@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "0.1.0-beta1",
+  "version": "0.1.0-beta1.0",
   "description": "Official SDK for Inngest.com",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
