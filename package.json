@@ -5,9 +5,10 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "yarn run clean && tsc",
     "test": "jest",
-    "clean": "rm -rf ./dist"
+    "clean": "rm -rf ./dist",
+    "release": "yarn run np"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
@@ -35,6 +36,7 @@
   "devDependencies": {
     "@types/jest": "^27.4.1",
     "jest": "27.5.1",
+    "np": "^7.6.1",
     "ts-jest": "^27.1.4",
     "typescript": "^4.6.3"
   }
