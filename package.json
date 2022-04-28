@@ -1,0 +1,41 @@
+{
+  "name": "inngest",
+  "version": "0.1.0-beta1",
+  "description": "Official SDK for Inngest.com",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "clean": "rm -rf ./dist"
+  },
+  "homepage": "https://github.com/inngest/inngest-js#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git"
+  },
+  "author": "Dan Farrelly <dan@inngest.com>",
+  "license": "GPL-3.0",
+  "private": false,
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "prettier": {
+    "tabWidth": 2,
+    "useTabs": false,
+    "semi": true,
+    "trailingComma": "es5"
+  },
+  "dependencies": {
+    "axios": "^0.27.2"
+  },
+  "devDependencies": {
+    "@types/jest": "^27.4.1",
+    "jest": "27.5.1",
+    "ts-jest": "^27.1.4",
+    "typescript": "^4.6.3"
+  }
+}
