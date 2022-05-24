@@ -37,6 +37,6 @@ const events = ["+12125551234", "+13135555678"].map(phoneNumber => ({
   user: {
     phone: phoneNumber
   }
-}})
+}});
 await inngest.send(events);
 ```
