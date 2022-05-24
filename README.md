@@ -4,6 +4,8 @@
 npm install inngest
 ```
 
+👋 _**Have a question or feature request? [Join our Discord](https://www.inngest.com/discord)!**_
+
 ## Usage
 
 ```js
