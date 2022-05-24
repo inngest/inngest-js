@@ -8,6 +8,7 @@
     "build": "yarn run clean && tsc",
     "test": "jest",
     "clean": "rm -rf ./dist",
+    "prepare": "yarn run test && yarn run build",
     "release": "yarn run np"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
