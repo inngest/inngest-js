@@ -29,11 +29,6 @@ describe("InngestJS", () => {
         config: {},
         request: {},
       };
-      // (axios.post as jest.Mock).mockImplementationOnce(() =>
-      //   Promise.resolve({ status: 200 })
-      // );
-
-      // mockedAxios.get.mockRejectedValue("Network error: Something went wrong");
       mockedAxios.post.mockResolvedValueOnce(response);
 
       const inngest = new Inngest("test-key");
@@ -44,6 +39,38 @@ describe("InngestJS", () => {
         },
       };
       const result = await inngest.send(event);
+      expect(axios.post).toHaveBeenCalled();
+      expect(result).toBe(true);
+      console.log(result);
+    });
+
+    it("should send multiple events", async () => {
+      const response: AxiosResponse = {
+        status: 200,
+        statusText: "OK",
+        data: "OK",
+        headers: {},
+        config: {},
+        request: {},
+      };
+      mockedAxios.post.mockResolvedValueOnce(response);
+
+      const inngest = new Inngest("test-key");
+      const events = [
+        {
+          name: "test-event",
+          data: {
+            test: "one",
+          },
+        },
+        {
+          name: "test-event",
+          data: {
+            test: "two",
+          },
+        },
+      ];
+      const result = await inngest.send(events);
       expect(axios.post).toHaveBeenCalled();
       expect(result).toBe(true);
       console.log(result);

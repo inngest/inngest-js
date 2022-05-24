@@ -1,6 +1,10 @@
 import { URL } from "url";
 
-import axios, { AxiosRequestConfig } from "axios";
+import axios, {
+  AxiosRequestConfig,
+  AxiosResponseHeaders,
+  AxiosResponse,
+} from "axios";
 
 /**
  * The event payload structure for sending data to Inngest
@@ -99,19 +103,7 @@ class Inngest {
     };
   }
 
-  /**
-   * Send an event to Inngest
-   */
-  public async send(payload: EventPayload): Promise<boolean> {
-    const response = await axios.post(
-      this.inngestApiUrl,
-      payload,
-      this.axiosConfig
-    );
-    if (response.status >= 200 && response.status < 300) {
-      return true;
-    }
-
+  private getResponseError(response: AxiosResponse): Error {
     let errorMessage = "Unknown error";
     switch (response.status) {
       case 401:
@@ -140,8 +132,22 @@ class Inngest {
         errorMessage = "Internal server error";
         break;
     }
+    return new Error(`Inngest API Error: ${response.status} ${errorMessage}`);
+  }
 
-    throw new Error(`Inngest API Error: ${response.status} ${errorMessage}`);
+  /**
+   * Send event(s) to Inngest
+   */
+  public async send(payload: EventPayload | EventPayload[]): Promise<boolean> {
+    const response = await axios.post(
+      this.inngestApiUrl,
+      payload,
+      this.axiosConfig
+    );
+    if (response.status >= 200 && response.status < 300) {
+      return true;
+    }
+    throw this.getResponseError(response);
   }
 }
 
