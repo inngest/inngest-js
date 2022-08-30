@@ -4,6 +4,9 @@
   "description": "Official SDK for Inngest.com",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "inngest-init": "./dist/init.js"
+  },
   "scripts": {
     "build": "yarn run clean && tsc",
     "test": "jest",
