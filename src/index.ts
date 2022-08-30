@@ -1,10 +1,48 @@
+import axios, { AxiosRequestConfig, AxiosResponse } from "axios";
 import { URL } from "url";
 
-import axios, {
-  AxiosRequestConfig,
-  AxiosResponseHeaders,
-  AxiosResponse,
-} from "axios";
+/**
+ * An HTTP-like, standardised response format that allows Inngest to help
+ * orchestrate steps and retries.
+ */
+export interface InngestResponse {
+  /**
+   * A step response must contain an HTTP status code.
+   *
+   * A `2xx` response indicates success; this is not a failure and no retry is
+   * necessary.
+   *
+   * A `4xx` response indicates a bad request; this step will not be retried as
+   * it is deemed irrecoverable. Examples of this might be an event with
+   * insufficient data or concerning a user that no longer exists.
+   *
+   * A `5xx` status indicates a temporary internal error; this will be retried
+   * according to the step and function's retry policy (3 times, by default).
+   *
+   * @link https://www.inngest.com/docs/functions/function-input-and-output#response-format
+   * @link https://www.inngest.com/docs/functions/retries
+   */
+  status: number;
+
+  /**
+   * The output of the function - the `body` - can be any arbitrary
+   * JSON-compatible data. It is then usable by any future steps.
+   *
+   * @link https://www.inngest.com/docs/functions/function-input-and-output#response-format
+   */
+  body?: any;
+}
+
+/**
+ * A single step within a function.
+ */
+export type InngestStep<Context = any> = (
+  /**
+   * The context for this step, including the triggering event and any previous
+   * step output.
+   */
+  context: Context
+) => Promise<InngestResponse> | InngestResponse;
 
 /**
  * The event payload structure for sending data to Inngest
