@@ -201,5 +201,22 @@ export class Inngest<Events extends Record<string, any>> {
 
     throw this.getResponseError(response);
   }
+
+  /**
+   * Respond to an incoming event.
+   */
+  public on<
+    Event extends keyof Events,
+    Fn extends (arg: { event: EventPayload<Events[Event]> }) => any
+  >(name: string, event: Event, fn: Fn): InngestFunction<Events> {
+    return new InngestFunction(this);
+  }
 }
 
+class InngestFunction<Events extends Record<string, any>> {
+  readonly #inngest: Inngest<Events>;
+
+  constructor(inngest: Inngest<Events>) {
+    this.#inngest = inngest;
+  }
+}
