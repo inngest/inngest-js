@@ -2,8 +2,8 @@
   "name": "inngest",
   "version": "0.3.0",
   "description": "Official SDK for Inngest.com",
-  "main": "./dist/src/index.js",
-  "types": "./dist/src/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
@@ -11,6 +11,7 @@
     "inngest-init": "./dist/init.js"
   },
   "scripts": {
+    "prebuild": "genversion --semi --double --es6 ./src/version.ts",
     "build": "yarn run clean && tsc",
     "test": "jest",
     "clean": "rm -rf ./dist",
