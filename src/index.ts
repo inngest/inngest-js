@@ -47,7 +47,7 @@ export type InngestStep<Context = any> = (
 /**
  * The event payload structure for sending data to Inngest
  */
-export interface EventPayload {
+export interface EventPayload<Data = Record<string, any>> {
   /**
    * A unique identifier for the event
    */
@@ -55,9 +55,7 @@ export interface EventPayload {
   /**
    * Any data pertinent to the event
    */
-  data: {
-    [key: string]: any;
-  };
+  data: Data;
   /**
    * Any user data associated with the event
    * All fields ending in "_id" will be used to attribute the event to a particular user
