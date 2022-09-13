@@ -38,7 +38,8 @@
     "trailingComma": "es5"
   },
   "dependencies": {
-    "axios": "^0.27.2"
+    "axios": "^0.27.2",
+    "zod": "^3.19.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.13",
