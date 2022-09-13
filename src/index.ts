@@ -102,7 +102,7 @@ export interface InngestClientOptions {
 /**
  * A client for the Inngest Source API
  */
-class Inngest {
+class Inngest<Events = Record<string, any>> {
   public readonly name: string;
 
   /**
@@ -178,15 +178,25 @@ class Inngest {
   /**
    * Send event(s) to Inngest
    */
-  public async send(payload: EventPayload | EventPayload[]): Promise<boolean> {
+  public async send<Event extends keyof Events>(
+    name: Event,
+    payload:
+      | Omit<EventPayload<Events[Event]>, "name">
+      | Omit<EventPayload<Events[Event]>, "name">[]
+  ): Promise<boolean> {
     const response = await axios.post(
       this.inngestApiUrl,
-      payload,
-      this.axiosConfig
+      {
+        ...payload,
+        name,
+      },
+      this.#axiosConfig
     );
+
     if (response.status >= 200 && response.status < 300) {
       return true;
     }
+
     throw this.getResponseError(response);
   }
 }
