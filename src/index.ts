@@ -120,6 +120,8 @@ export class Inngest<Events extends Record<string, any>> {
    */
   readonly #axiosConfig: AxiosRequestConfig;
 
+  #fns: InngestFunction<Events>[] = [];
+
   /**
    * @param apiKey - An API Key for the Inngest Source API
    */
