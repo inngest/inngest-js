@@ -1,5 +1,8 @@
 import { Inngest } from "./Inngest";
 
+/**
+ * A typed, individual step within an `InngestFunction`.
+ */
 export class InngestStep<
   Events extends Record<string, any>,
   Input extends any[],
@@ -13,6 +16,9 @@ export class InngestStep<
     this.#fn = fn;
   }
 
+  /**
+   * Run this step with the given `data`.
+   */
   private async run(data: any): Promise<unknown> {
     return this.#fn(data);
   }

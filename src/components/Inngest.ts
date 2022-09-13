@@ -4,38 +4,75 @@ import { InngestFunction } from "./InngestFunction";
 import { InngestStep } from "./InngestStep";
 
 /**
- * A client for the Inngest Source API
+ * A client used to interact with the Inngest API by sending or reacting to
+ * events.
+ *
+ * To provide event typing, make sure to pass in your generated event types as
+ * the first generic.
  */
 export class Inngest<Events extends Record<string, any>> {
+  /**
+   * The name of this instance, most commonly the name of the application it
+   * resides in.
+   */
   public readonly name: string;
 
   /**
-   * Inngest Source API Key
+   * Inngest Source API key, used to send events to Inngest Cloud.
    */
   private readonly apiKey: string;
 
   /**
-   * Full URL for the Inngest Source API
+   * Base URL for Inngest Cloud.
    */
   private readonly inngestBaseUrl: URL;
+
+  /**
+   * The URL of the Inngest Cloud API.
+   */
   private readonly inngestApiUrl: URL;
+
+  /**
+   * The URL of the Inngest function registration endpoint.
+   */
   private readonly inngestRegisterUrl: URL;
 
   /**
-   * Axios configuration for sending events to Inngest
+   * An Axios instance used for communicating with Inngest Cloud.
+   *
+   * @link https://npm.im/axios
    */
   private readonly client: AxiosInstance;
 
+  /**
+   * A private collection of functions that have been registered. This map is
+   * used to find and register functions when interacting with Inngest Cloud.
+   */
   private readonly fns: Record<string, InngestFunction<Events>> = {};
 
-  /**
-   * @param apiKey - An API Key for the Inngest Source API
-   */
   constructor(
+    /**
+     * The name of this instance, most commonly the name of the application it
+     * resides in.
+     */
     name: string,
+
+    /**
+     * Inngest Source API key, used to send events to Inngest Cloud.
+     */
     apiKey: string,
     { inngestBaseUrl = "https://inn.gs/" }: InngestT.ClientOptions = {}
   ) {
+    if (!name) {
+      throw new Error("A name must be passed to create an Inngest instance.");
+    }
+
+    if (!apiKey) {
+      throw new Error(
+        "An API key must be passed to create an Inngest instance."
+      );
+    }
+
     this.name = name;
     this.apiKey = apiKey;
     this.inngestBaseUrl = new URL(inngestBaseUrl);
@@ -107,7 +144,8 @@ export class Inngest<Events extends Record<string, any>> {
   }
 
   /**
-   * Respond to an incoming event.
+   * Given an event to listen to, run the given function when that event is
+   * seen.
    */
   public on<
     Event extends keyof Events,
@@ -157,7 +195,10 @@ export class Inngest<Events extends Record<string, any>> {
 
   /**
    * Finds a function by `functionId` and runs the relevant step with the given
-   * `stepId`.
+   * `stepId` and `data`.
+   *
+   * This is a private function to hide it from prying eyes, but is actually
+   * used internally within the library via `inngest['runStep']`.
    */
   private async runStep(
     functionId: string,

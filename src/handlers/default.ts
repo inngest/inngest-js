@@ -9,11 +9,35 @@ import {
 } from "../types";
 import { version } from "../version";
 
+/**
+ * A handler for registering Inngest functions. This type should be used
+ * whenever a handler for a new framework is being added to enforce that the
+ * registration process is always the same for the user.
+ */
 export type RegisterHandler = (
+  /**
+   * The `Inngest` instance used to declare all functions.
+   */
   inngest: Inngest<any>,
+
+  /**
+   * A key used to sign requests to and from Inngest in order to prove that the
+   * source is legitimate.
+   *
+   * @link TODO
+   */
   signingKey: string
 ) => any;
 
+/**
+ * Register any declared functions with Inngest, making them available to be
+ * triggered by events.
+ *
+ * Can either take an `Inngest` instance and a signing key, or can be used to
+ * create custom handlers by passing in an `InngestCommHandler`.
+ *
+ * @link TODO
+ */
 export const register = (
   ...args:
     | [inngest: Inngest<any>, signingKey: string]
@@ -21,14 +45,25 @@ export const register = (
 ) => {
   const [inngestOrHandler, signingKey] = args;
 
+  /**
+   * Explicitly check all args are what we expect.
+   *
+   * Let's handle the usual, default flow here.
+   */
   if (inngestOrHandler instanceof Inngest && signingKey) {
     return new InngestCommHandler(inngestOrHandler, signingKey).createHandler();
   }
 
+  /**
+   * Handle a custom comm handler being passed in.
+   */
   if (inngestOrHandler instanceof InngestCommHandler) {
     return inngestOrHandler.createHandler();
   }
 
+  /**
+   * Default to throwing if the input is not recognised.
+   */
   throw new Error(
     "Failed to create Inngest handler; invalid comm handler or no signing key present"
   );

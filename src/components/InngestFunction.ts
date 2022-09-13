@@ -57,6 +57,9 @@ export class InngestFunction<Events extends Record<string, any>> {
     };
   }
 
+  /**
+   * Run a step in this function defined by `stepId` with `data`.
+   */
   private runStep(stepId: string, data: any): Promise<unknown> {
     const step = this.#steps[stepId];
     if (!step) {
