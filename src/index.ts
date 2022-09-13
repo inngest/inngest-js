@@ -1,3 +1,7 @@
 export { Inngest } from "./components/Inngest";
-export { register } from "./handlers/default";
+export {
+  InngestCommHandler,
+  register,
+  RegisterHandler,
+} from "./handlers/default";
 export { ClientOptions, FunctionOptions } from "./types";

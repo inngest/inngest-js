@@ -9,22 +9,36 @@ import {
 } from "../types";
 import { version } from "../version";
 
-export const register = (
-  inngestOrHandler: Inngest<any> | InngestCommHandler
-) => {
-  const handler =
-    inngestOrHandler instanceof Inngest
-      ? new InngestCommHandler(inngestOrHandler)
-      : inngestOrHandler;
+export type RegisterHandler = (
+  inngest: Inngest<any>,
+  signingKey: string
+) => any;
 
-  return handler.createHandler();
+export const register = (
+  ...args:
+    | [inngest: Inngest<any>, signingKey: string]
+    | [handler: InngestCommHandler]
+) => {
+  const [inngestOrHandler, signingKey] = args;
+
+  if (inngestOrHandler instanceof Inngest && signingKey) {
+    return new InngestCommHandler(inngestOrHandler, signingKey).createHandler();
+  }
+
+  if (inngestOrHandler instanceof InngestCommHandler) {
+    return inngestOrHandler.createHandler();
+  }
+
+  throw new Error(
+    "Failed to create Inngest handler; invalid comm handler or no signing key present"
+  );
 };
 
 export class InngestCommHandler {
   protected readonly frameworkName: string = "default";
   protected readonly inngest: Inngest<any>;
 
-  constructor(inngest: Inngest<any>) {
+  constructor(inngest: Inngest<any>, signingKey: string) {
     this.inngest = inngest;
   }
 
