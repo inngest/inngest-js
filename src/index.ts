@@ -102,7 +102,7 @@ export interface InngestClientOptions {
 /**
  * A client for the Inngest Source API
  */
-class Inngest<Events = Record<string, any>> {
+export class Inngest<Events extends Record<string, any>> {
   public readonly name: string;
 
   /**
@@ -201,4 +201,3 @@ class Inngest<Events = Record<string, any>> {
   }
 }
 
-export { Inngest };
