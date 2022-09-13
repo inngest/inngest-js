@@ -103,32 +103,36 @@ export interface InngestClientOptions {
  * A client for the Inngest Source API
  */
 class Inngest {
+  public readonly name: string;
+
   /**
    * Inngest Source API Key
    */
-  private apiKey: string;
+  readonly #apiKey: string;
 
   /**
    * Full URL for the Inngest Source API
    */
-  private inngestApiUrl: string;
+  private readonly inngestApiUrl: string;
 
   /**
    * Axios configuration for sending events to Inngest
    */
-  private axiosConfig: AxiosRequestConfig;
+  readonly #axiosConfig: AxiosRequestConfig;
 
   /**
    * @param apiKey - An API Key for the Inngest Source API
    */
   constructor(
+    name: string,
     apiKey: string,
     { inngestApiUrl = "https://inn.gs/e/" }: InngestClientOptions = {}
   ) {
-    this.apiKey = apiKey;
-    this.inngestApiUrl = new URL(this.apiKey, inngestApiUrl).toString();
+    this.name = name;
+    this.#apiKey = apiKey;
+    this.inngestApiUrl = new URL(this.#apiKey, inngestApiUrl).toString();
 
-    this.axiosConfig = {
+    this.#axiosConfig = {
       timeout: 0,
       headers: {
         "Content-Type": "application/json",
