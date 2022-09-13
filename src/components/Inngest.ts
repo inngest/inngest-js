@@ -44,12 +44,6 @@ export class Inngest<Events extends Record<string, any>> {
    */
   private readonly client: AxiosInstance;
 
-  /**
-   * A private collection of functions that have been registered. This map is
-   * used to find and register functions when interacting with Inngest Cloud.
-   */
-  private readonly fns: Record<string, InngestFunction<Events>> = {};
-
   constructor(
     /**
      * The name of this instance, most commonly the name of the application it
@@ -167,61 +161,12 @@ export class Inngest<Events extends Record<string, any>> {
     event: Event,
     fn: Fn
   ): InngestFunction<Events> {
-    return this.#addFunction(
+    return new InngestFunction<Events>(
       typeof opts === "string" ? { name: opts } : opts,
       event,
       {
-        step: new InngestStep(this, fn),
+        step: new InngestStep(fn),
       }
     );
-  }
-
-  #addFunction(
-    opts: InngestT.FunctionOptions,
-    trigger: keyof Events,
-    steps: InngestT.Steps<Events>
-  ): InngestFunction<Events> {
-    if (Object.prototype.hasOwnProperty.call(this.fns, opts.name)) {
-      throw new Error(
-        `Cannot create two functions with the same name: "${opts.name}`
-      );
-    }
-
-    const fn = new InngestFunction(this, opts, trigger, steps);
-    this.fns[opts.name] = fn;
-
-    return fn;
-  }
-
-  /**
-   * Finds a function by `functionId` and runs the relevant step with the given
-   * `stepId` and `data`.
-   *
-   * This is a private function to hide it from prying eyes, but is actually
-   * used internally within the library via `inngest['runStep']`.
-   */
-  private async runStep(
-    functionId: string,
-    stepId: string,
-    data: any
-  ): Promise<InngestT.StepRunResponse> {
-    try {
-      const fn = this.fns[functionId];
-      if (!fn) {
-        throw new Error(`Could not find function with ID "${functionId}"`);
-      }
-
-      const body = await fn["runStep"](stepId, data);
-
-      return {
-        status: 200,
-        body: JSON.stringify(body),
-      };
-    } catch (err: any) {
-      return {
-        status: 500,
-        error: err.stack || err.message,
-      };
-    }
   }
 }

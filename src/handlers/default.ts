@@ -1,8 +1,10 @@
-import { AxiosRequestConfig } from "axios";
+import axios, { AxiosInstance, AxiosRequestConfig } from "axios";
 import { Request, Response } from "express";
 import { z } from "zod";
 import { Inngest } from "../components/Inngest";
+import { InngestFunction } from "../components/InngestFunction";
 import {
+  ClientOptions,
   FunctionConfig,
   RegisterPingResponse,
   StepRunResponse,
@@ -26,7 +28,9 @@ export type RegisterHandler = (
    *
    * @link TODO
    */
-  signingKey: string
+  signingKey: string,
+
+  opts?: ClientOptions
 ) => any;
 
 /**
@@ -38,43 +42,72 @@ export type RegisterHandler = (
  *
  * @link TODO
  */
-export const register = (
-  ...args:
-    | [inngest: Inngest<any>, signingKey: string]
-    | [handler: InngestCommHandler]
+export const register = <Events extends Record<string, any>>(
+  name: string,
+  signingKey: string,
+  functions: InngestFunction<Events>[],
+  opts?: ClientOptions
 ) => {
-  const [inngestOrHandler, signingKey] = args;
-
-  /**
-   * Explicitly check all args are what we expect.
-   *
-   * Let's handle the usual, default flow here.
-   */
-  if (inngestOrHandler instanceof Inngest && signingKey) {
-    return new InngestCommHandler(inngestOrHandler, signingKey).createHandler();
-  }
-
-  /**
-   * Handle a custom comm handler being passed in.
-   */
-  if (inngestOrHandler instanceof InngestCommHandler) {
-    return inngestOrHandler.createHandler();
-  }
-
-  /**
-   * Default to throwing if the input is not recognised.
-   */
-  throw new Error(
-    "Failed to create Inngest handler; invalid comm handler or no signing key present"
-  );
+  const handler = new InngestCommHandler(name, signingKey, functions, opts);
+  return handler.createHandler();
 };
 
-export class InngestCommHandler {
-  protected readonly frameworkName: string = "default";
-  protected readonly inngest: Inngest<any>;
+export class InngestCommHandler<Events extends Record<string, any>> {
+  public name: string;
 
-  constructor(inngest: Inngest<any>, signingKey: string) {
-    this.inngest = inngest;
+  /**
+   * Base URL for Inngest Cloud.
+   */
+  private readonly inngestBaseUrl: URL;
+
+  /**
+   * The URL of the Inngest function registration endpoint.
+   */
+  private readonly inngestRegisterUrl: URL;
+
+  protected readonly frameworkName: string = "default";
+  protected readonly signingKey: string;
+
+  /**
+   * An Axios instance used for communicating with Inngest Cloud.
+   *
+   * @link https://npm.im/axios
+   */
+  private readonly client: AxiosInstance;
+
+  /**
+   * A private collection of functions that have been registered. This map is
+   * used to find and register functions when interacting with Inngest Cloud.
+   */
+  private readonly fns: Record<string, InngestFunction<any>> = {};
+
+  constructor(
+    name: string,
+    signingKey: string,
+    functions: InngestFunction<Events>[],
+    { inngestBaseUrl = "https://inn.gs/" }: ClientOptions = {}
+  ) {
+    this.name = name;
+    this.fns = functions.reduce((acc, fn) => {
+      return {
+        ...acc,
+        [fn.name]: fn,
+      };
+    }, {});
+    this.inngestBaseUrl = new URL(inngestBaseUrl);
+    this.inngestRegisterUrl = new URL("x/register", this.inngestBaseUrl);
+    // this.inngest = inngest;
+    this.signingKey = signingKey;
+
+    this.client = axios.create({
+      timeout: 0,
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": `InngestJS v${version}`,
+      },
+      validateStatus: () => true, // all status codes return a response
+      maxRedirects: 0,
+    });
   }
 
   public createHandler(): any {
@@ -121,7 +154,7 @@ export class InngestCommHandler {
     };
   }
 
-  protected runStep(
+  protected async runStep(
     functionId: string,
     stepId: string,
     data: any
@@ -135,11 +168,28 @@ export class InngestCommHandler {
       data
     );
 
-    return this.inngest["runStep"](functionId, stepId, data);
+    try {
+      const fn = this.fns[functionId];
+      if (!fn) {
+        throw new Error(`Could not find function with ID "${functionId}"`);
+      }
+
+      const body = await fn["runStep"](stepId, data);
+
+      return {
+        status: 200,
+        body: JSON.stringify(body),
+      };
+    } catch (err: any) {
+      return {
+        status: 500,
+        error: err.stack || err.message,
+      };
+    }
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    return Object.values(this.inngest["fns"]).map((fn) => fn["getConfig"](url));
+    return Object.values(this.fns).map((fn) => fn["getConfig"](url));
   }
 
   protected async register(url: URL): Promise<void> {
@@ -150,19 +200,19 @@ export class InngestCommHandler {
 
     const config: AxiosRequestConfig = {
       headers: {
-        Authorization: `Bearer ${this.inngest["apiKey"]}`,
+        Authorization: `Bearer ${this.signingKey}`,
       },
     };
 
-    const res = await this.inngest["client"].post(
-      this.inngest["inngestRegisterUrl"].href,
+    const res = await this.client.post(
+      this.inngestRegisterUrl.href,
       body,
       config
     );
 
     console.log(
       "hit the register URL",
-      this.inngest["inngestRegisterUrl"].href,
+      this.inngestRegisterUrl.href,
       "with:",
       body,
       "and",
@@ -175,13 +225,11 @@ export class InngestCommHandler {
 
   protected pong(url: URL): RegisterPingResponse {
     return {
-      ctx: {
-        deployType: "ping",
-        framework: this.frameworkName,
-        name: this.inngest.name,
-      },
+      deployType: "ping",
+      framework: this.frameworkName,
+      appName: this.name,
       functions: this.configs(url),
-      sdk: version,
+      sdk: `js:v${version}`,
       v: "0.1",
     };
   }

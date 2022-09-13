@@ -1,18 +1,10 @@
-import { Inngest } from "./Inngest";
-
 /**
  * A typed, individual step within an `InngestFunction`.
  */
-export class InngestStep<
-  Events extends Record<string, any>,
-  Input extends any[],
-  Output
-> {
-  readonly #inngest: Inngest<Events>;
+export class InngestStep<Input extends any[], Output> {
   readonly #fn: (...args: any) => Output;
 
-  constructor(inngest: Inngest<Events>, fn: (...args: Input) => Output) {
-    this.#inngest = inngest;
+  constructor(fn: (...args: Input) => Output) {
     this.#fn = fn;
   }
 
