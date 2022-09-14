@@ -65,6 +65,21 @@ export const register = <Events extends Record<string, EventPayload>>(
   return handler.createHandler();
 };
 
+/**
+ * TODO Instead of `createHandler`, expose `createRequest` and `handleResponse`
+ *
+ * Overriding `createHandler` requires that we always remember crucial steps,
+ * e.g. validating signatures, handling POST, etc.
+ *
+ * We should instead require that new comm handlers override only two functions:
+ *
+ * `createRequest()`
+ * This is the function that is exposed. It must return a valid `HandlerRequest`
+ *
+ * `handleResponse()`
+ * The input is a `StepResponse`, and output can be anything needed for the
+ * platform
+ */
 export class InngestCommHandler {
   public name: string;
 
