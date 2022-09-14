@@ -77,33 +77,31 @@ export interface RegisterPingResponse {
   /**
    * Response version, allowing Inngest to change any top-level field.
    */
-  v: string;
+  v: `${number}.${number}`;
 
   /**
    * SDK version from `package.json` for our internal metrics and to warn users
    * they need to upgrade.
    */
-  sdk: string;
+  sdk: `js:v${number}.${number}.${number}`;
 
-  ctx: {
-    /**
-     * The name of this particular app, used for grouping and easier viewing in
-     * the UI.
-     */
-    name: string;
+  /**
+   * The method used to deploy these functions.
+   */
+  deployType: "ping";
 
-    /**
-     * The name of the framework being used for this instance, e.g. "nextjs",
-     * "vercel", "netlify", "lambda", etc. Uses the `framework` specified when
-     * creating a new `InngestCommHandler`.
-     */
-    framework: string;
+  /**
+   * The name of the framework being used for this instance, e.g. "nextjs",
+   * "vercel", "netlify", "lambda", etc. Uses the `framework` specified when
+   * creating a new `InngestCommHandler`.
+   */
+  framework: string;
 
-    /**
-     * The method used to deploy these functions.
-     */
-    deployType: "ping";
-  };
+  /**
+   * The name of this particular app, used for grouping and easier viewing in
+   * the UI.
+   */
+  appName: string;
 
   /**
    * The functions available at this particular handler.
