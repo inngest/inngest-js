@@ -18,9 +18,9 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   public readonly name: string;
 
   /**
-   * Inngest Source API key, used to send events to Inngest Cloud.
+   * Inngest event key, used to send events to Inngest Cloud.
    */
-  private readonly apiKey: string;
+  private readonly eventKey: string;
 
   /**
    * Base URL for Inngest Cloud.
@@ -47,25 +47,25 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
     name: string,
 
     /**
-     * Inngest Source API key, used to send events to Inngest Cloud.
+     * Inngest event key, used to send events to Inngest Cloud.
      */
-    apiKey: string,
+    eventKey: string,
     { inngestBaseUrl = "https://inn.gs/" }: InngestT.ClientOptions = {}
   ) {
     if (!name) {
       throw new Error("A name must be passed to create an Inngest instance.");
     }
 
-    if (!apiKey) {
+    if (!eventKey) {
       throw new Error(
-        "An API key must be passed to create an Inngest instance."
+        "An event key must be passed to create an Inngest instance."
       );
     }
 
     this.name = name;
-    this.apiKey = apiKey;
+    this.eventKey = eventKey;
     this.inngestBaseUrl = new URL(inngestBaseUrl);
-    this.inngestApiUrl = new URL(`e/${this.apiKey}`, this.inngestBaseUrl);
+    this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
 
     this.client = axios.create({
       timeout: 0,
@@ -82,7 +82,7 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
     let errorMessage = "Unknown error";
     switch (response.status) {
       case 401:
-        errorMessage = "API Key Not Found";
+        errorMessage = "Event key Not Found";
         break;
       case 400:
         errorMessage = "Cannot process event payload";
@@ -91,7 +91,7 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
         errorMessage = "Forbidden";
         break;
       case 404:
-        errorMessage = "API Key not found";
+        errorMessage = "Event key not found";
         break;
       case 406:
         errorMessage = `${JSON.stringify(response.data)}`;
