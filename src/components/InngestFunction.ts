@@ -43,7 +43,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
               id: stepId,
               name: stepId,
               runtime: {
-                type: "remote",
+                type: "http",
                 url: url.href,
               },
             },

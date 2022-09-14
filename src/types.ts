@@ -170,7 +170,7 @@ export interface FunctionConfig {
       id: string;
       name: string;
       runtime: {
-        type: "remote";
+        type: "http";
         url: string;
       };
     }
