@@ -133,7 +133,7 @@ export interface RegisterPingResponse {
    * SDK version from `package.json` for our internal metrics and to warn users
    * they need to upgrade.
    */
-  sdk: `js:v${number}.${number}.${number}`;
+  sdk: `js:v${number}.${number}.${number}${"" | `-${string}.${number}`}`;
 
   /**
    * The method used to deploy these functions.
