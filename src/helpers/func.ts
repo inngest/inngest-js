@@ -3,7 +3,7 @@ import { InngestStep } from "../components/InngestStep";
 import { EventPayload, FunctionOptions } from "../types";
 
 export const createFunction = <Event extends EventPayload>(
-  opts: string | FunctionOptions,
+  nameOrOpts: string | FunctionOptions,
   event: Event extends EventPayload
     ? {
         [K in keyof Event]: K extends "name" ? Event[K] : never;
@@ -12,7 +12,7 @@ export const createFunction = <Event extends EventPayload>(
   fn: (arg: { event: Event }) => any
 ): InngestFunction<any> => {
   return new InngestFunction(
-    typeof opts === "string" ? { name: opts } : opts,
+    typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
     event as string,
     {
       step: new InngestStep(fn),

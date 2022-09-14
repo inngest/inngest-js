@@ -149,12 +149,12 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
     Event extends keyof Events,
     Fn extends (arg: { event: Events[Event] }) => any
   >(
-    opts: string | InngestT.FunctionOptions,
+    nameOrOpts: string | InngestT.FunctionOptions,
     event: Event,
     fn: Fn
   ): InngestFunction<Events> {
     return new InngestFunction<Events>(
-      typeof opts === "string" ? { name: opts } : opts,
+      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
       event,
       {
         step: new InngestStep(fn),
