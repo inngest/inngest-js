@@ -79,6 +79,8 @@ export const register = <Events extends Record<string, EventPayload>>(
  * `handleResponse()`
  * The input is a `StepResponse`, and output can be anything needed for the
  * platform
+ *
+ * This needs to also account for the ability to validate signatures etc.
  */
 export class InngestCommHandler {
   public name: string;
