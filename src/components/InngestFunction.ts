@@ -12,6 +12,10 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     this.#steps = steps || {};
   }
 
+  public get id() {
+    return this.#opts.id || this.#generateId();
+  }
+
   public get name() {
     return this.#opts.name;
   }
@@ -28,12 +32,12 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     baseUrl: URL
   ): FunctionConfig {
     return {
-      id: this.#opts.name,
-      name: this.#opts.name,
+      id: this.id,
+      name: this.name,
       triggers: [{ event: this.#trigger as string }],
       steps: Object.keys(this.#steps).reduce<FunctionConfig["steps"]>(
         (acc, stepId) => {
-          const url = new URL(baseUrl);
+          const url = new URL(baseUrl.href);
           url.searchParams.set(fnIdParam, this.#opts.name);
           url.searchParams.set(stepIdParam, stepId);
 
@@ -66,5 +70,17 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     }
 
     return step["run"](data);
+  }
+
+  #generateId() {
+    const join = "-";
+
+    return this.#opts.name
+      .toLowerCase()
+      .replaceAll(/[^a-z0-9-]+/g, join)
+      .replaceAll(/-+/g, join)
+      .split(join)
+      .filter(Boolean)
+      .join(join);
   }
 }

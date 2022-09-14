@@ -106,8 +106,9 @@ export interface ClientOptions {
 /**
  * A set of options for configuring an Inngest function.
  */
-export interface FunctionOptions<Name = string> {
-  name: Name;
+export interface FunctionOptions {
+  id?: string;
+  name: string;
 }
 
 export type Steps = Record<string, InngestStep<any[], any>>;

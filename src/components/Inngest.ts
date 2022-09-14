@@ -135,24 +135,21 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
    */
   public createFunction<
     Event extends keyof Events,
-    FnId extends string,
-    Fn extends InngestT.StepFn<Events[Event], FnId, "step">
-  >(name: FnId, event: Event, fn: Fn): InngestFunction<Events>;
+    Fn extends InngestT.StepFn<Events[Event], string, "step">
+  >(name: string, event: Event, fn: Fn): InngestFunction<Events>;
   public createFunction<
     Event extends keyof Events,
-    FnId extends string,
-    Fn extends InngestT.StepFn<Events[Event], FnId, "step">
+    Fn extends InngestT.StepFn<Events[Event], string, "step">
   >(
-    opts: InngestT.FunctionOptions<FnId>,
+    opts: InngestT.FunctionOptions,
     event: Event,
     fn: Fn
   ): InngestFunction<Events>;
   public createFunction<
     Event extends keyof Events,
-    FnId extends string,
-    Fn extends InngestT.StepFn<Events[Event], FnId, "step">
+    Fn extends InngestT.StepFn<Events[Event], string, "step">
   >(
-    nameOrOpts: FnId | InngestT.FunctionOptions<FnId>,
+    nameOrOpts: string | InngestT.FunctionOptions,
     event: Event,
     fn: Fn
   ): InngestFunction<Events> {

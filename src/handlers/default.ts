@@ -118,17 +118,26 @@ export class InngestCommHandler {
     this.name =
       typeof nameOrInngest === "string" ? nameOrInngest : nameOrInngest.name;
 
-    this.fns = functions.reduce((acc, fn) => {
-      return {
-        ...acc,
-        [fn.name]: fn,
-      };
-    }, {});
+    this.fns = functions.reduce<Record<string, InngestFunction<any>>>(
+      (acc, fn) => {
+        if (acc[fn.id]) {
+          throw new Error(
+            `Duplicate function ID "${fn.id}"; please change a function's name or provide an explicit ID to avoid conflicts.`
+          );
+        }
+
+        return {
+          ...acc,
+          [fn.id]: fn,
+        };
+      },
+      {}
+    );
 
     this.inngestBaseUrl = new URL(
       inngestBaseUrl ||
         (nameOrInngest instanceof Inngest
-          ? nameOrInngest.inngestBaseUrl
+          ? nameOrInngest.inngestBaseUrl.href
           : "https://inn.gs/")
     );
 
