@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { z } from "zod";
+import { fnIdParam, stepIdParam } from "../helpers/consts";
 import {
   InngestCommHandler,
   register as defaultRegister,
@@ -43,8 +44,8 @@ class NextCommHandler extends InngestCommHandler {
               stepId: z.string().min(1),
             })
             .parse({
-              fnId: req.query.fnId,
-              stepId: req.query.stepId,
+              fnId: req.query[fnIdParam],
+              stepId: req.query[stepIdParam],
             });
 
           const stepRes = await this.runStep(fnId, stepId, req.body);

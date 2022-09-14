@@ -1,3 +1,4 @@
+import { fnIdParam, stepIdParam } from "../helpers/consts";
 import { EventPayload, FunctionConfig, FunctionOptions, Steps } from "../types";
 
 export class InngestFunction<Events extends Record<string, EventPayload>> {
@@ -20,11 +21,11 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
    */
   private getConfig(
     /**
-     * Must be provided a URL that will be used to trigger the step. This
-     * function can't be expected to know how it will be accessed, so relies on
-     * an outside method providing context.
+     * Must be provided a URL that will be used to access the function and step.
+     * This function can't be expected to know how it will be accessed, so
+     * relies on an outside method providing context.
      */
-    url: URL
+    baseUrl: URL
   ): FunctionConfig {
     return {
       id: this.#opts.name,
@@ -32,6 +33,10 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       triggers: [{ event: this.#trigger as string }],
       steps: Object.keys(this.#steps).reduce<FunctionConfig["steps"]>(
         (acc, stepId) => {
+          const url = new URL(baseUrl);
+          url.searchParams.set(fnIdParam, this.#opts.name);
+          url.searchParams.set(stepIdParam, stepId);
+
           return {
             ...acc,
             [stepId]: {
