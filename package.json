@@ -7,15 +7,12 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
-  "bin": {
-    "inngest-init": "./dist/init.js"
-  },
   "scripts": {
     "prebuild": "genversion --semi --double --es6 ./src/version.ts",
     "build": "yarn run clean && tsc",
     "test": "jest",
     "clean": "rm -rf ./dist",
-    "prepare": "yarn run test && yarn run build",
+    "prepare": "yarn run build",
     "release": "yarn run np"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
