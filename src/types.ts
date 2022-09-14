@@ -120,7 +120,7 @@ export type StepRunResponse =
     }
   | {
       status: 200;
-      body?: string;
+      body?: any;
     };
 
 export interface RegisterPingResponse {

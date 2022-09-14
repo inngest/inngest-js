@@ -191,7 +191,11 @@ export class InngestCommHandler {
 
           const stepRes = await this.runStep(fnId, stepId, req.body);
 
-          return void res.json(stepRes);
+          if (stepRes.status === 500) {
+            return void res.status(stepRes.status).json(stepRes.error);
+          }
+
+          return void res.status(stepRes.status).json(stepRes.body);
 
         default:
           return void res.sendStatus(405);
@@ -223,7 +227,7 @@ export class InngestCommHandler {
 
       return {
         status: 200,
-        body: JSON.stringify(body),
+        body,
       };
     } catch (err: any) {
       return {
