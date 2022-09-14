@@ -5,6 +5,7 @@ import { Inngest } from "../components/Inngest";
 import { InngestFunction } from "../components/InngestFunction";
 import {
   ClientOptions,
+  EventPayload,
   FunctionConfig,
   RegisterPingResponse,
   StepRunResponse,
@@ -42,7 +43,7 @@ export type RegisterHandler = (
  *
  * @link TODO
  */
-export const register = <Events extends Record<string, any>>(
+export const register = <Events extends Record<string, EventPayload>>(
   name: string,
   signingKey: string,
   functions: InngestFunction<Events>[],
@@ -52,7 +53,7 @@ export const register = <Events extends Record<string, any>>(
   return handler.createHandler();
 };
 
-export class InngestCommHandler<Events extends Record<string, any>> {
+export class InngestCommHandler<Events extends Record<string, EventPayload>> {
   public name: string;
 
   /**

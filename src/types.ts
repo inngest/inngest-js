@@ -1,5 +1,48 @@
 import { InngestStep } from "./components/InngestStep";
 
+export interface EventPayload {
+  /**
+   * A unique identifier for the event
+   */
+  name: string;
+
+  /**
+   * Any data pertinent to the event
+   */
+  data: any;
+
+  /**
+   * Any user data associated with the event
+   * All fields ending in "_id" will be used to attribute the event to a particular user
+   */
+  user?: {
+    /**
+     * Your user's unique id in your system
+     */
+    external_id?: string;
+    /**
+     * Your user's email address
+     */
+    email?: string;
+    /**
+     * Your user's phone number
+     */
+    phone?: string;
+    [key: string]: any;
+  };
+  /**
+   * A specific event schema version
+   * (optional)
+   */
+  v?: string;
+  /**
+   * An integer representing the milliseconds since the unix epoch at which this event occurred.
+   * Defaults to the current time.
+   * (optional)
+   */
+  ts?: number;
+}
+
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
  * orchestrate steps and retries.

@@ -10,7 +10,7 @@ import { InngestStep } from "./InngestStep";
  * To provide event typing, make sure to pass in your generated event types as
  * the first generic.
  */
-export class Inngest<Events extends Record<string, any>> {
+export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   /**
    * The name of this instance, most commonly the name of the application it
    * resides in.
@@ -139,11 +139,11 @@ export class Inngest<Events extends Record<string, any>> {
    * Given an event to listen to, run the given function when that event is
    * seen.
    */
-  public on<
+  public createFunction<
     Event extends keyof Events,
     Fn extends (arg: { event: Events[Event] }) => any
   >(name: string, event: Event, fn: Fn): InngestFunction<Events>;
-  public on<
+  public createFunction<
     Event extends keyof Events,
     Fn extends (arg: { event: Events[Event] }) => any
   >(
@@ -151,7 +151,7 @@ export class Inngest<Events extends Record<string, any>> {
     event: Event,
     fn: Fn
   ): InngestFunction<Events>;
-  public on<
+  public createFunction<
     Event extends keyof Events,
     Fn extends (arg: { event: Events[Event] }) => any
   >(

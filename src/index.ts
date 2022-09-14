@@ -4,4 +4,5 @@ export {
   register,
   RegisterHandler,
 } from "./handlers/default";
+export { createFunction } from "./helpers/func";
 export { ClientOptions, FunctionOptions } from "./types";
