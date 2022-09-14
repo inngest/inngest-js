@@ -19,9 +19,10 @@ import { version } from "../version";
  */
 export type RegisterHandler = (
   /**
-   * The `Inngest` instance used to declare all functions.
+   * The name of this app, used to scope and group Inngest functions, or
+   * the `Inngest` instance used to declare all functions.
    */
-  inngest: Inngest<any>,
+  nameOrInngest: string | Inngest<any>,
 
   /**
    * A key used to sign requests to and from Inngest in order to prove that the
@@ -30,7 +31,7 @@ export type RegisterHandler = (
    * @link TODO
    */
   signingKey: string,
-
+  functions: InngestFunction<any>[],
   opts?: ClientOptions
 ) => any;
 
@@ -44,16 +45,26 @@ export type RegisterHandler = (
  * @link TODO
  */
 export const register = <Events extends Record<string, EventPayload>>(
-  name: string,
-  signingKey: string,
-  functions: InngestFunction<Events>[],
-  opts?: ClientOptions
+  ...args:
+    | [
+        nameOrInngest: string | Inngest<Events>,
+        signingKey: string,
+        functions: InngestFunction<Events>[],
+        opts?: ClientOptions
+      ]
+    | [commHandler: InngestCommHandler]
 ) => {
-  const handler = new InngestCommHandler(name, signingKey, functions, opts);
+  if (args.length === 1) {
+    return args[0].createHandler();
+  }
+
+  const [nameOrInngest, signingKey, fns, opts] = args;
+  const handler = new InngestCommHandler(nameOrInngest, signingKey, fns, opts);
+
   return handler.createHandler();
 };
 
-export class InngestCommHandler<Events extends Record<string, EventPayload>> {
+export class InngestCommHandler {
   public name: string;
 
   /**
@@ -83,12 +94,13 @@ export class InngestCommHandler<Events extends Record<string, EventPayload>> {
   private readonly fns: Record<string, InngestFunction<any>> = {};
 
   constructor(
-    name: string,
+    nameOrInngest: string | Inngest<any>,
     signingKey: string,
-    functions: InngestFunction<Events>[],
+    functions: InngestFunction<any>[],
     { inngestBaseUrl = "https://inn.gs/" }: ClientOptions = {}
   ) {
-    this.name = name;
+    this.name =
+      typeof nameOrInngest === "string" ? nameOrInngest : nameOrInngest.name;
     this.fns = functions.reduce((acc, fn) => {
       return {
         ...acc,
