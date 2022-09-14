@@ -1,5 +1,11 @@
 import { InngestStep } from "./components/InngestStep";
 
+export type StepFn<Event, FnId, StepId> = (arg: {
+  event: Event;
+  steps: {};
+  ctx: { fn_id: FnId; step_id: StepId };
+}) => any;
+
 export interface EventPayload {
   /**
    * A unique identifier for the event
@@ -100,8 +106,8 @@ export interface ClientOptions {
 /**
  * A set of options for configuring an Inngest function.
  */
-export interface FunctionOptions {
-  name: string;
+export interface FunctionOptions<Name = string> {
+  name: Name;
 }
 
 export type Steps = Record<string, InngestStep<any[], any>>;
