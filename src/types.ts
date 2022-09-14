@@ -44,50 +44,6 @@ export type Step<Context = any> = (
 ) => Promise<Response> | Response;
 
 /**
- * The event payload structure for sending data to Inngest
- */
-export interface EventPayload<Data = Record<string, any>> {
-  /**
-   * A unique identifier for the event
-   */
-  name: string;
-  /**
-   * Any data pertinent to the event
-   */
-  data: Data;
-  /**
-   * Any user data associated with the event
-   * All fields ending in "_id" will be used to attribute the event to a particular user
-   */
-  user?: {
-    /**
-     * Your user's unique id in your system
-     */
-    external_id?: string;
-    /**
-     * Your user's email address
-     */
-    email?: string;
-    /**
-     * Your user's phone number
-     */
-    phone?: string;
-    [key: string]: any;
-  };
-  /**
-   * A specific event schema version
-   * (optional)
-   */
-  v?: string;
-  /**
-   * An integer representing the milliseconds since the unix epoch at which this event occurred.
-   * Defaults to the current time.
-   * (optional)
-   */
-  ts?: number;
-}
-
-/**
  * A set of options for configuring the Inngest client
  */
 export interface ClientOptions {
@@ -105,10 +61,7 @@ export interface FunctionOptions {
   name: string;
 }
 
-export type Steps<Events extends Record<string, any>> = Record<
-  string,
-  InngestStep<Events, any[], any>
->;
+export type Steps = Record<string, InngestStep<any[], any>>;
 
 export type StepRunResponse =
   | {

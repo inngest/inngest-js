@@ -1,4 +1,4 @@
-import { EventPayload, FunctionConfig, FunctionOptions, Steps } from "../types";
+import { FunctionConfig, FunctionOptions, Steps } from "../types";
 import { InngestStep } from "./InngestStep";
 
 export class InngestFunction<Events extends Record<string, any>> {
@@ -70,7 +70,7 @@ export class InngestFunction<Events extends Record<string, any>> {
    */
   public on<
     Event extends keyof Events,
-    Fn extends (arg: { event: EventPayload<Events[Event]> }) => any
+    Fn extends (arg: { event: Events[Event] }) => any
   >(event: Event, fn: Fn): this {
     /**
      * Temporary check while we have multiple paths to the same functionality that

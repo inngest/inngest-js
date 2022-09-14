@@ -121,9 +121,7 @@ export class Inngest<Events extends Record<string, any>> {
    */
   public async send<Event extends keyof Events>(
     name: Event,
-    payload:
-      | Omit<InngestT.EventPayload<Events[Event]>, "name">
-      | Omit<InngestT.EventPayload<Events[Event]>, "name">[]
+    payload: Omit<Events[Event], "name"> | Omit<Events[Event], "name">[]
   ): Promise<boolean> {
     const response = await this.client.post(this.inngestApiUrl.href, {
       ...payload,
@@ -143,11 +141,11 @@ export class Inngest<Events extends Record<string, any>> {
    */
   public on<
     Event extends keyof Events,
-    Fn extends (arg: { event: InngestT.EventPayload<Events[Event]> }) => any
+    Fn extends (arg: { event: Events[Event] }) => any
   >(name: string, event: Event, fn: Fn): InngestFunction<Events>;
   public on<
     Event extends keyof Events,
-    Fn extends (arg: { event: InngestT.EventPayload<Events[Event]> }) => any
+    Fn extends (arg: { event: Events[Event] }) => any
   >(
     opts: InngestT.FunctionOptions,
     event: Event,
@@ -155,7 +153,7 @@ export class Inngest<Events extends Record<string, any>> {
   ): InngestFunction<Events>;
   public on<
     Event extends keyof Events,
-    Fn extends (arg: { event: InngestT.EventPayload<Events[Event]> }) => any
+    Fn extends (arg: { event: Events[Event] }) => any
   >(
     opts: string | InngestT.FunctionOptions,
     event: Event,
