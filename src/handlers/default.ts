@@ -5,9 +5,9 @@ import { Inngest } from "../components/Inngest";
 import { InngestFunction } from "../components/InngestFunction";
 import { fnIdParam, stepIdParam } from "../helpers/consts";
 import {
-  ClientOptions,
   EventPayload,
   FunctionConfig,
+  RegisterOptions,
   RegisterPingResponse,
   StepRunResponse,
 } from "../types";
@@ -33,7 +33,7 @@ export type RegisterHandler = (
    */
   signingKey: string,
   functions: InngestFunction<any>[],
-  opts?: ClientOptions
+  opts?: RegisterOptions
 ) => any;
 
 /**
@@ -51,7 +51,7 @@ export const register = <Events extends Record<string, EventPayload>>(
         nameOrInngest: string | Inngest<Events>,
         signingKey: string,
         functions: InngestFunction<Events>[],
-        opts?: ClientOptions
+        opts?: RegisterOptions
       ]
     | [commHandler: InngestCommHandler]
 ) => {
@@ -86,11 +86,6 @@ export class InngestCommHandler {
   public name: string;
 
   /**
-   * Base URL for Inngest Cloud.
-   */
-  private readonly inngestBaseUrl: URL;
-
-  /**
    * The URL of the Inngest function registration endpoint.
    */
   private readonly inngestRegisterUrl: URL;
@@ -115,7 +110,7 @@ export class InngestCommHandler {
     nameOrInngest: string | Inngest<any>,
     signingKey: string,
     functions: InngestFunction<any>[],
-    { inngestBaseUrl }: ClientOptions = {}
+    { inngestRegisterUrl }: RegisterOptions = {}
   ) {
     this.name =
       typeof nameOrInngest === "string" ? nameOrInngest : nameOrInngest.name;
@@ -136,14 +131,10 @@ export class InngestCommHandler {
       {}
     );
 
-    this.inngestBaseUrl = new URL(
-      inngestBaseUrl ||
-        (nameOrInngest instanceof Inngest
-          ? nameOrInngest.inngestBaseUrl.href
-          : "https://inn.gs/")
+    this.inngestRegisterUrl = new URL(
+      inngestRegisterUrl || "https://api.inngest.com/fn/register"
     );
 
-    this.inngestRegisterUrl = new URL("x/register", this.inngestBaseUrl);
     this.signingKey = signingKey;
 
     this.client = axios.create({

@@ -104,6 +104,17 @@ export interface ClientOptions {
 }
 
 /**
+ * A set of options for configuring the registration for Inngest function
+ */
+export interface RegisterOptions {
+  /**
+   * The URL used to register functions with Inngest.
+   * Defaults to https://api.inngest.com/fn/register
+   */
+  inngestRegisterUrl?: string;
+}
+
+/**
  * A set of options for configuring an Inngest function.
  */
 export interface FunctionOptions {
