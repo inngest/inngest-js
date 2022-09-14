@@ -97,19 +97,26 @@ export class InngestCommHandler {
     nameOrInngest: string | Inngest<any>,
     signingKey: string,
     functions: InngestFunction<any>[],
-    { inngestBaseUrl = "https://inn.gs/" }: ClientOptions = {}
+    { inngestBaseUrl }: ClientOptions = {}
   ) {
     this.name =
       typeof nameOrInngest === "string" ? nameOrInngest : nameOrInngest.name;
+
     this.fns = functions.reduce((acc, fn) => {
       return {
         ...acc,
         [fn.name]: fn,
       };
     }, {});
-    this.inngestBaseUrl = new URL(inngestBaseUrl);
+
+    this.inngestBaseUrl = new URL(
+      inngestBaseUrl ||
+        (nameOrInngest instanceof Inngest
+          ? nameOrInngest.inngestBaseUrl
+          : "https://inn.gs/")
+    );
+
     this.inngestRegisterUrl = new URL("x/register", this.inngestBaseUrl);
-    // this.inngest = inngest;
     this.signingKey = signingKey;
 
     this.client = axios.create({

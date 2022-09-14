@@ -25,17 +25,12 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   /**
    * Base URL for Inngest Cloud.
    */
-  private readonly inngestBaseUrl: URL;
+  public readonly inngestBaseUrl: URL;
 
   /**
    * The URL of the Inngest Cloud API.
    */
   private readonly inngestApiUrl: URL;
-
-  /**
-   * The URL of the Inngest function registration endpoint.
-   */
-  private readonly inngestRegisterUrl: URL;
 
   /**
    * An Axios instance used for communicating with Inngest Cloud.
@@ -71,7 +66,6 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
     this.apiKey = apiKey;
     this.inngestBaseUrl = new URL(inngestBaseUrl);
     this.inngestApiUrl = new URL(`e/${this.apiKey}`, this.inngestBaseUrl);
-    this.inngestRegisterUrl = new URL("x/register", this.inngestBaseUrl);
 
     this.client = axios.create({
       timeout: 0,
