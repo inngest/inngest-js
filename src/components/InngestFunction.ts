@@ -2,7 +2,7 @@ import { EventPayload, FunctionConfig, FunctionOptions, Steps } from "../types";
 
 export class InngestFunction<Events extends Record<string, EventPayload>> {
   readonly #opts: FunctionOptions;
-  #trigger: keyof Events;
+  readonly #trigger: keyof Events;
   readonly #steps: Steps;
 
   constructor(opts: FunctionOptions, trigger: keyof Events, steps: Steps) {
