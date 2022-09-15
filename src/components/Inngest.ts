@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosResponse } from "axios";
 import * as InngestT from "../types";
+import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
 import { InngestStep } from "./InngestStep";
 
@@ -71,7 +72,7 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
       timeout: 0,
       headers: {
         "Content-Type": "application/json",
-        "User-Agent": "InngestJS 0.1.0",
+        "User-Agent": `InngestJS v${version}`,
       },
       validateStatus: () => true, // all status codes return a response
       maxRedirects: 0,
