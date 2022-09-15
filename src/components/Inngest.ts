@@ -117,14 +117,14 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   public async send<Event extends keyof Events>(
     name: Event,
     payload: Omit<Events[Event], "name"> | Omit<Events[Event], "name">[]
-  ): Promise<boolean> {
+  ): Promise<void> {
     const response = await this.client.post(this.inngestApiUrl.href, {
       ...payload,
       name,
     });
 
     if (response.status >= 200 && response.status < 300) {
-      return true;
+      return;
     }
 
     throw this.#getResponseError(response);
