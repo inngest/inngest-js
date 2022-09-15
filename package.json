@@ -26,9 +26,6 @@
   "files": [
     "dist"
   ],
-  "engines": {
-    "node": ">=14.0.0"
-  },
   "prettier": {
     "tabWidth": 2,
     "useTabs": false,
