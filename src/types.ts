@@ -1,11 +1,20 @@
 import { InngestStep } from "./components/InngestStep";
 
+/**
+ * The shape of a step function, taking in event, step, and ctx data, and
+ * outputting anything.
+ */
 export type StepFn<Event, FnId, StepId> = (arg: {
   event: Event;
   steps: {};
   ctx: { fn_id: FnId; step_id: StepId };
 }) => any;
 
+/**
+ * The shape of a single event's payload. It should be extended to enforce
+ * adherence to given events and not used as a method of creating them (i.e. as
+ * a generic).
+ */
 export interface EventPayload {
   /**
    * A unique identifier for the event
@@ -26,23 +35,34 @@ export interface EventPayload {
      * Your user's unique id in your system
      */
     external_id?: string;
+
     /**
      * Your user's email address
      */
     email?: string;
+
     /**
      * Your user's phone number
      */
     phone?: string;
+
+    /**
+     * The user block can contain arbitrary data that you can use within your
+     * own handlers too.
+     */
     [key: string]: any;
   };
+
   /**
    * A specific event schema version
    * (optional)
    */
   v?: string;
+
   /**
-   * An integer representing the milliseconds since the unix epoch at which this event occurred.
+   * An integer representing the milliseconds since the unix epoch at which this
+   * event occurred.
+   *
    * Defaults to the current time.
    * (optional)
    */
@@ -93,7 +113,7 @@ export type Step<Context = any> = (
 ) => Promise<Response> | Response;
 
 /**
- * A set of options for configuring the Inngest client
+ * A set of options for configuring the Inngest client.
  */
 export interface ClientOptions {
   /**
@@ -104,7 +124,7 @@ export interface ClientOptions {
 }
 
 /**
- * A set of options for configuring the registration for Inngest function
+ * A set of options for configuring the registration of Inngest functions.
  */
 export interface RegisterOptions {
   /**
@@ -118,12 +138,42 @@ export interface RegisterOptions {
  * A set of options for configuring an Inngest function.
  */
 export interface FunctionOptions {
+  /**
+   * An optional unique ID used to identify the function. This is used
+   * internally for versioning and referring to your function, so should not
+   * change between deployments.
+   *
+   * By default, this is a slugified version of the given `name`, e.g.
+   * `"My FN :)"` would be slugified to `"my-fn"`.
+   *
+   * If you are not specifying an ID and get a warning about duplicate
+   * functions, make sure to explicitly set an ID for the duplicate or change
+   * the name.
+   */
   id?: string;
+
+  /**
+   * A name for the function as it will appear in the Inngest Cloud UI.
+   *
+   * This is used to create a slugified ID for the function too, e.g.
+   * `"My FN :)"` would create a slugified ID of `"my-fn"`.
+   *
+   * If you are not specifying an ID and get a warning about duplicate
+   * functions, make sure to explicitly set an ID for the duplicate or change
+   * the name.
+   */
   name: string;
 }
 
+/**
+ * A shortcut type for a collection of Inngest steps.
+ */
 export type Steps = Record<string, InngestStep<any[], any>>;
 
+/**
+ * Expected responses to be used within an `InngestCommHandler` in order to
+ * appropriately respond to Inngest.
+ */
 export type StepRunResponse =
   | {
       status: 500;
@@ -134,6 +184,10 @@ export type StepRunResponse =
       body?: any;
     };
 
+/**
+ * The response to send to Inngest when pushing function config either directly
+ * or when pinged by Inngest Cloud.
+ */
 export interface RegisterPingResponse {
   /**
    * Response version, allowing Inngest to change any top-level field.
@@ -170,6 +224,10 @@ export interface RegisterPingResponse {
   functions: FunctionConfig[];
 }
 
+/**
+ * A block representing an individual function being registered to Inngest
+ * Cloud.
+ */
 export interface FunctionConfig {
   name: string;
   id: string;

@@ -10,6 +10,22 @@ import { InngestStep } from "./InngestStep";
  *
  * To provide event typing, make sure to pass in your generated event types as
  * the first generic.
+ *
+ * @example
+ *
+ * const inngest = new Inngest<Events>("My App", process.env.INNGEST_API_KEY);
+ *
+ * // or to provide custom events too
+ * const inngest = new Inngest<
+ *   Events & {
+ *     "demo/event.blah": {
+ *       name: "demo/event.blah";
+ *       data: {
+ *         bar: boolean;
+ *       };
+ *     };
+ *   }
+ * >("My App", process.env.INNGEST_API_KEY);
  */
 export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   /**
@@ -40,6 +56,29 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
    */
   private readonly client: AxiosInstance;
 
+  /**
+   * A client used to interact with the Inngest API by sending or reacting to
+   * events.
+   *
+   * To provide event typing, make sure to pass in your generated event types as
+   * the first generic.
+   *
+   * @example
+   *
+   * const inngest = new Inngest<Events>("My App", process.env.INNGEST_API_KEY);
+   *
+   * // or to provide custom events too
+   * const inngest = new Inngest<
+   *   Events & {
+   *     "demo/event.blah": {
+   *       name: "demo/event.blah";
+   *       data: {
+   *         bar: boolean;
+   *       };
+   *     };
+   *   }
+   * >("My App", process.env.INNGEST_API_KEY);
+   */
   constructor(
     /**
      * The name of this instance, most commonly the name of the application it
@@ -79,6 +118,9 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
     });
   }
 
+  /**
+   * Given a response from Inngest, relay the error to the caller.
+   */
   #getResponseError(response: AxiosResponse): Error {
     let errorMessage = "Unknown error";
     switch (response.status) {
@@ -112,7 +154,24 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   }
 
   /**
-   * Send event(s) to Inngest
+   * Send one or many events to Inngest. Takes a known event from this Inngest
+   * instance based on the given `name`.
+   *
+   * Returns a promise that will resolve if the event(s) were sent successfully,
+   * else throws with an error explaining what went wrong.
+   *
+   * If you wish to send an event with custom types (i.e. one that hasn't been
+   * generated), make sure to add it when creating your Inngest instance, like
+   * so:
+   *
+   * @example
+   *
+   * const inngest = new Inngest<Events & {
+   *   "my/event": {
+   *     name: "my/event";
+   *     data: { bar: string; };
+   *   }
+   * }>("My App", "API_KEY");
    */
   public async send<Event extends keyof Events>(
     name: Event,
@@ -137,13 +196,39 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   public createFunction<
     Event extends keyof Events,
     Fn extends InngestT.StepFn<Events[Event], string, "step">
-  >(name: string, event: Event, fn: Fn): InngestFunction<Events>;
+  >(
+    /**
+     * The name of this function as it will appear in the Inngst Cloud UI.
+     */
+    name: string,
+
+    /**
+     * The event to listen for.
+     */
+    event: Event,
+
+    /**
+     * The function to run when the event is received.
+     */
+    fn: Fn
+  ): InngestFunction<Events>;
   public createFunction<
     Event extends keyof Events,
     Fn extends InngestT.StepFn<Events[Event], string, "step">
   >(
+    /**
+     * Options for this Inngest function - useful for defining a custom ID.
+     */
     opts: InngestT.FunctionOptions,
+
+    /**
+     * The event to listen for.
+     */
     event: Event,
+
+    /**
+     * The function to run when the event is received.
+     */
     fn: Fn
   ): InngestFunction<Events>;
   public createFunction<
