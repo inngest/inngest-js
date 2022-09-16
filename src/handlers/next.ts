@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import NextCors from "nextjs-cors";
 import { z } from "zod";
 import { fnIdParam, stepIdParam } from "../helpers/consts";
 import {
@@ -12,6 +13,16 @@ class NextCommHandler extends InngestCommHandler {
 
   public override createHandler() {
     return async (req: NextApiRequest, res: NextApiResponse) => {
+      /**
+       * Specifically for CORS (browser->site requests), only allow PUT requests
+       * from the dashboard.
+       */
+      await NextCors(req, res, {
+        methods: ["PUT"],
+        origin: "https://app.inngest.com",
+        optionsSuccessStatus: 200,
+      });
+
       let reqUrl: URL;
 
       try {
