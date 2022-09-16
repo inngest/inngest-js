@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import NextCors from "nextjs-cors";
 import { z } from "zod";
-import { fnIdParam, stepIdParam } from "../helpers/consts";
+import { corsOrigin, fnIdParam, stepIdParam } from "../helpers/consts";
 import {
   InngestCommHandler,
   register as defaultRegister,
@@ -19,7 +19,7 @@ class NextCommHandler extends InngestCommHandler {
        */
       await NextCors(req, res, {
         methods: ["PUT"],
-        origin: "https://app.inngest.com",
+        origin: corsOrigin,
         optionsSuccessStatus: 200,
       });
 
