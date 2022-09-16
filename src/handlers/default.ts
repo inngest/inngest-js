@@ -1,6 +1,7 @@
+import crypto from "crypto";
 import axios, { AxiosInstance, AxiosRequestConfig } from "axios";
 import type { NextFunction, Request, Response } from "express";
-import { z } from "zod";
+import { z } from "zod";  
 import { Inngest } from "../components/Inngest";
 import { InngestFunction } from "../components/InngestFunction";
 import { corsOrigin, fnIdParam, stepIdParam } from "../helpers/consts";
@@ -8,7 +9,7 @@ import {
   EventPayload,
   FunctionConfig,
   RegisterOptions,
-  RegisterPingResponse,
+  RegisterRequest,
   StepRunResponse,
 } from "../types";
 import { version } from "../version";
@@ -148,6 +149,19 @@ export class InngestCommHandler {
     });
   }
 
+  // hashedSigningKey creates a sha256 checksum of the signing key with the
+  // same signing key prefix.
+  private get hashedSigningKey(): string {
+    const prefix = this.signingKey.match(/^signkey-(test|prod)-/)?.shift();
+    const key = Buffer.from(this.signingKey.replace(/^signkey-(test|prod)-/, ""), "hex");
+
+    // Decode the key from its hex representation into a bytestream 
+
+    console.log(prefix, key, `${prefix}${crypto.createHash('sha256').update(key).digest('hex')}`);
+
+    return `${prefix}${crypto.createHash('sha256').update(key).digest('hex')}`;
+  }
+
   public createHandler(): any {
     return async (req: Request, res: Response, next: NextFunction) => {
       /**
@@ -172,14 +186,6 @@ export class InngestCommHandler {
           // Push config to Inngest.
           await this.register(reqUrl);
           return void res.sendStatus(200);
-
-        case "GET":
-          console.log("It was a GET request");
-          // Inngest is asking for config; confirm signed and send.
-          this.validateSignature(); //TODO
-          const pingRes = this.pong(reqUrl);
-          this.signResponse(); // TODO
-          return void res.json(pingRes);
 
         case "POST":
           console.log("It was a POST request");
@@ -247,14 +253,19 @@ export class InngestCommHandler {
   }
 
   protected async register(url: URL): Promise<void> {
-    const body = {
+    const body: RegisterRequest = {
       url: url.href,
-      hash: "TODO",
+      deployType: "ping",
+      framework: this.frameworkName,
+      appName: this.name,
+      functions: this.configs(url),
+      sdk: `js:v${version}`,
+      v: "0.1",
     };
 
     const config: AxiosRequestConfig = {
       headers: {
-        Authorization: `Bearer ${this.signingKey}`,
+        Authorization: `Bearer ${this.hashedSigningKey}`,
       },
     };
 
@@ -275,17 +286,6 @@ export class InngestCommHandler {
       res.status,
       res.data
     );
-  }
-
-  protected pong(url: URL): RegisterPingResponse {
-    return {
-      deployType: "ping",
-      framework: this.frameworkName,
-      appName: this.name,
-      functions: this.configs(url),
-      sdk: `js:v${version}`,
-      v: "0.1",
-    };
   }
 
   protected validateSignature(): boolean {
