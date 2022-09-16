@@ -188,7 +188,12 @@ export type StepRunResponse =
  * The response to send to Inngest when pushing function config either directly
  * or when pinged by Inngest Cloud.
  */
-export interface RegisterPingResponse {
+export interface RegisterRequest {
+  /**
+   * The API handler's URL to invoke SDK based functions.
+   */
+  url: string;
+
   /**
    * Response version, allowing Inngest to change any top-level field.
    */
@@ -222,6 +227,11 @@ export interface RegisterPingResponse {
    * The functions available at this particular handler.
    */
   functions: FunctionConfig[];
+
+  /**
+   * The hash of the current commit used to track deploys
+   */
+  hash?: string;
 }
 
 /**

@@ -26,25 +26,17 @@ class NextCommHandler extends InngestCommHandler {
       let reqUrl: URL;
 
       try {
-        reqUrl = new URL(req.url as string, `https://${req.headers.host}`);
+        const scheme = process.env.NODE_ENV === "development" ? "http" : "https"
+        reqUrl = new URL(req.url as string, `${scheme}://${req.headers.host}`);
       } catch (err) {
         return void res.status(500).json(err);
       }
 
       switch (req.method) {
         case "PUT":
-          console.log("It was a PUT request");
           // Push config to Inngest.
           await this.register(reqUrl);
           return void res.status(200).end();
-
-        case "GET":
-          console.log("It was a GET request");
-          // Inngest is asking for config; confirm signed and send.
-          this.validateSignature(); //TODO
-          const pingRes = this.pong(reqUrl);
-          this.signResponse(); // TODO
-          return void res.status(200).json(pingRes);
 
         case "POST":
           console.log("It was a POST request");
@@ -60,7 +52,6 @@ class NextCommHandler extends InngestCommHandler {
             });
 
           const stepRes = await this.runStep(fnId, stepId, req.body);
-
           return void res.json(stepRes);
 
         default:
