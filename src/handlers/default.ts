@@ -141,7 +141,7 @@ export class InngestCommHandler {
       timeout: 0,
       headers: {
         "Content-Type": "application/json",
-        "User-Agent": `InngestJS v${version}`,
+        "User-Agent": `InngestJS v${version} (${this.frameworkName})`,
       },
       validateStatus: () => true, // all status codes return a response
       maxRedirects: 0,
