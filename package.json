@@ -16,8 +16,8 @@
     "release": "yarn run np",
     "api-extractor": "api-extractor",
     "dev": "concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"yarn run dev:build\" \"yarn run dev:lint\"",
-    "dev:build": "nodemon -w src -e ts -i version.ts -x 'yarn run build'",
-    "dev:lint": "nodemon -w src -e ts -i version.ts -x 'eslint .'",
+    "dev:build": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'yarn run build && yarn run build:check --local'",
+    "dev:lint": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'eslint .'",
     "build:api": "api-extractor run --local --verbose",
     "build:check": "api-extractor run --verbose"
   },
