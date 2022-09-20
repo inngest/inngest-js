@@ -195,12 +195,13 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
    */
   public createFunction<
     Event extends keyof Events,
-    Fn extends InngestT.StepFn<Events[Event], string, "step">
+    Name extends string,
+    Fn extends InngestT.StepFn<Events[Event], Name, "step">
   >(
     /**
      * The name of this function as it will appear in the Inngst Cloud UI.
      */
-    name: string,
+    name: Name,
 
     /**
      * The event to listen for.
@@ -214,12 +215,17 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   ): InngestFunction<Events>;
   public createFunction<
     Event extends keyof Events,
-    Fn extends InngestT.StepFn<Events[Event], string, "step">
+    Opts extends InngestT.FunctionOptions,
+    Fn extends InngestT.StepFn<
+      Events[Event],
+      Opts extends InngestT.FunctionOptions ? Opts["name"] : string,
+      "step"
+    >
   >(
     /**
      * Options for this Inngest function - useful for defining a custom ID.
      */
-    opts: InngestT.FunctionOptions,
+    opts: Opts,
 
     /**
      * The event to listen for.
@@ -233,12 +239,17 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   ): InngestFunction<Events>;
   public createFunction<
     Event extends keyof Events,
-    Fn extends InngestT.StepFn<Events[Event], string, "step">
-  >(
-    nameOrOpts: string | InngestT.FunctionOptions,
-    event: Event,
-    fn: Fn
-  ): InngestFunction<Events> {
+    Opts extends InngestT.FunctionOptions | string,
+    Fn extends InngestT.StepFn<
+      Events[Event],
+      Opts extends InngestT.FunctionOptions
+        ? Opts["name"]
+        : Opts extends string
+        ? Opts
+        : string,
+      "step"
+    >
+  >(nameOrOpts: Opts, event: Event, fn: Fn): InngestFunction<Events> {
     return new InngestFunction<Events>(
       typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
       { event: event as string },
