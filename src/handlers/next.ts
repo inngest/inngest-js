@@ -56,7 +56,12 @@ class NextCommHandler extends InngestCommHandler {
             });
 
           const stepRes = await this.runStep(fnId, stepId, req.body);
-          return void res.json(stepRes);
+
+          if (stepRes.status === 500) {
+            return void res.status(stepRes.status).json(stepRes.error);
+          }
+
+          return void res.status(stepRes.status).json(stepRes.body);
         }
 
         default:
