@@ -12,7 +12,7 @@ export interface ClientOptions {
 // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
 //
 // @public (undocumented)
-export const createFunction: <Event_1 extends EventPayload>(nameOrOpts: string | FunctionOptions, event: Event_1 extends EventPayload ? { [K in keyof Event_1]: K extends "name" ? Event_1[K] : never; }[keyof Event_1] : never, fn: StepFn<Event_1, string, "step">) => InngestFunction<any>;
+export const createFunction: <Event_1 extends EventPayload>(nameOrOpts: string | FunctionOptions, event: Event_1 extends EventPayload ? (Event_1 extends infer T ? { [K in keyof T]: K extends "name" ? Event_1[K] : never; } : never)[keyof Event_1] : never, fn: StepFn<Event_1, string, "step">) => InngestFunction<any>;
 
 // @public (undocumented)
 export const createScheduledFunction: (nameOrOpts: string | FunctionOptions, cron: string, fn: StepFn<null, string, "step">) => InngestFunction<any>;
@@ -108,7 +108,7 @@ export interface RegisterOptions {
 // @public
 export type StepFn<Event, FnId, StepId> = (arg: {
     event: Event;
-    steps: {};
+    steps: Record<string, never>;
     ctx: {
         fn_id: FnId;
         step_id: StepId;
