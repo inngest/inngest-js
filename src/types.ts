@@ -234,6 +234,14 @@ export interface RegisterRequest {
   hash?: string;
 }
 
+export type FunctionTrigger<T = string> =
+  | {
+      event: T;
+      expression?: string;
+    }
+  | {
+      cron: string;
+    };
 /**
  * A block representing an individual function being registered to Inngest
  * Cloud.
@@ -241,15 +249,7 @@ export interface RegisterRequest {
 export interface FunctionConfig {
   name: string;
   id: string;
-  triggers: (
-    | {
-        event: string;
-        expression?: string;
-      }
-    | {
-        cron: string;
-      }
-  )[];
+  triggers: FunctionTrigger[];
   steps: Record<
     string,
     {

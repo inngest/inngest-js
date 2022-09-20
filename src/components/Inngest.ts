@@ -241,10 +241,8 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   ): InngestFunction<Events> {
     return new InngestFunction<Events>(
       typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
-      event,
-      {
-        step: new InngestStep(fn),
-      }
+      { event: event as string },
+      { step: new InngestStep(fn) }
     );
   }
 }

@@ -1,12 +1,22 @@
 import { fnIdParam, stepIdParam } from "../helpers/consts";
-import { EventPayload, FunctionConfig, FunctionOptions, Steps } from "../types";
+import {
+  EventPayload,
+  FunctionConfig,
+  FunctionOptions,
+  FunctionTrigger,
+  Steps,
+} from "../types";
 
 export class InngestFunction<Events extends Record<string, EventPayload>> {
   readonly #opts: FunctionOptions;
-  readonly #trigger: keyof Events;
+  readonly #trigger: FunctionTrigger<keyof Events>;
   readonly #steps: Steps;
 
-  constructor(opts: FunctionOptions, trigger: keyof Events, steps: Steps) {
+  constructor(
+    opts: FunctionOptions,
+    trigger: FunctionTrigger<keyof Events>,
+    steps: Steps
+  ) {
     this.#opts = opts;
     this.#trigger = trigger;
     this.#steps = steps || {};
@@ -34,7 +44,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     return {
       id: this.id,
       name: this.name,
-      triggers: [{ event: this.#trigger as string }],
+      triggers: [this.#trigger as FunctionTrigger],
       steps: Object.keys(this.#steps).reduce<FunctionConfig["steps"]>(
         (acc, stepId) => {
           const url = new URL(baseUrl.href);
