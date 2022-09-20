@@ -18,6 +18,8 @@ import { version } from "../version";
  * A handler for registering Inngest functions. This type should be used
  * whenever a handler for a new framework is being added to enforce that the
  * registration process is always the same for the user.
+ *
+ * @public
  */
 export type RegisterHandler = (
   /**
@@ -44,7 +46,7 @@ export type RegisterHandler = (
  * Can either take an `Inngest` instance and a signing key, or can be used to
  * create custom handlers by passing in an `InngestCommHandler`.
  *
- * @link TODO
+ * @public
  */
 export const register = <Events extends Record<string, EventPayload>>(
   ...args:
@@ -84,6 +86,8 @@ export const register = <Events extends Record<string, EventPayload>>(
  * platform
  *
  * This needs to also account for the ability to validate signatures etc.
+ *
+ * @public
  */
 export class InngestCommHandler {
   public name: string;
@@ -99,7 +103,7 @@ export class InngestCommHandler {
   /**
    * An Axios instance used for communicating with Inngest Cloud.
    *
-   * @link https://npm.im/axios
+   * {@link https://npm.im/axios}
    */
   private readonly client: AxiosInstance;
 
