@@ -40,3 +40,16 @@ const events = ["+12125551234", "+13135555678"].map(phoneNumber => ({
 }});
 await inngest.send(events);
 ```
+
+## Contributing
+
+Clone the repository, then:
+
+```sh
+yarn # install dependencies
+yarn dev # build/lint/test
+```
+
+We use [Volta](https://volta.sh/) to manage Node/Yarn versions.
+
+When making a pull request, make sure to commit the changed `etc/inngest.api.md` file; this is a generated types/docs file that will highlight changes to the exposed API.
