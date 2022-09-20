@@ -23,7 +23,11 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
   }
 
   public get id() {
-    return this.#opts.id || this.#generateId();
+    if (!this.#opts.id) {
+      this.#opts.id = this.#generateId();
+    }
+
+    return this.#opts.id;
   }
 
   public get name() {
