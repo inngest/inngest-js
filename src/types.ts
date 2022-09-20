@@ -5,8 +5,23 @@ import { InngestStep } from "./components/InngestStep";
  * outputting anything.
  */
 export type StepFn<Event, FnId, StepId> = (arg: {
+  /**
+   * If relevant, the event data present in the payload.
+   */
   event: Event;
+
+  /**
+   * The potential step output from other steps in this function. You cannot
+   * reference output from the running step.
+   *
+   * Implementation here may well vary greatly depending on step function
+   * implementation.
+   */
   steps: {};
+
+  /**
+   * The "context" of the function.
+   */
   ctx: { fn_id: FnId; step_id: StepId };
 }) => any;
 
@@ -234,6 +249,9 @@ export interface RegisterRequest {
   hash?: string;
 }
 
+/**
+ * An individual function trigger.
+ */
 export type FunctionTrigger<T = string> =
   | {
       event: T;
@@ -242,6 +260,7 @@ export type FunctionTrigger<T = string> =
   | {
       cron: string;
     };
+
 /**
  * A block representing an individual function being registered to Inngest
  * Cloud.

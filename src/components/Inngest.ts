@@ -45,7 +45,7 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   public readonly inngestBaseUrl: URL;
 
   /**
-   * The URL of the Inngest Cloud API.
+   * The absolute URL of the Inngest Cloud API.
    */
   private readonly inngestApiUrl: URL;
 
@@ -258,8 +258,7 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   }
 
   /**
-   * Given an event to listen to, run the given function when that event is
-   * seen.
+   * Run the given `fn` at a specified time or on a schedule given by `cron`.
    */
   public createScheduledFunction<Name extends string>(
     /**
@@ -268,12 +267,22 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
     name: Name,
 
     /**
-     * The event to listen for.
+     * The cron definition to schedule your function.
+     *
+     * @example
+     *
+     * "0 0 0 1 1 * 1" // At 12:00 AM, on day 1 of the month, only in January, only in 0001
+     * "0 0 0 1 1 * 1,2" // At 12:00 AM, on day 1 of the month, only in January, only in 0001 and 0002
+     * "0 0 0 1 1 * 1,2,3" // At 12:00 AM, on day 1 of the month, only in January, only in 0001, 0002, and 0003
+     * "0 0 0 1 * * 1/4" // At 12:00 AM, on day 1 of the month, every 4 years
+     * "0 0 0 * * 0 1-4" // At 12:00 AM, only on Sunday, 0001 through 0004
+     * "0 0 0 * * * 2/4" // At 12:00 AM, every 4 years, 0002 through 9999
+     * "0 0 * * * * *" // Every hour
      */
     cron: string,
 
     /**
-     * The function to run when the event is received.
+     * The function to run.
      */
     fn: InngestT.StepFn<null, Name, "step">
   ): InngestFunction<Events>;
@@ -284,12 +293,22 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
     opts: Opts,
 
     /**
-     * The event to listen for.
+     * The cron definition to schedule your function.
+     *
+     * @example
+     *
+     * "0 0 0 1 1 * 1" // At 12:00 AM, on day 1 of the month, only in January, only in 0001
+     * "0 0 0 1 1 * 1,2" // At 12:00 AM, on day 1 of the month, only in January, only in 0001 and 0002
+     * "0 0 0 1 1 * 1,2,3" // At 12:00 AM, on day 1 of the month, only in January, only in 0001, 0002, and 0003
+     * "0 0 0 1 * * 1/4" // At 12:00 AM, on day 1 of the month, every 4 years
+     * "0 0 0 * * 0 1-4" // At 12:00 AM, only on Sunday, 0001 through 0004
+     * "0 0 0 * * * 2/4" // At 12:00 AM, every 4 years, 0002 through 9999
+     * "0 0 * * * * *" // Every hour
      */
     cron: string,
 
     /**
-     * The function to run when the event is received.
+     * The function to run.
      */
     fn: InngestT.StepFn<
       null,
