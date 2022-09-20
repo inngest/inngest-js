@@ -41,6 +41,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     this.#steps = steps || {};
   }
 
+  /**
+   * The generated or given ID for this function.
+   */
   public get id() {
     if (!this.#opts.id) {
       this.#opts.id = this.#generateId();
@@ -49,6 +52,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     return this.#opts.id;
   }
 
+  /**
+   * The name of this function as it will appear in the Inngest Cloud UI.
+   */
   public get name() {
     return this.#opts.name;
   }
@@ -105,6 +111,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     return step["run"](data);
   }
 
+  /**
+   * Generate an ID based on the function's name.
+   */
   #generateId() {
     const join = "-";
 

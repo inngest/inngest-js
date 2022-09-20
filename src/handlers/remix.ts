@@ -79,6 +79,12 @@ class RemixCommHandler extends InngestCommHandler {
   }
 }
 
+/**
+ * In Remix, register any declared functions with Inngest, making them available
+ * to be triggered by events.
+ *
+ * @public
+ */
 export const register: RegisterHandler = (
   nameOrInngest,
   signingKey,

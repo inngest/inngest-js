@@ -66,6 +66,12 @@ class NextCommHandler extends InngestCommHandler {
   }
 }
 
+/**
+ * In Next.js, register any declared functions with Inngest, making them
+ * available to be triggered by events.
+ *
+ * @public
+ */
 export const register: RegisterHandler = (
   nameOrInngest,
   signingKey,

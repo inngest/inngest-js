@@ -215,6 +215,10 @@ export class Inngest<Events extends Record<string, EventPayload>> {
      */
     fn: Fn
   ): InngestFunction<Events>;
+  /**
+   * Given an event to listen to, run the given function when that event is
+   * seen.
+   */
   public createFunction<
     Event extends keyof Events,
     Opts extends FunctionOptions,
@@ -239,6 +243,10 @@ export class Inngest<Events extends Record<string, EventPayload>> {
      */
     fn: Fn
   ): InngestFunction<Events>;
+  /**
+   * Given an event to listen to, run the given function when that event is
+   * seen.
+   */
   public createFunction<
     Event extends keyof Events,
     Opts extends FunctionOptions | string,
@@ -264,7 +272,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    */
   public createScheduledFunction<Name extends string>(
     /**
-     * The name of this function as it will appear in the Inngst Cloud UI.
+     * The name of this function as it will appear in the Inngest Cloud UI.
      */
     name: Name,
 
@@ -288,6 +296,9 @@ export class Inngest<Events extends Record<string, EventPayload>> {
      */
     fn: StepFn<null, Name, "step">
   ): InngestFunction<Events>;
+  /**
+   * Run the given `fn` at a specified time or on a schedule given by `cron`.
+   */
   public createScheduledFunction<Opts extends FunctionOptions>(
     /**
      * Options for this Inngest function - useful for defining a custom ID.
@@ -318,6 +329,9 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       "step"
     >
   ): InngestFunction<Events>;
+  /**
+   * Run the given `fn` at a specified time or on a schedule given by `cron`.
+   */
   public createScheduledFunction<Opts extends FunctionOptions | string>(
     nameOrOpts: Opts,
     cron: string,
