@@ -3,6 +3,8 @@ import { InngestStep } from "./components/InngestStep";
 /**
  * The shape of a step function, taking in event, step, and ctx data, and
  * outputting anything.
+ *
+ * @public
  */
 export type StepFn<Event, FnId, StepId> = (arg: {
   /**
@@ -17,7 +19,7 @@ export type StepFn<Event, FnId, StepId> = (arg: {
    * Implementation here may well vary greatly depending on step function
    * implementation.
    */
-  steps: {};
+  steps: Record<string, never>;
 
   /**
    * The "context" of the function.
@@ -29,6 +31,8 @@ export type StepFn<Event, FnId, StepId> = (arg: {
  * The shape of a single event's payload. It should be extended to enforce
  * adherence to given events and not used as a method of creating them (i.e. as
  * a generic).
+ *
+ * @public
  */
 export interface EventPayload {
   /**
@@ -87,6 +91,8 @@ export interface EventPayload {
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
  * orchestrate steps and retries.
+ *
+ * @internal
  */
 export interface Response {
   /**
@@ -102,8 +108,8 @@ export interface Response {
    * A `5xx` status indicates a temporary internal error; this will be retried
    * according to the step and function's retry policy (3 times, by default).
    *
-   * @link https://www.inngest.com/docs/functions/function-input-and-output#response-format
-   * @link https://www.inngest.com/docs/functions/retries
+   * {@link https://www.inngest.com/docs/functions/function-input-and-output#response-format}
+   * {@link https://www.inngest.com/docs/functions/retries}
    */
   status: number;
 
@@ -111,13 +117,15 @@ export interface Response {
    * The output of the function - the `body` - can be any arbitrary
    * JSON-compatible data. It is then usable by any future steps.
    *
-   * @link https://www.inngest.com/docs/functions/function-input-and-output#response-format
+   * {@link https://www.inngest.com/docs/functions/function-input-and-output#response-format}
    */
   body?: any;
 }
 
 /**
  * A single step within a function.
+ *
+ * @internal
  */
 export type Step<Context = any> = (
   /**
@@ -129,6 +137,8 @@ export type Step<Context = any> = (
 
 /**
  * A set of options for configuring the Inngest client.
+ *
+ * @public
  */
 export interface ClientOptions {
   /**
@@ -140,6 +150,8 @@ export interface ClientOptions {
 
 /**
  * A set of options for configuring the registration of Inngest functions.
+ *
+ * @public
  */
 export interface RegisterOptions {
   /**
@@ -151,6 +163,8 @@ export interface RegisterOptions {
 
 /**
  * A set of options for configuring an Inngest function.
+ *
+ * @public
  */
 export interface FunctionOptions {
   /**
@@ -182,12 +196,16 @@ export interface FunctionOptions {
 
 /**
  * A shortcut type for a collection of Inngest steps.
+ *
+ * @internal
  */
 export type Steps = Record<string, InngestStep<any[], any>>;
 
 /**
  * Expected responses to be used within an `InngestCommHandler` in order to
  * appropriately respond to Inngest.
+ *
+ * @internal
  */
 export type StepRunResponse =
   | {
@@ -202,6 +220,8 @@ export type StepRunResponse =
 /**
  * The response to send to Inngest when pushing function config either directly
  * or when pinged by Inngest Cloud.
+ *
+ * @internal
  */
 export interface RegisterRequest {
   /**
@@ -251,6 +271,8 @@ export interface RegisterRequest {
 
 /**
  * An individual function trigger.
+ *
+ * @internal
  */
 export type FunctionTrigger<T = string> =
   | {
@@ -264,6 +286,8 @@ export type FunctionTrigger<T = string> =
 /**
  * A block representing an individual function being registered to Inngest
  * Cloud.
+ *
+ * @internal
  */
 export interface FunctionConfig {
   name: string;

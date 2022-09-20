@@ -7,12 +7,31 @@ import {
   Steps,
 } from "../types";
 
+/**
+ * A stateless Inngest function, wrapping up function configuration and any
+ * in-memory steps to run when triggered.
+ *
+ * This function can be "registered" to create a handler that Inngest can
+ * trigger remotely.
+ *
+ * @public
+ */
 export class InngestFunction<Events extends Record<string, EventPayload>> {
   readonly #opts: FunctionOptions;
   readonly #trigger: FunctionTrigger<keyof Events>;
   readonly #steps: Steps;
 
+  /**
+   * A stateless Inngest function, wrapping up function configuration and any
+   * in-memory steps to run when triggered.
+   *
+   * This function can be "registered" to create a handler that Inngest can
+   * trigger remotely.
+   */
   constructor(
+    /**
+     * Options
+     */
     opts: FunctionOptions,
     trigger: FunctionTrigger<keyof Events>,
     steps: Steps

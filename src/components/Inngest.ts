@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from "axios";
-import * as InngestT from "../types";
+import { ClientOptions, EventPayload, FunctionOptions, StepFn } from "../types";
 import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
 import { InngestStep } from "./InngestStep";
@@ -11,8 +11,7 @@ import { InngestStep } from "./InngestStep";
  * To provide event typing, make sure to pass in your generated event types as
  * the first generic.
  *
- * @example
- *
+ * ```ts
  * const inngest = new Inngest<Events>("My App", process.env.INNGEST_API_KEY);
  *
  * // or to provide custom events too
@@ -26,8 +25,11 @@ import { InngestStep } from "./InngestStep";
  *     };
  *   }
  * >("My App", process.env.INNGEST_API_KEY);
+ * ```
+ *
+ * @public
  */
-export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
+export class Inngest<Events extends Record<string, EventPayload>> {
   /**
    * The name of this instance, most commonly the name of the application it
    * resides in.
@@ -52,7 +54,7 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   /**
    * An Axios instance used for communicating with Inngest Cloud.
    *
-   * @link https://npm.im/axios
+   * {@link https://npm.im/axios}
    */
   private readonly client: AxiosInstance;
 
@@ -63,8 +65,7 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
    * To provide event typing, make sure to pass in your generated event types as
    * the first generic.
    *
-   * @example
-   *
+   * ```ts
    * const inngest = new Inngest<Events>("My App", process.env.INNGEST_API_KEY);
    *
    * // or to provide custom events too
@@ -78,6 +79,7 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
    *     };
    *   }
    * >("My App", process.env.INNGEST_API_KEY);
+   * ```
    */
   constructor(
     /**
@@ -90,7 +92,7 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
      * Inngest event key, used to send events to Inngest Cloud.
      */
     eventKey: string,
-    { inngestBaseUrl = "https://inn.gs/" }: InngestT.ClientOptions = {}
+    { inngestBaseUrl = "https://inn.gs/" }: ClientOptions = {}
   ) {
     if (!name) {
       throw new Error("A name must be passed to create an Inngest instance.");
@@ -164,14 +166,14 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
    * generated), make sure to add it when creating your Inngest instance, like
    * so:
    *
-   * @example
-   *
+   * ```ts
    * const inngest = new Inngest<Events & {
    *   "my/event": {
    *     name: "my/event";
    *     data: { bar: string; };
    *   }
    * }>("My App", "API_KEY");
+   * ```
    */
   public async send<Event extends keyof Events>(
     name: Event,
@@ -196,7 +198,7 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   public createFunction<
     Event extends keyof Events,
     Name extends string,
-    Fn extends InngestT.StepFn<Events[Event], Name, "step">
+    Fn extends StepFn<Events[Event], Name, "step">
   >(
     /**
      * The name of this function as it will appear in the Inngst Cloud UI.
@@ -215,10 +217,10 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   ): InngestFunction<Events>;
   public createFunction<
     Event extends keyof Events,
-    Opts extends InngestT.FunctionOptions,
-    Fn extends InngestT.StepFn<
+    Opts extends FunctionOptions,
+    Fn extends StepFn<
       Events[Event],
-      Opts extends InngestT.FunctionOptions ? Opts["name"] : string,
+      Opts extends FunctionOptions ? Opts["name"] : string,
       "step"
     >
   >(
@@ -239,10 +241,10 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
   ): InngestFunction<Events>;
   public createFunction<
     Event extends keyof Events,
-    Opts extends InngestT.FunctionOptions | string,
-    Fn extends InngestT.StepFn<
+    Opts extends FunctionOptions | string,
+    Fn extends StepFn<
       Events[Event],
-      Opts extends InngestT.FunctionOptions
+      Opts extends FunctionOptions
         ? Opts["name"]
         : Opts extends string
         ? Opts
@@ -284,9 +286,9 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
     /**
      * The function to run.
      */
-    fn: InngestT.StepFn<null, Name, "step">
+    fn: StepFn<null, Name, "step">
   ): InngestFunction<Events>;
-  public createScheduledFunction<Opts extends InngestT.FunctionOptions>(
+  public createScheduledFunction<Opts extends FunctionOptions>(
     /**
      * Options for this Inngest function - useful for defining a custom ID.
      */
@@ -310,20 +312,18 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
     /**
      * The function to run.
      */
-    fn: InngestT.StepFn<
+    fn: StepFn<
       null,
-      Opts extends InngestT.FunctionOptions ? Opts["name"] : string,
+      Opts extends FunctionOptions ? Opts["name"] : string,
       "step"
     >
   ): InngestFunction<Events>;
-  public createScheduledFunction<
-    Opts extends InngestT.FunctionOptions | string
-  >(
+  public createScheduledFunction<Opts extends FunctionOptions | string>(
     nameOrOpts: Opts,
     cron: string,
-    fn: InngestT.StepFn<
+    fn: StepFn<
       null,
-      Opts extends InngestT.FunctionOptions
+      Opts extends FunctionOptions
         ? Opts["name"]
         : Opts extends string
         ? Opts

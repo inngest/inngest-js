@@ -6,6 +6,7 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
+    "rootDir": "src",
     "outDir": "dist",
     "types": ["node", "jest"],
     "moduleResolution": "node",

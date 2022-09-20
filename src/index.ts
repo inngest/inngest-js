@@ -5,4 +5,10 @@ export {
   RegisterHandler,
 } from "./handlers/default";
 export { createFunction, createScheduledFunction } from "./helpers/func";
-export { ClientOptions, FunctionOptions } from "./types";
+export {
+  ClientOptions,
+  EventPayload,
+  FunctionOptions,
+  RegisterOptions,
+  StepFn,
+} from "./types";

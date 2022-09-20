@@ -1,7 +1,7 @@
-import crypto from "crypto";
 import axios, { AxiosInstance, AxiosRequestConfig } from "axios";
+import crypto from "crypto";
 import type { NextFunction, Request, Response } from "express";
-import { z } from "zod";  
+import { z } from "zod";
 import { Inngest } from "../components/Inngest";
 import { InngestFunction } from "../components/InngestFunction";
 import { corsOrigin, fnIdParam, stepIdParam } from "../helpers/consts";
@@ -57,12 +57,14 @@ export const register = <Events extends Record<string, EventPayload>>(
     | [commHandler: InngestCommHandler]
 ) => {
   if (args.length === 1) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return args[0].createHandler();
   }
 
   const [nameOrInngest, signingKey, fns, opts] = args;
   const handler = new InngestCommHandler(nameOrInngest, signingKey, fns, opts);
 
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return handler.createHandler();
 };
 
@@ -152,14 +154,22 @@ export class InngestCommHandler {
   // hashedSigningKey creates a sha256 checksum of the signing key with the
   // same signing key prefix.
   private get hashedSigningKey(): string {
-    const prefix = this.signingKey.match(/^signkey-(test|prod)-/)?.shift();
-    const key = Buffer.from(this.signingKey.replace(/^signkey-(test|prod)-/, ""), "hex");
+    const prefix =
+      this.signingKey.match(/^signkey-(test|prod)-/)?.shift() || "";
+    const key = Buffer.from(
+      this.signingKey.replace(/^signkey-(test|prod)-/, ""),
+      "hex"
+    );
 
-    // Decode the key from its hex representation into a bytestream 
+    // Decode the key from its hex representation into a bytestream
 
-    console.log(prefix, key, `${prefix}${crypto.createHash('sha256').update(key).digest('hex')}`);
+    console.log(
+      prefix,
+      key,
+      `${prefix}${crypto.createHash("sha256").update(key).digest("hex")}`
+    );
 
-    return `${prefix}${crypto.createHash('sha256').update(key).digest('hex')}`;
+    return `${prefix}${crypto.createHash("sha256").update(key).digest("hex")}`;
   }
 
   public createHandler(): any {
@@ -187,7 +197,7 @@ export class InngestCommHandler {
           await this.register(reqUrl);
           return void res.sendStatus(200);
 
-        case "POST":
+        case "POST": {
           console.log("It was a POST request");
           // Inngest is trying to run a step; confirm signed and run.
           const { fnId, stepId } = z
@@ -207,6 +217,7 @@ export class InngestCommHandler {
           }
 
           return void res.status(stepRes.status).json(stepRes.body);
+        }
 
         default:
           return void res.sendStatus(405);
@@ -240,10 +251,17 @@ export class InngestCommHandler {
         status: 200,
         body,
       };
-    } catch (err: any) {
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        return {
+          status: 500,
+          error: err.stack || err.message,
+        };
+      }
+
       return {
         status: 500,
-        error: err.stack || err.message,
+        error: `Unknown error: ${JSON.stringify(err)}`,
       };
     }
   }

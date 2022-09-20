@@ -2,6 +2,9 @@ import { InngestFunction } from "../components/InngestFunction";
 import { InngestStep } from "../components/InngestStep";
 import { EventPayload, FunctionOptions, StepFn } from "../types";
 
+/**
+ * @public
+ */
 export const createFunction = <Event extends EventPayload>(
   nameOrOpts: string | FunctionOptions,
   event: Event extends EventPayload
@@ -18,6 +21,9 @@ export const createFunction = <Event extends EventPayload>(
   );
 };
 
+/**
+ * @public
+ */
 export const createScheduledFunction = (
   nameOrOpts: string | FunctionOptions,
   cron: string,

@@ -26,8 +26,12 @@ class NextCommHandler extends InngestCommHandler {
       let reqUrl: URL;
 
       try {
-        const scheme = process.env.NODE_ENV === "development" ? "http" : "https"
-        reqUrl = new URL(req.url as string, `${scheme}://${req.headers.host}`);
+        const scheme =
+          process.env.NODE_ENV === "development" ? "http" : "https";
+        reqUrl = new URL(
+          req.url as string,
+          `${scheme}://${req.headers.host || ""}`
+        );
       } catch (err) {
         return void res.status(500).json(err);
       }
@@ -38,7 +42,7 @@ class NextCommHandler extends InngestCommHandler {
           await this.register(reqUrl);
           return void res.status(200).end();
 
-        case "POST":
+        case "POST": {
           console.log("It was a POST request");
           // Inngest is trying to run a step; confirm signed and run.
           const { fnId, stepId } = z
@@ -53,6 +57,7 @@ class NextCommHandler extends InngestCommHandler {
 
           const stepRes = await this.runStep(fnId, stepId, req.body);
           return void res.json(stepRes);
+        }
 
         default:
           return void res.status(405).end();
@@ -66,7 +71,7 @@ export const register: RegisterHandler = (
   signingKey,
   fns,
   opts
-) => {
+): any => {
   return defaultRegister(
     new NextCommHandler(nameOrInngest, signingKey, fns, opts)
   );

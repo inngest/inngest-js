@@ -38,7 +38,7 @@ class RemixCommHandler extends InngestCommHandler {
       let reqUrl: URL;
 
       try {
-        reqUrl = new URL(req.url, `https://${req.headers.get("host")}`);
+        reqUrl = new URL(req.url, `https://${req.headers.get("host") || ""}`);
       } catch (err) {
         return new Response(JSON.stringify(err), {
           status: 500,
@@ -54,15 +54,7 @@ class RemixCommHandler extends InngestCommHandler {
             status: 200,
           });
 
-        case "GET":
-          console.log("It was a GET request");
-          // Inngest is asking for config; confirm signed and send.
-          this.validateSignature(); //TODO
-          const pingRes = this.pong(reqUrl);
-          this.signResponse(); // TODO
-          return new Response(JSON.stringify(pingRes), { status: 200 });
-
-        case "POST":
+        case "POST": {
           console.log("It was a POST request");
           // Inngest is trying to run a step; confirm signed and run.
           const { fnId, stepId } = z
@@ -78,6 +70,7 @@ class RemixCommHandler extends InngestCommHandler {
           const stepRes = await this.runStep(fnId, stepId, req.body);
 
           return new Response(JSON.stringify(stepRes), { status: 200 });
+        }
 
         default:
           return new Response(null, { status: 405 });
@@ -91,7 +84,7 @@ export const register: RegisterHandler = (
   signingKey,
   fns,
   opts
-) => {
+): any => {
   return defaultRegister(
     new RemixCommHandler(nameOrInngest, signingKey, fns, opts)
   );

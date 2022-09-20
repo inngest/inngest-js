@@ -10,7 +10,11 @@ export class InngestStep<Input extends any[], Output> {
 
   /**
    * Run this step with the given `data`.
+   *
+   * Purposefully return a promise so that it's easier to catch further up the
+   * stack.
    */
+  // eslint-disable-next-line @typescript-eslint/require-await
   private async run(data: any): Promise<unknown> {
     return this.#fn(data);
   }
