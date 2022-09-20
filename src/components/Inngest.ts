@@ -245,4 +245,66 @@ export class Inngest<Events extends Record<string, InngestT.EventPayload>> {
       { step: new InngestStep(fn) }
     );
   }
+
+  /**
+   * Given an event to listen to, run the given function when that event is
+   * seen.
+   */
+  public createScheduledFunction<Name extends string>(
+    /**
+     * The name of this function as it will appear in the Inngst Cloud UI.
+     */
+    name: Name,
+
+    /**
+     * The event to listen for.
+     */
+    cron: string,
+
+    /**
+     * The function to run when the event is received.
+     */
+    fn: InngestT.StepFn<null, Name, "step">
+  ): InngestFunction<Events>;
+  public createScheduledFunction<Opts extends InngestT.FunctionOptions>(
+    /**
+     * Options for this Inngest function - useful for defining a custom ID.
+     */
+    opts: Opts,
+
+    /**
+     * The event to listen for.
+     */
+    cron: string,
+
+    /**
+     * The function to run when the event is received.
+     */
+    fn: InngestT.StepFn<
+      null,
+      Opts extends InngestT.FunctionOptions ? Opts["name"] : string,
+      "step"
+    >
+  ): InngestFunction<Events>;
+  public createScheduledFunction<
+    Opts extends InngestT.FunctionOptions | string
+  >(
+    nameOrOpts: Opts,
+    cron: string,
+    fn: InngestT.StepFn<
+      null,
+      Opts extends InngestT.FunctionOptions
+        ? Opts["name"]
+        : Opts extends string
+        ? Opts
+        : string,
+      "step"
+    >
+  ): InngestFunction<Events> {
+    return new InngestFunction<Events>(
+      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
+      { cron },
+      { step: new InngestStep(fn) }
+    );
+  }
 }

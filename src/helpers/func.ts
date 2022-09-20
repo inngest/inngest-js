@@ -13,9 +13,19 @@ export const createFunction = <Event extends EventPayload>(
 ): InngestFunction<any> => {
   return new InngestFunction(
     typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
-    event as string,
-    {
-      step: new InngestStep(fn),
-    }
+    { event: event as string },
+    { step: new InngestStep(fn) }
+  );
+};
+
+export const createScheduledFunction = (
+  nameOrOpts: string | FunctionOptions,
+  cron: string,
+  fn: StepFn<null, string, "step">
+): InngestFunction<any> => {
+  return new InngestFunction(
+    typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
+    { cron },
+    { step: new InngestStep(fn) }
   );
 };
