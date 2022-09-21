@@ -11,6 +11,13 @@ on:
           - patch
           - minor
           - major
+      npm_tag:
+        type: choice
+        description: What npm tag do you want to target?
+        default: latest
+        options:
+          - latest
+          - beta
 
 env:
   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -25,7 +32,11 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
-      - run: yarn run release ${{ github.event.inputs.type }}
+      - run: |
+          git config user.name "botbot"
+          git config user.email "<>"
+      - run: |
+          yarn run release ${{ github.event.inputs.type }} --tag=${{ github.event.inputs.npm_tag }}
         env:
           NODE_ENV: test # disable npm access checks; they don't work in CI
 
