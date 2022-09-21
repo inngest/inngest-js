@@ -21,12 +21,24 @@
 
 <hr />
 
-Build, test, and deploy code that runs in response to events or on a schedule right in your own codebase. 
+Build, test, and deploy code that runs in response to events or on a schedule right in your own codebase.<br />
 👋 _Have a question or feature request? [Join our Discord](https://www.inngest.com/discord)!_
 
 <br />
 
-### Getting started
+## Features
+
+- **Fully serverless:**  Run background jobs, scheduled functions, and build event-driven systems without any servers, state, or setup
+- **Deploy anywhere**:  works with NextJS, Netlify, Vercel, Redwood, Express, Cloudflare, and Lambda
+- **Use your existing code:**  write functions within your current project, zero learning required
+- **A complete platform**:  complex functionality built in, such as **event replay**, **canary deploys**, **version management** and **git integration**
+- **Fully typed**:  Event schemas, versioning, and governance out of the box
+- **Observable**:  A full UI for managing and inspecting your functions
+- **Any language:**  Use our CLI to write functions using any language
+
+<br />
+
+## Getting started
 
 <br />
 
