@@ -1,0 +1,30 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      type:
+        type: choice
+        description: What kind of release?
+        required: true
+        options:
+          - major
+          - minor
+          - patch
+
+jobs:
+  checks:
+    uses: ./.github/workflows/pr.yml
+
+  npm:
+    needs: [checks]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: |
+          yarn config set '//registry.npmjs.org/:_authToken' "${{ env.NODE_AUTH_TOKEN }}"
+          yarn run release ${{ github.event.inputs.type }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+

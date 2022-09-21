@@ -1,2 +1,11 @@
+# Node packages
 node_modules
+
+# Built files
 dist
+
+# Generated version file; always created pre-publish
+src/version.ts
+
+# Generated API diffs for @microsoft/api-extractor CI
+temp/

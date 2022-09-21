@@ -1,19 +1,18 @@
 #!/usr/bin/env node
 
 import path from "path";
-import { InngestStep } from "./index";
 
 /**
  * Init initializes the context for running the function.  This calls
  * start() when
  */
 async function init() {
-  const [, , fnPath, rawContext] = process.argv;
+  const [, , fnPath = "", rawContext = "null"] = process.argv;
 
   // We pass the event in as an argument to the node function.  Running
   // npx ts-node "./foo.bar" means we have 2 arguments prior to the event.
   // We'll also be adding stdin and lambda compatibility soon.
-  const context = JSON.parse(rawContext);
+  const context: unknown = JSON.parse(rawContext);
 
   if (!context) {
     throw new Error("unable to parse context");
@@ -24,7 +23,7 @@ async function init() {
   const { run } = (await import(
     path.join(process.cwd(), fnPath)
   )) as unknown as {
-    run: InngestStep<any>;
+    run: (...args: any[]) => unknown;
   };
 
   const result = await run(context);
