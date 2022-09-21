@@ -23,7 +23,8 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
       - run: |
-          yarn config set '//registry.npmjs.org/:_authToken' "${{ env.NODE_AUTH_TOKEN }}"
+          echo "//registry.npmjs.org/:_authToken=${{ env.NODE_AUTH_TOKEN }}" >> .npmrc
+          cat .npmrc
           npx np ${{ github.event.inputs.type }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
