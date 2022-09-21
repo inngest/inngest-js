@@ -77,7 +77,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       steps: Object.keys(this.#steps).reduce<FunctionConfig["steps"]>(
         (acc, stepId) => {
           const url = new URL(baseUrl.href);
-          url.searchParams.set(fnIdParam, this.#opts.name);
+          url.searchParams.set(fnIdParam, this.id);
           url.searchParams.set(stepIdParam, stepId);
 
           return {
