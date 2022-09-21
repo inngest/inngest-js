@@ -3,8 +3,8 @@ import { z } from "zod";
 import { corsOrigin, fnIdParam, stepIdParam } from "../helpers/consts";
 import {
   InngestCommHandler,
-  register as defaultRegister,
-  RegisterHandler,
+  serve as defaultServe,
+  ServeHandler,
 } from "./default";
 
 /**
@@ -80,18 +80,18 @@ class RemixCommHandler extends InngestCommHandler {
 }
 
 /**
- * In Remix, register any declared functions with Inngest, making them available
- * to be triggered by events.
+ * In Remix, serve and register any declared functions with Inngest, making them
+ * available to be triggered by events.
  *
  * @public
  */
-export const register: RegisterHandler = (
+export const register: ServeHandler = (
   nameOrInngest,
   signingKey,
   fns,
   opts
 ): any => {
-  return defaultRegister(
+  return defaultServe(
     new RemixCommHandler(nameOrInngest, signingKey, fns, opts)
   );
 };

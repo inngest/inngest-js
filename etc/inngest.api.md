@@ -91,9 +91,6 @@ export class InngestCommHandler {
 }
 
 // @public
-export const register: <Events extends Record<string, EventPayload>>(...args: [nameOrInngest: string | Inngest<Events>, signingKey: string, functions: InngestFunction<Events>[], opts?: RegisterOptions | undefined] | [commHandler: InngestCommHandler]) => any;
-
-// @public
 export type RegisterHandler = (
 nameOrInngest: string | Inngest<any>,
 signingKey: string, functions: InngestFunction<any>[], opts?: RegisterOptions) => any;
@@ -102,6 +99,9 @@ signingKey: string, functions: InngestFunction<any>[], opts?: RegisterOptions) =
 export interface RegisterOptions {
     inngestRegisterUrl?: string;
 }
+
+// @public
+export const serve: <Events extends Record<string, EventPayload>>(...args: [nameOrInngest: string | Inngest<Events>, signingKey: string, functions: InngestFunction<Events>[], opts?: RegisterOptions | undefined] | [commHandler: InngestCommHandler]) => any;
 
 // @public
 export type StepFn<Event, FnId, StepId> = (arg: {

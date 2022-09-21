@@ -15,13 +15,13 @@ import {
 import { version } from "../version";
 
 /**
- * A handler for registering Inngest functions. This type should be used
+ * A handler for serving Inngest functions. This type should be used
  * whenever a handler for a new framework is being added to enforce that the
  * registration process is always the same for the user.
  *
  * @public
  */
-export type RegisterHandler = (
+export type ServeHandler = (
   /**
    * The name of this app, used to scope and group Inngest functions, or
    * the `Inngest` instance used to declare all functions.
@@ -40,15 +40,15 @@ export type RegisterHandler = (
 ) => any;
 
 /**
- * Register any declared functions with Inngest, making them available to be
- * triggered by events.
+ * Serve and register any declared functions with Inngest, making them available
+ * to be triggered by events.
  *
  * Can either take an `Inngest` instance and a signing key, or can be used to
  * create custom handlers by passing in an `InngestCommHandler`.
  *
  * @public
  */
-export const register = <Events extends Record<string, EventPayload>>(
+export const serve = <Events extends Record<string, EventPayload>>(
   ...args:
     | [
         nameOrInngest: string | Inngest<Events>,
@@ -108,8 +108,8 @@ export class InngestCommHandler {
   private readonly client: AxiosInstance;
 
   /**
-   * A private collection of functions that have been registered. This map is
-   * used to find and register functions when interacting with Inngest Cloud.
+   * A private collection of functions that are being served. This map is used
+   * to find and register functions when interacting with Inngest Cloud.
    */
   private readonly fns: Record<string, InngestFunction<any>> = {};
 

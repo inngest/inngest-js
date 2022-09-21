@@ -4,8 +4,8 @@ import { z } from "zod";
 import { corsOrigin, fnIdParam, stepIdParam } from "../helpers/consts";
 import {
   InngestCommHandler,
-  register as defaultRegister,
-  RegisterHandler,
+  serve as defaultServe,
+  ServeHandler,
 } from "./default";
 
 class NextCommHandler extends InngestCommHandler {
@@ -72,18 +72,18 @@ class NextCommHandler extends InngestCommHandler {
 }
 
 /**
- * In Next.js, register any declared functions with Inngest, making them
- * available to be triggered by events.
+ * In Next.js, serve and register any declared functions with Inngest, making
+ * them available to be triggered by events.
  *
  * @public
  */
-export const register: RegisterHandler = (
+export const serve: ServeHandler = (
   nameOrInngest,
   signingKey,
   fns,
   opts
 ): any => {
-  return defaultRegister(
+  return defaultServe(
     new NextCommHandler(nameOrInngest, signingKey, fns, opts)
   );
 };

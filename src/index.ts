@@ -1,8 +1,8 @@
 export { Inngest } from "./components/Inngest";
 export {
   InngestCommHandler,
-  register,
-  RegisterHandler,
+  serve,
+  ServeHandler as RegisterHandler,
 } from "./handlers/default";
 export { createFunction, createScheduledFunction } from "./helpers/func";
 export {
