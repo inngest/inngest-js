@@ -43,7 +43,6 @@ class NextCommHandler extends InngestCommHandler {
           return void res.status(200).end();
 
         case "POST": {
-          console.log("It was a POST request");
           // Inngest is trying to run a step; confirm signed and run.
           const { fnId, stepId } = z
             .object({

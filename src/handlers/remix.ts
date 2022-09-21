@@ -47,7 +47,6 @@ class RemixCommHandler extends InngestCommHandler {
 
       switch (req.method) {
         case "PUT":
-          console.log("It was a PUT request");
           // Push config to Inngest.
           await this.register(reqUrl);
           return new Response(null, {
@@ -55,7 +54,6 @@ class RemixCommHandler extends InngestCommHandler {
           });
 
         case "POST": {
-          console.log("It was a POST request");
           // Inngest is trying to run a step; confirm signed and run.
           const { fnId, stepId } = z
             .object({

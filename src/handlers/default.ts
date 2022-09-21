@@ -166,13 +166,6 @@ export class InngestCommHandler {
     );
 
     // Decode the key from its hex representation into a bytestream
-
-    console.log(
-      prefix,
-      key,
-      `${prefix}${crypto.createHash("sha256").update(key).digest("hex")}`
-    );
-
     return `${prefix}${crypto.createHash("sha256").update(key).digest("hex")}`;
   }
 
@@ -190,19 +183,15 @@ export class InngestCommHandler {
         return void next();
       }
 
-      console.log("Something hit the default handler!");
-
       const reqUrl = new URL(req.originalUrl, req.hostname);
 
       switch (req.method) {
         case "PUT":
-          console.log("It was a PUT request");
           // Push config to Inngest.
           await this.register(reqUrl);
           return void res.sendStatus(200);
 
         case "POST": {
-          console.log("It was a POST request");
           // Inngest is trying to run a step; confirm signed and run.
           const { fnId, stepId } = z
             .object({
@@ -234,15 +223,6 @@ export class InngestCommHandler {
     stepId: string,
     data: any
   ): Promise<StepRunResponse> {
-    console.log(
-      "Trying to run step",
-      stepId,
-      "in function",
-      functionId,
-      "with data",
-      data
-    );
-
     try {
       const fn = this.fns[functionId];
       if (!fn) {
@@ -291,23 +271,7 @@ export class InngestCommHandler {
       },
     };
 
-    const res = await this.client.post(
-      this.inngestRegisterUrl.href,
-      body,
-      config
-    );
-
-    console.log(
-      "hit the register URL",
-      this.inngestRegisterUrl.href,
-      "with:",
-      body,
-      "and",
-      config,
-      "and got back:",
-      res.status,
-      res.data
-    );
+    await this.client.post(this.inngestRegisterUrl.href, body, config);
   }
 
   protected validateSignature(): boolean {
