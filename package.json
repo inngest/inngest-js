@@ -7,6 +7,9 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
+  "bin": {
+    "inngest-init": "./dist/init.js"
+  },
   "scripts": {
     "prebuild": "genversion --semi --double --es6 ./src/version.ts",
     "build": "yarn run clean && tsc",
