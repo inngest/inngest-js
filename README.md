@@ -1,45 +1,42 @@
-# inngest-node
+# inngest
+
+[![TypeScript](https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg)](http://www.typescriptlang.org/)
+[![npm version](https://img.shields.io/npm/v/inngest)](https://www.npmjs.com/package/inngest)
+[![Discord](https://img.shields.io/discord/842170679536517141?label=discord)](https://discord.gg/EuesV2ZSnX)
+[![Twitter Follow](https://img.shields.io/twitter/follow/inngest?style=social)](https://twitter.com/inngest)
+
+Build, test, and deploy code that runs in response to events or on a schedule right in your own codebase.
+
+👋 _**Have a question or feature request? [Join our Discord](https://www.inngest.com/discord)!**_
 
 ```
 npm install inngest
 ```
 
-👋 _**Have a question or feature request? [Join our Discord](https://www.inngest.com/discord)!**_
-
-## Usage
-
-```js
-// ES Modules / TypeScript
+```ts
+// Send events
 import { Inngest } from "inngest";
-// or CommonJS
-const { Inngest } = require("inngest");
+const inngest = new Inngest({ name: "My App" });
 
-const inngest = new Inngest(process.env.INNGEST_SOURCE_API_KEY);
-
-// Send a single event
-await inngest.send({
-  name: "user.signup",
-  data: {
-    plan: account.planType,
-  },
-  user: {
-    external_id: user.id,
-    email: user.email,
-  },
-});
-
-// Send events in bulk
-const events = ["+12125551234", "+13135555678"].map(phoneNumber => ({
-  name: "sms.response.requested",
-  data: {
-    message: "Are you available for work today? (y/n)"
-  },
-  user: {
-    phone: phoneNumber
-  }
-}});
-await inngest.send(events);
+inngest.send("app/user.created", { data: { id: 123 } });
 ```
+
+```ts
+// Listen to events
+import { createFunction } from "inngest";
+
+export default createFunction(
+  "Send welcome email",
+  "app/user.created",
+  ({ event }) => {
+    sendEmailTo(event.data.id, "Welcome!");
+  }
+);
+```
+
+## Getting started
+
+Links to how to start, platforms, frameworks, logos?
 
 ## Contributing
 
