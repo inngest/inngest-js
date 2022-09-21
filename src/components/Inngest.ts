@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from "axios";
+import { SingleOrArray, ValueOf } from "../helpers/types";
 import { ClientOptions, EventPayload, FunctionOptions, StepFn } from "../types";
 import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
@@ -151,6 +152,10 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    * Send one or many events to Inngest. Takes a known event from this Inngest
    * instance based on the given `name`.
    *
+   * ```ts
+   * await inngest.send("app/user.created", { data: { id: 123 } });
+   * ```
+   *
    * Returns a promise that will resolve if the event(s) were sent successfully,
    * else throws with an error explaining what went wrong.
    *
@@ -169,12 +174,79 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    */
   public async send<Event extends keyof Events>(
     name: Event,
-    payload: Omit<Events[Event], "name"> | Omit<Events[Event], "name">[]
+    payload: SingleOrArray<Omit<Events[Event], "name">>
+  ): Promise<void>;
+  /**
+   * Send one or many events to Inngest. Takes an entire payload (including
+   * name) as each input.
+   *
+   * ```ts
+   * await inngest.send({ name: "app/user.created", data: { id: 123 } });
+   * ```
+   *
+   * Returns a promise that will resolve if the event(s) were sent successfully,
+   * else throws with an error explaining what went wrong.
+   *
+   * If you wish to send an event with custom types (i.e. one that hasn't been
+   * generated), make sure to add it when creating your Inngest instance, like
+   * so:
+   *
+   * ```ts
+   * const inngest = new Inngest<Events & {
+   *   "my/event": {
+   *     name: "my/event";
+   *     data: { bar: string; };
+   *   }
+   * }>("My App", "API_KEY");
+   * ```
+   */
+  public async send<Payload extends SingleOrArray<ValueOf<Events>>>(
+    payload: Payload
+  ): Promise<void>;
+  public async send<Event extends keyof Events>(
+    nameOrPayload: Event | SingleOrArray<ValueOf<Events>>,
+    maybePayload?: SingleOrArray<Omit<Events[Event], "name">>
   ): Promise<void> {
-    const response = await this.client.post(this.inngestApiUrl.href, {
-      ...payload,
-      name,
-    });
+    let payloads: ValueOf<Events>[];
+
+    if (typeof nameOrPayload === "string") {
+      /**
+       * Add our payloads and ensure they all have a name.
+       */
+      payloads = (
+        Array.isArray(maybePayload)
+          ? maybePayload
+          : maybePayload
+          ? [maybePayload]
+          : []
+      ).map((payload) => ({
+        ...payload,
+        name: nameOrPayload,
+      })) as typeof payloads;
+    } else {
+      /**
+       * Grab our payloads straight from the args.
+       */
+      payloads = (
+        Array.isArray(nameOrPayload)
+          ? nameOrPayload
+          : nameOrPayload
+          ? [nameOrPayload]
+          : []
+      ) as typeof payloads;
+    }
+
+    /**
+     * The two overload types should never allow this to happen, but in the case
+     * the user is in JS Land and it does, let's throw.
+     */
+    if (!payloads.length) {
+      throw new Error(
+        "Provided a name but no events to send; make sure to send an event payload too"
+      );
+    }
+
+    const response = await this.client.post(this.inngestApiUrl.href, payloads);
 
     if (response.status >= 200 && response.status < 300) {
       return;
