@@ -1,17 +1,64 @@
-# inngest
+<div align="center">
+  <br/>
+    <img src="https://user-images.githubusercontent.com/306177/191580717-1f563f4c-31e3-4aa0-848c-5ddc97808a9a.png" width="250" />
+  <br/>
+  <br/>
+  <p>
+    Serverless event-driven queues, background jobs, and scheduled jobs for Typescript.<br />
+    Works with any framework and platform.
+  </p>
+  Read the <a href="https://https://www.inngest.com/docs">documentation</a> and get started in minutes.
+  <br/>
+  <p>
 
-[![TypeScript](https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg)](http://www.typescriptlang.org/)
-[![npm version](https://img.shields.io/npm/v/inngest)](https://www.npmjs.com/package/inngest)
-[![Discord](https://img.shields.io/discord/842170679536517141?label=discord)](https://discord.gg/EuesV2ZSnX)
-[![Twitter Follow](https://img.shields.io/twitter/follow/inngest?style=social)](https://twitter.com/inngest)
+<a href="http://www.typescriptlang.org/"><img src="https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg" /></a>
+<a href="https://www.npmjs.com/package/inngest"><img src="https://img.shields.io/npm/v/inngest" /></a>
+<a href="https://discord.gg/EuesV2ZSnX"><img src="https://img.shields.io/discord/842170679536517141?label=discord" /></a>
+<a href="https://twitter.com/inngest"><img src="https://img.shields.io/twitter/follow/inngest?style=social" /></a>
 
-Build, test, and deploy code that runs in response to events or on a schedule right in your own codebase.
+  </p>
+</div>
 
-👋 _**Have a question or feature request? [Join our Discord](https://www.inngest.com/discord)!**_
+<hr />
 
+Build, test, and deploy code that runs in response to events or on a schedule right in your own codebase. 
+👋 _Have a question or feature request? [Join our Discord](https://www.inngest.com/discord)!_
+
+<br />
+
+### Getting started
+
+<br />
+
+Install Inngest:
+
+```bash
+npm install inngest  # or yarn install inngest
 ```
-npm install inngest
+
+<br />
+
+**Writing functions**: Write serverless functions and background jobs right in your own code:
+
+```ts
+
+import { createFunction } from "inngest";
+
+export default createFunction(
+  "Send welcome email",
+  "app/user.created", // Subscribe to the `app/user.created` event.
+  ({ event }) => {
+    sendEmailTo(event.data.id, "Welcome!");
+  }
+);
 ```
+
+Functions listen to events which can be triggered by API calls, webhooks, integrations, or external services.  When a matching event is received, the serverless function runs automatically.
+
+<br />
+
+**Triggering functions by events:**  Send events to trigger functions automatically.
+
 
 ```ts
 // Send events
@@ -21,18 +68,7 @@ const inngest = new Inngest({ name: "My App" });
 inngest.send("app/user.created", { data: { id: 123 } });
 ```
 
-```ts
-// Listen to events
-import { createFunction } from "inngest";
-
-export default createFunction(
-  "Send welcome email",
-  "app/user.created",
-  ({ event }) => {
-    sendEmailTo(event.data.id, "Welcome!");
-  }
-);
-```
+<br />
 
 ## Contributing
 
