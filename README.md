@@ -62,7 +62,7 @@ export default createFunction(
 );
 ```
 
-Functions listen to events which can be triggered by API calls, webhooks, integrations, or external services.  When a matching event is received, the serverless function runs automatically.
+Functions listen to events which can be triggered by API calls, webhooks, integrations, or external services.  When a matching event is received, the serverless function runs automatically, with built in retries.
 
 <br />
 
@@ -74,8 +74,11 @@ Functions listen to events which can be triggered by API calls, webhooks, integr
 import { Inngest } from "inngest";
 const inngest = new Inngest({ name: "My App" });
 
+// This will run the function above automatically, in the background
 inngest.send("app/user.created", { data: { id: 123 } });
 ```
+
+Events trigger any number of functions automatically, in parallel, in the background.
 
 
 <br />
