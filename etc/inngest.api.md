@@ -60,7 +60,10 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     fn: StepFn<null, Opts extends FunctionOptions ? Opts["name"] : string, "step">): InngestFunction<Events>;
     readonly inngestBaseUrl: URL;
     readonly name: string;
-    send<Event extends keyof Events>(name: Event, payload: Omit<Events[Event], "name"> | Omit<Events[Event], "name">[]): Promise<void>;
+    // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
+    send<Event extends keyof Events>(name: Event, payload: SingleOrArray<Omit<Events[Event], "name">>): Promise<void>;
+    // Warning: (ae-forgotten-export) The symbol "ValueOf" needs to be exported by the entry point index.d.ts
+    send<Payload extends SingleOrArray<ValueOf<Events>>>(payload: Payload): Promise<void>;
 }
 
 // @public
