@@ -20,7 +20,7 @@
     "test": "jest",
     "clean": "rm -rf ./dist",
     "prepare": "yarn run build",
-    "postversion": "shx cp package.json ./dist/package.json",
+    "postversion": "shx cp package.json LICENSE.md README.md dist",
     "release": "yarn run np",
     "api-extractor": "api-extractor",
     "dev": "concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"yarn run dev:build\" \"yarn run dev:lint\"",
