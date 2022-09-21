@@ -16,8 +16,7 @@
   },
   "scripts": {
     "prebuild": "genversion --semi --double --es6 ./src/version.ts",
-    "build": "yarn run clean && tsc",
-    "postbuild": "cp ../package.json ../LICENSE.md ../README.md .",
+    "build": "yarn run clean && tsc && cp package.json LICENSE.md README.md dist",
     "test": "jest --passWithNoTests",
     "clean": "rm -rf ./dist",
     "prepare": "yarn run build",
