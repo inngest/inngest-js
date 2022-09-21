@@ -2,6 +2,8 @@ name: "Setup and build"
 description: "Sets up Node, installs dependencies, and builds the project."
 runs:
   using: composite
+  env:
+    NODE_AUTH_TOKEN: nothing
   steps:
     - uses: volta-cli/action@v3
 

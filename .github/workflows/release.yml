@@ -12,6 +12,9 @@ on:
           - minor
           - major
 
+env:
+  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
 jobs:
   checks:
     uses: ./.github/workflows/pr.yml
@@ -25,5 +28,4 @@ jobs:
       - run: yarn run release ${{ github.event.inputs.type }}
         env:
           NODE_ENV: test # disable npm access checks; they don't work in CI
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

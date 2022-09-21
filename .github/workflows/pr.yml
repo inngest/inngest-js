@@ -9,6 +9,9 @@ concurrency:
   group: pr-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NODE_AUTH_TOKEN: nothing
+
 jobs:
   test:
     name: Test
