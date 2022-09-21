@@ -1,28 +1,17 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import NextCors from "nextjs-cors";
 import { z } from "zod";
 import {
   InngestCommHandler,
   serve as defaultServe,
   ServeHandler,
 } from "./handlers/default";
-import { corsOrigin, fnIdParam, stepIdParam } from "./helpers/consts";
+import { fnIdParam, stepIdParam } from "./helpers/consts";
 
 class NextCommHandler extends InngestCommHandler {
   protected override frameworkName = "nextjs";
 
   public override createHandler() {
     return async (req: NextApiRequest, res: NextApiResponse) => {
-      /**
-       * Specifically for CORS (browser->site requests), only allow PUT requests
-       * from the dashboard.
-       */
-      await NextCors(req, res, {
-        methods: ["PUT"],
-        origin: corsOrigin,
-        optionsSuccessStatus: 200,
-      });
-
       let reqUrl: URL;
 
       try {

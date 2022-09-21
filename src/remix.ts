@@ -5,7 +5,7 @@ import {
   serve as defaultServe,
   ServeHandler,
 } from "./handlers/default";
-import { corsOrigin, fnIdParam, stepIdParam } from "./helpers/consts";
+import { fnIdParam, stepIdParam } from "./helpers/consts";
 
 /**
  * app/inngest/index.server.ts
@@ -20,21 +20,6 @@ class RemixCommHandler extends InngestCommHandler {
     }: {
       request: Request;
     }): Promise<Response> => {
-      /**
-       * Specifically for CORS (browser->site requests), only allow PUT requests
-       * from the dashboard.
-       */
-      if (req.method === "OPTIONS") {
-        return new Response(null, {
-          status: 200,
-          headers: {
-            "Access-Control-Allow-Origin": corsOrigin,
-            "Access-Control-Allow-Methods": "PUT",
-            "Access-Control-Allow-Headers": "Content-Type",
-          },
-        });
-      }
-
       let reqUrl: URL;
 
       try {

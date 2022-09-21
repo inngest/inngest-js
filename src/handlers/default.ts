@@ -1,10 +1,10 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
 import crypto from "crypto";
-import type { NextFunction, Request, Response } from "express";
+import type { Request, Response } from "express";
 import { z } from "zod";
 import { Inngest } from "../components/Inngest";
 import { InngestFunction } from "../components/InngestFunction";
-import { corsOrigin, fnIdParam, stepIdParam } from "../helpers/consts";
+import { fnIdParam, stepIdParam } from "../helpers/consts";
 import {
   EventPayload,
   FunctionConfig,
@@ -170,19 +170,7 @@ export class InngestCommHandler {
   }
 
   public createHandler(): any {
-    return async (req: Request, res: Response, next: NextFunction) => {
-      /**
-       * Specifically for CORS (browser->site requests), only allow PUT requests
-       * from the dashboard.
-       */
-      if (req.method === "OPTIONS") {
-        res.header("Access-Control-Allow-Origin", corsOrigin);
-        res.header("Access-Control-Allow-Methods", "PUT");
-        res.header("Access-Control-Allow-Headers", "Content-Type");
-
-        return void next();
-      }
-
+    return async (req: Request, res: Response) => {
       const reqUrl = new URL(req.originalUrl, req.hostname);
 
       switch (req.method) {
