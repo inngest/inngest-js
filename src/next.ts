@@ -1,12 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import NextCors from "nextjs-cors";
 import { z } from "zod";
-import { corsOrigin, fnIdParam, stepIdParam } from "../helpers/consts";
 import {
   InngestCommHandler,
   serve as defaultServe,
   ServeHandler,
-} from "./default";
+} from "./handlers/default";
+import { corsOrigin, fnIdParam, stepIdParam } from "./helpers/consts";
 
 class NextCommHandler extends InngestCommHandler {
   protected override frameworkName = "nextjs";

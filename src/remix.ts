@@ -1,11 +1,11 @@
 import { Response } from "cross-fetch";
 import { z } from "zod";
-import { corsOrigin, fnIdParam, stepIdParam } from "../helpers/consts";
 import {
   InngestCommHandler,
   serve as defaultServe,
   ServeHandler,
-} from "./default";
+} from "./handlers/default";
+import { corsOrigin, fnIdParam, stepIdParam } from "./helpers/consts";
 
 /**
  * app/inngest/index.server.ts
