@@ -37,10 +37,11 @@ class NextCommHandler extends InngestCommHandler {
       }
 
       switch (req.method) {
-        case "PUT":
+        case "PUT": {
           // Push config to Inngest.
-          await this.register(reqUrl);
-          return void res.status(200).end();
+          const { status, message } = await this.register(reqUrl);
+          return void res.status(status).json({ message });
+        }
 
         case "POST": {
           // Inngest is trying to run a step; confirm signed and run.

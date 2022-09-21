@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosRequestConfig } from "axios";
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
 import crypto from "crypto";
 import type { NextFunction, Request, Response } from "express";
 import { z } from "zod";
@@ -186,10 +186,11 @@ export class InngestCommHandler {
       const reqUrl = new URL(req.originalUrl, req.hostname);
 
       switch (req.method) {
-        case "PUT":
+        case "PUT": {
           // Push config to Inngest.
-          await this.register(reqUrl);
-          return void res.sendStatus(200);
+          const { status, message } = await this.register(reqUrl);
+          return void res.status(status).json({ message });
+        }
 
         case "POST": {
           // Inngest is trying to run a step; confirm signed and run.
@@ -254,7 +255,9 @@ export class InngestCommHandler {
     return Object.values(this.fns).map((fn) => fn["getConfig"](url));
   }
 
-  protected async register(url: URL): Promise<void> {
+  protected async register(
+    url: URL
+  ): Promise<{ status: number; message: string }> {
     const body: RegisterRequest = {
       url: url.href,
       deployType: "ping",
@@ -271,7 +274,29 @@ export class InngestCommHandler {
       },
     };
 
-    await this.client.post(this.inngestRegisterUrl.href, body, config);
+    let res: AxiosResponse<any, any>;
+
+    try {
+      res = await this.client.post(this.inngestRegisterUrl.href, body, config);
+    } catch (err: unknown) {
+      console.error(err);
+
+      return {
+        status: 500,
+        message: "Failed to register",
+      };
+    }
+
+    console.log("Registered:", res.status, res.statusText, res.data);
+
+    const { status, error } = z
+      .object({
+        status: z.number().default(200),
+        error: z.string().default("Successfully registered"),
+      })
+      .parse(res.data);
+
+    return { status, message: error };
   }
 
   protected validateSignature(): boolean {

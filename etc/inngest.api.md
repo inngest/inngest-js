@@ -80,7 +80,10 @@ export class InngestCommHandler {
     // (undocumented)
     name: string;
     // (undocumented)
-    protected register(url: URL): Promise<void>;
+    protected register(url: URL): Promise<{
+        status: number;
+        message: string;
+    }>;
     // Warning: (ae-forgotten-export) The symbol "StepRunResponse" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)

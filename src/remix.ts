@@ -46,12 +46,11 @@ class RemixCommHandler extends InngestCommHandler {
       }
 
       switch (req.method) {
-        case "PUT":
+        case "PUT": {
           // Push config to Inngest.
-          await this.register(reqUrl);
-          return new Response(null, {
-            status: 200,
-          });
+          const { status, message } = await this.register(reqUrl);
+          return new Response(JSON.stringify({ message }), { status });
+        }
 
         case "POST": {
           // Inngest is trying to run a step; confirm signed and run.
