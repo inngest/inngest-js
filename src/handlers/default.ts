@@ -294,7 +294,7 @@ export class InngestCommHandler {
         status: z.number().default(200),
         error: z.string().default("Successfully registered"),
       })
-      .parse(res.data);
+      .parse(res.data || { status: 200, error: "Successfully registered" });
 
     return { status, message: error };
   }
