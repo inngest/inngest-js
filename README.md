@@ -26,15 +26,12 @@ Build, test, and deploy code that runs in response to events or on a schedule ri
 
 <br />
 
-## Features
-
-- **Fully serverless:**  Run background jobs, scheduled functions, and build event-driven systems without any servers, state, or setup
-- **Deploy anywhere**:  works with NextJS, Netlify, Vercel, Redwood, Express, Cloudflare, and Lambda
-- **Use your existing code:**  write functions within your current project, zero learning required
-- **A complete platform**:  complex functionality built in, such as **event replay**, **canary deploys**, **version management** and **git integration**
-- **Fully typed**:  Event schemas, versioning, and governance out of the box
-- **Observable**:  A full UI for managing and inspecting your functions
-- **Any language:**  Use our CLI to write functions using any language
+<p align="center">
+<a href="#getting-started">Getting started</a> · 
+<a href="#features">Features</a> · 
+<a href="#contributing">Contributing</a> · 
+<a href="https://www.inngest.com/docs">Documentation</a>
+</p>
 
 <br />
 
@@ -79,6 +76,19 @@ const inngest = new Inngest({ name: "My App" });
 
 inngest.send("app/user.created", { data: { id: 123 } });
 ```
+
+
+<br />
+
+## Features
+
+- **Fully serverless:**  Run background jobs, scheduled functions, and build event-driven systems without any servers, state, or setup
+- **Deploy anywhere**:  works with NextJS, Netlify, Vercel, Redwood, Express, Cloudflare, and Lambda
+- **Use your existing code:**  write functions within your current project, zero learning required
+- **A complete platform**:  complex functionality built in, such as **event replay**, **canary deploys**, **version management** and **git integration**
+- **Fully typed**:  Event schemas, versioning, and governance out of the box
+- **Observable**:  A full UI for managing and inspecting your functions
+- **Any language:**  Use our CLI to write functions using any language
 
 <br />
 
