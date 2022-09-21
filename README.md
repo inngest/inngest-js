@@ -66,7 +66,7 @@ Functions listen to events which can be triggered by API calls, webhooks, integr
 
 <br />
 
-**Triggering functions by events:**  Send events to trigger functions automatically.
+**Triggering functions by events:**
 
 
 ```ts
@@ -78,7 +78,7 @@ const inngest = new Inngest({ name: "My App" });
 inngest.send("app/user.created", { data: { id: 123 } });
 ```
 
-Events trigger any number of functions automatically, in parallel, in the background.
+Events trigger any number of functions automatically, in parallel, in the background.  Inngest also stores a history of all events for observability, testing, and replay.
 
 
 <br />
