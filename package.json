@@ -37,9 +37,6 @@
   "author": "Dan Farrelly <dan@inngest.com>",
   "license": "GPL-3.0",
   "private": false,
-  "files": [
-    "dist"
-  ],
   "prettier": {
     "tabWidth": 2,
     "useTabs": false,
