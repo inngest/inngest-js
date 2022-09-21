@@ -18,7 +18,7 @@
     "prebuild": "genversion --semi --double --es6 ./src/version.ts",
     "build": "yarn run clean && tsc",
     "postbuild": "yarn run build:copy",
-    "test": "jest",
+    "test": "jest --passWithNoTests",
     "clean": "rm -rf ./dist",
     "prepare": "yarn run build",
     "postversion": "yarn run build:copy",
