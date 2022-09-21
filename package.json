@@ -17,20 +17,18 @@
   "scripts": {
     "prebuild": "genversion --semi --double --es6 ./src/version.ts",
     "build": "yarn run clean && tsc",
-    "postbuild": "yarn run build:copy",
+    "postbuild": "cp ../package.json ../LICENSE.md ../README.md .",
     "test": "jest --passWithNoTests",
     "clean": "rm -rf ./dist",
     "prepare": "yarn run build",
-    "preversion": "yarn run clean",
-    "postversion": "yarn run build",
+    "postversion": "cp package.json LICENSE.md README.md dist",
     "release": "yarn run np",
     "api-extractor": "api-extractor",
     "dev": "concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"yarn run dev:build\" \"yarn run dev:lint\"",
     "dev:build": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'yarn run build && yarn run build:check --local'",
     "dev:lint": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'eslint .'",
     "build:api": "api-extractor run --local --verbose",
-    "build:check": "api-extractor run --verbose",
-    "build:copy": "cp package.json LICENSE.md README.md dist"
+    "build:check": "api-extractor run --verbose"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
