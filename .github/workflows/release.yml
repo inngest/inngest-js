@@ -22,7 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
-      - run: yarn run release ${{ github.event.inputs.type }}
+      - run: |
+          yarn config set '//registry.npmjs.org/:_authToken' "${{ env.NODE_AUTH_TOKEN }}"
+          yarn run release ${{ github.event.inputs.type }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
