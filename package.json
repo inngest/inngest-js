@@ -29,7 +29,7 @@
     "dev:lint": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'eslint .'",
     "build:api": "api-extractor run --local --verbose",
     "build:check": "api-extractor run --verbose",
-    "build:copy": "shx cp package.json LICENSE.md README.md dist"
+    "build:copy": "cp package.json LICENSE.md README.md dist"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
