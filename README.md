@@ -34,10 +34,6 @@ export default createFunction(
 );
 ```
 
-## Getting started
-
-Links to how to start, platforms, frameworks, logos?
-
 ## Contributing
 
 Clone the repository, then:
