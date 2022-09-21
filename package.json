@@ -2,8 +2,8 @@
   "name": "inngest",
   "version": "0.4.0-beta.7",
   "description": "Official SDK for Inngest.com",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./index.js",
+  "types": "./index.d.ts",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
@@ -12,7 +12,7 @@
     "contents": "dist"
   },
   "bin": {
-    "inngest-init": "./dist/init.js"
+    "inngest-init": "./init.js"
   },
   "scripts": {
     "prebuild": "genversion --semi --double --es6 ./src/version.ts",
@@ -20,6 +20,7 @@
     "test": "jest",
     "clean": "rm -rf ./dist",
     "prepare": "yarn run build",
+    "postversion": "shx cp package.json ./dist/package.json",
     "release": "yarn run np",
     "api-extractor": "api-extractor",
     "dev": "concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"yarn run dev:build\" \"yarn run dev:lint\"",
