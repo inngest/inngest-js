@@ -21,7 +21,8 @@
     "test": "jest --passWithNoTests",
     "clean": "rm -rf ./dist",
     "prepare": "yarn run build",
-    "postversion": "yarn run build:copy",
+    "preversion": "yarn run clean",
+    "postversion": "yarn run build",
     "release": "yarn run np",
     "api-extractor": "api-extractor",
     "dev": "concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"yarn run dev:build\" \"yarn run dev:lint\"",
@@ -29,7 +30,7 @@
     "dev:lint": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'eslint .'",
     "build:api": "api-extractor run --local --verbose",
     "build:check": "api-extractor run --verbose",
-    "build:copy": "f() { if [ \"$PWD\" = */dist ]; then cp ../package.json ../LICENSE.md ../README.md .; else cp package.json LICENSE.md README.md dist; fi; }; f"
+    "build:copy": "cp package.json LICENSE.md README.md dist"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
