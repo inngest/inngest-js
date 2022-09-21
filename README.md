@@ -7,7 +7,7 @@
     Serverless event-driven queues, background jobs, and scheduled jobs for Typescript.<br />
     Works with any framework and platform.
   </p>
-  Read the <a href="https://https://www.inngest.com/docs">documentation</a> and get started in minutes.
+  Read the <a href="https://www.inngest.com/docs">documentation</a> and get started in minutes.
   <br/>
   <p>
 
