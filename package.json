@@ -7,6 +7,10 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
+  "np": {
+    "yarn": true,
+    "contents": "dist"
+  },
   "bin": {
     "inngest-init": "./dist/init.js"
   },
