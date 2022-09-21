@@ -12,7 +12,7 @@ import { InngestStep } from "./InngestStep";
  * the first generic.
  *
  * ```ts
- * const inngest = new Inngest<Events>("My App", process.env.INNGEST_API_KEY);
+ * const inngest = new Inngest<Events>("My App", process.env.INNGEST_EVENT_KEY);
  *
  * // or to provide custom events too
  * const inngest = new Inngest<
@@ -24,7 +24,7 @@ import { InngestStep } from "./InngestStep";
  *       };
  *     };
  *   }
- * >("My App", process.env.INNGEST_API_KEY);
+ * >("My App", process.env.INNGEST_EVENT_KEY);
  * ```
  *
  * @public
@@ -66,7 +66,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    * the first generic.
    *
    * ```ts
-   * const inngest = new Inngest<Events>("My App", process.env.INNGEST_API_KEY);
+   * const inngest = new Inngest<Events>("My App", process.env.INNGEST_EVENT_KEY);
    *
    * // or to provide custom events too
    * const inngest = new Inngest<
@@ -78,22 +78,14 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    *       };
    *     };
    *   }
-   * >("My App", process.env.INNGEST_API_KEY);
+   * >("My App", process.env.INNGEST_EVENT_KEY);
    * ```
    */
-  constructor(
-    /**
-     * The name of this instance, most commonly the name of the application it
-     * resides in.
-     */
-    name: string,
-
-    /**
-     * Inngest event key, used to send events to Inngest Cloud.
-     */
-    eventKey: string,
-    { inngestBaseUrl = "https://inn.gs/" }: ClientOptions = {}
-  ) {
+  constructor({
+    name,
+    eventKey = process.env.INNGEST_EVENT_KEY,
+    inngestBaseUrl = "https://inn.gs/",
+  }: ClientOptions) {
     if (!name) {
       throw new Error("A name must be passed to create an Inngest instance.");
     }

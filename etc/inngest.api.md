@@ -6,7 +6,9 @@
 
 // @public
 export interface ClientOptions {
+    eventKey?: string;
     inngestBaseUrl?: string;
+    name: string;
 }
 
 // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
@@ -39,9 +41,7 @@ export interface FunctionOptions {
 
 // @public
 export class Inngest<Events extends Record<string, EventPayload>> {
-    constructor(
-    name: string,
-    eventKey: string, { inngestBaseUrl }?: ClientOptions);
+    constructor({ name, eventKey, inngestBaseUrl, }: ClientOptions);
     createFunction<Event extends keyof Events, Name extends string, Fn extends StepFn<Events[Event], Name, "step">>(
     name: Name,
     event: Event,

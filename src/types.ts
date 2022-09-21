@@ -142,6 +142,19 @@ export type Step<Context = any> = (
  */
 export interface ClientOptions {
   /**
+   * The name of this instance, most commonly the name of the application it
+   * resides in.
+   */
+  name: string;
+
+  /**
+   * Inngest event key, used to send events to Inngest Cloud. If not provided,
+   * will search for the `INNGEST_EVENT_KEY` environment variable. If neither
+   * can be found, however, an error will be thrown.
+   */
+  eventKey?: string;
+
+  /**
    * The base Inngest Source API URL to append the Source API Key to.
    * Defaults to https://inn.gs/
    */
