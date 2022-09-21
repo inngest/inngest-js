@@ -25,7 +25,8 @@ jobs:
       - run: |
           echo "//registry.npmjs.org/:_authToken=${{ env.NODE_AUTH_TOKEN }}" >> .npmrc
           cat .npmrc
-          npx np ${{ github.event.inputs.type }}
+          yarn run release ${{ github.event.inputs.type }}
         env:
+          NODE_ENV: test # disable npm access checks; they don't work in CI
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
