@@ -19,7 +19,7 @@
     "build": "yarn run clean && tsc",
     "test": "jest --passWithNoTests",
     "clean": "rm -rf ./dist",
-    "postversion": "yarn run build:copy",
+    "postversion": "yarn run build && yarn run build:copy",
     "release": "yarn run np",
     "api-extractor": "api-extractor",
     "dev": "concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"yarn run dev:build\" \"yarn run dev:lint\"",
