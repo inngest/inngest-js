@@ -36,7 +36,7 @@ jobs:
           git config user.name "botbot"
           git config user.email "<>"
       - run: |
-          yarn run release ${{ github.event.inputs.type }} --tag=${{ github.event.inputs.npm_tag }}
+          yarn run release ${{ github.event.inputs.type }} --tag=${{ github.event.inputs.npm_tag }} --any-branch --no-tests
         env:
           NODE_ENV: test # disable npm access checks; they don't work in CI
 
