@@ -98,7 +98,7 @@ export class InngestCommHandler {
   private readonly inngestRegisterUrl: URL;
 
   protected readonly frameworkName: string = "default";
-  protected readonly signingKey: string;
+  protected readonly signingKey: string | undefined;
 
   /**
    * An Axios instance used for communicating with Inngest Cloud.
@@ -158,6 +158,10 @@ export class InngestCommHandler {
   // hashedSigningKey creates a sha256 checksum of the signing key with the
   // same signing key prefix.
   private get hashedSigningKey(): string {
+    if (!this.signingKey) {
+      return "";
+    }
+
     const prefix =
       this.signingKey.match(/^signkey-(test|prod)-/)?.shift() || "";
     const key = Buffer.from(
@@ -171,7 +175,24 @@ export class InngestCommHandler {
 
   public createHandler(): any {
     return async (req: Request, res: Response) => {
-      const reqUrl = new URL(req.originalUrl, req.hostname);
+      const hostname = req.hostname || req.headers["host"];
+      if (!hostname) {
+        console.error("Unable to determine your site URL to host Inngest.");
+        return res.status(500).json("Unable to determine your site URL to host Inngest.");
+      }
+
+      let scheme = "";
+      if (hostname.indexOf("://") === -1) {
+        scheme = (process.env.NODE_ENV === "development" || !req.connection.encrypted) ? "http://" : "https://";
+      }
+
+      let reqUrl;
+      try {
+        reqUrl = new URL(req.originalUrl, scheme + hostname);
+      } catch(e) {
+        console.error("Unable to determine your site URL to host Inngest.");
+        return res.status(500).json("Unable to determine your site URL to host Inngest.");
+      }
 
       switch (req.method) {
         case "PUT": {
