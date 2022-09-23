@@ -176,22 +176,17 @@ export class InngestCommHandler {
   public createHandler(): any {
     return async (req: Request, res: Response) => {
       const hostname = req.hostname || req.headers["host"];
-      if (!hostname) {
-        console.error("Unable to determine your site URL to host Inngest.");
-        return res.status(500).json("Unable to determine your site URL to host Inngest.");
-      }
-
-      let scheme = "";
-      if (hostname.indexOf("://") === -1) {
-        scheme = (process.env.NODE_ENV === "development" || !req.connection.encrypted) ? "http://" : "https://";
-      }
+      const protocol = hostname?.includes("://") ? "" : `${req.protocol}://`;
 
       let reqUrl;
       try {
-        reqUrl = new URL(req.originalUrl, scheme + hostname);
-      } catch(e) {
-        console.error("Unable to determine your site URL to host Inngest.");
-        return res.status(500).json("Unable to determine your site URL to host Inngest.");
+        reqUrl = new URL(req.originalUrl, `${protocol}${hostname || ""}`);
+      } catch (e) {
+        const message =
+          "Unable to determine your site URL to serve the Inngest handler.";
+        console.error(message);
+
+        return res.status(500).json({ message });
       }
 
       switch (req.method) {
