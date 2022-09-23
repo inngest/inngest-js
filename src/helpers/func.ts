@@ -1,6 +1,7 @@
 import { InngestFunction } from "../components/InngestFunction";
 import { InngestStep } from "../components/InngestStep";
 import { EventPayload, FunctionOptions, StepFn } from "../types";
+import { EventName } from "./types";
 
 /**
  * Given an event to listen to, run the given function when that event is
@@ -18,11 +19,7 @@ export const createFunction = <Event extends EventPayload>(
   /**
    * The event to listen for.
    */
-  event: Event extends EventPayload
-    ? {
-        [K in keyof Event]: K extends "name" ? Event[K] : never;
-      }[keyof Event]
-    : never,
+  event: EventName<Event>,
 
   /**
    * The function to run when the event is received.

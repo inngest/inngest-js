@@ -1,5 +1,10 @@
 import axios, { AxiosInstance, AxiosResponse } from "axios";
-import { PartialK, SingleOrArray, ValueOf } from "../helpers/types";
+import {
+  PartialK,
+  SendEventPayload,
+  SingleOrArray,
+  ValueOf,
+} from "../helpers/types";
 import { ClientOptions, EventPayload, FunctionOptions, StepFn } from "../types";
 import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
@@ -200,13 +205,9 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    * }>("My App", "API_KEY");
    * ```
    */
-  public async send<
-    Payload extends SingleOrArray<
-      {
-        [K in keyof Events]: PartialK<Omit<Events[K], "v">, "ts">;
-      }[keyof Events]
-    >
-  >(payload: Payload): Promise<void>;
+  public async send<Payload extends SendEventPayload<Events>>(
+    payload: Payload
+  ): Promise<void>;
   public async send<Event extends keyof Events>(
     nameOrPayload:
       | Event
