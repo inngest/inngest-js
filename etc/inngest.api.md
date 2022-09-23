@@ -89,7 +89,7 @@ export class InngestCommHandler {
     // (undocumented)
     protected runStep(functionId: string, stepId: string, data: any): Promise<StepRunResponse>;
     // (undocumented)
-    protected readonly signingKey: string;
+    protected readonly signingKey: string | undefined;
     // (undocumented)
     protected signResponse(): string;
     // (undocumented)
