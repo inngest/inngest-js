@@ -124,15 +124,15 @@ export class InngestCommHandler {
 
     this.fns = functions.reduce<Record<string, InngestFunction<any>>>(
       (acc, fn) => {
-        if (acc[fn.id]) {
+        if (acc[fn.id(this.name)]) {
           throw new Error(
-            `Duplicate function ID "${fn.id}"; please change a function's name or provide an explicit ID to avoid conflicts.`
+            `Duplicate function ID "${fn.id(this.name)}"; please change a function's name or provide an explicit ID to avoid conflicts.`
           );
         }
 
         return {
           ...acc,
-          [fn.id]: fn,
+          [fn.id(this.name)]: fn,
         };
       },
       {}
@@ -256,7 +256,7 @@ export class InngestCommHandler {
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    return Object.values(this.fns).map((fn) => fn["getConfig"](url));
+    return Object.values(this.fns).map((fn) => fn["getConfig"](url, this.name));
   }
 
   protected async register(

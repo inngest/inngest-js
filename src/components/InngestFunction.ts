@@ -44,9 +44,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
   /**
    * The generated or given ID for this function.
    */
-  public get id() {
+  public id(prefix?: string) {
     if (!this.#opts.id) {
-      this.#opts.id = this.#generateId();
+      this.#opts.id = this.#generateId(prefix);
     }
 
     return this.#opts.id;
@@ -68,16 +68,17 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * This function can't be expected to know how it will be accessed, so
      * relies on an outside method providing context.
      */
-    baseUrl: URL
+    baseUrl: URL,
+    appPrefix?: string
   ): FunctionConfig {
     return {
-      id: this.id,
+      id: this.id(appPrefix),
       name: this.name,
       triggers: [this.#trigger as FunctionTrigger],
       steps: Object.keys(this.#steps).reduce<FunctionConfig["steps"]>(
         (acc, stepId) => {
           const url = new URL(baseUrl.href);
-          url.searchParams.set(fnIdParam, this.id);
+          url.searchParams.set(fnIdParam, this.id(appPrefix));
           url.searchParams.set(stepIdParam, stepId);
 
           return {
@@ -114,10 +115,10 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
   /**
    * Generate an ID based on the function's name.
    */
-  #generateId() {
+  #generateId(prefix?: string) {
     const join = "-";
 
-    return this.#opts.name
+    return `${prefix || ""}-${this.#opts.name}`
       .toLowerCase()
       .replaceAll(/[^a-z0-9-]+/g, join)
       .replaceAll(/-+/g, join)
