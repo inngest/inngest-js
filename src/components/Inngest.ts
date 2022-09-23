@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from "axios";
-import { SingleOrArray, ValueOf } from "../helpers/types";
+import { PartialK, SingleOrArray, ValueOf } from "../helpers/types";
 import { ClientOptions, EventPayload, FunctionOptions, StepFn } from "../types";
 import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
@@ -174,7 +174,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    */
   public async send<Event extends keyof Events>(
     name: Event,
-    payload: SingleOrArray<Omit<Events[Event], "name">>
+    payload: SingleOrArray<PartialK<Omit<Events[Event], "name" | "v">, "ts">>
   ): Promise<void>;
   /**
    * Send one or many events to Inngest. Takes an entire payload (including
@@ -200,12 +200,24 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    * }>("My App", "API_KEY");
    * ```
    */
-  public async send<Payload extends SingleOrArray<ValueOf<Events>>>(
-    payload: Payload
-  ): Promise<void>;
+  public async send<
+    Payload extends SingleOrArray<
+      {
+        [K in keyof Events]: PartialK<Omit<Events[K], "v">, "ts">;
+      }[keyof Events]
+    >
+  >(payload: Payload): Promise<void>;
   public async send<Event extends keyof Events>(
-    nameOrPayload: Event | SingleOrArray<ValueOf<Events>>,
-    maybePayload?: SingleOrArray<Omit<Events[Event], "name">>
+    nameOrPayload:
+      | Event
+      | SingleOrArray<
+          ValueOf<{
+            [K in keyof Events]: PartialK<Omit<Events[K], "v">, "ts">;
+          }>
+        >,
+    maybePayload?: SingleOrArray<
+      PartialK<Omit<Events[Event], "name" | "v">, "ts">
+    >
   ): Promise<void> {
     let payloads: ValueOf<Events>[];
 
