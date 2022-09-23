@@ -37,6 +37,8 @@ jobs:
           git config user.email "<>"
       - run: |
           echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
+          echo "registry=https://registry.npmjs.org/" >> .npmrc
+          echo "always-auth=true" >> .npmrc
           cat .npmrc
           yarn run release ${{ github.event.inputs.type }} --tag=${{ github.event.inputs.npm_tag }} --any-branch --no-tests
         env:

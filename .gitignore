@@ -9,3 +9,6 @@ src/version.ts
 
 # Generated API diffs for @microsoft/api-extractor CI
 temp/
+
+# Release-only files; tree must be clean on release, so these can't be modified
+.npmrc
