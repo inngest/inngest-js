@@ -11,10 +11,11 @@ export interface ClientOptions {
     name: string;
 }
 
+// Warning: (ae-forgotten-export) The symbol "EventName" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
 //
 // @public
-export const createFunction: <Event_1 extends EventPayload>(nameOrOpts: string | FunctionOptions, event: Event_1 extends EventPayload ? (Event_1 extends infer T ? { [K in keyof T]: K extends "name" ? Event_1[K] : never; } : never)[keyof Event_1] : never, fn: StepFn<Event_1, string, "step">) => InngestFunction<any>;
+export const createFunction: <Event_1 extends EventPayload>(nameOrOpts: string | FunctionOptions, event: EventName<Event_1>, fn: StepFn<Event_1, string, "step">) => InngestFunction<any>;
 
 // @public
 export const createScheduledFunction: (nameOrOpts: string | FunctionOptions, cron: string, fn: StepFn<null, string, "step">) => InngestFunction<any>;
@@ -63,9 +64,8 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "PartialK" needs to be exported by the entry point index.d.ts
     send<Event extends keyof Events>(name: Event, payload: SingleOrArray<PartialK<Omit<Events[Event], "name" | "v">, "ts">>): Promise<void>;
-    send<Payload extends SingleOrArray<{
-        [K in keyof Events]: PartialK<Omit<Events[K], "v">, "ts">;
-    }[keyof Events]>>(payload: Payload): Promise<void>;
+    // Warning: (ae-forgotten-export) The symbol "SendEventPayload" needs to be exported by the entry point index.d.ts
+    send<Payload extends SendEventPayload<Events>>(payload: Payload): Promise<void>;
 }
 
 // @public
