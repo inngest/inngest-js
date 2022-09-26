@@ -1,9 +1,8 @@
 // Import and set polyfills before other imports
-// eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-(window as any).global = window;
 import { Buffer } from "buffer";
 if (typeof window !== "undefined") {
   window.Buffer = Buffer;
+  window.global = window;
 }
 
 // Regular imports
