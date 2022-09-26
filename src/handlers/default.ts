@@ -1,10 +1,10 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
-import crypto from "crypto";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { Inngest } from "../components/Inngest";
 import { InngestFunction } from "../components/InngestFunction";
 import { fnIdParam, stepIdParam } from "../helpers/consts";
+import { createHash } from "../helpers/crypto";
 import {
   EventPayload,
   FunctionConfig,
@@ -170,7 +170,7 @@ export class InngestCommHandler {
     );
 
     // Decode the key from its hex representation into a bytestream
-    return `${prefix}${crypto.createHash("sha256").update(key).digest("hex")}`;
+    return `${prefix}${createHash("sha256").update(key).digest("hex")}`;
   }
 
   public createHandler(): any {
