@@ -1,5 +1,5 @@
 if (typeof global === "undefined") {
-  (global as any) = { crypto: window.crypto };
+  (global as any) = { crypto };
 }
 
 if (typeof window !== "undefined") {
