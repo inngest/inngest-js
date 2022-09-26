@@ -1,3 +1,10 @@
+// Import Buffer to polyfill it before others
+import { Buffer } from "buffer";
+if (typeof window !== "undefined") {
+  window.Buffer = Buffer;
+}
+
+// Regular imports
 import { z } from "zod";
 import {
   InngestCommHandler,

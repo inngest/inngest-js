@@ -46,8 +46,11 @@
   },
   "dependencies": {
     "axios": "^0.27.2",
+    "buffer": "^6.0.3",
     "cross-fetch": "^3.1.5",
+    "events": "^3.3.0",
     "isomorphic-crypto": "^3.0.0",
+    "stream": "^0.0.2",
     "zod": "^3.19.1"
   },
   "devDependencies": {
