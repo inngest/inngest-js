@@ -1,10 +1,13 @@
+// Grab crypto polyfill
+import { createHash } from "../helpers/crypto";
+
+// Regular imports
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { Inngest } from "../components/Inngest";
 import { InngestFunction } from "../components/InngestFunction";
 import { fnIdParam, stepIdParam } from "../helpers/consts";
-import { createHash } from "../helpers/crypto";
 import {
   EventPayload,
   FunctionConfig,
