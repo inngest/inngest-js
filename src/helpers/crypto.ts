@@ -1,21 +1,31 @@
-if (typeof global === "undefined") {
-  (global as any) = { crypto };
-}
-
-if (typeof window !== "undefined") {
-  window.global = global;
-}
-
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-var-requires */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import cryptoIsomorphic from "isomorphic-crypto";
-import type { createHash as createHashT } from "crypto";
-
-global.crypto = cryptoIsomorphic;
-
-if (typeof window !== "undefined") {
-  window.crypto = cryptoIsomorphic;
-}
-
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-export const createHash = cryptoIsomorphic.createHash as typeof createHashT;
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/require-await */
+export const sha256Hash =
+  typeof crypto === "undefined"
+    ? /**
+       * Node land - use `crypto` via an import
+       */
+      async (data: string): Promise<string> => {
+        return require("crypto")
+          .createHash("sha256")
+          .update(data)
+          .digest("hex");
+      }
+    : /**
+       * Browser/SW land - use web APIs
+       */
+      async (data: string): Promise<string> => {
+        return Array.from(
+          new Uint8Array(
+            await crypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode(data)
+            )
+          )
+        )
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+      };

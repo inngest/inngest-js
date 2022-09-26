@@ -1,13 +1,10 @@
-// Grab crypto polyfill
-import { createHash } from "../helpers/crypto";
-
-// Regular imports
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { Inngest } from "../components/Inngest";
 import { InngestFunction } from "../components/InngestFunction";
 import { fnIdParam, stepIdParam } from "../helpers/consts";
+import { sha256Hash } from "../helpers/crypto";
 import {
   EventPayload,
   FunctionConfig,
@@ -160,20 +157,18 @@ export class InngestCommHandler {
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
   // same signing key prefix.
-  private get hashedSigningKey(): string {
+  private async hashedSigningKey(): Promise<string> {
     if (!this.signingKey) {
       return "";
     }
 
     const prefix =
       this.signingKey.match(/^signkey-(test|prod)-/)?.shift() || "";
-    const key = Buffer.from(
-      this.signingKey.replace(/^signkey-(test|prod)-/, ""),
-      "hex"
-    );
 
     // Decode the key from its hex representation into a bytestream
-    return `${prefix}${createHash("sha256").update(key).digest("hex")}`;
+    return `${prefix}${await sha256Hash(
+      this.signingKey.replace(/^signkey-(test|prod)-/, "")
+    )}`;
   }
 
   public createHandler(): any {
@@ -277,7 +272,7 @@ export class InngestCommHandler {
 
     const config: AxiosRequestConfig = {
       headers: {
-        Authorization: `Bearer ${this.hashedSigningKey}`,
+        Authorization: `Bearer ${await this.hashedSigningKey()}`,
       },
     };
 
