@@ -1,4 +1,3 @@
-import { Response } from "cross-fetch";
 import { z } from "zod";
 import {
   InngestCommHandler,
