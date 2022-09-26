@@ -46,6 +46,7 @@
   },
   "dependencies": {
     "axios": "^0.27.2",
+    "cross-fetch": "^3.1.5",
     "zod": "^3.19.1"
   },
   "devDependencies": {
@@ -55,7 +56,6 @@
     "@typescript-eslint/eslint-plugin": "^5.38.0",
     "@typescript-eslint/parser": "^5.38.0",
     "concurrently": "^7.4.0",
-    "cross-fetch": "^3.1.5",
     "eslint": "^8.23.1",
     "eslint-config-prettier": "^8.5.0",
     "eslint-plugin-prettier": "^4.2.1",
