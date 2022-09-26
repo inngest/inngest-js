@@ -98,7 +98,7 @@ export class InngestCommHandler {
   private readonly inngestRegisterUrl: URL;
 
   protected readonly frameworkName: string = "default";
-  protected readonly signingKey: string | undefined;
+  protected signingKey: string | undefined;
 
   /**
    * An Axios instance used for communicating with Inngest Cloud.
