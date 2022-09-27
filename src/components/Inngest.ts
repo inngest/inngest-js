@@ -18,19 +18,19 @@ import { InngestStep } from "./InngestStep";
  * the first generic.
  *
  * ```ts
- * const inngest = new Inngest<Events>("My App", process.env.INNGEST_EVENT_KEY);
+ * const inngest = new Inngest<Events>({ name: "My App" });
  *
  * // or to provide custom events too
  * const inngest = new Inngest<
  *   Events & {
- *     "demo/event.blah": {
- *       name: "demo/event.blah";
+ *     "app/user.created": {
+ *       name: "app/user.created";
  *       data: {
- *         bar: boolean;
+ *         foo: boolean;
  *       };
  *     };
  *   }
- * >("My App", process.env.INNGEST_EVENT_KEY);
+ * >({ name: "My App" });
  * ```
  *
  * @public
@@ -72,19 +72,19 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    * the first generic.
    *
    * ```ts
-   * const inngest = new Inngest<Events>("My App", process.env.INNGEST_EVENT_KEY);
+   * const inngest = new Inngest<Events>({ name: "My App" });
    *
    * // or to provide custom events too
    * const inngest = new Inngest<
    *   Events & {
-   *     "demo/event.blah": {
-   *       name: "demo/event.blah";
+   *     "app/user.created": {
+   *       name: "app/user.created";
    *       data: {
-   *         bar: boolean;
+   *         foo: boolean;
    *       };
    *     };
    *   }
-   * >("My App", process.env.INNGEST_EVENT_KEY);
+   * >({ name: "My App" });
    * ```
    */
   constructor({
