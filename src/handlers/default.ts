@@ -124,15 +124,17 @@ export class InngestCommHandler {
 
     this.fns = functions.reduce<Record<string, InngestFunction<any>>>(
       (acc, fn) => {
-        if (acc[fn.id]) {
+        const id = fn.id(this.name);
+
+        if (acc[id]) {
           throw new Error(
-            `Duplicate function ID "${fn.id}"; please change a function's name or provide an explicit ID to avoid conflicts.`
+            `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`
           );
         }
 
         return {
           ...acc,
-          [fn.id]: fn,
+          [id]: fn,
         };
       },
       {}
@@ -256,7 +258,7 @@ export class InngestCommHandler {
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    return Object.values(this.fns).map((fn) => fn["getConfig"](url));
+    return Object.values(this.fns).map((fn) => fn["getConfig"](url, this.name));
   }
 
   protected async register(
