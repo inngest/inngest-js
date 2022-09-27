@@ -14,6 +14,17 @@ import {
 } from "./handlers/default";
 import { fnIdParam, stepIdParam } from "./helpers/consts";
 
+/**
+ * Okay but don't do this.
+ *
+ * The problem is that we're importing `"inngest"` which includes
+ * `./handlers/default.ts`, which includes the conditional crypto usage.
+ *
+ * Let's try NOT exporting the default handler directly from Inngest, and
+ * instead importing it from `"inngest/generic"` or similar.
+ *
+ * This way, we only import the crypto fun once we've sorted it? Maybe? I dunno.
+ */
 class CloudflareCommHandler extends InngestCommHandler {
   protected override frameworkName = "cloudflare-pages";
 
