@@ -71,14 +71,15 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     baseUrl: URL,
     appPrefix?: string
   ): FunctionConfig {
+    const id = this.id(appPrefix);
     return {
-      id: this.id(appPrefix),
+      id,
       name: this.name,
       triggers: [this.#trigger as FunctionTrigger],
       steps: Object.keys(this.#steps).reduce<FunctionConfig["steps"]>(
         (acc, stepId) => {
           const url = new URL(baseUrl.href);
-          url.searchParams.set(fnIdParam, this.id(appPrefix));
+          url.searchParams.set(fnIdParam, id);
           url.searchParams.set(stepIdParam, stepId);
 
           return {
@@ -118,7 +119,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
   #generateId(prefix?: string) {
     const join = "-";
 
-    return [prefix || "", this.#opts.name].join("-");
+    return [prefix || "", this.#opts.name].join("-")
       .toLowerCase()
       .replaceAll(/[^a-z0-9-]+/g, join)
       .replaceAll(/-+/g, join)
