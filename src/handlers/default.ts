@@ -124,15 +124,17 @@ export class InngestCommHandler {
 
     this.fns = functions.reduce<Record<string, InngestFunction<any>>>(
       (acc, fn) => {
-        if (acc[fn.id(this.name)]) {
+        const id = fn.id(this.name);
+
+        if (acc[id]) {
           throw new Error(
-            `Duplicate function ID "${fn.id(this.name)}"; please change a function's name or provide an explicit ID to avoid conflicts.`
+            `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`
           );
         }
 
         return {
           ...acc,
-          [fn.id(this.name)]: fn,
+          [id]: fn,
         };
       },
       {}
