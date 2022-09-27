@@ -1,10 +1,10 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
+import crypto from "crypto";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { Inngest } from "../components/Inngest";
 import { InngestFunction } from "../components/InngestFunction";
 import { fnIdParam, stepIdParam } from "../helpers/consts";
-import { sha256Hash } from "../helpers/crypto";
 import {
   EventPayload,
   FunctionConfig,
@@ -98,7 +98,7 @@ export class InngestCommHandler {
   private readonly inngestRegisterUrl: URL;
 
   protected readonly frameworkName: string = "default";
-  protected signingKey: string | undefined;
+  protected readonly signingKey: string | undefined;
 
   /**
    * An Axios instance used for communicating with Inngest Cloud.
@@ -157,18 +157,20 @@ export class InngestCommHandler {
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
   // same signing key prefix.
-  private async hashedSigningKey(): Promise<string> {
+  private get hashedSigningKey(): string {
     if (!this.signingKey) {
       return "";
     }
 
     const prefix =
       this.signingKey.match(/^signkey-(test|prod)-/)?.shift() || "";
+    const key = Buffer.from(
+      this.signingKey.replace(/^signkey-(test|prod)-/, ""),
+      "hex"
+    );
 
     // Decode the key from its hex representation into a bytestream
-    return `${prefix}${await sha256Hash(
-      this.signingKey.replace(/^signkey-(test|prod)-/, "")
-    )}`;
+    return `${prefix}${crypto.createHash("sha256").update(key).digest("hex")}`;
   }
 
   public createHandler(): any {
@@ -272,7 +274,7 @@ export class InngestCommHandler {
 
     const config: AxiosRequestConfig = {
       headers: {
-        Authorization: `Bearer ${await this.hashedSigningKey()}`,
+        Authorization: `Bearer ${this.hashedSigningKey}`,
       },
     };
 
