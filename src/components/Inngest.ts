@@ -1,4 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from "axios";
+import { envKeys } from "../helpers/consts";
 import {
   PartialK,
   SendEventPayload,
@@ -89,7 +90,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    */
   constructor({
     name,
-    eventKey = process.env.INNGEST_EVENT_KEY,
+    eventKey = process.env[envKeys.EventKey],
     inngestBaseUrl = "https://inn.gs/",
   }: ClientOptions) {
     if (!name) {

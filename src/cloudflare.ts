@@ -4,7 +4,7 @@ import {
   serve as defaultServe,
   ServeHandler,
 } from "./express";
-import { fnIdParam, stepIdParam } from "./helpers/consts";
+import { envKeys, fnIdParam, stepIdParam } from "./helpers/consts";
 
 class CloudflareCommHandler extends InngestCommHandler {
   protected override frameworkName = "remix";
@@ -12,8 +12,10 @@ class CloudflareCommHandler extends InngestCommHandler {
   public override createHandler() {
     return async ({
       request: req,
+      env,
     }: {
       request: Request;
+      env: Record<string, string | undefined>;
     }): Promise<Response> => {
       let reqUrl: URL;
 
@@ -23,6 +25,10 @@ class CloudflareCommHandler extends InngestCommHandler {
         return new Response(JSON.stringify(err), {
           status: 500,
         });
+      }
+
+      if (!this.signingKey && env[envKeys.SigningKey]) {
+        this.signingKey = env[envKeys.SigningKey];
       }
 
       switch (req.method) {
