@@ -16,7 +16,7 @@
   },
   "scripts": {
     "prebuild": "genversion --semi --double --es6 ./src/version.ts",
-    "build": "yarn run clean && tsc",
+    "build": "yarn run clean && tsc --project tsconfig.build.json",
     "test": "jest --passWithNoTests",
     "clean": "rm -rf ./dist",
     "postversion": "yarn run build && yarn run build:copy",
