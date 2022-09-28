@@ -13,6 +13,11 @@ import {
 } from "./types";
 import { version } from "./version";
 
+const registerResSchema = z.object({
+  status: z.number().default(200),
+  error: z.string().default("Successfully registered"),
+});
+
 type FetchT = typeof fetch;
 
 /**
@@ -288,16 +293,17 @@ export class InngestCommHandler {
       };
     }
 
-    const { status, error } = z
-      .object({
-        status: z.number().default(200),
-        error: z.string().default("Successfully registered"),
-      })
-      .parse(
-        (await res.json()) || { status: 200, error: "Successfully registered" }
-      );
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    let data: z.input<typeof registerResSchema> = {};
 
-    console.log("Registered:", res.status, res.statusText, res.json());
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      data = await res.json();
+    } catch (err) {
+      console.warn("Couldn't unpack register response:", err);
+    }
+    const { status, error } = registerResSchema.parse(data);
+    console.log("Registered:", res.status, res.statusText, data);
 
     return { status, message: error };
   }
