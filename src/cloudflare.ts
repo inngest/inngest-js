@@ -76,7 +76,7 @@ class CloudflareCommHandler extends InngestCommHandler {
  *
  * @public
  */
-export const register: ServeHandler = (
+export const serve: ServeHandler = (
   nameOrInngest,
   signingKey,
   fns,
