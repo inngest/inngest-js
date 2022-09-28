@@ -1,6 +1,6 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
-import shajs from "sha.js";
+import fetch from "cross-fetch";
 import type { Request, Response } from "express";
+import shajs from "sha.js";
 import { z } from "zod";
 import { Inngest } from "./components/Inngest";
 import { InngestFunction } from "./components/InngestFunction";
@@ -99,13 +99,7 @@ export class InngestCommHandler {
 
   protected readonly frameworkName: string = "default";
   protected signingKey: string | undefined;
-
-  /**
-   * An Axios instance used for communicating with Inngest Cloud.
-   *
-   * {@link https://npm.im/axios}
-   */
-  private readonly client: AxiosInstance;
+  private readonly headers: Record<string, string>;
 
   /**
    * A private collection of functions that are being served. This map is used
@@ -146,15 +140,10 @@ export class InngestCommHandler {
 
     this.signingKey = signingKey;
 
-    this.client = axios.create({
-      timeout: 0,
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": `InngestJS v${version} (${this.frameworkName})`,
-      },
-      validateStatus: () => true, // all status codes return a response
-      maxRedirects: 0,
-    });
+    this.headers = {
+      "Content-Type": "application/json",
+      "User-Agent": `InngestJS v${version} (${this.frameworkName})`,
+    };
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
@@ -274,33 +263,38 @@ export class InngestCommHandler {
       v: "0.1",
     };
 
-    const config: AxiosRequestConfig = {
-      headers: {
-        Authorization: `Bearer ${this.hashedSigningKey}`,
-      },
-    };
-
-    let res: AxiosResponse<any, any>;
+    let res: globalThis.Response;
 
     try {
-      res = await this.client.post(this.inngestRegisterUrl.href, body, config);
+      res = await fetch(this.inngestRegisterUrl, {
+        body: JSON.stringify(body),
+        headers: {
+          ...this.headers,
+          Authorization: `Bearer ${this.hashedSigningKey}`,
+        },
+        redirect: "follow",
+      });
     } catch (err: unknown) {
       console.error(err);
 
       return {
         status: 500,
-        message: "Failed to register",
+        message: `Failed to register${
+          err instanceof Error ? `; ${err.message}` : ""
+        }`,
       };
     }
-
-    console.log("Registered:", res.status, res.statusText, res.data);
 
     const { status, error } = z
       .object({
         status: z.number().default(200),
         error: z.string().default("Successfully registered"),
       })
-      .parse(res.data || { status: 200, error: "Successfully registered" });
+      .parse(
+        (await res.json()) || { status: 200, error: "Successfully registered" }
+      );
+
+    console.log("Registered:", res.status, res.statusText, res.json());
 
     return { status, message: error };
   }
