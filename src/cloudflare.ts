@@ -83,6 +83,9 @@ export const register: ServeHandler = (
   opts
 ): any => {
   return defaultServe(
-    new CloudflareCommHandler(nameOrInngest, signingKey, fns, opts)
+    new CloudflareCommHandler(nameOrInngest, signingKey, fns, {
+      fetch: fetch.bind(globalThis),
+      ...opts,
+    })
   );
 };

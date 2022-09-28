@@ -172,6 +172,8 @@ export interface RegisterOptions {
    * Defaults to https://api.inngest.com/fn/register
    */
   inngestRegisterUrl?: string;
+
+  fetch?: typeof fetch;
 }
 
 /**

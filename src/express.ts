@@ -1,4 +1,3 @@
-import fetch from "cross-fetch";
 import type { Request, Response } from "express";
 import shajs from "sha.js";
 import { z } from "zod";
@@ -13,6 +12,8 @@ import {
   StepRunResponse,
 } from "./types";
 import { version } from "./version";
+
+type FetchT = typeof fetch;
 
 /**
  * A handler for serving Inngest functions. This type should be used
@@ -100,6 +101,7 @@ export class InngestCommHandler {
   protected readonly frameworkName: string = "default";
   protected signingKey: string | undefined;
   private readonly headers: Record<string, string>;
+  private readonly fetch: FetchT;
 
   /**
    * A private collection of functions that are being served. This map is used
@@ -111,7 +113,7 @@ export class InngestCommHandler {
     nameOrInngest: string | Inngest<any>,
     signingKey: string,
     functions: InngestFunction<any>[],
-    { inngestRegisterUrl }: RegisterOptions = {}
+    { inngestRegisterUrl, fetch }: RegisterOptions = {}
   ) {
     this.name =
       typeof nameOrInngest === "string" ? nameOrInngest : nameOrInngest.name;
@@ -144,6 +146,9 @@ export class InngestCommHandler {
       "Content-Type": "application/json",
       "User-Agent": `InngestJS v${version} (${this.frameworkName})`,
     };
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    this.fetch = fetch || (require("cross-fetch") as FetchT);
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
@@ -266,7 +271,7 @@ export class InngestCommHandler {
     let res: globalThis.Response;
 
     try {
-      res = await fetch(this.inngestRegisterUrl, {
+      res = await this.fetch(this.inngestRegisterUrl, {
         method: "POST",
         body: JSON.stringify(body),
         headers: {
