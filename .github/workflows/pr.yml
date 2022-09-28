@@ -28,3 +28,11 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
       - run: yarn run api-extractor run
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: yarn lint
