@@ -250,6 +250,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     }
 
     const response = await fetch(this.inngestApiUrl, {
+      method: "POST",
       body: JSON.stringify(payloads),
       headers: { ...this.headers },
     });

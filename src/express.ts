@@ -267,6 +267,7 @@ export class InngestCommHandler {
 
     try {
       res = await fetch(this.inngestRegisterUrl, {
+        method: "POST",
         body: JSON.stringify(body),
         headers: {
           ...this.headers,
