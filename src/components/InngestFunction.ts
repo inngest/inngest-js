@@ -119,7 +119,8 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
   #generateId(prefix?: string) {
     const join = "-";
 
-    return [prefix || "", this.#opts.name].join("-")
+    return [prefix || "", this.#opts.name]
+      .join("-")
       .toLowerCase()
       .replaceAll(/[^a-z0-9-]+/g, join)
       .replaceAll(/-+/g, join)

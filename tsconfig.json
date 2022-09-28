@@ -19,6 +19,5 @@
     "noUncheckedIndexedAccess": true,
     "strictNullChecks": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["src/**/*.test.ts", "src/**/*.js"]
+  "include": ["src/**/*"]
 }
