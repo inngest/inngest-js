@@ -4,7 +4,7 @@ import {
   InngestCommHandler,
   serve as defaultServe,
   ServeHandler,
-} from "./handlers/default";
+} from "./express";
 import { fnIdParam, stepIdParam } from "./helpers/consts";
 
 class NextCommHandler extends InngestCommHandler {
