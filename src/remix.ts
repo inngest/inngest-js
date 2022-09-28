@@ -4,7 +4,7 @@ import {
   InngestCommHandler,
   serve as defaultServe,
   ServeHandler,
-} from "./handlers/default";
+} from "./express";
 import { fnIdParam, stepIdParam } from "./helpers/consts";
 
 /**
@@ -49,9 +49,17 @@ class RemixCommHandler extends InngestCommHandler {
               stepId: reqUrl.searchParams.get(stepIdParam),
             });
 
-          const stepRes = await this.runStep(fnId, stepId, req.body);
+          const stepRes = await this.runStep(fnId, stepId, await req.json());
 
-          return new Response(JSON.stringify(stepRes), { status: 200 });
+          if (stepRes.status === 500) {
+            return new Response(JSON.stringify(stepRes.error), {
+              status: stepRes.status,
+            });
+          }
+
+          return new Response(JSON.stringify(stepRes.body), {
+            status: stepRes.status,
+          });
         }
 
         default:
