@@ -271,7 +271,7 @@ export class InngestCommHandler {
     let res: globalThis.Response;
 
     try {
-      res = await this.fetch(this.inngestRegisterUrl, {
+      res = await this.fetch(this.inngestRegisterUrl.href, {
         method: "POST",
         body: JSON.stringify(body),
         headers: {
