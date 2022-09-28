@@ -160,13 +160,10 @@ export class InngestCommHandler {
 
     const prefix =
       this.signingKey.match(/^signkey-(test|prod)-/)?.shift() || "";
-    const key = Buffer.from(
-      this.signingKey.replace(/^signkey-(test|prod)-/, ""),
-      "hex"
-    );
+    const key = this.signingKey.replace(/^signkey-(test|prod)-/, "");
 
     // Decode the key from its hex representation into a bytestream
-    return `${prefix}${shajs("sha256").update(key).digest("hex")}`;
+    return `${prefix}${shajs("sha256").update(key, "hex").digest("hex")}`;
   }
 
   public createHandler(): any {
