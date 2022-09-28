@@ -6,6 +6,7 @@ import {
   ServeHandler,
 } from "./handlers/default";
 import { fnIdParam, stepIdParam } from "./helpers/consts";
+import { landing } from "./landing";
 
 class NextCommHandler extends InngestCommHandler {
   protected override frameworkName = "nextjs";
@@ -26,6 +27,11 @@ class NextCommHandler extends InngestCommHandler {
       }
 
       switch (req.method) {
+        case "GET": {
+          // Grab landing page and serve
+          return void res.status(200).send(landing);
+        }
+
         case "PUT": {
           // Push config to Inngest.
           const { status, message } = await this.register(reqUrl);

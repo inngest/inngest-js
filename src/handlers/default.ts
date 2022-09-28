@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Inngest } from "../components/Inngest";
 import { InngestFunction } from "../components/InngestFunction";
 import { fnIdParam, stepIdParam } from "../helpers/consts";
+import { landing } from "../landing";
 import {
   EventPayload,
   FunctionConfig,
@@ -192,6 +193,11 @@ export class InngestCommHandler {
       }
 
       switch (req.method) {
+        case "GET": {
+          // Grab landing page and serve
+          return void res.status(200).send(landing);
+        }
+
         case "PUT": {
           // Push config to Inngest.
           const { status, message } = await this.register(reqUrl);
