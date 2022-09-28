@@ -69,47 +69,9 @@ export class Inngest<Events extends Record<string, EventPayload>> {
 }
 
 // @public
-export class InngestCommHandler {
-    constructor(nameOrInngest: string | Inngest<any>, signingKey: string, functions: InngestFunction<any>[], { inngestRegisterUrl }?: RegisterOptions);
-    // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
-    //
-    // (undocumented)
-    protected configs(url: URL): FunctionConfig[];
-    // (undocumented)
-    createHandler(): any;
-    // (undocumented)
-    protected readonly frameworkName: string;
-    // (undocumented)
-    name: string;
-    // (undocumented)
-    protected register(url: URL): Promise<{
-        status: number;
-        message: string;
-    }>;
-    // Warning: (ae-forgotten-export) The symbol "StepRunResponse" needs to be exported by the entry point index.d.ts
-    //
-    // (undocumented)
-    protected runStep(functionId: string, stepId: string, data: any): Promise<StepRunResponse>;
-    // (undocumented)
-    protected readonly signingKey: string | undefined;
-    // (undocumented)
-    protected signResponse(): string;
-    // (undocumented)
-    protected validateSignature(): boolean;
-}
-
-// @public
-export type RegisterHandler = (
-nameOrInngest: string | Inngest<any>,
-signingKey: string, functions: InngestFunction<any>[], opts?: RegisterOptions) => any;
-
-// @public
 export interface RegisterOptions {
     inngestRegisterUrl?: string;
 }
-
-// @public
-export const serve: <Events extends Record<string, EventPayload>>(...args: [nameOrInngest: string | Inngest<Events>, signingKey: string, functions: InngestFunction<Events>[], opts?: RegisterOptions | undefined] | [commHandler: InngestCommHandler]) => any;
 
 // @public
 export type StepFn<Event, FnId, StepId> = (arg: {
