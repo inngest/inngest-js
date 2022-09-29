@@ -28,6 +28,8 @@ class NextCommHandler extends InngestCommHandler {
         return void res.status(500).json(err);
       }
 
+      res.setHeader("x-inngest-sdk", "inngest-js/next");
+
       switch (req.method) {
         case "GET": {
           const showLandingPage = this.shouldShowLandingPage(

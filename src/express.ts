@@ -150,6 +150,8 @@ export class InngestCommHandler {
       {}
     );
 
+    // TODO: This should change if the dev server is available.
+
     this.inngestRegisterUrl = new URL(
       inngestRegisterUrl || "https://api.inngest.com/fn/register"
     );
