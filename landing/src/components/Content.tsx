@@ -11,31 +11,80 @@ export const Content = () => {
 
   const fns: FunctionConfig[] = [
     {
-      id: "123",
-      name: "Foo",
+      id: "send-pr-creation-alert",
+      name: "Send PR creation alert",
       steps: {},
       triggers: [
         {
-          event: "demo/event.sent",
+          event: "github/pull_request",
+        },
+      ],
+    },
+    {
+      id: "send-welcome-email",
+      name: "📧 Send welcome email",
+      steps: {},
+      triggers: [
+        {
+          event: "app/user.created",
+        },
+      ],
+    },
+    {
+      id: "backfill-user-data",
+      name: "Backfill user data",
+      steps: {},
+      triggers: [
+        {
+          event: "app/user.created",
+        },
+      ],
+    },
+    {
+      id: "weekly-cleanup",
+      name: "🧹 Weekly cleanup",
+      steps: {},
+      triggers: [
+        {
+          cron: "0 0 * * 0",
+        },
+      ],
+    },
+    {
+      id: "process-profile-photos",
+      name: "Process profile photos",
+      steps: {},
+      triggers: [
+        {
+          event: "app/user.profile.photo.updated",
         },
       ],
     },
   ];
 
   return (
-    <div class="flex flex-col gap-4 p-4">
-      <div class="text-2xl">✅ Your functions are set up correctly</div>
-
-      <div class="flex flex-row w-full justify-center mt-8">
+    <>
+      <div class="flex flex-col gap-4 p-20 bg-gray-100">
+        <div class="text-3xl">✅ Your functions are set up correctly</div>
         <div>
-          <div class="flex w-[60rem] max-w-screen-md">Found 4 functions</div>
+          <code>inngest@v0.55.1</code>
+        </div>
+      </div>
+      <div class="w-full flex items-center justify-center mt-8 p-4">
+        <div class="w-[60rem] max-w-full">
+          <div class="mb-8">Found 4 functions</div>
           <div class="flex flex-col">
-            {fns.map((fn) => (
-              <FunctionBlock config={fn} />
+            <div class="w-full grid grid-cols-[1fr_1fr_1fr] font-semibold border-b-2 border-slate-300 pb-1">
+              <div>Name</div>
+              <div>ID</div>
+              <div>Event / Cron</div>
+            </div>
+            {fns.map((fn, i) => (
+              <FunctionBlock config={fn} altBg={i % 2 === 0} />
             ))}
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 };
