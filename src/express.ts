@@ -6,7 +6,9 @@ import { InngestFunction } from "./components/InngestFunction";
 import { envKeys, queryKeys } from "./helpers/consts";
 import { strBoolean } from "./helpers/scalar";
 import { landing } from "./landing";
+import { available, devserverURL } from "./helpers/devserver";
 import type {
+  EventPayload,
   FunctionConfig,
   IntrospectRequest,
   RegisterOptions,
@@ -149,8 +151,6 @@ export class InngestCommHandler {
       },
       {}
     );
-
-    // TODO: This should change if the dev server is available.
 
     this.inngestRegisterUrl = new URL(
       inngestRegisterUrl || "https://api.inngest.com/fn/register"
@@ -308,8 +308,15 @@ export class InngestCommHandler {
 
     let res: globalThis.Response;
 
+    // Whenever we register, we check to see if the dev server is up.  This
+    // is a noop and returns false in production.
+    let registerURL = this.inngestRegisterUrl;
+    if (await available()) {
+      registerURL = devserverURL("/fn/register");
+    }
+
     try {
-      res = await this.fetch(this.inngestRegisterUrl.href, {
+      res = await this.fetch(registerURL.href, {
         method: "POST",
         body: JSON.stringify(body),
         headers: {
@@ -339,7 +346,7 @@ export class InngestCommHandler {
       console.warn("Couldn't unpack register response:", err);
     }
     const { status, error } = registerResSchema.parse(data);
-    console.log("Registered:", res.status, res.statusText, data);
+    console.log("Registered Inngest functions:", res.status, res.statusText, data);
 
     return { status, message: error };
   }

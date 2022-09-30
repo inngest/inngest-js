@@ -28,7 +28,7 @@ class NextCommHandler extends InngestCommHandler {
         return void res.status(500).json(err);
       }
 
-      res.setHeader("x-inngest-sdk", "inngest-js/next");
+      res.setHeader("x-inngest-sdk", `js/${this.frameworkName}`);
 
       switch (req.method) {
         case "GET": {

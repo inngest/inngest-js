@@ -33,6 +33,9 @@ class RemixCommHandler extends InngestCommHandler {
       } catch (err) {
         return new Response(JSON.stringify(err), {
           status: 500,
+          headers: {
+            "x-inngest-sdk": `js/${this.frameworkName}`,
+          },
         });
       }
 
@@ -59,6 +62,7 @@ class RemixCommHandler extends InngestCommHandler {
           return new Response(landing, {
             status: 200,
             headers: {
+              "x-inngest-sdk": `js/${this.frameworkName}`,
               "content-type": "text/html;charset=UTF-8",
             },
           });
@@ -67,7 +71,12 @@ class RemixCommHandler extends InngestCommHandler {
         case "PUT": {
           // Push config to Inngest.
           const { status, message } = await this.register(reqUrl);
-          return new Response(JSON.stringify({ message }), { status });
+          return new Response(JSON.stringify({ message }), {
+            status,
+            headers: {
+              "x-inngest-sdk": `js/${this.frameworkName}`,
+            },
+          });
         }
 
         case "POST": {
@@ -84,16 +93,21 @@ class RemixCommHandler extends InngestCommHandler {
 
           const stepRes = await this.runStep(fnId, stepId, await req.json());
 
-          if (stepRes.status === 500) {
-            return new Response(JSON.stringify(stepRes.error), {
-              status: stepRes.status,
-            });
-          }
-
-          return new Response(JSON.stringify(stepRes.body), {
-            status: stepRes.status,
+          return new Response(JSON.stringify(stepRes), {
+            status: stepRes.status || 200,
+            headers: {
+              "x-inngest-sdk": `js/${this.frameworkName}`,
+            },
           });
         }
+
+        default:
+          return new Response(null, {
+            status: 405,
+            headers: {
+              "x-inngest-sdk": `js/${this.frameworkName}`,
+            },
+          });
       }
 
       return new Response(null, { status: 405 });
