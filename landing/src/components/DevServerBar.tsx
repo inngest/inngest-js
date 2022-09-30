@@ -6,6 +6,12 @@ export const DevServerBar = () => {
     <div class="bg-gray-200 top-0 w-full p-4 flex flex-row items-center gap-5">
       <div class="font-medium text-gray-900 text-xl">Inngest</div>
       <div class="h-6 w-1 bg-gray-300" />
+      <a href="" class="bg-gray-300 px-2 py-0.5 rounded no-underline">
+        SDK
+      </a>
+      <a href="" disabled class="bg-gray-300 px-2 py-0.5 rounded no-underline">
+        Dev Server
+      </a>
       <DevServerPill />
 
       <a href="#" class="text-gray-700 font-semibold">

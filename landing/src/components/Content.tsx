@@ -73,6 +73,38 @@ export const Content = () => {
           </div>
         </Wrapper>
       </div>
+      <div>
+        <Wrapper>
+          <div class="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 py-4 space-y-4 space-x-0 lg:space-y-0 lg:space-x-6">
+            {[
+              {
+                title: "Foo",
+                description: "Description",
+                href: "#",
+              },
+              {
+                title: "Foo",
+                description: "Description",
+                href: "#",
+              },
+              {
+                title: "Foo",
+                description: "Description",
+                href: "#",
+              },
+            ].map((card) => (
+              <a
+                href="#"
+                class="bg-white rounded border-1 border-black shadow-xl p-4 flex flex-col space-y-2 transition-all hover:scale-105 hover:shadow-2xl"
+              >
+                <div class="font-semibold text-lg">{card.title}</div>
+                <div>{card.description}</div>
+                <div class="text-right">Explore →</div>
+              </a>
+            ))}
+          </div>
+        </Wrapper>
+      </div>
       <div class="w-full flex items-center justify-center mt-8 p-4">
         <Wrapper>
           <div class="flex flex-row justify-between">
