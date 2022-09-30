@@ -106,4 +106,23 @@ yarn dev # build/lint/test
 
 We use [Volta](https://volta.sh/) to manage Node/Yarn versions.
 
-When making a pull request, make sure to commit the changed `etc/inngest.api.md` file; this is a generated types/docs file that will highlight changes to the exposed API.
+> When making a pull request, make sure to commit the changed `etc/inngest.api.md` file; this is a generated types/docs file that will highlight changes to the exposed API.
+
+### Locally linking (`npm|yarn link`)
+
+In order to provide sensible namespaced imports such as `"inngest/next"`, the package actually builds to _and deploys from_ `dist/`.
+
+To replicate this locally to test changes with other local repos, you can link the project like so (replace `npm` for `yarn` if desired):
+
+```sh
+# in this repo
+yarn build
+yarn prelink
+cd dist/
+yarn link
+```
+
+```sh
+# in another repo
+yarn link inngest
+```
