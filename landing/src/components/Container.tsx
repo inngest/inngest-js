@@ -4,10 +4,16 @@ interface Props {
   children: ComponentChildren;
 }
 
+/**
+ * A full-width container.
+ */
 export const Container = ({ children }: Props) => {
   return <div class="w-full">{children}</div>;
 };
 
+/**
+ * A consistent wrapper for page content.
+ */
 export const Wrapper = ({ children }: Props) => {
   return (
     <div class="w-full flex justify-center">

@@ -1,5 +1,9 @@
 import { ConfigErr } from "../types";
 
+/**
+ * A map of config errors to static rendered JSX elements. These errors will be
+ * rendered when showing erroring functions in the list.
+ */
 export const configErrors: Record<ConfigErr, JSX.Element> = {
   [ConfigErr.EmptyTrigger]: (
     <>

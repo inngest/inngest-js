@@ -1,20 +1,20 @@
 import { useState } from "preact/hooks";
 import { classNames } from "../utils/classnames";
 
+/**
+ * A nav bar intended to be at the top of the page.
+ */
 export const DevServerBar = () => {
   return (
     <div class="bg-gray-200 top-0 w-full p-4 flex flex-row items-center gap-5">
       <div class="font-medium text-gray-900 text-xl">Inngest SDK</div>
-      {/* <div class="h-6 w-1 bg-gray-300" />
-      <DevServerPill />
-
-      <a href="#" class="text-gray-700 font-semibold">
-        Learn more
-      </a> */}
     </div>
   );
 };
 
+/**
+ * A large pill showing dev server connection status.
+ */
 export const DevServerPill = () => {
   const [on, setOn] = useState(true);
 

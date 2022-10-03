@@ -4,6 +4,9 @@ interface SpinnerProps {
   class?: string;
 }
 
+/**
+ * A small loading SVG that spins using CSS.
+ */
 export const Spinner = ({ class: className = "" }: SpinnerProps) => {
   return (
     <svg

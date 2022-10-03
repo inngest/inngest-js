@@ -8,18 +8,35 @@ interface Props {
   altBg?: boolean;
 }
 
+/**
+ * Renders a single entry for a found function.
+ */
 export const FunctionBlock = ({ config, altBg }: Props) => {
+  /**
+   * Figure out here what kind of function it is so that we can approriately
+   * label it.
+   *
+   * This is naive and doesn't take in to account functions with multiple
+   * triggers.
+   */
   const type = useMemo<"cron" | "event">(() => {
     const trigger = config.triggers[0] as any;
     if (trigger.cron) return "cron";
     return "event";
   }, [config.triggers]);
 
+  /**
+   * Figure out the "expression" used. This doubles up as the found `cron` if
+   * it's a scheduled function.
+   */
   const expression = useMemo(() => {
     const trigger = config.triggers[0] as any;
     return trigger.cron || trigger.event || "";
   }, [config.triggers]);
 
+  /**
+   * Figure out if we have errors to show.
+   */
   const hasErrors = useMemo(
     () => Boolean(config.errors?.size),
     [config.errors]

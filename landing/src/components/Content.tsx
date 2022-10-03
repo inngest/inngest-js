@@ -4,12 +4,23 @@ import { Wrapper } from "./Container";
 import { FunctionBlock } from "./FunctionBlock";
 import { Spinner } from "./Loading";
 
+/**
+ * A messy catch-all component to render almost the entire landing page.
+ */
 export const Content = () => {
   const { loading, value: fns, retry: refresh } = useFnIntrospect();
+
+  /**
+   * Figure out if we have errors based on the latest fetched functions.
+   */
   const hasErrors = useMemo(() => {
     return fns?.functions.some((fn) => fn.errors?.size) || false;
   }, [fns?.functions]);
 
+  /**
+   * Memoise a set of quick-start cards. They're memoised so that we can adjust
+   * them in the future based on the above fetched config.
+   */
   const quickStartCards = useMemo(() => {
     return [
       {
@@ -35,59 +46,6 @@ export const Content = () => {
   if (loading) {
     return <Spinner class="h-8 w-8" />;
   }
-
-  // const fns: FunctionConfig[] = [
-  //   {
-  //     id: "send-pr-creation-alert",
-  //     name: "Send PR creation alert",
-  //     steps: {},
-  //     triggers: [
-  //       {
-  //         event: "github/pull_request",
-  //       },
-  //     ],
-  //   },
-  //   {
-  //     id: "send-welcome-email",
-  //     name: "📧 Send welcome email",
-  //     steps: {},
-  //     triggers: [
-  //       {
-  //         event: "app/user.created",
-  //       },
-  //     ],
-  //   },
-  //   {
-  //     id: "backfill-user-data",
-  //     name: "Backfill user data",
-  //     steps: {},
-  //     triggers: [
-  //       {
-  //         event: "app/user.created",
-  //       },
-  //     ],
-  //   },
-  //   {
-  //     id: "weekly-cleanup",
-  //     name: "🧹 Weekly cleanup",
-  //     steps: {},
-  //     triggers: [
-  //       {
-  //         cron: "0 0 * * 0",
-  //       },
-  //     ],
-  //   },
-  //   {
-  //     id: "process-profile-photos",
-  //     name: "Process profile photos",
-  //     steps: {},
-  //     triggers: [
-  //       {
-  //         event: "app/user.profile.photo.updated",
-  //       },
-  //     ],
-  //   },
-  // ];
 
   return (
     <>
