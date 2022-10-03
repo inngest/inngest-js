@@ -96,7 +96,9 @@ export const Content = () => {
           <div class="text-3xl">
             {hasErrors
               ? "❌ Your functions are not set up correctly"
-              : "✅ Your functions are set up correctly"}
+              : fns?.functions.length
+              ? "✅ Your functions are set up correctly"
+              : "❎ No functions detected"}
           </div>
           <div class="ml-12 opacity-75">
             <code>inngest-{fns?.sdk}</code>
