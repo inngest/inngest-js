@@ -70,7 +70,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
 
 // @public
 export class InngestCommHandler {
-    constructor(nameOrInngest: string | Inngest<any>, signingKey: string, functions: InngestFunction<any>[], { inngestRegisterUrl }?: RegisterOptions);
+    constructor(nameOrInngest: string | Inngest<any>, signingKey: string, functions: InngestFunction<any>[], { inngestRegisterUrl, landingPage }?: RegisterOptions);
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
@@ -86,10 +86,17 @@ export class InngestCommHandler {
         status: number;
         message: string;
     }>;
+    // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    protected registerBody(url: URL): RegisterRequest;
     // Warning: (ae-forgotten-export) The symbol "StepRunResponse" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
     protected runStep(functionId: string, stepId: string, data: any): Promise<StepRunResponse>;
+    // (undocumented)
+    protected shouldShowLandingPage(strEnvVar: string | undefined): boolean;
+    protected readonly showLandingPage: boolean | undefined;
     // (undocumented)
     protected readonly signingKey: string | undefined;
     // (undocumented)
@@ -106,6 +113,7 @@ signingKey: string, functions: InngestFunction<any>[], opts?: RegisterOptions) =
 // @public
 export interface RegisterOptions {
     inngestRegisterUrl?: string;
+    landingPage?: boolean;
 }
 
 // @public

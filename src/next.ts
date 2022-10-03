@@ -5,7 +5,7 @@ import {
   serve as defaultServe,
   ServeHandler,
 } from "./handlers/default";
-import { fnIdParam, stepIdParam } from "./helpers/consts";
+import { envKeys, queryKeys } from "./helpers/consts";
 import { landing } from "./landing";
 
 class NextCommHandler extends InngestCommHandler {
@@ -22,12 +22,23 @@ class NextCommHandler extends InngestCommHandler {
           req.url as string,
           `${scheme}://${req.headers.host || ""}`
         );
+        reqUrl.searchParams.delete(queryKeys.Introspect);
       } catch (err) {
         return void res.status(500).json(err);
       }
 
       switch (req.method) {
         case "GET": {
+          const showLandingPage = this.shouldShowLandingPage(
+            process.env[envKeys.LandingPage]
+          );
+
+          if (!showLandingPage) break;
+
+          if (Object.hasOwnProperty.call(req.query, queryKeys.Introspect)) {
+            return void res.status(200).json(this.registerBody(reqUrl));
+          }
+
           // Grab landing page and serve
           return void res.status(200).send(landing);
         }
@@ -46,8 +57,8 @@ class NextCommHandler extends InngestCommHandler {
               stepId: z.string().min(1),
             })
             .parse({
-              fnId: req.query[fnIdParam],
-              stepId: req.query[stepIdParam],
+              fnId: req.query[queryKeys.FnId],
+              stepId: req.query[queryKeys.StepId],
             });
 
           const stepRes = await this.runStep(fnId, stepId, req.body);
@@ -58,10 +69,9 @@ class NextCommHandler extends InngestCommHandler {
 
           return void res.status(stepRes.status).json(stepRes.body);
         }
-
-        default:
-          return void res.status(405).end();
       }
+
+      return void res.status(405).end();
     };
   }
 }

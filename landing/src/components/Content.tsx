@@ -1,105 +1,123 @@
-import type { FunctionConfig } from "../../../src/types";
+import { useMemo } from "preact/hooks";
+import { useFnIntrospect } from "../hooks/useFnIntrospect";
 import { Wrapper } from "./Container";
 import { FunctionBlock } from "./FunctionBlock";
 import { Spinner } from "./Loading";
 
 export const Content = () => {
-  const isReady = true;
+  const { loading, value: fns, retry: refresh } = useFnIntrospect();
+  const hasErrors = useMemo(() => {
+    return fns?.functions.some((fn) => fn.errors?.size) || false;
+  }, [fns?.functions]);
 
-  if (!isReady) {
+  const quickStartCards = useMemo(() => {
+    return [
+      {
+        title: "🧑‍💻 Writing functions",
+        description:
+          "Get started writing your serverless background functions and scheduled tasks.",
+        href: "https://www.inngest.com/docs/functions",
+      },
+      {
+        title: "📢 Sending events",
+        description:
+          "Learn how to trigger your functions by sending events from your code.",
+        href: "https://www.inngest.com/docs/events",
+      },
+      {
+        title: "🚢 Deploying",
+        description: "Deploy functions to your platform of choice.",
+        href: "https://www.inngest.com/docs/deploy",
+      },
+    ];
+  }, []);
+
+  if (loading) {
     return <Spinner class="h-8 w-8" />;
   }
 
-  const fns: FunctionConfig[] = [
-    {
-      id: "send-pr-creation-alert",
-      name: "Send PR creation alert",
-      steps: {},
-      triggers: [
-        {
-          event: "github/pull_request",
-        },
-      ],
-    },
-    {
-      id: "send-welcome-email",
-      name: "📧 Send welcome email",
-      steps: {},
-      triggers: [
-        {
-          event: "app/user.created",
-        },
-      ],
-    },
-    {
-      id: "backfill-user-data",
-      name: "Backfill user data",
-      steps: {},
-      triggers: [
-        {
-          event: "app/user.created",
-        },
-      ],
-    },
-    {
-      id: "weekly-cleanup",
-      name: "🧹 Weekly cleanup",
-      steps: {},
-      triggers: [
-        {
-          cron: "0 0 * * 0",
-        },
-      ],
-    },
-    {
-      id: "process-profile-photos",
-      name: "Process profile photos",
-      steps: {},
-      triggers: [
-        {
-          event: "app/user.profile.photo.updated",
-        },
-      ],
-    },
-  ];
+  // const fns: FunctionConfig[] = [
+  //   {
+  //     id: "send-pr-creation-alert",
+  //     name: "Send PR creation alert",
+  //     steps: {},
+  //     triggers: [
+  //       {
+  //         event: "github/pull_request",
+  //       },
+  //     ],
+  //   },
+  //   {
+  //     id: "send-welcome-email",
+  //     name: "📧 Send welcome email",
+  //     steps: {},
+  //     triggers: [
+  //       {
+  //         event: "app/user.created",
+  //       },
+  //     ],
+  //   },
+  //   {
+  //     id: "backfill-user-data",
+  //     name: "Backfill user data",
+  //     steps: {},
+  //     triggers: [
+  //       {
+  //         event: "app/user.created",
+  //       },
+  //     ],
+  //   },
+  //   {
+  //     id: "weekly-cleanup",
+  //     name: "🧹 Weekly cleanup",
+  //     steps: {},
+  //     triggers: [
+  //       {
+  //         cron: "0 0 * * 0",
+  //       },
+  //     ],
+  //   },
+  //   {
+  //     id: "process-profile-photos",
+  //     name: "Process profile photos",
+  //     steps: {},
+  //     triggers: [
+  //       {
+  //         event: "app/user.profile.photo.updated",
+  //       },
+  //     ],
+  //   },
+  // ];
 
   return (
     <>
       <div class="flex flex-col gap-4 py-20 bg-gray-100">
         <Wrapper>
-          <div class="text-3xl">✅ Your functions are set up correctly</div>
+          <div class="text-3xl">
+            {hasErrors
+              ? "❌ Your functions are not set up correctly"
+              : "✅ Your functions are set up correctly"}
+          </div>
           <div class="ml-12 opacity-75">
-            <code>inngest@v0.55.1</code>
+            <code>inngest-{fns?.sdk}</code>
           </div>
         </Wrapper>
       </div>
       <div>
         <Wrapper>
-          <div class="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 py-4 space-y-4 space-x-0 lg:space-y-0 lg:space-x-6">
-            {[
-              {
-                title: "Foo",
-                description: "Description",
-                href: "#",
-              },
-              {
-                title: "Foo",
-                description: "Description",
-                href: "#",
-              },
-              {
-                title: "Foo",
-                description: "Description",
-                href: "#",
-              },
-            ].map((card) => (
+          <div class="w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 py-4 gap-4">
+            {quickStartCards.map((card) => (
               <a
-                href="#"
-                class="bg-white rounded border-1 border-black shadow-xl p-4 flex flex-col space-y-2 transition-all hover:scale-105 hover:shadow-2xl"
+                href={card.href}
+                target="_blank"
+                class="bg-white rounded border-1 border-black shadow-xl p-4 flex flex-col space-y-2 transition-all hover:scale-105 hover:shadow-2xl no-underline"
               >
                 <div class="font-semibold text-lg">{card.title}</div>
-                <div>{card.description}</div>
-                <div class="text-right">Explore →</div>
+                <div class="text-sm">{card.description}</div>
+                <div class="flex-1" />
+                <div class="text-right font-semibold text-purple-500">
+                  Explore →
+                </div>
               </a>
             ))}
           </div>
@@ -108,22 +126,49 @@ export const Content = () => {
       <div class="w-full flex items-center justify-center mt-8 p-4">
         <Wrapper>
           <div class="flex flex-row justify-between">
-            <div>Found 4 functions</div>
+            <div class="flex flex-row space-x-2 items-center justify-center">
+              <div class="font-semibold">
+                Found {fns?.functions.length || 0} functions
+              </div>
+              <div>
+                <div
+                  class="bg-gray-100 rounded px-1 py-0.5 hover:cursor-pointer text-sm uppercase"
+                  onClick={() => refresh()}
+                >
+                  Refresh
+                </div>
+              </div>
+            </div>
             <a class="mb-8" href="#">
               Don't see your function?
             </a>
           </div>
 
-          <div class="flex flex-col">
-            <div class="w-full grid grid-cols-[1fr_1fr_1fr] font-semibold border-b-2 border-slate-300 pb-1">
-              <div>Name</div>
-              <div>ID</div>
-              <div>Event / Cron</div>
+          {fns?.functions.length ? (
+            <div class="flex flex-col">
+              <div class="w-full grid grid-cols-[1fr_1fr_1fr] font-semibold border-b-2 border-slate-300 pb-1">
+                <div>Name</div>
+                <div>ID</div>
+                <div>Event / Cron</div>
+              </div>
+              {fns?.functions.map((fn, i) => (
+                <FunctionBlock config={fn} altBg={i % 2 === 0} />
+              ))}
             </div>
-            {fns.map((fn, i) => (
-              <FunctionBlock config={fn} altBg={i % 2 === 0} />
-            ))}
-          </div>
+          ) : (
+            <div class="bg-gray-100 rounded-lg flex flex-col space-y-2 items-center justify-center p-20">
+              <div class="font-semibold">No functions found</div>
+              <div class="opacity-75 text-center">
+                We found your handler, but couldn't see any exported functions.
+                <br />
+                Check out the{" "}
+                <a href="https://www.inngest.com/docs/functions">
+                  Writing functions
+                </a>{" "}
+                guide to get started.
+              </div>
+            </div>
+          )}
         </Wrapper>
       </div>
     </>
