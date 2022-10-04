@@ -70,10 +70,10 @@ export class Inngest<Events extends Record<string, EventPayload>> {
 
 // @public
 export interface RegisterOptions {
-    // (undocumented)
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
     landingPage?: boolean;
+    signingKey?: string;
 }
 
 // @public

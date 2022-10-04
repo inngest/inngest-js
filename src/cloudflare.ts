@@ -102,14 +102,9 @@ class CloudflareCommHandler extends InngestCommHandler {
  *
  * @public
  */
-export const serve: ServeHandler = (
-  nameOrInngest,
-  signingKey,
-  fns,
-  opts
-): any => {
+export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
   return defaultServe(
-    new CloudflareCommHandler(nameOrInngest, signingKey, fns, {
+    new CloudflareCommHandler(nameOrInngest, fns, {
       fetch: fetch.bind(globalThis),
       ...opts,
     })

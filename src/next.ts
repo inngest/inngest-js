@@ -82,13 +82,6 @@ class NextCommHandler extends InngestCommHandler {
  *
  * @public
  */
-export const serve: ServeHandler = (
-  nameOrInngest,
-  signingKey,
-  fns,
-  opts
-): any => {
-  return defaultServe(
-    new NextCommHandler(nameOrInngest, signingKey, fns, opts)
-  );
+export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
+  return defaultServe(new NextCommHandler(nameOrInngest, fns, opts));
 };

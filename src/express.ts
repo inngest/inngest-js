@@ -6,8 +6,7 @@ import { InngestFunction } from "./components/InngestFunction";
 import { envKeys, queryKeys } from "./helpers/consts";
 import { strBoolean } from "./helpers/scalar";
 import { landing } from "./landing";
-import {
-  EventPayload,
+import type {
   FunctionConfig,
   RegisterOptions,
   RegisterRequest,
@@ -15,11 +14,17 @@ import {
 } from "./types";
 import { version } from "./version";
 
+/**
+ * A schema for the response from Inngest when registering.
+ */
 const registerResSchema = z.object({
   status: z.number().default(200),
   error: z.string().default("Successfully registered"),
 });
 
+/**
+ * Capturing the global type of fetch so that we can reliably access it below.
+ */
 type FetchT = typeof fetch;
 
 /**
@@ -37,13 +42,14 @@ export type ServeHandler = (
   nameOrInngest: string | Inngest<any>,
 
   /**
-   * A key used to sign requests to and from Inngest in order to prove that the
-   * source is legitimate.
-   *
-   * @link TODO
+   * An array of the functions to serve and register with Inngest.
    */
-  signingKey: string,
   functions: InngestFunction<any>[],
+
+  /**
+   * A set of options to further configure the registration of Inngest
+   * functions.
+   */
   opts?: RegisterOptions
 ) => any;
 
@@ -56,23 +62,16 @@ export type ServeHandler = (
  *
  * @public
  */
-export const serve = <Events extends Record<string, EventPayload>>(
-  ...args:
-    | [
-        nameOrInngest: string | Inngest<Events>,
-        signingKey: string,
-        functions: InngestFunction<Events>[],
-        opts?: RegisterOptions
-      ]
-    | [commHandler: InngestCommHandler]
+export const serve = (
+  ...args: Parameters<ServeHandler> | [commHandler: InngestCommHandler]
 ) => {
   if (args.length === 1) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return args[0].createHandler();
   }
 
-  const [nameOrInngest, signingKey, fns, opts] = args;
-  const handler = new InngestCommHandler(nameOrInngest, signingKey, fns, opts);
+  const [nameOrInngest, fns, opts] = args;
+  const handler = new InngestCommHandler(nameOrInngest, fns, opts);
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return handler.createHandler();
@@ -126,9 +125,8 @@ export class InngestCommHandler {
 
   constructor(
     nameOrInngest: string | Inngest<any>,
-    signingKey: string,
     functions: InngestFunction<any>[],
-    { inngestRegisterUrl, fetch, landingPage }: RegisterOptions = {}
+    { inngestRegisterUrl, fetch, landingPage, signingKey }: RegisterOptions = {}
   ) {
     this.name =
       typeof nameOrInngest === "string" ? nameOrInngest : nameOrInngest.name;
