@@ -168,7 +168,7 @@ export class InngestCommHandler {
 
     this.headers = {
       "Content-Type": "application/json",
-      "User-Agent": `InngestJS v${version} (${this.frameworkName})`,
+      "User-Agent": `inngest-js:v${version} (${this.frameworkName})`,
     };
 
     // eslint-disable-next-line @typescript-eslint/no-var-requires
