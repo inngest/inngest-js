@@ -22,6 +22,7 @@ class CloudflareCommHandler extends InngestCommHandler {
 
       try {
         reqUrl = new URL(req.url, `https://${req.headers.get("host") || ""}`);
+        reqUrl.searchParams.delete(queryKeys.Introspect);
       } catch (err) {
         return new Response(JSON.stringify(err), {
           status: 500,
