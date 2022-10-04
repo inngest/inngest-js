@@ -16,9 +16,9 @@ export const available = async (): Promise<boolean> => {
     const result = await fetch(url.toString());
     await result.json();
     return true;
-  } catch (e) {}
-
-  return false;
+  } catch (e) {
+    return false;
+  }
 };
 
 // isProd compares any supported standard env variable for "production",
