@@ -8,7 +8,7 @@ export enum envKeys {
   SigningKey = "INNGEST_SIGNING_KEY",
   EventKey = "INNGEST_EVENT_KEY",
   LandingPage = "INNGEST_LANDING_PAGE",
-  DevServerURL = "INNGEST_DEVSERVER_URL",
+  DevServerUrl = "INNGEST_DEVSERVER_URL",
 }
 
 export enum prodEnvKeys {
@@ -16,3 +16,5 @@ export enum prodEnvKeys {
   VercelEnvKey = "VERCEL_ENV",
   NetlifyEnvKey = "CONTEXT",
 }
+
+export const defaultDevServerHost = "http://127.0.0.1:8288/";

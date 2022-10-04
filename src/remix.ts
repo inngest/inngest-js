@@ -39,6 +39,11 @@ class RemixCommHandler extends InngestCommHandler {
         });
       }
 
+      this._isProd =
+        process.env.VERCEL_ENV === "production" ||
+        process.env.CONTEXT === "production" ||
+        process.env.ENVIRONMENT === "production";
+
       switch (req.method) {
         case "GET": {
           const showLandingPage = this.shouldShowLandingPage(

@@ -4,9 +4,9 @@ import { z } from "zod";
 import { Inngest } from "./components/Inngest";
 import { InngestFunction } from "./components/InngestFunction";
 import { envKeys, queryKeys } from "./helpers/consts";
+import { devServerAvailable, devServerUrl } from "./helpers/devserver";
 import { strBoolean } from "./helpers/scalar";
 import { landing } from "./landing";
-import { available, devserverURL } from "./helpers/devserver";
 import type {
   FunctionConfig,
   IntrospectRequest,
@@ -108,6 +108,14 @@ export class InngestCommHandler {
 
   protected readonly frameworkName: string = "default";
   protected signingKey: string | undefined;
+
+  /**
+   * A property that can be set to indicate whether or not we believe we are in
+   * production mode.
+   *
+   * Should be set every time a request is received.
+   */
+  protected _isProd = false;
   private readonly headers: Record<string, string>;
   private readonly fetch: FetchT;
 
@@ -201,6 +209,8 @@ export class InngestCommHandler {
           .set("x-inngest-sdk", `js/${this.frameworkName}`)
           .json({ message });
       }
+
+      this._isProd = process.env.ENVIRONMENT === "production";
 
       switch (req.method) {
         case "GET": {
@@ -325,8 +335,14 @@ export class InngestCommHandler {
     // Whenever we register, we check to see if the dev server is up.  This
     // is a noop and returns false in production.
     let registerURL = this.inngestRegisterUrl;
-    if (await available()) {
-      registerURL = devserverURL("/fn/register");
+    const devServerHost = process.env[envKeys.DevServerUrl];
+
+    if (!this.isProd) {
+      const hasDevServer = await devServerAvailable(devServerHost, this.fetch);
+
+      if (hasDevServer) {
+        registerURL = devServerUrl(devServerHost, "/fn/register");
+      }
     }
 
     try {
@@ -368,6 +384,10 @@ export class InngestCommHandler {
     );
 
     return { status, message: error };
+  }
+
+  private get isProd() {
+    return this._isProd;
   }
 
   protected shouldShowLandingPage(strEnvVar: string | undefined): boolean {

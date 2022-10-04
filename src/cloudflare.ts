@@ -37,6 +37,10 @@ class CloudflareCommHandler extends InngestCommHandler {
         this.signingKey = env[envKeys.SigningKey];
       }
 
+      this._isProd =
+        process.env.CF_PAGES === "1" ||
+        process.env.ENVIRONMENT === "production";
+
       switch (req.method) {
         case "GET": {
           const showLandingPage = this.shouldShowLandingPage(

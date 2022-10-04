@@ -1,50 +1,45 @@
-import fetch from "cross-fetch";
-import { envKeys, prodEnvKeys } from "./consts";
 import type { FunctionConfig } from "../types";
+import { defaultDevServerHost } from "./consts";
 
-export const available = async (): Promise<boolean> => {
-  if (isProd()) {
-    return false;
-  }
+/**
+ * A simple type map that we can transparently use `fetch` later without having
+ * to fall in to the self-referencing `const fetch: typeof fetch = ...` which
+ * fails.
+ */
+type FetchT = typeof fetch;
 
+/**
+ * Attempts to contact the dev server, returning a boolean indicating whether or
+ * not it was successful.
+ */
+export const devServerAvailable = async (
+  /**
+   * The host of the dev server. You should pass in an environment variable as
+   * this parameter.
+   */
+  host = defaultDevServerHost,
+
+  /**
+   * The fetch implementation to use to communicate with the dev server.
+   */
+  fetch: FetchT
+): Promise<boolean> => {
   try {
-    const url = devserverURL("/dev");
+    const url = devServerUrl(host, "/dev");
     const result = await fetch(url.toString());
     await result.json();
+
     return true;
   } catch (e) {
     return false;
   }
 };
 
-// isProd compares any supported standard env variable for "production",
-// returning true on first match.
-export const isProd = (): boolean => {
-  return !!Object.values(prodEnvKeys).find(
-    (e) => process.env[e] === "production"
-  );
-};
-
-// url returns the dev server URL, overriding to use the INNGEST_DEVSERVER_URL
-// env var if provided.
-export const devserverURL = (pathname?: string): URL => {
-  let host = process.env[envKeys.DevServerURL];
-  if (!host) {
-    // Use the default.
-    const url = new URL(`http://127.0.0.1:8288/`);
-    url.pathname = pathname || "";
-    return url;
-  }
-
-  // Normalize the URL to be friendly here.  If the user hasn't added a scheme,
-  // default to http.
-  if (host.indexOf("://") === -1) {
-    host = `http://${host}`;
-  }
-
-  const url = new URL(host);
-  url.pathname = pathname || "";
-  return url;
+export const devServerUrl = (
+  host = defaultDevServerHost,
+  pathname = ""
+): URL => {
+  return new URL(pathname, host.includes("://") ? host : `http://${host}`);
 };
 
 // InfoResponse is the API response for the dev server's /dev endpoint.
