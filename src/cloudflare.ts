@@ -19,9 +19,12 @@ class CloudflareCommHandler extends InngestCommHandler {
       env: Record<string, string | undefined>;
     }): Promise<Response> => {
       let reqUrl: URL;
+      let isIntrospection: boolean;
 
       try {
         reqUrl = new URL(req.url, `https://${req.headers.get("host") || ""}`);
+
+        isIntrospection = reqUrl.searchParams.has(queryKeys.Introspect);
         reqUrl.searchParams.delete(queryKeys.Introspect);
       } catch (err) {
         return new Response(JSON.stringify(err), {
@@ -41,7 +44,7 @@ class CloudflareCommHandler extends InngestCommHandler {
 
           if (!showLandingPage) break;
 
-          if (reqUrl.searchParams.has(queryKeys.Introspect)) {
+          if (isIntrospection) {
             return new Response(JSON.stringify(this.registerBody(reqUrl)), {
               status: 200,
             });
