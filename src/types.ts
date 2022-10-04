@@ -170,8 +170,6 @@ export interface RegisterOptions {
   /**
    * A key used to sign requests to and from Inngest in order to prove that the
    * source is legitimate.
-   *
-   * @link TODO
    */
   signingKey?: string;
 
