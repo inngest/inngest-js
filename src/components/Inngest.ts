@@ -1,11 +1,16 @@
-import axios, { AxiosInstance, AxiosResponse } from "axios";
-import {
+import { envKeys } from "../helpers/consts";
+import type {
   PartialK,
   SendEventPayload,
   SingleOrArray,
   ValueOf,
 } from "../helpers/types";
-import { ClientOptions, EventPayload, FunctionOptions, StepFn } from "../types";
+import type {
+  ClientOptions,
+  EventPayload,
+  FunctionOptions,
+  StepFn,
+} from "../types";
 import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
 import { InngestStep } from "./InngestStep";
@@ -57,12 +62,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    */
   private readonly inngestApiUrl: URL;
 
-  /**
-   * An Axios instance used for communicating with Inngest Cloud.
-   *
-   * {@link https://npm.im/axios}
-   */
-  private readonly client: AxiosInstance;
+  private readonly headers: Record<string, string>;
 
   /**
    * A client used to interact with the Inngest API by sending or reacting to
@@ -89,7 +89,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    */
   constructor({
     name,
-    eventKey = process.env.INNGEST_EVENT_KEY,
+    eventKey = process.env[envKeys.EventKey],
     inngestBaseUrl = "https://inn.gs/",
   }: ClientOptions) {
     if (!name) {
@@ -107,21 +107,16 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     this.inngestBaseUrl = new URL(inngestBaseUrl);
     this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
 
-    this.client = axios.create({
-      timeout: 0,
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": `InngestJS v${version}`,
-      },
-      validateStatus: () => true, // all status codes return a response
-      maxRedirects: 0,
-    });
+    this.headers = {
+      "Content-Type": "application/json",
+      "User-Agent": `InngestJS v${version}`,
+    };
   }
 
   /**
    * Given a response from Inngest, relay the error to the caller.
    */
-  #getResponseError(response: AxiosResponse): Error {
+  async #getResponseError(response: globalThis.Response): Promise<Error> {
     let errorMessage = "Unknown error";
     switch (response.status) {
       case 401:
@@ -137,7 +132,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
         errorMessage = "Event key not found";
         break;
       case 406:
-        errorMessage = `${JSON.stringify(response.data)}`;
+        errorMessage = `${JSON.stringify(await response.json())}`;
         break;
       case 409:
       case 412:
@@ -259,13 +254,17 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       );
     }
 
-    const response = await this.client.post(this.inngestApiUrl.href, payloads);
+    const response = await fetch(this.inngestApiUrl.href, {
+      method: "POST",
+      body: JSON.stringify(payloads),
+      headers: { ...this.headers },
+    });
 
     if (response.status >= 200 && response.status < 300) {
       return;
     }
 
-    throw this.#getResponseError(response);
+    throw await this.#getResponseError(response);
   }
 
   /**

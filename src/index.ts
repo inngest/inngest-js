@@ -1,11 +1,6 @@
 export { Inngest } from "./components/Inngest";
-export {
-  InngestCommHandler,
-  serve,
-  ServeHandler as RegisterHandler,
-} from "./handlers/default";
 export { createFunction, createScheduledFunction } from "./helpers/func";
-export {
+export type {
   ClientOptions,
   EventPayload,
   FunctionOptions,

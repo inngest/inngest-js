@@ -1,4 +1,4 @@
-import { InngestStep } from "./components/InngestStep";
+import type { InngestStep } from "./components/InngestStep";
 
 /**
  * The shape of a step function, taking in event, step, and ctx data, and
@@ -168,10 +168,50 @@ export interface ClientOptions {
  */
 export interface RegisterOptions {
   /**
+   * A key used to sign requests to and from Inngest in order to prove that the
+   * source is legitimate.
+   *
+   * You must provide a signing key to communicate securely with Inngest. If
+   * your key is not provided here, we'll try to retrieve it from the
+   * `INNGEST_SIGNING_KEY` environment variable.
+   *
+   * You can retrieve your signing key from the Inngest UI inside the "Secrets"
+   * section at {@link https://app.inngest.com/secrets}. We highly recommend
+   * that you add this to your platform's available environment variables as
+   * `INNGEST_SIGNING_KEY`.
+   *
+   * If no key can be found, you will not be able to register your functions or
+   * receive events from Inngest.
+   */
+  signingKey?: string;
+
+  /**
    * The URL used to register functions with Inngest.
    * Defaults to https://api.inngest.com/fn/register
    */
   inngestRegisterUrl?: string;
+
+  /**
+   * If provided, will override the used `fetch` implementation. Useful for
+   * giving the library a particular implementation if accessing it is not done
+   * via globals.
+   *
+   * By default the library will try to use the native Web API fetch, falling
+   * back to a Node implementation if no global fetch can be found.
+   */
+  fetch?: typeof fetch;
+
+  /**
+   * Controls whether a landing page with introspection capabilities is shown
+   * when a `GET` request is performed to this handler.
+   *
+   * Defaults to using the boolean value of `process.env.INNGEST_LANDING_PAGE`
+   * (e.g. `"true"`), and `true` if that env var is not defined.
+   *
+   * This page is highly recommended when getting started in development,
+   * testing, or staging environments.
+   */
+  landingPage?: boolean;
 }
 
 /**
@@ -280,6 +320,19 @@ export interface RegisterRequest {
    * The hash of the current commit used to track deploys
    */
   hash?: string;
+}
+
+/**
+ * The response to send to the local SDK UI when an introspection request is
+ * made.
+ *
+ * @internal
+ */
+export interface IntrospectRequest extends RegisterRequest {
+  /**
+   * Represents whether a signing key could be found when running this handler.
+   */
+  hasSigningKey: boolean;
 }
 
 /**

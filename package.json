@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "0.4.15",
+  "version": "0.4.16-cfp.11",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -15,7 +15,9 @@
     "inngest-init": "./init.js"
   },
   "scripts": {
-    "prebuild": "genversion --semi --double --es6 ./src/version.ts",
+    "prebuild": "yarn run pb:version && yarn run pb:landing",
+    "pb:version": "genversion --semi --double --es6 ./src/version.ts",
+    "pb:landing": "yarn build:landing && node -e 'const page = JSON.stringify(require(\"fs\").readFileSync(\"./landing/dist/index.html\").toString()); console.log(\"export const landing = \" + page);' > ./src/landing.ts && npx prettier ./src/landing.ts --write",
     "build": "yarn run clean && tsc --project tsconfig.build.json",
     "test": "jest --passWithNoTests",
     "clean": "rm -rf ./dist",
@@ -23,10 +25,12 @@
     "postversion": "yarn run build && yarn run build:copy",
     "release": "yarn run np",
     "api-extractor": "api-extractor",
-    "dev": "concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"yarn run dev:build\" \"yarn run dev:lint\"",
-    "dev:build": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'yarn run build && yarn run build:check --local'",
-    "dev:lint": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'yarn lint'",
+    "dev": "yarn && sh -c 'cd ./landing && yarn' && concurrently --names Build,Lint,Landing --prefix-colors \"green.inverse,magenta.inverse,blue.inverse\" --handle-input \"yarn run dev:build\" \"yarn run dev:lint\" \"yarn run dev:landing\"",
+    "dev:build": "nodemon -w src -e ts -i version.ts -i landing.ts --delay 300ms -x 'yarn run build && yarn run build:check --local'",
+    "dev:lint": "nodemon -w src -e ts -i version.ts -i landing.ts --delay 300ms -x 'yarn lint'",
+    "dev:landing": "nodemon -w landing/src -e ts,tsx,css --delay 300ms -x 'yarn run build:landing'",
     "build:api": "api-extractor run --local --verbose",
+    "build:landing": "cd landing && yarn run build",
     "build:check": "api-extractor run --verbose",
     "build:copy": "cp package.json LICENSE.md README.md dist",
     "prelink": "yarn run build:copy"
@@ -46,14 +50,16 @@
     "trailingComma": "es5"
   },
   "dependencies": {
-    "axios": "^0.27.2",
+    "buffer": "^6.0.3",
     "cross-fetch": "^3.1.5",
+    "sha.js": "^2.4.11",
     "zod": "^3.19.1"
   },
   "devDependencies": {
-    "@microsoft/api-extractor": "^7.31.1",
+    "@microsoft/api-extractor": "^7.31.2",
     "@types/express": "^4.17.13",
     "@types/jest": "^27.4.1",
+    "@types/sha.js": "^2.4.0",
     "@typescript-eslint/eslint-plugin": "^5.38.0",
     "@typescript-eslint/parser": "^5.38.0",
     "concurrently": "^7.4.0",

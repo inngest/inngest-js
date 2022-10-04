@@ -1,7 +1,7 @@
 import { InngestFunction } from "../components/InngestFunction";
 import { InngestStep } from "../components/InngestStep";
-import { EventPayload, FunctionOptions, StepFn } from "../types";
-import { EventName } from "./types";
+import type { EventPayload, FunctionOptions, StepFn } from "../types";
+import type { EventName } from "./types";
 
 /**
  * Given an event to listen to, run the given function when that event is

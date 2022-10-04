@@ -1,4 +1,3 @@
-import { Response } from "cross-fetch";
 import { z } from "zod";
 import {
   InngestCommHandler,
@@ -7,20 +6,18 @@ import {
 } from "./express";
 import { envKeys, queryKeys } from "./helpers/consts";
 import { landing } from "./landing";
-import type { IntrospectRequest } from "./types";
+import { IntrospectRequest } from "./types";
 
-/**
- * app/inngest/index.server.ts
- * app/routes/api/inngest.ts
- */
-class RemixCommHandler extends InngestCommHandler {
+class CloudflareCommHandler extends InngestCommHandler {
   protected override frameworkName = "remix";
 
   public override createHandler() {
     return async ({
       request: req,
+      env,
     }: {
       request: Request;
+      env: Record<string, string | undefined>;
     }): Promise<Response> => {
       const headers = { "x-inngest-sdk": this.sdkHeader.join("") };
 
@@ -39,15 +36,18 @@ class RemixCommHandler extends InngestCommHandler {
         });
       }
 
+      if (!this.signingKey && env[envKeys.SigningKey]) {
+        this.signingKey = env[envKeys.SigningKey];
+      }
+
       this._isProd =
-        process.env.VERCEL_ENV === "production" ||
-        process.env.CONTEXT === "production" ||
+        process.env.CF_PAGES === "1" ||
         process.env.ENVIRONMENT === "production";
 
       switch (req.method) {
         case "GET": {
           const showLandingPage = this.shouldShowLandingPage(
-            process.env[envKeys.LandingPage]
+            env[envKeys.LandingPage]
           );
 
           if (!showLandingPage) break;
@@ -60,6 +60,7 @@ class RemixCommHandler extends InngestCommHandler {
 
             return new Response(JSON.stringify(introspection), {
               status: 200,
+              headers,
             });
           }
 
@@ -76,10 +77,7 @@ class RemixCommHandler extends InngestCommHandler {
         case "PUT": {
           // Push config to Inngest.
           const { status, message } = await this.register(reqUrl);
-          return new Response(JSON.stringify({ message }), {
-            status,
-            headers,
-          });
+          return new Response(JSON.stringify({ message }), { status, headers });
         }
 
         case "POST": {
@@ -116,11 +114,16 @@ class RemixCommHandler extends InngestCommHandler {
 }
 
 /**
- * In Remix, serve and register any declared functions with Inngest, making them
- * available to be triggered by events.
+ * In Cloudflare, serve and register any declared functions with Inngest, making
+ * them available to be triggered by events.
  *
  * @public
  */
-export const register: ServeHandler = (nameOrInngest, fns, opts): any => {
-  return defaultServe(new RemixCommHandler(nameOrInngest, fns, opts));
+export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
+  return defaultServe(
+    new CloudflareCommHandler(nameOrInngest, fns, {
+      fetch: fetch.bind(globalThis),
+      ...opts,
+    })
+  );
 };

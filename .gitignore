@@ -6,6 +6,7 @@ dist
 
 # Generated version file; always created pre-publish
 src/version.ts
+src/landing.ts
 
 # Generated API diffs for @microsoft/api-extractor CI
 temp/

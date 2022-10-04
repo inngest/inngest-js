@@ -4,8 +4,10 @@ import {
   InngestCommHandler,
   serve as defaultServe,
   ServeHandler,
-} from "./handlers/default";
-import { fnIdParam, stepIdParam } from "./helpers/consts";
+} from "./express";
+import { envKeys, queryKeys } from "./helpers/consts";
+import { landing } from "./landing";
+import { IntrospectRequest } from "./types";
 
 class NextCommHandler extends InngestCommHandler {
   protected override frameworkName = "nextjs";
@@ -21,11 +23,39 @@ class NextCommHandler extends InngestCommHandler {
           req.url as string,
           `${scheme}://${req.headers.host || ""}`
         );
+        reqUrl.searchParams.delete(queryKeys.Introspect);
       } catch (err) {
         return void res.status(500).json(err);
       }
 
+      res.setHeader("x-inngest-sdk", this.sdkHeader.join(""));
+
+      this._isProd =
+        process.env.VERCEL_ENV === "production" ||
+        process.env.CONTEXT === "production" ||
+        process.env.ENVIRONMENT === "production";
+
       switch (req.method) {
+        case "GET": {
+          const showLandingPage = this.shouldShowLandingPage(
+            process.env[envKeys.LandingPage]
+          );
+
+          if (!showLandingPage) break;
+
+          if (Object.hasOwnProperty.call(req.query, queryKeys.Introspect)) {
+            const introspection: IntrospectRequest = {
+              ...this.registerBody(reqUrl),
+              hasSigningKey: Boolean(this.signingKey),
+            };
+
+            return void res.status(200).json(introspection);
+          }
+
+          // Grab landing page and serve
+          return void res.status(200).send(landing);
+        }
+
         case "PUT": {
           // Push config to Inngest.
           const { status, message } = await this.register(reqUrl);
@@ -40,8 +70,8 @@ class NextCommHandler extends InngestCommHandler {
               stepId: z.string().min(1),
             })
             .parse({
-              fnId: req.query[fnIdParam],
-              stepId: req.query[stepIdParam],
+              fnId: req.query[queryKeys.FnId],
+              stepId: req.query[queryKeys.StepId],
             });
 
           const stepRes = await this.runStep(fnId, stepId, req.body);
@@ -52,10 +82,9 @@ class NextCommHandler extends InngestCommHandler {
 
           return void res.status(stepRes.status).json(stepRes.body);
         }
-
-        default:
-          return void res.status(405).end();
       }
+
+      return void res.status(405).end();
     };
   }
 }
@@ -66,13 +95,6 @@ class NextCommHandler extends InngestCommHandler {
  *
  * @public
  */
-export const serve: ServeHandler = (
-  nameOrInngest,
-  signingKey,
-  fns,
-  opts
-): any => {
-  return defaultServe(
-    new NextCommHandler(nameOrInngest, signingKey, fns, opts)
-  );
+export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
+  return defaultServe(new NextCommHandler(nameOrInngest, fns, opts));
 };
