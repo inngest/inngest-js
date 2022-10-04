@@ -50,7 +50,6 @@ npm install inngest  # or yarn install inngest
 **Writing functions**: Write serverless functions and background jobs right in your own code:
 
 ```ts
-
 import { createFunction } from "inngest";
 
 export default createFunction(
@@ -62,12 +61,11 @@ export default createFunction(
 );
 ```
 
-Functions listen to events which can be triggered by API calls, webhooks, integrations, or external services.  When a matching event is received, the serverless function runs automatically, with built in retries.
+Functions listen to events which can be triggered by API calls, webhooks, integrations, or external services. When a matching event is received, the serverless function runs automatically, with built in retries.
 
 <br />
 
 **Triggering functions by events:**
-
 
 ```ts
 // Send events
@@ -78,20 +76,19 @@ const inngest = new Inngest({ name: "My App" });
 inngest.send("app/user.created", { data: { id: 123 } });
 ```
 
-Events trigger any number of functions automatically, in parallel, in the background.  Inngest also stores a history of all events for observability, testing, and replay.
-
+Events trigger any number of functions automatically, in parallel, in the background. Inngest also stores a history of all events for observability, testing, and replay.
 
 <br />
 
 ## Features
 
-- **Fully serverless:**  Run background jobs, scheduled functions, and build event-driven systems without any servers, state, or setup
-- **Deploy anywhere**:  works with NextJS, Netlify, Vercel, Redwood, Express, Cloudflare, and Lambda
-- **Use your existing code:**  write functions within your current project, zero learning required
-- **A complete platform**:  complex functionality built in, such as **event replay**, **canary deploys**, **version management** and **git integration**
-- **Fully typed**:  Event schemas, versioning, and governance out of the box
-- **Observable**:  A full UI for managing and inspecting your functions
-- **Any language:**  Use our CLI to write functions using any language
+- **Fully serverless:** Run background jobs, scheduled functions, and build event-driven systems without any servers, state, or setup
+- **Deploy anywhere**: works with NextJS, Netlify, Vercel, Redwood, Express, Cloudflare, and Lambda
+- **Use your existing code:** write functions within your current project, zero learning required
+- **A complete platform**: complex functionality built in, such as **event replay**, **canary deploys**, **version management** and **git integration**
+- **Fully typed**: Event schemas, versioning, and governance out of the box
+- **Observable**: A full UI for managing and inspecting your functions
+- **Any language:** Use our CLI to write functions using any language
 
 <br />
 

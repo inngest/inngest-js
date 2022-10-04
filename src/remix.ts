@@ -22,6 +22,8 @@ class RemixCommHandler extends InngestCommHandler {
     }: {
       request: Request;
     }): Promise<Response> => {
+      const headers = { "x-inngest-sdk": this.sdkHeader.join("") };
+
       let reqUrl: URL;
       let isIntrospection: boolean;
 
@@ -33,8 +35,14 @@ class RemixCommHandler extends InngestCommHandler {
       } catch (err) {
         return new Response(JSON.stringify(err), {
           status: 500,
+          headers,
         });
       }
+
+      this._isProd =
+        process.env.VERCEL_ENV === "production" ||
+        process.env.CONTEXT === "production" ||
+        process.env.ENVIRONMENT === "production";
 
       switch (req.method) {
         case "GET": {
@@ -59,6 +67,7 @@ class RemixCommHandler extends InngestCommHandler {
           return new Response(landing, {
             status: 200,
             headers: {
+              ...headers,
               "content-type": "text/html;charset=UTF-8",
             },
           });
@@ -67,7 +76,10 @@ class RemixCommHandler extends InngestCommHandler {
         case "PUT": {
           // Push config to Inngest.
           const { status, message } = await this.register(reqUrl);
-          return new Response(JSON.stringify({ message }), { status });
+          return new Response(JSON.stringify({ message }), {
+            status,
+            headers,
+          });
         }
 
         case "POST": {
@@ -87,16 +99,18 @@ class RemixCommHandler extends InngestCommHandler {
           if (stepRes.status === 500) {
             return new Response(JSON.stringify(stepRes.error), {
               status: stepRes.status,
+              headers,
             });
           }
 
           return new Response(JSON.stringify(stepRes.body), {
             status: stepRes.status,
+            headers,
           });
         }
       }
 
-      return new Response(null, { status: 405 });
+      return new Response(null, { status: 405, headers });
     };
   }
 }

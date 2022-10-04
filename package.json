@@ -25,7 +25,7 @@
     "postversion": "yarn run build && yarn run build:copy",
     "release": "yarn run np",
     "api-extractor": "api-extractor",
-    "dev": "concurrently --names Build,Lint,Landing --prefix-colors \"green.inverse,magenta.inverse,blue.inverse\" --handle-input \"yarn run dev:build\" \"yarn run dev:lint\" \"yarn run dev:landing\"",
+    "dev": "yarn && sh -c 'cd ./landing && yarn' && concurrently --names Build,Lint,Landing --prefix-colors \"green.inverse,magenta.inverse,blue.inverse\" --handle-input \"yarn run dev:build\" \"yarn run dev:lint\" \"yarn run dev:landing\"",
     "dev:build": "nodemon -w src -e ts -i version.ts -i landing.ts --delay 300ms -x 'yarn run build && yarn run build:check --local'",
     "dev:lint": "nodemon -w src -e ts -i version.ts -i landing.ts --delay 300ms -x 'yarn lint'",
     "dev:landing": "nodemon -w landing/src -e ts,tsx,css --delay 300ms -x 'yarn run build:landing'",

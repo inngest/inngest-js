@@ -4,6 +4,7 @@ import { z } from "zod";
 import { Inngest } from "./components/Inngest";
 import { InngestFunction } from "./components/InngestFunction";
 import { envKeys, queryKeys } from "./helpers/consts";
+import { devServerAvailable, devServerUrl } from "./helpers/devserver";
 import { strBoolean } from "./helpers/scalar";
 import { landing } from "./landing";
 import type {
@@ -107,6 +108,14 @@ export class InngestCommHandler {
 
   protected readonly frameworkName: string = "default";
   protected signingKey: string | undefined;
+
+  /**
+   * A property that can be set to indicate whether or not we believe we are in
+   * production mode.
+   *
+   * Should be set every time a request is received.
+   */
+  protected _isProd = false;
   private readonly headers: Record<string, string>;
   private readonly fetch: FetchT;
 
@@ -159,7 +168,7 @@ export class InngestCommHandler {
 
     this.headers = {
       "Content-Type": "application/json",
-      "User-Agent": `InngestJS v${version} (${this.frameworkName})`,
+      "User-Agent": `inngest-js:v${version} (${this.frameworkName})`,
     };
 
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -183,6 +192,8 @@ export class InngestCommHandler {
 
   public createHandler(): any {
     return async (req: Request, res: Response) => {
+      res.setHeader("x-inngest-sdk", this.sdkHeader.join(""));
+
       const hostname = req.hostname || req.headers["host"];
       const protocol = hostname?.includes("://") ? "" : `${req.protocol}://`;
 
@@ -197,6 +208,8 @@ export class InngestCommHandler {
 
         return res.status(500).json({ message });
       }
+
+      this._isProd = process.env.ENVIRONMENT === "production";
 
       switch (req.method) {
         case "GET": {
@@ -287,6 +300,20 @@ export class InngestCommHandler {
     return Object.values(this.fns).map((fn) => fn["getConfig"](url, this.name));
   }
 
+  /**
+   * Returns an SDK header split in to three parts so that they can be used for
+   * different purposes.
+   *
+   * To use the entire string, run `this.sdkHeader.join("")`.
+   */
+  protected get sdkHeader(): [
+    prefix: string,
+    version: RegisterRequest["sdk"],
+    suffix: string
+  ] {
+    return ["inngest-", `js:v${version}`, ` (${this.frameworkName})`];
+  }
+
   protected registerBody(url: URL): RegisterRequest {
     return {
       url: url.href,
@@ -294,7 +321,7 @@ export class InngestCommHandler {
       framework: this.frameworkName,
       appName: this.name,
       functions: this.configs(url),
-      sdk: `js:v${version}`,
+      sdk: this.sdkHeader[1],
       v: "0.1",
     };
   }
@@ -306,8 +333,21 @@ export class InngestCommHandler {
 
     let res: globalThis.Response;
 
+    // Whenever we register, we check to see if the dev server is up.  This
+    // is a noop and returns false in production.
+    let registerURL = this.inngestRegisterUrl;
+    const devServerHost = process.env[envKeys.DevServerUrl];
+
+    if (!this.isProd) {
+      const hasDevServer = await devServerAvailable(devServerHost, this.fetch);
+
+      if (hasDevServer) {
+        registerURL = devServerUrl(devServerHost, "/fn/register");
+      }
+    }
+
     try {
-      res = await this.fetch(this.inngestRegisterUrl.href, {
+      res = await this.fetch(registerURL.href, {
         method: "POST",
         body: JSON.stringify(body),
         headers: {
@@ -337,9 +377,18 @@ export class InngestCommHandler {
       console.warn("Couldn't unpack register response:", err);
     }
     const { status, error } = registerResSchema.parse(data);
-    console.log("Registered:", res.status, res.statusText, data);
+    console.log(
+      "Registered Inngest functions:",
+      res.status,
+      res.statusText,
+      data
+    );
 
     return { status, message: error };
+  }
+
+  private get isProd() {
+    return this._isProd;
   }
 
   protected shouldShowLandingPage(strEnvVar: string | undefined): boolean {
