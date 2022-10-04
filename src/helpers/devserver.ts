@@ -1,10 +1,5 @@
 import fetch from "cross-fetch";
-
-const envVars = [
-  "NODE_ENV", // express slash standard.
-  "VERCEL_ENV", // vercel
-  "CONTEXT", // netlify
-];
+import { envKeys, prodEnvKeys } from "./consts";
 
 export const available = async (): Promise<boolean> => {
   if (isProd()) {
@@ -24,13 +19,13 @@ export const available = async (): Promise<boolean> => {
 // isProd compares any supported standard env variable for "production",
 // returning true on first match.
 export const isProd = (): boolean => {
-  return !!envVars.find((e) => process.env[e] === "production");
+  return !!Object.values(prodEnvKeys).find((e) => process.env[e] === "production");
 };
 
 // url returns the dev server URL, overriding to use the INNGEST_DEVSERVER_URL
 // env var if provided.
 export const devserverURL = (pathname?: string): URL => {
-  let host = process.env.INNGEST_DEVSERVER_URL;
+  let host = process.env[envKeys.DevServerURL];
   if (!host) {
     // Use the default.
     const url = new URL(`http://127.0.0.1:8288/`);
