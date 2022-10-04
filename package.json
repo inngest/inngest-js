@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "0.4.16-cfp.6",
+  "version": "0.4.16-cfp.7",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
