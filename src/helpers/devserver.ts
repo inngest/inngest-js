@@ -1,5 +1,6 @@
 import fetch from "cross-fetch";
 import { envKeys, prodEnvKeys } from "./consts";
+import type { FunctionConfig } from "../types";
 
 export const available = async (): Promise<boolean> => {
   if (isProd()) {
@@ -19,7 +20,9 @@ export const available = async (): Promise<boolean> => {
 // isProd compares any supported standard env variable for "production",
 // returning true on first match.
 export const isProd = (): boolean => {
-  return !!Object.values(prodEnvKeys).find((e) => process.env[e] === "production");
+  return !!Object.values(prodEnvKeys).find(
+    (e) => process.env[e] === "production"
+  );
 };
 
 // url returns the dev server URL, overriding to use the INNGEST_DEVSERVER_URL
@@ -45,7 +48,7 @@ export const devserverURL = (pathname?: string): URL => {
 };
 
 // InfoResponse is the API response for the dev server's /dev endpoint.
-type InfoResponse = {
+export type InfoResponse = {
   version: string; // Version of the dev server
   startOpts: {
     sdkURLs: string[]; // URLs the dev server was started with
@@ -57,7 +60,7 @@ type InfoResponse = {
     test: WorkspaceResponse;
   };
   // SDK registration helpers
-  functions: Function[];
+  functions: FunctionConfig[];
   handlers: SDKHandler[];
 };
 
@@ -81,8 +84,4 @@ type SDKHandler = {
     framework?: string;
     app: string; // app name
   };
-};
-
-type Function = {
-  id: string;
 };
