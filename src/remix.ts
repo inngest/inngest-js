@@ -96,20 +96,21 @@ class RemixCommHandler extends InngestCommHandler {
 
           const stepRes = await this.runStep(fnId, stepId, await req.json());
 
-          return new Response(JSON.stringify(stepRes), {
-            status: stepRes.status || 200,
+          if (stepRes.status === 500) {
+            return new Response(JSON.stringify(stepRes.error), {
+              status: stepRes.status,
+              headers,
+            });
+          }
+
+          return new Response(JSON.stringify(stepRes.body), {
+            status: stepRes.status,
             headers,
           });
         }
-
-        default:
-          return new Response(null, {
-            status: 405,
-            headers,
-          });
       }
 
-      return new Response(null, { status: 405 });
+      return new Response(null, { status: 405, headers });
     };
   }
 }
