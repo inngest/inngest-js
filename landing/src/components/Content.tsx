@@ -52,7 +52,11 @@ export const Content = () => {
   }, []);
 
   if (loading) {
-    return <Spinner class="h-8 w-8" />;
+    return (
+      <div class="flex-1 w-full h-full flex items-center justify-center">
+        <Spinner class="h-8 w-8" />
+      </div>
+    );
   }
 
   return (

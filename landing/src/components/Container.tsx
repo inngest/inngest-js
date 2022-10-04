@@ -8,7 +8,7 @@ interface Props {
  * A full-width container.
  */
 export const Container = ({ children }: Props) => {
-  return <div class="w-full">{children}</div>;
+  return <div class="w-full h-full">{children}</div>;
 };
 
 /**
