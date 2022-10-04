@@ -19,6 +19,8 @@ class CloudflareCommHandler extends InngestCommHandler {
       request: Request;
       env: Record<string, string | undefined>;
     }): Promise<Response> => {
+      const headers = { "x-inngest-sdk": this.sdkHeader.join("") };
+
       let reqUrl: URL;
       let isIntrospection: boolean;
 
@@ -30,6 +32,7 @@ class CloudflareCommHandler extends InngestCommHandler {
       } catch (err) {
         return new Response(JSON.stringify(err), {
           status: 500,
+          headers,
         });
       }
 
@@ -57,6 +60,7 @@ class CloudflareCommHandler extends InngestCommHandler {
 
             return new Response(JSON.stringify(introspection), {
               status: 200,
+              headers,
             });
           }
 
@@ -64,6 +68,7 @@ class CloudflareCommHandler extends InngestCommHandler {
           return new Response(landing, {
             status: 200,
             headers: {
+              ...headers,
               "content-type": "text/html;charset=UTF-8",
             },
           });
@@ -72,7 +77,7 @@ class CloudflareCommHandler extends InngestCommHandler {
         case "PUT": {
           // Push config to Inngest.
           const { status, message } = await this.register(reqUrl);
-          return new Response(JSON.stringify({ message }), { status });
+          return new Response(JSON.stringify({ message }), { status, headers });
         }
 
         case "POST": {
@@ -92,16 +97,18 @@ class CloudflareCommHandler extends InngestCommHandler {
           if (stepRes.status === 500) {
             return new Response(JSON.stringify(stepRes.error), {
               status: stepRes.status,
+              headers,
             });
           }
 
           return new Response(JSON.stringify(stepRes.body), {
             status: stepRes.status,
+            headers,
           });
         }
       }
 
-      return new Response(null, { status: 405 });
+      return new Response(null, { status: 405, headers });
     };
   }
 }
