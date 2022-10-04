@@ -1,4 +1,4 @@
-import { InngestStep } from "./components/InngestStep";
+import type { InngestStep } from "./components/InngestStep";
 
 /**
  * The shape of a step function, taking in event, step, and ctx data, and

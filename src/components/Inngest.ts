@@ -1,11 +1,16 @@
 import { envKeys } from "../helpers/consts";
-import {
+import type {
   PartialK,
   SendEventPayload,
   SingleOrArray,
   ValueOf,
 } from "../helpers/types";
-import { ClientOptions, EventPayload, FunctionOptions, StepFn } from "../types";
+import type {
+  ClientOptions,
+  EventPayload,
+  FunctionOptions,
+  StepFn,
+} from "../types";
 import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
 import { InngestStep } from "./InngestStep";

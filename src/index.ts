@@ -1,6 +1,6 @@
 export { Inngest } from "./components/Inngest";
 export { createFunction, createScheduledFunction } from "./helpers/func";
-export {
+export type {
   ClientOptions,
   EventPayload,
   FunctionOptions,
