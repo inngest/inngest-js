@@ -8,7 +8,6 @@ import { strBoolean } from "./helpers/scalar";
 import { landing } from "./landing";
 import { available, devserverURL } from "./helpers/devserver";
 import type {
-  EventPayload,
   FunctionConfig,
   IntrospectRequest,
   RegisterOptions,
