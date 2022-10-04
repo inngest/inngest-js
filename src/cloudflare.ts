@@ -47,7 +47,12 @@ class CloudflareCommHandler extends InngestCommHandler {
           }
 
           // Grab landing page and serve
-          return new Response(JSON.stringify(landing), { status: 200 });
+          return new Response(landing, {
+            status: 200,
+            headers: {
+              "content-type": "text/html;charset=UTF-8",
+            },
+          });
         }
 
         case "PUT": {
