@@ -1,4 +1,4 @@
-import { fnIdParam, stepIdParam } from "../helpers/consts";
+import { queryKeys } from "../helpers/consts";
 import {
   EventPayload,
   FunctionConfig,
@@ -79,8 +79,8 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       steps: Object.keys(this.#steps).reduce<FunctionConfig["steps"]>(
         (acc, stepId) => {
           const url = new URL(baseUrl.href);
-          url.searchParams.set(fnIdParam, id);
-          url.searchParams.set(stepIdParam, stepId);
+          url.searchParams.set(queryKeys.FnId, id);
+          url.searchParams.set(queryKeys.StepId, stepId);
 
           return {
             ...acc,

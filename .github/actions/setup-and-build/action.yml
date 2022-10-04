@@ -22,4 +22,8 @@ runs:
       run: yarn install --frozen-lockfile
 
     - shell: bash
+      run: yarn install --frozen-lockfile
+      working-directory: landing
+
+    - shell: bash
       run: yarn build

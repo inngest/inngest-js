@@ -3,7 +3,9 @@ import shajs from "sha.js";
 import { z } from "zod";
 import { Inngest } from "./components/Inngest";
 import { InngestFunction } from "./components/InngestFunction";
-import { fnIdParam, stepIdParam } from "./helpers/consts";
+import { envKeys, queryKeys } from "./helpers/consts";
+import { strBoolean } from "./helpers/scalar";
+import { landing } from "./landing";
 import {
   EventPayload,
   FunctionConfig,
@@ -109,6 +111,14 @@ export class InngestCommHandler {
   private readonly fetch: FetchT;
 
   /**
+   * Whether we should show the SDK Landing Page.
+   *
+   * This purposefully does not take in to account any environment variables, as
+   * accessing them safely is platform-specific.
+   */
+  protected readonly showLandingPage: boolean | undefined;
+
+  /**
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
    */
@@ -118,7 +128,7 @@ export class InngestCommHandler {
     nameOrInngest: string | Inngest<any>,
     signingKey: string,
     functions: InngestFunction<any>[],
-    { inngestRegisterUrl, fetch }: RegisterOptions = {}
+    { inngestRegisterUrl, fetch, landingPage }: RegisterOptions = {}
   ) {
     this.name =
       typeof nameOrInngest === "string" ? nameOrInngest : nameOrInngest.name;
@@ -146,6 +156,7 @@ export class InngestCommHandler {
     );
 
     this.signingKey = signingKey;
+    this.showLandingPage = landingPage;
 
     this.headers = {
       "Content-Type": "application/json",
@@ -179,6 +190,7 @@ export class InngestCommHandler {
       let reqUrl;
       try {
         reqUrl = new URL(req.originalUrl, `${protocol}${hostname || ""}`);
+        reqUrl.searchParams.delete(queryKeys.Introspect);
       } catch (e) {
         const message =
           "Unable to determine your site URL to serve the Inngest handler.";
@@ -188,6 +200,21 @@ export class InngestCommHandler {
       }
 
       switch (req.method) {
+        case "GET": {
+          const showLandingPage = this.shouldShowLandingPage(
+            process.env[envKeys.LandingPage]
+          );
+
+          if (!showLandingPage) break;
+
+          if (Object.hasOwnProperty.call(req.query, queryKeys.Introspect)) {
+            return void res.status(200).json(this.registerBody(reqUrl));
+          }
+
+          // Grab landing page and serve
+          return void res.status(200).send(landing);
+        }
+
         case "PUT": {
           // Push config to Inngest.
           const { status, message } = await this.register(reqUrl);
@@ -202,8 +229,8 @@ export class InngestCommHandler {
               stepId: z.string().min(1),
             })
             .parse({
-              fnId: req.query[fnIdParam],
-              stepId: req.query[stepIdParam],
+              fnId: req.query[queryKeys.FnId],
+              stepId: req.query[queryKeys.StepId],
             });
 
           const stepRes = await this.runStep(fnId, stepId, req.body);
@@ -214,10 +241,9 @@ export class InngestCommHandler {
 
           return void res.status(stepRes.status).json(stepRes.body);
         }
-
-        default:
-          return void res.sendStatus(405);
       }
+
+      return void res.sendStatus(405);
     };
   }
 
@@ -257,10 +283,8 @@ export class InngestCommHandler {
     return Object.values(this.fns).map((fn) => fn["getConfig"](url, this.name));
   }
 
-  protected async register(
-    url: URL
-  ): Promise<{ status: number; message: string }> {
-    const body: RegisterRequest = {
+  protected registerBody(url: URL): RegisterRequest {
+    return {
       url: url.href,
       deployType: "ping",
       framework: this.frameworkName,
@@ -269,6 +293,12 @@ export class InngestCommHandler {
       sdk: `js:v${version}`,
       v: "0.1",
     };
+  }
+
+  protected async register(
+    url: URL
+  ): Promise<{ status: number; message: string }> {
+    const body = this.registerBody(url);
 
     let res: globalThis.Response;
 
@@ -306,6 +336,10 @@ export class InngestCommHandler {
     console.log("Registered:", res.status, res.statusText, data);
 
     return { status, message: error };
+  }
+
+  protected shouldShowLandingPage(strEnvVar: string | undefined): boolean {
+    return this.showLandingPage ?? strBoolean(strEnvVar) ?? true;
   }
 
   protected validateSignature(): boolean {

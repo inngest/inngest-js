@@ -5,7 +5,7 @@ import {
   serve as defaultServe,
   ServeHandler,
 } from "./express";
-import { fnIdParam, stepIdParam } from "./helpers/consts";
+import { queryKeys } from "./helpers/consts";
 
 /**
  * app/inngest/index.server.ts
@@ -45,8 +45,8 @@ class RemixCommHandler extends InngestCommHandler {
               stepId: z.string().min(1),
             })
             .parse({
-              fnId: reqUrl.searchParams.get(fnIdParam),
-              stepId: reqUrl.searchParams.get(stepIdParam),
+              fnId: reqUrl.searchParams.get(queryKeys.FnId),
+              stepId: reqUrl.searchParams.get(queryKeys.StepId),
             });
 
           const stepRes = await this.runStep(fnId, stepId, await req.json());

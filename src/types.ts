@@ -174,6 +174,18 @@ export interface RegisterOptions {
   inngestRegisterUrl?: string;
 
   fetch?: typeof fetch;
+
+  /**
+   * Controls whether a landing page with introspection capabilities is shown
+   * when a `GET` request is performed to this handler.
+   *
+   * Defaults to using the boolean value of `process.env.INNGEST_LANDING_PAGE`
+   * (e.g. `"true"`), and `true` if that env var is not defined.
+   *
+   * This page is highly recommended when getting started in development,
+   * testing, or staging environments.
+   */
+  landingPage?: boolean;
 }
 
 /**
