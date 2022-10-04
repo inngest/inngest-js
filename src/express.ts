@@ -197,7 +197,7 @@ export class InngestCommHandler {
           "Unable to determine your site URL to serve the Inngest handler.";
         console.error(message);
 
-        return res.status(500).json({ message });
+        return res.status(500).set("x-inngest-sdk", `js/${this.frameworkName}`).json({ message });
       }
 
       switch (req.method) {
@@ -214,7 +214,7 @@ export class InngestCommHandler {
               hasSigningKey: Boolean(this.signingKey),
             };
 
-            return void res.status(200).json(introspection);
+            return void res.status(200).set("x-inngest-sdk", `js/${this.frameworkName}`).json(introspection);
           }
 
           // Grab landing page and serve
@@ -224,7 +224,7 @@ export class InngestCommHandler {
         case "PUT": {
           // Push config to Inngest.
           const { status, message } = await this.register(reqUrl);
-          return void res.status(status).json({ message });
+          return void res.status(status).set("x-inngest-sdk", `js/${this.frameworkName}`).json({ message });
         }
 
         case "POST": {
@@ -242,10 +242,10 @@ export class InngestCommHandler {
           const stepRes = await this.runStep(fnId, stepId, req.body);
 
           if (stepRes.status === 500) {
-            return void res.status(stepRes.status).json(stepRes.error);
+            return void res.status(stepRes.status).set("x-inngest-sdk", `js/${this.frameworkName}`).json(stepRes.error);
           }
 
-          return void res.status(stepRes.status).json(stepRes.body);
+          return void res.status(stepRes.status).set("x-inngest-sdk", `js/${this.frameworkName}`).json(stepRes.body);
         }
       }
 
