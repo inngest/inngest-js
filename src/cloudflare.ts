@@ -5,6 +5,7 @@ import {
   ServeHandler,
 } from "./express";
 import { envKeys, queryKeys } from "./helpers/consts";
+import { landing } from "./landing";
 
 class CloudflareCommHandler extends InngestCommHandler {
   protected override frameworkName = "remix";
@@ -32,6 +33,23 @@ class CloudflareCommHandler extends InngestCommHandler {
       }
 
       switch (req.method) {
+        case "GET": {
+          const showLandingPage = this.shouldShowLandingPage(
+            env[envKeys.LandingPage]
+          );
+
+          if (!showLandingPage) break;
+
+          if (reqUrl.searchParams.has(queryKeys.Introspect)) {
+            return new Response(JSON.stringify(this.registerBody(reqUrl)), {
+              status: 200,
+            });
+          }
+
+          // Grab landing page and serve
+          return new Response(JSON.stringify(landing), { status: 200 });
+        }
+
         case "PUT": {
           // Push config to Inngest.
           const { status, message } = await this.register(reqUrl);
@@ -62,10 +80,9 @@ class CloudflareCommHandler extends InngestCommHandler {
             status: stepRes.status,
           });
         }
-
-        default:
-          return new Response(null, { status: 405 });
       }
+
+      return new Response(null, { status: 405 });
     };
   }
 }
