@@ -28,7 +28,7 @@ class NextCommHandler extends InngestCommHandler {
         return void res.status(500).json(err);
       }
 
-      res.setHeader("x-inngest-sdk", `js/${this.frameworkName}`);
+      res.setHeader("x-inngest-sdk", this.sdkHeader.join(""));
 
       this._isProd =
         process.env.VERCEL_ENV === "production" ||

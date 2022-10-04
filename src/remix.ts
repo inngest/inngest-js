@@ -22,6 +22,8 @@ class RemixCommHandler extends InngestCommHandler {
     }: {
       request: Request;
     }): Promise<Response> => {
+      const headers = { "x-inngest-sdk": this.sdkHeader.join("") };
+
       let reqUrl: URL;
       let isIntrospection: boolean;
 
@@ -33,9 +35,7 @@ class RemixCommHandler extends InngestCommHandler {
       } catch (err) {
         return new Response(JSON.stringify(err), {
           status: 500,
-          headers: {
-            "x-inngest-sdk": `js/${this.frameworkName}`,
-          },
+          headers,
         });
       }
 
@@ -67,7 +67,7 @@ class RemixCommHandler extends InngestCommHandler {
           return new Response(landing, {
             status: 200,
             headers: {
-              "x-inngest-sdk": `js/${this.frameworkName}`,
+              ...headers,
               "content-type": "text/html;charset=UTF-8",
             },
           });
@@ -78,9 +78,7 @@ class RemixCommHandler extends InngestCommHandler {
           const { status, message } = await this.register(reqUrl);
           return new Response(JSON.stringify({ message }), {
             status,
-            headers: {
-              "x-inngest-sdk": `js/${this.frameworkName}`,
-            },
+            headers,
           });
         }
 
@@ -100,18 +98,14 @@ class RemixCommHandler extends InngestCommHandler {
 
           return new Response(JSON.stringify(stepRes), {
             status: stepRes.status || 200,
-            headers: {
-              "x-inngest-sdk": `js/${this.frameworkName}`,
-            },
+            headers,
           });
         }
 
         default:
           return new Response(null, {
             status: 405,
-            headers: {
-              "x-inngest-sdk": `js/${this.frameworkName}`,
-            },
+            headers,
           });
       }
 

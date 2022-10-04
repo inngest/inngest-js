@@ -192,6 +192,8 @@ export class InngestCommHandler {
 
   public createHandler(): any {
     return async (req: Request, res: Response) => {
+      res.setHeader("x-inngest-sdk", this.sdkHeader.join(""));
+
       const hostname = req.hostname || req.headers["host"];
       const protocol = hostname?.includes("://") ? "" : `${req.protocol}://`;
 
@@ -204,10 +206,7 @@ export class InngestCommHandler {
           "Unable to determine your site URL to serve the Inngest handler.";
         console.error(message);
 
-        return res
-          .status(500)
-          .set("x-inngest-sdk", `js/${this.frameworkName}`)
-          .json({ message });
+        return res.status(500).json({ message });
       }
 
       this._isProd = process.env.ENVIRONMENT === "production";
@@ -226,10 +225,7 @@ export class InngestCommHandler {
               hasSigningKey: Boolean(this.signingKey),
             };
 
-            return void res
-              .status(200)
-              .set("x-inngest-sdk", `js/${this.frameworkName}`)
-              .json(introspection);
+            return void res.status(200).json(introspection);
           }
 
           // Grab landing page and serve
@@ -239,10 +235,7 @@ export class InngestCommHandler {
         case "PUT": {
           // Push config to Inngest.
           const { status, message } = await this.register(reqUrl);
-          return void res
-            .status(status)
-            .set("x-inngest-sdk", `js/${this.frameworkName}`)
-            .json({ message });
+          return void res.status(status).json({ message });
         }
 
         case "POST": {
@@ -260,16 +253,10 @@ export class InngestCommHandler {
           const stepRes = await this.runStep(fnId, stepId, req.body);
 
           if (stepRes.status === 500) {
-            return void res
-              .status(stepRes.status)
-              .set("x-inngest-sdk", `js/${this.frameworkName}`)
-              .json(stepRes.error);
+            return void res.status(stepRes.status).json(stepRes.error);
           }
 
-          return void res
-            .status(stepRes.status)
-            .set("x-inngest-sdk", `js/${this.frameworkName}`)
-            .json(stepRes.body);
+          return void res.status(stepRes.status).json(stepRes.body);
         }
       }
 
@@ -313,6 +300,20 @@ export class InngestCommHandler {
     return Object.values(this.fns).map((fn) => fn["getConfig"](url, this.name));
   }
 
+  /**
+   * Returns an SDK header split in to three parts so that they can be used for
+   * different purposes.
+   *
+   * To use the entire string, run `this.sdkHeader.join("")`.
+   */
+  protected get sdkHeader(): [
+    prefix: string,
+    version: RegisterRequest["sdk"],
+    suffix: string
+  ] {
+    return ["inngest-", `js:v${version}`, ` (${this.frameworkName})`];
+  }
+
   protected registerBody(url: URL): RegisterRequest {
     return {
       url: url.href,
@@ -320,7 +321,7 @@ export class InngestCommHandler {
       framework: this.frameworkName,
       appName: this.name,
       functions: this.configs(url),
-      sdk: `js:v${version}`,
+      sdk: this.sdkHeader[1],
       v: "0.1",
     };
   }
