@@ -5,7 +5,9 @@ import {
   serve as defaultServe,
   ServeHandler,
 } from "./express";
-import { queryKeys } from "./helpers/consts";
+import { envKeys, queryKeys } from "./helpers/consts";
+import { landing } from "./landing";
+import type { IntrospectRequest } from "./types";
 
 /**
  * app/inngest/index.server.ts
@@ -21,9 +23,13 @@ class RemixCommHandler extends InngestCommHandler {
       request: Request;
     }): Promise<Response> => {
       let reqUrl: URL;
+      let isIntrospection: boolean;
 
       try {
         reqUrl = new URL(req.url, `https://${req.headers.get("host") || ""}`);
+
+        isIntrospection = reqUrl.searchParams.has(queryKeys.Introspect);
+        reqUrl.searchParams.delete(queryKeys.Introspect);
       } catch (err) {
         return new Response(JSON.stringify(err), {
           status: 500,
@@ -31,6 +37,33 @@ class RemixCommHandler extends InngestCommHandler {
       }
 
       switch (req.method) {
+        case "GET": {
+          const showLandingPage = this.shouldShowLandingPage(
+            process.env[envKeys.LandingPage]
+          );
+
+          if (!showLandingPage) break;
+
+          if (isIntrospection) {
+            const introspection: IntrospectRequest = {
+              ...this.registerBody(reqUrl),
+              hasSigningKey: Boolean(this.signingKey),
+            };
+
+            return new Response(JSON.stringify(introspection), {
+              status: 200,
+            });
+          }
+
+          // Grab landing page and serve
+          return new Response(landing, {
+            status: 200,
+            headers: {
+              "content-type": "text/html;charset=UTF-8",
+            },
+          });
+        }
+
         case "PUT": {
           // Push config to Inngest.
           const { status, message } = await this.register(reqUrl);
@@ -61,10 +94,9 @@ class RemixCommHandler extends InngestCommHandler {
             status: stepRes.status,
           });
         }
-
-        default:
-          return new Response(null, { status: 405 });
       }
+
+      return new Response(null, { status: 405 });
     };
   }
 }

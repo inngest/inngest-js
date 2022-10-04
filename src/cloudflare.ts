@@ -6,6 +6,7 @@ import {
 } from "./express";
 import { envKeys, queryKeys } from "./helpers/consts";
 import { landing } from "./landing";
+import { IntrospectRequest } from "./types";
 
 class CloudflareCommHandler extends InngestCommHandler {
   protected override frameworkName = "remix";
@@ -45,7 +46,12 @@ class CloudflareCommHandler extends InngestCommHandler {
           if (!showLandingPage) break;
 
           if (isIntrospection) {
-            return new Response(JSON.stringify(this.registerBody(reqUrl)), {
+            const introspection: IntrospectRequest = {
+              ...this.registerBody(reqUrl),
+              hasSigningKey: Boolean(this.signingKey),
+            };
+
+            return new Response(JSON.stringify(introspection), {
               status: 200,
             });
           }

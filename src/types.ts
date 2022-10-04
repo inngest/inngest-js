@@ -323,6 +323,19 @@ export interface RegisterRequest {
 }
 
 /**
+ * The response to send to the local SDK UI when an introspection request is
+ * made.
+ *
+ * @internal
+ */
+export interface IntrospectRequest extends RegisterRequest {
+  /**
+   * Represents whether a signing key could be found when running this handler.
+   */
+  hasSigningKey: boolean;
+}
+
+/**
  * An individual function trigger.
  *
  * @internal

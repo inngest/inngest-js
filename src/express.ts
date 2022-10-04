@@ -8,6 +8,7 @@ import { strBoolean } from "./helpers/scalar";
 import { landing } from "./landing";
 import type {
   FunctionConfig,
+  IntrospectRequest,
   RegisterOptions,
   RegisterRequest,
   StepRunResponse,
@@ -206,7 +207,12 @@ export class InngestCommHandler {
           if (!showLandingPage) break;
 
           if (Object.hasOwnProperty.call(req.query, queryKeys.Introspect)) {
-            return void res.status(200).json(this.registerBody(reqUrl));
+            const introspection: IntrospectRequest = {
+              ...this.registerBody(reqUrl),
+              hasSigningKey: Boolean(this.signingKey),
+            };
+
+            return void res.status(200).json(introspection);
           }
 
           // Grab landing page and serve
