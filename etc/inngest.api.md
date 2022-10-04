@@ -73,6 +73,7 @@ export interface RegisterOptions {
     // (undocumented)
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
+    landingPage?: boolean;
 }
 
 // @public

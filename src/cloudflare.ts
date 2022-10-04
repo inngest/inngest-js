@@ -4,7 +4,7 @@ import {
   serve as defaultServe,
   ServeHandler,
 } from "./express";
-import { envKeys, fnIdParam, stepIdParam } from "./helpers/consts";
+import { envKeys, queryKeys } from "./helpers/consts";
 
 class CloudflareCommHandler extends InngestCommHandler {
   protected override frameworkName = "remix";
@@ -46,8 +46,8 @@ class CloudflareCommHandler extends InngestCommHandler {
               stepId: z.string().min(1),
             })
             .parse({
-              fnId: reqUrl.searchParams.get(fnIdParam),
-              stepId: reqUrl.searchParams.get(stepIdParam),
+              fnId: reqUrl.searchParams.get(queryKeys.FnId),
+              stepId: reqUrl.searchParams.get(queryKeys.StepId),
             });
 
           const stepRes = await this.runStep(fnId, stepId, await req.json());
