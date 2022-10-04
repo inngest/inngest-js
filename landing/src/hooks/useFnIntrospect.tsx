@@ -1,10 +1,14 @@
 import { useAsyncRetry } from "react-use";
-import { ConfigErr, ExpectedIntrospection } from "../types";
+import {
+  ExpectedIntrospection,
+  FunctionConfigErr,
+  GlobalConfigErr,
+} from "../types";
 
 /**
  * Introspect the local SDK handler and return config and errors.
  */
-export const useFnIntrospect = () => {
+export const useIntrospect = () => {
   const state = useAsyncRetry(async () => {
     const url = new URL(window.location.href);
     url.searchParams.set("introspect", "true");
@@ -14,17 +18,17 @@ export const useFnIntrospect = () => {
 
     result.functions = result.functions
       .map((fn) => {
-        const errs = new Set<ConfigErr>();
+        const errs = new Set<FunctionConfigErr>();
 
         if (fn.triggers?.length < 1) {
-          errs.add(ConfigErr.NoTriggers);
+          errs.add(FunctionConfigErr.NoTriggers);
         } else {
           const hasBadTrigger = fn.triggers.some((trigger: any) => {
             return !trigger?.event && !trigger?.cron;
           });
 
           if (hasBadTrigger) {
-            errs.add(ConfigErr.EmptyTrigger);
+            errs.add(FunctionConfigErr.EmptyTrigger);
           }
         }
 
@@ -44,6 +48,12 @@ export const useFnIntrospect = () => {
 
         return a.name.localeCompare(b.name);
       });
+
+    result.globalErrors = new Set<GlobalConfigErr>();
+
+    if (!result.hasSigningKey) {
+      result.globalErrors.add(GlobalConfigErr.NoSigningKey);
+    }
 
     return result;
   });

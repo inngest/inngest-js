@@ -1,20 +1,32 @@
-import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse } from "axios";
-import crypto from "crypto";
 import type { Request, Response } from "express";
+import shajs from "sha.js";
 import { z } from "zod";
-import { Inngest } from "../components/Inngest";
-import { InngestFunction } from "../components/InngestFunction";
-import { envKeys, queryKeys } from "../helpers/consts";
-import { strBoolean } from "../helpers/scalar";
-import { landing } from "../landing";
-import {
-  EventPayload,
+import { Inngest } from "./components/Inngest";
+import { InngestFunction } from "./components/InngestFunction";
+import { envKeys, queryKeys } from "./helpers/consts";
+import { strBoolean } from "./helpers/scalar";
+import { landing } from "./landing";
+import type {
   FunctionConfig,
+  IntrospectRequest,
   RegisterOptions,
   RegisterRequest,
   StepRunResponse,
-} from "../types";
-import { version } from "../version";
+} from "./types";
+import { version } from "./version";
+
+/**
+ * A schema for the response from Inngest when registering.
+ */
+const registerResSchema = z.object({
+  status: z.number().default(200),
+  error: z.string().default("Successfully registered"),
+});
+
+/**
+ * Capturing the global type of fetch so that we can reliably access it below.
+ */
+type FetchT = typeof fetch;
 
 /**
  * A handler for serving Inngest functions. This type should be used
@@ -31,13 +43,14 @@ export type ServeHandler = (
   nameOrInngest: string | Inngest<any>,
 
   /**
-   * A key used to sign requests to and from Inngest in order to prove that the
-   * source is legitimate.
-   *
-   * @link TODO
+   * An array of the functions to serve and register with Inngest.
    */
-  signingKey: string,
   functions: InngestFunction<any>[],
+
+  /**
+   * A set of options to further configure the registration of Inngest
+   * functions.
+   */
   opts?: RegisterOptions
 ) => any;
 
@@ -50,23 +63,16 @@ export type ServeHandler = (
  *
  * @public
  */
-export const serve = <Events extends Record<string, EventPayload>>(
-  ...args:
-    | [
-        nameOrInngest: string | Inngest<Events>,
-        signingKey: string,
-        functions: InngestFunction<Events>[],
-        opts?: RegisterOptions
-      ]
-    | [commHandler: InngestCommHandler]
+export const serve = (
+  ...args: Parameters<ServeHandler> | [commHandler: InngestCommHandler]
 ) => {
   if (args.length === 1) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return args[0].createHandler();
   }
 
-  const [nameOrInngest, signingKey, fns, opts] = args;
-  const handler = new InngestCommHandler(nameOrInngest, signingKey, fns, opts);
+  const [nameOrInngest, fns, opts] = args;
+  const handler = new InngestCommHandler(nameOrInngest, fns, opts);
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return handler.createHandler();
@@ -100,7 +106,9 @@ export class InngestCommHandler {
   private readonly inngestRegisterUrl: URL;
 
   protected readonly frameworkName: string = "default";
-  protected readonly signingKey: string | undefined;
+  protected signingKey: string | undefined;
+  private readonly headers: Record<string, string>;
+  private readonly fetch: FetchT;
 
   /**
    * Whether we should show the SDK Landing Page.
@@ -111,13 +119,6 @@ export class InngestCommHandler {
   protected readonly showLandingPage: boolean | undefined;
 
   /**
-   * An Axios instance used for communicating with Inngest Cloud.
-   *
-   * {@link https://npm.im/axios}
-   */
-  private readonly client: AxiosInstance;
-
-  /**
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
    */
@@ -125,9 +126,8 @@ export class InngestCommHandler {
 
   constructor(
     nameOrInngest: string | Inngest<any>,
-    signingKey: string,
     functions: InngestFunction<any>[],
-    { inngestRegisterUrl, landingPage }: RegisterOptions = {}
+    { inngestRegisterUrl, fetch, landingPage, signingKey }: RegisterOptions = {}
   ) {
     this.name =
       typeof nameOrInngest === "string" ? nameOrInngest : nameOrInngest.name;
@@ -157,15 +157,13 @@ export class InngestCommHandler {
     this.signingKey = signingKey;
     this.showLandingPage = landingPage;
 
-    this.client = axios.create({
-      timeout: 0,
-      headers: {
-        "Content-Type": "application/json",
-        "User-Agent": `InngestJS v${version} (${this.frameworkName})`,
-      },
-      validateStatus: () => true, // all status codes return a response
-      maxRedirects: 0,
-    });
+    this.headers = {
+      "Content-Type": "application/json",
+      "User-Agent": `InngestJS v${version} (${this.frameworkName})`,
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    this.fetch = fetch || (require("cross-fetch") as FetchT);
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
@@ -177,13 +175,10 @@ export class InngestCommHandler {
 
     const prefix =
       this.signingKey.match(/^signkey-(test|prod)-/)?.shift() || "";
-    const key = Buffer.from(
-      this.signingKey.replace(/^signkey-(test|prod)-/, ""),
-      "hex"
-    );
+    const key = this.signingKey.replace(/^signkey-(test|prod)-/, "");
 
     // Decode the key from its hex representation into a bytestream
-    return `${prefix}${crypto.createHash("sha256").update(key).digest("hex")}`;
+    return `${prefix}${shajs("sha256").update(key, "hex").digest("hex")}`;
   }
 
   public createHandler(): any {
@@ -212,7 +207,12 @@ export class InngestCommHandler {
           if (!showLandingPage) break;
 
           if (Object.hasOwnProperty.call(req.query, queryKeys.Introspect)) {
-            return void res.status(200).json(this.registerBody(reqUrl));
+            const introspection: IntrospectRequest = {
+              ...this.registerBody(reqUrl),
+              hasSigningKey: Boolean(this.signingKey),
+            };
+
+            return void res.status(200).json(introspection);
           }
 
           // Grab landing page and serve
@@ -304,33 +304,40 @@ export class InngestCommHandler {
   ): Promise<{ status: number; message: string }> {
     const body = this.registerBody(url);
 
-    const config: AxiosRequestConfig = {
-      headers: {
-        Authorization: `Bearer ${this.hashedSigningKey}`,
-      },
-    };
-
-    let res: AxiosResponse<any, any>;
+    let res: globalThis.Response;
 
     try {
-      res = await this.client.post(this.inngestRegisterUrl.href, body, config);
+      res = await this.fetch(this.inngestRegisterUrl.href, {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: {
+          ...this.headers,
+          Authorization: `Bearer ${this.hashedSigningKey}`,
+        },
+        redirect: "follow",
+      });
     } catch (err: unknown) {
       console.error(err);
 
       return {
         status: 500,
-        message: "Failed to register",
+        message: `Failed to register${
+          err instanceof Error ? `; ${err.message}` : ""
+        }`,
       };
     }
 
-    console.log("Registered:", res.status, res.statusText, res.data);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    let data: z.input<typeof registerResSchema> = {};
 
-    const { status, error } = z
-      .object({
-        status: z.number().default(200),
-        error: z.string().default("Successfully registered"),
-      })
-      .parse(res.data || { status: 200, error: "Successfully registered" });
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      data = await res.json();
+    } catch (err) {
+      console.warn("Couldn't unpack register response:", err);
+    }
+    const { status, error } = registerResSchema.parse(data);
+    console.log("Registered:", res.status, res.statusText, data);
 
     return { status, message: error };
   }

@@ -4,9 +4,10 @@ import {
   InngestCommHandler,
   serve as defaultServe,
   ServeHandler,
-} from "./handlers/default";
+} from "./express";
 import { envKeys, queryKeys } from "./helpers/consts";
 import { landing } from "./landing";
+import { IntrospectRequest } from "./types";
 
 class NextCommHandler extends InngestCommHandler {
   protected override frameworkName = "nextjs";
@@ -36,7 +37,12 @@ class NextCommHandler extends InngestCommHandler {
           if (!showLandingPage) break;
 
           if (Object.hasOwnProperty.call(req.query, queryKeys.Introspect)) {
-            return void res.status(200).json(this.registerBody(reqUrl));
+            const introspection: IntrospectRequest = {
+              ...this.registerBody(reqUrl),
+              hasSigningKey: Boolean(this.signingKey),
+            };
+
+            return void res.status(200).json(introspection);
           }
 
           // Grab landing page and serve
@@ -82,13 +88,6 @@ class NextCommHandler extends InngestCommHandler {
  *
  * @public
  */
-export const serve: ServeHandler = (
-  nameOrInngest,
-  signingKey,
-  fns,
-  opts
-): any => {
-  return defaultServe(
-    new NextCommHandler(nameOrInngest, signingKey, fns, opts)
-  );
+export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
+  return defaultServe(new NextCommHandler(nameOrInngest, fns, opts));
 };

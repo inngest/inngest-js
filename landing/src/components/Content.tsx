@@ -1,5 +1,6 @@
 import { useMemo } from "preact/hooks";
-import { useFnIntrospect } from "../hooks/useFnIntrospect";
+import { useIntrospect } from "../hooks/useFnIntrospect";
+import { globalConfigErrors } from "./ConfigErrors";
 import { Wrapper } from "./Container";
 import { FunctionBlock } from "./FunctionBlock";
 import { Spinner } from "./Loading";
@@ -8,7 +9,7 @@ import { Spinner } from "./Loading";
  * A messy catch-all component to render almost the entire landing page.
  */
 export const Content = () => {
-  const { loading, value: fns, retry: refresh } = useFnIntrospect();
+  const { loading, value: fns, retry: refresh } = useIntrospect();
 
   /**
    * Figure out if we have errors based on the latest fetched functions.
@@ -16,6 +17,13 @@ export const Content = () => {
   const hasErrors = useMemo(() => {
     return fns?.functions.some((fn) => fn.errors?.size) || false;
   }, [fns?.functions]);
+
+  /**
+   * Figure out if we have any global errors.
+   */
+  const hasGlobalErrors = useMemo(() => {
+    return Boolean(fns?.globalErrors.size);
+  }, [fns?.globalErrors]);
 
   /**
    * Memoise a set of quick-start cards. They're memoised so that we can adjust
@@ -83,6 +91,22 @@ export const Content = () => {
           </div>
         </Wrapper>
       </div>
+      {hasGlobalErrors ? (
+        <div class="mt-8">
+          <Wrapper>
+            <div class="w-full p-4 rounded bg-yellow-400/30 flex flex-col space-y-2">
+              <div class="font-semibold text-yellow-700 text-lg">
+                Your handler configuration might be missing some options
+              </div>
+              {Array.from(fns?.globalErrors ?? []).map((err) => (
+                <div class="bg-yellow-100 border border-yellow-400 rounded p-2 text-yellow-800">
+                  {globalConfigErrors[err]}
+                </div>
+              ))}
+            </div>
+          </Wrapper>
+        </div>
+      ) : null}
       <div class="w-full flex items-center justify-center mt-8 p-4">
         <Wrapper>
           <div class="flex flex-row justify-between">
