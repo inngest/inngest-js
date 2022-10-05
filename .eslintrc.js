@@ -11,11 +11,12 @@ module.exports = {
     tsconfigRootDir: __dirname,
     project: ["./tsconfig.json"],
   },
-  plugins: ["@typescript-eslint"],
+  plugins: ["@typescript-eslint", "@inngest"],
   root: true,
   ignorePatterns: ["dist/", "*.d.ts", "*.js"],
   rules: {
     "prettier/prettier": "warn",
     "@typescript-eslint/no-explicit-any": "off",
+    "@inngest/process-warn": "warn",
   },
 };
