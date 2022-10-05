@@ -76,7 +76,11 @@ class CloudflareCommHandler extends InngestCommHandler {
 
         case "PUT": {
           // Push config to Inngest.
-          const { status, message } = await this.register(reqUrl);
+          const { status, message } = await this.register(
+            reqUrl,
+            env[envKeys.DevServerUrl]
+          );
+
           return new Response(JSON.stringify({ message }), { status, headers });
         }
 

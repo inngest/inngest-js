@@ -234,7 +234,11 @@ export class InngestCommHandler {
 
         case "PUT": {
           // Push config to Inngest.
-          const { status, message } = await this.register(reqUrl);
+          const { status, message } = await this.register(
+            reqUrl,
+            process.env[envKeys.DevServerUrl]
+          );
+
           return void res.status(status).json({ message });
         }
 
@@ -327,7 +331,8 @@ export class InngestCommHandler {
   }
 
   protected async register(
-    url: URL
+    url: URL,
+    devServerHost: string | undefined
   ): Promise<{ status: number; message: string }> {
     const body = this.registerBody(url);
 
@@ -336,7 +341,6 @@ export class InngestCommHandler {
     // Whenever we register, we check to see if the dev server is up.  This
     // is a noop and returns false in production.
     let registerURL = this.inngestRegisterUrl;
-    const devServerHost = process.env[envKeys.DevServerUrl];
 
     if (!this.isProd) {
       const hasDevServer = await devServerAvailable(devServerHost, this.fetch);
