@@ -9,7 +9,7 @@ import { landing } from "./landing";
 import { IntrospectRequest } from "./types";
 
 class CloudflareCommHandler extends InngestCommHandler {
-  protected override frameworkName = "remix";
+  protected override frameworkName = "cloudflare-pages";
 
   public override createHandler() {
     return async ({
