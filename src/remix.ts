@@ -39,6 +39,10 @@ class RemixCommHandler extends InngestCommHandler {
         });
       }
 
+      if (!this.signingKey && process.env[envKeys.SigningKey]) {
+        this.signingKey = process.env[envKeys.SigningKey];
+      }
+
       this._isProd =
         process.env.VERCEL_ENV === "production" ||
         process.env.CONTEXT === "production" ||

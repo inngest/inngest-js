@@ -30,6 +30,10 @@ class NextCommHandler extends InngestCommHandler {
 
       res.setHeader("x-inngest-sdk", this.sdkHeader.join(""));
 
+      if (!this.signingKey && process.env[envKeys.SigningKey]) {
+        this.signingKey = process.env[envKeys.SigningKey];
+      }
+
       this._isProd =
         process.env.VERCEL_ENV === "production" ||
         process.env.CONTEXT === "production" ||

@@ -209,6 +209,10 @@ export class InngestCommHandler {
         return res.status(500).json({ message });
       }
 
+      if (!this.signingKey && process.env[envKeys.SigningKey]) {
+        this.signingKey = process.env[envKeys.SigningKey];
+      }
+
       this._isProd = process.env.ENVIRONMENT === "production";
 
       switch (req.method) {
