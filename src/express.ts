@@ -106,7 +106,7 @@ export class InngestCommHandler {
    */
   private readonly inngestRegisterUrl: URL;
 
-  protected readonly frameworkName: string = "default";
+  protected readonly frameworkName: string = "express";
   protected signingKey: string | undefined;
 
   /**
