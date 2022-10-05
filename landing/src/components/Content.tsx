@@ -1,4 +1,5 @@
 import { useMemo } from "preact/hooks";
+import { useInterval } from "react-use";
 import { useIntrospect } from "../hooks/useFnIntrospect";
 import { globalConfigErrors } from "./ConfigErrors";
 import { Wrapper } from "./Container";
@@ -10,6 +11,9 @@ import { Spinner } from "./Loading";
  */
 export const Content = () => {
   const { loading, value: fns, retry: refresh } = useIntrospect();
+
+  // Refresh our functions every 5 seconds.
+  useInterval(refresh, 5000);
 
   /**
    * Figure out if we have errors based on the latest fetched functions.
@@ -51,7 +55,7 @@ export const Content = () => {
     ];
   }, []);
 
-  if (loading) {
+  if (loading && !fns?.functions.length) {
     return (
       <div class="flex-1 w-full h-full flex items-center justify-center">
         <Spinner class="h-8 w-8" />

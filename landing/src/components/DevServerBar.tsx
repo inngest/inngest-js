@@ -1,7 +1,10 @@
 import { useMemo } from "preact/hooks";
 import { useAsyncRetry, useInterval } from "react-use";
+import { useIntrospect } from "../hooks/useFnIntrospect";
 import { classNames } from "../utils/classnames";
 import { Code } from "./Code";
+
+const defaultURL = "http://localhost:8288"
 
 /**
  * A nav bar intended to be at the top of the page.
@@ -30,15 +33,19 @@ interface DevServerInfo {
  * A large pill showing dev server connection status.
  */
 export const DevServerPill = () => {
+  const { value: data } = useIntrospect();
+
+  const url = new URL(data?.devServerURL || defaultURL);
+  url.pathname = "dev";
+
   const {
     loading,
     value: devServer,
     error,
     retry,
   } = useAsyncRetry(async () => {
-    const res = await fetch(new URL("http://localhost:8288/dev"));
+    const res = await fetch(url);
     const result: DevServerInfo = await res.json();
-
     return result;
   });
 
@@ -71,7 +78,7 @@ export const DevServerPill = () => {
         </div>
         {connected ? (
           <div>
-            Connected to <code>inngest dev</code> on <code>:8288</code>
+            Connected to <code>inngest dev</code> on <code>{url.hostname}:{url.port}</code>
           </div>
         ) : (
           <div>
@@ -80,7 +87,7 @@ export const DevServerPill = () => {
         )}
       </div>
       {!connected ? (
-        <Code copiable value={`npx inngest-cli -u ${window.location.href}`} />
+        <Code copiable value={`npx inngest-cli dev -u ${window.location.href}`} />
       ) : null}
     </>
   );

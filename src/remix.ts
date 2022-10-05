@@ -5,6 +5,7 @@ import {
   serve as defaultServe,
   ServeHandler,
 } from "./express";
+import { devServerUrl } from "./helpers/devserver";
 import { envKeys, queryKeys } from "./helpers/consts";
 import { landing } from "./landing";
 import type { IntrospectRequest } from "./types";
@@ -29,7 +30,6 @@ class RemixCommHandler extends InngestCommHandler {
 
       try {
         reqUrl = new URL(req.url, `https://${req.headers.get("host") || ""}`);
-
         isIntrospection = reqUrl.searchParams.has(queryKeys.Introspect);
         reqUrl.searchParams.delete(queryKeys.Introspect);
       } catch (err) {
@@ -59,6 +59,7 @@ class RemixCommHandler extends InngestCommHandler {
           if (isIntrospection) {
             const introspection: IntrospectRequest = {
               ...this.registerBody(reqUrl),
+              devServerURL: devServerUrl(process.env[envKeys.DevServerUrl]).href,
               hasSigningKey: Boolean(this.signingKey),
             };
 

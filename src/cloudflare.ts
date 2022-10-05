@@ -53,6 +53,7 @@ class CloudflareCommHandler extends InngestCommHandler {
           if (isIntrospection) {
             const introspection: IntrospectRequest = {
               ...this.registerBody(reqUrl),
+              devServerURL: new URL(env[envKeys.DevServerUrl] || "http://localhost:8288").href,
               hasSigningKey: Boolean(this.signingKey),
             };
 
