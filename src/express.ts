@@ -226,7 +226,8 @@ export class InngestCommHandler {
           if (Object.hasOwnProperty.call(req.query, queryKeys.Introspect)) {
             const introspection: IntrospectRequest = {
               ...this.registerBody(reqUrl),
-              devServerURL: devServerUrl(process.env[envKeys.DevServerUrl]).href,
+              devServerURL: devServerUrl(process.env[envKeys.DevServerUrl])
+                .href,
               hasSigningKey: Boolean(this.signingKey),
             };
 
