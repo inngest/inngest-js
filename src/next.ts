@@ -6,6 +6,7 @@ import {
   ServeHandler,
 } from "./express";
 import { envKeys, queryKeys } from "./helpers/consts";
+import { devServerUrl } from "./helpers/devserver";
 import { landing } from "./landing";
 import { IntrospectRequest } from "./types";
 
@@ -50,6 +51,8 @@ class NextCommHandler extends InngestCommHandler {
           if (Object.hasOwnProperty.call(req.query, queryKeys.Introspect)) {
             const introspection: IntrospectRequest = {
               ...this.registerBody(reqUrl),
+              devServerURL: devServerUrl(process.env[envKeys.DevServerUrl])
+                .href,
               hasSigningKey: Boolean(this.signingKey),
             };
 

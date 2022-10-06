@@ -333,6 +333,11 @@ export interface IntrospectRequest extends RegisterRequest {
    * Represents whether a signing key could be found when running this handler.
    */
   hasSigningKey: boolean;
+
+  /**
+   * devserverURL must be included for the frontend to know where to ping.
+   */
+  devServerURL: string;
 }
 
 /**
