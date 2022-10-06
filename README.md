@@ -21,7 +21,15 @@
 
 <hr />
 
-Build, test, and deploy code that runs in response to events or on a schedule right in your own codebase.<br />
+Inngest allows you to:
+
+- 👉 Write <b>background jobs</b> in any framework, on any platform <br />
+- 👉 Create <b>scheduled & cron jobs</b> for any serverless platform <br />
+- 👉 Build <b>serverless queues</b> without configuring infra <br />
+- 👉 Write complex <b>step functions</b> anywhere <br />
+- 👉 Build <b>serverless event-driven systems</b> <br />
+- 👉 Reliably respond to webhooks, with retries & payloads stored for history <br />
+
 👋 _Have a question or feature request? [Join our Discord](https://www.inngest.com/discord)!_
 
 <br />
@@ -34,6 +42,8 @@ Build, test, and deploy code that runs in response to events or on a schedule ri
 </p>
 
 <br />
+
+<img width="1489" alt="Screen Shot 2022-10-05 at 17 06 32" src="https://user-images.githubusercontent.com/306177/194185480-a942a175-0adb-42cb-9cfd-355aa03332d5.png">
 
 ## Getting started
 
