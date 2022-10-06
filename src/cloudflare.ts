@@ -5,6 +5,7 @@ import {
   ServeHandler,
 } from "./express";
 import { envKeys, queryKeys } from "./helpers/consts";
+import { devServerUrl } from "./helpers/devserver";
 import { landing } from "./landing";
 import { IntrospectRequest } from "./types";
 
@@ -53,7 +54,7 @@ class CloudflareCommHandler extends InngestCommHandler {
           if (isIntrospection) {
             const introspection: IntrospectRequest = {
               ...this.registerBody(reqUrl),
-              devServerURL: new URL(env[envKeys.DevServerUrl] || "http://localhost:8288").href,
+              devServerURL: devServerUrl(env[envKeys.DevServerUrl]).href,
               hasSigningKey: Boolean(this.signingKey),
             };
 
