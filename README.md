@@ -43,7 +43,7 @@ Inngest allows you to:
 
 <br />
 
-<img width="1491" alt="Screen Shot 2022-10-05 at 16 54 37" src="https://user-images.githubusercontent.com/306177/194185120-e8365557-a211-4717-92b9-a72133225a37.png">
+<img width="1489" alt="Screen Shot 2022-10-05 at 17 06 32" src="https://user-images.githubusercontent.com/306177/194185480-a942a175-0adb-42cb-9cfd-355aa03332d5.png">
 
 ## Getting started
 
