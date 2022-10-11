@@ -60,6 +60,7 @@ class NextCommHandler extends InngestCommHandler {
           }
 
           // Grab landing page and serve
+          res.setHeader("content-type", "text/html; charset=utf-8");
           return void res.status(200).send(landing);
         }
 
