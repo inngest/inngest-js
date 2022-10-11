@@ -74,7 +74,7 @@ class RemixCommHandler extends InngestCommHandler {
             status: 200,
             headers: {
               ...headers,
-              "content-type": "text/html;charset=UTF-8",
+              "content-type": "text/html; charset=utf-8",
             },
           });
         }
