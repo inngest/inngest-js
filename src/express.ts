@@ -235,7 +235,7 @@ export class InngestCommHandler {
           }
 
           // Grab landing page and serve
-          res.header("content-type", "text/html; charset=utf-8")
+          res.header("content-type", "text/html; charset=utf-8");
           return void res.status(200).send(landing);
         }
 
