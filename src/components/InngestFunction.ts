@@ -1,4 +1,5 @@
 import { queryKeys } from "../helpers/consts";
+import { slugify } from "../helpers/strings";
 import {
   EventPayload,
   FunctionConfig,
@@ -117,15 +118,6 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
    * Generate an ID based on the function's name.
    */
   #generateId(prefix?: string) {
-    const join = "-";
-
-    return [prefix || "", this.#opts.name]
-      .join("-")
-      .toLowerCase()
-      .replaceAll(/[^a-z0-9-]+/g, join)
-      .replaceAll(/-+/g, join)
-      .split(join)
-      .filter(Boolean)
-      .join(join);
+    return slugify([prefix || "", this.#opts.name].join("-"));
   }
 }
