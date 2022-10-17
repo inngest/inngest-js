@@ -16,10 +16,14 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        nodeVersion: [14, 16, 18, lts]
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
-      - run: yarn test
+      - run: volta run --node ${{ matrix.nodeVersion }} yarn test
 
   api_diff:
     name: Local API diff
