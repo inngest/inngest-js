@@ -17,6 +17,7 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         nodeVersion: [14, 16, 18, lts]
     steps:
