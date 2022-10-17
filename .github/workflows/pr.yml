@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        nodeVersion: [14, 16, 18]
+        nodeVersion: [14, 16, 18, lts]
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
