@@ -3,7 +3,7 @@ description: "Sets up Node, installs dependencies, and builds the project."
 runs:
   using: composite
   steps:
-    - uses: volta-cli/action@v3
+    - uses: volta-cli/action@v4
 
     - name: Get yarn cache directory path
       id: yarn-cache-dir-path
