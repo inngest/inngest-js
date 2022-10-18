@@ -43,14 +43,15 @@ describe("InngestCommHandler", () => {
       );
       const ch = new InngestCommHandler("test-1", [fn], {});
       const handler = ch.createHandler() as RequestHandler;
+      // Matches a real-world request using an express app
       const req: Request = httpMocks.createRequest({
         method: "GET",
         protocol: "http",
+        hostname: "localhost",
         headers: {
           host: "localhost:3000",
         },
-        url: "http://localhost:3000/api/inngest",
-        query: { introspect: true },
+        url: "/api/inngest?introspect=true",
       });
       const res = httpMocks.createResponse();
 
@@ -70,11 +71,11 @@ describe("InngestCommHandler", () => {
       const httpsReq: Request = httpMocks.createRequest({
         method: "GET",
         protocol: "https",
+        hostname: "localhost",
         headers: {
           host: "localhost:3001",
         },
-        url: "https://localhost:3001/api/inngest",
-        query: { introspect: true },
+        url: "/api/inngest?introspect=true",
       });
       const httpsRes = httpMocks.createResponse();
       handler(httpsReq, httpsRes, createNext());
