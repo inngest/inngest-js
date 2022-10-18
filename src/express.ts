@@ -195,7 +195,6 @@ export class InngestCommHandler {
       res.setHeader("x-inngest-sdk", this.sdkHeader.join(""));
 
       const hostname = req.get("host") || req.headers["host"];
-      console.log(hostname);
       const protocol = hostname?.includes("://") ? "" : `${req.protocol}://`;
 
       let reqUrl;
