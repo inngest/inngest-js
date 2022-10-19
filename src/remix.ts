@@ -131,6 +131,6 @@ class RemixCommHandler extends InngestCommHandler {
  *
  * @public
  */
-export const register: ServeHandler = (nameOrInngest, fns, opts): any => {
+export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
   return defaultServe(new RemixCommHandler(nameOrInngest, fns, opts));
 };
