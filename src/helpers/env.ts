@@ -1,6 +1,9 @@
 import { defaultDevServerHost } from "./consts";
 
-// This file exists to help
+// This file exists to help normalize process.env amongst the backend
+// and frontend.  Many frontends (eg. Next, CRA) utilize webpack's DefinePlugin
+// along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
+// string in order to read variables.
 
 /**
  * devServerHost returns the dev server host by searching for the INNGEST_DEVSERVER_URL
