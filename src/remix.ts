@@ -60,8 +60,7 @@ class RemixCommHandler extends InngestCommHandler {
           if (isIntrospection) {
             const introspection: IntrospectRequest = {
               ...this.registerBody(reqUrl),
-              devServerURL: devServerUrl(devServerHost())
-                .href,
+              devServerURL: devServerUrl(devServerHost()).href,
               hasSigningKey: Boolean(this.signingKey),
             };
 

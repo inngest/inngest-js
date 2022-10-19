@@ -1,6 +1,6 @@
 import { envKeys } from "../helpers/consts";
-import { devServerHost, isProd } from "../helpers/env";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+import { devServerHost, isProd } from "../helpers/env";
 import type {
   PartialK,
   SendEventPayload,
@@ -261,7 +261,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     let url = this.inngestApiUrl.href;
 
     if (!isProd()) {
-      const host = devServerHost()
+      const host = devServerHost();
       if (await devServerAvailable(host, fetch)) {
         url = devServerUrl(host, `e/${this.eventKey}`).href;
       }
