@@ -1,5 +1,3 @@
-import { defaultDevServerHost } from "./consts";
-
 // This file exists to help normalize process.env amongst the backend
 // and frontend.  Many frontends (eg. Next, CRA) utilize webpack's DefinePlugin
 // along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
@@ -9,11 +7,11 @@ import { defaultDevServerHost } from "./consts";
  * devServerHost returns the dev server host by searching for the INNGEST_DEVSERVER_URL
  * environment variable (plus project prefixces for eg. react, such as REACT_APP_INNGEST_DEVSERVER_URL).
  *
- * If not found, this returns the default URL of "http://127.0.0.1:8288/"
+ * If not found this returns undefined, indicating that the env var has not been set.
  *
  * @example devServerHost()
  */
-export const devServerHost = (): string => {
+export const devServerHost = (): string | undefined => {
   // devServerKeys are the env keys we search for to discover the dev server
   // URL.  This includes the standard key first, then includes prefixed keys
   // for use within common frameworks (eg. CRA, next).
@@ -31,7 +29,7 @@ export const devServerHost = (): string => {
           process.env.NEXT_PUBLIC_INNGEST_DEVSERVER_URL,
         ];
 
-  return values.find((a) => !!a) || defaultDevServerHost;
+  return values.find((a) => !!a);
 };
 
 export const isProd = (): boolean => {
