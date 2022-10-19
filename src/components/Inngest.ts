@@ -1,4 +1,6 @@
 import { envKeys } from "../helpers/consts";
+import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+import { devServerHost, isProd } from "../helpers/env";
 import type {
   PartialK,
   SendEventPayload,
@@ -89,7 +91,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    */
   constructor({
     name,
-    eventKey = process.env[envKeys.EventKey],
+    eventKey,
     inngestBaseUrl = "https://inn.gs/",
   }: ClientOptions) {
     if (!name) {
@@ -103,7 +105,13 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     }
 
     this.name = name;
-    this.eventKey = eventKey;
+
+    this.eventKey =
+      eventKey ||
+      (typeof process === "undefined"
+        ? ""
+        : process.env[envKeys.EventKey] || "");
+
     this.inngestBaseUrl = new URL(inngestBaseUrl);
     this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
 
@@ -254,7 +262,21 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       );
     }
 
-    const response = await fetch(this.inngestApiUrl.href, {
+    // When sending events, check if the dev server is available.  If so, use the
+    // dev server.
+    let url = this.inngestApiUrl.href;
+
+    if (!isProd()) {
+      const host = devServerHost();
+      // If the dev server host env var has been set we always want to use
+      // the dev server - even if it's down.  Otherwise, optimistically use
+      // it for non-prod services.
+      if (host !== undefined || await devServerAvailable(host, fetch)) {
+        url = devServerUrl(host, `e/${this.eventKey}`).href;
+      }
+    }
+
+    const response = await fetch(url, {
       method: "POST",
       body: JSON.stringify(payloads),
       headers: { ...this.headers },
