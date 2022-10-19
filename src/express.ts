@@ -17,6 +17,12 @@ import type {
 import { version } from "./version";
 
 /**
+ * lastRegisteredHash stores a checksum of the last successful function hash
+ * that was registered via this instance of the server.
+ */
+let lastRegisteredHash: string | undefined = undefined;
+
+/**
  * A schema for the response from Inngest when registering.
  */
 const registerResSchema = z.object({
@@ -326,7 +332,7 @@ export class InngestCommHandler {
   }
 
   protected registerBody(url: URL): RegisterRequest {
-    return {
+    const body: RegisterRequest = {
       url: url.href,
       deployType: "ping",
       framework: this.frameworkName,
@@ -335,6 +341,10 @@ export class InngestCommHandler {
       sdk: this.sdkHeader[1],
       v: "0.1",
     };
+
+    // Calculate the checksum of the body... without the checksum itself being included.
+    body.hash = shajs("sha256").update(JSON.stringify(body)).digest("hex");
+    return body;
   }
 
   protected async register(
@@ -387,12 +397,21 @@ export class InngestCommHandler {
       console.warn("Couldn't unpack register response:", err);
     }
     const { status, error } = registerResSchema.parse(data);
-    console.log(
-      "Registered Inngest functions:",
-      res.status,
-      res.statusText,
-      data
-    );
+
+    // The dev server polls this endpoint to register functions every few
+    // seconds, but we only want to log that we've registered functions if
+    // the function definitions change.  Therefore, we compare the body sent
+    // during registration with the body of the current functions and refuse
+    // to register if the functions are the same.
+    if (lastRegisteredHash !== body.hash) {
+      lastRegisteredHash = body.hash;
+      console.log(
+        "registered inngest functions:",
+        res.status,
+        res.statusText,
+        data
+      );
+    }
 
     return { status, message: error };
   }
