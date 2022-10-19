@@ -91,7 +91,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
    */
   constructor({
     name,
-    eventKey = process.env[envKeys.EventKey],
+    eventKey,
     inngestBaseUrl = "https://inn.gs/",
   }: ClientOptions) {
     if (!name) {
@@ -105,7 +105,13 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     }
 
     this.name = name;
-    this.eventKey = eventKey;
+
+    this.eventKey =
+      eventKey ||
+      (typeof process === "undefined"
+        ? ""
+        : process.env[envKeys.EventKey] || "");
+
     this.inngestBaseUrl = new URL(inngestBaseUrl);
     this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
 
