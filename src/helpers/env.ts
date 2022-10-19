@@ -1,4 +1,4 @@
-import { defaultDevServerHost, devServerKeys } from "./consts";
+import { defaultDevServerHost } from "./consts";
 
 // This file exists to help
 
@@ -8,7 +8,7 @@ import { defaultDevServerHost, devServerKeys } from "./consts";
  *
  * If not found, this returns the default URL of "http://127.0.0.1:8288/"
  *
- * @example devServerHost(process.env)
+ * @example devServerHost()
  */
 export const devServerHost = (): string => {
   // devServerKeys are the env keys we search for to discover the dev server
@@ -34,5 +34,5 @@ export const isProd = (): boolean => {
     process.env.VERCEL_ENV,
     process.env.CONTEXT,
   ]
-  return !!values.find(v => v === "PRODUCTION");
+  return !!values.find(v => v === "production");
 }
