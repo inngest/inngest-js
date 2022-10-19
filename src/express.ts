@@ -351,7 +351,6 @@ export class InngestCommHandler {
 
     if (!this.isProd) {
       const hasDevServer = await devServerAvailable(devServerHost, this.fetch);
-
       if (hasDevServer) {
         registerURL = devServerUrl(devServerHost, "/fn/register");
       }

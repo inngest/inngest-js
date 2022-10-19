@@ -7,6 +7,7 @@ import {
 } from "./express";
 import { envKeys, queryKeys } from "./helpers/consts";
 import { devServerUrl } from "./helpers/devserver";
+import { devServerHost } from "./helpers/env";
 import { landing } from "./landing";
 import type { IntrospectRequest } from "./types";
 
@@ -59,7 +60,7 @@ class RemixCommHandler extends InngestCommHandler {
           if (isIntrospection) {
             const introspection: IntrospectRequest = {
               ...this.registerBody(reqUrl),
-              devServerURL: devServerUrl(process.env[envKeys.DevServerUrl])
+              devServerURL: devServerUrl(devServerHost())
                 .href,
               hasSigningKey: Boolean(this.signingKey),
             };

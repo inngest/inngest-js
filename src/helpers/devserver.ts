@@ -11,13 +11,15 @@ type FetchT = typeof fetch;
 /**
  * Attempts to contact the dev server, returning a boolean indicating whether or
  * not it was successful.
+ *
+ * @example devServerUrl(process.env[envKeys.DevServerUrl], "/your-path")
  */
 export const devServerAvailable = async (
   /**
    * The host of the dev server. You should pass in an environment variable as
    * this parameter.
    */
-  host = defaultDevServerHost,
+  host: string = defaultDevServerHost,
 
   /**
    * The fetch implementation to use to communicate with the dev server.
@@ -28,15 +30,23 @@ export const devServerAvailable = async (
     const url = devServerUrl(host, "/dev");
     const result = await fetch(url.toString());
     await result.json();
-
     return true;
   } catch (e) {
     return false;
   }
 };
 
+/**
+ * devServerUrl returns a full URL for the given path name.
+ *
+ * Because Cloudflare/V8 platforms don't allow process.env, you are expected
+ * to pass in the host from the dev server env key:
+ *
+ * @example devServerUrl(process.env[envKeys.DevServerUrl], "/your-path")
+ * @example devServerUrl("http://localhost:8288/", "/your-path")
+ */
 export const devServerUrl = (
-  host = defaultDevServerHost,
+  host: string = defaultDevServerHost,
   pathname = ""
 ): URL => {
   return new URL(pathname, host.includes("://") ? host : `http://${host}`);
