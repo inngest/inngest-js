@@ -2,12 +2,16 @@ import type { RequestHandler } from "express";
 import { Request, NextFunction } from "express"; // interfaces
 import httpMocks from "node-mocks-http";
 
-import { InngestCommHandler } from "./express";
+import * as ExpressHandler from "./express";
 import { InngestFunction } from "./components/InngestFunction";
 import { InngestStep } from "./components/InngestStep";
 import { RegisterRequest, IntrospectRequest } from "./types";
+import { testFramework } from "./test/helpers";
 
+const { InngestCommHandler } = ExpressHandler;
 const createNext = (): NextFunction => () => undefined;
+
+testFramework("Express", ExpressHandler);
 
 describe("InngestCommHandler", () => {
   // Enable testing of protected methods
