@@ -45,6 +45,12 @@ export const testFramework = (
       describe("Environment checks", opts.envTests);
     }
 
+    describe("Export checks", () => {
+      test("serve should be a function", () => {
+        expect(handler.serve).toEqual(expect.any(Function));
+      });
+    });
+
     if (opts?.handlerTests) {
       describe("Serve return", opts.handlerTests);
     }
