@@ -55,7 +55,7 @@ export const Content = () => {
     ];
   }, []);
 
-  if (loading && !fns?.functions.length) {
+  if (loading && !fns && !error) {
     return (
       <div class="flex-1 w-full h-full flex items-center justify-center">
         <Spinner class="h-8 w-8" />
