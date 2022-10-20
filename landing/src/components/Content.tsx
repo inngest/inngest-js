@@ -1,16 +1,26 @@
-import { useMemo } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
 import { useInterval } from "react-use";
-import { useIntrospect } from "../hooks/useFnIntrospect";
 import { globalConfigErrors } from "./ConfigErrors";
 import { Wrapper } from "./Container";
+import { ExpandableEventSender } from "./ExpandableEventSender";
 import { FunctionBlock } from "./FunctionBlock";
+import { IntrospectConsumer, IntrospectValue } from "./Introspect";
 import { Spinner } from "./Loading";
+
+export const Content = () => {
+  return (
+    <IntrospectConsumer>
+      {value => <ContentUI introspect={value} /> }
+    </IntrospectConsumer>
+  );
+}
 
 /**
  * A messy catch-all component to render almost the entire landing page.
  */
-export const Content = () => {
-  const { loading, value: fns, retry: refresh } = useIntrospect();
+export const ContentUI = ({ introspect }: { introspect: IntrospectValue }) => {
+  const { loading, value: fns, retry: refresh, error } = introspect;
+  const [eventSenderExpanded, setEventSenderExpanded] = useState(false);
 
   // Refresh our functions every 5 seconds.
   useInterval(refresh, 5000);
@@ -55,7 +65,7 @@ export const Content = () => {
     ];
   }, []);
 
-  if (loading && !fns?.functions.length) {
+  if (loading && !fns && !error) {
     return (
       <div class="flex-1 w-full h-full flex items-center justify-center">
         <Spinner class="h-8 w-8" />
@@ -115,6 +125,10 @@ export const Content = () => {
           </Wrapper>
         </div>
       ) : null}
+      <ExpandableEventSender
+        expanded={eventSenderExpanded}
+        onToggle={() => setEventSenderExpanded((v) => !v)}
+      />
       <div class="w-full flex items-center justify-center mt-8 p-4">
         <Wrapper>
           <div class="flex flex-row justify-between">

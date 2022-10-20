@@ -376,3 +376,18 @@ export interface FunctionConfig {
     }
   >;
 }
+
+export interface DevServerInfo {
+  /**
+   * The version of the dev server.
+   */
+  version: string;
+  authed: boolean;
+  startOpts: {
+    dir?: string;
+    autodiscover: boolean;
+    urls: string[],
+  },
+  functions: FunctionConfig[];
+  handlers: RegisterRequest[];
+}
