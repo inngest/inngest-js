@@ -1,17 +1,25 @@
 import { useMemo, useState } from "preact/hooks";
 import { useInterval } from "react-use";
-import { useIntrospect } from "../hooks/useFnIntrospect";
 import { globalConfigErrors } from "./ConfigErrors";
 import { Wrapper } from "./Container";
 import { ExpandableEventSender } from "./ExpandableEventSender";
 import { FunctionBlock } from "./FunctionBlock";
+import { IntrospectConsumer, IntrospectValue } from "./Introspect";
 import { Spinner } from "./Loading";
+
+export const Content = () => {
+  return (
+    <IntrospectConsumer>
+      {value => <ContentUI introspect={value} /> }
+    </IntrospectConsumer>
+  );
+}
 
 /**
  * A messy catch-all component to render almost the entire landing page.
  */
-export const Content = () => {
-  const { loading, value: fns, retry: refresh, error } = useIntrospect();
+export const ContentUI = ({ introspect }: { introspect: IntrospectValue }) => {
+  const { loading, value: fns, retry: refresh, error } = introspect;
   console.log("loading and value:", loading, Boolean(fns), Boolean(error));
   const [eventSenderExpanded, setEventSenderExpanded] = useState(false);
 

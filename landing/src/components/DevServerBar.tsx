@@ -1,8 +1,8 @@
 import { useMemo } from "preact/hooks";
 import { useAsyncRetry, useInterval } from "react-use";
-import { useIntrospect } from "../hooks/useFnIntrospect";
 import { classNames } from "../utils/classnames";
 import { Code } from "./Code";
+import { IntrospectConsumer, IntrospectValue } from "./Introspect";
 
 const defaultURL = "http://localhost:8288"
 
@@ -11,14 +11,18 @@ const defaultURL = "http://localhost:8288"
  */
 export const DevServerBar = () => {
   return (
-    <div class="bg-gray-200 top-0 w-full p-4 flex flex-row items-center gap-5">
-      <div class="font-medium text-gray-900 text-xl">Inngest SDK</div>
-      <div class="h-6 w-1 bg-gray-300" />
-      <DevServerPill />
-      {/* <a href="#" class="text-gray-700 font-semibold">
-        Learn more
-      </a> */}
-    </div>
+    <IntrospectConsumer>
+    { value => (
+      <div class="bg-gray-200 top-0 w-full p-4 flex flex-row items-center gap-5">
+        <div class="font-medium text-gray-900 text-xl">Inngest SDK</div>
+        <div class="h-6 w-1 bg-gray-300" />
+        <DevServerPill introspect={value} />
+        {/* <a href="#" class="text-gray-700 font-semibold">
+          Learn more
+        </a> */}
+      </div>
+    )}
+    </IntrospectConsumer>
   );
 };
 
@@ -32,16 +36,13 @@ interface DevServerInfo {
 /**
  * A large pill showing dev server connection status.
  */
-export const DevServerPill = () => {
-  const { value: data } = useIntrospect();
-
+const DevServerPill = ({ introspect }: { introspect: IntrospectValue }) => {
+  const { value: data } = introspect;
   const url = new URL(data?.devServerURL || defaultURL);
   url.pathname = "dev";
 
   const {
-    loading,
     value: devServer,
-    error,
     retry,
   } = useAsyncRetry(async () => {
     const res = await fetch(url);
