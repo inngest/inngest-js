@@ -1,8 +1,9 @@
-import { useMemo } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
 import { useInterval } from "react-use";
 import { useIntrospect } from "../hooks/useFnIntrospect";
 import { globalConfigErrors } from "./ConfigErrors";
 import { Wrapper } from "./Container";
+import { ExpandableEventSender } from "./ExpandableEventSender";
 import { FunctionBlock } from "./FunctionBlock";
 import { Spinner } from "./Loading";
 
@@ -10,7 +11,9 @@ import { Spinner } from "./Loading";
  * A messy catch-all component to render almost the entire landing page.
  */
 export const Content = () => {
-  const { loading, value: fns, retry: refresh } = useIntrospect();
+  const { loading, value: fns, retry: refresh, error } = useIntrospect();
+  console.log("loading and value:", loading, Boolean(fns), Boolean(error));
+  const [eventSenderExpanded, setEventSenderExpanded] = useState(false);
 
   // Refresh our functions every 5 seconds.
   useInterval(refresh, 5000);
@@ -115,6 +118,10 @@ export const Content = () => {
           </Wrapper>
         </div>
       ) : null}
+      <ExpandableEventSender
+        expanded={eventSenderExpanded}
+        onToggle={() => setEventSenderExpanded((v) => !v)}
+      />
       <div class="w-full flex items-center justify-center mt-8 p-4">
         <Wrapper>
           <div class="flex flex-row justify-between">
