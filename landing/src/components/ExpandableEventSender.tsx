@@ -1,24 +1,33 @@
 import { useMemo, useState } from "preact/hooks";
+import { Inngest } from "../../../src/components/Inngest";
 import { classNames } from "../utils/classnames";
 import { Button } from "./Button";
 import { Wrapper } from "./Container";
-import { TextAreaInput, TextInput } from "./TextInput";
+import { IntrospectConsumer, IntrospectValue } from "./Introspect";
+import { TextAreaInput } from "./TextInput";
 
 interface Props {
   expanded: boolean;
   onToggle?: () => void;
-  eventName?: string;
   eventData?: any;
 }
 
-export const ExpandableEventSender = ({
-  expanded,
+export const ExpandableEventSender = (props: Props) => {
+  return (
+    <IntrospectConsumer>
+      {introspect => <ExpandableEventSenderUI {...props} introspect={introspect} /> }
+    </IntrospectConsumer>
+  );
+}
+
+
+const ExpandableEventSenderUI = ({
+  introspect,
   eventData,
-  eventName,
-  onToggle,
-}: Props) => {
-  const [name, setName] = useState(eventName || "");
-  const [data, setData] = useState(eventData || "{}");
+}: Props & { introspect: IntrospectValue }) => {
+
+  const { value } = introspect;
+  const [data, setData] = useState(eventData || JSON.stringify({ name: "", data: {} }, undefined, "  "));
 
   const isValidData = useMemo(() => {
     try {
@@ -29,26 +38,30 @@ export const ExpandableEventSender = ({
     }
   }, [data]);
 
+  const send = async (e: Event) => {
+    // Attempt to send to the devserver.
+    e.preventDefault();
+
+    if (!value) {
+      // TODO: Error
+      return;
+    }
+
+    const inngest = new Inngest({ name: value.appName, inngestBaseUrl: value.devServerURL, eventKey: "dev-server" });
+    await inngest.send(JSON.parse(data));
+  }
+
   /**
    * TODO
    *
    * - Add "history" section via localstorage
-   * - Add "Invoke" button for
    */
 
   return (
     <Wrapper>
       <details class="border border-gray-200 p-4 flex flex-col cursor-pointer rounded-lg bg-white shadow-lg my-4">
         <summary class="select-none">Send a test event</summary>
-        <div class="flex-1">
-          <div class="my-4">
-            <TextInput
-              label="Event name"
-              className="font-mono"
-              value={name}
-              onChange={setName}
-            />
-          </div>
+        <form class="flex-1" onSubmit={send}>
           <div class="my-4">
             <TextAreaInput
               label="Event data (JSON)"
@@ -62,9 +75,9 @@ export const ExpandableEventSender = ({
           </div>
           <div class="flex flex-row justify-end space-x-4 items-center italic">
             <div class="text-gray-500 text-sm">Ctrl + Enter to send</div>
-            <Button>Send event</Button>
+            <Button type="submit">Send event</Button>
           </div>
-        </div>
+        </form>
       </details>
     </Wrapper>
   );
