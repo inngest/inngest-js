@@ -20,7 +20,6 @@ export const Content = () => {
  */
 export const ContentUI = ({ introspect }: { introspect: IntrospectValue }) => {
   const { loading, value: fns, retry: refresh, error } = introspect;
-  console.log("loading and value:", loading, Boolean(fns), Boolean(error));
   const [eventSenderExpanded, setEventSenderExpanded] = useState(false);
 
   // Refresh our functions every 5 seconds.
