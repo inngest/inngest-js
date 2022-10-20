@@ -36,6 +36,7 @@ export interface TextAreaInputProps {
   value?: string;
   onChange?: (value: string) => void;
   className?: string;
+  disabled?: boolean;
 }
 
 export const TextAreaInput = ({
@@ -43,11 +44,13 @@ export const TextAreaInput = ({
   label,
   onChange,
   className = "",
+  disabled
 }: TextAreaInputProps) => {
   return (
     <>
       {label ? <Label>{label}</Label> : null}
       <textarea
+        disabled={disabled}
         class={classNames({
           "w-full bg-gray-100 rounded p-2 focus:outline-none focus:ring focus:border-blue-500":
             true,

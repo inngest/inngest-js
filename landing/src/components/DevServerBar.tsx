@@ -1,5 +1,3 @@
-import { useMemo } from "preact/hooks";
-import { useAsyncRetry, useInterval } from "react-use";
 import { classNames } from "../utils/classnames";
 import { Code } from "./Code";
 import { IntrospectConsumer, IntrospectValue } from "./Introspect";
@@ -26,36 +24,14 @@ export const DevServerBar = () => {
   );
 };
 
-interface DevServerInfo {
-  /**
-   * The version of the dev server.
-   */
-  version: string;
-}
-
 /**
  * A large pill showing dev server connection status.
  */
 const DevServerPill = ({ introspect }: { introspect: IntrospectValue }) => {
-  const { value: data } = introspect;
+  const { value: data, devConnected: connected } = introspect;
+
   const url = new URL(data?.devServerURL || defaultURL);
   url.pathname = "dev";
-
-  const {
-    value: devServer,
-    retry,
-  } = useAsyncRetry(async () => {
-    const res = await fetch(url);
-    const result: DevServerInfo = await res.json();
-    return result;
-  });
-
-  /**
-   * Whenever the dev server isn't connected, keep trying every 5 seconds.
-   */
-  useInterval(retry, 5000);
-
-  const connected = useMemo(() => Boolean(devServer), [devServer]);
 
   return (
     <>
@@ -88,7 +64,7 @@ const DevServerPill = ({ introspect }: { introspect: IntrospectValue }) => {
         )}
       </div>
       {!connected ? (
-        <Code copiable value={`npx inngest-cli dev -u ${window.location.href}`} />
+        <><div className="text-sm">Run the dev server: </div><Code copiable value={`npx inngest-cli dev -u ${window.location.href}`} /></>
       ) : null}
     </>
   );

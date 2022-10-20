@@ -4,11 +4,14 @@ export interface ButtonProps {
   children: ComponentChildren;
   type?: string;
   onClick?: any;
+  disabled?: boolean;
 }
 
-export const Button = ({ children, onClick, type }: ButtonProps) => {
+export const Button = ({ children, onClick, type, disabled }: ButtonProps) => {
+  const color = disabled ? "bg-slate-400" : "bg-blue-500";
+
   return (
-    <button class="bg-blue-500 text-white px-5 py-1 font-semibold rounded" onClick={onClick} type={type}>
+    <button class={`${color} text-white px-5 py-1 font-semibold rounded`} onClick={onClick} type={type} disabled={disabled}>
       {children}
     </button>
   );
