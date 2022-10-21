@@ -3,6 +3,7 @@
 import type { Request, Response } from "express";
 import httpMocks from "node-mocks-http";
 import { ServeHandler } from "../express";
+import { version } from "../version";
 
 interface HandlerStandardReturn {
   status: number;
@@ -240,7 +241,34 @@ export const testFramework = (
           });
         });
 
-        test.todo("if introspection is specified, return introspection data");
+        test("if introspection is specified, return introspection data", async () => {
+          const appName = "Test";
+
+          const ret = await run(
+            [appName, [], { landingPage: true }],
+            [{ method: "GET", url: "/api/inngest?introspect=true", protocol }]
+          );
+
+          const body = JSON.parse(ret.body);
+
+          expect(ret).toMatchObject({
+            status: 200,
+            headers: expect.objectContaining({
+              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            }),
+          });
+
+          expect(body).toMatchObject({
+            url: `${protocol}://localhost:3000/api/inngest`,
+            deployType: "ping",
+            framework: expect.any(String),
+            appName,
+            functions: [],
+            sdk: `js:v${version}`,
+            v: "0.1",
+            hasSigningKey: false,
+          });
+        });
       });
 
       describe(`PUT (register): ${protocol.toUpperCase()}`, () => {
