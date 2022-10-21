@@ -15,8 +15,13 @@ testFramework("Cloudflare", CloudflareHandler, {
       /**
        * Fake lack of any `process` global var; Cloudflare allows access to env
        * vars by passing them in to the request handler.
+       *
+       * Because of some test components (mainly `debug`) that use
+       * `process.stderr`, we do need to provide some pieces of this, but we can
+       * still remove any env vars.
        */
-      process = undefined as unknown as NodeJS.Process;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      process.env = undefined as any;
 
       /**
        * Fake a global `fetch` value, which is available as the Cloudflare
@@ -41,7 +46,7 @@ testFramework("Cloudflare", CloudflareHandler, {
       /**
        * Reset all changes made to the global scope
        */
-      process = originalProcess;
+      process.env = originalProcess.env;
       globalThis.fetch = originalFetch;
       globalThis.Response = originalResponse;
       globalThis.Headers = originalHeaders;
@@ -78,7 +83,7 @@ testFramework("Cloudflare", CloudflareHandler, {
   },
   envTests: () => {
     test("process should be undefined", () => {
-      expect(process).toBeUndefined();
+      expect(process.env).toBeUndefined();
     });
   },
   handlerTests: () => {
