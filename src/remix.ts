@@ -66,6 +66,7 @@ class RemixCommHandler extends InngestCommHandler {
 
             return new Response(JSON.stringify(introspection), {
               status: 200,
+              headers,
             });
           }
 
