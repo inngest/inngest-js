@@ -20,23 +20,25 @@ export const devServerHost = (): string | undefined => {
   // processed using webpack's DefinePlugin, which is dumb and does a straight
   // text replacement instead of actually understanding the AST, despite webpack
   // being fully capable of understanding the AST.
-  const values =
-    typeof process === "undefined"
-      ? []
-      : [
-          process.env.INNGEST_DEVSERVER_URL,
-          process.env.REACT_APP_INNGEST_DEVSERVER_URL,
-          process.env.NEXT_PUBLIC_INNGEST_DEVSERVER_URL,
-        ];
+  const values = hasProcessEnv()
+    ? [
+        process.env.INNGEST_DEVSERVER_URL,
+        process.env.REACT_APP_INNGEST_DEVSERVER_URL,
+        process.env.NEXT_PUBLIC_INNGEST_DEVSERVER_URL,
+      ]
+    : [];
 
   return values.find((a) => !!a);
 };
 
 export const isProd = (): boolean => {
-  const values =
-    typeof process === "undefined"
-      ? []
-      : [process.env.NODE_ENV, process.env.VERCEL_ENV, process.env.CONTEXT];
+  const values = hasProcessEnv()
+    ? [process.env.NODE_ENV, process.env.VERCEL_ENV, process.env.CONTEXT]
+    : [];
 
   return values.includes("production");
+};
+
+export const hasProcessEnv = (): boolean => {
+  return typeof process !== "undefined" && "env" in process;
 };
