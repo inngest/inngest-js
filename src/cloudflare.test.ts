@@ -47,7 +47,7 @@ testFramework("Cloudflare", CloudflareHandler, {
       globalThis.Headers = originalHeaders;
     });
   },
-  transformReq: (req) => {
+  transformReq: (req, res, env) => {
     const headers = new Headers();
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
@@ -59,7 +59,7 @@ testFramework("Cloudflare", CloudflareHandler, {
     return [
       {
         request: req,
-        env: originalProcess.env,
+        env,
       },
     ];
   },
