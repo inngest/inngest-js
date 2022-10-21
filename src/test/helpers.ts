@@ -297,75 +297,77 @@ export const testFramework = (
     });
 
     describe("PUT (register)", () => {
-      test("register with correct default URL from request", async () => {
-        let reqToMock;
+      describe("prod env registration", () => {
+        test("register with correct default URL from request", async () => {
+          let reqToMock;
 
-        nock("https://api.inngest.com")
-          .post("/fn/register", (b) => {
-            reqToMock = b;
+          nock("https://api.inngest.com")
+            .post("/fn/register", (b) => {
+              reqToMock = b;
 
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-            return b;
-          })
-          .reply(200, {
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+              return b;
+            })
+            .reply(200, {
+              status: 200,
+            });
+
+          const ret = await run(["Test", []], [{ method: "PUT" }]);
+
+          const retBody = JSON.parse(ret.body);
+
+          expect(ret).toMatchObject({
             status: 200,
+            headers: expect.objectContaining({
+              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            }),
           });
 
-        const ret = await run(["Test", []], [{ method: "PUT" }]);
-
-        const retBody = JSON.parse(ret.body);
-
-        expect(ret).toMatchObject({
-          status: 200,
-          headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
-          }),
-        });
-
-        expect(reqToMock).toMatchObject({
-          url: "https://localhost:3000/api/inngest",
-        });
-
-        expect(retBody).toMatchObject({
-          message: "Successfully registered",
-        });
-      });
-
-      test("register with correct custom URL from request", async () => {
-        const customUrl = "/foo/bar/inngest/endpoint";
-        let reqToMock;
-
-        nock("https://api.inngest.com")
-          .post("/fn/register", (b) => {
-            reqToMock = b;
-
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-            return b;
-          })
-          .reply(200, {
-            status: 200,
+          expect(reqToMock).toMatchObject({
+            url: "https://localhost:3000/api/inngest",
           });
 
-        const ret = await run(
-          ["Test", []],
-          [{ method: "PUT", url: customUrl }]
-        );
-
-        const retBody = JSON.parse(ret.body);
-
-        expect(ret).toMatchObject({
-          status: 200,
-          headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
-          }),
+          expect(retBody).toMatchObject({
+            message: "Successfully registered",
+          });
         });
 
-        expect(reqToMock).toMatchObject({
-          url: `https://localhost:3000${customUrl}`,
-        });
+        test("register with correct custom URL from request", async () => {
+          const customUrl = "/foo/bar/inngest/endpoint";
+          let reqToMock;
 
-        expect(retBody).toMatchObject({
-          message: "Successfully registered",
+          nock("https://api.inngest.com")
+            .post("/fn/register", (b) => {
+              reqToMock = b;
+
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+              return b;
+            })
+            .reply(200, {
+              status: 200,
+            });
+
+          const ret = await run(
+            ["Test", []],
+            [{ method: "PUT", url: customUrl }]
+          );
+
+          const retBody = JSON.parse(ret.body);
+
+          expect(ret).toMatchObject({
+            status: 200,
+            headers: expect.objectContaining({
+              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            }),
+          });
+
+          expect(reqToMock).toMatchObject({
+            url: `https://localhost:3000${customUrl}`,
+          });
+
+          expect(retBody).toMatchObject({
+            message: "Successfully registered",
+          });
         });
       });
 
