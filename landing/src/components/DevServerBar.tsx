@@ -2,7 +2,7 @@ import { classNames } from "../utils/classnames";
 import { Code } from "./Code";
 import { IntrospectConsumer, IntrospectValue } from "./Introspect";
 
-const defaultURL = "http://localhost:8288"
+const defaultURL = "http://localhost:8288";
 
 /**
  * A nav bar intended to be at the top of the page.
@@ -10,16 +10,16 @@ const defaultURL = "http://localhost:8288"
 export const DevServerBar = () => {
   return (
     <IntrospectConsumer>
-    { value => (
-      <div class="bg-gray-200 top-0 w-full p-4 flex flex-row items-center gap-5">
-        <div class="font-medium text-gray-900 text-xl">Inngest SDK</div>
-        <div class="h-6 w-1 bg-gray-300" />
-        <DevServerPill introspect={value} />
-        {/* <a href="#" class="text-gray-700 font-semibold">
+      {(value) => (
+        <div class="bg-gray-200 top-0 w-full p-4 flex flex-row items-center gap-5">
+          <div class="font-medium text-gray-900 text-xl">Inngest SDK</div>
+          <div class="h-6 w-1 bg-gray-300" />
+          <DevServerPill introspect={value} />
+          {/* <a href="#" class="text-gray-700 font-semibold">
           Learn more
         </a> */}
-      </div>
-    )}
+        </div>
+      )}
     </IntrospectConsumer>
   );
 };
@@ -55,7 +55,10 @@ const DevServerPill = ({ introspect }: { introspect: IntrospectValue }) => {
         </div>
         {connected ? (
           <div>
-            Connected to <code>inngest dev</code> on <code>{url.hostname}:{url.port}</code>
+            Connected to <code>inngest dev</code> on{" "}
+            <code>
+              {url.hostname}:{url.port}
+            </code>
           </div>
         ) : (
           <div>
@@ -64,7 +67,13 @@ const DevServerPill = ({ introspect }: { introspect: IntrospectValue }) => {
         )}
       </div>
       {!connected ? (
-        <><div className="text-sm">Run the dev server: </div><Code copiable value={`npx inngest-cli dev -u ${window.location.href}`} /></>
+        <>
+          <div className="text-sm">Run the dev server: </div>
+          <Code
+            copiable
+            value={`npx inngest-cli dev -u ${window.location.href}`}
+          />
+        </>
       ) : null}
     </>
   );
