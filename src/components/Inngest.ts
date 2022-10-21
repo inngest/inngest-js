@@ -268,7 +268,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       // If the dev server host env var has been set we always want to use
       // the dev server - even if it's down.  Otherwise, optimistically use
       // it for non-prod services.
-      if (host !== undefined || await devServerAvailable(host, fetch)) {
+      if (host !== undefined || (await devServerAvailable(host, fetch))) {
         url = devServerUrl(host, `e/${this.eventKey}`).href;
       }
     }
