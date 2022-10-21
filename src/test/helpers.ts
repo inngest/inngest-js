@@ -1,4 +1,22 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+import type { Request, Response } from "express";
+import httpMocks from "node-mocks-http";
 import { ServeHandler } from "../express";
+
+interface HandlerStandardReturn {
+  status: number;
+  body: string;
+  headers: Record<string, string>;
+}
+
+const createReqRes = (...args: Parameters<typeof httpMocks.createRequest>) => {
+  const options = args[0];
+  const req = httpMocks.createRequest(options);
+  const res = httpMocks.createResponse();
+
+  return [req, res] as [typeof req, typeof res];
+};
 
 export const testFramework = (
   /**
@@ -23,6 +41,31 @@ export const testFramework = (
     lifecycleChanges?: () => void;
 
     /**
+     * Specify a transformer for a given request and response, which will be
+     * used to mimic the behavior of the framework's handler.
+     */
+    transformReq?: (req: Request, res: Response) => any[];
+
+    /**
+     * Specify a transformer for a given response, which will be used to
+     * understand whether a response was valid or not. Must return a particular
+     * pattern.
+     */
+    transformRes?: (
+      /**
+       * The Response object that was passed in to the handler. Depending on the
+       * handler, this may not be exposed to the handler, so you may need the
+       * next option, which is the returned value from the handler.
+       */
+      res: Response,
+
+      /**
+       * The returned value from the handler.
+       */
+      ret: any
+    ) => Promise<HandlerStandardReturn>;
+
+    /**
      * Specify a custom suite of tests to run against the given serve handler to
      * ensure that it's returning the correct format for its particular target.
      */
@@ -36,6 +79,36 @@ export const testFramework = (
     envTests?: () => void;
   }
 ) => {
+  /**
+   * Create a helper function for running tests against the given serve handler.
+   */
+  const run = async (
+    handlerOpts: Parameters<typeof handler["serve"]>,
+    reqOpts: Parameters<typeof httpMocks.createRequest>
+  ): Promise<HandlerStandardReturn> => {
+    const serveHandler = handler.serve(...handlerOpts);
+
+    const [req, res] = createReqRes({
+      hostname: "localhost",
+      headers: {
+        host: "localhost:3000",
+      },
+      url: "/api/inngest",
+      ...reqOpts[0],
+    });
+
+    const args = opts?.transformReq?.(req, res) ?? [req, res];
+    const ret = await serveHandler(...args);
+
+    return (
+      opts?.transformRes?.(res, ret) ?? {
+        status: res.statusCode,
+        body: res._getData(),
+        headers: res.getHeaders() as Record<string, string>,
+      }
+    );
+  };
+
   describe(`${
     frameworkName.charAt(0).toUpperCase() + frameworkName.slice(1)
   } handler`, () => {
@@ -55,24 +128,40 @@ export const testFramework = (
       describe("Serve return", opts.handlerTests);
     }
 
-    describe("GET (landing page)", () => {
-      test.todo("show landing page if forced on");
-      test.todo("show landing page if forced on with conflicting env");
-      test.todo("don't show landing page if forced off");
-      test.todo("don't show landing page if forced off with conflicting env");
-      test.todo("show landing page if env var is set to truthy value");
-      test.todo("don't show landing page if env var is set to falsey value");
-      test.todo("if introspection is specified, return introspection data");
-    });
+    ["http", "https"].forEach((protocol) => {
+      describe(`GET (landing page): ${protocol.toUpperCase()}`, () => {
+        test("show landing page if forced on", async () => {
+          const ret = await run(
+            ["Test", [], { landingPage: true }],
+            [{ method: "GET", protocol }]
+          );
 
-    describe("PUT (register)", () => {
-      test.todo("register with correct URL from request");
-      test.todo("register with dev server host from env if specified");
-      test.todo("register with default dev server host if no env specified");
-    });
+          expect(ret).toMatchObject({
+            status: 200,
+            body: expect.stringContaining("<!DOCTYPE html>"),
+            headers: expect.objectContaining({
+              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            }),
+          });
+        });
 
-    describe("POST (run function)", () => {
-      test.todo("...");
+        test.todo("show landing page if forced on with conflicting env");
+        test.todo("don't show landing page if forced off");
+        test.todo("don't show landing page if forced off with conflicting env");
+        test.todo("show landing page if env var is set to truthy value");
+        test.todo("don't show landing page if env var is set to falsey value");
+        test.todo("if introspection is specified, return introspection data");
+      });
+
+      describe(`PUT (register): ${protocol.toUpperCase()}`, () => {
+        test.todo("register with correct URL from request");
+        test.todo("register with dev server host from env if specified");
+        test.todo("register with default dev server host if no env specified");
+      });
+
+      describe(`POST (run function): ${protocol.toUpperCase()}`, () => {
+        test.todo("...");
+      });
     });
   });
 };
