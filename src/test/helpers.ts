@@ -41,10 +41,21 @@ export const testFramework = (
     lifecycleChanges?: () => void;
 
     /**
-     * Specify a transformer for a given request and response, which will be
-     * used to mimic the behavior of the framework's handler.
+     * Specify a transformer for a given request, response, and env,  which will
+     * be used to mimic the behavior of the framework's handler.
+     *
+     * If the function returns an array, the array will be used as args to the
+     * serve handler. If it returns void, the default request and response args
+     * will be used.
+     *
+     * Returning void is useful if you need to make environment changes but
+     * are still fine with the default behaviour past that point.
      */
-    transformReq?: (req: Request, res: Response) => any[];
+    transformReq?: (
+      req: Request,
+      res: Response,
+      env: Record<string, string | undefined>
+    ) => any[] | void;
 
     /**
      * Specify a transformer for a given response, which will be used to
@@ -84,7 +95,8 @@ export const testFramework = (
    */
   const run = async (
     handlerOpts: Parameters<typeof handler["serve"]>,
-    reqOpts: Parameters<typeof httpMocks.createRequest>
+    reqOpts: Parameters<typeof httpMocks.createRequest>,
+    env: Record<string, string | undefined> = {}
   ): Promise<HandlerStandardReturn> => {
     const serveHandler = handler.serve(...handlerOpts);
 
@@ -97,7 +109,18 @@ export const testFramework = (
       ...reqOpts[0],
     });
 
-    const args = opts?.transformReq?.(req, res) ?? [req, res];
+    let envToPass = { ...env };
+
+    /**
+     * If we have `process` in this emulated environment, also mutate that to
+     * account for common situations.
+     */
+    if (typeof process !== "undefined") {
+      process.env = { ...process.env, ...envToPass };
+      envToPass = { ...process.env };
+    }
+
+    const args = opts?.transformReq?.(req, res, envToPass) ?? [req, res];
     const ret = await serveHandler(...args);
 
     return (
@@ -145,11 +168,78 @@ export const testFramework = (
           });
         });
 
-        test.todo("show landing page if forced on with conflicting env");
-        test.todo("don't show landing page if forced off");
-        test.todo("don't show landing page if forced off with conflicting env");
-        test.todo("show landing page if env var is set to truthy value");
-        test.todo("don't show landing page if env var is set to falsey value");
+        test("show landing page if forced on with conflicting env", async () => {
+          const ret = await run(
+            ["Test", [], { landingPage: true }],
+            [{ method: "GET", protocol }],
+            { INNGEST_LANDING_PAGE: "false" }
+          );
+
+          expect(ret).toMatchObject({
+            status: 200,
+            body: expect.stringContaining("<!DOCTYPE html>"),
+            headers: expect.objectContaining({
+              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            }),
+          });
+        });
+
+        test("don't show landing page if forced off", async () => {
+          const ret = await run(
+            ["Test", [], { landingPage: false }],
+            [{ method: "GET", protocol }]
+          );
+
+          expect(ret).toMatchObject({
+            status: 405,
+            headers: expect.objectContaining({
+              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            }),
+          });
+        });
+
+        test("don't show landing page if forced off with conflicting env", async () => {
+          const ret = await run(
+            ["Test", [], { landingPage: false }],
+            [{ method: "GET", protocol }],
+            { INNGEST_LANDING_PAGE: "true" }
+          );
+
+          expect(ret).toMatchObject({
+            status: 405,
+            headers: expect.objectContaining({
+              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            }),
+          });
+        });
+
+        test("show landing page if env var is set to truthy value", async () => {
+          const ret = await run(["Test", []], [{ method: "GET", protocol }], {
+            INNGEST_LANDING_PAGE: "true",
+          });
+
+          expect(ret).toMatchObject({
+            status: 200,
+            body: expect.stringContaining("<!DOCTYPE html>"),
+            headers: expect.objectContaining({
+              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            }),
+          });
+        });
+
+        test("don't show landing page if env var is set to falsey value", async () => {
+          const ret = await run(["Test", []], [{ method: "GET", protocol }], {
+            INNGEST_LANDING_PAGE: "false",
+          });
+
+          expect(ret).toMatchObject({
+            status: 405,
+            headers: expect.objectContaining({
+              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            }),
+          });
+        });
+
         test.todo("if introspection is specified, return introspection data");
       });
 
