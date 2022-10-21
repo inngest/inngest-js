@@ -71,7 +71,7 @@ const DevServerPill = ({ introspect }: { introspect: IntrospectValue }) => {
           <div className="text-sm">Run the dev server: </div>
           <Code
             copiable
-            value={`npx inngest-cli dev -u ${window.location.href}`}
+            value={`npx inngest-cli@latest dev -u ${window.location.href}`}
           />
         </>
       ) : null}
