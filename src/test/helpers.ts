@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import type { Request, Response } from "express";
+import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ServeHandler } from "../express";
 import { version } from "../version";
@@ -107,6 +108,7 @@ export const testFramework = (
         host: "localhost:3000",
       },
       url: "/api/inngest",
+      protocol: "https",
       ...reqOpts[0],
     });
 
@@ -116,7 +118,7 @@ export const testFramework = (
      * If we have `process` in this emulated environment, also mutate that to
      * account for common situations.
      */
-    if (typeof process !== "undefined") {
+    if (typeof process !== "undefined" && "env" in process) {
       process.env = { ...process.env, ...envToPass };
       envToPass = { ...process.env };
     }
@@ -136,6 +138,30 @@ export const testFramework = (
   describe(`${
     frameworkName.charAt(0).toUpperCase() + frameworkName.slice(1)
   } handler`, () => {
+    beforeEach(() => {
+      /**
+       * Ensure nock is active before each test. This is required after each
+       * use of `nock.restore()`.
+       *
+       * See https://www.npmjs.com/package/nock#restoring
+       */
+      try {
+        nock.activate();
+      } catch {
+        // no-op - will throw if Nock is already active
+      }
+    });
+
+    afterEach(() => {
+      /**
+       * Reset nock state after each test.
+       *
+       * See https://www.npmjs.com/package/nock#memory-issues-with-jest
+       */
+      nock.restore();
+      nock.cleanAll();
+    });
+
     opts?.lifecycleChanges?.();
 
     if (opts?.envTests) {
@@ -152,134 +178,203 @@ export const testFramework = (
       describe("Serve return", opts.handlerTests);
     }
 
-    ["http", "https"].forEach((protocol) => {
-      describe(`GET (landing page): ${protocol.toUpperCase()}`, () => {
-        test("show landing page if forced on", async () => {
-          const ret = await run(
-            ["Test", [], { landingPage: true }],
-            [{ method: "GET", protocol }]
-          );
+    describe("GET (landing page)", () => {
+      test("show landing page if forced on", async () => {
+        const ret = await run(
+          ["Test", [], { landingPage: true }],
+          [{ method: "GET" }]
+        );
 
-          expect(ret).toMatchObject({
-            status: 200,
-            body: expect.stringContaining("<!DOCTYPE html>"),
-            headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
-            }),
-          });
-        });
-
-        test("show landing page if forced on with conflicting env", async () => {
-          const ret = await run(
-            ["Test", [], { landingPage: true }],
-            [{ method: "GET", protocol }],
-            { INNGEST_LANDING_PAGE: "false" }
-          );
-
-          expect(ret).toMatchObject({
-            status: 200,
-            body: expect.stringContaining("<!DOCTYPE html>"),
-            headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
-            }),
-          });
-        });
-
-        test("don't show landing page if forced off", async () => {
-          const ret = await run(
-            ["Test", [], { landingPage: false }],
-            [{ method: "GET", protocol }]
-          );
-
-          expect(ret).toMatchObject({
-            status: 405,
-            headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
-            }),
-          });
-        });
-
-        test("don't show landing page if forced off with conflicting env", async () => {
-          const ret = await run(
-            ["Test", [], { landingPage: false }],
-            [{ method: "GET", protocol }],
-            { INNGEST_LANDING_PAGE: "true" }
-          );
-
-          expect(ret).toMatchObject({
-            status: 405,
-            headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
-            }),
-          });
-        });
-
-        test("show landing page if env var is set to truthy value", async () => {
-          const ret = await run(["Test", []], [{ method: "GET", protocol }], {
-            INNGEST_LANDING_PAGE: "true",
-          });
-
-          expect(ret).toMatchObject({
-            status: 200,
-            body: expect.stringContaining("<!DOCTYPE html>"),
-            headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
-            }),
-          });
-        });
-
-        test("don't show landing page if env var is set to falsey value", async () => {
-          const ret = await run(["Test", []], [{ method: "GET", protocol }], {
-            INNGEST_LANDING_PAGE: "false",
-          });
-
-          expect(ret).toMatchObject({
-            status: 405,
-            headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
-            }),
-          });
-        });
-
-        test("if introspection is specified, return introspection data", async () => {
-          const appName = "Test";
-
-          const ret = await run(
-            [appName, [], { landingPage: true }],
-            [{ method: "GET", url: "/api/inngest?introspect=true", protocol }]
-          );
-
-          const body = JSON.parse(ret.body);
-
-          expect(ret).toMatchObject({
-            status: 200,
-            headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
-            }),
-          });
-
-          expect(body).toMatchObject({
-            url: `${protocol}://localhost:3000/api/inngest`,
-            deployType: "ping",
-            framework: expect.any(String),
-            appName,
-            functions: [],
-            sdk: `js:v${version}`,
-            v: "0.1",
-            hasSigningKey: false,
-          });
+        expect(ret).toMatchObject({
+          status: 200,
+          body: expect.stringContaining("<!DOCTYPE html>"),
+          headers: expect.objectContaining({
+            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+          }),
         });
       });
 
-      describe(`PUT (register): ${protocol.toUpperCase()}`, () => {
-        test.todo("register with correct URL from request");
-        test.todo("register with dev server host from env if specified");
-        test.todo("register with default dev server host if no env specified");
+      test("show landing page if forced on with conflicting env", async () => {
+        const ret = await run(
+          ["Test", [], { landingPage: true }],
+          [{ method: "GET" }],
+          { INNGEST_LANDING_PAGE: "false" }
+        );
+
+        expect(ret).toMatchObject({
+          status: 200,
+          body: expect.stringContaining("<!DOCTYPE html>"),
+          headers: expect.objectContaining({
+            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+          }),
+        });
       });
 
-      describe(`POST (run function): ${protocol.toUpperCase()}`, () => {
-        test.todo("...");
+      test("don't show landing page if forced off", async () => {
+        const ret = await run(
+          ["Test", [], { landingPage: false }],
+          [{ method: "GET" }]
+        );
+
+        expect(ret).toMatchObject({
+          status: 405,
+          headers: expect.objectContaining({
+            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+          }),
+        });
       });
+
+      test("don't show landing page if forced off with conflicting env", async () => {
+        const ret = await run(
+          ["Test", [], { landingPage: false }],
+          [{ method: "GET" }],
+          { INNGEST_LANDING_PAGE: "true" }
+        );
+
+        expect(ret).toMatchObject({
+          status: 405,
+          headers: expect.objectContaining({
+            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+          }),
+        });
+      });
+
+      test("show landing page if env var is set to truthy value", async () => {
+        const ret = await run(["Test", []], [{ method: "GET" }], {
+          INNGEST_LANDING_PAGE: "true",
+        });
+
+        expect(ret).toMatchObject({
+          status: 200,
+          body: expect.stringContaining("<!DOCTYPE html>"),
+          headers: expect.objectContaining({
+            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+          }),
+        });
+      });
+
+      test("don't show landing page if env var is set to falsey value", async () => {
+        const ret = await run(["Test", []], [{ method: "GET" }], {
+          INNGEST_LANDING_PAGE: "false",
+        });
+
+        expect(ret).toMatchObject({
+          status: 405,
+          headers: expect.objectContaining({
+            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+          }),
+        });
+      });
+
+      test("if introspection is specified, return introspection data", async () => {
+        const appName = "Test";
+
+        const ret = await run(
+          [appName, [], { landingPage: true }],
+          [{ method: "GET", url: "/api/inngest?introspect=true" }]
+        );
+
+        const body = JSON.parse(ret.body);
+
+        expect(ret).toMatchObject({
+          status: 200,
+          headers: expect.objectContaining({
+            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+          }),
+        });
+
+        expect(body).toMatchObject({
+          url: "https://localhost:3000/api/inngest",
+          deployType: "ping",
+          framework: expect.any(String),
+          appName,
+          functions: [],
+          sdk: `js:v${version}`,
+          v: "0.1",
+          hasSigningKey: false,
+        });
+      });
+    });
+
+    describe("PUT (register)", () => {
+      test("register with correct default URL from request", async () => {
+        let reqToMock;
+
+        nock("https://api.inngest.com")
+          .post("/fn/register", (b) => {
+            reqToMock = b;
+
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            return b;
+          })
+          .reply(200, {
+            status: 200,
+          });
+
+        const ret = await run(["Test", []], [{ method: "PUT" }]);
+
+        const retBody = JSON.parse(ret.body);
+
+        expect(ret).toMatchObject({
+          status: 200,
+          headers: expect.objectContaining({
+            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+          }),
+        });
+
+        expect(reqToMock).toMatchObject({
+          url: "https://localhost:3000/api/inngest",
+        });
+
+        expect(retBody).toMatchObject({
+          message: "Successfully registered",
+        });
+      });
+
+      test("register with correct custom URL from request", async () => {
+        const customUrl = "/foo/bar/inngest/endpoint";
+        let reqToMock;
+
+        nock("https://api.inngest.com")
+          .post("/fn/register", (b) => {
+            reqToMock = b;
+
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            return b;
+          })
+          .reply(200, {
+            status: 200,
+          });
+
+        const ret = await run(
+          ["Test", []],
+          [{ method: "PUT", url: customUrl }]
+        );
+
+        const retBody = JSON.parse(ret.body);
+
+        expect(ret).toMatchObject({
+          status: 200,
+          headers: expect.objectContaining({
+            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+          }),
+        });
+
+        expect(reqToMock).toMatchObject({
+          url: `https://localhost:3000${customUrl}`,
+        });
+
+        expect(retBody).toMatchObject({
+          message: "Successfully registered",
+        });
+      });
+
+      test.todo("register with dev server host from env if specified");
+      test.todo("register with default dev server host if no env specified");
+    });
+
+    describe("POST (run function)", () => {
+      test.todo("...");
     });
   });
 };
