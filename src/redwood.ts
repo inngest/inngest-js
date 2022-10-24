@@ -29,15 +29,7 @@ class RedwoodCommHandler extends InngestCommHandler {
       context: LambdaContext
     ): Promise<RedwoodResponse> => {
       const headers = { "x-inngest-sdk": this.sdkHeader.join("") };
-
       let reqUrl: URL;
-
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-        console.log("yerp a derp:", global as any, process.env);
-      } catch {
-        // noop
-      }
 
       try {
         const scheme =
