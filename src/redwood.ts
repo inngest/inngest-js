@@ -42,7 +42,11 @@ class RedwoodCommHandler extends InngestCommHandler {
       try {
         const scheme =
           process.env.NODE_ENV === "development" ? "http" : "https";
-        reqUrl = new URL(event.path, `${scheme}://${event.headers.host || ""}`);
+
+        reqUrl = this.reqUrl(
+          event.path,
+          `${scheme}://${event.headers.host || ""}`
+        );
         reqUrl.searchParams.delete(queryKeys.Introspect);
       } catch (err) {
         return {

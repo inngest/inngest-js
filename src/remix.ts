@@ -30,7 +30,10 @@ class RemixCommHandler extends InngestCommHandler {
       let isIntrospection: boolean;
 
       try {
-        reqUrl = new URL(req.url, `https://${req.headers.get("host") || ""}`);
+        reqUrl = this.reqUrl(
+          req.url,
+          `https://${req.headers.get("host") || ""}`
+        );
         isIntrospection = reqUrl.searchParams.has(queryKeys.Introspect);
         reqUrl.searchParams.delete(queryKeys.Introspect);
       } catch (err) {

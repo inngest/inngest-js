@@ -212,7 +212,7 @@ export class InngestCommHandler {
 
       let reqUrl;
       try {
-        reqUrl = new URL(req.originalUrl, `${protocol}${hostname || ""}`);
+        reqUrl = this.reqUrl(req.originalUrl, `${protocol}${hostname || ""}`);
         reqUrl.searchParams.delete(queryKeys.Introspect);
       } catch (e) {
         const message =
