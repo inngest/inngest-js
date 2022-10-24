@@ -338,7 +338,25 @@ export class InngestCommHandler {
     return ["inngest-", `js:v${version}`, ` (${this.frameworkName})`];
   }
 
-  protected reqUrl(path?: string, host?: string): URL {
+  /**
+   * Return an Inngest serve endpoint URL given a potential `path` and `host`.
+   *
+   * Will automatically use the `serveHost` and `servePath` if they have been
+   * set when registering.
+   */
+  protected reqUrl(
+    /**
+     * The path of the Inngest register URL to create. Regardless of the value,
+     * will be overwritten by `servePath` if it has been set.
+     */
+    path?: string,
+
+    /**
+     * The host of the Inngest register URL to create. Regardless of the value,
+     * will be overwritten by `serveHost` if it has been set.
+     */
+    host?: string
+  ): URL {
     return new URL(
       this.servePath || path?.trim() || "",
       this.serveHost || host?.trim() || ""
