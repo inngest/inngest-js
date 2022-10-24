@@ -73,6 +73,8 @@ export interface RegisterOptions {
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
     landingPage?: boolean;
+    serveHost?: string;
+    servePath?: string;
     signingKey?: string;
 }
 
