@@ -128,6 +128,9 @@ export class InngestCommHandler {
    */
   protected readonly showLandingPage: boolean | undefined;
 
+  protected readonly serveHost: string | undefined;
+  protected readonly servePath: string | undefined;
+
   /**
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
@@ -137,7 +140,14 @@ export class InngestCommHandler {
   constructor(
     nameOrInngest: string | Inngest<any>,
     functions: InngestFunction<any>[],
-    { inngestRegisterUrl, fetch, landingPage, signingKey }: RegisterOptions = {}
+    {
+      inngestRegisterUrl,
+      fetch,
+      landingPage,
+      signingKey,
+      serveHost,
+      servePath,
+    }: RegisterOptions = {}
   ) {
     this.name =
       typeof nameOrInngest === "string" ? nameOrInngest : nameOrInngest.name;
@@ -166,6 +176,8 @@ export class InngestCommHandler {
 
     this.signingKey = signingKey;
     this.showLandingPage = landingPage;
+    this.serveHost = serveHost;
+    this.servePath = servePath;
 
     this.headers = {
       "Content-Type": "application/json",
@@ -324,6 +336,13 @@ export class InngestCommHandler {
     suffix: string
   ] {
     return ["inngest-", `js:v${version}`, ` (${this.frameworkName})`];
+  }
+
+  protected reqUrl(path?: string, host?: string): URL {
+    return new URL(
+      this.servePath || path?.trim() || "",
+      this.serveHost || host?.trim() || ""
+    );
   }
 
   protected registerBody(url: URL): RegisterRequest {

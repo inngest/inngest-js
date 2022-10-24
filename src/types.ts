@@ -212,6 +212,40 @@ export interface RegisterOptions {
    * testing, or staging environments.
    */
   landingPage?: boolean;
+
+  /**
+   * The path to the Inngest serve endpoint. e.g.:
+   *
+   *     "/some/long/path/to/inngest/endpoint"
+   *
+   * By default, the library will try to infer this using request details such
+   * as the "Host" header and request path, but sometimes this isn't possible
+   * (e.g. when running in a more controlled environments such as AWS Lambda or
+   * when dealing with proxies/rediects).
+   *
+   * Provide the custom path (excluding the hostname) here to ensure that the
+   * path is reported correctly when registering functions with Inngest.
+   *
+   * To also provide a custom hostname, use `serveHost`.
+   */
+  servePath?: string;
+
+  /**
+   * The host used to access the Inngest serve endpoint, e.g.:
+   *
+   *     "https://myapp.com"
+   *
+   * By default, the library will try to infer this using request details such
+   * as the "Host" header and request path, but sometimes this isn't possible
+   * (e.g. when running in a more controlled environments such as AWS Lambda or
+   * when dealing with proxies/rediects).
+   *
+   * Provide the custom hostname here to ensure that the path is reported
+   * correctly when registering functions with Inngest.
+   *
+   * To also provide a custom path, use `servePath`.
+   */
+  serveHost?: string;
 }
 
 /**
