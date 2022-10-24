@@ -105,12 +105,13 @@ export const testFramework = (
 
     const [req, res] = createReqRes({
       hostname: "localhost",
-      headers: {
-        host: "localhost:3000",
-      },
       url: "/api/inngest",
       protocol: "https",
       ...reqOpts[0],
+      headers: {
+        ...reqOpts[0]?.headers,
+        host: "localhost:3000",
+      },
     });
 
     let envToPass = { ...env };
