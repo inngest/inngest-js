@@ -386,8 +386,8 @@ export interface DevServerInfo {
   startOpts: {
     dir?: string;
     autodiscover: boolean;
-    urls: string[],
-  },
+    urls: string[];
+  };
   functions: FunctionConfig[];
   handlers: RegisterRequest[];
 }
