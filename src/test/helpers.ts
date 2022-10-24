@@ -4,6 +4,7 @@ import type { Request, Response } from "express";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ServeHandler } from "../express";
+import { createFunction } from "../helpers/func";
 import { version } from "../version";
 
 interface HandlerStandardReturn {
@@ -368,6 +369,118 @@ export const testFramework = (
           expect(retBody).toMatchObject({
             message: "Successfully registered",
           });
+        });
+
+        test("register with overwritten host when specified", async () => {
+          let reqToMock;
+
+          nock("https://api.inngest.com")
+            .post("/fn/register", (b) => {
+              reqToMock = b;
+
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+              return b;
+            })
+            .reply(200, {
+              status: 200,
+            });
+
+          const fn1 = createFunction("fn1", "demo/event.sent", () => "fn1");
+          const serveHost = "https://example.com";
+          const stepId = "step";
+
+          await run(["Test", [fn1], { serveHost }], [{ method: "PUT" }]);
+
+          expect(reqToMock).toMatchObject({
+            url: `${serveHost}/api/inngest`,
+            functions: [
+              {
+                steps: {
+                  [stepId]: {
+                    runtime: {
+                      url: `${serveHost}/api/inngest?fnId=test-fn1&stepId=${stepId}`,
+                    },
+                  },
+                },
+              },
+            ],
+          });
+        });
+
+        test("register with overwritten path when specified", async () => {
+          let reqToMock;
+
+          nock("https://api.inngest.com")
+            .post("/fn/register", (b) => {
+              reqToMock = b;
+
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+              return b;
+            })
+            .reply(200, {
+              status: 200,
+            });
+
+          const fn1 = createFunction("fn1", "demo/event.sent", () => "fn1");
+          const servePath = "/foo/bar/inngest/endpoint";
+          const stepId = "step";
+
+          await run(["Test", [fn1], { servePath }], [{ method: "PUT" }]);
+
+          expect(reqToMock).toMatchObject({
+            url: `https://localhost:3000${servePath}`,
+            functions: [
+              {
+                steps: {
+                  [stepId]: {
+                    runtime: {
+                      url: `https://localhost:3000${servePath}?fnId=test-fn1&stepId=${stepId}`,
+                    },
+                  },
+                },
+              },
+            ],
+          });
+        });
+      });
+
+      test("register with overwritten host and path when specified", async () => {
+        let reqToMock;
+
+        nock("https://api.inngest.com")
+          .post("/fn/register", (b) => {
+            reqToMock = b;
+
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            return b;
+          })
+          .reply(200, {
+            status: 200,
+          });
+
+        const fn1 = createFunction("fn1", "demo/event.sent", () => "fn1");
+        const serveHost = "https://example.com";
+        const servePath = "/foo/bar/inngest/endpoint";
+        const stepId = "step";
+
+        await run(
+          ["Test", [fn1], { serveHost, servePath }],
+          [{ method: "PUT" }]
+        );
+
+        expect(reqToMock).toMatchObject({
+          url: `${serveHost}${servePath}`,
+          functions: [
+            {
+              steps: {
+                [stepId]: {
+                  runtime: {
+                    url: `${serveHost}${servePath}?fnId=test-fn1&stepId=${stepId}`,
+                  },
+                },
+              },
+            },
+          ],
         });
       });
 
