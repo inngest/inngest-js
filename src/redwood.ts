@@ -121,11 +121,17 @@ class RedwoodCommHandler extends InngestCommHandler {
               stepId: event.queryStringParameters?.[queryKeys.StepId],
             });
 
-          const stepRes = await this.runStep(
-            fnId,
-            stepId,
-            JSON.parse(event.body || "{}")
-          );
+          /**
+           * Some requests can be base64 encoded, requiring us to decode it
+           * first before parsing as JSON.
+           */
+          const strJson = event.body
+            ? event.isBase64Encoded
+              ? Buffer.from(event.body, "base64").toString()
+              : event.body
+            : "{}";
+
+          const stepRes = await this.runStep(fnId, stepId, JSON.parse(strJson));
 
           if (stepRes.status === 500) {
             return {
