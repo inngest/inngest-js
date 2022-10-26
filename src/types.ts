@@ -1,12 +1,6 @@
-import type { InngestStep } from "./components/InngestStep";
+import { InngestStepTools } from "./components/InngestStepTools";
 
-/**
- * The shape of a step function, taking in event, step, and ctx data, and
- * outputting anything.
- *
- * @public
- */
-export type StepFn<Event, FnId, StepId> = (arg: {
+export interface StepArgs<Event, FnId, StepId> {
   /**
    * If relevant, the event data present in the payload.
    */
@@ -25,7 +19,30 @@ export type StepFn<Event, FnId, StepId> = (arg: {
    * The "context" of the function.
    */
   ctx: { fn_id: FnId; step_id: StepId };
-}) => any;
+}
+
+export interface GeneratorArgs<Event, FnId, StepId>
+  extends StepArgs<Event, FnId, StepId> {
+  tools: InngestStepTools;
+}
+
+export enum StepOpCode {
+  WaitForEvent = 0x18231,
+}
+
+export type GeneratorFn<Event, FnId, StepId> = (
+  arg: GeneratorArgs<Event, FnId, StepId>
+) => Generator<[boolean], any, false>;
+
+/**
+ * The shape of a step function, taking in event, step, and ctx data, and
+ * outputting anything.
+ *
+ * @public
+ */
+export type StepFn<Event, FnId, StepId> = (
+  arg: StepArgs<Event, FnId, StepId>
+) => any;
 
 /**
  * The shape of a single event's payload. It should be extended to enforce
@@ -280,13 +297,6 @@ export interface FunctionOptions {
    */
   name: string;
 }
-
-/**
- * A shortcut type for a collection of Inngest steps.
- *
- * @internal
- */
-export type Steps = Record<string, InngestStep<any[], any>>;
 
 /**
  * Expected responses to be used within an `InngestCommHandler` in order to

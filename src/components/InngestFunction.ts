@@ -5,8 +5,11 @@ import {
   FunctionConfig,
   FunctionOptions,
   FunctionTrigger,
-  Steps,
+  GeneratorArgs,
+  StepArgs,
+  StepOpCode,
 } from "../types";
+import { InngestStepTools } from "./InngestStepTools";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -18,9 +21,11 @@ import {
  * @public
  */
 export class InngestFunction<Events extends Record<string, EventPayload>> {
+  static stepId = "step";
+
   readonly #opts: FunctionOptions;
   readonly #trigger: FunctionTrigger<keyof Events>;
-  readonly #steps: Steps;
+  readonly #fn: (...args: any[]) => any;
 
   /**
    * A stateless Inngest function, wrapping up function configuration and any
@@ -35,11 +40,11 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      */
     opts: FunctionOptions,
     trigger: FunctionTrigger<keyof Events>,
-    steps: Steps
+    fn: (...args: any[]) => any
   ) {
     this.#opts = opts;
     this.#trigger = trigger;
-    this.#steps = steps || {};
+    this.#fn = fn;
   }
 
   /**
@@ -72,46 +77,93 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     baseUrl: URL,
     appPrefix?: string
   ): FunctionConfig {
-    const id = this.id(appPrefix);
+    const fnId = this.id(appPrefix);
+
+    const stepUrl = new URL(baseUrl.href);
+    stepUrl.searchParams.set(queryKeys.FnId, fnId);
+    stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
+
     return {
-      id,
+      id: fnId,
       name: this.name,
       triggers: [this.#trigger as FunctionTrigger],
-      steps: Object.keys(this.#steps).reduce<FunctionConfig["steps"]>(
-        (acc, stepId) => {
-          const url = new URL(baseUrl.href);
-          url.searchParams.set(queryKeys.FnId, id);
-          url.searchParams.set(queryKeys.StepId, stepId);
-
-          return {
-            ...acc,
-            [stepId]: {
-              id: stepId,
-              name: stepId,
-              runtime: {
-                type: "http",
-                url: url.href,
-              },
-            },
-          };
+      steps: {
+        step: {
+          id: InngestFunction.stepId,
+          name: InngestFunction.stepId,
+          runtime: {
+            type: "http",
+            url: stepUrl.href,
+          },
         },
-        {}
-      ),
+      },
     };
   }
 
   /**
    * Run a step in this function defined by `stepId` with `data`.
    */
-  private runStep(stepId: string, data: any): Promise<unknown> {
-    const step = this.#steps[stepId];
-    if (!step) {
-      throw new Error(
-        `Could not find step with ID "${stepId}" in function "${this.name}"`
-      );
+  // eslint-disable-next-line @typescript-eslint/require-await
+  private async runFn(
+    data: any,
+    runStack: [StepOpCode, any][]
+  ): Promise<unknown> {
+    /**
+     * We type `res` as a generator here, but there's a chance it might not be
+     * one. We'll check for that as soon as we can.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const res: Generator<
+      [StepOpCode, any],
+      any,
+      GeneratorArgs<string, string, string>
+    > = await this.#fn(data);
+
+    const isGenerator =
+      Boolean(res) &&
+      Object.hasOwnProperty.call(res, "next") &&
+      typeof (res as { next: any }).next === "function";
+
+    if (!isGenerator) {
+      // Not a generator, return this data and handle as usual.
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      return res;
     }
 
-    return step["run"](data);
+    /**
+     * First, we must skip every step we've already completed. To do this, we
+     * must iterate over the generator, passing it all data we currently have,
+     * step by step.
+     *
+     * For each of these steps, data will be returned from the generator. We
+     * must ensure that our expected next step matches the next step desired by
+     * the generator.
+     *
+     * If it does not match, we must trigger the step that is different and
+     * show a warning to the user.
+     *
+     * If we run out of data, we will perform the last action given by the
+     * generator.
+     */
+
+    for (const run of runStack) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+      const { value, done } = res.next({
+        ...(data as StepArgs<string, string, string>),
+        tools: new InngestStepTools(),
+      });
+
+      if (done) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        return value;
+      }
+
+      if (op !== value.op) {
+        throw new Error(
+          `Expected step ${op} but got ${value.op} from generator.`
+        );
+      }
+    }
   }
 
   /**
