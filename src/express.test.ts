@@ -45,7 +45,7 @@ describe("InngestCommHandler", () => {
         { event: "test/event.name" },
         { step: new InngestStep(() => undefined) }
       );
-      const ch = new InngestCommHandler("test-1", [fn], {});
+      const ch = new InngestCommHandler("test-1", [fn], { landingPage: true });
       const handler = ch.createHandler() as RequestHandler;
       // Matches a real-world request using an express app
       const req: Request = httpMocks.createRequest({
