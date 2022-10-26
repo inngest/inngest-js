@@ -21,7 +21,7 @@ class NextCommHandler extends InngestCommHandler {
       try {
         const scheme =
           process.env.NODE_ENV === "development" ? "http" : "https";
-        reqUrl = new URL(
+        reqUrl = this.reqUrl(
           req.url as string,
           `${scheme}://${req.headers.host || ""}`
         );
