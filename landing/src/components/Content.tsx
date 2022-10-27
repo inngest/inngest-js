@@ -10,10 +10,10 @@ import { Spinner } from "./Loading";
 export const Content = () => {
   return (
     <IntrospectConsumer>
-      {value => <ContentUI introspect={value} /> }
+      {(value) => <ContentUI introspect={value} />}
     </IntrospectConsumer>
   );
-}
+};
 
 /**
  * A messy catch-all component to render almost the entire landing page.
@@ -152,7 +152,7 @@ export const ContentUI = ({ introspect }: { introspect: IntrospectValue }) => {
 
           {fns?.functions.length ? (
             <div class="flex flex-col">
-              <div class="w-full grid grid-cols-[1fr_1fr_1fr] font-semibold border-b-2 border-slate-300 pb-1">
+              <div class="w-full grid grid-cols-[1fr_1fr_1fr_100px] font-semibold border-b-2 border-slate-300 pb-1">
                 <div>Name</div>
                 <div>ID</div>
                 <div>Event / Cron</div>
