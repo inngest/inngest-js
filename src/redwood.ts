@@ -110,17 +110,6 @@ class RedwoodCommHandler extends InngestCommHandler {
         }
 
         case "POST": {
-          // Inngest is trying to run a step; confirm signed and run.
-          const { fnId, stepId } = z
-            .object({
-              fnId: z.string().min(1),
-              stepId: z.string().min(1),
-            })
-            .parse({
-              fnId: event.queryStringParameters?.[queryKeys.FnId],
-              stepId: event.queryStringParameters?.[queryKeys.StepId],
-            });
-
           /**
            * Some requests can be base64 encoded, requiring us to decode it
            * first before parsing as JSON.
@@ -130,6 +119,28 @@ class RedwoodCommHandler extends InngestCommHandler {
               ? Buffer.from(event.body, "base64").toString()
               : event.body
             : "{}";
+
+          // Inngest is trying to run a step; confirm signed and run.
+          try {
+            this.validateSignature(event.headers["x-inngest-signature"], strJson)
+          } catch(e) {
+            console.warn("Invalid x-inngest-signature", e);
+            return {
+              statusCode: 401,
+              body: "invalid signature",
+              headers,
+            };
+          }
+
+          const { fnId, stepId } = z
+            .object({
+              fnId: z.string().min(1),
+              stepId: z.string().min(1),
+            })
+            .parse({
+              fnId: event.queryStringParameters?.[queryKeys.FnId],
+              stepId: event.queryStringParameters?.[queryKeys.StepId],
+            });
 
           const stepRes = await this.runStep(fnId, stepId, JSON.parse(strJson));
 
