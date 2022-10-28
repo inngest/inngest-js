@@ -465,6 +465,11 @@ export class InngestCommHandler {
   }
 
   protected validateSignature(sig: string | string[] | undefined, body: string | Record<string, any>) {
+    if (!this.signingKey) {
+      console.warn("No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets");
+      return;
+    }
+
     let header = Array.isArray(sig) ? sig[0] : sig;
     if (!header) {
       throw new Error("No x-inngest-signature provided");
