@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import shajs from "sha.js";
+import hash from "hash.js";
 import { z } from "zod";
 import { Inngest } from "./components/Inngest";
 import { InngestFunction } from "./components/InngestFunction";
@@ -199,8 +199,10 @@ export class InngestCommHandler {
       this.signingKey.match(/^signkey-(test|prod)-/)?.shift() || "";
     const key = this.signingKey.replace(/^signkey-(test|prod)-/, "");
 
+    const sum = hash.sha256().update(key, "hex").digest("hex");
+
     // Decode the key from its hex representation into a bytestream
-    return `${prefix}${shajs("sha256").update(key, "hex").digest("hex")}`;
+    return `${prefix}${sum}`;
   }
 
   public createHandler(): any {
@@ -264,6 +266,13 @@ export class InngestCommHandler {
 
         case "POST": {
           // Inngest is trying to run a step; confirm signed and run.
+          try {
+            this.validateSignature(req.headers["x-inngest-signature"], req.body)
+          } catch(e) {
+            console.warn("Invalid x-inngest-signature", e);
+            return void res.sendStatus(401);
+          }
+
           const { fnId, stepId } = z
             .object({
               fnId: z.string().min(1),
@@ -375,7 +384,7 @@ export class InngestCommHandler {
     };
 
     // Calculate the checksum of the body... without the checksum itself being included.
-    body.hash = shajs("sha256").update(JSON.stringify(body)).digest("hex");
+    body.hash = hash.sha256().update(JSON.stringify(body)).digest("hex");
     return body;
   }
 
@@ -455,8 +464,44 @@ export class InngestCommHandler {
     return this.showLandingPage ?? strBoolean(strEnvVar) ?? true;
   }
 
-  protected validateSignature(): boolean {
-    return true;
+  protected validateSignature(sig: string | string[] | undefined, body: string | Record<string, any>) {
+    let header = Array.isArray(sig) ? sig[0] : sig;
+    if (!header) {
+      throw new Error("No x-inngest-signature provided");
+    }
+
+    // sig should have a format of `t=${unixTS}&s=${signature}` to parse.
+    //
+    // We cant use URLSearchParams here because this needs to run directly in V8
+    // which may not have this defined.
+    const map: { [k: string]: string } = {};
+    header.split("&").forEach(item => {
+      const kv = item.split("=");
+      if (kv.length < 2 || !kv[0] || !kv[1]) {
+        return;
+      }
+      map[kv[0]] = kv[1];
+    });
+
+    // Ensure that we have a time and signature field.
+    if (!map.t || !map.s) {
+      throw new Error("Invalid x-inngest-signature provided");
+    }
+
+    // Ensure that the request was created within the last 5 mintues by taking the
+    // difference in the unix timestamp, in seconds.
+    const delta = (new Date().valueOf() - new Date(parseInt(map.t, 10) * 1000).valueOf()) / 1000;
+    if (delta > (60 * 5)) {
+      throw new Error("Request has expired");
+    }
+
+    // Calculate the HMAC of the request body ourselves.
+    const encoded = typeof body === "string" ? body : JSON.stringify(body);
+    const mac = hash.hmac(hash.sha256 as any, this.signingKey || "").update(encoded).digest("hex"); 
+
+    if (mac !== map.s) {
+      throw new Error("Invalid signature");
+    }
   }
 
   protected signResponse(): string {
