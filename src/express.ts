@@ -497,7 +497,10 @@ export class InngestCommHandler {
 
     // Calculate the HMAC of the request body ourselves.
     const encoded = typeof body === "string" ? body : JSON.stringify(body);
-    const mac = hash.hmac(hash.sha256 as any, this.signingKey || "").update(encoded).digest("hex"); 
+    const mac = hash.hmac(hash.sha256 as any, this.signingKey || "")
+      .update(encoded)
+      .update(map.t)
+      .digest("hex"); 
 
     if (mac !== map.s) {
       throw new Error("Invalid signature");
