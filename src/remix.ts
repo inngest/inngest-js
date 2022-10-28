@@ -98,6 +98,18 @@ class RemixCommHandler extends InngestCommHandler {
 
         case "POST": {
           // Inngest is trying to run a step; confirm signed and run.
+          const input = await req.json();
+
+          try {
+            this.validateSignature(req.headers.get("x-inngest-signature"), input)
+          } catch(e) {
+            console.warn("Invalid x-inngest-signature", e);
+            return new Response("invalid signature", {
+              status: 401,
+              headers,
+            });
+          }
+
           const { fnId, stepId } = z
             .object({
               fnId: z.string().min(1),
@@ -108,7 +120,7 @@ class RemixCommHandler extends InngestCommHandler {
               stepId: reqUrl.searchParams.get(queryKeys.StepId),
             });
 
-          const stepRes = await this.runStep(fnId, stepId, await req.json());
+          const stepRes = await this.runStep(fnId, stepId, input);
 
           if (stepRes.status === 500) {
             return new Response(JSON.stringify(stepRes.error), {

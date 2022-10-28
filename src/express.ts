@@ -464,7 +464,7 @@ export class InngestCommHandler {
     return this.showLandingPage ?? strBoolean(strEnvVar) ?? true;
   }
 
-  protected validateSignature(sig: string | string[] | undefined, body: string | Record<string, any>) {
+  protected validateSignature(sig: string | string[] | undefined | null, body: string | Record<string, any>) {
     if (!this.signingKey) {
       console.warn("No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets");
       return;

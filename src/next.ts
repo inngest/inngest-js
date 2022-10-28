@@ -76,6 +76,13 @@ class NextCommHandler extends InngestCommHandler {
 
         case "POST": {
           // Inngest is trying to run a step; confirm signed and run.
+          try {
+            this.validateSignature(req.headers["x-inngest-signature"], req.body)
+          } catch(e) {
+            console.warn("Invalid x-inngest-signature", e);
+            return void res.status(401).send("invalid signature");
+          }
+
           const { fnId, stepId } = z
             .object({
               fnId: z.string().min(1),
