@@ -302,14 +302,16 @@ export class InngestCommHandler {
       const { event, ctx } = z
         .object({
           event: z.object({}).passthrough(),
-          ctx: z.object({
-            _stack: z.array(z.any()).optional(),
-          }),
+          ctx: z
+            .object({
+              _stack: z.array(z.any()).optional(),
+            })
+            .optional(),
         })
         .parse(data);
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      const ret = await fn["runFn"]({ event }, ctx._stack || []);
+      const ret = await fn["runFn"]({ event }, ctx?._stack || []);
       const isOp = ret[0];
 
       console.log("express.ts runStep ret:", ret);
