@@ -21,18 +21,29 @@ export interface StepArgs<Event, FnId, StepId> {
   ctx: { fn_id: FnId; step_id: StepId };
 }
 
-export interface GeneratorArgs<Event, FnId, StepId>
-  extends StepArgs<Event, FnId, StepId> {
-  tools: InngestStepTools;
+export interface GeneratorArgs<
+  Events extends Record<string, EventPayload>,
+  Event,
+  FnId,
+  StepId
+> extends StepArgs<Event, FnId, StepId> {
+  tools: InngestStepTools<Events>;
 }
 
 export enum StepOpCode {
   WaitForEvent = 0x18231,
 }
 
-export type GeneratorFn<Event, FnId, StepId> = (
-  arg: GeneratorArgs<Event, FnId, StepId>
-) => Generator<[boolean], any, false>;
+export interface StepOpGenerator<T> extends Generator<T, T, StepOpCode> {
+  op: StepOpCode;
+}
+
+export type GeneratorFn<
+  Events extends Record<string, EventPayload>,
+  Event,
+  FnId,
+  StepId
+> = (arg: GeneratorArgs<Events, Event, FnId, StepId>) => Generator;
 
 /**
  * The shape of a step function, taking in event, step, and ctx data, and

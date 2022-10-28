@@ -8,8 +8,30 @@ inngest.createFunction("Normal", "demo/event.sent", ({ event }) => {
   return event.data.name;
 });
 
-inngest.createStepFunction("Step Fn", "demo/event.sent", function* ({ event }) {
-  yield [true];
+const foo = function* (event: string) {
+  yield "bar";
+  return "bar";
+};
 
-  return event.data.name;
-});
+inngest.createStepFunction(
+  "Something",
+  "demo/event.sent",
+  function* ({ event, tools: { waitForEvent } }) {
+    const anotherEvent = yield* waitForEvent("demo/another.event.sent");
+    return event.data.name + " and " + anotherEvent.data.name;
+  }
+);
+
+inngest.createStepFunction(
+  "Step Fn",
+  "demo/event.sent",
+  function* ({ event, tools: { waitForEvent } }) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const anotherEvent = yield* foo("wow");
+    // return anotherEvent.data.name;
+  }
+);
+
+// const bar = function* () {
+//   const baz = yield* foo("demo/event.sent");
+// };
