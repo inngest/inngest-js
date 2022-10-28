@@ -11,8 +11,8 @@ import type {
   ClientOptions,
   EventPayload,
   FunctionOptions,
-  GeneratorFn,
   StepFn,
+  SyncStepFn,
 } from "../types";
 import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
@@ -289,7 +289,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   public createStepFunction<
     Event extends keyof Events,
     Name extends string,
-    Fn extends GeneratorFn<Events, Events[Event], Name, "step">
+    Fn extends SyncStepFn<Events, Events[Event], Name, "step">
   >(
     /**
      * The name of this function as it will appear in the Inngst Cloud UI.
@@ -302,7 +302,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     event: Event,
 
     /**
-     * The function to run when the event is received.
+     * The function to run when the event is received. Must be synchronous.
      */
     fn: Fn
   ): InngestFunction<Events>;
@@ -313,7 +313,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   public createStepFunction<
     Event extends keyof Events,
     Opts extends FunctionOptions,
-    Fn extends GeneratorFn<
+    Fn extends SyncStepFn<
       Events,
       Events[Event],
       Opts extends FunctionOptions ? Opts["name"] : string,
@@ -331,7 +331,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     event: Event,
 
     /**
-     * The function to run when the event is received.
+     * The function to run when the event is received. Must be synchronous.
      */
     fn: Fn
   ): InngestFunction<Events>;
@@ -342,7 +342,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   public createStepFunction<
     Event extends keyof Events,
     Opts extends FunctionOptions | string,
-    Fn extends GeneratorFn<
+    Fn extends SyncStepFn<
       Events,
       Events[Event],
       Opts extends FunctionOptions

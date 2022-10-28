@@ -59,6 +59,17 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     opts: Opts,
     cron: string,
     fn: StepFn<null, Opts extends FunctionOptions ? Opts["name"] : string, "step">): InngestFunction<Events>;
+    // Warning: (ae-forgotten-export) The symbol "SyncStepFn" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    createStepFunction<Event extends keyof Events, Name extends string, Fn extends SyncStepFn<Events, Events[Event], Name, "step">>(
+    name: Name,
+    event: Event,
+    fn: Fn): InngestFunction<Events>;
+    createStepFunction<Event extends keyof Events, Opts extends FunctionOptions, Fn extends SyncStepFn<Events, Events[Event], Opts extends FunctionOptions ? Opts["name"] : string, "step">>(
+    opts: Opts,
+    event: Event,
+    fn: Fn): InngestFunction<Events>;
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
@@ -78,15 +89,10 @@ export interface RegisterOptions {
     signingKey?: string;
 }
 
+// Warning: (ae-forgotten-export) The symbol "StepArgs" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type StepFn<Event, FnId, StepId> = (arg: {
-    event: Event;
-    steps: Record<string, never>;
-    ctx: {
-        fn_id: FnId;
-        step_id: StepId;
-    };
-}) => any;
+export type StepFn<Event, FnId, StepId> = (arg: StepArgs<Event, FnId, StepId>) => any;
 
 // (No @packageDocumentation comment for this package)
 

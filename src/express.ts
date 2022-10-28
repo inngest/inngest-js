@@ -299,11 +299,31 @@ export class InngestCommHandler {
         throw new Error(`Could not find function with ID "${functionId}"`);
       }
 
-      const body = await fn["runStep"](stepId, data);
+      const { event, ctx } = z
+        .object({
+          event: z.object({}).passthrough(),
+          ctx: z.object({
+            _stack: z.array(z.any()).optional(),
+          }),
+        })
+        .parse(data);
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      const ret = await fn["runFn"]({ event }, ctx._stack || []);
+      const isOp = ret[0];
+
+      console.log("express.ts runStep ret:", ret);
+
+      if (isOp) {
+        return {
+          status: 206,
+          body: ret[1],
+        };
+      }
 
       return {
         status: 200,
-        body,
+        body: ret[1],
       };
     } catch (err: unknown) {
       if (err instanceof Error) {

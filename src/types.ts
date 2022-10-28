@@ -1,4 +1,4 @@
-import { InngestStepTools } from "./components/InngestStepTools";
+import { createStepTools } from "./components/InngestStepTools";
 
 export interface StepArgs<Event, FnId, StepId> {
   /**
@@ -27,23 +27,24 @@ export interface GeneratorArgs<
   FnId,
   StepId
 > extends StepArgs<Event, FnId, StepId> {
-  tools: InngestStepTools<Events>;
+  tools: ReturnType<typeof createStepTools<Events>>;
 }
 
 export enum StepOpCode {
   WaitForEvent = 0x18231,
+  RunStep = 0x18232,
 }
 
 export interface StepOpGenerator<T> extends Generator<T, T, StepOpCode> {
   op: StepOpCode;
 }
 
-export type GeneratorFn<
-  Events extends Record<string, EventPayload>,
-  Event,
-  FnId,
-  StepId
-> = (arg: GeneratorArgs<Events, Event, FnId, StepId>) => Generator;
+// export type GeneratorFn<
+//   Events extends Record<string, EventPayload>,
+//   Event,
+//   FnId,
+//   StepId
+// > = (arg: GeneratorArgs<Events, Event, FnId, StepId>) => Generator;
 
 /**
  * The shape of a step function, taking in event, step, and ctx data, and
@@ -54,6 +55,13 @@ export type GeneratorFn<
 export type StepFn<Event, FnId, StepId> = (
   arg: StepArgs<Event, FnId, StepId>
 ) => any;
+
+export type SyncStepFn<
+  Events extends Record<string, EventPayload>,
+  Event,
+  FnId,
+  StepId
+> = (arg: GeneratorArgs<Events, Event, FnId, StepId>) => any;
 
 /**
  * The shape of a single event's payload. It should be extended to enforce
@@ -323,6 +331,10 @@ export type StepRunResponse =
   | {
       status: 200;
       body?: any;
+    }
+  | {
+      status: 206;
+      body: any;
     };
 
 /**

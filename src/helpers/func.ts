@@ -1,5 +1,4 @@
 import { InngestFunction } from "../components/InngestFunction";
-import { InngestStep } from "../components/InngestStep";
 import type { EventPayload, FunctionOptions, StepFn } from "../types";
 import type { EventName } from "./types";
 
@@ -29,7 +28,7 @@ export const createFunction = <Event extends EventPayload>(
   return new InngestFunction(
     typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
     { event: event as string },
-    { step: new InngestStep(fn) }
+    fn
   );
 };
 
@@ -65,6 +64,6 @@ export const createScheduledFunction = (
   return new InngestFunction(
     typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
     { cron },
-    { step: new InngestStep(fn) }
+    fn
   );
 };

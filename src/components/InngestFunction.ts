@@ -5,11 +5,15 @@ import {
   FunctionConfig,
   FunctionOptions,
   FunctionTrigger,
-  ReturnedGenerator,
   StepArgs,
-  StepOpCode,
 } from "../types";
-import { InngestStepTools } from "./InngestStepTools";
+import {
+  createStepTools,
+  Op,
+  OpId,
+  OpStack,
+  SubmitOpFn,
+} from "./InngestStepTools";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -106,107 +110,49 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
   // eslint-disable-next-line @typescript-eslint/require-await
   private async runFn(
     data: any,
-    runStack: [StepOpCode, any][]
-  ): Promise<unknown> {
-    /**
-     * We type `res` as a generator here, but there's a chance it might not be
-     * one. We'll check for that as soon as we can.
-     */
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const res: ReturnedGenerator = await this.#fn({
+    opStack: OpStack
+  ): Promise<[isOp: true, op: Op | OpId] | [isOp: false, data: unknown]> {
+    let nextOp: Op | OpId | undefined;
+
+    const submitOp: SubmitOpFn = (op) => {
+      nextOp = op;
+    };
+
+    // const tools = new InngestStepTools(opStack, submitOp);
+    const mutableToolState: Parameters<typeof createStepTools>[2] = {
+      pendingOp: undefined,
+    };
+
+    const tools = createStepTools(opStack, submitOp, mutableToolState);
+
+    const fnArg = {
       ...(data as StepArgs<string, string, string>),
-      tools: new InngestStepTools(),
-    });
+      tools,
+    };
 
-    const isGenerator =
-      Boolean(res) &&
-      Object.hasOwnProperty.call(res, "next") &&
-      typeof (res as { next: any }).next === "function";
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const ret = await this.#fn(fnArg);
 
-    if (!isGenerator) {
-      // Not a generator, return this data and handle as usual.
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-      return res;
+    /**
+     * This could be a step function that has triggered an asynchronous step
+     * right at this moment.
+     *
+     * If this is the case, the above function will have now resolved and the
+     * async step function might still be running.
+     *
+     * Let's check for this occurence by checking the toolset we created to see
+     * if there is a pending op. If there is, wait for that, otherwise continue
+     * straight to the end.
+     */
+    if (mutableToolState.pendingOp) {
+      return [true, await mutableToolState.pendingOp];
     }
 
     /**
-     * First, we must skip every step we've already completed. To do this, we
-     * must iterate over the generator, passing it all data we currently have,
-     * step by step.
-     *
-     * For each of these steps, data will be returned from the generator. We
-     * must ensure that our expected next step matches the next step desired by
-     * the generator.
-     *
-     * If it does not match, we must trigger the step that is different and
-     * show a warning to the user.
-     *
-     * If we run out of data, we will perform the last action given by the
-     * generator.
+     * It could be that we have returned an op synchronously, in which case we
+     * can use that here.
      */
-    /**
-     * First things first, let's run the generator once to get the first result.
-     *
-     * We'll mutate this later on for each run.
-     */
-    let ret = res.next();
-
-    for (const [nextOpCode, nextData] of runStack) {
-      /**
-       * If the generator is done, we can't do anything else, but here we're
-       * expecting that it's to be run again with more data.
-       *
-       * Lets return the data as we usually would, but warn that this is
-       * unexpected.
-       */
-      if (ret.done) {
-        console.warn(
-          "Generator is done, but run stack had more data to run; this likely means that a function was altered after a run had started but before it had finished."
-        );
-
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-        return ret.value;
-      }
-
-      /**
-       * Next, let's check that the generator is expecting the same operation.
-       *
-       * If it is expecting the same operation, we can pass the yielded value
-       * immediately, and continue to the next step.
-       *
-       * If it is not expecting the same operation, we must trigger the op, as
-       * it's likely the function has been altered and we can't know what the
-       * next step is.
-       *
-       * TODO This check is not strong enough. We need a method of reliably
-       * checking for the exact operation required and that they have yielded
-       * our tooling.
-       */
-      if (ret.value.op !== nextOpCode) {
-        console.warn("Next operation did not match run stack.");
-        // TODO Run op
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      ret = res.next(nextData);
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-      const { value, done } = res.next({
-        ...(data as StepArgs<string, string, string>),
-        tools: new InngestStepTools(),
-      });
-
-      if (done) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-        return value;
-      }
-
-      // if (op !== value.op) {
-      //   throw new Error(
-      //     `Expected step ${op} but got ${value.op} from generator.`
-      //   );
-      // }
-    }
+    return nextOp ? [true, nextOp] : [false, ret];
   }
 
   /**
@@ -216,11 +162,3 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     return slugify([prefix || "", this.#opts.name].join("-"));
   }
 }
-
-const checkIfGenerator = (input: any): boolean => {
-  return (
-    Boolean(input) &&
-    Object.hasOwnProperty.call(input, "next") &&
-    typeof (input as { next: any }).next === "function"
-  );
-};
