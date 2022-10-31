@@ -1,5 +1,4 @@
 import { InngestFunction } from "./InngestFunction";
-import { InngestStep } from "./InngestStep";
 
 describe("#generateID", () => {
   it("Returns a correct name", () => {
@@ -7,7 +6,7 @@ describe("#generateID", () => {
       new InngestFunction(
         { name: "HELLO 👋 there mr Wolf 🥳!" },
         { event: "test/event.name" },
-        { step: new InngestStep(() => undefined) }
+        () => undefined
       );
     expect(fn().id("MY MAGIC APP 🥳!")).toEqual(
       "my-magic-app-hello-there-mr-wolf"
