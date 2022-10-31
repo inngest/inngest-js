@@ -115,7 +115,17 @@ export const createStepTools = <Events extends Record<string, EventPayload>>(
 
   return {
     waitForEvent: createTool<
-      <Event extends keyof Events>(event: Event) => Events[Event]
+      <
+        Event extends keyof Events,
+        Opts extends WaitForEventOpts<Events[Event]>
+      >(
+        event: Event,
+        opts?: Opts
+      ) => Opts["timeout"] extends string
+        ? Opts["timeout"] extends ""
+          ? Events[Event]
+          : Events[Event] | null
+        : Events[Event]
     >(
       ({ submitOp }) => {
         submitOp();
@@ -144,3 +154,31 @@ export const createStepTools = <Events extends Record<string, EventPayload>>(
     ),
   };
 };
+
+type EventTimeout = `${`${number}w` | ""}${`${number}d` | ""}${
+  | `${number}h`
+  | ""}${`${number}m` | ""}${`${number}s` | ""}${`${number}ms` | ""}`;
+
+/**
+ * A set of optional parameters given to a `waitForEvent` call to control how
+ * the event is handled.
+ */
+interface WaitForEventOpts<Event extends EventPayload> {
+  /**
+   * If provided, the step function will wait for the event for a maximum of
+   * this time, at which point the event will be returned as `null` instead of
+   * any event data.
+   *
+   * The time to wait is specified using a string in the format of
+   * `[number][unit]`, e.g. `50ms` for 50 milliseconds, `1s` for 1 second, `2m`
+   * for 2 minutes, `3h` for 3 hours, `4d` for 4 days, and `5w` for 5 weeks.
+   *
+   * Times can also be combined, e.g. `1h30m` for 1 hour and 30 minutes.
+   *
+   * If this is not specified or is blank (an empty string `""`), the step will
+   * wait for the event indefinitely.
+   */
+  timeout?: EventTimeout;
+
+  if?: (event: Event) => boolean | Promise<boolean>;
+}
