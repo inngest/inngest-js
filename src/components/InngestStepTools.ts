@@ -200,6 +200,18 @@ export const createStepTools = <
         };
       }
     ),
+
+    sleep: createTool<(time: TimeStr) => void>(
+      ({ submitOp }) => {
+        submitOp();
+      },
+      (time) => {
+        return {
+          op: StepOpCode.Sleep,
+          id: time,
+        };
+      }
+    ),
   };
 };
 
