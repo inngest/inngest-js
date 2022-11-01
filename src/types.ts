@@ -36,10 +36,6 @@ export enum StepOpCode {
   Sleep = 0x18233,
 }
 
-export interface StepOpGenerator<T> extends Generator<T, T, StepOpCode> {
-  op: StepOpCode;
-}
-
 /**
  * The shape of a step function, taking in event, step, and ctx data, and
  * outputting anything.
