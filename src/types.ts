@@ -40,13 +40,6 @@ export interface StepOpGenerator<T> extends Generator<T, T, StepOpCode> {
   op: StepOpCode;
 }
 
-// export type GeneratorFn<
-//   Events extends Record<string, EventPayload>,
-//   Event,
-//   FnId,
-//   StepId
-// > = (arg: GeneratorArgs<Events, Event, FnId, StepId>) => Generator;
-
 /**
  * The shape of a step function, taking in event, step, and ctx data, and
  * outputting anything.
