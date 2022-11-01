@@ -199,6 +199,13 @@ export const createStepTools = <
         setPendingOp(new Promise((resolve) => resolve(fn())));
       }
     ),
+
+    sleep: createTool<(time: TimeStr) => void>((time) => {
+      return {
+        op: StepOpCode.Sleep,
+        id: time,
+      };
+    }),
   };
 };
 
