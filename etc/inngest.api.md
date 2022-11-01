@@ -62,11 +62,11 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     // Warning: (ae-forgotten-export) The symbol "SyncStepFn" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    createStepFunction<Event extends keyof Events, Name extends string, Fn extends SyncStepFn<Events, Events[Event], Name, "step">>(
+    createStepFunction<Event extends keyof Events, Name extends string, Fn extends SyncStepFn<Events, Event, Name, "step">>(
     name: Name,
     event: Event,
     fn: Fn): InngestFunction<Events>;
-    createStepFunction<Event extends keyof Events, Opts extends FunctionOptions, Fn extends SyncStepFn<Events, Events[Event], Opts extends FunctionOptions ? Opts["name"] : string, "step">>(
+    createStepFunction<Event extends keyof Events, Opts extends FunctionOptions, Fn extends SyncStepFn<Events, Event, Opts extends FunctionOptions ? Opts["name"] : string, "step">>(
     opts: Opts,
     event: Event,
     fn: Fn): InngestFunction<Events>;
