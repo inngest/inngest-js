@@ -1,4 +1,3 @@
-import { createInfiniteProxy } from "../helpers/proxy";
 import { ObjectPaths, Primitive } from "../helpers/types";
 import { EventPayload, StepOpCode } from "../types";
 
@@ -11,6 +10,8 @@ export type Op = {
 
 export type OpStack = Op[];
 export type SubmitOpFn = (op: Op) => void;
+
+export class StepFlowInterrupt {}
 
 /**
  * This feels better being a class, but class bindings are lost (i.e. `this`
@@ -89,8 +90,7 @@ export const createStepTools = <
   ): T => {
     return ((...args: Parameters<T>) => {
       if (!active) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-        return createInfiniteProxy();
+        throw new StepFlowInterrupt();
       }
 
       const opId = matchOp(...args);
@@ -123,8 +123,7 @@ export const createStepTools = <
         submitOp();
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-      return createInfiniteProxy();
+      throw new StepFlowInterrupt();
     }) as T;
   };
 

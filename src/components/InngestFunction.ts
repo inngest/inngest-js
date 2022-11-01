@@ -7,7 +7,13 @@ import {
   FunctionTrigger,
   StepArgs,
 } from "../types";
-import { createStepTools, Op, OpStack, SubmitOpFn } from "./InngestStepTools";
+import {
+  createStepTools,
+  Op,
+  OpStack,
+  StepFlowInterrupt,
+  SubmitOpFn,
+} from "./InngestStepTools";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -122,8 +128,32 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       tools,
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const ret = await this.#fn(fnArg);
+    let ret;
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      ret = await this.#fn(fnArg);
+    } catch (err) {
+      if (!(err instanceof StepFlowInterrupt)) {
+        /**
+         * If the error is not a StepFlowInterrupt, then it is an error that we
+         * should probably bubble up.
+         *
+         * An exception is if the error has been somehow caused after
+         * successfully submitting a new op. This might happen if a user
+         * attempts to catch step errors with a try/catch block. In that case,
+         * we should warn of this but continue on.
+         */
+        if (!mutableToolState.pendingOp && !nextOp) {
+          throw err;
+        }
+
+        console.warn(
+          "An error occurred after submitting a new op. Continuing on.",
+          err
+        );
+      }
+    }
 
     /**
      * This could be a step function that has triggered an asynchronous step
