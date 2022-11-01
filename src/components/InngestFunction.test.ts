@@ -157,6 +157,12 @@ describe("runFn", () => {
           id: "bar",
         });
       });
+
+      test("should not have run any steps", () => {
+        expect(tools.step1).not.toHaveBeenCalled();
+        expect(tools.step2).not.toHaveBeenCalled();
+        expect(tools.step3).not.toHaveBeenCalled();
+      });
     });
 
     describe("maybe run step1", () => {
@@ -181,6 +187,11 @@ describe("runFn", () => {
 
         test("run step", () => {
           expect(tools.step1).toHaveBeenCalledTimes(1);
+        });
+
+        test("should not have run any other steps", () => {
+          expect(tools.step2).toHaveBeenCalledTimes(0);
+          expect(tools.step3).toHaveBeenCalledTimes(0);
         });
 
         test("return step data", () => {
@@ -214,6 +225,11 @@ describe("runFn", () => {
         test("skip step", () => {
           expect(tools.step1).toHaveBeenCalledTimes(0);
         });
+
+        test("should not have run any other steps", () => {
+          expect(tools.step2).toHaveBeenCalledTimes(0);
+          expect(tools.step3).toHaveBeenCalledTimes(0);
+        });
       });
     });
 
@@ -239,6 +255,12 @@ describe("runFn", () => {
 
       test("returns isOp true", () => {
         expect(ret[0]).toBe(true);
+      });
+
+      test("should not have run any steps", () => {
+        expect(tools.step1).toHaveBeenCalledTimes(0);
+        expect(tools.step2).toHaveBeenCalledTimes(0);
+        expect(tools.step3).toHaveBeenCalledTimes(0);
       });
 
       test("returns event request data", () => {
@@ -288,6 +310,10 @@ describe("runFn", () => {
         test("skip step", () => {
           expect(tools.step2).toHaveBeenCalledTimes(0);
         });
+
+        test("should not have run any previous steps", () => {
+          expect(tools.step1).toHaveBeenCalledTimes(0);
+        });
       });
 
       describe("event not found", () => {
@@ -324,6 +350,11 @@ describe("runFn", () => {
 
         test("run step", () => {
           expect(tools.step2).toHaveBeenCalledTimes(1);
+        });
+
+        test("should not have run any other steps", () => {
+          expect(tools.step1).toHaveBeenCalledTimes(0);
+          expect(tools.step3).toHaveBeenCalledTimes(0);
         });
       });
     });
@@ -363,6 +394,11 @@ describe("runFn", () => {
 
       test("run step", () => {
         expect(tools.step3).toHaveBeenCalledTimes(1);
+      });
+
+      test("should not have run any other steps", () => {
+        expect(tools.step1).toHaveBeenCalledTimes(0);
+        expect(tools.step2).toHaveBeenCalledTimes(0);
       });
 
       test("step returns data", () => {
@@ -409,6 +445,12 @@ describe("runFn", () => {
 
       test("returns isOp false", () => {
         expect(ret[0]).toBe(false);
+      });
+
+      test("should not have run any steps", () => {
+        expect(tools.step1).toHaveBeenCalledTimes(0);
+        expect(tools.step2).toHaveBeenCalledTimes(0);
+        expect(tools.step3).toHaveBeenCalledTimes(0);
       });
 
       test("returns void data", () => {
