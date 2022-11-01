@@ -124,6 +124,12 @@ export const createStepTools = <
     }) as T;
   };
 
+  /**
+   * Define the set of tools the user has access to for their step functions.
+   *
+   * Each key is the function name and is expected to run `createTool` and pass
+   * a generic type for that function as it will appear in the user's code.
+   */
   return {
     waitForEvent: createTool<
       <
