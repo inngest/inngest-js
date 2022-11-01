@@ -1,10 +1,16 @@
 import { createInfiniteProxy } from "../helpers/proxy";
+import { ObjectPaths, Primitive } from "../helpers/types";
 import { EventPayload, StepOpCode } from "../types";
 
-export type Op = [op: StepOpCode, id: string, data: any];
-export type OpId = [op: StepOpCode, id: string];
+export type Op = {
+  op: StepOpCode;
+  id: string;
+  opts?: any;
+  data?: any;
+};
+
 export type OpStack = Op[];
-export type SubmitOpFn = (op: OpId | Op) => void;
+export type SubmitOpFn = (op: Op) => void;
 
 /**
  * This feels better being a class, but class bindings are lost (i.e. `this`
@@ -13,7 +19,10 @@ export type SubmitOpFn = (op: OpId | Op) => void;
  *
  * Thus, we must instead use closures for this functionality.
  */
-export const createStepTools = <Events extends Record<string, EventPayload>>(
+export const createStepTools = <
+  Events extends Record<string, EventPayload>,
+  TriggeringEvent extends keyof Events
+>(
   _opStack: OpStack,
   _submitOp: SubmitOpFn,
   _mutableState: {
@@ -45,7 +54,7 @@ export const createStepTools = <Events extends Record<string, EventPayload>>(
    * stack. In either case, we should run the next op.
    */
   const getNextPastOpData = (
-    op: OpId
+    op: Op
   ): [found: false, data: undefined] | [found: true, data: any] => {
     const next = opStack.shift();
 
@@ -57,11 +66,12 @@ export const createStepTools = <Events extends Record<string, EventPayload>>(
     /**
      * Check if op matches, returning fail case if it doesn't.
      */
-    for (let i = 0; i < op.length; i++) {
-      if (op[i] !== next[i]) return [false, undefined];
-    }
+    const opMatches = (["op", "id"] as (keyof Op)[]).every(
+      (k) => op[k] === next[k]
+    );
+    if (!opMatches) return [false, undefined];
 
-    return [true, next[2]];
+    return [true, next["data"]];
   };
 
   const createTool = <T extends (...args: any[]) => any>(
@@ -70,12 +80,12 @@ export const createStepTools = <Events extends Record<string, EventPayload>>(
         submitOp,
         setPendingOp,
       }: {
-        submitOp: (...args: [] | [data: any]) => void;
+        submitOp: (opExtras?: Pick<Op, "data" | "opts">) => void;
         setPendingOp: (pendingOp: Promise<any>) => void;
       },
       ...args: Parameters<T>
     ) => any,
-    matchOp: (...args: Parameters<T>) => OpId
+    matchOp: (...args: Parameters<T>) => Op
   ): T => {
     return ((...args: Parameters<T>) => {
       if (!active) {
@@ -94,16 +104,17 @@ export const createStepTools = <Events extends Record<string, EventPayload>>(
 
       active = false;
 
-      const submitOp = (...args: [] | [data: any]) => {
-        if (args.length) {
-          _submitOp([...opId, data]);
-        } else {
-          _submitOp([...opId]);
-        }
+      const submitOp: Parameters<
+        Parameters<typeof createTool>[0]
+      >[0]["submitOp"] = (opExtras) => {
+        _submitOp({ ...opId, ...opExtras });
       };
 
-      const setPendingOp = (pendingOp: Promise<any>) => {
-        _mutableState.pendingOp = pendingOp.then((data) => [...opId, data]);
+      const setPendingOp: Parameters<
+        Parameters<typeof createTool>[0]
+      >[0]["setPendingOp"] = (pendingOp) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        _mutableState.pendingOp = pendingOp.then((data) => ({ ...opId, data }));
       };
 
       fn({ submitOp, setPendingOp }, ...args);
@@ -116,22 +127,29 @@ export const createStepTools = <Events extends Record<string, EventPayload>>(
   return {
     waitForEvent: createTool<
       <
-        Event extends keyof Events,
-        Opts extends WaitForEventOpts<Events[Event]>
+        IncomingEvent extends keyof Events,
+        Opts extends WaitForEventOpts<
+          Events[TriggeringEvent],
+          Events[IncomingEvent]
+        >
       >(
-        event: Event,
+        event: IncomingEvent,
         opts?: Opts
       ) => Opts["timeout"] extends string
         ? Opts["timeout"] extends ""
-          ? Events[Event]
-          : Events[Event] | null
-        : Events[Event]
+          ? Events[IncomingEvent]
+          : Events[IncomingEvent] | null
+        : Events[IncomingEvent]
     >(
       ({ submitOp }) => {
         submitOp();
       },
-      (event) => {
-        return [StepOpCode.WaitForEvent, event as string];
+      (event, opts) => {
+        return {
+          op: StepOpCode.WaitForEvent,
+          id: event as string,
+          // TODO Add if/match opts
+        };
       }
     ),
 
@@ -149,7 +167,10 @@ export const createStepTools = <Events extends Record<string, EventPayload>>(
         setPendingOp(new Promise((resolve) => resolve(fn())));
       },
       (name) => {
-        return [StepOpCode.RunStep, name];
+        return {
+          op: StepOpCode.RunStep,
+          id: name,
+        };
       }
     ),
   };
@@ -163,7 +184,10 @@ type EventTimeout = `${`${number}w` | ""}${`${number}d` | ""}${
  * A set of optional parameters given to a `waitForEvent` call to control how
  * the event is handled.
  */
-interface WaitForEventOpts<Event extends EventPayload> {
+interface WaitForEventOpts<
+  TriggeringEvent extends EventPayload,
+  IncomingEvent extends EventPayload
+> {
   /**
    * If provided, the step function will wait for the event for a maximum of
    * this time, at which point the event will be returned as `null` instead of
@@ -180,5 +204,9 @@ interface WaitForEventOpts<Event extends EventPayload> {
    */
   timeout?: EventTimeout;
 
-  if?: (event: Event) => boolean | Promise<boolean>;
+  match?:
+    | [ObjectPaths<TriggeringEvent> & ObjectPaths<IncomingEvent>]
+    | [ObjectPaths<IncomingEvent>, Primitive];
+
+  if?: string;
 }

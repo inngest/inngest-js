@@ -7,13 +7,7 @@ import {
   FunctionTrigger,
   StepArgs,
 } from "../types";
-import {
-  createStepTools,
-  Op,
-  OpId,
-  OpStack,
-  SubmitOpFn,
-} from "./InngestStepTools";
+import { createStepTools, Op, OpStack, SubmitOpFn } from "./InngestStepTools";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -111,8 +105,8 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
   private async runFn(
     data: any,
     opStack: OpStack
-  ): Promise<[isOp: true, op: Op | OpId] | [isOp: false, data: unknown]> {
-    let nextOp: Op | OpId | undefined;
+  ): Promise<[isOp: true, op: Op] | [isOp: false, data: unknown]> {
+    let nextOp: Op | undefined;
 
     const submitOp: SubmitOpFn = (op) => {
       nextOp = op;

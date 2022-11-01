@@ -23,11 +23,11 @@ export interface StepArgs<Event, FnId, StepId> {
 
 export interface GeneratorArgs<
   Events extends Record<string, EventPayload>,
-  Event,
+  Event extends keyof Events,
   FnId,
   StepId
-> extends StepArgs<Event, FnId, StepId> {
-  tools: ReturnType<typeof createStepTools<Events>>;
+> extends StepArgs<Events[Event], FnId, StepId> {
+  tools: ReturnType<typeof createStepTools<Events, Event>>;
 }
 
 export enum StepOpCode {
@@ -58,7 +58,7 @@ export type StepFn<Event, FnId, StepId> = (
 
 export type SyncStepFn<
   Events extends Record<string, EventPayload>,
-  Event,
+  Event extends keyof Events,
   FnId,
   StepId
 > = (arg: GeneratorArgs<Events, Event, FnId, StepId>) => any;

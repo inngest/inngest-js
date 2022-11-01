@@ -289,7 +289,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   public createStepFunction<
     Event extends keyof Events,
     Name extends string,
-    Fn extends SyncStepFn<Events, Events[Event], Name, "step">
+    Fn extends SyncStepFn<Events, Event, Name, "step">
   >(
     /**
      * The name of this function as it will appear in the Inngst Cloud UI.
@@ -315,7 +315,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     Opts extends FunctionOptions,
     Fn extends SyncStepFn<
       Events,
-      Events[Event],
+      Event,
       Opts extends FunctionOptions ? Opts["name"] : string,
       "step"
     >
@@ -344,7 +344,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     Opts extends FunctionOptions | string,
     Fn extends SyncStepFn<
       Events,
-      Events[Event],
+      Event,
       Opts extends FunctionOptions
         ? Opts["name"]
         : Opts extends string
