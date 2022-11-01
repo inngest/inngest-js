@@ -40,3 +40,36 @@ export type SendEventPayload<Events extends Record<string, EventPayload>> =
 export type EventName<Event extends EventPayload> = Event extends EventPayload
   ? Event["name"]
   : string;
+
+/**
+ * A list of simple, JSON-compatible, primitive types that contain no other
+ * values.
+ */
+export type Primitive = string | number | boolean | undefined | null;
+
+/**
+ * Given a key and a value, create a string that would be used to access that
+ * property in code.
+ */
+type StringPath<K extends string | number, V> = V extends Primitive
+  ? `${K}`
+  : `${K}` | `${K}.${Path<V>}`;
+
+/**
+ * Given an object or array, recursively return all string paths used to access
+ * properties within those objects.
+ */
+type Path<T> = T extends Array<infer V>
+  ? StringPath<number, V>
+  : {
+      [K in keyof T]-?: StringPath<K & string, T[K]>;
+    }[keyof T];
+
+/**
+ * Given an object, recursively return all string paths used to access
+ * properties within that object as if you were in code.
+ *
+ * This is an exported helper method to ensure we only try to access object
+ * paths of known objects.
+ */
+export type ObjectPaths<T extends Record<string, any>> = Path<T>;
