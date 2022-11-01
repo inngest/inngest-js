@@ -75,7 +75,8 @@ export const createStepTools = <
   };
 
   const createTool = <T extends (...args: any[]) => any>(
-    fn: (
+    matchOp: (...args: Parameters<T>) => Op,
+    fn?: (
       {
         submitOp,
         setPendingOp,
@@ -84,8 +85,7 @@ export const createStepTools = <
         setPendingOp: (pendingOp: Promise<any>) => void;
       },
       ...args: Parameters<T>
-    ) => any,
-    matchOp: (...args: Parameters<T>) => Op
+    ) => any
   ): T => {
     return ((...args: Parameters<T>) => {
       if (!active) {
@@ -105,19 +105,23 @@ export const createStepTools = <
       active = false;
 
       const submitOp: Parameters<
-        Parameters<typeof createTool>[0]
+        NonNullable<Parameters<typeof createTool>[1]>
       >[0]["submitOp"] = (opExtras) => {
         _submitOp({ ...opId, ...opExtras });
       };
 
       const setPendingOp: Parameters<
-        Parameters<typeof createTool>[0]
+        NonNullable<Parameters<typeof createTool>[1]>
       >[0]["setPendingOp"] = (pendingOp) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         _mutableState.pendingOp = pendingOp.then((data) => ({ ...opId, data }));
       };
 
-      fn({ submitOp, setPendingOp }, ...args);
+      if (fn) {
+        fn({ submitOp, setPendingOp }, ...args);
+      } else {
+        submitOp();
+      }
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return createInfiniteProxy();
@@ -146,39 +150,34 @@ export const createStepTools = <
           ? Events[IncomingEvent]
           : Events[IncomingEvent] | null
         : Events[IncomingEvent]
-    >(
-      ({ submitOp }) => {
-        submitOp();
-      },
-      (event, opts) => {
-        const matchOpts: { ttl?: string; match?: string } = {};
+    >((event, opts) => {
+      const matchOpts: { ttl?: string; match?: string } = {};
 
-        if (opts?.timeout) {
-          matchOpts.ttl = opts.timeout;
-        }
-
-        if (opts?.match) {
-          if (opts.match.length === 1) {
-            opts.if = `event.${opts.match[0]} == async.${opts.match[0]}`;
-          } else {
-            opts.if = `async.${opts.match[0]} == ${
-              typeof opts.match[1] === "string"
-                ? `'${opts.match[1]}'`
-                : // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-                  `${opts.match[1]}`
-            }`;
-          }
-        } else if (opts?.if) {
-          matchOpts.match = opts.if;
-        }
-
-        return {
-          op: StepOpCode.WaitForEvent,
-          id: event as string,
-          opts,
-        };
+      if (opts?.timeout) {
+        matchOpts.ttl = opts.timeout;
       }
-    ),
+
+      if (opts?.match) {
+        if (opts.match.length === 1) {
+          opts.if = `event.${opts.match[0]} == async.${opts.match[0]}`;
+        } else {
+          opts.if = `async.${opts.match[0]} == ${
+            typeof opts.match[1] === "string"
+              ? `'${opts.match[1]}'`
+              : // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+                `${opts.match[1]}`
+          }`;
+        }
+      } else if (opts?.if) {
+        matchOpts.match = opts.if;
+      }
+
+      return {
+        op: StepOpCode.WaitForEvent,
+        id: event as string,
+        opts,
+      };
+    }),
 
     step: createTool<
       <T extends (...args: any[]) => any>(
@@ -190,26 +189,14 @@ export const createStepTools = <
         ? null
         : ReturnType<T>
     >(
-      ({ setPendingOp }, _name, fn) => {
-        setPendingOp(new Promise((resolve) => resolve(fn())));
-      },
       (name) => {
         return {
           op: StepOpCode.RunStep,
           id: name,
         };
-      }
-    ),
-
-    sleep: createTool<(time: TimeStr) => void>(
-      ({ submitOp }) => {
-        submitOp();
       },
-      (time) => {
-        return {
-          op: StepOpCode.Sleep,
-          id: time,
-        };
+      ({ setPendingOp }, _name, fn) => {
+        setPendingOp(new Promise((resolve) => resolve(fn())));
       }
     ),
   };
