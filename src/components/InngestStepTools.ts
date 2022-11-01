@@ -203,9 +203,9 @@ export const createStepTools = <
   };
 };
 
-type EventTimeout = `${`${number}w` | ""}${`${number}d` | ""}${
-  | `${number}h`
-  | ""}${`${number}m` | ""}${`${number}s` | ""}${`${number}ms` | ""}`;
+type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${`${number}h` | ""}${
+  | `${number}m`
+  | ""}${`${number}s` | ""}${`${number}ms` | ""}`;
 
 /**
  * A set of optional parameters given to a `waitForEvent` call to control how
@@ -229,7 +229,7 @@ interface WaitForEventOpts<
    * If this is not specified or is blank (an empty string `""`), the step will
    * wait for the event indefinitely.
    */
-  timeout?: EventTimeout;
+  timeout?: TimeStr;
 
   match?:
     | [ObjectPaths<TriggeringEvent> & ObjectPaths<IncomingEvent>]
