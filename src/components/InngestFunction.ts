@@ -101,7 +101,6 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
   /**
    * Run a step in this function defined by `stepId` with `data`.
    */
-  // eslint-disable-next-line @typescript-eslint/require-await
   private async runFn(
     data: any,
     opStack: OpStack
@@ -112,7 +111,6 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       nextOp = op;
     };
 
-    // const tools = new InngestStepTools(opStack, submitOp);
     const mutableToolState: Parameters<typeof createStepTools>[2] = {
       pendingOp: undefined,
     };
