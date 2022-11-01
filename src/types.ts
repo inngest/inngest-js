@@ -55,7 +55,7 @@ export type SyncStepFn<
   Event extends keyof Events,
   FnId,
   StepId
-> = (arg: GeneratorArgs<Events, Event, FnId, StepId>) => any;
+> = (arg: GeneratorArgs<Events, Event, FnId, StepId>) => void;
 
 /**
  * The shape of a single event's payload. It should be extended to enforce
