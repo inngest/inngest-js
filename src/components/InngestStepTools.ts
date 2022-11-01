@@ -200,7 +200,7 @@ export const createStepTools = <
       }
     ),
 
-    sleep: createTool<(time: TimeStr) => void>((time) => {
+    sleep: createTool<(time: Exclude<TimeStr, "">) => void>((time) => {
       return {
         op: StepOpCode.Sleep,
         id: time,
