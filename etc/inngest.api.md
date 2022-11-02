@@ -84,7 +84,7 @@ export interface MultiStepFnArgs<Events extends Record<string, EventPayload>, Ev
     // Warning: (ae-forgotten-export) The symbol "createStepTools" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    tools: ReturnType<typeof createStepTools<Events, Event>>;
+    tools: ReturnType<typeof createStepTools<Events, Event>>[0];
 }
 
 // @public
