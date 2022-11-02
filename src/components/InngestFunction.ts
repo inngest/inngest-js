@@ -8,7 +8,6 @@ import {
   Op,
   OpStack,
   SingleStepFnArgs,
-  SubmitOpFn,
 } from "../types";
 import { createStepTools, StepFlowInterrupt } from "./InngestStepTools";
 
@@ -141,17 +140,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * user's function has run, we can check the mutated state of these to see
      * if an op has been submitted or not.
      */
-    let nextOp: Op | undefined;
-
-    const submitOp: SubmitOpFn = (op) => {
-      nextOp = op;
-    };
-
-    const mutableToolState: Parameters<typeof createStepTools>[2] = {
-      pendingOp: undefined,
-    };
-
-    const tools = createStepTools(opStack, submitOp, mutableToolState);
+    const [tools, state] = createStepTools(opStack);
 
     /**
      * Create args to pass in to our function. We blindly pass in the data and
@@ -183,7 +172,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
          * attempts to catch step errors with a try/catch block. In that case,
          * we should warn of this but continue on.
          */
-        if (!mutableToolState.pendingOp && !nextOp) {
+        if (!state.nextOp) {
           throw err;
         }
 
@@ -213,15 +202,11 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * if there is a pending op. If there is, wait for that, otherwise continue
      * straight to the end.
      */
-    if (mutableToolState.pendingOp) {
-      return [true, await mutableToolState.pendingOp];
+    if (state.nextOp) {
+      return [true, await state.nextOp];
     }
 
-    /**
-     * It could be that we have returned an op synchronously, in which case we
-     * can use that here.
-     */
-    return nextOp ? [true, nextOp] : [false, ret];
+    return [false, ret];
   }
 
   /**

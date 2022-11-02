@@ -1,13 +1,6 @@
 import { dateToTimeStr } from "../helpers/strings";
 import type { ObjectPaths, Primitive } from "../helpers/types";
-import {
-  EventPayload,
-  Op,
-  OpStack,
-  StepOpCode,
-  SubmitOpFn,
-  TimeStr,
-} from "../types";
+import { EventPayload, Op, OpStack, StepOpCode, TimeStr } from "../types";
 
 /**
  * A unique class used to interrupt the flow of a step. It is intended to be
@@ -35,15 +28,7 @@ export const createStepTools = <
   Events extends Record<string, EventPayload>,
   TriggeringEvent extends keyof Events
 >(
-  _opStack: OpStack,
-  _submitOp: SubmitOpFn,
-  _mutableState: {
-    /**
-     * An asynchronous step that is still running, even through the synchronous
-     * step flow function is complete.
-     */
-    pendingOp: Promise<Op> | undefined;
-  }
+  _opStack: OpStack
 ) => {
   /**
    * Controls whether these toolsets are active or not. Exposed tools should
@@ -167,14 +152,14 @@ export const createStepTools = <
       const submitOp: Parameters<
         NonNullable<Parameters<typeof createTool>[1]>
       >[0]["submitOp"] = (opExtras) => {
-        _submitOp({ ...opId, ...opExtras });
+        state.nextOp = { ...opId, ...opExtras };
       };
 
       const setPendingOp: Parameters<
         NonNullable<Parameters<typeof createTool>[1]>
       >[0]["setPendingOp"] = (pendingOp) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        _mutableState.pendingOp = pendingOp.then((data) => ({ ...opId, data }));
+        state.nextOp = pendingOp.then((data) => ({ ...opId, data }));
       };
 
       /**
@@ -194,13 +179,19 @@ export const createStepTools = <
     }) as T;
   };
 
+  const state: {
+    nextOp: Op | Promise<Op> | undefined;
+  } = {
+    nextOp: undefined,
+  };
+
   /**
    * Define the set of tools the user has access to for their step functions.
    *
    * Each key is the function name and is expected to run `createTool` and pass
    * a generic type for that function as it will appear in the user's code.
    */
-  return {
+  const tools = {
     /**
      * Wait for a particular event to be received before continuing. When the
      * event is received, it will be returned.
@@ -248,9 +239,9 @@ export const createStepTools = <
 
         if (opts?.match) {
           if (typeof opts.match === "string") {
-            opts.if = `event.${opts.match} == async.${opts.match}`;
+            matchOpts.match = `event.${opts.match} == async.${opts.match}`;
           } else {
-            opts.if = `async.${opts.match[0]} == ${
+            matchOpts.match = `async.${opts.match[0]} == ${
               typeof opts.match[1] === "string"
                 ? `'${opts.match[1]}'`
                 : // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
@@ -264,7 +255,7 @@ export const createStepTools = <
         return {
           op: StepOpCode.WaitForEvent,
           id: event as string,
-          opts,
+          opts: matchOpts,
         };
       }
     ),
@@ -355,6 +346,8 @@ export const createStepTools = <
       };
     }),
   };
+
+  return [tools, state] as [typeof tools, typeof state];
 };
 
 /**

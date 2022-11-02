@@ -38,7 +38,7 @@ export interface MultiStepFnArgs<
   FnId,
   StepId
 > extends SingleStepFnArgs<Events[Event], FnId, StepId> {
-  tools: ReturnType<typeof createStepTools<Events, Event>>;
+  tools: ReturnType<typeof createStepTools<Events, Event>>[0];
 }
 
 /**

@@ -155,6 +155,7 @@ describe("runFn", () => {
         expect(ret[1]).toEqual({
           op: StepOpCode.WaitForEvent,
           id: "bar",
+          opts: {},
         });
       });
 
@@ -268,7 +269,7 @@ describe("runFn", () => {
           op: StepOpCode.WaitForEvent,
           id: "baz",
           opts: {
-            timeout: "2d",
+            ttl: "2d",
           },
         });
       });
