@@ -13,7 +13,7 @@ runs:
     - name: Get yarn cache directory path
       id: yarn-cache-dir-path
       shell: bash
-      run: echo "::set-output name=dir::$(yarn cache dir)"
+      run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
       working-directory: ${{ inputs.working-directory }}
 
     - uses: actions/cache@v3
