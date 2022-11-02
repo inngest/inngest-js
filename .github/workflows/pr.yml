@@ -64,7 +64,7 @@ jobs:
 
       # Get the SDK ready and link it locally
       - run: yarn prelink
-      - run: yarn link
+      - run: test -f ../examples/integration/${{ matrix.repo }}/yarn.lock && yarn link || npm link
         working-directory: dist
 
       # Install dependencies in the example repo
