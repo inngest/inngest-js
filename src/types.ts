@@ -2,6 +2,8 @@ import type { createStepTools } from "./components/InngestStepTools";
 
 /**
  * Arguments for a single-step function.
+ *
+ * @public
  */
 export interface SingleStepFnArgs<Event, FnId, StepId> {
   /**
@@ -27,6 +29,8 @@ export interface SingleStepFnArgs<Event, FnId, StepId> {
 /**
  * Arguments for a multi-step function, extending the single-step args and
  * including step function tooling.
+ *
+ * @public
  */
 export interface MultiStepFnArgs<
   Events extends Record<string, EventPayload>,
