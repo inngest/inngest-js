@@ -64,7 +64,7 @@ jobs:
 
       # Get the SDK ready and link it locally
       - run: yarn prelink
-      - run: test -f ../examples/integration/${{ matrix.repo }}/yarn.lock && yarn link || npm link
+      - run: yarn link
         working-directory: dist
 
       # Install dependencies in the example repo
@@ -72,11 +72,11 @@ jobs:
         working-directory: examples/integration/${{ matrix.repo }}
 
       # Link the SDK
-      - run: test -f yarn.lock && yarn link inngest || npm link inngest --force
+      - run: yarn link inngest
         working-directory: examples/integration/${{ matrix.repo }}
 
       # Try to build the example
-      - run: test -f yarn.lock && yarn build || npm run build
+      - run: yarn build
         working-directory: examples/integration/${{ matrix.repo }}
 
       # TODO Run the example and confirm SDK UI shows correctly
