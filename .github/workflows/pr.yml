@@ -100,9 +100,25 @@ jobs:
       - run: test -f yarn.lock && yarn build || npm run build
         working-directory: examples/${{ matrix.repo }}
 
-      # TODO Run the example and confirm SDK UI shows correctly
-      # - run: npm run dev &
-      # - run: sleep 5
-      # - run: curl http://localhost:3000/api/inngest
+      # Run the example
+      - run: test -f yarn.lock && (yarn dev &) || (npm run dev &)
+        working-directory: examples/${{ matrix.repo }}
+        # Provide the example any env vars it might need
+        env:
+          PORT: 3000
+      - uses: ifaxity/wait-on-action@v1
+        with:
+          resource: http-get://localhost:3000
+          timeout: 20000
 
+      # Confirm the example vaguely returns all the expected functions
+      - id: assert-function-count
+        run: |
+          echo "expected-count=$(ls src/examples | grep -v index.* | grep -v README | wc -l)" >> $GITHUB_OUTPUT
 
+          echo "actual-count=$(curl -s http://localhost:3000/api/inngest?introspect | jq -r '.functions | length')" >> $GITHUB_OUTPUT
+        working-directory: sdk
+      - uses: nick-fields/assert-action@v1
+        with:
+          expected: ${{ steps.assert-function-count.outputs.expected-count }}
+          actual: ${{ steps.assert-function-count.outputs.actual-count }}
