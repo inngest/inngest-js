@@ -114,13 +114,96 @@ describe("waitForEvent", () => {
 });
 
 describe("step", () => {
-  test.todo("...");
+  let run: ReturnType<typeof createStepTools>[0]["run"];
+  let state: ReturnType<typeof createStepTools>[1];
+
+  beforeEach(() => {
+    [{ run }, state] = createStepTools([]);
+  });
+
+  test("return Step step op code", async () => {
+    expect(() => run("step", () => undefined)).toThrow(StepFlowInterrupt);
+    await expect(state.nextOp).resolves.toMatchObject({
+      op: StepOpCode.RunStep,
+    });
+  });
+
+  test("return step name as ID", async () => {
+    expect(() => run("step", () => undefined)).toThrow(StepFlowInterrupt);
+    await expect(state.nextOp).resolves.toMatchObject({
+      id: "step",
+    });
+  });
+
+  test("return promisified pending op when synchronous function given", async () => {
+    expect(() => run("step", () => "foo")).toThrow(StepFlowInterrupt);
+    await expect(state.nextOp).resolves.toMatchObject({
+      data: "foo",
+    });
+  });
+
+  test("return promisified pending op when asynchronous function given", async () => {
+    expect(() =>
+      run(
+        "step",
+        () => new Promise((resolve) => setTimeout(() => resolve("foo")))
+      )
+    ).toThrow(StepFlowInterrupt);
+    await expect(state.nextOp).resolves.toMatchObject({
+      data: "foo",
+    });
+  });
 });
 
 describe("sleep", () => {
-  test.todo("...");
+  let sleep: ReturnType<typeof createStepTools>[0]["sleep"];
+  let state: ReturnType<typeof createStepTools>[1];
+
+  beforeEach(() => {
+    [{ sleep }, state] = createStepTools([]);
+  });
+
+  test("return Sleep step op code", () => {
+    expect(() => sleep("1m")).toThrow(StepFlowInterrupt);
+    expect(state.nextOp).toMatchObject({
+      op: StepOpCode.Sleep,
+    });
+  });
+
+  test("return time string as ID", () => {
+    expect(() => sleep("1m")).toThrow(StepFlowInterrupt);
+    expect(state.nextOp).toMatchObject({
+      id: "1m",
+    });
+  });
 });
 
 describe("sleepUntil", () => {
-  test.todo("...");
+  let sleepUntil: ReturnType<typeof createStepTools>[0]["sleepUntil"];
+  let state: ReturnType<typeof createStepTools>[1];
+
+  beforeEach(() => {
+    [{ sleepUntil }, state] = createStepTools([]);
+  });
+
+  test("return Sleep step op code", () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 1);
+
+    expect(() => sleepUntil(future)).toThrow(StepFlowInterrupt);
+    expect(state.nextOp).toMatchObject({
+      op: StepOpCode.Sleep,
+    });
+  });
+
+  test("return time string as ID given a date", () => {
+    const upcoming = new Date();
+    upcoming.setDate(upcoming.getDate() + 6);
+    upcoming.setHours(upcoming.getHours() + 1);
+
+    expect(() => sleepUntil(upcoming)).toThrow(StepFlowInterrupt);
+    expect(state.nextOp).toMatchObject({
+      id: expect.stringContaining("6d"),
+    });
+  });
 });
