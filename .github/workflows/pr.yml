@@ -49,6 +49,7 @@ jobs:
       matrix:
         repo:
           - inngest/sdk-example-cloudflare-workers
+          - inngest/sdk-example-nextjs-vercel
     steps:
       # Checkout the repo
       - uses: actions/checkout@v3
