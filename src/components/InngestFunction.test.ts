@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { jest } from "@jest/globals";
-import { StepOpCode, SyncStepFn } from "../types";
+import { MultiStepFn, StepOpCode } from "../types";
 import { InngestFunction } from "./InngestFunction";
 
 type TestEvents = {
@@ -109,13 +109,13 @@ describe("runFn", () => {
           )
       );
 
-      const stepFn: SyncStepFn<TestEvents, "foo", string, string> = ({
-        tools: { step, waitForEvent },
+      const stepFn: MultiStepFn<TestEvents, "foo", string, string> = ({
+        tools: { run, waitForEvent },
       }) => {
         const event2 = waitForEvent("bar");
 
         if (event2.data.bar === "baz") {
-          step("step1", step1);
+          run("step1", step1);
         }
 
         const event3 = waitForEvent("baz", {
@@ -123,10 +123,10 @@ describe("runFn", () => {
         });
 
         if (!event3) {
-          step("step2", step2);
+          run("step2", step2);
         }
 
-        step("step3", step3);
+        run("step3", step3);
       };
 
       const fn = new InngestFunction<TestEvents>(

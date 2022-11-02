@@ -15,10 +15,10 @@ export interface ClientOptions {
 // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
 //
 // @public
-export const createFunction: <Event_1 extends EventPayload>(nameOrOpts: string | FunctionOptions, event: EventName<Event_1>, fn: StepFn<Event_1, string, "step">) => InngestFunction<any>;
+export const createFunction: <Event_1 extends EventPayload>(nameOrOpts: string | FunctionOptions, event: EventName<Event_1>, fn: SingleStepFn<Event_1, string, "step">) => InngestFunction<any>;
 
 // @public
-export const createScheduledFunction: (nameOrOpts: string | FunctionOptions, cron: string, fn: StepFn<null, string, "step">) => InngestFunction<any>;
+export const createScheduledFunction: (nameOrOpts: string | FunctionOptions, cron: string, fn: SingleStepFn<null, string, "step">) => InngestFunction<any>;
 
 // @public
 export interface EventPayload {
@@ -43,30 +43,27 @@ export interface FunctionOptions {
 // @public
 export class Inngest<Events extends Record<string, EventPayload>> {
     constructor({ name, eventKey, inngestBaseUrl, }: ClientOptions);
-    createFunction<Event extends keyof Events, Name extends string, Fn extends StepFn<Events[Event], Name, "step">>(
+    createFunction<Event extends keyof Events, Name extends string, Fn extends SingleStepFn<Events[Event], Name, "step">>(
     name: Name,
     event: Event,
     fn: Fn): InngestFunction<Events>;
-    createFunction<Event extends keyof Events, Opts extends FunctionOptions, Fn extends StepFn<Events[Event], Opts extends FunctionOptions ? Opts["name"] : string, "step">>(
+    createFunction<Event extends keyof Events, Opts extends FunctionOptions, Fn extends SingleStepFn<Events[Event], Opts extends FunctionOptions ? Opts["name"] : string, "step">>(
     opts: Opts,
     event: Event,
     fn: Fn): InngestFunction<Events>;
     createScheduledFunction<Name extends string>(
     name: Name,
     cron: string,
-    fn: StepFn<null, Name, "step">): InngestFunction<Events>;
+    fn: SingleStepFn<null, Name, "step">): InngestFunction<Events>;
     createScheduledFunction<Opts extends FunctionOptions>(
     opts: Opts,
     cron: string,
-    fn: StepFn<null, Opts extends FunctionOptions ? Opts["name"] : string, "step">): InngestFunction<Events>;
-    // Warning: (ae-forgotten-export) The symbol "SyncStepFn" needs to be exported by the entry point index.d.ts
-    //
-    // (undocumented)
-    createStepFunction<Event extends keyof Events, Name extends string, Fn extends SyncStepFn<Events, Event, Name, "step">>(
+    fn: SingleStepFn<null, Opts extends FunctionOptions ? Opts["name"] : string, "step">): InngestFunction<Events>;
+    createStepFunction<Event extends keyof Events, Name extends string, Fn extends MultiStepFn<Events, Event, Name, "step">>(
     name: Name,
     event: Event,
     fn: Fn): InngestFunction<Events>;
-    createStepFunction<Event extends keyof Events, Opts extends FunctionOptions, Fn extends SyncStepFn<Events, Event, Opts extends FunctionOptions ? Opts["name"] : string, "step">>(
+    createStepFunction<Event extends keyof Events, Opts extends FunctionOptions, Fn extends MultiStepFn<Events, Event, Opts extends FunctionOptions ? Opts["name"] : string, "step">>(
     opts: Opts,
     event: Event,
     fn: Fn): InngestFunction<Events>;
@@ -80,6 +77,17 @@ export class Inngest<Events extends Record<string, EventPayload>> {
 }
 
 // @public
+export type MultiStepFn<Events extends Record<string, EventPayload>, Event extends keyof Events, FnId, StepId> = (arg: MultiStepFnArgs<Events, Event, FnId, StepId>) => void;
+
+// @public
+export interface MultiStepFnArgs<Events extends Record<string, EventPayload>, Event extends keyof Events, FnId, StepId> extends SingleStepFnArgs<Events[Event], FnId, StepId> {
+    // Warning: (ae-forgotten-export) The symbol "createStepTools" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    tools: ReturnType<typeof createStepTools<Events, Event>>;
+}
+
+// @public
 export interface RegisterOptions {
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
@@ -89,10 +97,18 @@ export interface RegisterOptions {
     signingKey?: string;
 }
 
-// Warning: (ae-forgotten-export) The symbol "StepArgs" needs to be exported by the entry point index.d.ts
-//
 // @public
-export type StepFn<Event, FnId, StepId> = (arg: StepArgs<Event, FnId, StepId>) => any;
+export type SingleStepFn<Event, FnId, StepId> = (arg: SingleStepFnArgs<Event, FnId, StepId>) => any;
+
+// @public
+export interface SingleStepFnArgs<Event, FnId, StepId> {
+    ctx: {
+        fn_id: FnId;
+        step_id: StepId;
+    };
+    event: Event;
+    steps: Record<string, never>;
+}
 
 // (No @packageDocumentation comment for this package)
 

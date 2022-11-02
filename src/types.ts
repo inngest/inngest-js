@@ -1,6 +1,9 @@
-import { createStepTools } from "./components/InngestStepTools";
+import type { createStepTools } from "./components/InngestStepTools";
 
-export interface StepArgs<Event, FnId, StepId> {
+/**
+ * Arguments for a single-step function.
+ */
+export interface SingleStepFnArgs<Event, FnId, StepId> {
   /**
    * If relevant, the event data present in the payload.
    */
@@ -21,15 +24,23 @@ export interface StepArgs<Event, FnId, StepId> {
   ctx: { fn_id: FnId; step_id: StepId };
 }
 
-export interface GeneratorArgs<
+/**
+ * Arguments for a multi-step function, extending the single-step args and
+ * including step function tooling.
+ */
+export interface MultiStepFnArgs<
   Events extends Record<string, EventPayload>,
   Event extends keyof Events,
   FnId,
   StepId
-> extends StepArgs<Events[Event], FnId, StepId> {
+> extends SingleStepFnArgs<Events[Event], FnId, StepId> {
   tools: ReturnType<typeof createStepTools<Events, Event>>;
 }
 
+/**
+ * Unique codes for the different types of operation that can be sent to Inngest
+ * from SDK step functions.
+ */
 export enum StepOpCode {
   WaitForEvent = 0x18231,
   RunStep = 0x18232,
@@ -37,21 +48,81 @@ export enum StepOpCode {
 }
 
 /**
+ * The shape of a single operation in a step function. Used to communicate
+ * desired and received operations to Inngest.
+ */
+export type Op = {
+  /**
+   * The unique code for this operation.
+   */
+  op: StepOpCode;
+
+  /**
+   * An identifier for this operation, used to confirm that the operation was
+   * completed when it is received from Inngest.
+   */
+  id: string;
+
+  /**
+   * Any additional data required for this operation to send to Inngest. This
+   * is not compared when confirming that the operation was completed; use `id`
+   * for this.
+   */
+  opts?: any;
+
+  /**
+   * Any data present for this operation. If data is present, this operation is
+   * treated as completed.
+   */
+  data?: any;
+};
+
+/**
+ * A helper type to represent a stack of operations that will accumulate
+ * throughout a step function's run.
+ */
+export type OpStack = Op[];
+
+/**
+ * A function that can be used to submit an operation to Inngest internally.
+ */
+export type SubmitOpFn = (op: Op) => void;
+
+/**
+ * A sleep-compatible time string such as `"1h30m15s"` that can be sent to
+ * Inngest to sleep for a given amount of time.
+ *
+ * This type includes an empty string too, so make sure to exclude that via
+ * `Exclude<TimeStr, "">` if you don't want to allow empty strings.
+ */
+export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
+  | `${number}h`
+  | ""}${`${number}m` | ""}${`${number}s` | ""}${`${number}ms` | ""}`;
+
+/**
  * The shape of a step function, taking in event, step, and ctx data, and
  * outputting anything.
  *
  * @public
  */
-export type StepFn<Event, FnId, StepId> = (
-  arg: StepArgs<Event, FnId, StepId>
+export type SingleStepFn<Event, FnId, StepId> = (
+  arg: SingleStepFnArgs<Event, FnId, StepId>
 ) => any;
 
-export type SyncStepFn<
+/**
+ * The shape of a multi-step function, taking in event, step, ctx, and tools.
+ *
+ * Multi-step functions are not expected to return any data themselves, as all
+ * logic is expected to be placed within steps.
+ *
+ * @public
+ */
+export type MultiStepFn<
   Events extends Record<string, EventPayload>,
   Event extends keyof Events,
   FnId,
   StepId
-> = (arg: GeneratorArgs<Events, Event, FnId, StepId>) => void;
+> = (arg: MultiStepFnArgs<Events, Event, FnId, StepId>) => void;
 
 /**
  * The shape of a single event's payload. It should be extended to enforce

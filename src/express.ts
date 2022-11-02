@@ -314,8 +314,6 @@ export class InngestCommHandler {
       const ret = await fn["runFn"]({ event }, ctx?._stack || []);
       const isOp = ret[0];
 
-      console.log("express.ts runStep ret:", ret);
-
       if (isOp) {
         return {
           status: 206,

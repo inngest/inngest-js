@@ -4,6 +4,9 @@ export type {
   ClientOptions,
   EventPayload,
   FunctionOptions,
+  MultiStepFn,
+  MultiStepFnArgs,
   RegisterOptions,
-  StepFn,
+  SingleStepFn,
+  SingleStepFnArgs,
 } from "./types";
