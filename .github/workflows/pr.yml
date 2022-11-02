@@ -72,8 +72,9 @@ jobs:
       - run: test -f yarn.lock && yarn install --frozen-lockfile || npm ci
         working-directory: examples/integration/${{ matrix.repo }}
 
-      # Link the SDK
-      - run: yarn link inngest
+      # Link the SDK, making sure to use the same Yarn version that we used to
+      # create the link
+      - run: volta run --yarn $(cat ../../../package.json | jq -r .volta.yarn) yarn link inngest
         working-directory: examples/integration/${{ matrix.repo }}
 
       # Try to build the example
