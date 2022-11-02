@@ -67,11 +67,6 @@ jobs:
           path: examples/${{ matrix.repo }}
           ref: main
 
-      - run: |
-          ls -la
-          ls -la sdk
-          ls -la examples
-
       # Get the SDK ready and link it locally
       - run: yarn prelink
         working-directory: sdk
