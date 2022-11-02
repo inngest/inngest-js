@@ -86,6 +86,15 @@ jobs:
       - run: volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
         working-directory: examples/${{ matrix.repo }}
 
+      # Copy any SDK function examples to the example repo so that we're always
+      # testing many functions against many handlers.
+      - id: inngest-functions-path
+        run: echo "dir=$(dirname $(echo \"$(git ls-files | grep inngest/index.ts)))\"" >> $GITHUB_OUTPUT
+        working-directory: examples/${{ matrix.repo }}
+      - run: rm -rf ${{ steps.inngest-functions-path.outputs.dir }}
+        working-directory: examples/${{ matrix.repo }}
+      - run: cp -r ../../../sdk/src/examples/ ${{ steps.inngest-functions-path.outputs.dir }}
+        working-directory: examples/${{ matrix.repo }}
 
       # Try to build the example
       - run: test -f yarn.lock && yarn build || npm run build
