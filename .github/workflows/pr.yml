@@ -74,8 +74,12 @@ jobs:
 
       # Link the SDK, making sure to use the same Yarn version that we used to
       # create the link
-      - run: volta run --yarn $(cat ../../../package.json | jq -r .volta.yarn) yarn link inngest
-        working-directory: examples/integration/${{ matrix.repo }}
+      - working-directory: examples/integration/${{ matrix.repo }}
+        run: |
+          pwd
+          ls -la
+          cat ../../../package.json
+          volta run --yarn $(cat ../../../package.json | jq -r .volta.yarn) yarn link inngest
 
       # Try to build the example
       - run: yarn build
