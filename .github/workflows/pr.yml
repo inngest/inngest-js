@@ -83,7 +83,7 @@ jobs:
 
 
       # Try to build the example
-      - run: yarn build
+      - run: test -f yarn.lock && yarn build || npm run build
         working-directory: examples/integration/${{ matrix.repo }}
 
       # TODO Run the example and confirm SDK UI shows correctly
