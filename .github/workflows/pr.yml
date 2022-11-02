@@ -55,7 +55,7 @@ jobs:
       - uses: actions/checkout@v3
         with:
           path: sdk
-      - uses: ./.github/actions/setup-and-build
+      - uses: ./sdk/.github/actions/setup-and-build
         with:
           working-directory: sdk
 
@@ -67,6 +67,11 @@ jobs:
           path: examples/${{ matrix.repo }}
           ref: main
 
+      - run: |
+          ls -la
+          ls -la sdk
+          ls -la examples
+
       # Get the SDK ready and link it locally
       - run: yarn prelink
         working-directory: sdk
@@ -75,7 +80,7 @@ jobs:
 
       # Install dependencies in the example repo
       - run: test -f yarn.lock && yarn install --frozen-lockfile || npm ci
-        working-directory: examples/integration/${{ matrix.repo }}
+        working-directory: examples/${{ matrix.repo }}
 
       # Link the SDK, making sure to use the same Yarn version that we used to
       # create the link.
@@ -83,13 +88,13 @@ jobs:
       # Because repos are always owner/repo with a slash, the directory will be
       # the same, therefore we must venture an extra level deep when searching
       # for package.json.
-      - run: volta run --yarn $(cat ../../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
-        working-directory: examples/integration/${{ matrix.repo }}
+      - run: volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
+        working-directory: examples/${{ matrix.repo }}
 
 
       # Try to build the example
       - run: test -f yarn.lock && yarn build || npm run build
-        working-directory: examples/integration/${{ matrix.repo }}
+        working-directory: examples/${{ matrix.repo }}
 
       # TODO Run the example and confirm SDK UI shows correctly
       # - run: npm run dev &
