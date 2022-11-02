@@ -13,6 +13,22 @@ export type SubmitOpFn = (op: Op) => void;
 
 export class StepFlowInterrupt {}
 
+const millisecond = 1;
+const second = millisecond * 1000;
+const minute = second * 60;
+const hour = minute * 60;
+const day = hour * 24;
+const week = day * 7;
+
+const periods = [
+  ["w", week],
+  ["d", day],
+  ["h", hour],
+  ["m", minute],
+  ["s", second],
+  ["ms", millisecond],
+] as const;
+
 /**
  * This feels better being a class, but class bindings are lost (i.e. `this`
  * becomes `undefined`) if a user destructures the tools within their step
@@ -203,6 +219,46 @@ export const createStepTools = <
       return {
         op: StepOpCode.Sleep,
         id: time,
+      };
+    }),
+
+    sleepUntil: createTool<(time: Date) => void>((time) => {
+      const isValidDate = !isNaN(time.getTime());
+
+      if (!isValidDate) {
+        throw new Error("Invalid date given to sleep until");
+      }
+
+      const now = new Date();
+
+      /**
+       * TODO In this eventuality, should we smartly skip the sleep?
+       *
+       * We'd have to return two ops to Inngest, this being skipped and the
+       * next.
+       */
+      if (time <= now) {
+        throw new Error("Cannot sleep until a time in the past");
+      }
+
+      const timeNum = time.getTime() - now.getTime();
+
+      const [, timeStr] = periods.reduce<[number, string]>(
+        ([num, str], [suffix, period]) => {
+          const numPeriods = Math.floor(num / period);
+
+          if (numPeriods > 0) {
+            return [num % period, `${str}${numPeriods}${suffix}`];
+          }
+
+          return [num, str];
+        },
+        [timeNum, ""]
+      );
+
+      return {
+        op: StepOpCode.Sleep,
+        id: timeStr,
       };
     }),
   };
