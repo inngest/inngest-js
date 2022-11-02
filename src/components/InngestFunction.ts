@@ -5,15 +5,12 @@ import {
   FunctionConfig,
   FunctionOptions,
   FunctionTrigger,
-  StepArgs,
-} from "../types";
-import {
-  createStepTools,
   Op,
   OpStack,
-  StepFlowInterrupt,
+  SingleStepFnArgs,
   SubmitOpFn,
-} from "./InngestStepTools";
+} from "../types";
+import { createStepTools, StepFlowInterrupt } from "./InngestStepTools";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -105,12 +102,45 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
   }
 
   /**
-   * Run a step in this function defined by `stepId` with `data`.
+   * Run this function, optionally providing an op stack to pass as state.
+   *
+   * It is a `private` method to prevent users from being exposed to it
+   * directly, but ensuring it is available to the generated handler.
+   *
+   * For a single-step function that doesn't use any step tooling, this will
+   * await the result of the function given to this instance of
+   * `InngestFunction` and return the data and a boolean indicating that the
+   * function is complete and should not be called again.
+   *
+   * For a multi-step function, also try to await the result of the function
+   * given to this instance of `InngestFunction`, though will check whether an
+   * op has been submitted for use (or a Promise is pending, such as a step
+   * running) after the function has completed.
+   *
+   * In both cases, an unknown error (i.e. anything except a
+   * `StepFlowInterrupt` error) will bubble up to the caller, meaning the caller
+   * must handle what to do with the error.
    */
   private async runFn(
+    /**
+     * The data to pass to the function, probably straight from Inngest.
+     */
     data: any,
+
+    /**
+     * The op stack to pass to the function as state, likely stored in
+     * `ctx._state` in the Inngest payload.
+     *
+     * This must be provided in order to always be cognizant of step function
+     * state and to allow for multi-step functions.
+     */
     opStack: OpStack
   ): Promise<[isOp: true, op: Op] | [isOp: false, data: unknown]> {
+    /**
+     * Create some values to be mutated and passed to the step tools. Once the
+     * user's function has run, we can check the mutated state of these to see
+     * if an op has been submitted or not.
+     */
     let nextOp: Op | undefined;
 
     const submitOp: SubmitOpFn = (op) => {
@@ -123,13 +153,22 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
 
     const tools = createStepTools(opStack, submitOp, mutableToolState);
 
+    /**
+     * Create args to pass in to our function. We blindly pass in the data and
+     * add tools.
+     */
     const fnArg = {
-      ...(data as StepArgs<string, string, string>),
+      ...(data as SingleStepFnArgs<string, string, string>),
       tools,
     };
 
     let ret;
 
+    /**
+     * Attempt to run the function. If this is a step function, we expect to
+     * catch `StepFlowInterrupt` errors and ignore them, as they are used to
+     * interrupt function execution safely.
+     */
     try {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       ret = await this.#fn(fnArg);
@@ -148,6 +187,14 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
           throw err;
         }
 
+        /**
+         * If we're here, then this unknown error was caused after successfully
+         * submitting an op.
+         *
+         * In this case, we warn the user that trying to catch these is not a
+         * good idea and continue on; the step tool itself will attempt to throw
+         * again to stop execution.
+         */
         console.warn(
           "An error occurred after submitting a new op. Continuing on.",
           err
