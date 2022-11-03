@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import hash from "hash.js";
+import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
 import { Inngest } from "./components/Inngest";
 import { InngestFunction } from "./components/InngestFunction";
@@ -199,7 +199,7 @@ export class InngestCommHandler {
       this.signingKey.match(/^signkey-(test|prod)-/)?.shift() || "";
     const key = this.signingKey.replace(/^signkey-(test|prod)-/, "");
 
-    const sum = hash.sha256().update(key, "hex").digest("hex");
+    const sum = sha256().update(key, "hex").digest("hex");
 
     // Decode the key from its hex representation into a bytestream
     return `${prefix}${sum}`;
@@ -267,8 +267,11 @@ export class InngestCommHandler {
         case "POST": {
           // Inngest is trying to run a step; confirm signed and run.
           try {
-            this.validateSignature(req.headers["x-inngest-signature"], req.body)
-          } catch(e) {
+            this.validateSignature(
+              req.headers["x-inngest-signature"],
+              req.body
+            );
+          } catch (e) {
             console.warn("Invalid x-inngest-signature", e);
             return void res.sendStatus(401);
           }
@@ -384,7 +387,7 @@ export class InngestCommHandler {
     };
 
     // Calculate the checksum of the body... without the checksum itself being included.
-    body.hash = hash.sha256().update(JSON.stringify(body)).digest("hex");
+    body.hash = sha256().update(JSON.stringify(body)).digest("hex");
     return body;
   }
 
@@ -464,13 +467,18 @@ export class InngestCommHandler {
     return this.showLandingPage ?? strBoolean(strEnvVar) ?? true;
   }
 
-  protected validateSignature(sig: string | string[] | undefined | null, body: string | Record<string, any>) {
+  protected validateSignature(
+    sig: string | string[] | undefined | null,
+    body: any
+  ) {
     if (!this.signingKey) {
-      console.warn("No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets");
+      console.warn(
+        "No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets"
+      );
       return;
     }
 
-    let header = Array.isArray(sig) ? sig[0] : sig;
+    const header = Array.isArray(sig) ? sig[0] : sig;
     if (!header) {
       throw new Error("No x-inngest-signature provided");
     }
@@ -480,7 +488,7 @@ export class InngestCommHandler {
     // We cant use URLSearchParams here because this needs to run directly in V8
     // which may not have this defined.
     const map: { [k: string]: string } = {};
-    header.split("&").forEach(item => {
+    header.split("&").forEach((item) => {
       const kv = item.split("=");
       if (kv.length < 2 || !kv[0] || !kv[1]) {
         return;
@@ -495,17 +503,20 @@ export class InngestCommHandler {
 
     // Ensure that the request was created within the last 5 mintues by taking the
     // difference in the unix timestamp, in seconds.
-    const delta = (new Date().valueOf() - new Date(parseInt(map.t, 10) * 1000).valueOf()) / 1000;
-    if (delta > (60 * 5)) {
+    const delta =
+      (new Date().valueOf() - new Date(parseInt(map.t, 10) * 1000).valueOf()) /
+      1000;
+    if (delta > 60 * 5) {
       throw new Error("Request has expired");
     }
 
     // Calculate the HMAC of the request body ourselves.
     const encoded = typeof body === "string" ? body : JSON.stringify(body);
-    const mac = hash.hmac(hash.sha256 as any, this.signingKey || "")
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    const mac = hmac(sha256 as any, this.signingKey || "")
       .update(encoded)
       .update(map.t)
-      .digest("hex"); 
+      .digest("hex");
 
     if (mac !== map.s) {
       throw new Error("Invalid signature");

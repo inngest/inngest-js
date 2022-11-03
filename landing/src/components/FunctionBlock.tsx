@@ -2,6 +2,8 @@ import { useMemo } from "preact/hooks";
 import { FunctionConfig } from "../types";
 import { classNames } from "../utils/classnames";
 import { configErrors } from "./ConfigErrors";
+import { Button } from "./Button";
+import useToast from "./Toast";
 
 interface Props {
   config: FunctionConfig;
@@ -12,6 +14,7 @@ interface Props {
  * Renders a single entry for a found function.
  */
 export const FunctionBlock = ({ config, altBg }: Props) => {
+  const { push } = useToast();
   /**
    * Figure out here what kind of function it is so that we can approriately
    * label it.
@@ -42,11 +45,39 @@ export const FunctionBlock = ({ config, altBg }: Props) => {
     [config.errors]
   );
 
+  /**
+   * Trigger a cron function
+   */
+  const triggerCron = async () => {
+    const url = new URL(window.location.href);
+
+    // Default to the default step name for crons
+    url.searchParams.set("fnId", config.id);
+    url.searchParams.set("stepId", config.steps.step.id);
+
+    push({
+      type: "default",
+      message: "Scheduled function triggered",
+    });
+
+    const res = await fetch(url, {
+      method: "POST",
+    });
+    const json = await res.json();
+    const status =
+      typeof json === "object" && json.status ? json.status : res.status;
+
+    push({
+      type: status === 200 ? "success" : "error",
+      message: `Function complete: ${JSON.stringify(json)}`,
+    });
+  };
+
   return (
     <>
       <div
         class={classNames({
-          "w-full grid grid-cols-[1fr_1fr_1fr] p-2 items-center": true,
+          "w-full grid grid-cols-[1fr_1fr_1fr_100px] p-2 items-center": true,
           "bg-slate-200/30": Boolean(altBg),
           "bg-red-400/30": hasErrors,
         })}
@@ -83,6 +114,13 @@ export const FunctionBlock = ({ config, altBg }: Props) => {
             <code class="bg-white">Invalid or no expression</code>
           )}
         </span>
+        <div>
+          {type === "cron" && (
+            <Button className="text-sm" onClick={triggerCron}>
+              Trigger
+            </Button>
+          )}
+        </div>
       </div>
       {hasErrors ? (
         <div class="w-full p-2 bg-red-400/30">
