@@ -122,8 +122,11 @@ class RedwoodCommHandler extends InngestCommHandler {
 
           // Inngest is trying to run a step; confirm signed and run.
           try {
-            this.validateSignature(event.headers["x-inngest-signature"], strJson)
-          } catch(e) {
+            this.validateSignature(
+              event.headers["x-inngest-signature"],
+              strJson
+            );
+          } catch (e) {
             console.warn("Invalid x-inngest-signature", e);
             return {
               statusCode: 401,

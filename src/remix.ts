@@ -101,7 +101,10 @@ class RemixCommHandler extends InngestCommHandler {
           const input = await req.json();
 
           try {
-            this.validateSignature(req.headers.get("x-inngest-signature"), input)
+            this.validateSignature(
+              req.headers.get("x-inngest-signature"),
+              input
+            );
           } catch(e) {
             console.warn("Invalid x-inngest-signature", e);
             return new Response("invalid signature", {
