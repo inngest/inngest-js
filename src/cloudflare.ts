@@ -89,6 +89,7 @@ class CloudflareCommHandler extends InngestCommHandler {
 
         case "POST": {
           // Inngest is trying to run a step; confirm signed and run.
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           const input = await req.json();
 
           try {
