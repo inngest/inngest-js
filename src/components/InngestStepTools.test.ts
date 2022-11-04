@@ -76,30 +76,6 @@ describe("waitForEvent", () => {
     });
   });
 
-  test("return custom field match if `match` array given", async () => {
-    expect(() => waitForEvent("event", { match: ["name", 123] })).toThrow(
-      StepFlowInterrupt
-    );
-    await expect(state.nextOp).resolves.toMatchObject({
-      opts: {
-        match: "async.name == 123",
-      },
-      hash: "392ba5e9ca54ebda8759ff1ca251d6e7d12d1587",
-    });
-  });
-
-  test("wrap custom field match is `match` array comparison is a string", async () => {
-    expect(() => waitForEvent("event", { match: ["name", "123"] })).toThrow(
-      StepFlowInterrupt
-    );
-    await expect(state.nextOp).resolves.toMatchObject({
-      opts: {
-        match: "async.name == '123'",
-      },
-      hash: "1765e55ef0fd0589442a5dffe79e8c317de16b8c",
-    });
-  });
-
   test("return custom match statement if `if` given", async () => {
     expect(() => waitForEvent("event", { if: "name == 123" })).toThrow(
       StepFlowInterrupt

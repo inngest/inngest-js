@@ -1,7 +1,7 @@
 import { sha1 } from "hash.js";
 import sigmund from "sigmund";
 import { dateToTimeStr } from "../helpers/strings";
-import type { ObjectPaths, Primitive } from "../helpers/types";
+import type { ObjectPaths } from "../helpers/types";
 import {
   EventPayload,
   HashedOp,
@@ -270,16 +270,7 @@ export const createStepTools = <
         }
 
         if (opts?.match) {
-          if (typeof opts.match === "string") {
-            matchOpts.match = `event.${opts.match} == async.${opts.match}`;
-          } else {
-            matchOpts.match = `async.${opts.match[0]} == ${
-              typeof opts.match[1] === "string"
-                ? `'${opts.match[1]}'`
-                : // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-                  `${opts.match[1]}`
-            }`;
-          }
+          matchOpts.match = `event.${opts.match} == async.${opts.match}`;
         } else if (opts?.if) {
           matchOpts.match = opts.if;
         }
@@ -413,26 +404,23 @@ interface WaitForEventOpts<
    * particular criteria. If the event does not match, it will be ignored and
    * the step function will wait for another event.
    *
-   * It can either be a string of a dot-notation field name within both events
-   * to compare, e.g. `"date.id"` or `"user.email"`, or an array of two values,
-   * the first being a field name of the incoming event and the second being the
-   * value to compare it to.
+   * It must be a string of a dot-notation field name within both events to
+   * compare, e.g. `"date.id"` or `"user.email"`.
    *
    * ```
    * // Wait for an event where the `user.email` field matches
    * match: "user.email"
-   *
-   * // Wait for an event wher `data.name` matches "Alice"
-   * match: ["data.name", "Alice"]
    * ```
    *
    * All of these are helpers for the `if` option, which allows you to specify
    * a custom condition to check. This can be useful if you need to compare
    * multiple fields or use a more complex condition.
+   *
+   * See the Inngest expressions docs for more information.
+   *
+   * {@link https://www.inngest.com/docs/functions/expressions}
    */
-  match?:
-    | (ObjectPaths<TriggeringEvent> & ObjectPaths<IncomingEvent>)
-    | [ObjectPaths<IncomingEvent>, Primitive];
+  match?: ObjectPaths<TriggeringEvent> & ObjectPaths<IncomingEvent>;
 
   /**
    * If provided, the step function will wait for the incoming event to match
