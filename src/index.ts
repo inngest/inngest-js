@@ -9,4 +9,5 @@ export type {
   RegisterOptions,
   SingleStepFn,
   SingleStepFnArgs,
+  TimeStr,
 } from "./types";

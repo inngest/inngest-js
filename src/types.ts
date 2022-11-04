@@ -98,6 +98,8 @@ export type SubmitOpFn = (op: Op) => void;
  *
  * This type includes an empty string too, so make sure to exclude that via
  * `Exclude<TimeStr, "">` if you don't want to allow empty strings.
+ *
+ * @public
  */
 export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
   | `${number}h`

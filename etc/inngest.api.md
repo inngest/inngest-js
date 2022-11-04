@@ -37,7 +37,13 @@ export interface EventPayload {
 // @public
 export interface FunctionOptions {
     id?: string;
+    idempotency?: string;
     name: string;
+    throttle?: {
+        key?: string;
+        count: number;
+        period: TimeStr;
+    };
 }
 
 // @public
@@ -109,6 +115,9 @@ export interface SingleStepFnArgs<Event, FnId, StepId> {
     event: Event;
     steps: Record<string, never>;
 }
+
+// @public
+export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${`${number}h` | ""}${`${number}m` | ""}${`${number}s` | ""}${`${number}ms` | ""}`;
 
 // (No @packageDocumentation comment for this package)
 
