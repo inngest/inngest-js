@@ -34,7 +34,7 @@ describe("waitForEvent", () => {
   test("return a hash of the op", async () => {
     expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
-      hash: "42edfdc124dd954eea08457cc64ff951e62af8eb",
+      hash: "17ffb6f7b5118797c77057e5176fdc2412e275fe",
     });
   });
 
@@ -72,7 +72,7 @@ describe("waitForEvent", () => {
       opts: {
         match: "event.name == async.name",
       },
-      hash: "2a095ca4f4f779baba6796fda0789b5cb75e4fa5",
+      hash: "b3702cc0450f2e014e1ea9b9d2438e8f3127c95a",
     });
   });
 
@@ -84,7 +84,7 @@ describe("waitForEvent", () => {
       opts: {
         match: "async.name == 123",
       },
-      hash: "12d20be4e5c5f11c2e1f200c6ce3fe0cf3ccf7cb",
+      hash: "392ba5e9ca54ebda8759ff1ca251d6e7d12d1587",
     });
   });
 
@@ -96,7 +96,7 @@ describe("waitForEvent", () => {
       opts: {
         match: "async.name == '123'",
       },
-      hash: "f37492b084a6ae8285de9e78f3839bd096363f82",
+      hash: "1765e55ef0fd0589442a5dffe79e8c317de16b8c",
     });
   });
 
@@ -108,7 +108,7 @@ describe("waitForEvent", () => {
       opts: {
         match: "name == 123",
       },
-      hash: "9f5e20dd2308bf007ddccdf83797b7448ee3a4d9",
+      hash: "9d3fe213c82f60f52e91b036388fa7851b7ef6b3",
     });
   });
 
@@ -120,7 +120,7 @@ describe("waitForEvent", () => {
       opts: {
         match: "event.name == async.name",
       },
-      hash: "2a095ca4f4f779baba6796fda0789b5cb75e4fa5",
+      hash: "b3702cc0450f2e014e1ea9b9d2438e8f3127c95a",
     });
   });
 });

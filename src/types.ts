@@ -46,9 +46,9 @@ export interface MultiStepFnArgs<
  * from SDK step functions.
  */
 export enum StepOpCode {
-  WaitForEvent = 0x18231,
-  RunStep = 0x18232,
-  Sleep = 0x18233,
+  WaitForEvent = "WaitForEvent",
+  RunStep = "Step",
+  Sleep = "Sleep",
 }
 
 /**

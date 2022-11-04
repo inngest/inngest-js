@@ -172,11 +172,11 @@ export const createStepTools = <
 
       const submitOp: Parameters<
         NonNullable<Parameters<typeof createTool>[1]>
-      >[0]["submitOp"] = (_data) => {
-        state.nextOp = new Promise((resolve) => resolve(_data)).then(
+      >[0]["submitOp"] = (...args) => {
+        state.nextOp = new Promise((resolve) => resolve(args[0])).then(
           (data) => ({
             ...opId,
-            data,
+            ...(args.length ? { data } : {}),
           })
         );
       };

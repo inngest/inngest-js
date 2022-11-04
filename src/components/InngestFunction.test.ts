@@ -156,7 +156,7 @@ describe("runFn", () => {
           op: StepOpCode.WaitForEvent,
           id: "bar",
           opts: {},
-          hash: "33d294bf9106f0d36639dbdb9d2166561332b710",
+          hash: "38e9c591a5568ab82c6a24cdf64266711bc33a4a",
         });
       });
 
@@ -177,7 +177,7 @@ describe("runFn", () => {
           ret = await tools.fn["runFn"](
             { event: tools.event },
             {
-              "33d294bf9106f0d36639dbdb9d2166561332b710": {
+              "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
                 op: StepOpCode.WaitForEvent,
                 id: "bar",
                 data: { name: "bar", data: { bar: "baz" } },
@@ -204,7 +204,7 @@ describe("runFn", () => {
             op: StepOpCode.RunStep,
             id: "step1",
             data: tools.step1Ret,
-            hash: "e76d612621cfef2c93214bf8e2f07b4d37e5c2e5",
+            hash: "1bcb3c7669a9134d7cde073740850225a636ade4",
           });
         });
       });
@@ -218,7 +218,7 @@ describe("runFn", () => {
           ret = await tools.fn["runFn"](
             { event: tools.event },
             {
-              "33d294bf9106f0d36639dbdb9d2166561332b710": {
+              "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
                 op: StepOpCode.WaitForEvent,
                 id: "bar",
                 data: { name: "bar", data: { bar: "not baz" } },
@@ -251,12 +251,12 @@ describe("runFn", () => {
         ret = await tools.fn["runFn"](
           { event: tools.event },
           {
-            "33d294bf9106f0d36639dbdb9d2166561332b710": {
+            "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
               op: StepOpCode.WaitForEvent,
               id: "bar",
               data: { name: "bar", data: { bar: "baz" } },
             },
-            e76d612621cfef2c93214bf8e2f07b4d37e5c2e5: {
+            "1bcb3c7669a9134d7cde073740850225a636ade4": {
               op: StepOpCode.RunStep,
               id: "step1",
               data: tools.step1Ret,
@@ -282,7 +282,7 @@ describe("runFn", () => {
           opts: {
             ttl: "2d",
           },
-          hash: "b3a2b801e545ce8419ad8fdbbbedc2b15841c5cb",
+          hash: "3aa14f4575265636a7a4155834d4b478c2e21f37",
         });
       });
     });
@@ -297,17 +297,17 @@ describe("runFn", () => {
           ret = await tools.fn["runFn"](
             { event: tools.event },
             {
-              "33d294bf9106f0d36639dbdb9d2166561332b710": {
+              "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
                 op: StepOpCode.WaitForEvent,
                 id: "bar",
                 data: { name: "bar", data: { bar: "baz" } },
               },
-              e76d612621cfef2c93214bf8e2f07b4d37e5c2e5: {
+              "1bcb3c7669a9134d7cde073740850225a636ade4": {
                 op: StepOpCode.RunStep,
                 id: "step1",
                 data: tools.step1Ret,
               },
-              b3a2b801e545ce8419ad8fdbbbedc2b15841c5cb: {
+              "3aa14f4575265636a7a4155834d4b478c2e21f37": {
                 op: StepOpCode.WaitForEvent,
                 id: "baz",
                 opts: {
@@ -341,17 +341,17 @@ describe("runFn", () => {
           ret = await tools.fn["runFn"](
             { event: tools.event },
             {
-              "33d294bf9106f0d36639dbdb9d2166561332b710": {
+              "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
                 op: StepOpCode.WaitForEvent,
                 id: "bar",
                 data: { name: "bar", data: { bar: "baz" } },
               },
-              e76d612621cfef2c93214bf8e2f07b4d37e5c2e5: {
+              "1bcb3c7669a9134d7cde073740850225a636ade4": {
                 op: StepOpCode.RunStep,
                 id: "step1",
                 data: tools.step1Ret,
               },
-              b3a2b801e545ce8419ad8fdbbbedc2b15841c5cb: {
+              "3aa14f4575265636a7a4155834d4b478c2e21f37": {
                 op: StepOpCode.WaitForEvent,
                 id: "baz",
                 opts: {
@@ -387,18 +387,18 @@ describe("runFn", () => {
         ret = await tools.fn["runFn"](
           { event: tools.event },
           {
-            "33d294bf9106f0d36639dbdb9d2166561332b710": {
+            "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
               op: StepOpCode.WaitForEvent,
               id: "bar",
               data: { name: "bar", data: { bar: "baz" } },
             },
-            e76d612621cfef2c93214bf8e2f07b4d37e5c2e5: {
+            "1bcb3c7669a9134d7cde073740850225a636ade4": {
               op: StepOpCode.RunStep,
               id: "step1",
               data: tools.step1Ret,
             },
 
-            b3a2b801e545ce8419ad8fdbbbedc2b15841c5cb: {
+            "3aa14f4575265636a7a4155834d4b478c2e21f37": {
               op: StepOpCode.WaitForEvent,
               id: "baz",
               opts: {
@@ -428,7 +428,7 @@ describe("runFn", () => {
           op: StepOpCode.RunStep,
           id: "step3",
           data: tools.step3Ret,
-          hash: "2044693d6f34a253726f0d001b9aa944030101b1",
+          hash: "ea57c7bf08b7362db04ddedeaa2236198f8cbe86",
         });
       });
     });
@@ -442,17 +442,17 @@ describe("runFn", () => {
         ret = await tools.fn["runFn"](
           { event: tools.event },
           {
-            "33d294bf9106f0d36639dbdb9d2166561332b710": {
+            "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
               op: StepOpCode.WaitForEvent,
               id: "bar",
               data: { name: "bar", data: { bar: "baz" } },
             },
-            e76d612621cfef2c93214bf8e2f07b4d37e5c2e5: {
+            "1bcb3c7669a9134d7cde073740850225a636ade4": {
               op: StepOpCode.RunStep,
               id: "step1",
               data: tools.step1Ret,
             },
-            b3a2b801e545ce8419ad8fdbbbedc2b15841c5cb: {
+            "3aa14f4575265636a7a4155834d4b478c2e21f37": {
               op: StepOpCode.WaitForEvent,
               id: "baz",
               opts: {
@@ -460,7 +460,7 @@ describe("runFn", () => {
               },
               data: { name: "baz", data: { baz: "baz" } },
             },
-            "2044693d6f34a253726f0d001b9aa944030101b1": {
+            ea57c7bf08b7362db04ddedeaa2236198f8cbe86: {
               op: StepOpCode.RunStep,
               id: "step3",
               data: tools.step3Ret,
