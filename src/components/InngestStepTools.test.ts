@@ -10,46 +10,46 @@ describe("waitForEvent", () => {
     [{ waitForEvent }, state] = createStepTools({});
   });
 
-  test("return WaitForEvent step op code", () => {
+  test("return WaitForEvent step op code", async () => {
     expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       op: StepOpCode.WaitForEvent,
     });
   });
 
-  test("returns `event` as ID", () => {
+  test("returns `event` as ID", async () => {
     expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       id: "event",
     });
   });
 
-  test("return blank opts if none given", () => {
+  test("return blank opts if none given", async () => {
     expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       opts: {},
     });
   });
 
-  test("return a hash of the op", () => {
+  test("return a hash of the op", async () => {
     expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       hash: "42edfdc124dd954eea08457cc64ff951e62af8eb",
     });
   });
 
-  test("return TTL if string `timeout` given", () => {
+  test("return TTL if string `timeout` given", async () => {
     expect(() => waitForEvent("event", { timeout: "1m" })).toThrow(
       StepFlowInterrupt
     );
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       opts: {
         ttl: "1m",
       },
     });
   });
 
-  test("return TTL if date `timeout` given", () => {
+  test("return TTL if date `timeout` given", async () => {
     const upcoming = new Date();
     upcoming.setDate(upcoming.getDate() + 6);
     upcoming.setHours(upcoming.getHours() + 1);
@@ -57,18 +57,18 @@ describe("waitForEvent", () => {
     expect(() => waitForEvent("event", { timeout: upcoming })).toThrow(
       StepFlowInterrupt
     );
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       opts: {
         ttl: expect.stringContaining("6d"),
       },
     });
   });
 
-  test("return simple field match if `match` string given", () => {
+  test("return simple field match if `match` string given", async () => {
     expect(() => waitForEvent("event", { match: "name" })).toThrow(
       StepFlowInterrupt
     );
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       opts: {
         match: "event.name == async.name",
       },
@@ -76,11 +76,11 @@ describe("waitForEvent", () => {
     });
   });
 
-  test("return custom field match if `match` array given", () => {
+  test("return custom field match if `match` array given", async () => {
     expect(() => waitForEvent("event", { match: ["name", 123] })).toThrow(
       StepFlowInterrupt
     );
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       opts: {
         match: "async.name == 123",
       },
@@ -88,11 +88,11 @@ describe("waitForEvent", () => {
     });
   });
 
-  test("wrap custom field match is `match` array comparison is a string", () => {
+  test("wrap custom field match is `match` array comparison is a string", async () => {
     expect(() => waitForEvent("event", { match: ["name", "123"] })).toThrow(
       StepFlowInterrupt
     );
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       opts: {
         match: "async.name == '123'",
       },
@@ -100,11 +100,11 @@ describe("waitForEvent", () => {
     });
   });
 
-  test("return custom match statement if `if` given", () => {
+  test("return custom match statement if `if` given", async () => {
     expect(() => waitForEvent("event", { if: "name == 123" })).toThrow(
       StepFlowInterrupt
     );
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       opts: {
         match: "name == 123",
       },
@@ -112,11 +112,11 @@ describe("waitForEvent", () => {
     });
   });
 
-  test("prioritise `match` statement if both `match` and `if` given", () => {
+  test("prioritise `match` statement if both `match` and `if` given", async () => {
     expect(() =>
       waitForEvent("event", { match: "name", if: "name == 123" })
     ).toThrow(StepFlowInterrupt);
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       opts: {
         match: "event.name == async.name",
       },
@@ -175,16 +175,16 @@ describe("sleep", () => {
     [{ sleep }, state] = createStepTools({});
   });
 
-  test("return Sleep step op code", () => {
+  test("return Sleep step op code", async () => {
     expect(() => sleep("1m")).toThrow(StepFlowInterrupt);
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       op: StepOpCode.Sleep,
     });
   });
 
-  test("return time string as ID", () => {
+  test("return time string as ID", async () => {
     expect(() => sleep("1m")).toThrow(StepFlowInterrupt);
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       id: "1m",
     });
   });
@@ -198,23 +198,23 @@ describe("sleepUntil", () => {
     [{ sleepUntil }, state] = createStepTools({});
   });
 
-  test("return Sleep step op code", () => {
+  test("return Sleep step op code", async () => {
     const future = new Date();
     future.setDate(future.getDate() + 1);
 
     expect(() => sleepUntil(future)).toThrow(StepFlowInterrupt);
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       op: StepOpCode.Sleep,
     });
   });
 
-  test("return time string as ID given a date", () => {
+  test("return time string as ID given a date", async () => {
     const upcoming = new Date();
     upcoming.setDate(upcoming.getDate() + 6);
     upcoming.setHours(upcoming.getHours() + 1);
 
     expect(() => sleepUntil(upcoming)).toThrow(StepFlowInterrupt);
-    expect(state.nextOp).toMatchObject({
+    await expect(state.nextOp).resolves.toMatchObject({
       id: expect.stringContaining("6d"),
     });
   });

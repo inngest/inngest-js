@@ -40,11 +40,26 @@ export const createStepTools = <
   _opStack: OpStack
 ) => {
   /**
-   * Controls whether these toolsets are active or not. Exposed tools should
-   * watch this value to decide what action to perform. It is most likely that
-   * if this boolean is `false` then they should immediately interrupt flow.
+   * A boolean to represent that we're currently running through the op stack of
+   * the function to decide what to do next.
+   *
+   * When we've finished reading the op stack to set the function's state and
+   * have a new operation to run, we set this to `false` to indicate that we've
+   * found the next operation and will no longer attempt any other actions.
+   *
+   * We use this instead of `Boolean(state.nextOp)` because some operations may
+   * accidentally not set `state.nextOp`, so we need another way to know that we
+   * have found the next potential operation.
    */
-  let active = true;
+  let readingFromStack = true;
+
+  /**
+   * We use pos to ensure that hashes are unique for each step and a function
+   * will produce the same IDs and outputs every time.
+   *
+   * Each time attempt to fetch data for an operation, we increment this value
+   * and include it in the hash for that op.
+   */
   let pos = 0;
 
   /**
@@ -106,7 +121,6 @@ export const createStepTools = <
     fn?: (
       {
         submitOp,
-        setPendingOp,
       }: {
         /**
          * Use this to submit the next operation for the step function to
@@ -116,26 +130,28 @@ export const createStepTools = <
          * function will default to just running this `submitOp` tool, so if
          * that's all you're doing then you might not need to define this.
          */
-        submitOp: (opExtras?: Pick<Op, "data" | "opts">) => void;
-
-        /**
-         * Use this to pass a promise as the data of the created op. This is
-         * useful for tools that are responsible for creating their own data
-         * (e.g. steps themselves) and need to wait for that data to be
-         * available before submitting the op.
-         */
-        setPendingOp: (pendingOp: Promise<any>) => void;
+        submitOp: (data?: Op["data"]) => void;
       },
       ...args: Parameters<T>
     ) => any
   ): T => {
     return ((...args: Parameters<T>) => {
-      if (!active) {
+      /**
+       * If we already have the next op to run, then we've already received
+       * output from another tool and should no longer continue.
+       */
+      if (!readingFromStack) {
         throw new StepFlowInterrupt();
       }
 
+      /**
+       * Fetch the next op to run from the tool we want to run.
+       */
       const unhashedOpId: Op = matchOp(...args);
 
+      /**
+       * Hash the operation ID.
+       */
       const opId: HashedOp = {
         ...unhashedOpId,
         hash: hashOp(unhashedOpId, pos++),
@@ -148,19 +164,21 @@ export const createStepTools = <
         return data;
       }
 
-      active = false;
+      /**
+       * Set `readingFromStack` to false to indicate that we've found the next
+       * op to run.
+       */
+      readingFromStack = false;
 
       const submitOp: Parameters<
         NonNullable<Parameters<typeof createTool>[1]>
-      >[0]["submitOp"] = (opExtras) => {
-        state.nextOp = { ...opId, ...opExtras };
-      };
-
-      const setPendingOp: Parameters<
-        NonNullable<Parameters<typeof createTool>[1]>
-      >[0]["setPendingOp"] = (pendingOp) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        state.nextOp = pendingOp.then((data) => ({ ...opId, data }));
+      >[0]["submitOp"] = (_data) => {
+        state.nextOp = new Promise((resolve) => resolve(_data)).then(
+          (data) => ({
+            ...opId,
+            data,
+          })
+        );
       };
 
       /**
@@ -171,17 +189,30 @@ export const createStepTools = <
        * If we haven't been given this, simply submit the op.
        */
       if (fn) {
-        fn({ submitOp, setPendingOp }, ...args);
+        fn({ submitOp }, ...args);
       } else {
         submitOp();
       }
 
+      /**
+       * If we've run the tool and it hasn't submitted an op, then we should
+       * throw. This is exceedingly unexpected and indicates that a tool has
+       * a bug.
+       */
+      if (!state.nextOp) {
+        throw new Error("No operation was submitted by a tool");
+      }
+
+      /**
+       * If we're here, we've attempted to use a tool and should therefore throw
+       * an error to stop the function from running.
+       */
       throw new StepFlowInterrupt();
     }) as T;
   };
 
   const state: {
-    nextOp: HashedOp | Promise<HashedOp> | undefined;
+    nextOp: Promise<HashedOp> | undefined;
   } = {
     nextOp: undefined,
   };
@@ -303,8 +334,8 @@ export const createStepTools = <
           id: name,
         };
       },
-      ({ setPendingOp }, _name, fn) => {
-        setPendingOp(new Promise((resolve) => resolve(fn())));
+      ({ submitOp }, _name, fn) => {
+        submitOp(fn());
       }
     ),
 
