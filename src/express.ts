@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import shajs from "sha.js";
+import { sha256 } from "hash.js";
 import { z } from "zod";
 import { Inngest } from "./components/Inngest";
 import { InngestFunction } from "./components/InngestFunction";
@@ -200,7 +200,7 @@ export class InngestCommHandler {
     const key = this.signingKey.replace(/^signkey-(test|prod)-/, "");
 
     // Decode the key from its hex representation into a bytestream
-    return `${prefix}${shajs("sha256").update(key, "hex").digest("hex")}`;
+    return `${prefix}${sha256().update(key, "hex").digest("hex")}`;
   }
 
   public createHandler(): any {
@@ -395,7 +395,7 @@ export class InngestCommHandler {
     };
 
     // Calculate the checksum of the body... without the checksum itself being included.
-    body.hash = shajs("sha256").update(JSON.stringify(body)).digest("hex");
+    body.hash = sha256().update(JSON.stringify(body)).digest("hex");
     return body;
   }
 
