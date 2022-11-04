@@ -344,6 +344,10 @@ export const createStepTools = <
         time: Exclude<TimeStr, "">
       ) => void
     >((time) => {
+      /**
+       * The presence of this operation in the returned stack indicates that the
+       * sleep is over and we should continue execution.
+       */
       return {
         op: StepOpCode.Sleep,
         id: time,
@@ -363,6 +367,10 @@ export const createStepTools = <
         time: Date
       ) => void
     >((time) => {
+      /**
+       * The presence of this operation in the returned stack indicates that the
+       * sleep is over and we should continue execution.
+       */
       return {
         op: StepOpCode.Sleep,
         id: dateToTimeStr(time),
