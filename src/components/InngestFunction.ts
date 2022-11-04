@@ -84,6 +84,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
 
     return {
+      ...this.#opts,
       id: fnId,
       name: this.name,
       triggers: [this.#trigger as FunctionTrigger],
