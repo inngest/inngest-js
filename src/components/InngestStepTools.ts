@@ -1,6 +1,15 @@
+import { sha1 } from "hash.js";
+import sigmund from "sigmund";
 import { dateToTimeStr } from "../helpers/strings";
 import type { ObjectPaths, Primitive } from "../helpers/types";
-import { EventPayload, Op, OpStack, StepOpCode, TimeStr } from "../types";
+import {
+  EventPayload,
+  HashedOp,
+  Op,
+  OpStack,
+  StepOpCode,
+  TimeStr,
+} from "../types";
 
 /**
  * A unique class used to interrupt the flow of a step. It is intended to be
@@ -36,12 +45,13 @@ export const createStepTools = <
    * if this boolean is `false` then they should immediately interrupt flow.
    */
   let active = true;
+  let pos = 0;
 
   /**
    * Perform a shallow clone of the opstack to ensure we're not removing
    * elements from the original.
    */
-  const opStack = [..._opStack];
+  const opStack = { ..._opStack };
 
   /**
    * Returns [true, any] if the next op matches the next past op.
@@ -50,24 +60,10 @@ export const createStepTools = <
    * stack. In either case, we should run the next op.
    */
   const getNextPastOpData = (
-    op: Op
+    op: HashedOp
   ): [found: false, data: undefined] | [found: true, data: any] => {
-    const next = opStack.shift();
-
-    /**
-     * If we had no next op, return fail case.
-     */
-    if (!next) return [false, undefined];
-
-    /**
-     * Check if op matches, returning fail case if it doesn't.
-     */
-    const opMatches = (["op", "id"] as (keyof Op)[]).every(
-      (k) => op[k] === next[k]
-    );
-    if (!opMatches) return [false, undefined];
-
-    return [true, next["data"]];
+    const next = opStack[op.hash];
+    return [Boolean(next), next?.data];
   };
 
   /**
@@ -138,7 +134,12 @@ export const createStepTools = <
         throw new StepFlowInterrupt();
       }
 
-      const opId = matchOp(...args);
+      const unhashedOpId: Op = matchOp(...args);
+
+      const opId: HashedOp = {
+        ...unhashedOpId,
+        hash: hashOp(unhashedOpId, pos++),
+      };
 
       const [found, data] = getNextPastOpData(opId);
 
@@ -180,7 +181,7 @@ export const createStepTools = <
   };
 
   const state: {
-    nextOp: Op | Promise<Op> | undefined;
+    nextOp: HashedOp | Promise<HashedOp> | undefined;
   } = {
     nextOp: undefined,
   };
@@ -416,3 +417,30 @@ interface WaitForEventOpts<
    */
   if?: string;
 }
+
+/**
+ * Create a unique hash of an operation using only a subset of the operation's
+ * properties; will never use `data` and will guarantee the order of the object
+ * so we don't rely on individual tools for that.
+ */
+const hashOp = (
+  /**
+   * The op to generate a hash from. We only use a subset of the op's properties
+   * when creating the hash.
+   */
+  op: Op,
+
+  /**
+   * The position in the "stack" that this was called from. We use this to
+   * ensure that the hash is unique for each step and in-line with what we
+   * expect the stack to be.
+   */
+  pos: number
+): string => {
+  return (
+    sha1()
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      .update(sigmund({ pos, op: op.op, id: op.id, opts: op.opts }))
+      .digest("hex")
+  );
+};

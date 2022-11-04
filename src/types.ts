@@ -82,10 +82,21 @@ export type Op = {
 };
 
 /**
+ * The shape of a hashed operation in a step function. Used to communicate
+ * desired and received operations to Inngest.
+ */
+export type HashedOp = Op & {
+  /**
+   * The hash of the operation, using all fields present in the op
+   */
+  hash: string;
+};
+
+/**
  * A helper type to represent a stack of operations that will accumulate
  * throughout a step function's run.
  */
-export type OpStack = Op[];
+export type OpStack = Record<string, Op>;
 
 /**
  * A function that can be used to submit an operation to Inngest internally.

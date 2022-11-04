@@ -299,19 +299,15 @@ export class InngestCommHandler {
         throw new Error(`Could not find function with ID "${functionId}"`);
       }
 
-      const { event, ctx } = z
+      const { event, steps } = z
         .object({
           event: z.object({}).passthrough(),
-          ctx: z
-            .object({
-              _stack: z.array(z.any()).optional(),
-            })
-            .optional(),
+          steps: z.object({}).passthrough().optional().nullable(),
         })
         .parse(data);
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      const ret = await fn["runFn"]({ event }, ctx?._stack || []);
+      const ret = await fn["runFn"]({ event }, steps || {});
       const isOp = ret[0];
 
       if (isOp) {

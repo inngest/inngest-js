@@ -7,7 +7,7 @@ describe("waitForEvent", () => {
   let state: ReturnType<typeof createStepTools>[1];
 
   beforeEach(() => {
-    [{ waitForEvent }, state] = createStepTools([]);
+    [{ waitForEvent }, state] = createStepTools({});
   });
 
   test("return WaitForEvent step op code", () => {
@@ -28,6 +28,13 @@ describe("waitForEvent", () => {
     expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
     expect(state.nextOp).toMatchObject({
       opts: {},
+    });
+  });
+
+  test("return a hash of the op", () => {
+    expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
+    expect(state.nextOp).toMatchObject({
+      hash: "42edfdc124dd954eea08457cc64ff951e62af8eb",
     });
   });
 
@@ -65,6 +72,7 @@ describe("waitForEvent", () => {
       opts: {
         match: "event.name == async.name",
       },
+      hash: "2a095ca4f4f779baba6796fda0789b5cb75e4fa5",
     });
   });
 
@@ -76,6 +84,7 @@ describe("waitForEvent", () => {
       opts: {
         match: "async.name == 123",
       },
+      hash: "12d20be4e5c5f11c2e1f200c6ce3fe0cf3ccf7cb",
     });
   });
 
@@ -87,6 +96,7 @@ describe("waitForEvent", () => {
       opts: {
         match: "async.name == '123'",
       },
+      hash: "f37492b084a6ae8285de9e78f3839bd096363f82",
     });
   });
 
@@ -98,6 +108,7 @@ describe("waitForEvent", () => {
       opts: {
         match: "name == 123",
       },
+      hash: "9f5e20dd2308bf007ddccdf83797b7448ee3a4d9",
     });
   });
 
@@ -109,6 +120,7 @@ describe("waitForEvent", () => {
       opts: {
         match: "event.name == async.name",
       },
+      hash: "2a095ca4f4f779baba6796fda0789b5cb75e4fa5",
     });
   });
 });
@@ -118,7 +130,7 @@ describe("step", () => {
   let state: ReturnType<typeof createStepTools>[1];
 
   beforeEach(() => {
-    [{ run }, state] = createStepTools([]);
+    [{ run }, state] = createStepTools({});
   });
 
   test("return Step step op code", async () => {
@@ -160,7 +172,7 @@ describe("sleep", () => {
   let state: ReturnType<typeof createStepTools>[1];
 
   beforeEach(() => {
-    [{ sleep }, state] = createStepTools([]);
+    [{ sleep }, state] = createStepTools({});
   });
 
   test("return Sleep step op code", () => {
@@ -183,7 +195,7 @@ describe("sleepUntil", () => {
   let state: ReturnType<typeof createStepTools>[1];
 
   beforeEach(() => {
-    [{ sleepUntil }, state] = createStepTools([]);
+    [{ sleepUntil }, state] = createStepTools({});
   });
 
   test("return Sleep step op code", () => {
