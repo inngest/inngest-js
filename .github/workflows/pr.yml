@@ -40,3 +40,85 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
       - run: yarn lint
+
+  examples:
+    name: Test examples
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          - inngest/sdk-example-cloudflare-workers
+          - inngest/sdk-example-nextjs-vercel
+    steps:
+      # Checkout the repo
+      - uses: actions/checkout@v3
+        with:
+          path: sdk
+      - uses: ./sdk/.github/actions/setup-and-build
+        with:
+          working-directory: sdk
+
+      # Checkout the example repo
+      - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.EXAMPLES_GITHUB_TOKEN }}
+          repository: ${{ matrix.repo }}
+          path: examples/${{ matrix.repo }}
+          ref: main
+
+      # Get the SDK ready and link it locally
+      - run: yarn prelink
+        working-directory: sdk
+      - run: yarn link
+        working-directory: sdk/dist
+
+      # Install dependencies in the example repo
+      - run: test -f yarn.lock && yarn install --frozen-lockfile || npm ci
+        working-directory: examples/${{ matrix.repo }}
+
+      # Link the SDK, making sure to use the same Yarn version that we used to
+      # create the link.
+      #
+      # Because repos are always owner/repo with a slash, the directory will be
+      # the same, therefore we must venture an extra level deep when searching
+      # for package.json.
+      - run: volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
+        working-directory: examples/${{ matrix.repo }}
+
+      # Copy any SDK function examples to the example repo so that we're always
+      # testing many functions against many handlers.
+      - id: inngest-functions-path
+        run: echo "dir=$(dirname $(echo \"$(git ls-files | grep inngest/index.ts)))\"" >> $GITHUB_OUTPUT
+        working-directory: examples/${{ matrix.repo }}
+      - run: rm -rf ${{ steps.inngest-functions-path.outputs.dir }}
+        working-directory: examples/${{ matrix.repo }}
+      - run: cp -r ../../../sdk/src/examples/ ${{ steps.inngest-functions-path.outputs.dir }}
+        working-directory: examples/${{ matrix.repo }}
+
+      # Try to build the example
+      - run: test -f yarn.lock && yarn build || npm run build
+        working-directory: examples/${{ matrix.repo }}
+
+      # Run the example
+      - run: test -f yarn.lock && (yarn dev &) || (npm run dev &)
+        working-directory: examples/${{ matrix.repo }}
+        # Provide the example any env vars it might need
+        env:
+          PORT: 3000
+      - uses: ifaxity/wait-on-action@v1
+        with:
+          resource: http-get://localhost:3000
+          timeout: 20000
+
+      # Confirm the example vaguely returns all the expected functions
+      - id: assert-function-count
+        run: |
+          echo "expected-count=$(ls src/examples | grep -v index.* | grep -v README | wc -l)" >> $GITHUB_OUTPUT
+
+          echo "actual-count=$(curl -s http://localhost:3000/api/inngest?introspect | jq -r '.functions | length')" >> $GITHUB_OUTPUT
+        working-directory: sdk
+      - uses: nick-fields/assert-action@v1
+        with:
+          expected: ${{ steps.assert-function-count.outputs.expected-count }}
+          actual: ${{ steps.assert-function-count.outputs.actual-count }}
