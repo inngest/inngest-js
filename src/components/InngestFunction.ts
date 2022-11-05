@@ -88,7 +88,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       name: this.name,
       triggers: [this.#trigger as FunctionTrigger],
       steps: {
-        step: {
+        [InngestFunction.stepId]: {
           id: InngestFunction.stepId,
           name: InngestFunction.stepId,
           runtime: {
