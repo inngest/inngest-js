@@ -47,7 +47,7 @@ class NextCommHandler extends InngestCommHandler {
             process.env[envKeys.LandingPage]
           );
 
-          if (!showLandingPage) break;
+          if (this._isProd || !showLandingPage) break;
 
           if (Object.hasOwnProperty.call(req.query, queryKeys.Introspect)) {
             const introspection: IntrospectRequest = {
