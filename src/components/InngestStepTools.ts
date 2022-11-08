@@ -77,8 +77,11 @@ export const createStepTools = <
   const getNextPastOpData = (
     op: HashedOp
   ): [found: false, data: undefined] | [found: true, data: any] => {
-    const next = opStack[op.hash];
-    return [Boolean(next), next?.data];
+    const next: unknown = opStack[op.id];
+    // if the data is undefined, it hasn't ran.  Any other data, such
+    // as false, null, etc. indicates that the step has already ran as
+    // state was persisted.
+    return [next !== undefined, next as any];
   };
 
   /**
@@ -154,7 +157,7 @@ export const createStepTools = <
        */
       const opId: HashedOp = {
         ...unhashedOpId,
-        hash: hashOp(unhashedOpId, pos++),
+        id: hashOp(unhashedOpId, pos++),
       };
 
       const [found, data] = getNextPastOpData(opId);
@@ -277,7 +280,7 @@ export const createStepTools = <
 
         return {
           op: StepOpCode.WaitForEvent,
-          id: event as string,
+          name: event as string,
           opts: matchOpts,
         };
       }
@@ -322,7 +325,7 @@ export const createStepTools = <
       (name) => {
         return {
           op: StepOpCode.RunStep,
-          id: name,
+          name,
         };
       },
       ({ submitOp }, _name, fn) => {
@@ -350,7 +353,7 @@ export const createStepTools = <
        */
       return {
         op: StepOpCode.Sleep,
-        id: time,
+        name: time,
       };
     }),
 
@@ -373,7 +376,7 @@ export const createStepTools = <
        */
       return {
         op: StepOpCode.Sleep,
-        id: dateToTimeStr(time),
+        name: dateToTimeStr(time),
       };
     }),
   };
@@ -467,7 +470,7 @@ const hashOp = (
   return (
     sha1()
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      .update(sigmund({ pos, op: op.op, id: op.id, opts: op.opts }))
+      .update(sigmund({ pos, op: op.op, name: op.name, opts: op.opts }))
       .digest("hex")
   );
 };

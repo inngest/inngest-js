@@ -5,7 +5,7 @@ import {
   FunctionConfig,
   FunctionOptions,
   FunctionTrigger,
-  Op,
+  HashedOp,
   OpStack,
   SingleStepFnArgs,
 } from "../types";
@@ -134,7 +134,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * state and to allow for multi-step functions.
      */
     opStack: OpStack
-  ): Promise<[isOp: true, op: Op] | [isOp: false, data: unknown]> {
+  ): Promise<[isOp: true, op: HashedOp] | [isOp: false, data: unknown]> {
     /**
      * Create some values to be mutated and passed to the step tools. Once the
      * user's function has run, we can check the mutated state of these to see

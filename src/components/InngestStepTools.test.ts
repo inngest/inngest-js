@@ -20,7 +20,7 @@ describe("waitForEvent", () => {
   test("returns `event` as ID", async () => {
     expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
-      id: "event",
+      name: "event",
     });
   });
 
@@ -34,7 +34,9 @@ describe("waitForEvent", () => {
   test("return a hash of the op", async () => {
     expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
-      hash: "17ffb6f7b5118797c77057e5176fdc2412e275fe",
+      name: "event",
+      op: "WaitForEvent",
+      opts: {},
     });
   });
 
@@ -72,7 +74,6 @@ describe("waitForEvent", () => {
       opts: {
         match: "event.name == async.name",
       },
-      hash: "b3702cc0450f2e014e1ea9b9d2438e8f3127c95a",
     });
   });
 
@@ -84,7 +85,6 @@ describe("waitForEvent", () => {
       opts: {
         match: "name == 123",
       },
-      hash: "9d3fe213c82f60f52e91b036388fa7851b7ef6b3",
     });
   });
 
@@ -96,7 +96,6 @@ describe("waitForEvent", () => {
       opts: {
         match: "event.name == async.name",
       },
-      hash: "b3702cc0450f2e014e1ea9b9d2438e8f3127c95a",
     });
   });
 });
@@ -116,10 +115,10 @@ describe("step", () => {
     });
   });
 
-  test("return step name as ID", async () => {
+  test("return step name as name", async () => {
     expect(() => run("step", () => undefined)).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
-      id: "step",
+      name: "step",
     });
   });
 
@@ -158,10 +157,10 @@ describe("sleep", () => {
     });
   });
 
-  test("return time string as ID", async () => {
+  test("return time string as name", async () => {
     expect(() => sleep("1m")).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
-      id: "1m",
+      name: "1m",
     });
   });
 });
@@ -191,7 +190,7 @@ describe("sleepUntil", () => {
 
     expect(() => sleepUntil(upcoming)).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
-      id: expect.stringContaining("6d"),
+      name: expect.stringContaining("6d"),
     });
   });
 });
