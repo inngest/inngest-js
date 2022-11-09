@@ -1,4 +1,5 @@
 import { sha1 } from "hash.js";
+import ms from "ms";
 import sigmund from "sigmund";
 import { dateToTimeStr } from "../helpers/strings";
 import type { ObjectPaths } from "../helpers/types";
@@ -237,25 +238,30 @@ export const createStepTools = <
      * returning `null` instead of any event data.
      */
     waitForEvent: createTool<
-      <
-        IncomingEvent extends keyof Events,
-        Opts extends
-          | (WaitForEventOpts<
-              Events[TriggeringEvent],
-              Events[IncomingEvent]
-            > & { if?: never })
-          | (WaitForEventOpts<
-              Events[TriggeringEvent],
-              Events[IncomingEvent]
-            > & { match?: never })
-      >(
-        event: IncomingEvent,
-        opts?: Opts
-      ) => Opts["timeout"] extends string
-        ? Opts["timeout"] extends ""
-          ? Events[IncomingEvent]
-          : Events[IncomingEvent] | null
-        : Events[IncomingEvent]
+      <IncomingEvent extends keyof Events | EventPayload>(
+        event: IncomingEvent extends keyof Events
+          ? IncomingEvent
+          : IncomingEvent extends EventPayload
+          ? IncomingEvent["name"]
+          : never,
+        opts:
+          | ((IncomingEvent extends keyof Events
+              ? WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>
+              : IncomingEvent extends EventPayload
+              ? WaitForEventOpts<Events[TriggeringEvent], IncomingEvent>
+              : never) & {
+              if?: never;
+            })
+          | ((IncomingEvent extends keyof Events
+              ? WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>
+              : IncomingEvent extends EventPayload
+              ? WaitForEventOpts<Events[TriggeringEvent], IncomingEvent>
+              : never) & {
+              match?: never;
+            })
+      ) => IncomingEvent extends keyof Events
+        ? Events[IncomingEvent] | null
+        : IncomingEvent | null
     >(
       (
         /**
@@ -266,15 +272,20 @@ export const createStepTools = <
         /**
          * Options to control the event we're waiting for.
          */
-        opts: WaitForEventOpts<any, any> | undefined
+        opts: WaitForEventOpts<any, any>
       ) => {
         const matchOpts: { ttl?: string; match?: string } = {};
 
-        if (opts?.timeout) {
-          matchOpts.ttl =
-            typeof opts.timeout === "string"
-              ? opts.timeout
-              : dateToTimeStr(opts.timeout);
+        if (
+          typeof opts.timeout === "string" ||
+          typeof opts.timeout === "number"
+        ) {
+          const numTimeout =
+            typeof opts.timeout === "string" ? ms(opts.timeout) : opts.timeout;
+
+          matchOpts.ttl = dateToTimeStr(new Date(Date.now() + numTimeout));
+        } else {
+          matchOpts.ttl = dateToTimeStr(opts.timeout);
         }
 
         if (opts?.match) {
@@ -398,22 +409,16 @@ interface WaitForEventOpts<
   IncomingEvent extends EventPayload
 > {
   /**
-   * If provided, the step function will wait for the event for a maximum of
-   * this time, at which point the event will be returned as `null` instead of
-   * any event data.
+   * The step function will wait for the event for a maximum of this time, at
+   * which point the event will be returned as `null` instead of any event data.
    *
-   * The time to wait can be specified using a string in the format of
-   * `[number][unit]`, e.g. `50ms` for 50 milliseconds, `1s` for 1 second, `2m`
-   * for 2 minutes, `3h` for 3 hours, `4d` for 4 days, and `5w` for 5 weeks.
-   * These can also be combined, e.g. `1h30m` for 1 hour and 30 minutes.
+   * The time to wait can be specified using a `number` of milliseconds, a
+   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
+   * a `Date` object.
    *
-   * Alternatively, the timeout can be provided as a `Date`, in which case the
-   * SDK will calculate the time to wait for you.
-   *
-   * If this is not specified or is blank (an empty string `""`), the step will
-   * wait for the event indefinitely.
+   * {@link https://npm.im/ms}
    */
-  timeout?: TimeStr | Date;
+  timeout: number | string | Date;
 
   /**
    * If provided, the step function will wait for the incoming event to match
