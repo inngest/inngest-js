@@ -21,6 +21,9 @@ export const createFunction: <Event_1 extends EventPayload>(nameOrOpts: string |
 export const createScheduledFunction: (nameOrOpts: string | FunctionOptions, cron: string, fn: SingleStepFn<null, string, "step">) => InngestFunction<any>;
 
 // @public
+export const createStepFunction: <T extends EventPayload>(nameOrOpts: string | FunctionOptions, event: EventName<T>, fn: MultiStepFn<Record<T["name"], T>, T["name"], string, "step">) => InngestFunction<any>;
+
+// @public
 export interface EventPayload {
     data: any;
     name: string;
