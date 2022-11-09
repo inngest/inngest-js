@@ -82,10 +82,7 @@ export const createScheduledFunction = (
  *
  * @public
  */
-export const createStepFunction = <
-  Events extends Record<string, EventPayload>,
-  Event extends keyof Events
->(
+export const createStepFunction = <T extends EventPayload>(
   /**
    * The name or options for this Inngest function - providing options is
    * useful for defining a custom ID.
@@ -95,12 +92,12 @@ export const createStepFunction = <
   /**
    * The event to listen for.
    */
-  event: EventName<Events[Event]>,
+  event: EventName<T>,
 
   /**
    * The function to run when the event is received.
    */
-  fn: MultiStepFn<Events, Event, string, "step">
+  fn: MultiStepFn<Record<T["name"], T>, T["name"], string, "step">
 ): InngestFunction<any> => {
   return new InngestFunction(
     typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
