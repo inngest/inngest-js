@@ -236,10 +236,15 @@ export const createStepTools = <
     waitForEvent: createTool<
       <
         IncomingEvent extends keyof Events,
-        Opts extends WaitForEventOpts<
-          Events[TriggeringEvent],
-          Events[IncomingEvent]
-        >
+        Opts extends
+          | (WaitForEventOpts<
+              Events[TriggeringEvent],
+              Events[IncomingEvent]
+            > & { if?: never })
+          | (WaitForEventOpts<
+              Events[TriggeringEvent],
+              Events[IncomingEvent]
+            > & { match?: never })
       >(
         event: IncomingEvent,
         opts?: Opts
@@ -258,7 +263,7 @@ export const createStepTools = <
         /**
          * Options to control the event we're waiting for.
          */
-        opts
+        opts: WaitForEventOpts<any, any> | undefined
       ) => {
         const matchOpts: { ttl?: string; match?: string } = {};
 

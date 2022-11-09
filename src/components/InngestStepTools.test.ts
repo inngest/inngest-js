@@ -87,18 +87,6 @@ describe("waitForEvent", () => {
       hash: "9d3fe213c82f60f52e91b036388fa7851b7ef6b3",
     });
   });
-
-  test("prioritise `match` statement if both `match` and `if` given", async () => {
-    expect(() =>
-      waitForEvent("event", { match: "name", if: "name == 123" })
-    ).toThrow(StepFlowInterrupt);
-    await expect(state.nextOp).resolves.toMatchObject({
-      opts: {
-        match: "event.name == async.name",
-      },
-      hash: "b3702cc0450f2e014e1ea9b9d2438e8f3127c95a",
-    });
-  });
 });
 
 describe("step", () => {
