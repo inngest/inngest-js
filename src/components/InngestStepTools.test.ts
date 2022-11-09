@@ -87,17 +87,6 @@ describe("waitForEvent", () => {
       },
     });
   });
-
-  test("prioritise `match` statement if both `match` and `if` given", async () => {
-    expect(() =>
-      waitForEvent("event", { match: "name", if: "name == 123" })
-    ).toThrow(StepFlowInterrupt);
-    await expect(state.nextOp).resolves.toMatchObject({
-      opts: {
-        match: "event.name == async.name",
-      },
-    });
-  });
 });
 
 describe("step", () => {

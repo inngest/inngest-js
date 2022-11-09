@@ -110,6 +110,8 @@ export type SubmitOpFn = (op: Op) => void;
  *
  * This type includes an empty string too, so make sure to exclude that via
  * `Exclude<TimeStr, "">` if you don't want to allow empty strings.
+ *
+ * @public
  */
 export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
   | `${number}h`
@@ -392,6 +394,34 @@ export interface FunctionOptions {
    * the name.
    */
   name: string;
+
+  /**
+   * Allow the specification of an idempotency key using event data. If
+   * specified, this overrides the throttle object.
+   */
+  idempotency?: string;
+
+  /**
+   * Throttle workflows, only running them a given number of times (count) per
+   * period. This can optionally include a throttle key, which is used to
+   * further constrain throttling similar to idempotency.
+   */
+  throttle?: {
+    /**
+     * An optional key to use for throttle, similar to idempotency.
+     */
+    key?: string;
+
+    /**
+     * The number of times to allow the function to run per the given `period`.
+     */
+    count: number;
+
+    /**
+     * The period of time to allow the function to run `count` times.
+     */
+    period: TimeStr;
+  };
 }
 
 /**
@@ -519,6 +549,12 @@ export interface FunctionConfig {
       };
     }
   >;
+  idempotency?: string;
+  throttle?: {
+    key?: string;
+    count: number;
+    period: TimeStr;
+  };
 }
 
 export interface DevServerInfo {
