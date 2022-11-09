@@ -52,7 +52,7 @@ class CloudflareCommHandler extends InngestCommHandler {
             env[envKeys.LandingPage]
           );
 
-          if (!showLandingPage) break;
+          if (this._isProd || !showLandingPage) break;
 
           if (isIntrospection) {
             const introspection: IntrospectRequest = {
