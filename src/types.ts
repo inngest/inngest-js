@@ -62,10 +62,9 @@ export type Op = {
   op: StepOpCode;
 
   /**
-   * An identifier for this operation, used to confirm that the operation was
-   * completed when it is received from Inngest.
+   * The unhashed step name for this operation.
    */
-  id: string;
+  name: string;
 
   /**
    * Any additional data required for this operation to send to Inngest. This
@@ -87,16 +86,18 @@ export type Op = {
  */
 export type HashedOp = Op & {
   /**
-   * The hash of the operation, using all fields present in the op
+   * The hashed identifier for this operation, used to confirm that the operation
+   * was completed when it is received from Inngest.
    */
-  hash: string;
+  id: string;
 };
 
 /**
  * A helper type to represent a stack of operations that will accumulate
- * throughout a step function's run.
+ * throughout a step function's run.  This stack contains an object of
+ * op hashes to data.
  */
-export type OpStack = Record<string, Op>;
+export type OpStack = Record<string, any>;
 
 /**
  * A function that can be used to submit an operation to Inngest internally.

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { jest } from "@jest/globals";
-import { MultiStepFn, StepOpCode } from "../types";
+import { MultiStepFn, OpStack, StepOpCode } from "../types";
 import { InngestFunction } from "./InngestFunction";
 
 type TestEvents = {
@@ -95,13 +95,13 @@ describe("runFn", () => {
   });
 
   describe("multi-step functions", () => {
+    const step1Ret = "step1 done";
+    const step3Ret = "step3 done";
+
     const createFn = () => {
       const event: TestEvents["foo"] = { name: "foo", data: { foo: "foo" } };
-      const step1Ret = "step1 done";
-      const step3Ret = "step3 done";
       const step1 = jest.fn(() => step1Ret);
       const step2 = jest.fn();
-
       const step3 = jest.fn(
         () =>
           new Promise<string>((resolve) =>
@@ -109,24 +109,28 @@ describe("runFn", () => {
           )
       );
 
+      // Create a step function to test SDK handling various state inputs.
       const stepFn: MultiStepFn<TestEvents, "foo", string, string> = ({
         tools: { run, waitForEvent },
       }) => {
-        const event2 = waitForEvent("bar");
-
-        if (event2.data.bar === "baz") {
-          run("step1", step1);
+        const stepres = [];
+        const firstWaitForEvent = waitForEvent("bar");
+        if (firstWaitForEvent.data.bar === "baz") {
+          const data = run("step1", step1);
+          stepres.push(data);
         }
 
-        const event3 = waitForEvent("baz", {
+        const secondWaitForEvent = waitForEvent("baz", {
           timeout: "2d",
         });
-
-        if (!event3) {
-          run("step2", step2);
+        if (!secondWaitForEvent) {
+          const data = run("step2", step2);
+          stepres.push(data);
         }
 
-        run("step3", step3);
+        const data = run("step3", step3);
+        stepres.push(data);
+        return { stepres };
       };
 
       const fn = new InngestFunction<TestEvents>(
@@ -138,25 +142,49 @@ describe("runFn", () => {
       return { fn, step1Ret, step1, step2, step3Ret, step3, event };
     };
 
+    // runFuncWith is a helper to run the above step function given stack data.
+    // It returns the step function tools and function response.
+    const runFuncWith = async (
+      input: OpStack = {}
+    ): Promise<
+      [
+        ReturnType<typeof createFn>,
+        Awaited<ReturnType<InngestFunction<TestEvents>["runFn"]>>
+      ]
+    > => {
+      const tools: ReturnType<typeof createFn> = createFn();
+      const ret: Awaited<ReturnType<InngestFunction<TestEvents>["runFn"]>> =
+        await tools.fn["runFn"]({ event: tools.event }, input);
+      return [tools, ret];
+    };
+
+    // These represent hashes for each step in the above step function
+    const hashes = {
+      firstWaitForEvent: "6baa64d382dd94a5c1cb73c40a7f0c1c3fc89140",
+      step1: "375be344ee59a2b013ef35d909ac84b23136c732",
+      secondWaitForEvent: "c0fe3f23240c37a0a5b7287ba74be64b4a5d5f06",
+      step2: "3bff481d2c96dbbf8680d4f824c32882d109e8da",
+      step3: "88a0e46b054ef061bc4ed598be3ae22be87fdd2d",
+    };
+
     describe("waitForEvent bar", () => {
       let tools: ReturnType<typeof createFn>;
       let ret: Awaited<ReturnType<InngestFunction<TestEvents>["runFn"]>>;
 
       beforeAll(async () => {
-        tools = createFn();
-        ret = await tools.fn["runFn"]({ event: tools.event }, {});
+        [tools, ret] = await runFuncWith({});
       });
 
-      test("returns isOp true", () => {
+      test("with no input data returns isOp true", () => {
         expect(ret[0]).toBe(true);
       });
 
-      test("returns bar event request data", () => {
+      test("with no input data returns correct opcode", () => {
         expect(ret[1]).toEqual({
           op: StepOpCode.WaitForEvent,
-          id: "bar",
+          name: "bar",
           opts: {},
-          hash: "38e9c591a5568ab82c6a24cdf64266711bc33a4a",
+          id: hashes.firstWaitForEvent,
         });
       });
 
@@ -168,29 +196,24 @@ describe("runFn", () => {
     });
 
     describe("maybe run step1", () => {
-      describe("data matches", () => {
+      describe("if wait for event data matches", () => {
         let tools: ReturnType<typeof createFn>;
         let ret: Awaited<ReturnType<InngestFunction<TestEvents>["runFn"]>>;
 
         beforeAll(async () => {
-          tools = createFn();
-          ret = await tools.fn["runFn"](
-            { event: tools.event },
-            {
-              "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
-                op: StepOpCode.WaitForEvent,
-                id: "bar",
-                data: { name: "bar", data: { bar: "baz" } },
-              },
-            }
-          );
+          [tools, ret] = await runFuncWith({
+            [hashes.firstWaitForEvent]: {
+              name: "bar",
+              data: { bar: "baz" },
+            },
+          });
         });
 
         test("returns isOp true", () => {
           expect(ret[0]).toBe(true);
         });
 
-        test("run step", () => {
+        test("should run the first step's tool", () => {
           expect(tools.step1).toHaveBeenCalledTimes(1);
         });
 
@@ -199,12 +222,12 @@ describe("runFn", () => {
           expect(tools.step3).toHaveBeenCalledTimes(0);
         });
 
-        test("return step data", () => {
+        test("should return step1 opcode data", () => {
           expect(ret[1]).toEqual({
             op: StepOpCode.RunStep,
-            id: "step1",
+            name: "step1",
             data: tools.step1Ret,
-            hash: "1bcb3c7669a9134d7cde073740850225a636ade4",
+            id: hashes.step1,
           });
         });
       });
@@ -214,24 +237,19 @@ describe("runFn", () => {
         let ret: Awaited<ReturnType<InngestFunction<TestEvents>["runFn"]>>;
 
         beforeAll(async () => {
-          tools = createFn();
-          ret = await tools.fn["runFn"](
-            { event: tools.event },
-            {
-              "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
-                op: StepOpCode.WaitForEvent,
-                id: "bar",
-                data: { name: "bar", data: { bar: "not baz" } },
-              },
-            }
-          );
+          [tools, ret] = await runFuncWith({
+            [hashes.firstWaitForEvent]: {
+              name: "bar",
+              data: { bar: "not baz" },
+            },
+          });
         });
 
         test("returns isOp true", () => {
           expect(ret[0]).toBe(true);
         });
 
-        test("skip step", () => {
+        test("should not call step 1", () => {
           expect(tools.step1).toHaveBeenCalledTimes(0);
         });
 
@@ -247,22 +265,13 @@ describe("runFn", () => {
       let ret: Awaited<ReturnType<InngestFunction<TestEvents>["runFn"]>>;
 
       beforeAll(async () => {
-        tools = createFn();
-        ret = await tools.fn["runFn"](
-          { event: tools.event },
-          {
-            "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
-              op: StepOpCode.WaitForEvent,
-              id: "bar",
-              data: { name: "bar", data: { bar: "baz" } },
-            },
-            "1bcb3c7669a9134d7cde073740850225a636ade4": {
-              op: StepOpCode.RunStep,
-              id: "step1",
-              data: tools.step1Ret,
-            },
-          }
-        );
+        [tools, ret] = await runFuncWith({
+          [hashes.firstWaitForEvent]: {
+            name: "bar",
+            data: { bar: "baz" },
+          },
+          [hashes.step1]: step1Ret,
+        });
       });
 
       test("returns isOp true", () => {
@@ -278,11 +287,11 @@ describe("runFn", () => {
       test("returns event request data", () => {
         expect(ret[1]).toEqual({
           op: StepOpCode.WaitForEvent,
-          id: "baz",
+          name: "baz",
           opts: {
             ttl: "2d",
           },
-          hash: "3aa14f4575265636a7a4155834d4b478c2e21f37",
+          id: hashes.secondWaitForEvent,
         });
       });
     });
@@ -293,37 +302,24 @@ describe("runFn", () => {
         let ret: Awaited<ReturnType<InngestFunction<TestEvents>["runFn"]>>;
 
         beforeAll(async () => {
-          tools = createFn();
-          ret = await tools.fn["runFn"](
-            { event: tools.event },
-            {
-              "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
-                op: StepOpCode.WaitForEvent,
-                id: "bar",
-                data: { name: "bar", data: { bar: "baz" } },
-              },
-              "1bcb3c7669a9134d7cde073740850225a636ade4": {
-                op: StepOpCode.RunStep,
-                id: "step1",
-                data: tools.step1Ret,
-              },
-              "3aa14f4575265636a7a4155834d4b478c2e21f37": {
-                op: StepOpCode.WaitForEvent,
-                id: "baz",
-                opts: {
-                  timeout: "2d",
-                },
-                data: { name: "baz", data: { baz: "baz" } },
-              },
-            }
-          );
+          [tools, ret] = await runFuncWith({
+            [hashes.firstWaitForEvent]: {
+              name: "bar",
+              data: { bar: "baz" },
+            },
+            [hashes.step1]: step1Ret,
+            [hashes.secondWaitForEvent]: {
+              name: "baz",
+              data: { baz: "baz" },
+            },
+          });
         });
 
         test("returns isOp true", () => {
           expect(ret[0]).toBe(true);
         });
 
-        test("skip step", () => {
+        test("skips step 2, which runs if secondWaitForEvent is null", () => {
           expect(tools.step2).toHaveBeenCalledTimes(0);
         });
 
@@ -337,43 +333,36 @@ describe("runFn", () => {
         let ret: Awaited<ReturnType<InngestFunction<TestEvents>["runFn"]>>;
 
         beforeAll(async () => {
-          tools = createFn();
-          ret = await tools.fn["runFn"](
-            { event: tools.event },
-            {
-              "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
-                op: StepOpCode.WaitForEvent,
-                id: "bar",
-                data: { name: "bar", data: { bar: "baz" } },
-              },
-              "1bcb3c7669a9134d7cde073740850225a636ade4": {
-                op: StepOpCode.RunStep,
-                id: "step1",
-                data: tools.step1Ret,
-              },
-              "3aa14f4575265636a7a4155834d4b478c2e21f37": {
-                op: StepOpCode.WaitForEvent,
-                id: "baz",
-                opts: {
-                  timeout: "2d",
-                },
-                data: null,
-              },
-            }
-          );
+          [tools, ret] = await runFuncWith({
+            [hashes.firstWaitForEvent]: {
+              name: "bar",
+              data: { bar: "baz" },
+            },
+            [hashes.step1]: step1Ret,
+            [hashes.secondWaitForEvent]: null,
+          });
         });
 
         test("returns isOp true", () => {
           expect(ret[0]).toBe(true);
         });
 
-        test("run step", () => {
+        test("runs step 2", () => {
           expect(tools.step2).toHaveBeenCalledTimes(1);
         });
 
         test("should not have run any other steps", () => {
           expect(tools.step1).toHaveBeenCalledTimes(0);
           expect(tools.step3).toHaveBeenCalledTimes(0);
+        });
+
+        test("step returns data", () => {
+          expect(ret[1]).toEqual({
+            op: StepOpCode.RunStep,
+            name: "step2",
+            data: undefined,
+            id: hashes.step2,
+          });
         });
       });
     });
@@ -383,31 +372,14 @@ describe("runFn", () => {
       let ret: Awaited<ReturnType<InngestFunction<TestEvents>["runFn"]>>;
 
       beforeAll(async () => {
-        tools = createFn();
-        ret = await tools.fn["runFn"](
-          { event: tools.event },
-          {
-            "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
-              op: StepOpCode.WaitForEvent,
-              id: "bar",
-              data: { name: "bar", data: { bar: "baz" } },
-            },
-            "1bcb3c7669a9134d7cde073740850225a636ade4": {
-              op: StepOpCode.RunStep,
-              id: "step1",
-              data: tools.step1Ret,
-            },
-
-            "3aa14f4575265636a7a4155834d4b478c2e21f37": {
-              op: StepOpCode.WaitForEvent,
-              id: "baz",
-              opts: {
-                timeout: "2d",
-              },
-              data: { name: "baz", data: { baz: "baz" } },
-            },
-          }
-        );
+        [tools, ret] = await runFuncWith({
+          [hashes.firstWaitForEvent]: {
+            name: "bar",
+            data: { bar: "baz" },
+          },
+          [hashes.step1]: step1Ret,
+          [hashes.secondWaitForEvent]: { name: "baz", data: { baz: "baz" } },
+        });
       });
 
       test("returns isOp true", () => {
@@ -426,9 +398,9 @@ describe("runFn", () => {
       test("step returns data", () => {
         expect(ret[1]).toEqual({
           op: StepOpCode.RunStep,
-          id: "step3",
+          name: "step3",
           data: tools.step3Ret,
-          hash: "ea57c7bf08b7362db04ddedeaa2236198f8cbe86",
+          id: hashes.step3,
         });
       });
     });
@@ -438,35 +410,15 @@ describe("runFn", () => {
       let ret: Awaited<ReturnType<InngestFunction<TestEvents>["runFn"]>>;
 
       beforeAll(async () => {
-        tools = createFn();
-        ret = await tools.fn["runFn"](
-          { event: tools.event },
-          {
-            "38e9c591a5568ab82c6a24cdf64266711bc33a4a": {
-              op: StepOpCode.WaitForEvent,
-              id: "bar",
-              data: { name: "bar", data: { bar: "baz" } },
-            },
-            "1bcb3c7669a9134d7cde073740850225a636ade4": {
-              op: StepOpCode.RunStep,
-              id: "step1",
-              data: tools.step1Ret,
-            },
-            "3aa14f4575265636a7a4155834d4b478c2e21f37": {
-              op: StepOpCode.WaitForEvent,
-              id: "baz",
-              opts: {
-                timeout: "2d",
-              },
-              data: { name: "baz", data: { baz: "baz" } },
-            },
-            ea57c7bf08b7362db04ddedeaa2236198f8cbe86: {
-              op: StepOpCode.RunStep,
-              id: "step3",
-              data: tools.step3Ret,
-            },
-          }
-        );
+        [tools, ret] = await runFuncWith({
+          [hashes.firstWaitForEvent]: {
+            name: "bar",
+            data: { bar: "baz" },
+          },
+          [hashes.step1]: step1Ret,
+          [hashes.secondWaitForEvent]: { name: "baz", data: { baz: "baz" } },
+          [hashes.step3]: step3Ret,
+        });
       });
 
       test("returns isOp false", () => {
@@ -479,8 +431,8 @@ describe("runFn", () => {
         expect(tools.step3).toHaveBeenCalledTimes(0);
       });
 
-      test("returns void data", () => {
-        expect(ret[1]).toBeUndefined();
+      test("returns function data", () => {
+        expect(ret[1]).toEqual({ stepres: [step1Ret, step3Ret] });
       });
     });
   });
