@@ -226,7 +226,7 @@ export class InngestCommHandler {
         this.signingKey = process.env[envKeys.SigningKey];
       }
 
-      this._isProd = process.env.ENVIRONMENT === "production";
+      this._isProd = process.env.ENVIRONMENT === "production" || process.env.NODE_ENV === "production";
 
       switch (req.method) {
         case "GET": {
@@ -234,7 +234,7 @@ export class InngestCommHandler {
             process.env[envKeys.LandingPage]
           );
 
-          if (!showLandingPage) break;
+          if (this._isProd || !showLandingPage) break;
 
           if (Object.hasOwnProperty.call(req.query, queryKeys.Introspect)) {
             const introspection: IntrospectRequest = {
