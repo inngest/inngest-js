@@ -471,6 +471,21 @@ export class InngestCommHandler {
     sig: string | string[] | undefined | null,
     body: any
   ) {
+    if (this.isProd) {
+      return this._validateSignature(sig, body);
+    }
+
+    try {
+      return this._validateSignature(sig, body);
+    } catch(e) {
+      console.warn("Your signign key is invalid.  While this works in development your functions will not work in production.  Set the INNGEST_SIGNING_KEY environment variable with your keys found at https://app.inngest.com")
+    }
+  }
+
+  protected _validateSignature(
+    sig: string | string[] | undefined | null,
+    body: any
+  ) {
     if (!this.signingKey) {
       console.warn(
         "No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets"
