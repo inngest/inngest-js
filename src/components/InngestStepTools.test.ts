@@ -11,28 +11,36 @@ describe("waitForEvent", () => {
   });
 
   test("return WaitForEvent step op code", async () => {
-    expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
+    expect(() => waitForEvent("event", { timeout: "2h" })).toThrow(
+      StepFlowInterrupt
+    );
     await expect(state.nextOp).resolves.toMatchObject({
       op: StepOpCode.WaitForEvent,
     });
   });
 
   test("returns `event` as ID", async () => {
-    expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
+    expect(() => waitForEvent("event", { timeout: "2h" })).toThrow(
+      StepFlowInterrupt
+    );
     await expect(state.nextOp).resolves.toMatchObject({
       name: "event",
     });
   });
 
   test("return blank opts if none given", async () => {
-    expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
+    expect(() => waitForEvent("event", { timeout: "2h" })).toThrow(
+      StepFlowInterrupt
+    );
     await expect(state.nextOp).resolves.toMatchObject({
       opts: {},
     });
   });
 
   test("return a hash of the op", async () => {
-    expect(() => waitForEvent("event")).toThrow(StepFlowInterrupt);
+    expect(() => waitForEvent("event", { timeout: "2h" })).toThrow(
+      StepFlowInterrupt
+    );
     await expect(state.nextOp).resolves.toMatchObject({
       name: "event",
       op: "WaitForEvent",
@@ -67,9 +75,9 @@ describe("waitForEvent", () => {
   });
 
   test("return simple field match if `match` string given", async () => {
-    expect(() => waitForEvent("event", { match: "name" })).toThrow(
-      StepFlowInterrupt
-    );
+    expect(() =>
+      waitForEvent("event", { match: "name", timeout: "2h" })
+    ).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
       opts: {
         match: "event.name == async.name",
@@ -78,9 +86,9 @@ describe("waitForEvent", () => {
   });
 
   test("return custom match statement if `if` given", async () => {
-    expect(() => waitForEvent("event", { if: "name == 123" })).toThrow(
-      StepFlowInterrupt
-    );
+    expect(() =>
+      waitForEvent("event", { if: "name == 123", timeout: "2h" })
+    ).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
       opts: {
         match: "name == 123",

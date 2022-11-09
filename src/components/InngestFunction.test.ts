@@ -114,8 +114,8 @@ describe("runFn", () => {
         tools: { run, waitForEvent },
       }) => {
         const stepres = [];
-        const firstWaitForEvent = waitForEvent("bar");
-        if (firstWaitForEvent.data.bar === "baz") {
+        const firstWaitForEvent = waitForEvent("bar", { timeout: "5 minutes" });
+        if (firstWaitForEvent?.data.bar === "baz") {
           const data = run("step1", step1);
           stepres.push(data);
         }
@@ -160,7 +160,7 @@ describe("runFn", () => {
 
     // These represent hashes for each step in the above step function
     const hashes = {
-      firstWaitForEvent: "6baa64d382dd94a5c1cb73c40a7f0c1c3fc89140",
+      firstWaitForEvent: "ad7a92c7c23670ab7fb94a6f2dda2ae7d8c34b39",
       step1: "375be344ee59a2b013ef35d909ac84b23136c732",
       secondWaitForEvent: "c0fe3f23240c37a0a5b7287ba74be64b4a5d5f06",
       step2: "3bff481d2c96dbbf8680d4f824c32882d109e8da",
@@ -183,7 +183,7 @@ describe("runFn", () => {
         expect(ret[1]).toEqual({
           op: StepOpCode.WaitForEvent,
           name: "bar",
-          opts: {},
+          opts: { ttl: "5m" },
           id: hashes.firstWaitForEvent,
         });
       });
