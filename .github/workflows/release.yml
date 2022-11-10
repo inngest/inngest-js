@@ -25,6 +25,7 @@ env:
 jobs:
   checks:
     uses: ./.github/workflows/pr.yml
+    secrets: inherit
 
   npm:
     needs: [checks]
