@@ -31,7 +31,6 @@ const periods = [
   ["h", hour],
   ["m", minute],
   ["s", second],
-  ["ms", millisecond],
 ] as const;
 
 /**
@@ -58,6 +57,9 @@ export const timeStr = (
     const numTimeout = typeof date === "string" ? ms(date) : date;
     date = new Date(Date.now() + numTimeout);
   }
+
+  now.setMilliseconds(0);
+  date.setMilliseconds(0);
 
   const isValidDate = !isNaN(date.getTime());
 
