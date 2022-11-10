@@ -13,3 +13,6 @@ temp/
 
 # Release-only files; tree must be clean on release, so these can't be modified
 .npmrc
+
+# Local dev files
+coverage/

@@ -11,11 +11,11 @@ import type {
   ClientOptions,
   EventPayload,
   FunctionOptions,
-  StepFn,
+  MultiStepFn,
+  SingleStepFn,
 } from "../types";
 import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
-import { InngestStep } from "./InngestStep";
 
 /**
  * A client used to interact with the Inngest API by sending or reacting to
@@ -287,13 +287,100 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   }
 
   /**
+   * Given an event to listen to, run the given step function when that event is
+   * seen.
+   *
+   * These can be used to build multi-step, serverless workflows with delays,
+   * conditional logic, and coordination between events.
+   */
+  public createStepFunction<
+    Event extends keyof Events,
+    Name extends string,
+    Fn extends MultiStepFn<Events, Event, Name, "step">
+  >(
+    /**
+     * The name of this function as it will appear in the Inngst Cloud UI.
+     */
+    name: Name,
+
+    /**
+     * The event to listen for.
+     */
+    event: Event,
+
+    /**
+     * The step function flow to run when the event is received.
+     */
+    fn: Fn
+  ): InngestFunction<Events>;
+  /**
+   * Given an event to listen to, run the given step function when that event is
+   * seen.
+   *
+   * These can be used to build multi-step, serverless workflows with delays,
+   * conditional logic, and coordination between events.
+   */
+  public createStepFunction<
+    Event extends keyof Events,
+    Opts extends FunctionOptions,
+    Fn extends MultiStepFn<
+      Events,
+      Event,
+      Opts extends FunctionOptions ? Opts["name"] : string,
+      "step"
+    >
+  >(
+    /**
+     * Options for this Inngest function - useful for defining a custom ID.
+     */
+    opts: Opts,
+
+    /**
+     * The event to listen for.
+     */
+    event: Event,
+
+    /**
+     * The function to run when the event is received.
+     */
+    fn: Fn
+  ): InngestFunction<Events>;
+  /**
+   * Given an event to listen to, run the given step function when that event is
+   * seen.
+   *
+   * These can be used to build multi-step, serverless workflows with delays,
+   * conditional logic, and coordination between events.
+   */
+  public createStepFunction<
+    Event extends keyof Events,
+    Opts extends FunctionOptions | string,
+    Fn extends MultiStepFn<
+      Events,
+      Event,
+      Opts extends FunctionOptions
+        ? Opts["name"]
+        : Opts extends string
+        ? Opts
+        : string,
+      "step"
+    >
+  >(nameOrOpts: Opts, event: Event, fn: Fn): InngestFunction<Events> {
+    return new InngestFunction<Events>(
+      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
+      { event: event as string },
+      fn
+    );
+  }
+
+  /**
    * Given an event to listen to, run the given function when that event is
    * seen.
    */
   public createFunction<
     Event extends keyof Events,
     Name extends string,
-    Fn extends StepFn<Events[Event], Name, "step">
+    Fn extends SingleStepFn<Events[Event], Name, "step">
   >(
     /**
      * The name of this function as it will appear in the Inngst Cloud UI.
@@ -317,7 +404,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   public createFunction<
     Event extends keyof Events,
     Opts extends FunctionOptions,
-    Fn extends StepFn<
+    Fn extends SingleStepFn<
       Events[Event],
       Opts extends FunctionOptions ? Opts["name"] : string,
       "step"
@@ -345,7 +432,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   public createFunction<
     Event extends keyof Events,
     Opts extends FunctionOptions | string,
-    Fn extends StepFn<
+    Fn extends SingleStepFn<
       Events[Event],
       Opts extends FunctionOptions
         ? Opts["name"]
@@ -358,7 +445,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     return new InngestFunction<Events>(
       typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
       { event: event as string },
-      { step: new InngestStep(fn) }
+      fn
     );
   }
 
@@ -386,7 +473,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     /**
      * The function to run.
      */
-    fn: StepFn<null, Name, "step">
+    fn: SingleStepFn<null, Name, "step">
   ): InngestFunction<Events>;
   /**
    * Run the given `fn` at a specified time or on a schedule given by `cron`.
@@ -412,7 +499,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     /**
      * The function to run.
      */
-    fn: StepFn<
+    fn: SingleStepFn<
       null,
       Opts extends FunctionOptions ? Opts["name"] : string,
       "step"
@@ -424,7 +511,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   public createScheduledFunction<Opts extends FunctionOptions | string>(
     nameOrOpts: Opts,
     cron: string,
-    fn: StepFn<
+    fn: SingleStepFn<
       null,
       Opts extends FunctionOptions
         ? Opts["name"]
@@ -437,7 +524,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     return new InngestFunction<Events>(
       typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
       { cron },
-      { step: new InngestStep(fn) }
+      fn
     );
   }
 }

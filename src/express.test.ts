@@ -1,12 +1,10 @@
 import type { RequestHandler } from "express";
-import { Request, NextFunction } from "express"; // interfaces
+import { NextFunction, Request } from "express"; // interfaces
 import httpMocks from "node-mocks-http";
-
-import * as ExpressHandler from "./express";
 import { InngestFunction } from "./components/InngestFunction";
-import { InngestStep } from "./components/InngestStep";
-import { RegisterRequest, IntrospectRequest } from "./types";
+import * as ExpressHandler from "./express";
 import { testFramework } from "./test/helpers";
+import { IntrospectRequest, RegisterRequest } from "./types";
 
 const { InngestCommHandler } = ExpressHandler;
 const createNext = (): NextFunction => () => undefined;
@@ -26,7 +24,7 @@ describe("InngestCommHandler", () => {
       const fn = new InngestFunction(
         { name: "Test Express Function" },
         { event: "test/event.name" },
-        { step: new InngestStep(() => undefined) }
+        () => undefined
       );
       const ch = new InngestCommHandlerPublic("test-1", [fn], {});
 
@@ -43,7 +41,7 @@ describe("InngestCommHandler", () => {
       const fn = new InngestFunction(
         { name: "Test Express Function" },
         { event: "test/event.name" },
-        { step: new InngestStep(() => undefined) }
+        () => undefined
       );
       const ch = new InngestCommHandler("test-1", [fn], { landingPage: true });
       const handler = ch.createHandler() as RequestHandler;

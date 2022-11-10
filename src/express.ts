@@ -299,11 +299,27 @@ export class InngestCommHandler {
         throw new Error(`Could not find function with ID "${functionId}"`);
       }
 
-      const body = await fn["runStep"](stepId, data);
+      const { event, steps } = z
+        .object({
+          event: z.object({}).passthrough(),
+          steps: z.object({}).passthrough().optional().nullable(),
+        })
+        .parse(data);
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+      const ret = await fn["runFn"]({ event }, steps || {});
+      const isOp = ret[0];
+
+      if (isOp) {
+        return {
+          status: 206,
+          body: ret[1],
+        };
+      }
 
       return {
         status: 200,
-        body,
+        body: ret[1],
       };
     } catch (err: unknown) {
       if (err instanceof Error) {

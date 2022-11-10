@@ -1,12 +1,11 @@
-import type { InngestStep } from "./components/InngestStep";
+import type { createStepTools } from "./components/InngestStepTools";
 
 /**
- * The shape of a step function, taking in event, step, and ctx data, and
- * outputting anything.
+ * Arguments for a single-step function.
  *
  * @public
  */
-export type StepFn<Event, FnId, StepId> = (arg: {
+export interface SingleStepFnArgs<Event, FnId, StepId> {
   /**
    * If relevant, the event data present in the payload.
    */
@@ -25,7 +24,123 @@ export type StepFn<Event, FnId, StepId> = (arg: {
    * The "context" of the function.
    */
   ctx: { fn_id: FnId; step_id: StepId };
-}) => any;
+}
+
+/**
+ * Arguments for a multi-step function, extending the single-step args and
+ * including step function tooling.
+ *
+ * @public
+ */
+export interface MultiStepFnArgs<
+  Events extends Record<string, EventPayload>,
+  Event extends keyof Events,
+  FnId,
+  StepId
+> extends SingleStepFnArgs<Events[Event], FnId, StepId> {
+  tools: ReturnType<typeof createStepTools<Events, Event>>[0];
+}
+
+/**
+ * Unique codes for the different types of operation that can be sent to Inngest
+ * from SDK step functions.
+ */
+export enum StepOpCode {
+  WaitForEvent = "WaitForEvent",
+  RunStep = "Step",
+  Sleep = "Sleep",
+}
+
+/**
+ * The shape of a single operation in a step function. Used to communicate
+ * desired and received operations to Inngest.
+ */
+export type Op = {
+  /**
+   * The unique code for this operation.
+   */
+  op: StepOpCode;
+
+  /**
+   * The unhashed step name for this operation.
+   */
+  name: string;
+
+  /**
+   * Any additional data required for this operation to send to Inngest. This
+   * is not compared when confirming that the operation was completed; use `id`
+   * for this.
+   */
+  opts?: any;
+
+  /**
+   * Any data present for this operation. If data is present, this operation is
+   * treated as completed.
+   */
+  data?: any;
+};
+
+/**
+ * The shape of a hashed operation in a step function. Used to communicate
+ * desired and received operations to Inngest.
+ */
+export type HashedOp = Op & {
+  /**
+   * The hashed identifier for this operation, used to confirm that the operation
+   * was completed when it is received from Inngest.
+   */
+  id: string;
+};
+
+/**
+ * A helper type to represent a stack of operations that will accumulate
+ * throughout a step function's run.  This stack contains an object of
+ * op hashes to data.
+ */
+export type OpStack = Record<string, any>;
+
+/**
+ * A function that can be used to submit an operation to Inngest internally.
+ */
+export type SubmitOpFn = (op: Op) => void;
+
+/**
+ * A sleep-compatible time string such as `"1h30m15s"` that can be sent to
+ * Inngest to sleep for a given amount of time.
+ *
+ * This type includes an empty string too, so make sure to exclude that via
+ * `Exclude<TimeStr, "">` if you don't want to allow empty strings.
+ *
+ * @public
+ */
+export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
+  | `${number}h`
+  | ""}${`${number}m` | ""}${`${number}s` | ""}${`${number}ms` | ""}`;
+
+/**
+ * The shape of a step function, taking in event, step, and ctx data, and
+ * outputting anything.
+ *
+ * @public
+ */
+export type SingleStepFn<Event, FnId, StepId> = (
+  arg: SingleStepFnArgs<Event, FnId, StepId>
+) => any;
+
+/**
+ * The shape of a multi-step function, taking in event, step, ctx, and tools.
+ *
+ * Multi-step functions are not expected to return any data themselves, as all
+ * logic is expected to be placed within steps.
+ *
+ * @public
+ */
+export type MultiStepFn<
+  Events extends Record<string, EventPayload>,
+  Event extends keyof Events,
+  FnId,
+  StepId
+> = (arg: MultiStepFnArgs<Events, Event, FnId, StepId>) => void;
 
 /**
  * The shape of a single event's payload. It should be extended to enforce
@@ -279,14 +394,35 @@ export interface FunctionOptions {
    * the name.
    */
   name: string;
-}
 
-/**
- * A shortcut type for a collection of Inngest steps.
- *
- * @internal
- */
-export type Steps = Record<string, InngestStep<any[], any>>;
+  /**
+   * Allow the specification of an idempotency key using event data. If
+   * specified, this overrides the throttle object.
+   */
+  idempotency?: string;
+
+  /**
+   * Throttle workflows, only running them a given number of times (count) per
+   * period. This can optionally include a throttle key, which is used to
+   * further constrain throttling similar to idempotency.
+   */
+  throttle?: {
+    /**
+     * An optional key to use for throttle, similar to idempotency.
+     */
+    key?: string;
+
+    /**
+     * The number of times to allow the function to run per the given `period`.
+     */
+    count: number;
+
+    /**
+     * The period of time to allow the function to run `count` times.
+     */
+    period: TimeStr;
+  };
+}
 
 /**
  * Expected responses to be used within an `InngestCommHandler` in order to
@@ -302,6 +438,10 @@ export type StepRunResponse =
   | {
       status: 200;
       body?: any;
+    }
+  | {
+      status: 206;
+      body: any;
     };
 
 /**
@@ -409,6 +549,12 @@ export interface FunctionConfig {
       };
     }
   >;
+  idempotency?: string;
+  throttle?: {
+    key?: string;
+    count: number;
+    period: TimeStr;
+  };
 }
 
 export interface DevServerInfo {

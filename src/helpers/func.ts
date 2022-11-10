@@ -1,6 +1,10 @@
 import { InngestFunction } from "../components/InngestFunction";
-import { InngestStep } from "../components/InngestStep";
-import type { EventPayload, FunctionOptions, StepFn } from "../types";
+import type {
+  EventPayload,
+  FunctionOptions,
+  MultiStepFn,
+  SingleStepFn,
+} from "../types";
 import type { EventName } from "./types";
 
 /**
@@ -24,12 +28,12 @@ export const createFunction = <Event extends EventPayload>(
   /**
    * The function to run when the event is received.
    */
-  fn: StepFn<Event, string, "step">
+  fn: SingleStepFn<Event, string, "step">
 ): InngestFunction<any> => {
   return new InngestFunction(
     typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
     { event: event as string },
-    { step: new InngestStep(fn) }
+    fn
   );
 };
 
@@ -60,11 +64,44 @@ export const createScheduledFunction = (
   /**
    * The function to run.
    */
-  fn: StepFn<null, string, "step">
+  fn: SingleStepFn<null, string, "step">
 ): InngestFunction<any> => {
   return new InngestFunction(
     typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
     { cron },
-    { step: new InngestStep(fn) }
+    fn
+  );
+};
+
+/**
+ * Given an event to listen to, run the given step function when that event is
+ * seen.
+ *
+ * These can be used to build multi-step, serverless workflows with delays,
+ * conditional logic, and coordination between events.
+ *
+ * @public
+ */
+export const createStepFunction = <T extends EventPayload>(
+  /**
+   * The name or options for this Inngest function - providing options is
+   * useful for defining a custom ID.
+   */
+  nameOrOpts: string | FunctionOptions,
+
+  /**
+   * The event to listen for.
+   */
+  event: EventName<T>,
+
+  /**
+   * The function to run when the event is received.
+   */
+  fn: MultiStepFn<Record<T["name"], T>, T["name"], string, "step">
+): InngestFunction<any> => {
+  return new InngestFunction(
+    typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
+    { event: event as string },
+    fn
   );
 };
