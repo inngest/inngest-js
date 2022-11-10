@@ -1,16 +1,8 @@
 import { sha1 } from "hash.js";
-import ms from "ms";
 import sigmund from "sigmund";
-import { dateToTimeStr } from "../helpers/strings";
+import { timeStr } from "../helpers/strings";
 import type { ObjectPaths } from "../helpers/types";
-import {
-  EventPayload,
-  HashedOp,
-  Op,
-  OpStack,
-  StepOpCode,
-  TimeStr,
-} from "../types";
+import { EventPayload, HashedOp, Op, OpStack, StepOpCode } from "../types";
 
 /**
  * A unique class used to interrupt the flow of a step. It is intended to be
@@ -274,19 +266,9 @@ export const createStepTools = <
          */
         opts: WaitForEventOpts<any, any>
       ) => {
-        const matchOpts: { ttl?: string; match?: string } = {};
-
-        if (
-          typeof opts.timeout === "string" ||
-          typeof opts.timeout === "number"
-        ) {
-          const numTimeout =
-            typeof opts.timeout === "string" ? ms(opts.timeout) : opts.timeout;
-
-          matchOpts.ttl = dateToTimeStr(new Date(Date.now() + numTimeout));
-        } else {
-          matchOpts.ttl = dateToTimeStr(opts.timeout);
-        }
+        const matchOpts: { ttl: string; match?: string } = {
+          ttl: timeStr(opts.timeout),
+        };
 
         if (opts?.match) {
           matchOpts.match = `event.${opts.match} == async.${opts.match}`;
@@ -350,8 +332,12 @@ export const createStepTools = <
     ),
 
     /**
-     * Wait a specified amount of time before continuing, in the format of a
-     * time string like `"1h30m"` or `"1d"`.
+     * Wait a specified amount of time before continuing.
+     *
+     * The time to wait can be specified using a `number` of milliseconds or a
+     * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`.
+     *
+     * {@link https://npm.im/ms}
      *
      * To wait until a particular date, use `sleepUntil` instead.
      */
@@ -360,7 +346,7 @@ export const createStepTools = <
         /**
          * The amount of time to wait before continuing.
          */
-        time: Exclude<TimeStr, "">
+        time: number | string
       ) => void
     >((time) => {
       /**
@@ -369,7 +355,7 @@ export const createStepTools = <
        */
       return {
         op: StepOpCode.Sleep,
-        name: time,
+        name: timeStr(time),
       };
     }),
 
@@ -392,7 +378,7 @@ export const createStepTools = <
        */
       return {
         op: StepOpCode.Sleep,
-        name: dateToTimeStr(time),
+        name: timeStr(time),
       };
     }),
   };

@@ -1,3 +1,5 @@
+import ms from "ms";
+
 /**
  * Returns a slugified string used ot generate consistent IDs.
  */
@@ -33,37 +35,34 @@ const periods = [
 ] as const;
 
 /**
- * Convert a given `date` to a sleep-compatible time string (e.g. `"1d"` or
- * `"2h3010s"`).
+ * Convert a given `Date`, `number`, or `ms`-compatible `string` to a
+ * Inngest sleep-compatible time string (e.g. `"1d"` or `"2h3010s"`).
  *
  * Can optionally provide a `now` date to use as the base for the calculation,
  * otherwise a new date will be created on invocation.
  */
-export const dateToTimeStr = (
+export const timeStr = (
   /**
    * The future date to use to convert to a time string.
    */
-  date: Date,
+  input: string | number | Date,
 
   /**
    * Optionally provide a date to use as the base for the calculation.
    */
   now = new Date()
 ): string => {
+  let date = input;
+
+  if (typeof date === "string" || typeof date === "number") {
+    const numTimeout = typeof date === "string" ? ms(date) : date;
+    date = new Date(Date.now() + numTimeout);
+  }
+
   const isValidDate = !isNaN(date.getTime());
 
   if (!isValidDate) {
     throw new Error("Invalid date given to convert to time string");
-  }
-
-  /**
-   * TODO In this eventuality, should we smartly skip the sleep?
-   *
-   * We'd have to return two ops to Inngest, this being skipped and the
-   * next.
-   */
-  if (date <= now) {
-    throw new Error("Cannot sleep until a time in the past");
   }
 
   const timeNum = date.getTime() - now.getTime();
