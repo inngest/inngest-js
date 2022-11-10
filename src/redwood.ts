@@ -63,7 +63,7 @@ class RedwoodCommHandler extends InngestCommHandler {
             process.env[envKeys.LandingPage]
           );
 
-          if (!showLandingPage) break;
+          if (this._isProd || !showLandingPage) break;
 
           if (
             Object.hasOwnProperty.call(
