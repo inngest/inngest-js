@@ -334,7 +334,7 @@ export const createStepTools = <
     /**
      * Wait a specified amount of time before continuing.
      *
-     * The time to wait can be specified using a `number` of milliseconds or a
+     * The time to wait can be specified using a `number` of milliseconds or an
      * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`.
      *
      * {@link https://npm.im/ms}
@@ -398,7 +398,7 @@ interface WaitForEventOpts<
    * The step function will wait for the event for a maximum of this time, at
    * which point the event will be returned as `null` instead of any event data.
    *
-   * The time to wait can be specified using a `number` of milliseconds, a
+   * The time to wait can be specified using a `number` of milliseconds, an
    * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
    * a `Date` object.
    *
