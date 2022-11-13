@@ -1,14 +1,26 @@
 import { sha1 } from "hash.js";
+import {
+  deserializeError,
+  SerializedError,
+  serializeError,
+} from "serialize-error-cjs";
 import sigmund from "sigmund";
 import { timeStr } from "../helpers/strings";
 import type { ObjectPaths } from "../helpers/types";
-import { EventPayload, HashedOp, Op, OpStack, StepOpCode } from "../types";
+import {
+  EventPayload,
+  HashedOp,
+  IncomingOp,
+  Op,
+  OpStack,
+  StepOpCode,
+} from "../types";
 
 /**
  * A unique class used to interrupt the flow of a step. It is intended to be
- * thrown and caught using `instanceof StepFlowInterrupt`.
+ * thrown and caught using `instanceof StepFlowExpired`.
  */
-export class StepFlowInterrupt {}
+export class StepFlowExpired {}
 
 /**
  * Create a new set of step function tools ready to be used in a step function.
@@ -33,20 +45,6 @@ export const createStepTools = <
   _opStack: OpStack
 ) => {
   /**
-   * A boolean to represent that we're currently running through the op stack of
-   * the function to decide what to do next.
-   *
-   * When we've finished reading the op stack to set the function's state and
-   * have a new operation to run, we set this to `false` to indicate that we've
-   * found the next operation and will no longer attempt any other actions.
-   *
-   * We use this instead of `Boolean(state.nextOp)` because some operations may
-   * accidentally not set `state.nextOp`, so we need another way to know that we
-   * have found the next potential operation.
-   */
-  let readingFromStack = true;
-
-  /**
    * We use pos to ensure that hashes are unique for each step and a function
    * will produce the same IDs and outputs every time.
    *
@@ -67,14 +65,9 @@ export const createStepTools = <
    * Returns [false, undefined] if the next op didn't match or we ran out of
    * stack. In either case, we should run the next op.
    */
-  const getNextPastOpData = (
-    op: HashedOp
-  ): [found: false, data: undefined] | [found: true, data: any] => {
-    const next: unknown = opStack[op.id];
-    // if the data is undefined, it hasn't ran.  Any other data, such
-    // as false, null, etc. indicates that the step has already ran as
-    // state was persisted.
-    return [next !== undefined, next as any];
+  const getNextPastOpData = (op: HashedOp): IncomingOp | undefined => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return opStack[op.id];
   };
 
   /**
@@ -86,7 +79,7 @@ export const createStepTools = <
    * When using this function, a generic type should be provided which is the
    * function signature exposed to the user.
    */
-  const createTool = <T extends (...args: any[]) => any>(
+  const createTool = <T extends (...args: any[]) => Promise<any>>(
     /**
      * A function that returns an ID for this op. This is used to ensure that
      * the op stack is correctly filled, submitted, and retrieved with the same
@@ -101,116 +94,147 @@ export const createStepTools = <
        * Arguments passed by the user.
        */
       ...args: Parameters<T>
-    ) => Op,
+    ) => Omit<Op, "data" | "run">,
 
     /**
-     * Optionally, we can also provide a function that will be called with the
-     * data passed by the user in order to submit a new op.
+     * Optionally, we can also provide a function that will be called when
+     * Inngest tells us to run this operation.
      *
-     * By default - if this is not provided - this will be a simple function
-     * that runs the `submitOp()` tool passed to it.
+     * If this function is defined, the first time the tool is used it will
+     * report the desired operation (including options) to the Inngest. Inngest
+     * will then call back to the function to tell it to run the step and then
+     * retrieve data.
      *
-     * This is useful for tools that need to do some kind of async processing
-     * before submitting an op, or tools that need to adjust the op they're
-     * submitting.
+     * We do this in order to allow functionality such as per-step retries; this
+     * gives the SDK the opportunity to tell Inngest what it wants to do before
+     * it does it.
+     *
+     * This function is passed the arguments passed by the user. It will be run
+     * when we receive an operation matching this one that does not contain a
+     * `data` property.
      */
-    fn?: (
-      {
-        submitOp,
-      }: {
-        /**
-         * Use this to submit the next operation for the step function to
-         * Inngest.
-         *
-         * If the `fn` containing this parameter isn't defined, the entire
-         * function will default to just running this `submitOp` tool, so if
-         * that's all you're doing then you might not need to define this.
-         */
-        submitOp: (data?: Op["data"]) => void;
-      },
-      ...args: Parameters<T>
-    ) => any
+    fn?: (...args: Parameters<T>) => any
   ): T => {
+    // eslint-disable-next-line @typescript-eslint/require-await
     return ((...args: Parameters<T>) => {
       /**
-       * If we already have the next op to run, then we've already received
-       * output from another tool and should no longer continue.
+       * Mark that we've used a step function tool, so that we can know
+       * externally that this isn't a single-step function.
        */
-      if (!readingFromStack) {
-        throw new StepFlowInterrupt();
-      }
+      state.hasUsedTools = true;
 
-      /**
-       * Fetch the next op to run from the tool we want to run.
-       */
       const unhashedOpId: Op = matchOp(...args);
-
-      /**
-       * Hash the operation ID.
-       */
       const opId: HashedOp = {
         ...unhashedOpId,
         id: hashOp(unhashedOpId, pos++),
       };
 
-      const [found, data] = getNextPastOpData(opId);
-
-      if (found) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-        return data;
-      }
+      const op = getNextPastOpData(opId);
 
       /**
-       * Set `readingFromStack` to false to indicate that we've found the next
-       * op to run.
+       * If we've never seen this operation before, go tell Inngest it's next.
        */
-      readingFromStack = false;
-
-      const submitOp: Parameters<
-        NonNullable<Parameters<typeof createTool>[1]>
-      >[0]["submitOp"] = (...args) => {
-        state.nextOp = new Promise((resolve) => resolve(args[0])).then(
-          (data) => ({
+      if (!op) {
+        state.nextOps.push(
+          Promise.resolve({
             ...opId,
-            ...(args.length ? { data } : {}),
+            ...(fn ? { run: true } : {}),
           })
         );
-      };
+
+        return new Promise(() => undefined);
+      }
 
       /**
-       * If we've been passed a custom function to run in response to user data,
-       * run that now. That function will then be responsible for submitting an
-       * op.
+       * We now know that this is an operation Inngest knows about and we're
+       * refilling state.
        *
-       * If we haven't been given this, simply submit the op.
+       * If we don't have any user-defined code to run or - regardless - if we
+       * already have data, return that.
        */
-      if (fn) {
-        fn({ submitOp }, ...args);
-      } else {
-        submitOp();
+      if (
+        !fn ||
+        Object.prototype.hasOwnProperty.call(op, "data") ||
+        Object.prototype.hasOwnProperty.call(op, "error")
+      ) {
+        if (typeof op.data !== "undefined") {
+          return Promise.resolve(op.data);
+        }
+
+        /**
+         * If we have an error to throw, try to deserialize it back to an
+         * actual error object. If this doesn't work, just throw the error as it
+         * appears.
+         */
+        try {
+          return Promise.reject(deserializeError(op.error as SerializedError));
+        } catch {
+          return Promise.reject(op.error);
+        }
       }
 
       /**
-       * If we've run the tool and it hasn't submitted an op, then we should
-       * throw. This is exceedingly unexpected and indicates that a tool has
-       * a bug.
+       * If we do have user-defined code to run, figure out if Inngest wants us
+       * to run that on this invocation.
+       *
+       * If not, return a never-ending Promise that will get garbage-collected
+       * in the future.
        */
-      if (!state.nextOp) {
-        throw new Error("No operation was submitted by a tool");
+      if (!op.run) {
+        return new Promise(() => undefined);
       }
 
       /**
-       * If we're here, we've attempted to use a tool and should therefore throw
-       * an error to stop the function from running.
+       * If Inngest is telling us we do have to run the user-defined code, run
+       * it and return the result now.
        */
-      throw new StepFlowInterrupt();
+      state.nextOps.push(
+        new Promise((resolve) => resolve(fn(...args)))
+          .then((data) => ({
+            ...opId,
+            data: typeof data === "undefined" ? null : data,
+          }))
+          .catch((err: Error) => {
+            /**
+             * If the user-defined code throws an error, we should return this to
+             * Inngest as the response for this step. The function didn't fail,
+             * only this step, so Inngest can decide what we do next.
+             */
+            return {
+              ...opId,
+              error: serializeError(err),
+            };
+          })
+          .catch((err: Error) => {
+            /**
+             * If we can't serialize the error, just return the error directly.
+             */
+            return {
+              ...opId,
+              error: err,
+            };
+          })
+      );
+
+      return new Promise(() => undefined);
     }) as T;
   };
 
   const state: {
-    nextOp: Promise<HashedOp> | undefined;
+    nextOps: Promise<HashedOp>[];
+
+    /**
+     * A boolean to represent whether the user's function is using any step
+     * tools.
+     *
+     * If the function survives an entire tick of the event loop and hasn't
+     * touched any tools, we assume that it is a single-step async function and
+     * should be awaited as usual.
+     */
+    hasUsedTools: boolean;
   } = {
-    nextOp: undefined,
+    nextOps: [],
+    hasUsedTools: false,
   };
 
   /**
@@ -237,6 +261,7 @@ export const createStepTools = <
           ? IncomingEvent["name"]
           : never,
         opts:
+          | string
           | ((IncomingEvent extends keyof Events
               ? WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>
               : IncomingEvent extends EventPayload
@@ -251,9 +276,11 @@ export const createStepTools = <
               : never) & {
               match?: never;
             })
-      ) => IncomingEvent extends keyof Events
-        ? Events[IncomingEvent] | null
-        : IncomingEvent | null
+      ) => Promise<
+        IncomingEvent extends keyof Events
+          ? Events[IncomingEvent] | null
+          : IncomingEvent | null
+      >
     >(
       (
         /**
@@ -264,16 +291,18 @@ export const createStepTools = <
         /**
          * Options to control the event we're waiting for.
          */
-        opts: WaitForEventOpts<any, any>
+        opts: WaitForEventOpts<any, any> | string
       ) => {
-        const matchOpts: { ttl: string; match?: string } = {
-          ttl: timeStr(opts.timeout),
+        const matchOpts: { ttl?: string; match?: string } = {
+          ttl: timeStr(typeof opts === "string" ? opts : opts.timeout),
         };
 
-        if (opts?.match) {
-          matchOpts.match = `event.${opts.match} == async.${opts.match}`;
-        } else if (opts?.if) {
-          matchOpts.match = opts.if;
+        if (typeof opts !== "string") {
+          if (opts?.match) {
+            matchOpts.match = `event.${opts.match} == async.${opts.match}`;
+          } else if (opts?.if) {
+            matchOpts.match = opts.if;
+          }
         }
 
         return {
@@ -297,7 +326,7 @@ export const createStepTools = <
      * for next steps.
      */
     run: createTool<
-      <T extends (...args: any[]) => any>(
+      <T extends () => any>(
         /**
          * The name of this step as it will appear in the Inngest Cloud UI. This
          * is also used as a unique identifier for the step and should not match
@@ -314,11 +343,13 @@ export const createStepTools = <
          * for next steps.
          */
         fn: T
-      ) => T extends (...args: any[]) => Promise<infer U>
-        ? Awaited<U extends void ? null : U>
-        : ReturnType<T> extends void
-        ? null
-        : ReturnType<T>
+      ) => Promise<
+        T extends () => Promise<infer U>
+          ? Awaited<U extends void ? null : U>
+          : ReturnType<T> extends void
+          ? null
+          : ReturnType<T>
+      >
     >(
       (name) => {
         return {
@@ -326,9 +357,8 @@ export const createStepTools = <
           name,
         };
       },
-      ({ submitOp }, _name, fn) => {
-        submitOp(fn());
-      }
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      (_, fn) => fn()
     ),
 
     /**
@@ -347,7 +377,7 @@ export const createStepTools = <
          * The amount of time to wait before continuing.
          */
         time: number | string
-      ) => void
+      ) => Promise<void>
     >((time) => {
       /**
        * The presence of this operation in the returned stack indicates that the
@@ -370,7 +400,7 @@ export const createStepTools = <
          * The date to wait until before continuing.
          */
         time: Date
-      ) => void
+      ) => Promise<void>
     >((time) => {
       /**
        * The presence of this operation in the returned stack indicates that the

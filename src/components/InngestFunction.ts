@@ -1,15 +1,17 @@
 import { queryKeys } from "../helpers/consts";
 import { slugify } from "../helpers/strings";
 import {
+  EventData,
   EventPayload,
   FunctionConfig,
   FunctionOptions,
   FunctionTrigger,
+  HandlerArgs,
   HashedOp,
   OpStack,
-  SingleStepFnArgs,
+  StepOpCode,
 } from "../types";
-import { createStepTools, StepFlowInterrupt } from "./InngestStepTools";
+import { createStepTools, StepFlowExpired } from "./InngestStepTools";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -135,7 +137,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * state and to allow for multi-step functions.
      */
     opStack: OpStack
-  ): Promise<[isOp: true, op: HashedOp] | [isOp: false, data: unknown]> {
+  ): Promise<[isOp: true, op: HashedOp[]] | [isOp: false, data: unknown]> {
     /**
      * Create some values to be mutated and passed to the step tools. Once the
      * user's function has run, we can check the mutated state of these to see
@@ -148,11 +150,32 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * add tools.
      */
     const fnArg = {
-      ...(data as SingleStepFnArgs<string, string, string>),
+      ...(data as EventData<string>),
       tools,
-    };
+    } as Partial<HandlerArgs<any, any, any>>;
 
-    let ret;
+    /**
+     * If the user has passed functions they wish to use in their step, add them
+     * here.
+     *
+     * We simply place a thin `tools.run()` wrapper around the function and
+     * nothing else.
+     */
+    if (this.#opts.fns) {
+      fnArg.fns = Object.entries(this.#opts.fns).reduce((acc, [key, fn]) => {
+        if (typeof fn !== "function") {
+          return acc;
+        }
+
+        return {
+          ...acc,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
+          [key]: (...args: any[]) => tools.run(key, () => fn(...args)),
+        };
+      }, {});
+    }
+
+    let userFnPromise: Promise<unknown> | undefined;
 
     /**
      * Attempt to run the function. If this is a step function, we expect to
@@ -160,20 +183,48 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * interrupt function execution safely.
      */
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      ret = await this.#fn(fnArg);
+      /**
+       * Ensure the function only runs for a single tick, to ensure no actual
+       * async actions are taken and we only get the next queued operations.
+       */
+      const tickPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new StepFlowExpired()));
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
+      userFnPromise = new Promise(async (resolve, reject) => {
+        try {
+          resolve(await this.#fn(fnArg));
+        } catch (err) {
+          reject(err);
+        }
+      });
+
+      await Promise.race([userFnPromise, tickPromise]);
     } catch (err) {
-      if (!(err instanceof StepFlowInterrupt)) {
+      if (err instanceof StepFlowExpired) {
         /**
-         * If the error is not a StepFlowInterrupt, then it is an error that we
-         * should probably bubble up.
+         * If this has thrown, it means the function has had a single tick of
+         * the event loop to decide what it wants to do next.
+         *
+         * If we've used tools but don't have an op, we can assume the function
+         * is waiting on other operations to complete, so we can return a no-op
+         * to Inngest for now.
+         */
+        if (state.hasUsedTools && !state.nextOps.length) {
+          return [true, [{ op: StepOpCode.None, id: "", name: "" }]];
+        }
+      } else {
+        /**
+         * If the error is not a StepFlowInterrupt or a StepFlowExpires, then it
+         * is an error that we should probably bubble up.
          *
          * An exception is if the error has been somehow caused after
          * successfully submitting a new op. This might happen if a user
          * attempts to catch step errors with a try/catch block. In that case,
          * we should warn of this but continue on.
          */
-        if (!state.nextOp) {
+        if (!state.nextOps.length) {
           throw err;
         }
 
@@ -203,11 +254,11 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * if there is a pending op. If there is, wait for that, otherwise continue
      * straight to the end.
      */
-    if (state.nextOp) {
-      return [true, await state.nextOp];
+    if (state.nextOps.length) {
+      return [true, await Promise.all(state.nextOps)];
     }
 
-    return [false, ret];
+    return [false, await userFnPromise];
   }
 
   /**

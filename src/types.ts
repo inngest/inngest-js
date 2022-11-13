@@ -1,30 +1,19 @@
 import type { createStepTools } from "./components/InngestStepTools";
+import type { KeysNotOfType } from "./helpers/types";
 
 /**
  * Arguments for a single-step function.
  *
  * @public
  */
-export interface SingleStepFnArgs<Event, FnId, StepId> {
-  /**
-   * If relevant, the event data present in the payload.
-   */
-  event: Event;
-
-  /**
-   * The potential step output from other steps in this function. You cannot
-   * reference output from the running step.
-   *
-   * Implementation here may well vary greatly depending on step function
-   * implementation.
-   */
-  steps: Record<string, never>;
-
-  /**
-   * The "context" of the function.
-   */
-  ctx: { fn_id: FnId; step_id: StepId };
-}
+export type EventData<Event> = Event extends never
+  ? Record<string, never>
+  : {
+      /**
+       * The event data present in the payload.
+       */
+      event: Event;
+    };
 
 /**
  * Arguments for a multi-step function, extending the single-step args and
@@ -32,20 +21,74 @@ export interface SingleStepFnArgs<Event, FnId, StepId> {
  *
  * @public
  */
-export interface MultiStepFnArgs<
+export type HandlerArgs<
   Events extends Record<string, EventPayload>,
   Event extends keyof Events,
-  FnId,
-  StepId
-> extends SingleStepFnArgs<Events[Event], FnId, StepId> {
+  Opts extends FunctionOptions
+> = EventData<Events[Event]> & {
   tools: ReturnType<typeof createStepTools<Events, Event>>[0];
-}
+} & (Opts["fns"] extends Record<string, any>
+    ? {
+        /**
+         * Any `fns` passed when creating your Inngest function will be
+         * available here and can be used as normal.
+         *
+         * Every call to one of these functions will become a new retryable
+         * step.
+         *
+         * @example
+         *
+         * Both examples behave the same; it's preference as to which you
+         * prefer.
+         *
+         * ```ts
+         * import { userDb } from "./db";
+         *
+         * // Specify `fns` and be able to use them in your Inngest function
+         * inngest.createFunction(
+         *   { name: "Create user from PR", fns: { ...userDb } },
+         *   { event: "github/pull_request" },
+         *   async ({ tools: { run }, fns: { createUser } }) => {
+         *     await createUser("Alice");
+         *   }
+         * );
+         *
+         * // Or always use `run()` to run inline steps and use them directly
+         * inngest.createFunction(
+         *   { name: "Create user from PR" },
+         *   { event: "github/pull_request" },
+         *   async ({ tools: { run } }) => {
+         *     await run("createUser", () => userDb.createUser("Alice"));
+         *   }
+         * );
+         * ```
+         */
+        fns: {
+          /**
+           * The key omission here allows the user to pass anything to the `fns`
+           * object and have it be correctly understand and transformed.
+           *
+           * Crucially, we use a complex `Omit` here to ensure that function
+           * comments and metadata is preserved, meaning the user can still use
+           * the function exactly like they would in the rest of their codebase,
+           * even though we're shimming with `tools.run()`.
+           */
+          [K in keyof Omit<
+            Opts["fns"],
+            KeysNotOfType<Opts["fns"], (...args: any[]) => any>
+          >]: (
+            ...args: Parameters<Opts["fns"][K]>
+          ) => Promise<Awaited<ReturnType<Opts["fns"][K]>>>;
+        };
+      }
+    : Record<string, never>);
 
 /**
  * Unique codes for the different types of operation that can be sent to Inngest
  * from SDK step functions.
  */
 export enum StepOpCode {
+  None = "None",
   WaitForEvent = "WaitForEvent",
   RunStep = "Step",
   Sleep = "Sleep",
@@ -78,6 +121,35 @@ export type Op = {
    * treated as completed.
    */
   data?: any;
+
+  /**
+   * An error present for this operation. If an error is present, this operation
+   * is treated as completed, but failed. When this is read from the op stack,
+   * the SDK will throw the error via a promise rejection when it is read.
+   *
+   * This allows users to handle step failures using common tools such as
+   * try/catch or `.catch()`.
+   */
+  error?: any;
+
+  /**
+   * If specified, signifies that this is an operation that requires Inngest to
+   * call again to run some user-defined code.
+   */
+  run?: true;
+};
+
+export type IncomingOp = Op & {
+  /**
+   * If `true`, we should run the user-defined code specified with this
+   * operation and return the data to Inngest.
+   *
+   * If `false`, Inngest is telling us that it knows we need to run some
+   * user-defined code, but that it doesn't want the SDK to run it now. This is
+   * likely because it wants to target another specific piece of user-defined
+   * code instead.
+   */
+  run?: boolean;
 };
 
 /**
@@ -115,17 +187,7 @@ export type SubmitOpFn = (op: Op) => void;
  */
 export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
   | `${number}h`
-  | ""}${`${number}m` | ""}${`${number}s` | ""}${`${number}ms` | ""}`;
-
-/**
- * The shape of a step function, taking in event, step, and ctx data, and
- * outputting anything.
- *
- * @public
- */
-export type SingleStepFn<Event, FnId, StepId> = (
-  arg: SingleStepFnArgs<Event, FnId, StepId>
-) => any;
+  | ""}${`${number}m` | ""}${`${number}s` | ""}`;
 
 /**
  * The shape of a multi-step function, taking in event, step, ctx, and tools.
@@ -135,12 +197,11 @@ export type SingleStepFn<Event, FnId, StepId> = (
  *
  * @public
  */
-export type MultiStepFn<
+export type Handler<
   Events extends Record<string, EventPayload>,
   Event extends keyof Events,
-  FnId,
-  StepId
-> = (arg: MultiStepFnArgs<Events, Event, FnId, StepId>) => void;
+  Opts extends FunctionOptions
+> = (arg: HandlerArgs<Events, Event, Opts>) => void | Promise<void>;
 
 /**
  * The shape of a single event's payload. It should be extended to enforce
@@ -164,28 +225,7 @@ export interface EventPayload {
    * Any user data associated with the event
    * All fields ending in "_id" will be used to attribute the event to a particular user
    */
-  user?: {
-    /**
-     * Your user's unique id in your system
-     */
-    external_id?: string;
-
-    /**
-     * Your user's email address
-     */
-    email?: string;
-
-    /**
-     * Your user's phone number
-     */
-    phone?: string;
-
-    /**
-     * The user block can contain arbitrary data that you can use within your
-     * own handlers too.
-     */
-    [key: string]: any;
-  };
+  user?: any;
 
   /**
    * A specific event schema version
@@ -363,6 +403,15 @@ export interface RegisterOptions {
   serveHost?: string;
 }
 
+export type TriggerOptions<T extends string> =
+  | T
+  | {
+      event: T;
+    }
+  | {
+      cron: string;
+    };
+
 /**
  * A set of options for configuring an Inngest function.
  *
@@ -394,6 +443,8 @@ export interface FunctionOptions {
    * the name.
    */
   name: string;
+
+  fns?: Record<string, any>;
 
   /**
    * Allow the specification of an idempotency key using event data. If
