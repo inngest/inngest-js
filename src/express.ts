@@ -306,7 +306,6 @@ export class InngestCommHandler {
         })
         .parse(data);
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       const ret = await fn["runFn"]({ event }, steps || {});
       const isOp = ret[0];
 
