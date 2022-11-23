@@ -62,6 +62,10 @@ export const FunctionBlock = ({ config, altBg }: Props) => {
 
     const res = await fetch(url, {
       method: "POST",
+      body: JSON.stringify({ event: {} }),
+      headers: {
+        "Content-Type": "application/json",
+      },
     });
     const json = await res.json();
     const status =

@@ -98,19 +98,17 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       throw new Error("A name must be passed to create an Inngest instance.");
     }
 
+    this.name = name;
+    this.eventKey =
+      eventKey || (hasProcessEnv() ? process.env[envKeys.EventKey] || "" : "");
+    this.inngestBaseUrl = new URL(inngestBaseUrl);
+    this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
+
     if (!eventKey) {
       throw new Error(
         "An event key must be passed to create an Inngest instance."
       );
     }
-
-    this.name = name;
-
-    this.eventKey =
-      eventKey || (hasProcessEnv() ? process.env[envKeys.EventKey] || "" : "");
-
-    this.inngestBaseUrl = new URL(inngestBaseUrl);
-    this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
 
     this.headers = {
       "Content-Type": "application/json",
