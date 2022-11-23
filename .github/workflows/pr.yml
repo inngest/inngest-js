@@ -59,6 +59,15 @@ jobs:
         with:
           working-directory: sdk
 
+      # Checkout the CLI
+      # TODO Replace this with just doing npx @inngest/cli once we publish the CLI
+      - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.EXAMPLES_GITHUB_TOKEN }}
+          repository: inngest/inngest
+          path: cli
+          ref: dev-server-history
+
       # Checkout the example repo
       - uses: actions/checkout@v3
         with:
@@ -66,6 +75,22 @@ jobs:
           repository: ${{ matrix.repo }}
           path: examples/${{ matrix.repo }}
           ref: main
+
+      # Get the CLI ready
+      # TODO Replace this with just doing npx @inngest/cli once we publish the CLI
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.18
+      - run: |
+          yarn
+          yarn build
+          cp ./dist/index.html ../pkg/devserver/index.html
+        working-directory: cli/ui
+      - run: |
+          go build -o ./inngest-bin ./cmd/main.go
+          mv ./inngest-bin "$(go env GOPATH)/bin/inngest"
+        working-directory: cli
 
       # Get the SDK ready and link it locally
       - run: yarn prelink
@@ -111,14 +136,17 @@ jobs:
           resource: http-get://localhost:3000
           timeout: 20000
 
-      # Confirm the example vaguely returns all the expected functions
-      - id: assert-function-count
-        run: |
-          echo "expected-count=$(ls src/examples | grep -v index.* | grep -v README | wc -l)" >> $GITHUB_OUTPUT
+      # Give the dev server 5 seconds to register with the example
+      - run: sleep 5
 
-          echo "actual-count=$(curl -s http://localhost:3000/api/inngest?introspect | jq -r '.functions | length')" >> $GITHUB_OUTPUT
-        working-directory: sdk
-      - uses: nick-fields/assert-action@v1
+      # Run the dev server
+      - run: inngest dev &
+        working-directory: examples/${{ matrix.repo }}
+      - uses: ifaxity/wait-on-action@v1
         with:
-          expected: ${{ steps.assert-function-count.outputs.expected-count }}
-          actual: ${{ steps.assert-function-count.outputs.actual-count }}
+          resource: http-get://localhost:8288
+          timeout: 20000
+
+      # Run the examples test suite against the dev server
+      - run: yarn test:examples
+        working-directory: sdk
