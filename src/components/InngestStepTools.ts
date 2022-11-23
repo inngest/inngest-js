@@ -5,6 +5,7 @@ import {
   serializeError,
 } from "serialize-error-cjs";
 import sigmund from "sigmund";
+import { createFrozenPromise } from "../helpers/promises";
 import { timeStr } from "../helpers/strings";
 import type { ObjectPaths } from "../helpers/types";
 import {
@@ -116,7 +117,7 @@ export const createStepTools = <
     fn?: (...args: Parameters<T>) => any
   ): T => {
     // eslint-disable-next-line @typescript-eslint/require-await
-    return ((...args: Parameters<T>) => {
+    return ((...args: Parameters<T>): Promise<any> => {
       /**
        * Mark that we've used a step function tool, so that we can know
        * externally that this isn't a single-step function.
@@ -142,7 +143,7 @@ export const createStepTools = <
           })
         );
 
-        return new Promise(() => undefined);
+        return createFrozenPromise();
       }
 
       /**
@@ -181,7 +182,7 @@ export const createStepTools = <
        * in the future.
        */
       if (!op.run) {
-        return new Promise(() => undefined);
+        return createFrozenPromise();
       }
 
       /**
@@ -216,7 +217,7 @@ export const createStepTools = <
           })
       );
 
-      return new Promise(() => undefined);
+      return createFrozenPromise();
     }) as T;
   };
 
