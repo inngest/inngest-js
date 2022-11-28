@@ -29,7 +29,7 @@ describe("introspection", () => {
             runtime: {
               type: "http",
               url: expect.stringMatching(
-                /^http:\/\/(localhost|127\.0\.0\.1):3000\/api\/inngest\?fnId=.+-hello-world&stepId=step$/
+                /^http.+\?fnId=.+-hello-world&stepId=step$/
               ),
             },
           },
