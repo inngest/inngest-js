@@ -43,8 +43,8 @@ describe("introspection", () => {
           name: "step",
           runtime: {
             type: "http",
-            url: expect.stringMatching(
-              /^http:\/\/localhost:3000\/api\/inngest\?fnId=.+-hello-world&stepId=step$/
+              url: expect.stringMatching(
+                /^http:\/\/(localhost|127\.0\.0\.1):3000\/api\/inngest\?fnId=.+-hello-world&stepId=step$/
             ),
           },
         },
