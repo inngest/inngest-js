@@ -59,15 +59,6 @@ jobs:
         with:
           working-directory: sdk
 
-      # Checkout the CLI
-      # TODO Replace this with just doing npx @inngest/cli once we publish the CLI
-      - uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.EXAMPLES_GITHUB_TOKEN }}
-          repository: inngest/inngest
-          path: cli
-          ref: dev-server-history
-
       # Checkout the example repo
       - uses: actions/checkout@v3
         with:
@@ -75,22 +66,6 @@ jobs:
           repository: ${{ matrix.repo }}
           path: examples/${{ matrix.repo }}
           ref: main
-
-      # Get the CLI ready
-      # TODO Replace this with just doing npx @inngest/cli once we publish the CLI
-      - name: Set up Go
-        uses: actions/setup-go@v2
-        with:
-          go-version: 1.18
-      - run: |
-          yarn
-          yarn build
-          cp ./dist/index.html ../pkg/devserver/index.html
-        working-directory: cli/ui
-      - run: |
-          go build -o ./inngest-bin ./cmd/main.go
-          mv ./inngest-bin "$(go env GOPATH)/bin/inngest"
-        working-directory: cli
 
       # Get the SDK ready and link it locally
       - run: yarn prelink
@@ -140,7 +115,7 @@ jobs:
       - run: sleep 5
 
       # Run the dev server
-      - run: inngest dev &
+      - run: npx inngest-cli@latest dev &
         working-directory: examples/${{ matrix.repo }}
       - uses: ifaxity/wait-on-action@v1
         with:
