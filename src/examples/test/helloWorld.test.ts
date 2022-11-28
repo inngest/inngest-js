@@ -29,9 +29,15 @@ const introspectionSchema = z.object({
 });
 
 describe("introspection", () => {
-  test("should be registered", async () => {
-    const res = await fetch("http://localhost:3000/api/inngest?introspect");
-    const data = introspectionSchema.parse(await res.json());
+  const specs = [
+    { label: "SDK UI", url: "http://localhost:3000/api/inngest?introspect" },
+    { label: "Dev server UI", url: "http://localhost:8288/dev" },
+  ];
+
+  specs.forEach(({ label, url }) => {
+    test(`should show registered functions in ${label}`, async () => {
+      const res = await fetch(url);
+      const data = introspectionSchema.parse(await res.json());
 
     expect(data.functions).toContainEqual({
       name: "Hello World",
@@ -49,6 +55,7 @@ describe("introspection", () => {
           },
         },
       },
+    });
     });
   });
 });
