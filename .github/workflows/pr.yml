@@ -50,6 +50,7 @@ jobs:
         repo:
           - inngest/sdk-example-cloudflare-workers
           - inngest/sdk-example-nextjs-vercel
+          - inngest/sdk-example-redwoodjs-vercel
     steps:
       # Checkout the repo
       - uses: actions/checkout@v3
