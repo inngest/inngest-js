@@ -86,7 +86,23 @@ jobs:
       # Because repos are always owner/repo with a slash, the directory will be
       # the same, therefore we must venture an extra level deep when searching
       # for package.json.
-      - run: volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
+      #
+      # Yarn v3 (berry) will override Volta's version control and always use
+      # whatever version is specified and cached in the repo's `.yarnrc.yml`
+      # file.
+      # Because of this, we must instead link the SDK using a relative path, and
+      # have the library's `dist/` directory appear as a separate package by
+      # specifying an empty `yarn.lock` file within.
+      # - run: volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
+      - run: |
+          yarnv=$(volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn -v)
+
+          if [[ $yarnv == 3* ]]; then
+            touch ../../../sdk/dist/yarn.lock
+            yarn link ../../../sdk/dist
+          else
+            volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
+          fi
         working-directory: examples/${{ matrix.repo }}
 
       # Copy any SDK function examples to the example repo so that we're always
