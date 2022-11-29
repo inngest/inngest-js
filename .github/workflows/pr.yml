@@ -136,6 +136,8 @@ jobs:
       # Run the dev server
       - run: npx inngest-cli@latest dev &
         working-directory: examples/${{ matrix.repo }}
+        env:
+          DO_NOT_TRACK: 1
       - uses: ifaxity/wait-on-action@v1
         with:
           resource: http-get://localhost:8288
