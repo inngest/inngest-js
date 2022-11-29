@@ -128,7 +128,7 @@ jobs:
       - uses: ifaxity/wait-on-action@v1
         with:
           resource: http-get://localhost:3000/api/inngest
-          timeout: 20000
+          timeout: 60000
 
       # Give the dev server 5 seconds to register with the example
       - run: sleep 5
