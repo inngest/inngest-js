@@ -50,6 +50,9 @@ jobs:
         repo:
           - inngest/sdk-example-cloudflare-workers
           - inngest/sdk-example-nextjs-vercel
+          - inngest/sdk-example-redwoodjs-vercel
+          - inngest/sdk-example-nextjs-cloudflare
+          - inngest/sdk-example-nextjs-netlify
     steps:
       # Checkout the repo
       - uses: actions/checkout@v3
@@ -83,7 +86,22 @@ jobs:
       # Because repos are always owner/repo with a slash, the directory will be
       # the same, therefore we must venture an extra level deep when searching
       # for package.json.
-      - run: volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
+      #
+      # Yarn v3 (berry) will override Volta's version control and always use
+      # whatever version is specified and cached in the repo's `.yarnrc.yml`
+      # file.
+      # Because of this, we must instead link the SDK using a relative path, and
+      # have the library's `dist/` directory appear as a separate package by
+      # specifying an empty `yarn.lock` file within.
+      - run: |
+          yarnv=$(volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn -v)
+
+          if [[ $yarnv == 3* ]]; then
+            touch ../../../sdk/dist/yarn.lock
+            yarn link ../../../sdk/dist
+          else
+            volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
+          fi
         working-directory: examples/${{ matrix.repo }}
 
       # Copy any SDK function examples to the example repo so that we're always
@@ -108,17 +126,22 @@ jobs:
           PORT: 3000
       - uses: ifaxity/wait-on-action@v1
         with:
-          resource: http-get://localhost:3000
+          resource: http-get://localhost:3000/api/inngest
+          timeout: 60000
+
+      # Give the dev server 5 seconds to register with the example
+      - run: sleep 5
+
+      # Run the dev server
+      - run: npx inngest-cli@latest dev &
+        working-directory: examples/${{ matrix.repo }}
+        env:
+          DO_NOT_TRACK: 1
+      - uses: ifaxity/wait-on-action@v1
+        with:
+          resource: http-get://localhost:8288
           timeout: 20000
 
-      # Confirm the example vaguely returns all the expected functions
-      - id: assert-function-count
-        run: |
-          echo "expected-count=$(ls src/examples | grep -v index.* | grep -v README | wc -l)" >> $GITHUB_OUTPUT
-
-          echo "actual-count=$(curl -s http://localhost:3000/api/inngest?introspect | jq -r '.functions | length')" >> $GITHUB_OUTPUT
+      # Run the examples test suite against the dev server
+      - run: yarn test:examples
         working-directory: sdk
-      - uses: nick-fields/assert-action@v1
-        with:
-          expected: ${{ steps.assert-function-count.outputs.expected-count }}
-          actual: ${{ steps.assert-function-count.outputs.actual-count }}

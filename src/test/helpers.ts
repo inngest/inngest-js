@@ -1,8 +1,13 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
+import fetch from "cross-fetch";
 import type { Request, Response } from "express";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
+import { ulid } from "ulid";
+import { z } from "zod";
 import { ServeHandler } from "../express";
 import { createFunction } from "../helpers/func";
 import { version } from "../version";
@@ -493,4 +498,205 @@ export const testFramework = (
       test.todo("...");
     });
   });
+};
+
+/**
+ * A Zod schema for an introspection result from the SDK UI or the dev server.
+ */
+export const introspectionSchema = z.object({
+  functions: z.array(
+    z.object({
+      name: z.string(),
+      id: z.string(),
+      triggers: z.array(
+        z.object({ event: z.string() }).or(
+          z.object({
+            cron: z.string(),
+          })
+        )
+      ),
+      steps: z.object({
+        step: z.object({
+          id: z.literal("step"),
+          name: z.literal("step"),
+          runtime: z.object({
+            type: z.literal("http"),
+            url: z.string().url(),
+          }),
+        }),
+      }),
+    })
+  ),
+});
+
+/**
+ * A test helper used to send events to a local, unsecured dev server.
+ *
+ * Generates an ID and returns that ID for future use.
+ */
+export const sendEvent = async (
+  name: string,
+  data?: Record<string, any>,
+  user?: Record<string, any>
+): Promise<string> => {
+  const id = ulid();
+
+  const res = await fetch("http://localhost:8288/e/key", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ id, name, data: data || {}, user, ts: Date.now() }),
+  });
+
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+
+  return id;
+};
+
+/**
+ * Given a number of milliseconds `upTo`, wait for that amount of time,
+ * optionally starting from now or the given `from` date.
+ */
+export const waitUpTo = (upTo: number, from?: Date): Promise<void> => {
+  const start = from || new Date();
+  const now = from ? new Date() : start;
+
+  const msPassed = now.getTime() - start.getTime();
+  const ms = upTo - msPassed;
+
+  if (ms < 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => setTimeout(resolve, ms));
+};
+
+/**
+ * A test helper used to query a local, unsecured dev server to see if a given
+ * event has triggered a function run with a particular name.
+ *
+ * If found within 5 seconds, returns the run ID, else throws.
+ */
+export const eventRunWithName = async (
+  eventId: string,
+  name: string
+): Promise<string> => {
+  for (let i = 0; i < 5; i++) {
+    const start = new Date();
+
+    const res = await fetch("http://localhost:8300/gql", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: `query GetEventRuns($eventId: ID!) {
+        event(query: {eventId: $eventId}) {
+          id
+          functionRuns {
+            id
+            name
+          }
+        }
+      }`,
+        variables: {
+          eventId,
+        },
+        operationName: "GetEventRuns",
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+
+    const data = await res.json();
+
+    const run = data?.data?.event?.functionRuns?.find(
+      (run: any) => run.name === name
+    );
+
+    if (run) {
+      return run.id;
+    }
+
+    await waitUpTo(1000, start);
+  }
+
+  throw new Error("Event run not found");
+};
+
+/**
+ * A test helper used to query a local, unsecured dev server to see if a given
+ * run has a particular item in its timeline.
+ *
+ * If found within 5 seconds, returns `true`, else returns `false`.
+ */
+export const runHasTimeline = async (
+  runId: string,
+  timeline: {
+    __typename: "StepEvent" | "FunctionEvent";
+    name?: string;
+    stepType?: string;
+    functionType?: string;
+    output?: string;
+  }
+): Promise<boolean> => {
+  for (let i = 0; i < 5; i++) {
+    const start = new Date();
+
+    const res = await fetch("http://localhost:8300/gql", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: `query GetRunTimeline($runId: ID!) {
+          functionRun(query: {functionRunId: $runId}) {
+            timeline {
+              __typename
+              ... on StepEvent {
+                name
+                createdAt
+                stepType: type
+                output
+              }
+              ... on FunctionEvent {
+                createdAt
+                functionType: type
+                output
+              }
+            }
+          }
+        }`,
+        variables: {
+          runId,
+        },
+        operationName: "GetRunTimeline",
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+
+    const data = await res.json();
+
+    if (
+      data?.data?.functionRun?.timeline?.some((entry: any) =>
+        Object.keys(timeline).every(
+          (key) => entry[key] === (timeline as any)[key]
+        )
+      )
+    ) {
+      return true;
+    }
+
+    await waitUpTo(1000, start);
+  }
+
+  return false;
 };
