@@ -93,7 +93,6 @@ jobs:
       # Because of this, we must instead link the SDK using a relative path, and
       # have the library's `dist/` directory appear as a separate package by
       # specifying an empty `yarn.lock` file within.
-      # - run: volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
       - run: |
           yarnv=$(volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn -v)
 
