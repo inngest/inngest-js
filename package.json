@@ -12,7 +12,8 @@
     "contents": "dist"
   },
   "bin": {
-    "inngest-init": "./init.js"
+    "inngest-init": "./init.js",
+    "inngest": "./cli.js"
   },
   "scripts": {
     "prebuild": "yarn run pb:version && yarn run pb:landing",
