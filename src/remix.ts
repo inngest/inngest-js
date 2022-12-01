@@ -143,15 +143,13 @@ class RemixCommHandler extends InngestCommHandler {
  * import { serve } from "inngest/remix";
  * import fns from "~/inngest";
  *
- * export const { loader, action } = serve("My Remix App", fns);
+ * const handler = serve("My Remix App", fns);
+ *
+ * export { handler as loader, handler as action };
  * ```
  *
  * @public
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  const handler = defaultServe(new RemixCommHandler(nameOrInngest, fns, opts));
-
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-  return { loader: handler, action: handler };
+  return defaultServe(new RemixCommHandler(nameOrInngest, fns, opts));
 };
