@@ -53,6 +53,7 @@ jobs:
           - inngest/sdk-example-redwoodjs-vercel
           - inngest/sdk-example-nextjs-cloudflare
           - inngest/sdk-example-nextjs-netlify
+          - inngest/sdk-example-remix-vercel
     steps:
       # Checkout the repo
       - uses: actions/checkout@v3
