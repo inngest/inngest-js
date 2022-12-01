@@ -1,4 +1,3 @@
-import { Response } from "cross-fetch";
 import { z } from "zod";
 import {
   InngestCommHandler,
@@ -133,8 +132,26 @@ class RemixCommHandler extends InngestCommHandler {
  * In Remix, serve and register any declared functions with Inngest, making them
  * available to be triggered by events.
  *
+ * Remix requires that you export both a "loader" for serving `GET` requests,
+ * and an "action" for serving other requests, therefore exporting both is
+ * required.
+ *
+ * See {@link https://remix.run/docs/en/v1/guides/resource-routes}
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/remix";
+ * import fns from "~/inngest";
+ *
+ * export const { loader, action } = serve("My Remix App", fns);
+ * ```
+ *
  * @public
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
-  return defaultServe(new RemixCommHandler(nameOrInngest, fns, opts));
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  const handler = defaultServe(new RemixCommHandler(nameOrInngest, fns, opts));
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+  return { loader: handler, action: handler };
 };
