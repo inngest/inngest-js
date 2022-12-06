@@ -79,7 +79,7 @@ jobs:
         working-directory: sdk/dist
 
       # Install dependencies in the example repo
-      - run: test -f yarn.lock && yarn install --frozen-lockfile || npm ci
+      - run: test -f yarn.lock && yarn install --frozen-lockfile || test -f package-lock.json && npm ci || echo "No lockfile found; probably Deno, so skipping install"
         working-directory: examples/${{ matrix.repo }}
 
       # Link the SDK, making sure to use the same Yarn version that we used to
