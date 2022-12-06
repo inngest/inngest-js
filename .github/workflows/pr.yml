@@ -89,7 +89,14 @@ jobs:
           deno-version: vx.x.x
 
       # Install dependencies in the example repo
-      - run: test -f yarn.lock && yarn install --frozen-lockfile || test -f package-lock.json && npm ci || echo "No lockfile found; probably Deno, so skipping install"
+      - run: |
+          if test -f yarn.lock; then
+            yarn install --frozen-lockfile
+          elif test -f package-lock.json; then
+            npm ci
+          else
+            echo "No lockfile found; probably Deno, so skipping install"
+          fi
         working-directory: examples/${{ matrix.repo }}
 
       # Link the SDK, making sure to use the same Yarn version that we used to
@@ -137,17 +144,35 @@ jobs:
       # IF we're using Deno, also replace any "inngest..." imports with
       # "npm:inngest..."
       - run: |
-          test -f deno.json && \
-            find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i 's/from "inngest/from "npm:inngest/g' {} \; || \
+          if test -f deno.json; then
+            find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i 's/from "inngest/from "npm:inngest/g' {} \;
+          else
             echo "No deno.json found; skipping Deno transforms"
+          fi
         working-directory: examples/${{ matrix.repo }}
 
       # Try to build the example
-      - run: test -f yarn.lock && yarn build || test -f package-lock.json && npm run build || echo "No build script found"
+      - run: |
+          test -f yarn.lock && yarn build || test -f package-lock.json && npm run build || echo "No build script found"
+
+          if test -f yarn.lock; then
+            yarn build
+          elif test -f package-lock.json; then
+            npm run build
+          else
+            echo "No build script found; probably a Deno project"
+          fi
         working-directory: examples/${{ matrix.repo }}
 
       # Run the example
-      - run: test -f yarn.lock && (yarn dev &) || test -f package-lock.json && (npm run dev &) || (deno task start &)
+      - run: |
+          if test -f yarn.lock; then
+            (yarn dev &)
+          elif test -f package-lock.json; then
+            (npm run dev &)
+          else
+            (deno task start &)
+          fi
         working-directory: examples/${{ matrix.repo }}
         # Provide the example any env vars it might need
         env:
