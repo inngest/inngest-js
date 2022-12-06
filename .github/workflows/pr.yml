@@ -142,10 +142,12 @@ jobs:
       - run: cp -r ../../../sdk/src/examples/ ${{ steps.inngest-functions-path.outputs.dir }}
         working-directory: examples/${{ matrix.repo }}
       # IF we're using Deno, also replace any "inngest..." imports with
-      # "npm:inngest..."
+      # "npm:inngest..." and any direct file imports in `inngest/index.ts` with
+      # `.ts` suffixes.
       - run: |
           if test -f deno.json; then
             find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i 's/from "inngest/from "npm:inngest/g' {} \;
+            find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i -E 's/from "\.(.+)"/from "\.\1\.ts"/g' {} \;
           else
             echo "No deno.json found; skipping Deno transforms"
           fi
