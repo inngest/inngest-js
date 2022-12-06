@@ -54,6 +54,7 @@ jobs:
           - inngest/sdk-example-nextjs-cloudflare
           - inngest/sdk-example-nextjs-netlify
           - inngest/sdk-example-remix-vercel
+          - inngest/sdk-example-fresh-deno-deploy
     steps:
       # Checkout the repo
       - uses: actions/checkout@v3
@@ -94,16 +95,25 @@ jobs:
       # Because of this, we must instead link the SDK using a relative path, and
       # have the library's `dist/` directory appear as a separate package by
       # specifying an empty `yarn.lock` file within.
+      #
+      # Locally linking the lib to a Deno repo is harder, as Deno doesn't
+      # support local linking between ESM and CJS. Instead, we run a manual
+      # shim script to bend paths and adjust the target repo's import path.
       - run: |
-          yarnv=$(volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn -v)
-
-          if [[ $yarnv == 3* ]]; then
-            touch ../../../sdk/dist/yarn.lock
-            yarn link ../../../sdk/dist
+          if test -f deno.json; then
+            deno run --allow-read --allow-write ../../../sdk/deno_compat/link.ts
           else
-            volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
+            yarnv=$(volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn -v)
+
+            if [[ $yarnv == 3* ]]; then
+              touch ../../../sdk/dist/yarn.lock
+              yarn link ../../../sdk/dist
+            else
+              volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
+            fi
           fi
         working-directory: examples/${{ matrix.repo }}
+
 
       # Copy any SDK function examples to the example repo so that we're always
       # testing many functions against many handlers.
@@ -114,17 +124,25 @@ jobs:
         working-directory: examples/${{ matrix.repo }}
       - run: cp -r ../../../sdk/src/examples/ ${{ steps.inngest-functions-path.outputs.dir }}
         working-directory: examples/${{ matrix.repo }}
+      # IF we're using Deno, also replace any "inngest..." imports with
+      # "npm:inngest..."
+      - run: |
+          test -f deno.json && \
+            find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i 's/from "inngest/from "npm:inngest/g' {} \; || \
+            echo "No deno.json found; skipping Deno transforms"
+        working-directory: examples/${{ matrix.repo }}
 
       # Try to build the example
-      - run: test -f yarn.lock && yarn build || npm run build
+      - run: test -f yarn.lock && yarn build || test -f package-lock.json && npm run build || echo "No build script found"
         working-directory: examples/${{ matrix.repo }}
 
       # Run the example
-      - run: test -f yarn.lock && (yarn dev &) || (npm run dev &)
+      - run: test -f yarn.lock && (yarn dev &) || test -f package-lock.json && (npm run dev &) || (deno task start &)
         working-directory: examples/${{ matrix.repo }}
         # Provide the example any env vars it might need
         env:
           PORT: 3000
+          DO_NOT_TRACK: 1
       - uses: ifaxity/wait-on-action@v1
         with:
           resource: http-get://localhost:3000/api/inngest
@@ -134,6 +152,8 @@ jobs:
       - run: sleep 5
 
       # Run the dev server
+      # TODO Examples should run their own dev server, which means we can remove
+      # this.
       - run: npx inngest-cli@latest dev &
         working-directory: examples/${{ matrix.repo }}
         env:
