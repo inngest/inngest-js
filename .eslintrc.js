@@ -13,7 +13,7 @@ module.exports = {
   },
   plugins: ["@typescript-eslint", "@inngest"],
   root: true,
-  ignorePatterns: ["dist/", "*.d.ts", "*.js"],
+  ignorePatterns: ["dist/", "*.d.ts", "*.js", "deno_compat/"],
   rules: {
     "prettier/prettier": "warn",
     "@typescript-eslint/no-explicit-any": "off",
