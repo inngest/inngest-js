@@ -1,4 +1,5 @@
 export { Inngest } from "./components/Inngest";
+export { InngestCommHandler } from "./components/InngestCommHandler";
 export {
   createFunction,
   createScheduledFunction,
