@@ -162,6 +162,12 @@ export interface RegisterOptions {
 }
 
 // @public
+export type ServeHandler = (
+nameOrInngest: string | Inngest<any>,
+functions: InngestFunction<any>[],
+opts?: RegisterOptions) => any;
+
+// @public
 export type SingleStepFn<Event, FnId, StepId> = (arg: SingleStepFnArgs<Event, FnId, StepId>) => any;
 
 // @public

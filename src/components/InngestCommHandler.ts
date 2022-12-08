@@ -21,6 +21,25 @@ import type { InngestFunction } from "./InngestFunction";
  * whenever a handler for a new framework is being added to enforce that the
  * registration process is always the same for the user.
  *
+ * @example
+ * ```
+ * // my-custom-handler.ts
+ * import { InngestCommHandler, ServeHandler } from "inngest";
+ *
+ * export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
+ *   const handler = new InngestCommHandler(
+ *     "my-custom-handler",
+ *     nameOrInngest,
+ *     fns,
+ *     opts,
+ *     () => { ... },
+ *     () => { ... }
+ *   );
+ *
+ *   return handler.createHandler();
+ * };
+ * ```
+ *
  * @public
  */
 export type ServeHandler = (
