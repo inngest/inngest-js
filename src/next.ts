@@ -17,7 +17,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
     nameOrInngest,
     fns,
     opts,
-    (req: NextApiRequest, res: NextApiResponse) => {
+    (req: NextApiRequest, _res: NextApiResponse) => {
       const scheme = process.env.NODE_ENV === "development" ? "http" : "https";
       const url = new URL(
         req.url as string,

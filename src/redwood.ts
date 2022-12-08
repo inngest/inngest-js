@@ -26,7 +26,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
     nameOrInngest,
     fns,
     opts,
-    (event: APIGatewayProxyEvent, context: LambdaContext) => {
+    (event: APIGatewayProxyEvent, _context: LambdaContext) => {
       const scheme = process.env.NODE_ENV === "development" ? "http" : "https";
       const url = new URL(
         event.path,

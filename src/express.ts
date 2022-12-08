@@ -17,7 +17,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
     nameOrInngest,
     fns,
     opts,
-    (req: Request, res: Response) => {
+    (req: Request, _res: Response) => {
       const hostname = req.get("host") || req.headers["host"];
       const protocol = hostname?.includes("://") ? "" : `${req.protocol}://`;
       const url = new URL(req.originalUrl, `${protocol}${hostname || ""}`);
