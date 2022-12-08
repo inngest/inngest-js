@@ -89,20 +89,21 @@ export class Inngest<Events extends Record<string, EventPayload>> {
 //
 // @public
 export class InngestCommHandler<H extends Handler, TransformedRes> {
-    constructor(frameworkName: string, appNameOrInngest: string | Inngest<any>, functions: InngestFunction<any>[], { inngestRegisterUrl, fetch, landingPage, signingKey, serveHost, servePath, }: RegisterOptions | undefined, handler: H, transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
+    constructor(
+    frameworkName: string,
+    appNameOrInngest: string | Inngest<any>,
+    functions: InngestFunction<any>[], { inngestRegisterUrl, fetch, landingPage, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
+    handler: H,
+    transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
     protected configs(url: URL): FunctionConfig[];
-    // (undocumented)
     createHandler(): (...args: Parameters<H>) => Promise<TransformedRes>;
-    // (undocumented)
     protected readonly frameworkName: string;
-    // (undocumented)
     readonly handler: H;
     protected _isProd: boolean;
-    // (undocumented)
-    name: string;
+    readonly name: string;
     // (undocumented)
     protected register(url: URL, devServerHost: string | undefined): Promise<{
         status: number;
@@ -121,20 +122,15 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     version: RegisterRequest["sdk"],
     suffix: string
     ];
-    // (undocumented)
     protected readonly serveHost: string | undefined;
-    // (undocumented)
     protected readonly servePath: string | undefined;
     // (undocumented)
     protected shouldShowLandingPage(strEnvVar: string | undefined): boolean;
     protected readonly showLandingPage: boolean | undefined;
-    // (undocumented)
     protected signingKey: string | undefined;
     // (undocumented)
     protected signResponse(): string;
     // Warning: (ae-forgotten-export) The symbol "ActionResponse" needs to be exported by the entry point index.d.ts
-    //
-    // (undocumented)
     readonly transformRes: (res: ActionResponse, ...args: Parameters<H>) => TransformedRes;
     // (undocumented)
     protected validateSignature(): boolean;

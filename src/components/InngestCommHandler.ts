@@ -76,27 +76,56 @@ const registerResSchema = z.object({
 });
 
 /**
- * TODO Instead of `createHandler`, expose `createRequest` and `handleResponse`
+ * `InngestCommHandler` is a class for handling incoming requests from Inngest (or
+ * Inngest's tooling such as the dev server or CLI) and taking appropriate
+ * action for any served functions.
  *
- * Overriding `createHandler` requires that we always remember crucial steps,
- * e.g. validating signatures, handling POST, etc.
+ * All handlers (Next.js, RedwoodJS, Remix, Deno Fresh, etc) are created using
+ * this class; the exposed `serve` function will - most commonly - create an
+ * instance of `InngestCommHandler` and then return `instance.createHandler()`.
  *
- * We should instead require that new comm handlers override only two functions:
+ * Two critical parameters required are the `handler` and the `transformRes`
+ * function. See individual parameter details for more information, or see the
+ * source code for an existing handler, e.g.
+ * {@link https://github.com/inngest/inngest-js/blob/main/src/next.ts}
  *
- * `createRequest()`
- * This is the function that is exposed. It must return a valid `HandlerRequest`
+ * @example
+ * ```
+ * // my-custom-handler.ts
+ * import { InngestCommHandler, ServeHandler } from "inngest";
  *
- * `handleResponse()`
- * The input is a `StepResponse`, and output can be anything needed for the
- * platform
+ * export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
+ *   const handler = new InngestCommHandler(
+ *     "my-custom-handler",
+ *     nameOrInngest,
+ *     fns,
+ *     opts,
+ *     () => { ... },
+ *     () => { ... }
+ *   );
  *
- * This needs to also account for the ability to validate signatures etc.
+ *   return handler.createHandler();
+ * };
+ * ```
  *
  * @public
  */
 export class InngestCommHandler<H extends Handler, TransformedRes> {
-  public name: string;
+  /**
+   * The name of this serve handler, e.g. `"My App"`. It's recommended that this
+   * value represents the overarching app/service that this set of functions is
+   * being served from.
+   */
+  public readonly name: string;
+
+  /**
+   * The handler specified during instantiation of the class.
+   */
   public readonly handler: H;
+
+  /**
+   * The response transformer specified during instantiation of the class.
+   */
   public readonly transformRes: (
     res: ActionResponse,
     ...args: Parameters<H>
@@ -107,7 +136,18 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    */
   private readonly inngestRegisterUrl: URL;
 
+  /**
+   * The name of the framework this handler is designed for. Should be
+   * lowercase, alphanumeric characters inclusive of `-` and `/`. This should
+   * never be defined by the user; a {@link ServeHandler} should abstract this.
+   */
   protected readonly frameworkName: string;
+
+  /**
+   * The signing key used to validate requests from Inngest. This is
+   * intentionally mutatble so that we can pick up the signing key from the
+   * environment during execution if needed.
+   */
   protected signingKey: string | undefined;
 
   /**
@@ -117,7 +157,17 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    * Should be set every time a request is received.
    */
   protected _isProd = false;
+
+  /**
+   * A set of headers sent back with every request. Usually includes generic
+   * functionality such as `"Content-Type"`, alongside informational headers
+   * such as Inngest SDK version.
+   */
   private readonly headers: Record<string, string>;
+
+  /**
+   * The localized `fetch` implementation used by this handler.
+   */
   private readonly fetch: FetchT;
 
   /**
@@ -128,7 +178,38 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    */
   protected readonly showLandingPage: boolean | undefined;
 
+  /**
+   * The host used to access the Inngest serve endpoint, e.g.:
+   *
+   *     "https://myapp.com"
+   *
+   * By default, the library will try to infer this using request details such
+   * as the "Host" header and request path, but sometimes this isn't possible
+   * (e.g. when running in a more controlled environments such as AWS Lambda or
+   * when dealing with proxies/rediects).
+   *
+   * Provide the custom hostname here to ensure that the path is reported
+   * correctly when registering functions with Inngest.
+   *
+   * To also provide a custom path, use `servePath`.
+   */
   protected readonly serveHost: string | undefined;
+
+  /**
+   * The path to the Inngest serve endpoint. e.g.:
+   *
+   *     "/some/long/path/to/inngest/endpoint"
+   *
+   * By default, the library will try to infer this using request details such
+   * as the "Host" header and request path, but sometimes this isn't possible
+   * (e.g. when running in a more controlled environments such as AWS Lambda or
+   * when dealing with proxies/rediects).
+   *
+   * Provide the custom path (excluding the hostname) here to ensure that the
+   * path is reported correctly when registering functions with Inngest.
+   *
+   * To also provide a custom hostname, use `serveHost`.
+   */
   protected readonly servePath: string | undefined;
 
   /**
@@ -138,8 +219,30 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   private readonly fns: Record<string, InngestFunction<any>> = {};
 
   constructor(
+    /**
+     * The name of the framework this handler is designed for. Should be
+     * lowercase, alphanumeric characters inclusive of `-` and `/`.
+     *
+     * This should never be defined by the user; a {@link ServeHandler} should
+     * abstract this.
+     */
     frameworkName: string,
+
+    /**
+     * The name of this serve handler, e.g. `"My App"`. It's recommended that this
+     * value represents the overarching app/service that this set of functions is
+     * being served from.
+     *
+     * This can also be an `Inngest` client, in which case the name given when
+     * instantiating the client is used. This is useful if you're sending and
+     * receiving events from the same service, as you can reuse a single
+     * definition of Inngest.
+     */
     appNameOrInngest: string | Inngest<any>,
+
+    /**
+     * An array of the functions to serve and register with Inngest.
+     */
     functions: InngestFunction<any>[],
     {
       inngestRegisterUrl,
@@ -149,7 +252,57 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       serveHost,
       servePath,
     }: RegisterOptions = {},
+
+    /**
+     * The `handler` is the function your framework requires to handle a
+     * request. For example, this is most commonly a function that is given a
+     * `Request` and must return a `Response`.
+     *
+     * The handler must map out any incoming parameters, then return a
+     * strictly-typed object to assess what kind of request is being made,
+     * collecting any relevant data as we go.
+     *
+     * @example
+     * ```
+     * return {
+     *   register: () => { ... },
+     *   run: () => { ... },
+     *   view: () => { ... }
+     * };
+     * ```
+     *
+     * Every key must be specified and must be a function that either returns
+     * a strictly-typed payload or `undefined` if the request is not for that
+     * purpose.
+     *
+     * This gives handlers freedom to choose how their platform of choice will
+     * trigger differing actions, whilst also ensuring all required information
+     * is given for each request type.
+     *
+     * See any existing handler for a full example.
+     *
+     * This should never be defined by the user; a {@link ServeHandler} should
+     * abstract this.
+     */
     handler: H,
+
+    /**
+     * The `transformRes` function receives the output of the Inngest SDK and
+     * can decide how to package up that information to appropriately return the
+     * information to Inngest.
+     *
+     * Mostly, this is taking the given parameters and returning a new
+     * `Response`.
+     *
+     * The function is passed an {@link ActionResponse} (an object containing a
+     * `status` code, a `headers` object, and a stringified `body`), as well as
+     * every parameter passed to the given `handler` function. This ensures you
+     * can appropriately handle the response, including use of any required
+     * parameters such as `res` in Express-/Connect-like frameworks.
+     *
+     * This should never be defined by the user; a {@link ServeHandler} should
+     * abstract this.
+     */
     transformRes: (
       actionRes: ActionResponse,
       ...args: Parameters<H>
@@ -215,17 +368,57 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     return `${prefix}${sha256().update(key, "hex").digest("hex")}`;
   }
 
+  /**
+   * `createHandler` should be used to return a type-equivalent version of the
+   * `handler` specified during instantiation.
+   *
+   * @example
+   * ```
+   * // my-custom-handler.ts
+   * import { InngestCommHandler, ServeHandler } from "inngest";
+   *
+   * export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
+   *   const handler = new InngestCommHandler(
+   *     "my-custom-handler",
+   *     nameOrInngest,
+   *     fns,
+   *     opts,
+   *     () => { ... },
+   *     () => { ... }
+   *   );
+   *
+   *   return handler.createHandler();
+   * };
+   * ```
+   */
   public createHandler(): (...args: Parameters<H>) => Promise<TransformedRes> {
     return async (...args: Parameters<H>) => {
+      /**
+       * We purposefully `await` the handler, as it could be either sync or
+       * async.
+       */
       // eslint-disable-next-line @typescript-eslint/await-thenable
       const actions = await this.handler(...args);
+
       const actionRes = await this.handleAction(
         actions as ReturnType<Awaited<H>>
       );
+
       return this.transformRes(actionRes, ...args);
     };
   }
 
+  /**
+   * Given a set of functions to check if an action is available from the
+   * instance's handler, enact any action that is found.
+   *
+   * This method can fetch varying payloads of data, but ultimately is the place
+   * where _decisions_ are made regarding functionality.
+   *
+   * For example, if we find that we should be viewing the UI, this function
+   * will decide whether the UI should be visible based on the payload it has
+   * found (e.g. env vars, options, etc).
+   */
   private async handleAction(actions: ReturnType<H>): Promise<ActionResponse> {
     const headers = { "x-inngest-sdk": this.sdkHeader.join("") };
 
@@ -529,6 +722,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   }
 }
 
+/**
+ * The broad definition of a handler passed when instantiating an
+ * {@link InngestCommHandler} instance.
+ */
 type Handler = (...args: any[]) => {
   [K in Extract<
     HandlerAction,
@@ -538,12 +735,31 @@ type Handler = (...args: any[]) => {
   >;
 };
 
+/**
+ * The response from the Inngest SDK before it is transformed in to a
+ * framework-compatible response by an {@link InngestCommHandler} instance.
+ */
 interface ActionResponse {
+  /**
+   * The HTTP status code to return.
+   */
   status: number;
+
+  /**
+   * The headers to return in the response.
+   */
   headers: Record<string, string>;
+
+  /**
+   * A stringified body to return.
+   */
   body: string;
 }
 
+/**
+ * A set of actions the SDK is aware of, including any payloads they require
+ * when requesting them.
+ */
 type HandlerAction =
   | {
       action: "error";
