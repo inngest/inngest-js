@@ -104,7 +104,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     this.inngestBaseUrl = new URL(inngestBaseUrl);
     this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
 
-    if (!eventKey) {
+    if (!this.eventKey) {
       throw new Error(
         "An event key must be passed to create an Inngest instance."
       );
