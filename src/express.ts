@@ -184,8 +184,13 @@ export class InngestCommHandler {
       "User-Agent": `inngest-js:v${version} (${this.frameworkName})`,
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    this.fetch = fetch || (require("cross-fetch") as FetchT);
+    this.fetch =
+      fetch ||
+      (typeof nameOrInngest === "string"
+        ? undefined
+        : nameOrInngest["fetch"]) ||
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      (require("cross-fetch") as FetchT);
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
@@ -226,7 +231,9 @@ export class InngestCommHandler {
         this.signingKey = process.env[envKeys.SigningKey];
       }
 
-      this._isProd = process.env.ENVIRONMENT === "production" || process.env.NODE_ENV === "production";
+      this._isProd =
+        process.env.ENVIRONMENT === "production" ||
+        process.env.NODE_ENV === "production";
 
       switch (req.method) {
         case "GET": {

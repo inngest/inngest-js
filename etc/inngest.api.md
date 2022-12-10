@@ -7,6 +7,7 @@
 // @public
 export interface ClientOptions {
     eventKey?: string;
+    fetch?: typeof fetch;
     inngestBaseUrl?: string;
     name: string;
 }
@@ -51,7 +52,7 @@ export interface FunctionOptions {
 
 // @public
 export class Inngest<Events extends Record<string, EventPayload>> {
-    constructor({ name, eventKey, inngestBaseUrl, }: ClientOptions);
+    constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
     createFunction<Event extends keyof Events, Name extends string, Fn extends SingleStepFn<Events[Event], Name, "step">>(
     name: Name,
     event: Event,
