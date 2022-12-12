@@ -266,8 +266,8 @@ export const createStepTools = <
          */
         opts: WaitForEventOpts<any, any>
       ) => {
-        const matchOpts: { ttl: string; match?: string } = {
-          ttl: timeStr(opts.timeout),
+        const matchOpts: { timeout: string; match?: string } = {
+          timeout: timeStr(opts.timeout),
         };
 
         if (opts?.match) {
