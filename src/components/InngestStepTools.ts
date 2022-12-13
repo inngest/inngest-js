@@ -266,14 +266,14 @@ export const createStepTools = <
          */
         opts: WaitForEventOpts<any, any>
       ) => {
-        const matchOpts: { timeout: string; match?: string } = {
+        const matchOpts: { timeout: string; if?: string } = {
           timeout: timeStr(opts.timeout),
         };
 
         if (opts?.match) {
-          matchOpts.match = `event.${opts.match} == async.${opts.match}`;
+          matchOpts.if = `event.${opts.match} == async.${opts.match}`;
         } else if (opts?.if) {
-          matchOpts.match = opts.if;
+          matchOpts.if = opts.if;
         }
 
         return {
