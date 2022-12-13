@@ -1,4 +1,3 @@
-import { Response } from "cross-fetch";
 import { z } from "zod";
 import {
   InngestCommHandler,
@@ -24,6 +23,21 @@ class RemixCommHandler extends InngestCommHandler {
     }: {
       request: Request;
     }): Promise<Response> => {
+      /**
+       * If `Response` isn't included in this environment, it's probably a Node
+       * env that isn't already polyfilling. In this case, we can polyfill it
+       * here to be safe.
+       */
+      let Res: typeof Response;
+
+      if (typeof Response === "undefined") {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
+        Res = require("cross-fetch").Response;
+      } else {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        Res = Response;
+      }
+
       const headers = { "x-inngest-sdk": this.sdkHeader.join("") };
 
       let reqUrl: URL;
@@ -37,7 +51,7 @@ class RemixCommHandler extends InngestCommHandler {
         isIntrospection = reqUrl.searchParams.has(queryKeys.Introspect);
         reqUrl.searchParams.delete(queryKeys.Introspect);
       } catch (err) {
-        return new Response(JSON.stringify(err), {
+        return new Res(JSON.stringify(err), {
           status: 500,
           headers,
         });
@@ -67,14 +81,14 @@ class RemixCommHandler extends InngestCommHandler {
               hasSigningKey: Boolean(this.signingKey),
             };
 
-            return new Response(JSON.stringify(introspection), {
+            return new Res(JSON.stringify(introspection), {
               status: 200,
               headers,
             });
           }
 
           // Grab landing page and serve
-          return new Response(landing, {
+          return new Res(landing, {
             status: 200,
             headers: {
               ...headers,
@@ -90,7 +104,7 @@ class RemixCommHandler extends InngestCommHandler {
             process.env[envKeys.DevServerUrl]
           );
 
-          return new Response(JSON.stringify({ message }), {
+          return new Res(JSON.stringify({ message }), {
             status,
             headers,
           });
@@ -111,20 +125,20 @@ class RemixCommHandler extends InngestCommHandler {
           const stepRes = await this.runStep(fnId, stepId, await req.json());
 
           if (stepRes.status === 500) {
-            return new Response(JSON.stringify(stepRes.error), {
+            return new Res(JSON.stringify(stepRes.error), {
               status: stepRes.status,
               headers,
             });
           }
 
-          return new Response(JSON.stringify(stepRes.body), {
+          return new Res(JSON.stringify(stepRes.body), {
             status: stepRes.status,
             headers,
           });
         }
       }
 
-      return new Response(null, { status: 405, headers });
+      return new Res(null, { status: 405, headers });
     };
   }
 }
@@ -132,6 +146,22 @@ class RemixCommHandler extends InngestCommHandler {
 /**
  * In Remix, serve and register any declared functions with Inngest, making them
  * available to be triggered by events.
+ *
+ * Remix requires that you export both a "loader" for serving `GET` requests,
+ * and an "action" for serving other requests, therefore exporting both is
+ * required.
+ *
+ * See {@link https://remix.run/docs/en/v1/guides/resource-routes}
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/remix";
+ * import fns from "~/inngest";
+ *
+ * const handler = serve("My Remix App", fns);
+ *
+ * export { handler as loader, handler as action };
+ * ```
  *
  * @public
  */

@@ -7,6 +7,7 @@
 // @public
 export interface ClientOptions {
     eventKey?: string;
+    fetch?: typeof fetch;
     inngestBaseUrl?: string;
     name: string;
 }
@@ -36,7 +37,7 @@ export interface FunctionOptions {
 
 // @public
 export class Inngest<Events extends Record<string, EventPayload>> {
-    constructor({ name, eventKey, inngestBaseUrl, }: ClientOptions);
+    constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
     // Warning: (ae-forgotten-export) The symbol "TriggerOptions" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts

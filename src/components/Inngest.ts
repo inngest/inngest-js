@@ -18,6 +18,11 @@ import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
 
 /**
+ * Capturing the global type of fetch so that we can reliably access it below.
+ */
+type FetchT = typeof fetch;
+
+/**
  * A client used to interact with the Inngest API by sending or reacting to
  * events.
  *
@@ -66,6 +71,8 @@ export class Inngest<Events extends Record<string, EventPayload>> {
 
   private readonly headers: Record<string, string>;
 
+  private readonly fetch: FetchT;
+
   /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
@@ -93,6 +100,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     name,
     eventKey,
     inngestBaseUrl = "https://inn.gs/",
+    fetch,
   }: ClientOptions) {
     if (!name) {
       throw new Error("A name must be passed to create an Inngest instance.");
@@ -104,7 +112,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     this.inngestBaseUrl = new URL(inngestBaseUrl);
     this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
 
-    if (!eventKey) {
+    if (!this.eventKey) {
       throw new Error(
         "An event key must be passed to create an Inngest instance."
       );
@@ -114,6 +122,9 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       "Content-Type": "application/json",
       "User-Agent": `InngestJS v${version}`,
     };
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    this.fetch = fetch || (require("cross-fetch") as FetchT);
   }
 
   /**
@@ -266,12 +277,12 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       // If the dev server host env var has been set we always want to use
       // the dev server - even if it's down.  Otherwise, optimistically use
       // it for non-prod services.
-      if (host !== undefined || (await devServerAvailable(host, fetch))) {
+      if (host !== undefined || (await devServerAvailable(host, this.fetch))) {
         url = devServerUrl(host, `e/${this.eventKey}`).href;
       }
     }
 
-    const response = await fetch(url, {
+    const response = await this.fetch(url, {
       method: "POST",
       body: JSON.stringify(payloads),
       headers: { ...this.headers },

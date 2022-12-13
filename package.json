@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "0.8.1",
+  "version": "0.8.6",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -19,7 +19,8 @@
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
     "pb:landing": "yarn build:landing && node -e 'const page = JSON.stringify(require(\"fs\").readFileSync(\"./landing/dist/index.html\").toString()); console.log(\"export const landing = \" + page);' > ./src/landing.ts && npx prettier ./src/landing.ts --write",
     "build": "yarn run clean && tsc --project tsconfig.build.json",
-    "test": "node --expose-gc --max-old-space-size=4096 ./node_modules/.bin/jest --silent --logHeapUsage --maxWorkers=8 --coverage",
+    "test": "node --expose-gc --max-old-space-size=4096 ./node_modules/.bin/jest --silent --logHeapUsage --maxWorkers=8 --coverage --ci --verbose",
+    "test:examples": "node --expose-gc --max-old-space-size=4096 ./node_modules/.bin/jest --silent --logHeapUsage --maxWorkers=8 --testMatch \"**/examples/test/*.test.ts\" --ci --verbose",
     "clean": "rm -rf ./dist",
     "lint": "eslint .",
     "postversion": "yarn run build && yarn run build:copy",
@@ -84,7 +85,8 @@
     "prettier": "^2.7.1",
     "shx": "^0.3.4",
     "ts-jest": "^27.1.4",
-    "typescript": "^4.8.3"
+    "typescript": "^4.8.3",
+    "ulid": "^2.3.0"
   },
   "volta": {
     "node": "16.17.0",

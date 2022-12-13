@@ -314,6 +314,16 @@ export interface ClientOptions {
    * Defaults to https://inn.gs/
    */
   inngestBaseUrl?: string;
+
+  /**
+   * If provided, will override the used `fetch` implementation. Useful for
+   * giving the library a particular implementation if accessing it is not done
+   * via globals.
+   *
+   * By default the library will try to use the native Web API fetch, falling
+   * back to a Node implementation if no global fetch can be found.
+   */
+  fetch?: typeof fetch;
 }
 
 /**
