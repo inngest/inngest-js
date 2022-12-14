@@ -54,7 +54,7 @@ describe("waitForEvent", () => {
     );
     await expect(state.nextOp).resolves.toMatchObject({
       opts: {
-        ttl: "1m",
+        timeout: "1m",
       },
     });
   });
@@ -69,7 +69,7 @@ describe("waitForEvent", () => {
     );
     await expect(state.nextOp).resolves.toMatchObject({
       opts: {
-        ttl: expect.stringContaining("6d"),
+        timeout: expect.stringContaining("6d"),
       },
     });
   });
@@ -80,7 +80,7 @@ describe("waitForEvent", () => {
     ).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
       opts: {
-        match: "event.name == async.name",
+        if: "event.name == async.name",
       },
     });
   });
@@ -91,7 +91,7 @@ describe("waitForEvent", () => {
     ).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
       opts: {
-        match: "name == 123",
+        if: "name == 123",
       },
     });
   });
