@@ -294,15 +294,15 @@ export const createStepTools = <
          */
         opts: WaitForEventOpts<any, any> | string
       ) => {
-        const matchOpts: { ttl?: string; match?: string } = {
-          ttl: timeStr(typeof opts === "string" ? opts : opts.timeout),
+        const matchOpts: { timeout: string; if?: string } = {
+          timeout: timeStr(typeof opts === "string" ? opts : opts.timeout),
         };
 
         if (typeof opts !== "string") {
           if (opts?.match) {
-            matchOpts.match = `event.${opts.match} == async.${opts.match}`;
+            matchOpts.if = `event.${opts.match} == async.${opts.match}`;
           } else if (opts?.if) {
-            matchOpts.match = opts.if;
+            matchOpts.if = opts.if;
           }
         }
 
@@ -443,7 +443,7 @@ interface WaitForEventOpts<
    * the step function will wait for another event.
    *
    * It must be a string of a dot-notation field name within both events to
-   * compare, e.g. `"date.id"` or `"user.email"`.
+   * compare, e.g. `"data.id"` or `"user.email"`.
    *
    * ```
    * // Wait for an event where the `user.email` field matches
@@ -479,6 +479,37 @@ interface WaitForEventOpts<
  * Create a unique hash of an operation using only a subset of the operation's
  * properties; will never use `data` and will guarantee the order of the object
  * so we don't rely on individual tools for that.
+ *
+ * TODO We can't rely on pos for parallel tasks; they may be out of sync.
+ *
+ * For example, consider a function that specifies for steps: A that leads to B,
+ * and C that leads to D:
+ *
+ * ```
+ * await Promise.all([
+ *   run("A").then(() => run("B")),
+ *   run("C").then(() => run("D")),
+ * ]);
+ * ```
+ *
+ * First pass, A and C are returned as steps to run.
+ * A is pos 0, and C is pos 1.
+ * C resolves.
+ * Second pass, D is returned as the step to run.
+ * A is pos 0, C is pos 1, and D is pos 2.
+ * A resolves.
+ * Third pass, B is returned as the step to run.
+ * A is pos 0, B is pos 1, C is pos 2, and D is pos 3.
+ *
+ * This is bad - C and B swap positions due to the promises resolving at
+ * different times! We need another value to hash on.
+ *
+ * An idea is to also include all other previous hashes before this one is
+ * executed, but this is exactly the same as pos and results in the same issue.
+ *
+ * Another option might be to allow ops with the same ID, but to place them all
+ * in a positional array. This only mitigates the issue rather than solve it,
+ * though.
  */
 const hashOp = (
   /**

@@ -160,9 +160,9 @@ describe("runFn", () => {
 
     // These represent hashes for each step in the above step function
     const hashes = {
-      firstWaitForEvent: "ad7a92c7c23670ab7fb94a6f2dda2ae7d8c34b39",
+      firstWaitForEvent: "a6fa9aa0df0cedf8365321eadd2574e4f6c42f19",
       step1: "375be344ee59a2b013ef35d909ac84b23136c732",
-      secondWaitForEvent: "c0fe3f23240c37a0a5b7287ba74be64b4a5d5f06",
+      secondWaitForEvent: "89948cabd5c9ded4f39c13349b3acc153621814e",
       step2: "3bff481d2c96dbbf8680d4f824c32882d109e8da",
       step3: "88a0e46b054ef061bc4ed598be3ae22be87fdd2d",
     };
@@ -183,7 +183,7 @@ describe("runFn", () => {
         expect(ret[1]).toEqual({
           op: StepOpCode.WaitForEvent,
           name: "bar",
-          opts: { ttl: "5m" },
+          opts: { timeout: "5m" },
           id: hashes.firstWaitForEvent,
         });
       });
@@ -289,7 +289,7 @@ describe("runFn", () => {
           op: StepOpCode.WaitForEvent,
           name: "baz",
           opts: {
-            ttl: "2d",
+            timeout: "2d",
           },
           id: hashes.secondWaitForEvent,
         });
