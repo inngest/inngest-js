@@ -31,11 +31,7 @@ module.exports = {
         "*.test.ts",
         "src/test/**/*",
         "src/examples/**/*",
-        "src/express.ts",
         "src/init.ts",
-        "src/next.ts",
-        "src/redwood.ts",
-        "src/remix.ts",
       ],
       rules: {
         "@inngest/process-warn": "warn",
