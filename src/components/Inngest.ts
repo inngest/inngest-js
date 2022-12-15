@@ -1,3 +1,4 @@
+import { fetch as crossFetch } from "cross-fetch";
 import { envKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import { devServerHost, hasProcessEnv, isProd } from "../helpers/env";
@@ -123,8 +124,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       "User-Agent": `InngestJS v${version}`,
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    this.fetch = fetch || (require("cross-fetch") as FetchT);
+    this.fetch = fetch || crossFetch;
   }
 
   /**
