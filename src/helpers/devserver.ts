@@ -42,7 +42,7 @@ export const devServerAvailable = async (
  * Because Cloudflare/V8 platforms don't allow process.env, you are expected
  * to pass in the host from the dev server env key:
  *
- * @example devServerUrl(process.env[envKeys.DevServerUrl], "/your-path")
+ * @example devServerUrl(processEnv(envKeys.DevServerUrl), "/your-path")
  * @example devServerUrl("http://localhost:8288/", "/your-path")
  */
 export const devServerUrl = (

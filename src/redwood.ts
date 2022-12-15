@@ -7,6 +7,7 @@ import {
   ServeHandler,
 } from "./components/InngestCommHandler";
 import { queryKeys } from "./helpers/consts";
+import { allProcessEnv } from "./helpers/env";
 
 export interface RedwoodResponse {
   statusCode: number;
@@ -27,21 +28,22 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
     fns,
     opts,
     (event: APIGatewayProxyEvent, _context: LambdaContext) => {
-      const scheme = process.env.NODE_ENV === "development" ? "http" : "https";
+      const env = allProcessEnv();
+      const scheme = env.NODE_ENV === "development" ? "http" : "https";
       const url = new URL(
         event.path,
         `${scheme}://${event.headers.host || ""}`
       );
       const isProduction =
-        process.env.VERCEL_ENV === "production" ||
-        process.env.CONTEXT === "production" ||
-        process.env.ENVIRONMENT === "production";
+        env.VERCEL_ENV === "production" ||
+        env.CONTEXT === "production" ||
+        env.ENVIRONMENT === "production";
 
       return {
         register: () => {
           if (event.httpMethod === "PUT") {
             return {
-              env: process.env,
+              env,
               isProduction,
               url,
             };
@@ -62,7 +64,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
             ) as Record<string, any>;
 
             return {
-              env: process.env,
+              env,
               isProduction,
               url,
               data,
@@ -73,7 +75,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
         view: () => {
           if (event.httpMethod === "GET") {
             return {
-              env: process.env,
+              env,
               isProduction,
               url,
               isIntrospection: Object.hasOwnProperty.call(

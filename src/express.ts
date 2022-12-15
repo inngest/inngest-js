@@ -4,6 +4,7 @@ import {
   ServeHandler,
 } from "./components/InngestCommHandler";
 import { queryKeys } from "./helpers/consts";
+import { allProcessEnv } from "./helpers/env";
 
 /**
  * Serve and register any declared functions with Inngest, making them available
@@ -21,10 +22,9 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
       const hostname = req.get("host") || req.headers["host"];
       const protocol = hostname?.includes("://") ? "" : `${req.protocol}://`;
       const url = new URL(req.originalUrl, `${protocol}${hostname || ""}`);
-
+      const env = allProcessEnv();
       const isProduction =
-        process.env.ENVIRONMENT === "production" ||
-        process.env.NODE_ENV === "production";
+        env.ENVIRONMENT === "production" || env.NODE_ENV === "production";
 
       return {
         run: () => {
@@ -32,7 +32,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
             return {
               fnId: req.query[queryKeys.FnId] as string,
               data: req.body as Record<string, any>,
-              env: process.env,
+              env,
               isProduction,
               url,
             };
@@ -41,7 +41,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         register: () => {
           if (req.method === "PUT") {
             return {
-              env: process.env,
+              env,
               url,
               isProduction,
             };
@@ -50,7 +50,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         view: () => {
           if (req.method === "GET") {
             return {
-              env: process.env,
+              env,
               url,
               isIntrospection: Object.hasOwnProperty.call(
                 req.query,

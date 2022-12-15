@@ -3,6 +3,7 @@ import {
   ServeHandler,
 } from "./components/InngestCommHandler";
 import { queryKeys } from "./helpers/consts";
+import { allProcessEnv } from "./helpers/env";
 
 /**
  * In Remix, serve and register any declared functions with Inngest, making them
@@ -34,12 +35,12 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
     fns,
     opts,
     ({ request: req }: { request: Request }) => {
+      const env = allProcessEnv();
       const url = new URL(req.url, `https://${req.headers.get("host") || ""}`);
       const isProduction =
-        process.env.VERCEL_ENV === "production" ||
-        process.env.CONTEXT === "production" ||
-        process.env.ENVIRONMENT === "production";
-      const env = process.env;
+        env.VERCEL_ENV === "production" ||
+        env.CONTEXT === "production" ||
+        env.ENVIRONMENT === "production";
 
       return {
         register: () => {

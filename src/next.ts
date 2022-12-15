@@ -4,6 +4,7 @@ import {
   ServeHandler,
 } from "./components/InngestCommHandler";
 import { queryKeys } from "./helpers/consts";
+import { allProcessEnv } from "./helpers/env";
 
 /**
  * In Next.js, serve and register any declared functions with Inngest, making
@@ -18,21 +19,22 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
     fns,
     opts,
     (req: NextApiRequest, _res: NextApiResponse) => {
-      const scheme = process.env.NODE_ENV === "development" ? "http" : "https";
+      const env = allProcessEnv();
+      const scheme = env.NODE_ENV === "development" ? "http" : "https";
       const url = new URL(
         req.url as string,
         `${scheme}://${req.headers.host || ""}`
       );
       const isProduction =
-        process.env.VERCEL_ENV === "production" ||
-        process.env.CONTEXT === "production" ||
-        process.env.ENVIRONMENT === "production";
+        env.VERCEL_ENV === "production" ||
+        env.CONTEXT === "production" ||
+        env.ENVIRONMENT === "production";
 
       return {
         register: () => {
           if (req.method === "PUT") {
             return {
-              env: process.env,
+              env,
               url,
               isProduction,
             };
@@ -43,7 +45,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
             return {
               data: req.body as Record<string, any>,
               fnId: req.query[queryKeys.FnId] as string,
-              env: process.env,
+              env,
               isProduction,
               url,
             };
@@ -52,7 +54,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         view: () => {
           if (req.method === "GET") {
             return {
-              env: process.env,
+              env,
               isIntrospection: Object.hasOwnProperty.call(
                 req.query,
                 queryKeys.Introspect

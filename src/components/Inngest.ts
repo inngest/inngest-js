@@ -1,6 +1,6 @@
 import { envKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
-import { devServerHost, hasProcessEnv, isProd } from "../helpers/env";
+import { devServerHost, isProd, processEnv } from "../helpers/env";
 import type {
   PartialK,
   SendEventPayload,
@@ -99,8 +99,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     }
 
     this.name = name;
-    this.eventKey =
-      eventKey || (hasProcessEnv() ? process.env[envKeys.EventKey] || "" : "");
+    this.eventKey = eventKey || processEnv(envKeys.EventKey) || "";
     this.inngestBaseUrl = new URL(inngestBaseUrl);
     this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
 
