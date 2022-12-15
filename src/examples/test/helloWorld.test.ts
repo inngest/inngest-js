@@ -16,9 +16,7 @@ describe("introspection", () => {
   specs.forEach(({ label, url }) => {
     test(`should show registered functions in ${label}`, async () => {
       const res = await fetch(url);
-      const body = await res.json();
-      console.log("fetched:", url, res.status, res.statusText, body);
-      const data = introspectionSchema.parse(body);
+      const data = introspectionSchema.parse(await res.json());
 
       expect(data.functions).toContainEqual({
         name: "Hello World",

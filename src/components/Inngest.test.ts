@@ -84,7 +84,6 @@ describe("send", () => {
   });
 
   test("should fail to send if event key not specified at instantiation", async () => {
-    console.log("thisss");
     const inngest = new Inngest({ name: "test" });
 
     await expect(() => inngest.send(testEvent)).rejects.toThrowError(
