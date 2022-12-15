@@ -349,8 +349,13 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       "User-Agent": `inngest-js:v${version} (${this.frameworkName})`,
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    this.fetch = fetch || (require("cross-fetch") as FetchT);
+    this.fetch =
+      fetch ||
+      (typeof appNameOrInngest === "string"
+        ? undefined
+        : appNameOrInngest["fetch"]) ||
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      (require("cross-fetch") as FetchT);
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
