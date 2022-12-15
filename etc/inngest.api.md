@@ -84,6 +84,8 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     send<Event extends keyof Events>(name: Event, payload: SingleOrArray<PartialK<Omit<Events[Event], "name" | "v">, "ts">>): Promise<void>;
     // Warning: (ae-forgotten-export) The symbol "SendEventPayload" needs to be exported by the entry point index.d.ts
     send<Payload extends SendEventPayload<Events>>(payload: Payload): Promise<void>;
+    setEventKey(
+    eventKey: string): void;
 }
 
 // @public
