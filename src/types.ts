@@ -244,7 +244,8 @@ export interface ClientOptions {
   /**
    * Inngest event key, used to send events to Inngest Cloud. If not provided,
    * will search for the `INNGEST_EVENT_KEY` environment variable. If neither
-   * can be found, however, an error will be thrown.
+   * can be found, however, a warning will be shown and any attempts to send
+   * events will throw an error.
    */
   eventKey?: string;
 

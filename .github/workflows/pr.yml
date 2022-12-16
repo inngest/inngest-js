@@ -112,7 +112,7 @@ jobs:
         working-directory: examples/${{ matrix.repo }}
       - run: rm -rf ${{ steps.inngest-functions-path.outputs.dir }}
         working-directory: examples/${{ matrix.repo }}
-      - run: cp -r ../../../sdk/src/examples/ ${{ steps.inngest-functions-path.outputs.dir }}
+      - run: cp -Tr ../../../sdk/src/examples/ ${{ steps.inngest-functions-path.outputs.dir }}
         working-directory: examples/${{ matrix.repo }}
 
       # Try to build the example
@@ -120,15 +120,18 @@ jobs:
         working-directory: examples/${{ matrix.repo }}
 
       # Run the example
-      - run: test -f yarn.lock && (yarn dev &) || (npm run dev &)
+      - run: test -f yarn.lock && (yarn dev > dev.log 2>&1 &) || (npm run dev > dev.log 2>&1 &)
         working-directory: examples/${{ matrix.repo }}
         # Provide the example any env vars it might need
         env:
           PORT: 3000
-      - uses: ifaxity/wait-on-action@v1
+      - uses: mydea/action-wait-for-api@v1
         with:
-          resource: http-get://localhost:3000/api/inngest
-          timeout: 60000
+          url: "http://localhost:3000/api/inngest"
+          timeout: "60"
+      - if: ${{ always() }}
+        run: cat dev.log
+        working-directory: examples/${{ matrix.repo }}
 
       # Give the dev server 5 seconds to register with the example
       - run: sleep 5
@@ -138,10 +141,10 @@ jobs:
         working-directory: examples/${{ matrix.repo }}
         env:
           DO_NOT_TRACK: 1
-      - uses: ifaxity/wait-on-action@v1
+      - uses: mydea/action-wait-for-api@v1
         with:
-          resource: http-get://localhost:8288
-          timeout: 20000
+          url: "http://localhost:8288"
+          timeout: "60"
 
       # Run the examples test suite against the dev server
       - run: yarn test:examples
