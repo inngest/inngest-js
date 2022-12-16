@@ -208,7 +208,6 @@ jobs:
         working-directory: examples/${{ matrix.repo }}
         env:
           DO_NOT_TRACK: 1
-<<<<<<< HEAD
       - name: Wait for the Inngest dev server to start
         uses: mydea/action-wait-for-api@v1
         with:
