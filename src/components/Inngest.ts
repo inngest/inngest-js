@@ -22,6 +22,12 @@ import { InngestFunction } from "./InngestFunction";
  */
 type FetchT = typeof fetch;
 
+export const eventKeyWarning =
+  "Could not find an event key to send events; sending will throw unless an event key is added. Please pass one to the constructor, set the INNGEST_EVENT_KEY environment variable, or use inngest.setEventKey() at runtime.";
+
+export const eventKeyError =
+  "Could not find an event key to send events. Please pass one to the constructor, set the INNGEST_EVENT_KEY environment variable, or use inngest.setEventKey() at runtime.";
+
 /**
  * A client used to interact with the Inngest API by sending or reacting to
  * events.
@@ -57,7 +63,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   /**
    * Inngest event key, used to send events to Inngest Cloud.
    */
-  private readonly eventKey: string;
+  private eventKey = "";
 
   /**
    * Base URL for Inngest Cloud.
@@ -67,7 +73,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   /**
    * The absolute URL of the Inngest Cloud API.
    */
-  private readonly inngestApiUrl: URL;
+  private inngestApiUrl: URL = new URL(`e/${this.eventKey}`, "https://inn.gs/");
 
   private readonly headers: Record<string, string>;
 
@@ -107,15 +113,14 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     }
 
     this.name = name;
-    this.eventKey =
-      eventKey || (hasProcessEnv() ? process.env[envKeys.EventKey] || "" : "");
     this.inngestBaseUrl = new URL(inngestBaseUrl);
-    this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
+
+    this.setEventKey(
+      eventKey || (hasProcessEnv() ? process.env[envKeys.EventKey] || "" : "")
+    );
 
     if (!this.eventKey) {
-      throw new Error(
-        "An event key must be passed to create an Inngest instance."
-      );
+      console.warn(eventKeyWarning);
     }
 
     this.headers = {
@@ -160,6 +165,23 @@ export class Inngest<Events extends Record<string, EventPayload>> {
         break;
     }
     return new Error(`Inngest API Error: ${response.status} ${errorMessage}`);
+  }
+
+  /**
+   * Set the event key for this instance of Inngest. This is useful if for some
+   * reason the key is not available at time of instantiation or present in the
+   * `INNGEST_EVENT_KEY` environment variable.
+   */
+  public setEventKey(
+    /**
+     * Inngest event key, used to send events to Inngest Cloud. Use this is your
+     * key is for some reason not available at time of instantiation or present
+     * in the `INNGEST_EVENT_KEY` environment variable.
+     */
+    eventKey: string
+  ): void {
+    this.eventKey = eventKey;
+    this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
   }
 
   /**
@@ -229,6 +251,10 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       PartialK<Omit<Events[Event], "name" | "v">, "ts">
     >
   ): Promise<void> {
+    if (!this.eventKey) {
+      throw new Error(eventKeyError);
+    }
+
     let payloads: ValueOf<Events>[];
 
     if (typeof nameOrPayload === "string") {

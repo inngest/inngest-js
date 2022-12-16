@@ -39,6 +39,11 @@ export const isProd = (): boolean => {
   return values.includes("production");
 };
 
+/**
+ * TODO Refactor this to `processEnv(var: string): string | undefined`, which
+ * would mean we can drop `process.env` from everywhere in the codebase other
+ * than this function.
+ */
 export const hasProcessEnv = (): boolean => {
   return typeof process !== "undefined" && "env" in process;
 };
