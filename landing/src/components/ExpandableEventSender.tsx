@@ -51,7 +51,7 @@ const ExpandableEventSenderUI = ({
 
     const inngest = new Inngest({
       name: value.appName,
-      inngestBaseUrl: value.devServerURL,,
+      inngestBaseUrl: value.devServerURL,
       eventKey: "dev-server",
       fetch: fetch.bind(window),
     });
