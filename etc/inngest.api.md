@@ -29,12 +29,7 @@ export interface EventPayload {
     data: any;
     name: string;
     ts?: number;
-    user?: {
-        external_id?: string;
-        email?: string;
-        phone?: string;
-        [key: string]: any;
-    };
+    user?: Record<string, any>;
     v?: string;
 }
 
