@@ -149,7 +149,7 @@ jobs:
         run: rm -rf ${{ steps.inngest-functions-path.outputs.dir }}
         working-directory: examples/${{ matrix.repo }}
       - name: Copy functions to test to example
-        run: cp -r ../../../sdk/src/examples/ ${{ steps.inngest-functions-path.outputs.dir }}
+        run: cp -Tr ../../../sdk/src/examples/ ${{ steps.inngest-functions-path.outputs.dir }}
         working-directory: examples/${{ matrix.repo }}
       # IF we're using Deno, also replace any "inngest..." imports with
       # "npm:inngest..." and any direct file imports in `inngest/index.ts` with
@@ -176,11 +176,11 @@ jobs:
       - name: Run the example's dev server
         run: |
           if test -f yarn.lock; then
-            (yarn dev &)
+            (yarn dev > dev.log 2>&1 &)
           elif test -f package-lock.json; then
-            (npm run dev &)
+            (npm run dev > dev.log 2>&1 &)
           else
-            (deno task start &)
+            (deno task start > dev.log 2>&1 &)
           fi
         working-directory: examples/${{ matrix.repo }}
         # Provide the example any env vars it might need
@@ -188,10 +188,13 @@ jobs:
           PORT: 3000
           DO_NOT_TRACK: 1
       - name: Wait for the example to start
-        uses: ifaxity/wait-on-action@v1
+        uses: mydea/action-wait-for-api@v1
         with:
-          resource: http-get://localhost:3000/api/inngest
-          timeout: 60000
+          url: "http://localhost:3000/api/inngest"
+          timeout: "60"
+      - if: ${{ always() }}
+        run: cat dev.log
+        working-directory: examples/${{ matrix.repo }}
 
       # TODO Examples should run their own dev server, which means we can remove
       # this.
@@ -201,10 +204,10 @@ jobs:
         env:
           DO_NOT_TRACK: 1
       - name: Wait for the Inngest dev server to start
-        uses: ifaxity/wait-on-action@v1
+        uses: mydea/action-wait-for-api@v1
         with:
-          resource: http-get://localhost:8288
-          timeout: 20000
+          url: "http://localhost:8288"
+          timeout: "60"
       # Give the dev server 5 seconds to register with the example
       # TODO Check logs instead of sleeping
       - name: Wait 5 seconds for dev server registration
