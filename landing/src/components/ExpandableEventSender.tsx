@@ -49,7 +49,12 @@ const ExpandableEventSenderUI = ({
       return;
     }
 
-    const inngest = new Inngest({ name: value.appName, inngestBaseUrl: value.devServerURL, eventKey: "dev-server" });
+    const inngest = new Inngest({
+      name: value.appName,
+      inngestBaseUrl: value.devServerURL,,
+      eventKey: "dev-server",
+      fetch: fetch.bind(window),
+    });
     await inngest.send(JSON.parse(data));
     push({ type: "success", message: "Event sent.  Check your terminal for logs." });
   }
