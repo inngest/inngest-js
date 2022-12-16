@@ -164,28 +164,7 @@ export interface EventPayload {
    * Any user data associated with the event
    * All fields ending in "_id" will be used to attribute the event to a particular user
    */
-  user?: {
-    /**
-     * Your user's unique id in your system
-     */
-    external_id?: string;
-
-    /**
-     * Your user's email address
-     */
-    email?: string;
-
-    /**
-     * Your user's phone number
-     */
-    phone?: string;
-
-    /**
-     * The user block can contain arbitrary data that you can use within your
-     * own handlers too.
-     */
-    [key: string]: any;
-  };
+  user?: Record<string, any>;
 
   /**
    * A specific event schema version
@@ -265,7 +244,8 @@ export interface ClientOptions {
   /**
    * Inngest event key, used to send events to Inngest Cloud. If not provided,
    * will search for the `INNGEST_EVENT_KEY` environment variable. If neither
-   * can be found, however, an error will be thrown.
+   * can be found, however, a warning will be shown and any attempts to send
+   * events will throw an error.
    */
   eventKey?: string;
 
