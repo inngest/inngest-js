@@ -2,7 +2,7 @@ import * as RedwoodHandler from "./redwood";
 import { testFramework } from "./test/helpers";
 
 testFramework("Redwood.js", RedwoodHandler, {
-  transformReq: (req, res, env) => {
+  transformReq: (req, _res, _env) => {
     return [
       {
         path: req.path,

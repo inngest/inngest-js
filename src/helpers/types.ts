@@ -15,6 +15,11 @@ export type ValueOf<T> = T extends Record<string, any>
 export type SingleOrArray<T> = T | T[];
 
 /**
+ * Returns the given generic as either itself or a promise of itself.
+ */
+export type MaybePromise<T> = T | Promise<T>;
+
+/**
  * Acts like `Partial<T>` but only for the keys in `K`, leaving the rest alone.
  */
 export type PartialK<T, K extends PropertyKey = PropertyKey> = Partial<

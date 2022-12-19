@@ -83,6 +83,57 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     eventKey: string): void;
 }
 
+// Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
+//
+// @public
+export class InngestCommHandler<H extends Handler, TransformedRes> {
+    constructor(
+    frameworkName: string,
+    appNameOrInngest: string | Inngest<any>,
+    functions: InngestFunction<any>[], { inngestRegisterUrl, fetch, landingPage, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
+    handler: H,
+    transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
+    // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    protected configs(url: URL): FunctionConfig[];
+    createHandler(): (...args: Parameters<H>) => Promise<TransformedRes>;
+    protected readonly frameworkName: string;
+    readonly handler: H;
+    protected _isProd: boolean;
+    readonly name: string;
+    // (undocumented)
+    protected register(url: URL, devServerHost: string | undefined): Promise<{
+        status: number;
+        message: string;
+    }>;
+    // (undocumented)
+    protected registerBody(url: URL): RegisterRequest;
+    protected reqUrl(url: URL): URL;
+    // Warning: (ae-forgotten-export) The symbol "StepRunResponse" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    protected runStep(functionId: string, stepId: string, data: any): Promise<StepRunResponse>;
+    // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
+    protected get sdkHeader(): [
+    prefix: string,
+    version: RegisterRequest["sdk"],
+    suffix: string
+    ];
+    protected readonly serveHost: string | undefined;
+    protected readonly servePath: string | undefined;
+    // (undocumented)
+    protected shouldShowLandingPage(strEnvVar: string | undefined): boolean;
+    protected readonly showLandingPage: boolean | undefined;
+    protected signingKey: string | undefined;
+    // (undocumented)
+    protected signResponse(): string;
+    // Warning: (ae-forgotten-export) The symbol "ActionResponse" needs to be exported by the entry point index.d.ts
+    readonly transformRes: (res: ActionResponse, ...args: Parameters<H>) => TransformedRes;
+    // (undocumented)
+    protected validateSignature(): boolean;
+}
+
 // @public
 export type MultiStepFn<Events extends Record<string, EventPayload>, Event extends keyof Events, FnId, StepId> = (arg: MultiStepFnArgs<Events, Event, FnId, StepId>) => void;
 
@@ -103,6 +154,12 @@ export interface RegisterOptions {
     servePath?: string;
     signingKey?: string;
 }
+
+// @public
+export type ServeHandler = (
+nameOrInngest: string | Inngest<any>,
+functions: InngestFunction<any>[],
+opts?: RegisterOptions) => any;
 
 // @public
 export type SingleStepFn<Event, FnId, StepId> = (arg: SingleStepFnArgs<Event, FnId, StepId>) => any;

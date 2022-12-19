@@ -8,7 +8,7 @@ import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ulid } from "ulid";
 import { z } from "zod";
-import { ServeHandler } from "../express";
+import { ServeHandler } from "../components/InngestCommHandler";
 import { createFunction } from "../helpers/func";
 import { version } from "../version";
 
