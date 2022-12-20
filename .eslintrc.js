@@ -13,10 +13,29 @@ module.exports = {
   },
   plugins: ["@typescript-eslint", "@inngest"],
   root: true,
-  ignorePatterns: ["dist/", "*.d.ts", "*.js"],
+  ignorePatterns: ["dist/", "*.d.ts", "*.js", "deno_compat/"],
   rules: {
     "prettier/prettier": "warn",
     "@typescript-eslint/no-explicit-any": "off",
-    "@inngest/process-warn": "warn",
+    "@inngest/process-warn": "off",
+    "@typescript-eslint/no-unused-vars": [
+      "warn",
+      { varsIgnorePattern: "^_", argsIgnorePattern: "^_" },
+    ],
   },
+  overrides: [
+    {
+      files: ["src/**/*.ts"],
+      excludedFiles: [
+        "*.d.ts",
+        "*.test.ts",
+        "src/test/**/*",
+        "src/examples/**/*",
+        "src/init.ts",
+      ],
+      rules: {
+        "@inngest/process-warn": "warn",
+      },
+    },
+  ],
 };
