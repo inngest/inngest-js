@@ -8,8 +8,8 @@ import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ulid } from "ulid";
 import { z } from "zod";
+import { Inngest } from "../components/Inngest";
 import { ServeHandler } from "../components/InngestCommHandler";
-import { createFunction } from "../helpers/func";
 import { version } from "../version";
 
 interface HandlerStandardReturn {
@@ -25,6 +25,8 @@ const createReqRes = (...args: Parameters<typeof httpMocks.createRequest>) => {
 
   return [req, res] as [typeof req, typeof res];
 };
+
+const inngest = new Inngest({ name: "test", eventKey: "event-key-123" });
 
 export const testFramework = (
   /**
@@ -391,7 +393,11 @@ export const testFramework = (
               status: 200,
             });
 
-          const fn1 = createFunction("fn1", "demo/event.sent", () => "fn1");
+          const fn1 = inngest.createFunction(
+            "fn1",
+            "demo/event.sent",
+            () => "fn1"
+          );
           const serveHost = "https://example.com";
           const stepId = "step";
 
@@ -427,7 +433,11 @@ export const testFramework = (
               status: 200,
             });
 
-          const fn1 = createFunction("fn1", "demo/event.sent", () => "fn1");
+          const fn1 = inngest.createFunction(
+            "fn1",
+            "demo/event.sent",
+            () => "fn1"
+          );
           const servePath = "/foo/bar/inngest/endpoint";
           const stepId = "step";
 
@@ -464,7 +474,11 @@ export const testFramework = (
             status: 200,
           });
 
-        const fn1 = createFunction("fn1", "demo/event.sent", () => "fn1");
+        const fn1 = inngest.createFunction(
+          "fn1",
+          "demo/event.sent",
+          () => "fn1"
+        );
         const serveHost = "https://example.com";
         const servePath = "/foo/bar/inngest/endpoint";
         const stepId = "step";
