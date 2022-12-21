@@ -8,4 +8,10 @@
  * This should be used within transient closures to fake asynchronous action, so
  * long as it's guaranteed that they will fall out of scope.
  */
-export const createFrozenPromise = () => new Promise(() => undefined);
+export const createFrozenPromise = (): Promise<unknown> => {
+  return new Promise(() => undefined);
+};
+
+export const resolveNextTick = (): Promise<void> => {
+  return new Promise((resolve) => setTimeout(resolve));
+};

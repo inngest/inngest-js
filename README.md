@@ -35,9 +35,9 @@ Inngest allows you to:
 <br />
 
 <p align="center">
-<a href="#getting-started">Getting started</a> · 
-<a href="#features">Features</a> · 
-<a href="#contributing">Contributing</a> · 
+<a href="#getting-started">Getting started</a> ·
+<a href="#features">Features</a> ·
+<a href="#contributing">Contributing</a> ·
 <a href="https://www.inngest.com/docs">Documentation</a>
 </p>
 
@@ -133,3 +133,14 @@ yarn link
 # in another repo
 yarn link inngest
 ```
+
+---
+
+`InngestFunction#runFn()` is responsible for:
+  - Setting `state` for the next operation
+  - Running the function
+  - Running an actual step
+  - Returning compatible data
+
+`InngestStepTools` is responsible for:
+  - Creating tools which push a single sync op (incl. resolve/reject) to state

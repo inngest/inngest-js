@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { createStepTools } from "./components/InngestStepTools";
 import type { KeysNotOfType } from "./helpers/types";
 
@@ -139,18 +140,28 @@ export type Op = {
   run?: true;
 };
 
-export type IncomingOp = Op & {
-  /**
-   * If `true`, we should run the user-defined code specified with this
-   * operation and return the data to Inngest.
-   *
-   * If `false`, Inngest is telling us that it knows we need to run some
-   * user-defined code, but that it doesn't want the SDK to run it now. This is
-   * likely because it wants to target another specific piece of user-defined
-   * code instead.
-   */
-  run?: boolean;
-};
+export const incomingOpSchema = z.object({
+  id: z.string().min(1),
+  data: z.any().optional(),
+  error: z.any().optional(),
+  opPosition: z.array(z.number()).min(1),
+  run: z.literal(true).optional(),
+});
+
+export type IncomingOp = z.output<typeof incomingOpSchema>;
+
+export type OutgoingOp = Pick<HashedOp, "id" | "op" | "name" | "opts" | "run"> &
+  Pick<IncomingOp, "opPosition">;
+
+// export type IncomingOp = Pick<HashedOp, "id" | "data" | "error"> & {
+//   opPosition: number[];
+
+//   /**
+//    * If defined, will be `true`, in which case we should run the user-defined
+//    * code specified with this operation and return the data to Inngest.
+//    */
+//   run?: true;
+// };
 
 /**
  * The shape of a hashed operation in a step function. Used to communicate
@@ -169,7 +180,7 @@ export type HashedOp = Op & {
  * throughout a step function's run.  This stack contains an object of
  * op hashes to data.
  */
-export type OpStack = Record<string, any>;
+export type OpStack = IncomingOp[];
 
 /**
  * A function that can be used to submit an operation to Inngest internally.
@@ -201,7 +212,7 @@ export type Handler<
   Events extends Record<string, EventPayload>,
   Event extends keyof Events,
   Opts extends FunctionOptions
-> = (arg: HandlerArgs<Events, Event, Opts>) => void | Promise<void>;
+> = (arg: HandlerArgs<Events, Event, Opts>) => any | Promise<any>;
 
 /**
  * The shape of a single event's payload. It should be extended to enforce

@@ -1,27 +1,21 @@
 import { sha1 } from "hash.js";
-import {
-  deserializeError,
-  SerializedError,
-  serializeError,
-} from "serialize-error-cjs";
 import sigmund from "sigmund";
-import { createFrozenPromise } from "../helpers/promises";
 import { timeStr } from "../helpers/strings";
 import type { ObjectPaths } from "../helpers/types";
-import {
-  EventPayload,
-  HashedOp,
-  IncomingOp,
-  Op,
-  OpStack,
-  StepOpCode,
-} from "../types";
+import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
 
 /**
  * A unique class used to interrupt the flow of a step. It is intended to be
  * thrown and caught using `instanceof StepFlowExpired`.
  */
 export class StepFlowExpired {}
+
+export interface TickOp extends HashedOp {
+  tickOps: TickOp[];
+  fn?: (...args: any[]) => any;
+  resolve: (value: any | PromiseLike<any>) => void;
+  reject: (reason?: any) => void;
+}
 
 /**
  * Create a new set of step function tools ready to be used in a step function.
@@ -42,9 +36,10 @@ export class StepFlowExpired {}
 export const createStepTools = <
   Events extends Record<string, EventPayload>,
   TriggeringEvent extends keyof Events
->(
-  _opStack: OpStack
-) => {
+>() => {
+  // >(
+  //   _opStack: OpStack
+  // ) => {
   /**
    * We use pos to ensure that hashes are unique for each step and a function
    * will produce the same IDs and outputs every time.
@@ -52,13 +47,38 @@ export const createStepTools = <
    * Each time attempt to fetch data for an operation, we increment this value
    * and include it in the hash for that op.
    */
-  let pos = 0;
+  // const pos = 0;
 
   /**
    * Perform a shallow clone of the opstack to ensure we're not removing
    * elements from the original.
    */
-  const opStack = { ..._opStack };
+  // const opStack = [..._opStack];
+
+  const state: {
+    allFoundOps: TickOp[];
+    pos: number;
+    tickOps: TickOp[];
+    userFnToRun?: (...args: any[]) => any;
+
+    /**
+     * A boolean to represent whether the user's function is using any step
+     * tools.
+     *
+     * If the function survives an entire tick of the event loop and hasn't
+     * touched any tools, we assume that it is a single-step async function and
+     * should be awaited as usual.
+     */
+    hasUsedTools: boolean;
+  } = {
+    allFoundOps: [],
+    pos: -1,
+    tickOps: [],
+    hasUsedTools: false,
+  };
+
+  // Start referencing everything
+  state.tickOps = state.allFoundOps;
 
   /**
    * Returns [true, any] if the next op matches the next past op.
@@ -66,10 +86,10 @@ export const createStepTools = <
    * Returns [false, undefined] if the next op didn't match or we ran out of
    * stack. In either case, we should run the next op.
    */
-  const getNextPastOpData = (op: HashedOp): IncomingOp | undefined => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return opStack[op.id];
-  };
+  // const getNextPastOpData = (op: HashedOp): IncomingOp | undefined => {
+  //   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  //   return opStack[op.id];
+  // };
 
   /**
    * A local helper used to create tools that can be used to submit an op.
@@ -95,7 +115,7 @@ export const createStepTools = <
        * Arguments passed by the user.
        */
       ...args: Parameters<T>
-    ) => Omit<Op, "data" | "run">,
+    ) => Omit<Op, "data" | "run" | "opPosition">,
 
     /**
      * Optionally, we can also provide a function that will be called when
@@ -118,124 +138,129 @@ export const createStepTools = <
   ): T => {
     // eslint-disable-next-line @typescript-eslint/require-await
     return ((...args: Parameters<T>): Promise<any> => {
-      /**
-       * Mark that we've used a step function tool, so that we can know
-       * externally that this isn't a single-step function.
-       */
       state.hasUsedTools = true;
 
       const unhashedOpId: Op = matchOp(...args);
       const opId: HashedOp = {
         ...unhashedOpId,
-        id: hashOp(unhashedOpId, pos++),
+        id: hashOp(unhashedOpId, state.tickOps.length),
       };
 
-      const op = getNextPastOpData(opId);
+      return new Promise<any>((resolve, reject) => {
+        console.log("tool ran and pushing to state.tickOp");
 
-      /**
-       * If we've never seen this operation before, go tell Inngest it's next.
-       */
-      if (!op) {
-        state.nextOps.push(
-          Promise.resolve({
-            ...opId,
-            ...(fn ? { run: true } : {}),
-          })
-        );
-
-        return createFrozenPromise();
-      }
-
-      /**
-       * We now know that this is an operation Inngest knows about and we're
-       * refilling state.
-       *
-       * If we don't have any user-defined code to run or - regardless - if we
-       * already have data, return that.
-       */
-      if (
-        !fn ||
-        Object.prototype.hasOwnProperty.call(op, "data") ||
-        Object.prototype.hasOwnProperty.call(op, "error")
-      ) {
-        if (typeof op.data !== "undefined") {
-          return Promise.resolve(op.data);
-        }
-
-        /**
-         * If we have an error to throw, try to deserialize it back to an
-         * actual error object. If this doesn't work, just throw the error as it
-         * appears.
-         */
-        try {
-          return Promise.reject(deserializeError(op.error as SerializedError));
-        } catch {
-          return Promise.reject(op.error);
-        }
-      }
-
-      /**
-       * If we do have user-defined code to run, figure out if Inngest wants us
-       * to run that on this invocation.
-       *
-       * If not, return a never-ending Promise that will get garbage-collected
-       * in the future.
-       */
-      if (!op.run) {
-        return createFrozenPromise();
-      }
-
-      /**
-       * If Inngest is telling us we do have to run the user-defined code, run
-       * it and return the result now.
-       */
-      state.nextOps.push(
-        new Promise((resolve) => resolve(fn(...args)))
-          .then((data) => ({
-            ...opId,
-            data: typeof data === "undefined" ? null : data,
-          }))
-          .catch((err: Error) => {
-            /**
-             * If the user-defined code throws an error, we should return this to
-             * Inngest as the response for this step. The function didn't fail,
-             * only this step, so Inngest can decide what we do next.
-             */
-            return {
-              ...opId,
-              error: serializeError(err),
-            };
-          })
-          .catch((err: Error) => {
-            /**
-             * If we can't serialize the error, just return the error directly.
-             */
-            return {
-              ...opId,
-              error: err,
-            };
-          })
-      );
-
-      return createFrozenPromise();
+        state.tickOps.push({
+          ...opId,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+          ...(fn ? { fn: () => fn(...args) } : {}),
+          tickOps: [],
+          resolve,
+          reject,
+        });
+      });
     }) as T;
-  };
+    // return ((...args: Parameters<T>): Promise<any> => {
+    //   /**
+    //    * Mark that we've used a step function tool, so that we can know
+    //    * externally that this isn't a single-step function.
+    //    */
+    //   state.hasUsedTools = true;
 
-  const state: {
-    nextOps: Promise<HashedOp>[];
+    //   const unhashedOpId: Op = matchOp(...args);
+    //   const opId: HashedOp = {
+    //     ...unhashedOpId,
+    //     id: hashOp(unhashedOpId, pos++),
+    //   };
 
-    /**
-     * A boolean to represent whether the user's function is using any step
-     * tools.
-     *
-     * If the function survives an entire tick of the event loop and hasn't
-     * touched any tools, we assume that it is a single-step async function and
-     * should be awaited as usual.
-     */
-    hasUsedTools: boolean;
-  } = {
-    nextOps: [],
-    hasUsedTools: false,
+    //   const op = getNextPastOpData(opId);
+
+    //   /**
+    //    * If we've never seen this operation before, go tell Inngest it's next.
+    //    */
+    //   if (!op) {
+    //     state.nextOps.push(
+    //       Promise.resolve({
+    //         ...opId,
+    //         ...(fn ? { run: true } : {}),
+    //       })
+    //     );
+
+    //     return createFrozenPromise();
+    //   }
+
+    //   /**
+    //    * We now know that this is an operation Inngest knows about and we're
+    //    * refilling state.
+    //    *
+    //    * If we don't have any user-defined code to run or - regardless - if we
+    //    * already have data, return that.
+    //    */
+    //   if (
+    //     !fn ||
+    //     Object.prototype.hasOwnProperty.call(op, "data") ||
+    //     Object.prototype.hasOwnProperty.call(op, "error")
+    //   ) {
+    //     if (typeof op.data !== "undefined") {
+    //       return Promise.resolve(op.data);
+    //     }
+
+    //     /**
+    //      * If we have an error to throw, try to deserialize it back to an
+    //      * actual error object. If this doesn't work, just throw the error as it
+    //      * appears.
+    //      */
+    //     try {
+    //       return Promise.reject(deserializeError(op.error as SerializedError));
+    //     } catch {
+    //       return Promise.reject(op.error);
+    //     }
+    //   }
+
+    //   /**
+    //    * If we do have user-defined code to run, figure out if Inngest wants us
+    //    * to run that on this invocation.
+    //    *
+    //    * If not, return a never-ending Promise that will get garbage-collected
+    //    * in the future.
+    //    */
+    //   if (!op.run) {
+    //     return createFrozenPromise();
+    //   }
+
+    //   /**
+    //    * If Inngest is telling us we do have to run the user-defined code, run
+    //    * it and return the result now.
+    //    */
+    //   state.nextOps.push(
+    //     new Promise((resolve) => resolve(fn(...args)))
+    //       .then((data) => ({
+    //         ...opId,
+    //         data: typeof data === "undefined" ? null : data,
+    //       }))
+    //       .catch((err: Error) => {
+    //         /**
+    //          * If the user-defined code throws an error, we should return this to
+    //          * Inngest as the response for this step. The function didn't fail,
+    //          * only this step, so Inngest can decide what we do next.
+    //          */
+    //         return {
+    //           ...opId,
+    //           error: serializeError(err),
+    //         };
+    //       })
+    //       .catch((err: Error) => {
+    //         /**
+    //          * If we can't serialize the error, just return the error directly.
+    //          */
+    //         return {
+    //           ...opId,
+    //           error: err,
+    //         };
+    //       })
+    //   );
+
+    //   return createFrozenPromise();
+    // }) as T;
   };
 
   /**

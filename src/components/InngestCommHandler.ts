@@ -5,8 +5,9 @@ import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import { strBoolean } from "../helpers/scalar";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
-import type {
+import {
   FunctionConfig,
+  incomingOpSchema,
   IntrospectRequest,
   RegisterOptions,
   RegisterRequest,
@@ -548,11 +549,11 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       const { event, steps } = z
         .object({
           event: z.object({}).passthrough(),
-          steps: z.object({}).passthrough().optional().nullable(),
+          steps: z.array(incomingOpSchema.passthrough()).optional().nullable(),
         })
         .parse(data);
 
-      const ret = await fn["runFn"]({ event }, steps || {});
+      const ret = await fn["runFn"]({ event }, steps || []);
       const isOp = ret[0];
 
       if (isOp) {
