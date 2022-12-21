@@ -1,0 +1,32 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:js-lib",
+    ":disableDependencyDashboard",
+    "npm:unpublishSafe"
+  ],
+  "packageRules": [
+    {
+      "groupName": "TypeScript",
+      "groupSlug": "typescript",
+      "matchPackageNames": ["typescript"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "dependencyDashboardApproval": false,
+      "automerge": true,
+      "automergeType": "branch",
+      "automergeStrategy": "squash",
+      "rebaseWhen": "behind-base-branch"
+    },
+    {
+      "groupName": "Linting",
+      "groupSlug": "linting",
+      "matchPackagePrefixes": ["eslint", "@typescript-eslint/"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "dependencyDashboardApproval": false,
+      "automerge": true,
+      "automergeType": "branch",
+      "automergeStrategy": "squash",
+      "rebaseWhen": "behind-base-branch"
+    }
+  ]
+}
