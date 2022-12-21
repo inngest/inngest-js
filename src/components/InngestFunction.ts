@@ -268,18 +268,20 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
            * to Inngest as the response for this step. The function didn't
            * fail, only this step, so Inngest can decide what we do next.
            */
-          return {
-            error: serializeError(err),
-          };
-        })
-        .catch((err: Error) => {
-          /**
-           * If we can't serialize the error, just return the error
-           * directly.
-           */
-          return {
-            error: err,
-          };
+          try {
+            return {
+              error: serializeError(err),
+            };
+          } catch (serializationErr) {
+            console.warn(
+              "Could not serialize error to return to Inngest; stringifying instead",
+              serializationErr
+            );
+
+            return {
+              error: err,
+            };
+          }
         });
 
       return ["multi-run", result];
