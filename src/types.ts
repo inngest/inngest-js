@@ -89,7 +89,6 @@ export type HandlerArgs<
  * from SDK step functions.
  */
 export enum StepOpCode {
-  None = "None",
   WaitForEvent = "WaitForEvent",
   RunStep = "Step",
   Sleep = "Sleep",
@@ -152,16 +151,6 @@ export type IncomingOp = z.output<typeof incomingOpSchema>;
 
 export type OutgoingOp = Pick<HashedOp, "id" | "op" | "name" | "opts" | "run"> &
   Pick<IncomingOp, "opPosition">;
-
-// export type IncomingOp = Pick<HashedOp, "id" | "data" | "error"> & {
-//   opPosition: number[];
-
-//   /**
-//    * If defined, will be `true`, in which case we should run the user-defined
-//    * code specified with this operation and return the data to Inngest.
-//    */
-//   run?: true;
-// };
 
 /**
  * The shape of a hashed operation in a step function. Used to communicate

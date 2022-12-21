@@ -133,14 +133,3 @@ yarn link
 # in another repo
 yarn link inngest
 ```
-
----
-
-`InngestFunction#runFn()` is responsible for:
-  - Setting `state` for the next operation
-  - Running the function
-  - Running an actual step
-  - Returning compatible data
-
-`InngestStepTools` is responsible for:
-  - Creating tools which push a single sync op (incl. resolve/reject) to state

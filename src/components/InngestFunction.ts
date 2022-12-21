@@ -139,7 +139,6 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * state and to allow for multi-step functions.
      */
     opStack: OpStack
-    // ): Promise<[isOp: true, op: HashedOp[]] | [isOp: false, data: unknown]> {
   ): Promise<
     | [type: "single", data: unknown]
     | [type: "multi-discovery", ops: OutgoingOp[]]
@@ -202,13 +201,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     }
 
     do {
-      console.log("do hit");
       if (state.pos >= 0) {
-        console.log("state.pos hit:", state.pos);
         const incomingOp = opStack[state.pos] as IncomingOp;
-        console.log("incomingOp:", incomingOp);
         let targetOps = state.allFoundOps;
-        console.log("allFoundOps:", state.allFoundOps);
         let currentOp: TickOp | undefined;
 
         for (let i = 0; i < incomingOp.opPosition.length; i++) {
@@ -300,89 +295,6 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     });
 
     return ["multi-discovery", discoveredOps];
-
-    // /**
-    //  * Attempt to run the function. If this is a step function, we expect to
-    //  * catch `StepFlowInterrupt` errors and ignore them, as they are used to
-    //  * interrupt function execution safely.
-    //  */
-    // try {
-    //   /**
-    //    * Ensure the function only runs for a single tick, to ensure no actual
-    //    * async actions are taken and we only get the next queued operations.
-    //    */
-    //   const tickPromise = new Promise((_, reject) => {
-    //     setTimeout(() => reject(new StepFlowExpired()));
-    //   });
-
-    //   // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
-    //   userFnPromise = new Promise(async (resolve, reject) => {
-    //     try {
-    //       resolve(await this.#fn(fnArg));
-    //     } catch (err) {
-    //       reject(err);
-    //     }
-    //   });
-
-    //   await Promise.race([userFnPromise, tickPromise]);
-    // } catch (err) {
-    //   if (err instanceof StepFlowExpired) {
-    //     /**
-    //      * If this has thrown, it means the function has had a single tick of
-    //      * the event loop to decide what it wants to do next.
-    //      *
-    //      * If we've used tools but don't have an op, we can assume the function
-    //      * is waiting on other operations to complete, so we can return a no-op
-    //      * to Inngest for now.
-    //      */
-    //     if (state.hasUsedTools && !state.nextOps.length) {
-    //       return [true, []];
-    //     }
-    //   } else {
-    //     /**
-    //      * If the error is not a StepFlowInterrupt or a StepFlowExpires, then it
-    //      * is an error that we should probably bubble up.
-    //      *
-    //      * An exception is if the error has been somehow caused after
-    //      * successfully submitting a new op. This might happen if a user
-    //      * attempts to catch step errors with a try/catch block. In that case,
-    //      * we should warn of this but continue on.
-    //      */
-    //     if (!state.nextOps.length) {
-    //       throw err;
-    //     }
-
-    //     /**
-    //      * If we're here, then this unknown error was caused after successfully
-    //      * submitting an op.
-    //      *
-    //      * In this case, we warn the user that trying to catch these is not a
-    //      * good idea and continue on; the step tool itself will attempt to throw
-    //      * again to stop execution.
-    //      */
-    //     console.warn(
-    //       "An error occurred after submitting a new op. Continuing on.",
-    //       err
-    //     );
-    //   }
-    // }
-
-    // /**
-    //  * This could be a step function that has triggered an asynchronous step
-    //  * right at this moment.
-    //  *
-    //  * If this is the case, the above function will have now resolved and the
-    //  * async step function might still be running.
-    //  *
-    //  * Let's check for this occurence by checking the toolset we created to see
-    //  * if there is a pending op. If there is, wait for that, otherwise continue
-    //  * straight to the end.
-    //  */
-    // if (state.nextOps.length) {
-    //   return [true, await Promise.all(state.nextOps)];
-    // }
-
-    // return [false, await userFnPromise];
   }
 
   /**

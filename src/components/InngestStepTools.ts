@@ -4,12 +4,6 @@ import { timeStr } from "../helpers/strings";
 import type { ObjectPaths } from "../helpers/types";
 import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
 
-/**
- * A unique class used to interrupt the flow of a step. It is intended to be
- * thrown and caught using `instanceof StepFlowExpired`.
- */
-export class StepFlowExpired {}
-
 export interface TickOp extends HashedOp {
   tickOps: TickOp[];
   fn?: (...args: any[]) => any;
@@ -24,37 +18,11 @@ export interface TickOp extends HashedOp {
  *
  * An op stack (function state) is passed in as well as some mutable properties
  * that the tools can use to submit a new op.
- *
- * Broadly, each tool is responsible for potentially filling itself with data
- * from the op stack and submitting an op, interrupting the step function when
- * it does so.
- *
- * This feels better being a class, but class bindings are lost (i.e. `this`
- * becomes `undefined`) if a user destructures the tools within their step
- * function. Thus, we must instead use closures for this functionality.
  */
 export const createStepTools = <
   Events extends Record<string, EventPayload>,
   TriggeringEvent extends keyof Events
 >() => {
-  // >(
-  //   _opStack: OpStack
-  // ) => {
-  /**
-   * We use pos to ensure that hashes are unique for each step and a function
-   * will produce the same IDs and outputs every time.
-   *
-   * Each time attempt to fetch data for an operation, we increment this value
-   * and include it in the hash for that op.
-   */
-  // const pos = 0;
-
-  /**
-   * Perform a shallow clone of the opstack to ensure we're not removing
-   * elements from the original.
-   */
-  // const opStack = [..._opStack];
-
   const state: {
     allFoundOps: TickOp[];
     pos: number;
@@ -79,17 +47,6 @@ export const createStepTools = <
 
   // Start referencing everything
   state.tickOps = state.allFoundOps;
-
-  /**
-   * Returns [true, any] if the next op matches the next past op.
-   *
-   * Returns [false, undefined] if the next op didn't match or we ran out of
-   * stack. In either case, we should run the next op.
-   */
-  // const getNextPastOpData = (op: HashedOp): IncomingOp | undefined => {
-  //   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-  //   return opStack[op.id];
-  // };
 
   /**
    * A local helper used to create tools that can be used to submit an op.
@@ -147,8 +104,6 @@ export const createStepTools = <
       };
 
       return new Promise<any>((resolve, reject) => {
-        console.log("tool ran and pushing to state.tickOp");
-
         state.tickOps.push({
           ...opId,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return
@@ -402,37 +357,6 @@ interface WaitForEventOpts<
  * Create a unique hash of an operation using only a subset of the operation's
  * properties; will never use `data` and will guarantee the order of the object
  * so we don't rely on individual tools for that.
- *
- * TODO We can't rely on pos for parallel tasks; they may be out of sync.
- *
- * For example, consider a function that specifies for steps: A that leads to B,
- * and C that leads to D:
- *
- * ```
- * await Promise.all([
- *   run("A").then(() => run("B")),
- *   run("C").then(() => run("D")),
- * ]);
- * ```
- *
- * First pass, A and C are returned as steps to run.
- * A is pos 0, and C is pos 1.
- * C resolves.
- * Second pass, D is returned as the step to run.
- * A is pos 0, C is pos 1, and D is pos 2.
- * A resolves.
- * Third pass, B is returned as the step to run.
- * A is pos 0, B is pos 1, C is pos 2, and D is pos 3.
- *
- * This is bad - C and B swap positions due to the promises resolving at
- * different times! We need another value to hash on.
- *
- * An idea is to also include all other previous hashes before this one is
- * executed, but this is exactly the same as pos and results in the same issue.
- *
- * Another option might be to allow ops with the same ID, but to place them all
- * in a positional array. This only mitigates the issue rather than solve it,
- * though.
  */
 const hashOp = (
   /**
