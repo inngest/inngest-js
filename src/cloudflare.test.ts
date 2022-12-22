@@ -23,23 +23,11 @@ testFramework("Cloudflare", CloudflareHandler, {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       process.env = undefined as any;
 
-      /**
-       * Fake a global `fetch` value, which is available as the Cloudflare
-       * handler will use the global DOM `fetch`.
-       */
-      globalThis.fetch = fetch;
-
-      /**
-       * Fake a global `Response` class, which is used to create new responses
-       * for the handler.
-       */
-      globalThis.Response = Response;
-
-      /**
-       * Fake a global `Headers` class, which is used to create new Headers
-       * objects during response building.
-       */
-      globalThis.Headers = Headers;
+      Object.defineProperties(globalThis, {
+        fetch: { value: fetch },
+        Response: { value: Response },
+        Headers: { value: Headers },
+      });
     });
 
     afterEach(() => {
@@ -47,9 +35,11 @@ testFramework("Cloudflare", CloudflareHandler, {
        * Reset all changes made to the global scope
        */
       process.env = originalProcess.env;
-      globalThis.fetch = originalFetch;
-      globalThis.Response = originalResponse;
-      globalThis.Headers = originalHeaders;
+      Object.defineProperties(globalThis, {
+        fetch: { value: originalFetch },
+        Response: { value: originalResponse },
+        Headers: { value: originalHeaders },
+      });
     });
   },
   transformReq: (req, res, env) => {

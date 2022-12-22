@@ -28,7 +28,6 @@ import { allProcessEnv } from "./helpers/env";
  * @public
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
-  // return defaultServe(new RemixCommHandler(nameOrInngest, fns, opts));
   const handler = new InngestCommHandler(
     "remix",
     nameOrInngest,
