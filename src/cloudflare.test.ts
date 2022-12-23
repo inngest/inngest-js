@@ -24,9 +24,9 @@ testFramework("Cloudflare", CloudflareHandler, {
       process.env = undefined as any;
 
       Object.defineProperties(globalThis, {
-        fetch: { value: fetch },
-        Response: { value: Response },
-        Headers: { value: Headers },
+        fetch: { value: fetch, configurable: true },
+        Response: { value: Response, configurable: true },
+        Headers: { value: Headers, configurable: true },
       });
     });
 
@@ -36,9 +36,9 @@ testFramework("Cloudflare", CloudflareHandler, {
        */
       process.env = originalProcess.env;
       Object.defineProperties(globalThis, {
-        fetch: { value: originalFetch },
-        Response: { value: originalResponse },
-        Headers: { value: originalHeaders },
+        fetch: { value: originalFetch, configurable: true },
+        Response: { value: originalResponse, configurable: true },
+        Headers: { value: originalHeaders, configurable: true },
       });
     });
   },
