@@ -65,11 +65,20 @@ jobs:
         with:
           working-directory: sdk
 
+      # Decrypt and return a fine-grained access token to pull example repo
+      # contents
+      - name: Decrypt access token
+        id: sdk-example-repo-access
+        working-directory: sdk
+        run: |
+          gpg --quiet --batch --yes --decrypt --passphrase="sdk-example-repo-access" --output ./.github/token ./.github/sdk-example-repo-access.gpg
+          echo "token=$(cat ./.github/token)" >> $GITHUB_OUTPUT
+
       # Checkout the example repo
       - name: Checkout example
         uses: actions/checkout@v3
         with:
-          token: ${{ secrets.EXAMPLES_GITHUB_TOKEN }}
+          token: ${{ steps.sdk-example-repo-access.outputs.token }}
           repository: ${{ matrix.repo }}
           path: examples/${{ matrix.repo }}
           ref: main
