@@ -120,8 +120,8 @@ describe("runFn", () => {
 
     describe("simple A to B", () => {
       const hashes = {
-        A: "7d95a6e62d91240c20c905c223590471b9cd634f",
-        B: "4152041e2a4e84d064ef8195e6d4e8e7ab79aa88",
+        A: "edb02e09014ca133ec26708992d475cbb810bbdf",
+        B: "1867006fbd9cceba8a6fe0e6c847c52c6bc4e693",
       };
 
       const createFn = () => {
@@ -154,7 +154,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: hashes.A,
               name: "A",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
           ],
         ]);
@@ -184,7 +184,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: hashes.B,
               name: "B",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
           ],
         ]);
@@ -230,8 +230,8 @@ describe("runFn", () => {
     describe("change path based on data", () => {
       const hashes = {
         foo: "bf9df5d8612adc0d9d007f97e59d4a4cc6468690",
-        A: "c6337fdc770b2c60b2b8dc325a5c069a71f1ef23",
-        B: "87ad26c2a130d554bfd7fad39780807e2386bcd3",
+        A: "2d35fa12bb3ea433994b113e1f986cdee37db0ec",
+        B: "5e177f6a5b84062a701c22451c2b39a34adfbff4",
       };
 
       const createFn = () => {
@@ -291,7 +291,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: hashes.A,
               name: "A",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
           ],
         ]);
@@ -330,7 +330,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: hashes.B,
               name: "B",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
           ],
         ]);
@@ -375,9 +375,9 @@ describe("runFn", () => {
 
     describe("Promise.all", () => {
       const hashes = {
-        A: "7d95a6e62d91240c20c905c223590471b9cd634f",
-        B: "6de1287c8c0ded177d3bbcbb9450fd3320ffa21d",
-        C: "fb5f546d186479bb2616da06a9f161723ac1f40a",
+        A: "edb02e09014ca133ec26708992d475cbb810bbdf",
+        B: "67a1041952845ae4320367df23171bbbed7ec20c",
+        C: "300a4f24b02f329fd1407e0875b7ccb7c75a0b97",
       };
 
       const createFn = () => {
@@ -411,12 +411,12 @@ describe("runFn", () => {
             expect.objectContaining({
               id: hashes.A,
               name: "A",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
             expect.objectContaining({
               id: hashes.B,
               name: "B",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
           ],
         ]);
@@ -475,7 +475,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: hashes.C,
               name: "C",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
           ],
         ]);
@@ -531,9 +531,9 @@ describe("runFn", () => {
 
     describe("Promise.race", () => {
       const hashes = {
-        A: "7d95a6e62d91240c20c905c223590471b9cd634f",
-        B: "6de1287c8c0ded177d3bbcbb9450fd3320ffa21d",
-        Bwins: "193eeb30d79528b85fe1e662a49cfacca82790b7",
+        A: "edb02e09014ca133ec26708992d475cbb810bbdf",
+        B: "67a1041952845ae4320367df23171bbbed7ec20c",
+        Bwins: "1a05dd08435a58f5f9f3e2bf2ffe21db4f09fdd3",
       };
 
       const createFn = () => {
@@ -573,12 +573,12 @@ describe("runFn", () => {
             expect.objectContaining({
               id: hashes.A,
               name: "A",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
             expect.objectContaining({
               id: hashes.B,
               name: "B",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
           ],
         ]);
@@ -616,7 +616,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: hashes.Bwins,
               name: "B wins",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
           ],
         ]);
@@ -709,9 +709,9 @@ describe("runFn", () => {
     // B has a catch
     describe("silently handle step error", () => {
       const hashes = {
-        A: "7d95a6e62d91240c20c905c223590471b9cd634f",
-        B: "6de1287c8c0ded177d3bbcbb9450fd3320ffa21d",
-        Bfailed: "2842824482ea6b3f2591bd8007c77af0d9dc4f82",
+        A: "edb02e09014ca133ec26708992d475cbb810bbdf",
+        B: "67a1041952845ae4320367df23171bbbed7ec20c",
+        Bfailed: "be0967ec03bed2a48b00396606b8fab76d761b8a",
       };
 
       const createFn = () => {
@@ -749,12 +749,12 @@ describe("runFn", () => {
             expect.objectContaining({
               id: hashes.A,
               name: "A",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
             expect.objectContaining({
               id: hashes.B,
               name: "B",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
           ],
         ]);
@@ -813,7 +813,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: hashes.Bfailed,
               name: "B failed",
-              op: StepOpCode.RunStep,
+              op: StepOpCode.ReportStep,
             }),
           ],
         ]);

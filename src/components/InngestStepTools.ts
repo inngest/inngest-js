@@ -251,7 +251,7 @@ export const createStepTools = <
     >(
       (name) => {
         return {
-          op: StepOpCode.RunStep,
+          op: StepOpCode.ReportStep,
           name,
         };
       },

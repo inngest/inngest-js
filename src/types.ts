@@ -91,6 +91,7 @@ export type HandlerArgs<
 export enum StepOpCode {
   WaitForEvent = "WaitForEvent",
   RunStep = "Step",
+  ReportStep = "StepPlanned",
   Sleep = "Sleep",
 }
 
