@@ -433,7 +433,11 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       if (runRes) {
         this.upsertSigningKeyFromEnv(runRes.env);
 
-        const stepRes = await this.runStep(runRes.fnId, "step", runRes.data);
+        const stepRes = await this.runStep(
+          runRes.fnId,
+          runRes.stepId,
+          runRes.data
+        );
 
         if (stepRes.status === 500) {
           return {
@@ -537,7 +541,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
   protected async runStep(
     functionId: string,
-    stepId: string,
+    stepId: string | null,
     data: any
   ): Promise<StepRunResponse> {
     try {
@@ -553,7 +557,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         })
         .parse(data);
 
-      const ret = await fn["runFn"]({ event }, steps || []);
+      const ret = await fn["runFn"]({ event }, steps || [], stepId || null);
       const isOp = ret[0];
 
       if (isOp) {
@@ -790,6 +794,7 @@ type HandlerAction =
   | {
       action: "run";
       fnId: string;
+      stepId: string | null;
       data: Record<string, any>;
       env: Record<string, string | undefined>;
       isProduction: boolean;
