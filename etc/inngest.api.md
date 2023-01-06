@@ -87,7 +87,7 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     // Warning: (ae-forgotten-export) The symbol "StepRunResponse" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    protected runStep(functionId: string, stepId: string, data: any): Promise<StepRunResponse>;
+    protected runStep(functionId: string, stepId: string | null, data: any): Promise<StepRunResponse>;
     // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
     protected get sdkHeader(): [
     prefix: string,
