@@ -5,7 +5,6 @@ import type { ObjectPaths } from "../helpers/types";
 import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
 
 export interface TickOp extends HashedOp {
-  tickOps: TickOp[];
   fn?: (...args: any[]) => any;
   resolve: (value: any | PromiseLike<any>) => void;
   reject: (reason?: any) => void;
@@ -24,9 +23,32 @@ export const createStepTools = <
   TriggeringEvent extends keyof Events
 >() => {
   const state: {
-    allFoundOps: TickOp[];
-    pos: number;
-    tickOps: TickOp[];
+    /**
+     * The tree of all found ops in the entire invocation.
+     */
+    allFoundOps: Record<string, TickOp>;
+
+    /**
+     * All synchronous operations found in this particular tick. The array is
+     * reset every tick.
+     */
+    tickOps: Record<string, TickOp>;
+
+    /**
+     * The number of operations found in this tick so far. Used for unique
+     * hashing to ensure the expected order of operations.
+     */
+    tickPos: number;
+
+    /**
+     * Tracks the current operation being processed. This can be used to
+     */
+    currentOp: TickOp | undefined;
+
+    /**
+     * If we've found a user function to run, we'll store it here so a component
+     * higher up can invoke and await it.
+     */
     userFnToRun?: (...args: any[]) => any;
 
     /**
@@ -39,9 +61,10 @@ export const createStepTools = <
      */
     hasUsedTools: boolean;
   } = {
-    allFoundOps: [],
-    pos: -1,
-    tickOps: [],
+    allFoundOps: {},
+    tickOps: {},
+    tickPos: 0,
+    currentOp: undefined,
     hasUsedTools: false,
   };
 
@@ -50,9 +73,6 @@ export const createStepTools = <
 
   /**
    * A local helper used to create tools that can be used to submit an op.
-   *
-   * It will handle filling any data from the op stack and will provide tools to
-   * a given function to safely submit synchronous or asynchronous ops.
    *
    * When using this function, a generic type should be provided which is the
    * function signature exposed to the user.
@@ -72,7 +92,7 @@ export const createStepTools = <
        * Arguments passed by the user.
        */
       ...args: Parameters<T>
-    ) => Omit<Op, "data" | "run" | "opPosition">,
+    ) => Omit<Op, "data" | "error">,
 
     /**
      * Optionally, we can also provide a function that will be called when
@@ -100,18 +120,17 @@ export const createStepTools = <
       const unhashedOpId: Op = matchOp(...args);
       const opId: HashedOp = {
         ...unhashedOpId,
-        id: hashOp(unhashedOpId, state.tickOps.length),
+        id: _internals.hashOp(unhashedOpId, state.tickPos++, state.currentOp),
       };
 
       return new Promise<any>((resolve, reject) => {
-        state.tickOps.push({
+        state.tickOps[opId.id] = {
           ...opId,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return
           ...(fn ? { fn: () => fn(...args) } : {}),
-          tickOps: [],
           resolve,
           reject,
-        });
+        };
       });
     }) as T;
   };
@@ -370,12 +389,27 @@ const hashOp = (
    * ensure that the hash is unique for each step and in-line with what we
    * expect the stack to be.
    */
-  pos: number
+  pos: number,
+
+  /**
+   * The parent of this operation. We use this to ensure that the hash is unique
+   * for each step and in-line with what we expect the stack to be.
+   */
+  parent: HashedOp | undefined
 ): string => {
-  return (
-    sha1()
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      .update(sigmund({ pos, op: op.op, name: op.name, opts: op.opts }))
-      .digest("hex")
-  );
+  const obj = {
+    pos,
+    parent: parent?.id,
+    op: op.op,
+    name: op.name,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    opts: op.opts,
+  };
+
+  return sha1().update(sigmund(obj)).digest("hex");
 };
+
+/**
+ * Exported for testing.
+ */
+export const _internals = { hashOp };

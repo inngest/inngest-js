@@ -131,26 +131,16 @@ export type Op = {
    * try/catch or `.catch()`.
    */
   error?: any;
-
-  /**
-   * If specified, signifies that this is an operation that requires Inngest to
-   * call again to run some user-defined code.
-   */
-  run?: true;
 };
 
 export const incomingOpSchema = z.object({
   id: z.string().min(1),
   data: z.any().optional(),
   error: z.any().optional(),
-  opPosition: z.array(z.number()).min(1),
-  run: z.literal(true).optional(),
 });
 
 export type IncomingOp = z.output<typeof incomingOpSchema>;
-
-export type OutgoingOp = Pick<HashedOp, "id" | "op" | "name" | "opts" | "run"> &
-  Pick<IncomingOp, "opPosition">;
+export type OutgoingOp = Pick<HashedOp, "id" | "op" | "name" | "opts">;
 
 /**
  * The shape of a hashed operation in a step function. Used to communicate

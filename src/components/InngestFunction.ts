@@ -13,7 +13,7 @@ import {
   OpStack,
   OutgoingOp,
 } from "../types";
-import { createStepTools, TickOp } from "./InngestStepTools";
+import { createStepTools } from "./InngestStepTools";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -138,7 +138,15 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * This must be provided in order to always be cognizant of step function
      * state and to allow for multi-step functions.
      */
-    opStack: OpStack
+    opStack: OpStack,
+
+    /**
+     * The step ID that Inngest wants to run and receive data from. If this is
+     * defined, the step's user code will be run after filling the op stack. If
+     * this is `null`, the function will be run and next operations will be
+     * returned instead.
+     */
+    runStep: string | null
   ): Promise<
     | [type: "single", data: unknown]
     | [type: "multi-discovery", ops: OutgoingOp[]]
@@ -200,55 +208,39 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       return ["single", await userFnPromise];
     }
 
+    let pos = -1;
+
     do {
-      if (state.pos >= 0) {
-        const incomingOp = opStack[state.pos] as IncomingOp;
-        let targetOps = state.allFoundOps;
-        let currentOp: TickOp | undefined;
+      if (pos >= 0) {
+        state.tickOps = {};
+        const incomingOp = opStack[pos] as IncomingOp;
+        state.currentOp = state.allFoundOps[incomingOp.id];
 
-        for (let i = 0; i < incomingOp.opPosition.length; i++) {
-          currentOp = targetOps[incomingOp.opPosition[i] as number] as TickOp;
-          const isLastAccess = incomingOp.opPosition.length - 1 === i;
-
-          if (!isLastAccess) {
-            targetOps = currentOp.tickOps;
-            continue;
-          }
-
-          if (incomingOp.run) {
-            if (!currentOp.fn) {
-              throw new Error("Bad stack; no fn to execute; re-execute pls");
-            }
-
-            state.userFnToRun = currentOp.fn;
-            break;
-          }
-
-          if (typeof incomingOp.data !== "undefined") {
-            currentOp.resolve(incomingOp.data);
-          } else {
-            currentOp.reject(incomingOp.error);
-          }
+        if (!state.currentOp) {
+          throw new Error("BAD STACK; COULD NOT FIND OP TO RESOLVE");
         }
 
-        if (state.userFnToRun) {
-          break;
+        if (typeof incomingOp.data !== "undefined") {
+          state.currentOp.resolve(incomingOp.data);
+        } else {
+          state.currentOp.reject(incomingOp.error);
         }
-
-        if (!currentOp) {
-          throw new Error("Bad stack; fn might have changed; re-execute");
-        }
-
-        state.tickOps = currentOp.tickOps;
       }
 
       await resolveNextTick();
-      state.pos++;
-    } while (state.pos < opStack.length);
 
-    const { userFnToRun } = state;
+      state.tickPos = 0;
+      state.allFoundOps = { ...state.allFoundOps, ...state.tickOps };
+      pos++;
+    } while (pos < opStack.length);
 
-    if (userFnToRun) {
+    if (runStep) {
+      const userFnToRun = state.allFoundOps[runStep]?.fn;
+
+      if (!userFnToRun) {
+        throw new Error("Bad stack; no fn to execute; re-execute pls");
+      }
+
       const result = await new Promise((resolve) => {
         return resolve(userFnToRun());
       })
@@ -282,15 +274,13 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       return ["multi-run", result];
     }
 
-    const discoveredOps = state.tickOps.map<OutgoingOp>((op, index) => {
+    const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>((op) => {
       return {
         op: op.op,
-        ...(op.fn ? { run: true } : {}),
         id: op.id,
         name: op.name,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         opts: op.opts,
-        opPosition: [...(opStack[opStack.length - 1]?.opPosition ?? []), index],
       };
     });
 
