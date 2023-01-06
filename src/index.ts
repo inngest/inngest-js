@@ -5,7 +5,10 @@ export { NonRetriableError } from "./components/NonRetriableError";
 export type {
   ClientOptions,
   EventPayload,
+  EventPayloads,
+  EventSchema,
   FunctionOptions,
+  InferZodOrObject,
   RegisterOptions,
   TimeStr,
 } from "./types";

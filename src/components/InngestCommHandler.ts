@@ -51,7 +51,7 @@ export type ServeHandler = (
    * The name of this app, used to scope and group Inngest functions, or
    * the `Inngest` instance used to declare all functions.
    */
-  nameOrInngest: string | Inngest<any>,
+  nameOrInngest: string | Inngest<any, any>,
 
   /**
    * An array of the functions to serve and register with Inngest.
@@ -244,7 +244,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
      * receiving events from the same service, as you can reuse a single
      * definition of Inngest.
      */
-    appNameOrInngest: string | Inngest<any>,
+    appNameOrInngest: string | Inngest<any, any>,
 
     /**
      * An array of the functions to serve and register with Inngest.

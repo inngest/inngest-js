@@ -290,6 +290,37 @@ export type Step<Context = any> = (
 ) => Promise<Response> | Response;
 
 /**
+ * An individual event schema, containing the data and user schemas.
+ *
+ * @public
+ */
+export type EventSchema = {
+  data: z.AnyZodObject | Record<string, any>;
+  user?: z.AnyZodObject | Record<string, any>;
+};
+
+/**
+ * A set of event schemas, keyed by event name.
+ *
+ * @public
+ */
+export type EventPayloads<T extends Record<string, EventSchema>> = {
+  [K in keyof T & string]: {
+    name: K;
+    data: InferZodOrObject<T[K]["data"]>;
+    user?: InferZodOrObject<T[K]["user"]>;
+  };
+};
+
+/**
+ * Given a Zod object, returns the inferred type. Otherwise, returns the type
+ * itself.
+ *
+ * @public
+ */
+export type InferZodOrObject<T> = T extends z.AnyZodObject ? z.infer<T> : T;
+
+/**
  * A set of options for configuring the Inngest client.
  *
  * @public
@@ -300,6 +331,31 @@ export interface ClientOptions {
    * resides in.
    */
   name: string;
+
+  /**
+   * Local event schemas, keyed by event name. If provided, these will be used
+   * to provide typing to client methods such as `send` and `createFunction`.
+   *
+   * If you wish to use no typing, set this to `null`.
+   *
+   * ---
+   *
+   * Optionally, these may also be used to validate events before sending them
+   * to Inngest Cloud, or revalidate events received from Inngest Cloud locally.
+   *
+   * ---
+   *
+   * Generated types can provide a `withGeneratedSchemas` function to wrap local
+   * schemas with generated schemas.
+   *
+   * @example
+   * ```ts
+   * const withGeneratedSchemas = <T extends Record<string, EventSchema>>(
+   *   _schemas: T
+   * ): Omit<Genned, keyof T> & EventPayloads<T> => undefined as any;
+   * ```
+   */
+  schemas: Record<string, EventSchema> | null;
 
   /**
    * Inngest event key, used to send events to Inngest Cloud. If not provided,

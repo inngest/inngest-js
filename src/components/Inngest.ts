@@ -9,7 +9,8 @@ import type {
 } from "../helpers/types";
 import type {
   ClientOptions,
-  EventPayload,
+  EventPayloads,
+  EventSchema,
   FunctionOptions,
   Handler,
   TriggerOptions,
@@ -53,7 +54,10 @@ export const eventKeyError =
  *
  * @public
  */
-export class Inngest<Events extends Record<string, EventPayload>> {
+export class Inngest<
+  T extends ClientOptions,
+  Events extends EventPayloads<NonNullable<T["schemas"]>>
+> {
   /**
    * The name of this instance, most commonly the name of the application it
    * resides in.
@@ -78,6 +82,8 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   private readonly headers: Record<string, string>;
 
   private readonly fetch: FetchT;
+
+  public readonly schemas: Record<string, EventSchema>;
 
   /**
    * A client used to interact with the Inngest API by sending or reacting to
@@ -107,10 +113,13 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     eventKey,
     inngestBaseUrl = "https://inn.gs/",
     fetch,
-  }: ClientOptions) {
+    schemas,
+  }: T) {
     if (!name) {
       throw new Error("A name must be passed to create an Inngest instance.");
     }
+
+    this.schemas = { ...schemas } || {};
 
     this.name = name;
     this.inngestBaseUrl = new URL(inngestBaseUrl);
