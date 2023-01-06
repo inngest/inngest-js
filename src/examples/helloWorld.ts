@@ -1,6 +1,6 @@
-import { createFunction } from "inngest";
+import { inngest } from "./client";
 
-export default createFunction(
+export default inngest.createFunction(
   "Hello World",
   "demo/event.sent",
   () => "Hello, Inngest!"
