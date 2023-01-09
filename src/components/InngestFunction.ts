@@ -229,8 +229,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
 
       await resolveNextTick();
 
-      state.tickPos = 0;
-      state.allFoundOps = { ...state.allFoundOps, ...state.tickOps };
+      state.reset();
       pos++;
     } while (pos < opStack.length);
 

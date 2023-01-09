@@ -35,13 +35,19 @@ export const createStepTools = <
     tickOps: Record<string, TickOp>;
 
     /**
-     * The number of operations found in this tick so far. Used for unique
-     * hashing to ensure the expected order of operations.
+     * A hash of operations found within this tick, with keys being the hashed
+     * ops themselves (without a position) and the values being the number of
+     * times that op has been found.
+     *
+     * This is used to provide some mutation resilience to the op stack,
+     * allowing us to survive same-tick mutations of code by ensuring per-tick
+     * hashes are based on uniqueness rather than order.
      */
-    tickPos: number;
+    tickOpHashes: Record<string, number>;
 
     /**
      * Tracks the current operation being processed. This can be used to
+     * understand the contextual parent of any recorded operations.
      */
     currentOp: TickOp | undefined;
 
@@ -60,16 +66,57 @@ export const createStepTools = <
      * should be awaited as usual.
      */
     hasUsedTools: boolean;
+
+    /**
+     * A function that should be used to reset the state of the tools after a
+     * tick has completed.
+     */
+    reset: () => void;
   } = {
     allFoundOps: {},
     tickOps: {},
-    tickPos: 0,
+    tickOpHashes: {},
     currentOp: undefined,
     hasUsedTools: false,
+    reset: () => {
+      state.tickOpHashes = {};
+      state.allFoundOps = { ...state.allFoundOps, ...state.tickOps };
+    },
   };
 
   // Start referencing everything
   state.tickOps = state.allFoundOps;
+
+  /**
+   * Create a unique hash of an operation using only a subset of the operation's
+   * properties; will never use `data` and will guarantee the order of the object
+   * so we don't rely on individual tools for that.
+   */
+  const hashOp = (
+    /**
+     * The op to generate a hash from. We only use a subset of the op's properties
+     * when creating the hash.
+     */
+    op: Op
+  ): HashedOp => {
+    const obj = {
+      parent: state.currentOp?.id ?? null,
+      op: op.op,
+      name: op.name,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      opts: op.opts,
+    };
+
+    const collisionHash = _internals.hashData(obj);
+
+    const pos = (state.tickOpHashes[collisionHash] =
+      (state.tickOpHashes[collisionHash] ?? -1) + 1);
+
+    return {
+      ...op,
+      id: _internals.hashData({ pos, ...obj }),
+    };
+  };
 
   /**
    * A local helper used to create tools that can be used to submit an op.
@@ -113,15 +160,10 @@ export const createStepTools = <
      */
     fn?: (...args: Parameters<T>) => any
   ): T => {
-    // eslint-disable-next-line @typescript-eslint/require-await
     return ((...args: Parameters<T>): Promise<any> => {
       state.hasUsedTools = true;
 
-      const unhashedOpId: Op = matchOp(...args);
-      const opId: HashedOp = {
-        ...unhashedOpId,
-        id: _internals.hashOp(unhashedOpId, state.tickPos++, state.currentOp),
-      };
+      const opId = hashOp(matchOp(...args));
 
       return new Promise<any>((resolve, reject) => {
         state.tickOps[opId.id] = {
@@ -372,44 +414,11 @@ interface WaitForEventOpts<
   if?: string;
 }
 
-/**
- * Create a unique hash of an operation using only a subset of the operation's
- * properties; will never use `data` and will guarantee the order of the object
- * so we don't rely on individual tools for that.
- */
-const hashOp = (
-  /**
-   * The op to generate a hash from. We only use a subset of the op's properties
-   * when creating the hash.
-   */
-  op: Op,
-
-  /**
-   * The position in the "stack" that this was called from. We use this to
-   * ensure that the hash is unique for each step and in-line with what we
-   * expect the stack to be.
-   */
-  pos: number,
-
-  /**
-   * The parent of this operation. We use this to ensure that the hash is unique
-   * for each step and in-line with what we expect the stack to be.
-   */
-  parent: HashedOp | undefined
-): string => {
-  const obj = {
-    pos,
-    parent: parent?.id,
-    op: op.op,
-    name: op.name,
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    opts: op.opts,
-  };
-
-  return sha1().update(sigmund(obj)).digest("hex");
+const hashData = (data: any): string => {
+  return sha1().update(sigmund(data)).digest("hex");
 };
 
 /**
  * Exported for testing.
  */
-export const _internals = { hashOp };
+export const _internals = { hashData };
