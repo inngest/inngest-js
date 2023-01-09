@@ -1,5 +1,5 @@
 import { sha1 } from "hash.js";
-import sigmund from "sigmund";
+import stringify from "json-stringify-deterministic";
 import { timeStr } from "../helpers/strings";
 import type { ObjectPaths } from "../helpers/types";
 import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
@@ -104,7 +104,7 @@ export const createStepTools = <
       op: op.op,
       name: op.name,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      opts: op.opts,
+      opts: op.opts ?? null,
     };
 
     const collisionHash = _internals.hashData(obj);
@@ -414,8 +414,21 @@ interface WaitForEventOpts<
   if?: string;
 }
 
-const hashData = (data: any): string => {
-  return sha1().update(sigmund(data)).digest("hex");
+/**
+ * An operation ready to hash to be used to memoise step function progress.
+ *
+ * @internal
+ */
+export type UnhashedOp = {
+  name: string;
+  op: StepOpCode;
+  opts?: Record<string, any> | null;
+  parent: string | null;
+  pos?: number;
+};
+
+const hashData = (op: UnhashedOp): string => {
+  return sha1().update(stringify(op)).digest("hex");
 };
 
 /**

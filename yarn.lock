@@ -1232,11 +1232,6 @@
   dependencies:
     "@types/node" "*"
 
-"@types/sigmund@^1.0.0":
-  version "1.0.0"
-  resolved "https://registry.yarnpkg.com/@types/sigmund/-/sigmund-1.0.0.tgz#906f5598633840a689dd3d32bb4629823e928d5c"
-  integrity sha512-jL0vTm8XEQOHCu6DehNbZGeFXxRilblBsgYW4faqUCQTwbRfnZ27DZEGekIqM/ZsDFMIgz2RkY8LIvoTLnDTXA==
-
 "@types/stack-utils@^2.0.0":
   version "2.0.1"
   resolved "https://registry.yarnpkg.com/@types/stack-utils/-/stack-utils-2.0.1.tgz#20f18294f797f2209b5f65c8e3b5c8e8261d127c"
@@ -3772,6 +3767,11 @@ json-stable-stringify-without-jsonify@^1.0.1:
   resolved "https://registry.yarnpkg.com/json-stable-stringify-without-jsonify/-/json-stable-stringify-without-jsonify-1.0.1.tgz#9db7b59496ad3f3cfef30a75142d2d930ad72651"
   integrity sha512-Bdboy+l7tA3OGW6FjyFHWkP5LuByj1Tk33Ljyq0axyzdk9//JSi2u3fP1QSmd1KNwq6VOKYGlAu87CisVir6Pw==
 
+json-stringify-deterministic@^1.0.8:
+  version "1.0.8"
+  resolved "https://registry.yarnpkg.com/json-stringify-deterministic/-/json-stringify-deterministic-1.0.8.tgz#675eaf26f18ebac0197c5e4d2d4dcc2ab3750948"
+  integrity sha512-rkJID3qeigo3VCrEcxX1333fTBBxW89YrdYcZexMnL/WdB8u0zctyG63e/DpahRJyrWCDhh7IQhiR7u2XEDQ4Q==
+
 json-stringify-safe@^5.0.1:
   version "5.0.1"
   resolved "https://registry.yarnpkg.com/json-stringify-safe/-/json-stringify-safe-5.0.1.tgz#1296a2d58fd45f19a0f6ce01d65701e2c735b6eb"
@@ -5161,11 +5161,6 @@ side-channel@^1.0.4:
     call-bind "^1.0.0"
     get-intrinsic "^1.0.2"
     object-inspect "^1.9.0"
-
-sigmund@^1.0.1:
-  version "1.0.1"
-  resolved "https://registry.yarnpkg.com/sigmund/-/sigmund-1.0.1.tgz#3ff21f198cad2175f9f3b781853fd94d0d19b590"
-  integrity sha512-fCvEXfh6NWpm+YSuY2bpXb/VIihqWA6hLsgboC+0nl71Q7N7o2eaCW8mJa/NLvQhs6jpd3VZV4UiUQlV6+lc8g==
 
 signal-exit@^3.0.2, signal-exit@^3.0.3, signal-exit@^3.0.7:
   version "3.0.7"

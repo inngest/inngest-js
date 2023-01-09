@@ -54,9 +54,9 @@
     "buffer": "^6.0.3",
     "cross-fetch": "^3.1.5",
     "hash.js": "^1.1.7",
+    "json-stringify-deterministic": "^1.0.8",
     "ms": "^2.1.3",
     "serialize-error-cjs": "^0.1.3",
-    "sigmund": "^1.0.1",
     "zod": "^3.19.1"
   },
   "devDependencies": {
@@ -67,7 +67,6 @@
     "@types/jest": "^27.4.1",
     "@types/ms": "^0.7.31",
     "@types/sha.js": "^2.4.0",
-    "@types/sigmund": "^1.0.0",
     "@typescript-eslint/eslint-plugin": "^5.47.0",
     "@typescript-eslint/parser": "^5.47.0",
     "concurrently": "^7.4.0",
