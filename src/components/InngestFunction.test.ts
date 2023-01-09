@@ -3,6 +3,7 @@ import { jest } from "@jest/globals";
 import { OpStack, StepOpCode } from "../types";
 import { Inngest } from "./Inngest";
 import { InngestFunction } from "./InngestFunction";
+import { UnhashedOp, _internals } from "./InngestStepTools";
 
 type TestEvents = {
   foo: { name: "foo"; data: { foo: string } };
@@ -118,125 +119,162 @@ describe("runFn", () => {
       );
     };
 
-    describe("simple A to B", () => {
-      const hashes = {
-        A: "edb02e09014ca133ec26708992d475cbb810bbdf",
-        B: "1867006fbd9cceba8a6fe0e6c847c52c6bc4e693",
-      };
+    const getHashDataSpy = () => jest.spyOn(_internals, "hashData");
 
-      const createFn = () => {
-        const stepA = jest.fn(() => "A");
-        const stepB = jest.fn(() => "B");
+    const testFn = <
+      T extends {
+        fn: InngestFunction<any>;
+        steps: Record<
+          string,
+          jest.Mock<() => string> | jest.Mock<() => Promise<string>>
+        >;
+      },
+      U extends Record<keyof T["steps"], string>
+    >(
+      fnName: string,
+      createTools: () => T,
+      hashes: U,
+      tests: (hashes: U) => Record<
+        string,
+        {
+          stack?: OpStack;
+          runStep?: string;
+          expectedReturn: Awaited<ReturnType<typeof runFnWithStack>>;
+          expectedHashOps?: UnhashedOp[];
+          expectedStepsRun?: (keyof T["steps"])[];
+        }
+      >
+    ) => {
+      describe(fnName, () => {
+        Object.entries(tests(hashes)).forEach(([name, t]) => {
+          describe(name, () => {
+            let hashDataSpy: ReturnType<typeof getHashDataSpy>;
+            let tools: T;
+            let ret: Awaited<ReturnType<typeof runFnWithStack>>;
+
+            beforeAll(async () => {
+              hashDataSpy = getHashDataSpy();
+              tools = createTools();
+              ret = await runFnWithStack(tools.fn, t.stack || [], t.runStep);
+            });
+
+            test("returns expected value", () => {
+              expect(ret).toEqual(t.expectedReturn);
+            });
+
+            if (t.expectedHashOps?.length) {
+              test("hashes expected ops", () => {
+                t.expectedHashOps?.forEach((h) => {
+                  expect(hashDataSpy).toHaveBeenCalledWith(h);
+                });
+              });
+            }
+
+            test("runs expected steps", () => {
+              Object.keys(tools.steps).forEach((k) => {
+                const step = tools.steps[k];
+
+                if (t.expectedStepsRun?.includes(k)) {
+                  expect(step).toHaveBeenCalled();
+                } else {
+                  expect(step).not.toHaveBeenCalled();
+                }
+              });
+            });
+          });
+        });
+      });
+    };
+
+    testFn(
+      "simple A to B",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => "B");
 
         const fn = inngest.createFunction(
           "name",
           "foo",
           async ({ tools: { run } }) => {
-            await run("A", stepA);
-            await run("B", stepB);
+            await run("A", A);
+            await run("B", B);
           }
         );
 
-        return { fn, stepA, stepB };
-      };
-
-      let tools: ReturnType<typeof createFn>;
-      beforeEach(() => {
-        tools = createFn();
-      });
-
-      test("first run reports A step", async () => {
-        const ret = await runFnWithStack(tools.fn, []);
-
-        expect(ret).toEqual([
-          "multi-discovery",
-          [
-            expect.objectContaining({
-              id: hashes.A,
-              name: "A",
-              op: StepOpCode.ReportStep,
-            }),
+        return { fn, steps: { A, B } };
+      },
+      {
+        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+        B: "b494def3936f5c59986e81bc29443609bfc2384a",
+      },
+      ({ A, B }) => ({
+        "first run reports A step": {
+          expectedReturn: [
+            "multi-discovery",
+            [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.ReportStep,
+              }),
+            ],
           ],
-        ]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-      });
-
-      test("requesting to run A runs A", async () => {
-        const ret = await runFnWithStack(tools.fn, [], hashes.A);
-
-        expect(ret).toEqual(["multi-run", { data: "A" }]);
-        expect(tools.stepA).toHaveBeenCalledTimes(1);
-        expect(tools.stepB).not.toHaveBeenCalled();
-      });
-
-      test("request with A in stack reports B step", async () => {
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.A,
-            data: "A",
-          },
-        ]);
-
-        expect(ret).toEqual([
-          "multi-discovery",
-          [
-            expect.objectContaining({
-              id: hashes.B,
-              name: "B",
-              op: StepOpCode.ReportStep,
-            }),
-          ],
-        ]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-      });
-
-      test("requesting to run B runs B", async () => {
-        const ret = await runFnWithStack(
-          tools.fn,
-          [
+        },
+        "requesting to run A runs A": {
+          runStep: A,
+          expectedReturn: ["multi-run", { data: "A" }],
+          expectedStepsRun: ["A"],
+        },
+        "request with A in stack reports B step": {
+          stack: [
             {
-              id: hashes.A,
+              id: A,
               data: "A",
             },
           ],
-          hashes.B
-        );
+          expectedReturn: [
+            "multi-discovery",
+            [
+              expect.objectContaining({
+                id: B,
+                name: "B",
+                op: StepOpCode.ReportStep,
+              }),
+            ],
+          ],
+        },
+        "requesting to run B runs B": {
+          stack: [
+            {
+              id: A,
+              data: "A",
+            },
+          ],
+          runStep: B,
+          expectedReturn: ["multi-run", { data: "B" }],
+          expectedStepsRun: ["B"],
+        },
+        "final request returns empty response": {
+          stack: [
+            {
+              id: A,
+              data: "A",
+            },
+            {
+              id: B,
+              data: "B",
+            },
+          ],
+          expectedReturn: ["multi-discovery", []],
+        },
+      })
+    );
 
-        expect(ret).toEqual(["multi-run", { data: "B" }]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).toHaveBeenCalledTimes(1);
-      });
-
-      test("final request returns empty response", async () => {
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.A,
-            data: "A",
-          },
-          {
-            id: hashes.B,
-            data: "B",
-          },
-        ]);
-
-        expect(ret).toEqual(["multi-discovery", []]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-      });
-    });
-
-    describe("change path based on data", () => {
-      const hashes = {
-        foo: "bf9df5d8612adc0d9d007f97e59d4a4cc6468690",
-        A: "2d35fa12bb3ea433994b113e1f986cdee37db0ec",
-        B: "5e177f6a5b84062a701c22451c2b39a34adfbff4",
-      };
-
-      const createFn = () => {
-        const stepA = jest.fn(() => "A");
-        const stepB = jest.fn(() => "B");
+    testFn(
+      "change path based on data",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => "B");
 
         const fn = inngest.createFunction(
           "name",
@@ -245,626 +283,417 @@ describe("runFn", () => {
             const foo = await waitForEvent("foo", "2h");
 
             if (foo?.data.foo === "foo") {
-              await run("A", stepA);
+              await run("A", A);
             } else if (foo?.data.foo === "bar") {
-              await run("B", stepB);
+              await run("B", B);
             }
           }
         );
 
-        return { fn, stepA, stepB };
-      };
-
-      let tools: ReturnType<typeof createFn>;
-      beforeEach(() => {
-        tools = createFn();
-      });
-
-      test("first run reports waitForEvent", async () => {
-        const ret = await runFnWithStack(tools.fn, []);
-
-        expect(ret).toEqual([
-          "multi-discovery",
-          [
-            expect.objectContaining({
-              id: hashes.foo,
-              name: "foo",
-              op: StepOpCode.WaitForEvent,
-            }),
+        return { fn, steps: { A, B } };
+      },
+      {
+        foo: "715347facf54baa82ad66dafed5ed6f1f84eaf8a",
+        A: "cfae9b35319fd155051a76b9208840185cecdc07",
+        B: "1352bc51e5732952742e6d103747c954c16570f5",
+      },
+      ({ foo, A, B }) => ({
+        "first run reports waitForEvent": {
+          expectedReturn: [
+            "multi-discovery",
+            [
+              expect.objectContaining({
+                op: StepOpCode.WaitForEvent,
+                name: "foo",
+                id: foo,
+              }),
+            ],
           ],
-        ]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-      });
-
-      test("request with event foo.data.foo:foo reports A step", async () => {
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.foo,
-            data: { data: { foo: "foo" } },
-          },
-        ]);
-
-        expect(ret).toEqual([
-          "multi-discovery",
-          [
-            expect.objectContaining({
-              id: hashes.A,
-              name: "A",
-              op: StepOpCode.ReportStep,
-            }),
+        },
+        "request with event foo.data.foo:foo reports A step": {
+          stack: [{ id: foo, data: { data: { foo: "foo" } } }],
+          expectedReturn: [
+            "multi-discovery",
+            [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.ReportStep,
+              }),
+            ],
           ],
-        ]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-      });
-
-      test("requesting to run A runs A", async () => {
-        const ret = await runFnWithStack(
-          tools.fn,
-          [
+        },
+        "requesting to run A runs A": {
+          stack: [{ id: foo, data: { data: { foo: "foo" } } }],
+          runStep: A,
+          expectedReturn: ["multi-run", { data: "A" }],
+          expectedStepsRun: ["A"],
+        },
+        "request with event foo.data.foo:bar reports B step": {
+          stack: [{ id: foo, data: { data: { foo: "bar" } } }],
+          expectedReturn: [
+            "multi-discovery",
+            [
+              expect.objectContaining({
+                id: B,
+                name: "B",
+                op: StepOpCode.ReportStep,
+              }),
+            ],
+          ],
+        },
+        "requesting to run B runs B": {
+          stack: [{ id: foo, data: { data: { foo: "bar" } } }],
+          runStep: B,
+          expectedReturn: ["multi-run", { data: "B" }],
+          expectedStepsRun: ["B"],
+        },
+        "final request returns empty response": {
+          stack: [
             {
-              id: hashes.foo,
-              data: { data: { foo: "foo" } },
-            },
-          ],
-          hashes.A
-        );
-
-        expect(ret).toEqual(["multi-run", { data: "A" }]);
-        expect(tools.stepA).toHaveBeenCalledTimes(1);
-        expect(tools.stepB).not.toHaveBeenCalled();
-      });
-
-      test("request with event foo.data.foo:bar reports B step", async () => {
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.foo,
-            data: { data: { foo: "bar" } },
-          },
-        ]);
-
-        expect(ret).toEqual([
-          "multi-discovery",
-          [
-            expect.objectContaining({
-              id: hashes.B,
-              name: "B",
-              op: StepOpCode.ReportStep,
-            }),
-          ],
-        ]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-      });
-
-      test("requesting to run B runs B", async () => {
-        const ret = await runFnWithStack(
-          tools.fn,
-          [
-            {
-              id: hashes.foo,
+              id: foo,
               data: { data: { foo: "bar" } },
             },
+            {
+              id: B,
+              data: "B",
+            },
           ],
-          hashes.B
-        );
+          expectedReturn: ["multi-discovery", []],
+        },
+      })
+    );
 
-        expect(ret).toEqual(["multi-run", { data: "B" }]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).toHaveBeenCalledTimes(1);
-      });
-
-      test("final request returns empty response", async () => {
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.foo,
-            data: { data: { foo: "bar" } },
-          },
-          {
-            id: hashes.B,
-            data: "B",
-          },
-        ]);
-
-        expect(ret).toEqual(["multi-discovery", []]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-      });
-    });
-
-    describe("Promise.all", () => {
-      const hashes = {
-        A: "edb02e09014ca133ec26708992d475cbb810bbdf",
-        B: "67a1041952845ae4320367df23171bbbed7ec20c",
-        C: "300a4f24b02f329fd1407e0875b7ccb7c75a0b97",
-      };
-
-      const createFn = () => {
-        const stepA = jest.fn(() => "A");
-        const stepB = jest.fn(() => "B");
-        const stepC = jest.fn(() => "C");
+    testFn(
+      "Promise.all",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => "B");
+        const C = jest.fn(() => "C");
 
         const fn = inngest.createFunction(
           "name",
           "foo",
           async ({ tools: { run } }) => {
-            await Promise.all([run("A", stepA), run("B", stepB)]);
-            await run("C", stepC);
+            await Promise.all([run("A", A), run("B", B)]);
+            await run("C", C);
           }
         );
 
-        return { fn, stepA, stepB, stepC };
-      };
-
-      let tools: ReturnType<typeof createFn>;
-      beforeEach(() => {
-        tools = createFn();
-      });
-
-      test("first run reports A and B steps", async () => {
-        const ret = await runFnWithStack(tools.fn, []);
-
-        expect(ret).toEqual([
-          "multi-discovery",
-          [
-            expect.objectContaining({
-              id: hashes.A,
-              name: "A",
-              op: StepOpCode.ReportStep,
-            }),
-            expect.objectContaining({
-              id: hashes.B,
-              name: "B",
-              op: StepOpCode.ReportStep,
-            }),
+        return { fn, steps: { A, B, C } };
+      },
+      {
+        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+        B: "1b724c1e706194ce9fa9aa57c0fb1c5075c7f7f4",
+        C: "b9996145f3de0c6073d3526ec18bb73be43e8bd6",
+      },
+      ({ A, B, C }) => ({
+        "first run reports A and B steps": {
+          expectedReturn: [
+            "multi-discovery",
+            [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.ReportStep,
+              }),
+              expect.objectContaining({
+                id: B,
+                name: "B",
+                op: StepOpCode.ReportStep,
+              }),
+            ],
           ],
-        ]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepC).not.toHaveBeenCalled();
-      });
+        },
 
-      test("requesting to run B runs B", async () => {
-        const ret = await runFnWithStack(tools.fn, [], hashes.B);
+        "requesting to run B runs B": {
+          runStep: B,
+          expectedReturn: ["multi-run", { data: "B" }],
+          expectedStepsRun: ["B"],
+        },
 
-        expect(ret).toEqual(["multi-run", { data: "B" }]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).toHaveBeenCalledTimes(1);
-        expect(tools.stepC).not.toHaveBeenCalled();
-      });
-
-      test("request following B returns empty response", async () => {
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.B,
-            data: "B",
-          },
-        ]);
-
-        expect(ret).toEqual(["multi-discovery", []]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepC).not.toHaveBeenCalled();
-      });
-
-      test("requesting to run A runs A", async () => {
-        const ret = await runFnWithStack(tools.fn, [], hashes.A);
-
-        expect(ret).toEqual(["multi-run", { data: "A" }]);
-        expect(tools.stepA).toHaveBeenCalledTimes(1);
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepC).not.toHaveBeenCalled();
-      });
-
-      test("request with B,A order reports C step", async () => {
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.B,
-            data: "B",
-          },
-          {
-            id: hashes.A,
-            data: "A",
-          },
-        ]);
-
-        expect(ret).toEqual([
-          "multi-discovery",
-          [
-            expect.objectContaining({
-              id: hashes.C,
-              name: "C",
-              op: StepOpCode.ReportStep,
-            }),
-          ],
-        ]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepC).not.toHaveBeenCalled();
-      });
-
-      test("requesting to run C runs C", async () => {
-        const ret = await runFnWithStack(
-          tools.fn,
-          [
+        "request following B returns empty response": {
+          stack: [
             {
-              id: hashes.B,
+              id: B,
+              data: "B",
+            },
+          ],
+          expectedReturn: ["multi-discovery", []],
+        },
+
+        "requesting to run A runs A": {
+          runStep: A,
+          expectedReturn: ["multi-run", { data: "A" }],
+          expectedStepsRun: ["A"],
+        },
+
+        "request with B,A order reports C step": {
+          stack: [
+            {
+              id: B,
               data: "B",
             },
             {
-              id: hashes.A,
+              id: A,
               data: "A",
             },
           ],
-          hashes.C
-        );
+          expectedReturn: [
+            "multi-discovery",
+            [
+              expect.objectContaining({
+                id: C,
+                name: "C",
+                op: StepOpCode.ReportStep,
+              }),
+            ],
+          ],
+        },
 
-        expect(ret).toEqual(["multi-run", { data: "C" }]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepC).toHaveBeenCalledTimes(1);
-      });
+        "requesting to run C runs C": {
+          runStep: C,
+          stack: [
+            {
+              id: B,
+              data: "B",
+            },
+            {
+              id: A,
+              data: "A",
+            },
+          ],
+          expectedReturn: ["multi-run", { data: "C" }],
+          expectedStepsRun: ["C"],
+        },
 
-      test("final request returns empty response", async () => {
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.B,
-            data: "B",
-          },
-          {
-            id: hashes.A,
-            data: "A",
-          },
-          {
-            id: hashes.C,
-            data: "C",
-          },
-        ]);
+        "final request returns empty response": {
+          stack: [
+            {
+              id: B,
+              data: "B",
+            },
+            {
+              id: A,
+              data: "A",
+            },
+            {
+              id: C,
+              data: "C",
+            },
+          ],
+          expectedReturn: ["multi-discovery", []],
+        },
+      })
+    );
 
-        expect(ret).toEqual(["multi-discovery", []]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepC).not.toHaveBeenCalled();
-      });
-    });
-
-    describe("Promise.race", () => {
-      const hashes = {
-        A: "edb02e09014ca133ec26708992d475cbb810bbdf",
-        B: "67a1041952845ae4320367df23171bbbed7ec20c",
-        Bwins: "1a05dd08435a58f5f9f3e2bf2ffe21db4f09fdd3",
-      };
-
-      const createFn = () => {
-        const stepA = jest.fn(() => Promise.resolve("A"));
-        const stepB = jest.fn(() => Promise.resolve("B"));
-        const stepAWins = jest.fn(() => Promise.resolve("A wins"));
-        const stepBWins = jest.fn(() => Promise.resolve("B wins"));
+    testFn(
+      "Promise.race",
+      () => {
+        const A = jest.fn(() => Promise.resolve("A"));
+        const B = jest.fn(() => Promise.resolve("B"));
+        const AWins = jest.fn(() => Promise.resolve("A wins"));
+        const BWins = jest.fn(() => Promise.resolve("B wins"));
 
         const fn = inngest.createFunction(
           "name",
           "foo",
           async ({ tools: { run } }) => {
-            const winner = await Promise.race([
-              run("A", stepA),
-              run("B", stepB),
-            ]);
+            const winner = await Promise.race([run("A", A), run("B", B)]);
 
             if (winner === "A") {
-              await run("A wins", stepAWins);
+              await run("A wins", AWins);
             } else if (winner === "B") {
-              await run("B wins", stepBWins);
+              await run("B wins", BWins);
             }
           }
         );
 
-        return { fn, stepA, stepB, stepAWins, stepBWins };
-      };
-
-      test("first run reports A and B steps", async () => {
-        const tools = createFn();
-
-        const ret = await runFnWithStack(tools.fn, []);
-
-        expect(ret).toEqual([
-          "multi-discovery",
-          [
-            expect.objectContaining({
-              id: hashes.A,
-              name: "A",
-              op: StepOpCode.ReportStep,
-            }),
-            expect.objectContaining({
-              id: hashes.B,
-              name: "B",
-              op: StepOpCode.ReportStep,
-            }),
+        return { fn, steps: { A, B, AWins, BWins } };
+      },
+      {
+        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+        B: "1b724c1e706194ce9fa9aa57c0fb1c5075c7f7f4",
+        AWins: "",
+        BWins: "bfdc2902cd708525bec677c1ad15fffff4bdccca",
+      },
+      ({ A, B, BWins }) => ({
+        "first run reports A and B steps": {
+          expectedReturn: [
+            "multi-discovery",
+            [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.ReportStep,
+              }),
+              expect.objectContaining({
+                id: B,
+                name: "B",
+                op: StepOpCode.ReportStep,
+              }),
+            ],
           ],
-        ]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepAWins).not.toHaveBeenCalled();
-        expect(tools.stepBWins).not.toHaveBeenCalled();
-      });
+        },
 
-      test("requesting to run B runs B", async () => {
-        const tools = createFn();
+        "requesting to run B runs B": {
+          runStep: B,
+          expectedReturn: ["multi-run", { data: "B" }],
+          expectedStepsRun: ["B"],
+        },
 
-        const ret = await runFnWithStack(tools.fn, [], hashes.B);
-
-        expect(ret).toEqual(["multi-run", { data: "B" }]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).toHaveBeenCalledTimes(1);
-        expect(tools.stepAWins).not.toHaveBeenCalled();
-        expect(tools.stepBWins).not.toHaveBeenCalled();
-      });
-
-      test("request following B reports 'B wins' step", async () => {
-        const tools = createFn();
-
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.B,
-            data: "B",
-          },
-        ]);
-
-        expect(ret).toEqual([
-          "multi-discovery",
-          [
-            expect.objectContaining({
-              id: hashes.Bwins,
-              name: "B wins",
-              op: StepOpCode.ReportStep,
-            }),
-          ],
-        ]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepAWins).not.toHaveBeenCalled();
-        expect(tools.stepBWins).not.toHaveBeenCalled();
-      });
-
-      test("requesting to run A runs A", async () => {
-        const tools = createFn();
-
-        const ret = await runFnWithStack(tools.fn, [], hashes.A);
-
-        expect(ret).toEqual(["multi-run", { data: "A" }]);
-        expect(tools.stepA).toHaveBeenCalledTimes(1);
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepAWins).not.toHaveBeenCalled();
-        expect(tools.stepBWins).not.toHaveBeenCalled();
-      });
-
-      test("request following A returns empty response", async () => {
-        const tools = createFn();
-
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.B,
-            data: "B",
-          },
-          {
-            id: hashes.A,
-            data: "A",
-          },
-        ]);
-
-        expect(ret).toEqual(["multi-discovery", []]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepAWins).not.toHaveBeenCalled();
-        expect(tools.stepBWins).not.toHaveBeenCalled();
-      });
-
-      test("requesting to run 'B wins' runs 'B wins'", async () => {
-        const tools = createFn();
-
-        const ret = await runFnWithStack(
-          tools.fn,
-          [
+        "request following B reports 'B wins' step": {
+          stack: [
             {
-              id: hashes.B,
+              id: B,
               data: "B",
             },
           ],
-          hashes.Bwins
-        );
+          expectedReturn: [
+            "multi-discovery",
+            [
+              expect.objectContaining({
+                id: BWins,
+                name: "B wins",
+                op: StepOpCode.ReportStep,
+              }),
+            ],
+          ],
+        },
 
-        expect(ret).toEqual(["multi-run", { data: "B wins" }]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepAWins).not.toHaveBeenCalled();
-        expect(tools.stepBWins).toHaveBeenCalledTimes(1);
-      });
+        "requesting to run A runs A": {
+          runStep: A,
+          expectedReturn: ["multi-run", { data: "A" }],
+          expectedStepsRun: ["A"],
+        },
 
-      test("final request returns empty response", async () => {
-        const tools = createFn();
+        "request following A returns empty response": {
+          stack: [
+            {
+              id: B,
+              data: "B",
+            },
+            {
+              id: A,
+              data: "A",
+            },
+          ],
+          expectedReturn: ["multi-discovery", []],
+        },
 
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.B,
-            data: "B",
-          },
-          {
-            id: hashes.A,
-            data: "A",
-          },
-          {
-            id: hashes.Bwins,
-            data: "B wins",
-          },
-        ]);
+        "requesting to run 'B wins' runs 'B wins'": {
+          runStep: BWins,
+          stack: [
+            {
+              id: B,
+              data: "B",
+            },
+          ],
+          expectedReturn: ["multi-run", { data: "B wins" }],
+          expectedStepsRun: ["BWins"],
+        },
+      })
+    );
 
-        expect(ret).toEqual(["multi-discovery", []]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepAWins).not.toHaveBeenCalled();
-        expect(tools.stepBWins).not.toHaveBeenCalled();
-      });
-    });
-
-    // B has a catch
-    describe("silently handle step error", () => {
-      const hashes = {
-        A: "edb02e09014ca133ec26708992d475cbb810bbdf",
-        B: "67a1041952845ae4320367df23171bbbed7ec20c",
-        Bfailed: "be0967ec03bed2a48b00396606b8fab76d761b8a",
-      };
-
-      const createFn = () => {
-        const stepA = jest.fn(() => "A");
-        const stepB = jest.fn(() => {
+    testFn(
+      "silently handle step error",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => {
           throw "B";
         });
-        const stepBFailed = jest.fn(() => "B failed");
+        const BFailed = jest.fn(() => "B failed");
 
         const fn = inngest.createFunction(
           "name",
           "foo",
           async ({ tools: { run } }) => {
             await Promise.all([
-              run("A", stepA),
-              run("B", stepB).catch(() => run("B failed", stepBFailed)),
+              run("A", A),
+              run("B", B).catch(() => run("B failed", BFailed)),
             ]);
           }
         );
 
-        return { fn, stepA, stepB, stepBFailed };
-      };
-
-      let tools: ReturnType<typeof createFn>;
-      beforeEach(() => {
-        tools = createFn();
-      });
-
-      test("first run reports A and B steps", async () => {
-        const ret = await runFnWithStack(tools.fn, []);
-
-        expect(ret).toEqual([
-          "multi-discovery",
-          [
-            expect.objectContaining({
-              id: hashes.A,
-              name: "A",
-              op: StepOpCode.ReportStep,
-            }),
-            expect.objectContaining({
-              id: hashes.B,
-              name: "B",
-              op: StepOpCode.ReportStep,
-            }),
+        return { fn, steps: { A, B, BFailed } };
+      },
+      {
+        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+        B: "1b724c1e706194ce9fa9aa57c0fb1c5075c7f7f4",
+        BFailed: "0ccca8a0c6463bcf972afb233f1f0baa47d90cc3",
+      },
+      ({ A, B, BFailed }) => ({
+        "first run reports A and B steps": {
+          expectedReturn: [
+            "multi-discovery",
+            [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.ReportStep,
+              }),
+              expect.objectContaining({
+                id: B,
+                name: "B",
+                op: StepOpCode.ReportStep,
+              }),
+            ],
           ],
-        ]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepBFailed).not.toHaveBeenCalled();
-      });
+        },
 
-      test("requesting to run A runs A", async () => {
-        const ret = await runFnWithStack(tools.fn, [], hashes.A);
+        "requesting to run A runs A": {
+          runStep: A,
+          expectedReturn: ["multi-run", { data: "A" }],
+          expectedStepsRun: ["A"],
+        },
 
-        expect(ret).toEqual(["multi-run", { data: "A" }]);
-        expect(tools.stepA).toHaveBeenCalledTimes(1);
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepBFailed).not.toHaveBeenCalled();
-      });
+        "request following A returns empty response": {
+          stack: [{ id: A, data: "A" }],
+          expectedReturn: ["multi-discovery", []],
+        },
 
-      test("request following A returns empty response", async () => {
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.A,
-            data: "A",
-          },
-        ]);
+        "requesting to run B runs B, which fails": {
+          runStep: B,
+          expectedReturn: ["multi-run", { error: "B" }],
+          expectedStepsRun: ["B"],
+        },
 
-        expect(ret).toEqual(["multi-discovery", []]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepBFailed).not.toHaveBeenCalled();
-      });
-
-      test("requesting to run B runs B, which fails", async () => {
-        const ret = await runFnWithStack(tools.fn, [], hashes.B);
-
-        expect(ret).toEqual(["multi-run", { error: "B" }]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).toHaveBeenCalledTimes(1);
-        expect(tools.stepBFailed).not.toHaveBeenCalled();
-      });
-
-      test("request following B reports 'B failed' step", async () => {
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.A,
-            data: "A",
-          },
-          {
-            id: hashes.B,
-            error: "B",
-          },
-        ]);
-
-        expect(ret).toEqual([
-          "multi-discovery",
-          [
-            expect.objectContaining({
-              id: hashes.Bfailed,
-              name: "B failed",
-              op: StepOpCode.ReportStep,
-            }),
+        "request following B reports 'B failed' step": {
+          stack: [
+            { id: A, data: "A" },
+            { id: B, error: "B" },
           ],
-        ]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepBFailed).not.toHaveBeenCalled();
-      });
-
-      test("requesting to run 'B failed' runs 'B failed'", async () => {
-        const ret = await runFnWithStack(
-          tools.fn,
-          [
-            {
-              id: hashes.A,
-              data: "A",
-            },
-            {
-              id: hashes.B,
-              error: "B",
-            },
+          expectedReturn: [
+            "multi-discovery",
+            [
+              expect.objectContaining({
+                id: BFailed,
+                name: "B failed",
+                op: StepOpCode.ReportStep,
+              }),
+            ],
           ],
-          hashes.Bfailed
-        );
+        },
 
-        expect(ret).toEqual(["multi-run", { data: "B failed" }]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepBFailed).toHaveBeenCalledTimes(1);
-      });
+        "requesting to run 'B failed' runs 'B failed'": {
+          runStep: BFailed,
+          stack: [
+            { id: A, data: "A" },
+            { id: B, error: "B" },
+          ],
+          expectedReturn: ["multi-run", { data: "B failed" }],
+          expectedStepsRun: ["BFailed"],
+        },
 
-      test("final request returns empty response", async () => {
-        const ret = await runFnWithStack(tools.fn, [
-          {
-            id: hashes.A,
-            data: "A",
-          },
-          {
-            id: hashes.B,
-            error: "B",
-          },
-          {
-            id: hashes.Bfailed,
-            data: "B failed",
-          },
-        ]);
-
-        expect(ret).toEqual(["multi-discovery", []]);
-        expect(tools.stepA).not.toHaveBeenCalled();
-        expect(tools.stepB).not.toHaveBeenCalled();
-        expect(tools.stepBFailed).not.toHaveBeenCalled();
-      });
-    });
+        "final request returns empty response": {
+          stack: [
+            { id: A, data: "A" },
+            { id: B, error: "B" },
+            { id: BFailed, data: "B failed" },
+          ],
+          expectedReturn: ["multi-discovery", []],
+        },
+      })
+    );
   });
 });
