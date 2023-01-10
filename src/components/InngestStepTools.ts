@@ -422,7 +422,7 @@ interface WaitForEventOpts<
 export type UnhashedOp = {
   name: string;
   op: StepOpCode;
-  opts?: Record<string, any> | null;
+  opts: Record<string, any> | null;
   parent: string | null;
   pos?: number;
 };
