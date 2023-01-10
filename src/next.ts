@@ -37,6 +37,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
               env,
               url,
               isProduction,
+              deployId: req.query[queryKeys.DeployId]?.toString(),
             };
           }
         },
