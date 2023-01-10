@@ -120,10 +120,6 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
    * given to this instance of `InngestFunction`, though will check whether an
    * op has been submitted for use (or a Promise is pending, such as a step
    * running) after the function has completed.
-   *
-   * In both cases, an unknown error (i.e. anything except a
-   * `StepFlowInterrupt` error) will bubble up to the caller, meaning the caller
-   * must handle what to do with the error.
    */
   private async runFn(
     /**
