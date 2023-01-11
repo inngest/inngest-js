@@ -98,7 +98,7 @@ describe("waitForEvent", () => {
   });
 });
 
-describe("step", () => {
+describe("run", () => {
   let run: ReturnType<typeof createStepTools>[0]["run"];
   let state: ReturnType<typeof createStepTools>[1];
 
