@@ -3100,6 +3100,11 @@ is-binary-path@~2.1.0:
   dependencies:
     binary-extensions "^2.0.0"
 
+is-buffer@^2.0.5:
+  version "2.0.5"
+  resolved "https://registry.yarnpkg.com/is-buffer/-/is-buffer-2.0.5.tgz#ebc252e400d22ff8d77fa09888821a24a658c191"
+  integrity sha512-i2R6zNFDwgEHJyQUtJEk0XFi1i0dPFn/oqjK3/vPCcDeJvW5NQ83V8QbicfF1SupOaB0h8ntgBC2YiE7dfyctQ==
+
 is-ci@^2.0.0:
   version "2.0.0"
   resolved "https://registry.yarnpkg.com/is-ci/-/is-ci-2.0.0.tgz#6bc6334181810e04b5c22b3d589fdca55026404c"
@@ -5423,6 +5428,15 @@ terminal-link@^2.1.1:
     ansi-escapes "^4.2.1"
     supports-hyperlinks "^2.0.0"
 
+tersify@^3.11.1:
+  version "3.11.1"
+  resolved "https://registry.yarnpkg.com/tersify/-/tersify-3.11.1.tgz#422cbdf8de944695f1fb006c333555030d3e98f5"
+  integrity sha512-W/Kv1z+cgDRsI10p9CyCZJ+gopPUVOz1/h7OPntr6D52iIHQTbsg40MBUoaG82q8IgD/GKoWhoujg/rOxQW7SA==
+  dependencies:
+    acorn "^8.8.0"
+    is-buffer "^2.0.5"
+    unpartial "^1.0.0"
+
 test-exclude@^6.0.0:
   version "6.0.0"
   resolved "https://registry.yarnpkg.com/test-exclude/-/test-exclude-6.0.0.tgz#04a8698661d805ea6fa293b6cb9e63ac044ef15e"
@@ -5594,6 +5608,14 @@ type-is@^1.6.18, type-is@~1.6.18:
     media-typer "0.3.0"
     mime-types "~2.1.24"
 
+type-plus@^5.1.0:
+  version "5.1.0"
+  resolved "https://registry.yarnpkg.com/type-plus/-/type-plus-5.1.0.tgz#f34bda836ad6f42ec88db263b1b50bb6de92d51e"
+  integrity sha512-1+meU/urZTVvH0bvMgQkGtkVU6qUTkXSH36CTeRXjhzlOYKVW8/i5AuG0divp3LE6d3iUODBPzraLDrL2iB91Q==
+  dependencies:
+    tersify "^3.11.1"
+    unpartial "^1.0.4"
+
 typedarray-to-buffer@^3.1.5:
   version "3.1.5"
   resolved "https://registry.yarnpkg.com/typedarray-to-buffer/-/typedarray-to-buffer-3.1.5.tgz#a97ee7a9ff42691b9f783ff1bc5112fe3fca9080"
@@ -5632,6 +5654,11 @@ universalify@^0.1.0:
   version "0.1.2"
   resolved "https://registry.yarnpkg.com/universalify/-/universalify-0.1.2.tgz#b646f69be3942dabcecc9d6639c80dc105efaa66"
   integrity sha512-rBJeI5CXAlmy1pV+617WB9J63U6XcazHHF2f2dbJix4XzpUF0RS3Zbj0FGIOCAva5P/d/GBOYaACQ1w+0azUkg==
+
+unpartial@^1.0.0, unpartial@^1.0.4:
+  version "1.0.4"
+  resolved "https://registry.yarnpkg.com/unpartial/-/unpartial-1.0.4.tgz#56490ed475105110cee61890a80c5da394741833"
+  integrity sha512-xY8319WOQcRDRVFWvTty2YJXKvM8XRPehqWZUd7k/BatpbuitI4Jd+2xlwjTZbZScSvT75TnUsUmy5uwFa3o0g==
 
 unpipe@1.0.0, unpipe@~1.0.0:
   version "1.0.0"
