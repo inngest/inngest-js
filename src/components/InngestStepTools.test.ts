@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import ms from "ms";
 import { StepOpCode } from "../types";
 import { createStepTools, StepFlowInterrupt } from "./InngestStepTools";
 
@@ -173,21 +174,43 @@ describe("sleepUntil", () => {
   test("return Sleep step op code", async () => {
     const future = new Date();
     future.setDate(future.getDate() + 1);
-
     expect(() => sleepUntil(future)).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
       op: StepOpCode.Sleep,
     });
   });
 
-  test("return time string as ID given a date", async () => {
-    const upcoming = new Date();
-    upcoming.setDate(upcoming.getDate() + 6);
-    upcoming.setHours(upcoming.getHours() + 1);
+  test("parses dates", async () => {
+    const next = new Date();
 
-    expect(() => sleepUntil(upcoming)).toThrow(StepFlowInterrupt);
+    expect(() => sleepUntil(next)).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
-      name: expect.stringContaining("6d"),
+      name: next.toISOString(),
     });
+  });
+
+  test("parses ISO strings", async () => {
+    const next = new Date(new Date().valueOf() + ms("6d")).toISOString();
+
+    expect(() => sleepUntil(next)).toThrow(StepFlowInterrupt);
+    await expect(state.nextOp).resolves.toMatchObject({
+      name: next,
+    });
+  });
+
+  test("throws if invalid date given", async () => {
+    const next = new Date("bad");
+
+    expect(() => sleepUntil(next)).toThrow(
+      "Invalid date or date string passed"
+    );
+  });
+
+  test("throws if invalid time string given", async () => {
+    const next = "bad";
+
+    expect(() => sleepUntil(next)).toThrow(
+      "Invalid date or date string passed"
+    );
   });
 });
