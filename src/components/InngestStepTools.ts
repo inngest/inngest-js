@@ -1,5 +1,6 @@
 import { sha1 } from "hash.js";
 import sigmund from "sigmund";
+import { Jsonify } from "type-fest";
 import { timeStr } from "../helpers/strings";
 import type { ObjectPaths } from "../helpers/types";
 import { EventPayload, HashedOp, Op, OpStack, StepOpCode } from "../types";
@@ -314,11 +315,13 @@ export const createStepTools = <
          * for next steps.
          */
         fn: T
-      ) => T extends (...args: any[]) => Promise<infer U>
-        ? Awaited<U extends void ? null : U>
-        : ReturnType<T> extends void
-        ? null
-        : ReturnType<T>
+      ) => Jsonify<
+        T extends (...args: any[]) => Promise<infer U>
+          ? Awaited<U extends void ? null : U>
+          : ReturnType<T> extends void
+          ? null
+          : ReturnType<T>
+      >
     >(
       (name) => {
         return {

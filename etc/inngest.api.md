@@ -4,6 +4,8 @@
 
 ```ts
 
+import { Jsonify } from 'type-fest';
+
 // @public
 export interface ClientOptions {
     eventKey?: string;
