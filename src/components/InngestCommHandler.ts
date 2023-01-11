@@ -505,7 +505,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         const { status, message } = await this.register(
           this.reqUrl(registerRes.url),
           registerRes.env[envKeys.DevServerUrl],
-          registerRes.deployId,
+          registerRes.deployId
         );
 
         return {
@@ -640,7 +640,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected async register(
     url: URL,
     devServerHost: string | undefined,
-    deployId?: string | undefined | null,
+    deployId?: string | undefined | null
   ): Promise<{ status: number; message: string }> {
     const body = this.registerBody(url);
 
@@ -657,6 +657,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       }
     }
 
+    // eslint-disable-next-line no-extra-boolean-cast
     if (!!deployId) {
       registerURL.searchParams.set("deployId", deployId);
     }
