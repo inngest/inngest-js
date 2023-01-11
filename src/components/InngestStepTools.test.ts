@@ -198,7 +198,7 @@ describe("sleepUntil", () => {
     });
   });
 
-  test("throws if invalid date given", async () => {
+  test("throws if invalid date given", () => {
     const next = new Date("bad");
 
     expect(() => sleepUntil(next)).toThrow(
@@ -206,7 +206,7 @@ describe("sleepUntil", () => {
     );
   });
 
-  test("throws if invalid time string given", async () => {
+  test("throws if invalid time string given", () => {
     const next = "bad";
 
     expect(() => sleepUntil(next)).toThrow(
