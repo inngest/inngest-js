@@ -180,23 +180,37 @@ describe("sleepUntil", () => {
     });
   });
 
-  test("parses ISO strings", async () => {
-    const next = new Date().valueOf() + ms("6d");
+  test("parses dates", async () => {
+    const next = new Date();
 
-    expect(() => sleepUntil(new Date(next))).toThrow(StepFlowInterrupt);
+    expect(() => sleepUntil(next)).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
-      name: expect.stringContaining("6d"),
+      name: next.toISOString(),
     });
   });
 
-  test("return time string as ID given a date", async () => {
-    const upcoming = new Date();
-    upcoming.setDate(upcoming.getDate() + 6);
-    upcoming.setHours(upcoming.getHours() + 1);
+  test("parses ISO strings", async () => {
+    const next = new Date(new Date().valueOf() + ms("6d")).toISOString();
 
-    expect(() => sleepUntil(upcoming)).toThrow(StepFlowInterrupt);
+    expect(() => sleepUntil(next)).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
-      name: expect.stringContaining("6d"),
+      name: next,
     });
+  });
+
+  test("throws if invalid date given", async () => {
+    const next = new Date("bad");
+
+    expect(() => sleepUntil(next)).toThrow(
+      "Invalid date or date string passed"
+    );
+  });
+
+  test("throws if invalid time string given", async () => {
+    const next = "bad";
+
+    expect(() => sleepUntil(next)).toThrow(
+      "Invalid date or date string passed"
+    );
   });
 });
