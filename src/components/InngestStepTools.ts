@@ -369,16 +369,18 @@ export const createStepTools = <
         /**
          * The date to wait until before continuing.
          */
-        time: Date
+        time: Date | string
       ) => void
     >((time) => {
+      const date: Date = typeof time === "string" ? new Date(time) : time;
+
       /**
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
       return {
         op: StepOpCode.Sleep,
-        name: timeStr(time),
+        name: timeStr(date),
       };
     }),
   };

@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import ms from "ms";
 import { StepOpCode } from "../types";
 import { createStepTools, StepFlowInterrupt } from "./InngestStepTools";
 
@@ -173,10 +174,18 @@ describe("sleepUntil", () => {
   test("return Sleep step op code", async () => {
     const future = new Date();
     future.setDate(future.getDate() + 1);
-
     expect(() => sleepUntil(future)).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
       op: StepOpCode.Sleep,
+    });
+  });
+
+  test("parses ISO strings", async () => {
+    const next = new Date().valueOf() + ms("6d");
+
+    expect(() => sleepUntil(new Date(next))).toThrow(StepFlowInterrupt);
+    await expect(state.nextOp).resolves.toMatchObject({
+      name: expect.stringContaining("6d"),
     });
   });
 
