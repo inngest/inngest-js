@@ -657,8 +657,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       }
     }
 
-    // eslint-disable-next-line no-extra-boolean-cast
-    if (!!deployId) {
+    if (deployId) {
       registerURL.searchParams.set("deployId", deployId);
     }
 

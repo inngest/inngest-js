@@ -103,7 +103,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     protected _isProd: boolean;
     readonly name: string;
     // (undocumented)
-    protected register(url: URL, devServerHost: string | undefined): Promise<{
+    protected register(url: URL, devServerHost: string | undefined, deployId?: string | undefined | null): Promise<{
         status: number;
         message: string;
     }>;
