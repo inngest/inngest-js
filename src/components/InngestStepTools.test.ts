@@ -1,5 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import ms from "ms";
+import { assertType } from "type-plus";
 import { StepOpCode } from "../types";
 import { createStepTools, StepFlowInterrupt } from "./InngestStepTools";
 
@@ -137,6 +139,53 @@ describe("run", () => {
     await expect(state.nextOp).resolves.toMatchObject({
       data: "foo",
     });
+  });
+
+  test("types returned from run are the result of (de)serialization", () => {
+    const input = {
+      str: "",
+      num: 0,
+      bool: false,
+      date: new Date(),
+      fn: () => undefined,
+      obj: {
+        str: "",
+        num: 0,
+      },
+      arr: [0, 1, 2, () => undefined, true],
+      infinity: Infinity,
+      nan: NaN,
+      undef: undefined,
+      null: null,
+      symbol: Symbol("foo"),
+      map: new Map(),
+      set: new Set(),
+    };
+
+    const fn = () => run("step", () => input);
+
+    let output: ReturnType<typeof fn>;
+
+    expect(() => {
+      output = fn();
+    }).toThrow(StepFlowInterrupt);
+
+    assertType<{
+      str: string;
+      num: number;
+      bool: boolean;
+      date: string;
+      obj: {
+        str: string;
+        num: number;
+      };
+      arr: (number | null | boolean)[];
+      infinity: number;
+      nan: number;
+      null: null;
+      map: Record<string, never>;
+      set: Record<string, never>;
+    }>(output!);
   });
 });
 
