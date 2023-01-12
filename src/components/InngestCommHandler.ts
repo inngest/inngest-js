@@ -551,14 +551,37 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         throw new Error(`Could not find function with ID "${functionId}"`);
       }
 
-      const { event, steps } = z
+      const { event, steps, ctx } = z
         .object({
           event: z.object({}).passthrough(),
-          steps: z.array(incomingOpSchema.passthrough()).optional().nullable(),
+          steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
+          ctx: z
+            .object({
+              stack: z
+                .object({
+                  order: z.array(z.string()),
+                  progress: z.number(),
+                })
+                .passthrough()
+                .optional()
+                .nullable(),
+            })
+            .optional()
+            .nullable(),
         })
         .parse(data);
 
-      const ret = await fn["runFn"]({ event }, steps || [], stepId || null);
+      const opStack =
+        ctx?.stack?.order.slice(0, ctx.stack.progress).map((opId) => {
+          const step = steps?.[opId];
+          if (!step) {
+            throw new Error(`Could not find step with ID "${opId}"`);
+          }
+
+          return step;
+        }) ?? [];
+
+      const ret = await fn["runFn"]({ event }, opStack, stepId || null);
       const isOp = ret[0];
 
       if (isOp) {
