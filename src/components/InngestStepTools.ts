@@ -1,5 +1,6 @@
 import { sha1 } from "hash.js";
 import stringify from "json-stringify-deterministic";
+import { Jsonify } from "type-fest";
 import { timeStr } from "../helpers/strings";
 import type { ObjectPaths } from "../helpers/types";
 import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
@@ -284,11 +285,13 @@ export const createStepTools = <
          */
         fn: T
       ) => Promise<
-        T extends () => Promise<infer U>
-          ? Awaited<U extends void ? null : U>
-          : ReturnType<T> extends void
-          ? null
-          : ReturnType<T>
+        Jsonify<
+          T extends () => Promise<infer U>
+            ? Awaited<U extends void ? null : U>
+            : ReturnType<T> extends void
+            ? null
+            : ReturnType<T>
+        >
       >
     >(
       (name) => {
@@ -332,24 +335,39 @@ export const createStepTools = <
     /**
      * Wait until a particular date before continuing by passing a `Date`.
      *
-     * To wait for a particular amount of time, use `sleep` instead.
+     * To wait for a particular amount of time from now, always use `sleep`
+     * instead.
      */
     sleepUntil: createTool<
       (
         /**
          * The date to wait until before continuing.
          */
-        time: Date
+        time: Date | string
       ) => Promise<void>
     >((time) => {
+      const date = typeof time === "string" ? new Date(time) : time;
+
       /**
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
-      return {
-        op: StepOpCode.Sleep,
-        name: timeStr(time),
-      };
+      try {
+        return {
+          op: StepOpCode.Sleep,
+          name: date.toISOString(),
+        };
+      } catch (err) {
+        /**
+         * If we're here, it's because the date is invalid. We'll throw a custom
+         * error here to standardise this response.
+         */
+        console.warn("Invalid date or date string passed to sleepUntil;", err);
+
+        throw new Error(
+          `Invalid date or date string passed to sleepUntil: ${time.toString()}`
+        );
+      }
     }),
   };
 

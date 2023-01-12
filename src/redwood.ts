@@ -46,6 +46,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
               env,
               isProduction,
               url,
+              deployId: event.queryStringParameters?.[queryKeys.DeployId],
             };
           }
         },

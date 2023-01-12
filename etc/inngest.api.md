@@ -4,6 +4,8 @@
 
 ```ts
 
+import { Jsonify } from 'type-fest';
+
 // @public
 export interface ClientOptions {
     eventKey?: string;
@@ -77,7 +79,7 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     protected _isProd: boolean;
     readonly name: string;
     // (undocumented)
-    protected register(url: URL, devServerHost: string | undefined): Promise<{
+    protected register(url: URL, devServerHost: string | undefined, deployId?: string | undefined | null): Promise<{
         status: number;
         message: string;
     }>;
