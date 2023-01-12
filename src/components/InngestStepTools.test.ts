@@ -131,9 +131,7 @@ describe("run", () => {
       set: new Set(),
     };
 
-    const fn = () => run("step", () => input);
-    let output: ReturnType<typeof fn>;
-    void fn();
+    const output = run("step", () => input);
 
     assertType<
       Promise<{
@@ -152,7 +150,7 @@ describe("run", () => {
         map: Record<string, never>;
         set: Record<string, never>;
       }>
-    >(output!);
+    >(output);
   });
 });
 
@@ -201,7 +199,7 @@ describe("sleepUntil", () => {
     });
   });
 
-  test("parses dates", async () => {
+  test("parses dates", () => {
     const next = new Date();
 
     void sleepUntil(next);
@@ -210,7 +208,7 @@ describe("sleepUntil", () => {
     });
   });
 
-  test("parses ISO strings", async () => {
+  test("parses ISO strings", () => {
     const next = new Date(new Date().valueOf() + ms("6d")).toISOString();
 
     void sleepUntil(next);
