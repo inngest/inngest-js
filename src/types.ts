@@ -318,7 +318,11 @@ export type EventPayloads<T extends Record<string, EventSchema>> = {
  *
  * @public
  */
-export type InferZodOrObject<T> = T extends z.AnyZodObject ? z.infer<T> : T;
+export type InferZodOrObject<T> = T extends z.ZodTypeAny
+  ? z.input<T>
+  : T extends object
+  ? { [K in keyof T]: InferZodOrObject<T[K]> }
+  : T;
 
 /**
  * A set of options for configuring the Inngest client.

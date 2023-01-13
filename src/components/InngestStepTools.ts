@@ -231,33 +231,23 @@ export const createStepTools = <
      * returning `null` instead of any event data.
      */
     waitForEvent: createTool<
-      <IncomingEvent extends keyof Events | EventPayload>(
-        event: IncomingEvent extends keyof Events
-          ? IncomingEvent
-          : IncomingEvent extends EventPayload
-          ? IncomingEvent["name"]
-          : never,
+      <IncomingEvent extends keyof Events>(
+        event: IncomingEvent,
         opts:
           | string
-          | ((IncomingEvent extends keyof Events
-              ? WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>
-              : IncomingEvent extends EventPayload
-              ? WaitForEventOpts<Events[TriggeringEvent], IncomingEvent>
-              : never) & {
+          | (WaitForEventOpts<
+              Events[TriggeringEvent],
+              Events[IncomingEvent]
+            > & {
               if?: never;
             })
-          | ((IncomingEvent extends keyof Events
-              ? WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>
-              : IncomingEvent extends EventPayload
-              ? WaitForEventOpts<Events[TriggeringEvent], IncomingEvent>
-              : never) & {
+          | (WaitForEventOpts<
+              Events[TriggeringEvent],
+              Events[IncomingEvent]
+            > & {
               match?: never;
             })
-      ) => Promise<
-        IncomingEvent extends keyof Events
-          ? Events[IncomingEvent] | null
-          : IncomingEvent | null
-      >
+      ) => Promise<Events[IncomingEvent] | null>
     >(
       (
         /**
