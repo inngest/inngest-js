@@ -2,6 +2,7 @@ import { sha256 } from "hash.js";
 import { z } from "zod";
 import { envKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+import { ServerTiming } from "../helpers/promises";
 import { strBoolean } from "../helpers/scalar";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
@@ -399,18 +400,20 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    */
   public createHandler(): (...args: Parameters<H>) => Promise<TransformedRes> {
     return async (...args: Parameters<H>) => {
+      const timer = new ServerTiming();
+
       /**
        * We purposefully `await` the handler, as it could be either sync or
        * async.
        */
       // eslint-disable-next-line @typescript-eslint/await-thenable
-      const actions = await this.handler(...args);
+      const actions = await timer.wrap("handler", () => this.handler(...args));
 
-      const actionRes = await this.handleAction(
-        actions as ReturnType<Awaited<H>>
+      const actionRes = await timer.wrap("action", () =>
+        this.handleAction(actions as ReturnType<Awaited<H>>, timer)
       );
 
-      return this.transformRes(actionRes, ...args);
+      return timer.wrap("res", () => this.transformRes(actionRes, ...args));
     };
   }
 
@@ -425,8 +428,14 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    * will decide whether the UI should be visible based on the payload it has
    * found (e.g. env vars, options, etc).
    */
-  private async handleAction(actions: ReturnType<H>): Promise<ActionResponse> {
-    const headers = { "x-inngest-sdk": this.sdkHeader.join("") };
+  private async handleAction(
+    actions: ReturnType<H>,
+    timer: ServerTiming
+  ): Promise<ActionResponse> {
+    const getHeaders = () => ({
+      "x-inngest-sdk": this.sdkHeader.join(""),
+      "Server-Timing": timer.getHeader(),
+    });
 
     try {
       const runRes = await actions.run();
@@ -436,7 +445,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         const stepRes = await this.runStep(
           runRes.fnId,
           runRes.stepId,
-          runRes.data
+          runRes.data,
+          timer
         );
 
         if (stepRes.status === 500) {
@@ -444,7 +454,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
             status: 500,
             body: stepRes.error || "",
             headers: {
-              ...headers,
+              ...getHeaders(),
               "Content-Type": "application/json",
             },
           };
@@ -454,7 +464,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status: stepRes.status,
           body: JSON.stringify(stepRes.body),
           headers: {
-            ...headers,
+            ...getHeaders(),
             "Content-Type": "application/json",
           },
         };
@@ -472,7 +482,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           return {
             status: 405,
             body: "",
-            headers,
+            headers: getHeaders(),
           };
         }
 
@@ -487,7 +497,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
             status: 200,
             body: JSON.stringify(introspection),
             headers: {
-              ...headers,
+              ...getHeaders(),
               "Content-Type": "application/json",
             },
           };
@@ -497,7 +507,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status: 200,
           body: landing,
           headers: {
-            ...headers,
+            ...getHeaders(),
             "Content-Type": "text/html; charset=utf-8",
           },
         };
@@ -517,7 +527,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status,
           body: JSON.stringify({ message }),
           headers: {
-            ...headers,
+            ...getHeaders(),
             "Content-Type": "application/json",
           },
         };
@@ -527,7 +537,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         status: 500,
         body: JSON.stringify(err),
         headers: {
-          ...headers,
+          ...getHeaders(),
           "Content-Type": "application/json",
         },
       };
@@ -536,14 +546,15 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     return {
       status: 405,
       body: "",
-      headers,
+      headers: getHeaders(),
     };
   }
 
   protected async runStep(
     functionId: string,
     stepId: string | null,
-    data: any
+    data: any,
+    timer: ServerTiming
   ): Promise<StepRunResponse> {
     try {
       const fn = this.fns[functionId];
@@ -581,7 +592,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           return step;
         }) ?? [];
 
-      const ret = await fn["runFn"]({ event }, opStack, stepId || null);
+      const ret = await fn["runFn"]({ event }, opStack, stepId || null, timer);
       const isOp = ret[0];
 
       if (isOp) {

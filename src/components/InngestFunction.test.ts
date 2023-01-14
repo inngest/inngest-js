@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { jest } from "@jest/globals";
+import { ServerTiming } from "../helpers/promises";
 import { OpStack, StepOpCode } from "../types";
 import { Inngest } from "./Inngest";
 import { InngestFunction } from "./InngestFunction";
@@ -15,6 +16,8 @@ const inngest = new Inngest<TestEvents>({
   name: "test",
   eventKey: "event-key-123",
 });
+
+const timer = new ServerTiming();
 
 describe("#generateID", () => {
   it("Returns a correct name", () => {
@@ -67,7 +70,8 @@ describe("runFn", () => {
             ret = await fn["runFn"](
               { event: { name: "foo", data: { foo: "foo" } } },
               [],
-              null
+              null,
+              timer
             );
           });
 
@@ -97,7 +101,8 @@ describe("runFn", () => {
               fn["runFn"](
                 { event: { name: "foo", data: { foo: "foo" } } },
                 [],
-                null
+                null,
+                timer
               )
             ).rejects.toThrow(stepErr);
           });
@@ -115,7 +120,8 @@ describe("runFn", () => {
       return fn["runFn"](
         { event: { name: "foo", data: {} } },
         stack,
-        runStep || null
+        runStep || null,
+        timer
       );
     };
 

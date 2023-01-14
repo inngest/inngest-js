@@ -1,6 +1,6 @@
 import { serializeError } from "serialize-error-cjs";
 import { queryKeys } from "../helpers/consts";
-import { resolveNextTick } from "../helpers/promises";
+import { resolveNextTick, ServerTiming } from "../helpers/promises";
 import { slugify } from "../helpers/strings";
 import {
   EventData,
@@ -142,12 +142,16 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * this is `null`, the function will be run and next operations will be
      * returned instead.
      */
-    runStep: string | null
+    runStep: string | null,
+
+    timer: ServerTiming
   ): Promise<
     | [type: "single", data: unknown]
     | [type: "multi-discovery", ops: OutgoingOp[]]
     | [type: "multi-run", data: { data: any } | { error: any }]
   > {
+    const memoisingStop = timer.start("memoising");
+
     /**
      * Create some values to be mutated and passed to the step tools. Once the
      * user's function has run, we can check the mutated state of these to see
@@ -172,6 +176,12 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * nothing else.
      */
     if (this.#opts.fns) {
+      /**
+       * TODO `tools.run()` is using the key here. Maybe it should also be
+       * creating a sigmund hash of `...args`.
+       *
+       * Would these args ever change? Should they? 🤔
+       */
       fnArg.fns = Object.entries(this.#opts.fns).reduce((acc, [key, fn]) => {
         if (typeof fn !== "function") {
           return acc;
@@ -201,6 +211,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * Await the user function as normal.
      */
     if (!state.hasUsedTools) {
+      memoisingStop();
       return ["single", await userFnPromise];
     }
 
@@ -229,12 +240,16 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       pos++;
     } while (pos < opStack.length);
 
+    memoisingStop();
+
     if (runStep) {
       const userFnToRun = state.allFoundOps[runStep]?.fn;
 
       if (!userFnToRun) {
         throw new Error("Bad stack; no fn to execute; re-execute pls");
       }
+
+      const runningStepStop = timer.start("running-step");
 
       const result = await new Promise((resolve) => {
         return resolve(userFnToRun());
@@ -264,6 +279,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
               error: err,
             };
           }
+        })
+        .finally(() => {
+          runningStepStop();
         });
 
       return ["multi-run", result];
