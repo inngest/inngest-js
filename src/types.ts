@@ -290,25 +290,28 @@ export type Step<Context = any> = (
 ) => Promise<Response> | Response;
 
 /**
- * An individual event schema, containing the data and user schemas.
+ * An set of event schemas, containing the data and user schemas.
  *
  * @public
  */
-export type EventSchema = {
-  data: z.AnyZodObject | Record<string, any>;
-  user?: z.AnyZodObject | Record<string, any>;
-};
+export type EventSchemas = Record<
+  string,
+  {
+    data: z.AnyZodObject;
+    user?: z.AnyZodObject;
+  }
+>;
 
 /**
- * A set of event schemas, keyed by event name.
+ * A normalised set of event schemas, keyed by event name.
  *
  * @public
  */
-export type EventPayloads<T extends Record<string, EventSchema>> = {
-  [K in keyof T & string]: {
+export type EventPayloads<T extends EventSchemas> = {
+  [K in keyof InferZodOrObject<T> & string]: {
     name: K;
-    data: InferZodOrObject<T[K]["data"]>;
-    user?: InferZodOrObject<T[K]["user"]>;
+    data: InferZodOrObject<T>[K]["data"];
+    user?: InferZodOrObject<T>[K]["user"];
   };
 };
 
@@ -319,7 +322,7 @@ export type EventPayloads<T extends Record<string, EventSchema>> = {
  * @public
  */
 export type InferZodOrObject<T> = T extends z.ZodTypeAny
-  ? z.input<T>
+  ? z.infer<T>
   : T extends object
   ? { [K in keyof T]: InferZodOrObject<T[K]> }
   : T;
@@ -359,7 +362,7 @@ export interface ClientOptions {
    * ): Omit<Genned, keyof T> & EventPayloads<T> => undefined as any;
    * ```
    */
-  schemas: Record<string, EventSchema> | null;
+  schemas?: EventSchemas;
 
   /**
    * Inngest event key, used to send events to Inngest Cloud. If not provided,

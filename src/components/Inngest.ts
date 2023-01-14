@@ -10,7 +10,6 @@ import type {
 import type {
   ClientOptions,
   EventPayloads,
-  EventSchema,
   FunctionOptions,
   Handler,
   TriggerOptions,
@@ -83,8 +82,6 @@ export class Inngest<
 
   private readonly fetch: FetchT;
 
-  public readonly schemas: Record<string, EventSchema>;
-
   /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
@@ -113,13 +110,10 @@ export class Inngest<
     eventKey,
     inngestBaseUrl = "https://inn.gs/",
     fetch,
-    schemas,
   }: T) {
     if (!name) {
       throw new Error("A name must be passed to create an Inngest instance.");
     }
-
-    this.schemas = { ...schemas } || {};
 
     this.name = name;
     this.inngestBaseUrl = new URL(inngestBaseUrl);
