@@ -33,6 +33,7 @@ export type HandlerArgs<
   tools: ReturnType<typeof createStepTools<Events, Event>>[0];
 
   step: ReturnType<typeof createStepTools<Events, Event>>[0];
+  patterns: ReturnType<typeof createStepTools<Events, Event>>[2];
 } & (Opts["fns"] extends Record<string, any>
     ? {
         /**

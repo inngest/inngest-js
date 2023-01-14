@@ -462,7 +462,84 @@ export const createStepTools = <
     }),
   };
 
-  return [tools, state] as [typeof tools, typeof state];
+  /**
+   * Functions that can be used to replicate common patterns in step functions
+   * using the tools provided by this call.
+   *
+   * Each pattern must be purely composition, and can not contain any custom
+   * executor logic
+   */
+  const patterns = {
+    /**
+     * Run the given `fn` every `interval` until it either returns a value or
+     * the `timeout` expires.
+     *
+     * The function returning any value other than `undefined` will cause the
+     * value to be returned, otherwise the function will be called again after
+     * the `interval` has elapsed.
+     *
+     * If the `timeout` expires before the function returns a value, will return
+     * `undefined`.
+     *
+     * If the function throws an error, `poll` will throw the same error.
+     */
+    poll: async <
+      T extends () => any,
+      U extends {
+        /**
+         * The maximum amount of time to wait for the function to return a value
+         * before returning `undefined`.
+         *
+         * If not specified, will wait indefinitely.
+         */
+        timeout?: Parameters<typeof tools["sleep"]>[0];
+      }
+    >(
+      interval: Parameters<typeof tools["sleep"]>[0],
+      fn: T,
+      opts?: U
+    ): Promise<
+      undefined extends U["timeout"]
+        ? Exclude<Awaited<ReturnType<T>>, undefined>
+        : Awaited<ReturnType<T>>
+    > => {
+      /**
+       * Set a timer running that will flip this flag to `true` when it expires.
+       */
+      let timedOut = false;
+      if (opts?.timeout) {
+        void tools.sleep(opts.timeout).then(() => {
+          timedOut = true;
+        });
+      }
+
+      do {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const result = await fn();
+
+        if (typeof result !== "undefined") {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+          return result;
+        }
+
+        await tools.sleep(interval);
+      } while (!timedOut);
+
+      /**
+       * If we're here, it's because the timeout expired. We'll resolve the
+       * promise with `undefined` to indicate that the function didn't return
+       * anything in time.
+       *
+       * We have to cast this to `any` because the return type of this function
+       * is somewhat controlled to smartly handle the `timeout` option, but
+       * TypeScript doesn't know that.
+       */
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      return undefined as any;
+    },
+  };
+
+  return [tools, state, patterns] as const;
 };
 
 /**
