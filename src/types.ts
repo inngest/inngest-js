@@ -495,6 +495,10 @@ export type StepRunResponse =
   | {
       status: 206;
       body: any;
+    }
+  | {
+      status: 400;
+      error: any;
     };
 
 /**

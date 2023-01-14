@@ -111,6 +111,15 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
 }
 
 // @public
+export class NonRetriableError extends Error {
+    constructor(message: string, options?: {
+        cause?: any;
+    });
+    // (undocumented)
+    readonly cause?: any;
+}
+
+// @public
 export interface RegisterOptions {
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
