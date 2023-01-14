@@ -601,7 +601,7 @@ export const eventRunWithName = async (
   for (let i = 0; i < 5; i++) {
     const start = new Date();
 
-    const res = await fetch("http://localhost:8300/gql", {
+    const res = await fetch("http://localhost:8288/v0/gql", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -662,7 +662,7 @@ export const runHasTimeline = async (
   for (let i = 0; i < 5; i++) {
     const start = new Date();
 
-    const res = await fetch("http://localhost:8300/gql", {
+    const res = await fetch("http://localhost:8288/v0/gql", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

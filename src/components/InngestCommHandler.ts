@@ -778,7 +778,7 @@ type Handler = (...args: any[]) => {
  * The response from the Inngest SDK before it is transformed in to a
  * framework-compatible response by an {@link InngestCommHandler} instance.
  */
-interface ActionResponse {
+export interface ActionResponse {
   /**
    * The HTTP status code to return.
    */
