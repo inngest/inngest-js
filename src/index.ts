@@ -6,7 +6,7 @@ export type {
   ClientOptions,
   EventPayload,
   EventPayloads,
-  EventSchema,
+  EventSchemas,
   FunctionOptions,
   InferZodOrObject,
   RegisterOptions,

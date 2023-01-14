@@ -5,6 +5,7 @@
 ```ts
 
 import { Jsonify } from 'type-fest';
+import { z } from 'zod';
 
 // @public
 export interface ClientOptions {
@@ -12,6 +13,7 @@ export interface ClientOptions {
     fetch?: typeof fetch;
     inngestBaseUrl?: string;
     name: string;
+    schemas?: EventSchemas;
 }
 
 // @public
@@ -24,13 +26,27 @@ export interface EventPayload {
 }
 
 // @public
+export type EventPayloads<T extends EventSchemas> = {
+    [K in keyof InferZodOrObject<T> & string]: {
+        name: K;
+        data: InferZodOrObject<T>[K]["data"];
+        user?: InferZodOrObject<T>[K]["user"];
+    };
+};
+
+// @public
+export type EventSchemas = Record<string, {
+    data: z.AnyZodObject;
+    user?: z.AnyZodObject;
+}>;
+
+// @public
 export interface FunctionOptions {
     // (undocumented)
     fns?: Record<string, any>;
     id?: string;
     idempotency?: string;
     name: string;
-    retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
     throttle?: {
         key?: string;
         count: number;
@@ -39,8 +55,13 @@ export interface FunctionOptions {
 }
 
 // @public
-export class Inngest<Events extends Record<string, EventPayload>> {
-    constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
+export type InferZodOrObject<T> = T extends z.ZodTypeAny ? z.infer<T> : T extends object ? {
+    [K in keyof T]: InferZodOrObject<T[K]>;
+} : T;
+
+// @public
+export class Inngest<T extends ClientOptions, Events extends EventPayloads<NonNullable<T["schemas"]>>> {
+    constructor({ name, eventKey, inngestBaseUrl, fetch, }: T);
     // Warning: (ae-forgotten-export) The symbol "TriggerOptions" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
@@ -66,7 +87,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
 export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     constructor(
     frameworkName: string,
-    appNameOrInngest: string | Inngest<any>,
+    appNameOrInngest: string | Inngest<any, any>,
     functions: InngestFunction<any>[], { inngestRegisterUrl, fetch, landingPage, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
     handler: H,
     transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
@@ -87,11 +108,10 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     // (undocumented)
     protected registerBody(url: URL): RegisterRequest;
     protected reqUrl(url: URL): URL;
-    // Warning: (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "StepRunResponse" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    protected runStep(functionId: string, stepId: string | null, data: any, timer: ServerTiming): Promise<StepRunResponse>;
+    protected runStep(functionId: string, stepId: string | null, data: any): Promise<StepRunResponse>;
     // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
     protected get sdkHeader(): [
     prefix: string,
@@ -109,15 +129,7 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     // Warning: (ae-forgotten-export) The symbol "ActionResponse" needs to be exported by the entry point index.d.ts
     readonly transformRes: (res: ActionResponse, ...args: Parameters<H>) => TransformedRes;
     // (undocumented)
-    protected validateSignature(sig: string | undefined, body: Record<string, any>): void;
-}
-
-// @public
-export class NonRetriableError extends Error {
-    constructor(message: string, options?: {
-        cause?: any;
-    });
-    readonly cause?: any;
+    protected validateSignature(): boolean;
 }
 
 // @public
@@ -132,7 +144,7 @@ export interface RegisterOptions {
 
 // @public
 export type ServeHandler = (
-nameOrInngest: string | Inngest<any>,
+nameOrInngest: string | Inngest<any, any>,
 functions: InngestFunction<any>[],
 opts?: RegisterOptions) => any;
 
