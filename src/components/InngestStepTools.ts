@@ -2,7 +2,7 @@ import { sha1 } from "hash.js";
 import stringify from "json-stringify-deterministic";
 import { Jsonify } from "type-fest";
 import { timeStr } from "../helpers/strings";
-import type { ObjectPaths } from "../helpers/types";
+import type { ObjectPaths, PartialK, SingleOrArray } from "../helpers/types";
 import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
 
 export interface TickOp extends HashedOp {
@@ -187,6 +187,21 @@ export const createStepTools = <
    * a generic type for that function as it will appear in the user's code.
    */
   const tools = {
+    sendEvent: createTool<
+      <Event extends keyof Events & string>(
+        name: Event,
+        payload: SingleOrArray<
+          PartialK<Omit<Events[Event], "name" | "v">, "ts">
+        >
+      ) => Promise<void>
+    >((name, payload) => {
+      return {
+        op: StepOpCode.SendEvent,
+        name,
+        opts: { payload },
+      };
+    }),
+
     /**
      * Wait for a particular event to be received before continuing. When the
      * event is received, it will be returned.
