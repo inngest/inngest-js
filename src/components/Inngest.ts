@@ -12,6 +12,8 @@ import type {
   EventPayloads,
   FunctionOptions,
   Handler,
+  ObjectToZodObject,
+  SchemasFromOptions,
   TriggerOptions,
 } from "../types";
 import { version } from "../version";
@@ -27,6 +29,23 @@ export const eventKeyWarning =
 
 export const eventKeyError =
   "Could not find an event key to send events. Please pass one to the constructor, set the INNGEST_EVENT_KEY environment variable, or use inngest.setEventKey() at runtime.";
+
+export const schemaFromTypes = <
+  T extends Record<
+    string,
+    { data: Record<string, any>; user?: Record<string, any> }
+  >
+>(): {
+  [K in keyof T & string]: {
+    data: ObjectToZodObject<T[K]["data"]>;
+    user?: T[K]["user"] extends undefined
+      ? never
+      : ObjectToZodObject<NonNullable<T[K]["user"]>>;
+  };
+} => {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  return undefined as any;
+};
 
 /**
  * A client used to interact with the Inngest API by sending or reacting to
@@ -55,7 +74,7 @@ export const eventKeyError =
  */
 export class Inngest<
   T extends ClientOptions,
-  Events extends EventPayloads<NonNullable<T["schemas"]>>
+  Events extends EventPayloads<SchemasFromOptions<T>>
 > {
   /**
    * The name of this instance, most commonly the name of the application it
@@ -345,18 +364,20 @@ export class Inngest<
     trigger: Trigger,
     fn: Handler<
       Events,
-      Trigger extends string
+      Trigger extends keyof Events
         ? Trigger
-        : Trigger extends { event: string }
+        : Trigger extends { event: keyof Events }
         ? Trigger["event"]
-        : string,
+        : keyof Events,
       NameOrOpts extends FunctionOptions ? NameOrOpts : never
     >
   ): InngestFunction<Events> {
     return new InngestFunction(
       this,
       typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
-      typeof trigger === "string" ? { event: trigger } : trigger,
+      (typeof trigger === "string" ? { event: trigger } : trigger) as {
+        event: keyof Events;
+      },
       fn
     );
   }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { createStepTools } from "./components/InngestStepTools";
+import { Schemas } from "./components/Schemas";
 import type { KeysNotOfType } from "./helpers/types";
 
 /**
@@ -289,16 +290,30 @@ export type Step<Context = any> = (
   context: Context
 ) => Promise<Response> | Response;
 
+export type StandardEventSchemas = Record<string, StandardEventSchema>;
+export type StandardEventSchema = Pick<EventPayload, "data" | "user" | "v">;
+
+export type AnyEventSchemas = Record<
+  string,
+  {
+    data: z.AnyZodObject | Record<string, any>;
+    user?: z.AnyZodObject | Record<string, any>;
+  }
+>;
+
+export type ObjectToZodObject<T extends Record<string, any>> = z.ZodObject<T>;
+
 /**
  * An set of event schemas, containing the data and user schemas.
  *
  * @public
  */
-export type EventSchemas = Record<
+export type ZodEventSchemas = Record<
   string,
   {
     data: z.AnyZodObject;
     user?: z.AnyZodObject;
+    v?: z.ZodString;
   }
 >;
 
@@ -307,11 +322,11 @@ export type EventSchemas = Record<
  *
  * @public
  */
-export type EventPayloads<T extends EventSchemas> = {
-  [K in keyof InferZodOrObject<T> & string]: {
+export type EventPayloads<T extends StandardEventSchemas> = {
+  [K in keyof T & string]: {
     name: K;
-    data: InferZodOrObject<T>[K]["data"];
-    user?: InferZodOrObject<T>[K]["user"];
+    data: T[K]["data"];
+    user?: T[K]["user"];
   };
 };
 
@@ -326,6 +341,15 @@ export type InferZodOrObject<T> = T extends z.ZodTypeAny
   : T extends object
   ? { [K in keyof T]: InferZodOrObject<T[K]> }
   : T;
+
+export type SchemasFromOptions<T extends ClientOptions> =
+  T["schemas"] extends Schemas<infer U>
+    ? U extends Record<string, EventPayload>
+      ? {
+          [K in keyof U as string extends K ? never : K]: U[K];
+        }
+      : Record<string, any>
+    : Record<string, any>;
 
 /**
  * A set of options for configuring the Inngest client.
@@ -359,10 +383,10 @@ export interface ClientOptions {
    * ```ts
    * const withGeneratedSchemas = <T extends Record<string, EventSchema>>(
    *   _schemas: T
-   * ): Omit<Genned, keyof T> & EventPayloads<T> => undefined as any;
+   * ): Omit<Genned, keyof T> &a EventPayloads<T> => undefined as any;
    * ```
    */
-  schemas?: EventSchemas;
+  schemas?: Schemas<any>;
 
   /**
    * Inngest event key, used to send events to Inngest Cloud. If not provided,

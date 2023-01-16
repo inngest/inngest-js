@@ -1,4 +1,4 @@
-import { EventPayload } from "../types";
+import { EventPayload, StandardEventSchemas } from "../types";
 
 /**
  * Returns a union of all of the values in a given object, regardless of key.
@@ -32,7 +32,7 @@ export type PartialK<T, K extends PropertyKey = PropertyKey> = Partial<
 /**
  * A payload that could be sent to Inngest, based on the given `Events`.
  */
-export type SendEventPayload<Events extends Record<string, EventPayload>> =
+export type SendEventPayload<Events extends StandardEventSchemas> =
   SingleOrArray<
     {
       [K in keyof Events]: PartialK<Omit<Events[K], "v">, "ts">;

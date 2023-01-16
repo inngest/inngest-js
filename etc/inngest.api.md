@@ -5,6 +5,7 @@
 ```ts
 
 import { Jsonify } from 'type-fest';
+import { Simplify } from 'type-fest';
 import { z } from 'zod';
 
 // @public
@@ -13,7 +14,7 @@ export interface ClientOptions {
     fetch?: typeof fetch;
     inngestBaseUrl?: string;
     name: string;
-    schemas?: EventSchemas;
+    schemas?: Schemas<any>;
 }
 
 // @public
@@ -25,20 +26,16 @@ export interface EventPayload {
     v?: string;
 }
 
+// Warning: (ae-forgotten-export) The symbol "StandardEventSchemas" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type EventPayloads<T extends EventSchemas> = {
-    [K in keyof InferZodOrObject<T> & string]: {
+export type EventPayloads<T extends StandardEventSchemas> = {
+    [K in keyof T & string]: {
         name: K;
-        data: InferZodOrObject<T>[K]["data"];
-        user?: InferZodOrObject<T>[K]["user"];
+        data: T[K]["data"];
+        user?: T[K]["user"];
     };
 };
-
-// @public
-export type EventSchemas = Record<string, {
-    data: z.AnyZodObject;
-    user?: z.AnyZodObject;
-}>;
 
 // @public
 export interface FunctionOptions {
@@ -59,17 +56,19 @@ export type InferZodOrObject<T> = T extends z.ZodTypeAny ? z.infer<T> : T extend
     [K in keyof T]: InferZodOrObject<T[K]>;
 } : T;
 
+// Warning: (ae-forgotten-export) The symbol "SchemasFromOptions" needs to be exported by the entry point index.d.ts
+//
 // @public
-export class Inngest<T extends ClientOptions, Events extends EventPayloads<NonNullable<T["schemas"]>>> {
+export class Inngest<T extends ClientOptions, Events extends EventPayloads<SchemasFromOptions<T>>> {
     constructor({ name, eventKey, inngestBaseUrl, fetch, }: T);
     // Warning: (ae-forgotten-export) The symbol "TriggerOptions" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    createFunction<Trigger extends TriggerOptions<keyof Events & string>, NameOrOpts extends string | FunctionOptions>(nameOrOpts: NameOrOpts, trigger: Trigger, fn: Handler<Events, Trigger extends string ? Trigger : Trigger extends {
-        event: string;
-    } ? Trigger["event"] : string, NameOrOpts extends FunctionOptions ? NameOrOpts : never>): InngestFunction<Events>;
+    createFunction<Trigger extends TriggerOptions<keyof Events & string>, NameOrOpts extends string | FunctionOptions>(nameOrOpts: NameOrOpts, trigger: Trigger, fn: Handler<Events, Trigger extends keyof Events ? Trigger : Trigger extends {
+        event: keyof Events;
+    } ? Trigger["event"] : keyof Events, NameOrOpts extends FunctionOptions ? NameOrOpts : never>): InngestFunction<Events>;
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
@@ -140,6 +139,22 @@ export interface RegisterOptions {
     serveHost?: string;
     servePath?: string;
     signingKey?: string;
+}
+
+// @public (undocumented)
+export class Schemas<S extends Record<string, EventPayload>> {
+    // (undocumented)
+    fromGenerated<T extends StandardEventSchemas>(): Schemas<Simplify<S & T>>;
+    // (undocumented)
+    fromTypes<T extends StandardEventSchemas>(): Schemas<Simplify<S & T>>;
+    // Warning: (ae-forgotten-export) The symbol "ZodEventSchemas" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    fromZod<T extends ZodEventSchemas>(schemas: T): Schemas<Simplify<S & { [K in keyof T & string]: {
+            name: K;
+            data: z.TypeOf<T[K]["data"]>;
+            user?: z.TypeOf<NonNullable<T[K]["user"]>> | undefined;
+        }; }>>;
 }
 
 // @public
