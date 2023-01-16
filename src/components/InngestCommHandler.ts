@@ -582,18 +582,17 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         }) ?? [];
 
       const ret = await fn["runFn"]({ event }, opStack, stepId || null);
-      const isOp = ret[0];
 
-      if (isOp) {
+      if (ret[0] === "single") {
         return {
-          status: 206,
+          status: 200,
           body: ret[1],
         };
       }
 
       return {
-        status: 200,
-        body: ret[1],
+        status: 206,
+        body: Array.isArray(ret[1]) ? ret[1] : [ret[1]],
       };
     } catch (err: unknown) {
       if (err instanceof Error) {

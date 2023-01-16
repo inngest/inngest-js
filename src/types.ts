@@ -91,7 +91,7 @@ export type HandlerArgs<
 export enum StepOpCode {
   WaitForEvent = "WaitForEvent",
   RunStep = "Step",
-  ReportStep = "StepPlanned",
+  StepPlanned = "StepPlanned",
   Sleep = "Sleep",
 }
 
@@ -141,7 +141,10 @@ export const incomingOpSchema = z.object({
 });
 
 export type IncomingOp = z.output<typeof incomingOpSchema>;
-export type OutgoingOp = Pick<HashedOp, "id" | "op" | "name" | "opts">;
+export type OutgoingOp = Pick<
+  HashedOp,
+  "id" | "op" | "name" | "opts" | "data" | "error"
+>;
 
 /**
  * The shape of a hashed operation in a step function. Used to communicate
@@ -494,7 +497,7 @@ export type StepRunResponse =
     }
   | {
       status: 206;
-      body: any;
+      body: OutgoingOp[];
     };
 
 /**
