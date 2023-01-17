@@ -685,6 +685,8 @@ export const runHasTimeline = async (
 
     const data = await res.json();
 
+    console.log(data);
+
     if (
       data?.data?.functionRun?.timeline?.some((entry: any) =>
         Object.keys(timeline).every(
