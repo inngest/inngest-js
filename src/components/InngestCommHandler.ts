@@ -590,6 +590,21 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         };
       }
 
+      /**
+       * If the function has run user code and is intending to return an error,
+       * interrupt this flow and instead throw a 500 to Inngest.
+       *
+       * The executor doesn't yet support per-step errors, so returning an
+       * `error` key here would cause the executor to misunderstand what is
+       * happening.
+       *
+       * When the executor does support per-step errors, we can remove this
+       * comment and check and functionality should resume as normal.
+       */
+      if (ret[0] === "multi-run" && ret[1].error) {
+        throw new Error("Step returned error; not yet supported");
+      }
+
       return {
         status: 206,
         body: Array.isArray(ret[1]) ? ret[1] : [ret[1]],
