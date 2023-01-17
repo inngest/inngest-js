@@ -83,8 +83,13 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
 
+    const { retries: attempts, ...opts } = this.#opts;
+
+    // Convert retries into the format required when defining function configuration. 
+    const retries = attempts ? { attempts } : undefined;
+
     return {
-      ...this.#opts,
+      ...opts,
       id: fnId,
       name: this.name,
       triggers: [this.#trigger as FunctionTrigger],
@@ -96,6 +101,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
             type: "http",
             url: stepUrl.href,
           },
+          retries,
         },
       },
     };

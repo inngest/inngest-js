@@ -40,6 +40,7 @@ export interface FunctionOptions {
     id?: string;
     idempotency?: string;
     name: string;
+    retries?: number;
     throttle?: {
         key?: string;
         count: number;

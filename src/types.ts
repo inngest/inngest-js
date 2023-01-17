@@ -412,6 +412,11 @@ export interface FunctionOptions {
      */
     period: TimeStr;
   };
+
+  /**
+   * Specifies the maximum number of retries for all steps across this function.
+   */
+  retries?: number;
 }
 
 /**
@@ -541,6 +546,9 @@ export interface FunctionConfig {
         type: "http";
         url: string;
       };
+      retries?: {
+        attempts?: number;
+      }
     }
   >;
   idempotency?: string;
