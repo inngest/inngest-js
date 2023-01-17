@@ -148,6 +148,14 @@ export interface MultiStepFnArgs<Events extends Record<string, EventPayload>, Ev
 }
 
 // @public
+export class NonRetriableError extends Error {
+    constructor(message: string, options?: {
+        cause?: any;
+    });
+    readonly cause?: any;
+}
+
+// @public
 export interface RegisterOptions {
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
