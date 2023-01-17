@@ -30,6 +30,7 @@ export interface FunctionOptions {
     id?: string;
     idempotency?: string;
     name: string;
+    retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
     throttle?: {
         key?: string;
         count: number;
@@ -108,6 +109,14 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     readonly transformRes: (res: ActionResponse, ...args: Parameters<H>) => TransformedRes;
     // (undocumented)
     protected validateSignature(): boolean;
+}
+
+// @public
+export class NonRetriableError extends Error {
+    constructor(message: string, options?: {
+        cause?: any;
+    });
+    readonly cause?: any;
 }
 
 // @public
