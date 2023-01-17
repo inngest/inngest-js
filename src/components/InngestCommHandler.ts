@@ -7,7 +7,7 @@ import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
 import {
   FunctionConfig,
-  incomingOpSchema,
+  IncomingOp,
   IntrospectRequest,
   RegisterOptions,
   RegisterRequest,
@@ -554,13 +554,34 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       const { event, steps, ctx } = z
         .object({
           event: z.object({}).passthrough(),
-          steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
+          /**
+           * When handling per-step errors, steps will need to be an object with
+           * either a `data` or an `error` key.
+           *
+           * For now, we support the current method of steps just being a map of
+           * step ID to step data.
+           *
+           * TODO When the executor does support per-step errors, we can uncomment
+           * the expected schema below.
+           */
+          steps: z
+            .record(
+              z.any().refine((v) => typeof v !== "undefined", {
+                message: "Values in steps must be defined",
+              })
+            )
+            .optional()
+            .nullable(),
+          // steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
           ctx: z
             .object({
               stack: z
                 .object({
-                  order: z.array(z.string()),
-                  progress: z.number(),
+                  stack: z
+                    .array(z.string())
+                    .nullable()
+                    .transform((v) => (Array.isArray(v) ? v : [])),
+                  current: z.number(),
                 })
                 .passthrough()
                 .optional()
@@ -571,17 +592,34 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         })
         .parse(data);
 
+      /**
+       * TODO When the executor does support per-step errors, this map will need
+       * to adjust to ensure we're not double-stacking the op inside `data`.
+       */
       const opStack =
-        ctx?.stack?.order.slice(0, ctx.stack.progress).map((opId) => {
-          const step = steps?.[opId];
-          if (!step) {
-            throw new Error(`Could not find step with ID "${opId}"`);
-          }
+        ctx?.stack?.stack
+          .slice(0, ctx.stack.current)
+          .map<IncomingOp>((opId) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            const step = steps?.[opId];
+            if (typeof step === "undefined") {
+              throw new Error(`Could not find step with ID "${opId}"`);
+            }
 
-          return step;
-        }) ?? [];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            return { id: opId, data: step };
+          }) ?? [];
 
-      const ret = await fn["runFn"]({ event }, opStack, stepId || null);
+      const ret = await fn["runFn"](
+        { event },
+        opStack,
+        /**
+         * TODO The executor is sending `"step"` as the step ID when it is not
+         * wanting to run a specific step. This is not needed and we should
+         * remove this on the executor side.
+         */
+        stepId === "step" ? null : stepId || null
+      );
 
       if (ret[0] === "single") {
         return {
@@ -598,7 +636,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
        * `error` key here would cause the executor to misunderstand what is
        * happening.
        *
-       * When the executor does support per-step errors, we can remove this
+       * TODO When the executor does support per-step errors, we can remove this
        * comment and check and functionality should resume as normal.
        */
       if (ret[0] === "multi-run" && ret[1].error) {
