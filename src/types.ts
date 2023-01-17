@@ -91,7 +91,7 @@ export type HandlerArgs<
 export enum StepOpCode {
   WaitForEvent = "WaitForEvent",
   RunStep = "Step",
-  ReportStep = "StepPlanned",
+  StepPlanned = "StepPlanned",
   Sleep = "Sleep",
   SendEvent = "SendEvent",
 }
@@ -142,7 +142,10 @@ export const incomingOpSchema = z.object({
 });
 
 export type IncomingOp = z.output<typeof incomingOpSchema>;
-export type OutgoingOp = Pick<HashedOp, "id" | "op" | "name" | "opts">;
+export type OutgoingOp = Pick<
+  HashedOp,
+  "id" | "op" | "name" | "opts" | "data" | "error"
+>;
 
 /**
  * The shape of a hashed operation in a step function. Used to communicate
@@ -476,6 +479,34 @@ export interface FunctionOptions {
      */
     period: TimeStr;
   };
+
+  /**
+   * Specifies the maximum number of retries for all steps across this function.
+   *
+   * Can be a number from `0` to `20`. Defaults to `3`.
+   */
+  retries?:
+    | 0
+    | 1
+    | 2
+    | 3
+    | 4
+    | 5
+    | 6
+    | 7
+    | 8
+    | 9
+    | 10
+    | 11
+    | 12
+    | 13
+    | 14
+    | 15
+    | 16
+    | 17
+    | 18
+    | 19
+    | 20;
 }
 
 /**
@@ -495,7 +526,11 @@ export type StepRunResponse =
     }
   | {
       status: 206;
-      body: any;
+      body: OutgoingOp[];
+    }
+  | {
+      status: 400;
+      error: string;
     };
 
 /**
@@ -600,6 +635,9 @@ export interface FunctionConfig {
       runtime: {
         type: "http";
         url: string;
+      };
+      retries?: {
+        attempts?: number;
       };
     }
   >;

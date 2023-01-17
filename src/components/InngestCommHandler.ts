@@ -7,7 +7,7 @@ import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
 import {
   FunctionConfig,
-  incomingOpSchema,
+  IncomingOp,
   IntrospectRequest,
   RegisterOptions,
   RegisterRequest,
@@ -16,6 +16,7 @@ import {
 import { version } from "../version";
 import type { Inngest } from "./Inngest";
 import type { InngestFunction } from "./InngestFunction";
+import { NonRetriableError } from "./NonRetriableError";
 
 /**
  * A handler for serving Inngest functions. This type should be used
@@ -439,9 +440,9 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           runRes.data
         );
 
-        if (stepRes.status === 500) {
+        if (stepRes.status === 500 || stepRes.status === 400) {
           return {
-            status: 500,
+            status: stepRes.status,
             body: stepRes.error || "",
             headers: {
               ...headers,
@@ -554,13 +555,34 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       const { event, steps, ctx } = z
         .object({
           event: z.object({}).passthrough(),
-          steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
+          /**
+           * When handling per-step errors, steps will need to be an object with
+           * either a `data` or an `error` key.
+           *
+           * For now, we support the current method of steps just being a map of
+           * step ID to step data.
+           *
+           * TODO When the executor does support per-step errors, we can uncomment
+           * the expected schema below.
+           */
+          steps: z
+            .record(
+              z.any().refine((v) => typeof v !== "undefined", {
+                message: "Values in steps must be defined",
+              })
+            )
+            .optional()
+            .nullable(),
+          // steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
           ctx: z
             .object({
               stack: z
                 .object({
-                  order: z.array(z.string()),
-                  progress: z.number(),
+                  stack: z
+                    .array(z.string())
+                    .nullable()
+                    .transform((v) => (Array.isArray(v) ? v : [])),
+                  current: z.number(),
                 })
                 .passthrough()
                 .optional()
@@ -571,31 +593,85 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         })
         .parse(data);
 
+      /**
+       * TODO When the executor does support per-step errors, this map will need
+       * to adjust to ensure we're not double-stacking the op inside `data`.
+       */
       const opStack =
-        ctx?.stack?.order.slice(0, ctx.stack.progress).map((opId) => {
-          const step = steps?.[opId];
-          if (!step) {
-            throw new Error(`Could not find step with ID "${opId}"`);
-          }
+        ctx?.stack?.stack
+          .slice(0, ctx.stack.current)
+          .map<IncomingOp>((opId) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            const step = steps?.[opId];
+            if (typeof step === "undefined") {
+              throw new Error(`Could not find step with ID "${opId}"`);
+            }
 
-          return step;
-        }) ?? [];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            return { id: opId, data: step };
+          }) ?? [];
 
-      const ret = await fn["runFn"]({ event }, opStack, stepId || null);
-      const isOp = ret[0];
+      const ret = await fn["runFn"](
+        { event },
+        opStack,
+        /**
+         * TODO The executor is sending `"step"` as the step ID when it is not
+         * wanting to run a specific step. This is not needed and we should
+         * remove this on the executor side.
+         */
+        stepId === "step" ? null : stepId || null
+      );
 
-      if (isOp) {
+      if (ret[0] === "single") {
         return {
-          status: 206,
+          status: 200,
           body: ret[1],
         };
       }
 
+      /**
+       * If the function has run user code and is intending to return an error,
+       * interrupt this flow and instead throw a 500 to Inngest.
+       *
+       * The executor doesn't yet support per-step errors, so returning an
+       * `error` key here would cause the executor to misunderstand what is
+       * happening.
+       *
+       * TODO When the executor does support per-step errors, we can remove this
+       * comment and check and functionality should resume as normal.
+       */
+      if (ret[0] === "multi-run" && ret[1].error) {
+        throw new Error("Step returned error; not yet supported");
+      }
+
       return {
-        status: 200,
-        body: ret[1],
+        status: 206,
+        body: Array.isArray(ret[1]) ? ret[1] : [ret[1]],
       };
     } catch (err: unknown) {
+      /**
+       * If we've caught a non-retriable error, we'll return a 400 to Inngest
+       * to indicate that the error is not transient and should not be retried.
+       *
+       * The errors caught here are caught from the main function as well as
+       * inside individual steps, so this safely catches all areas.
+       */
+      if (err instanceof NonRetriableError) {
+        return {
+          status: 400,
+          error: JSON.stringify({
+            message: err.message,
+            stack: err.stack,
+            name: err.name,
+            cause: err.cause
+              ? err.cause instanceof Error
+                ? err.cause.stack || err.cause.message
+                : JSON.stringify(err.cause)
+              : undefined,
+          }),
+        };
+      }
+
       if (err instanceof Error) {
         return {
           status: 500,

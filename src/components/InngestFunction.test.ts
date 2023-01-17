@@ -215,14 +215,22 @@ describe("runFn", () => {
               expect.objectContaining({
                 id: A,
                 name: "A",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
             ],
           ],
         },
         "requesting to run A runs A": {
           runStep: A,
-          expectedReturn: ["multi-run", { data: "A" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.StepPlanned,
+              data: "A",
+            }),
+          ],
           expectedStepsRun: ["A"],
         },
         "request with A in stack reports B step": {
@@ -238,7 +246,7 @@ describe("runFn", () => {
               expect.objectContaining({
                 id: B,
                 name: "B",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
             ],
           ],
@@ -251,7 +259,15 @@ describe("runFn", () => {
             },
           ],
           runStep: B,
-          expectedReturn: ["multi-run", { data: "B" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: B,
+              name: "B",
+              op: StepOpCode.StepPlanned,
+              data: "B",
+            }),
+          ],
           expectedStepsRun: ["B"],
         },
         "final request returns empty response": {
@@ -318,7 +334,7 @@ describe("runFn", () => {
               expect.objectContaining({
                 id: A,
                 name: "A",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
             ],
           ],
@@ -326,7 +342,15 @@ describe("runFn", () => {
         "requesting to run A runs A": {
           stack: [{ id: foo, data: { data: { foo: "foo" } } }],
           runStep: A,
-          expectedReturn: ["multi-run", { data: "A" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.StepPlanned,
+              data: "A",
+            }),
+          ],
           expectedStepsRun: ["A"],
         },
         "request with event foo.data.foo:bar reports B step": {
@@ -337,7 +361,7 @@ describe("runFn", () => {
               expect.objectContaining({
                 id: B,
                 name: "B",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
             ],
           ],
@@ -345,7 +369,15 @@ describe("runFn", () => {
         "requesting to run B runs B": {
           stack: [{ id: foo, data: { data: { foo: "bar" } } }],
           runStep: B,
-          expectedReturn: ["multi-run", { data: "B" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: B,
+              name: "B",
+              op: StepOpCode.StepPlanned,
+              data: "B",
+            }),
+          ],
           expectedStepsRun: ["B"],
         },
         "final request returns empty response": {
@@ -395,12 +427,12 @@ describe("runFn", () => {
               expect.objectContaining({
                 id: A,
                 name: "A",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
               expect.objectContaining({
                 id: B,
                 name: "B",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
             ],
           ],
@@ -408,7 +440,15 @@ describe("runFn", () => {
 
         "requesting to run B runs B": {
           runStep: B,
-          expectedReturn: ["multi-run", { data: "B" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: B,
+              name: "B",
+              op: StepOpCode.StepPlanned,
+              data: "B",
+            }),
+          ],
           expectedStepsRun: ["B"],
         },
 
@@ -424,7 +464,15 @@ describe("runFn", () => {
 
         "requesting to run A runs A": {
           runStep: A,
-          expectedReturn: ["multi-run", { data: "A" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.StepPlanned,
+              data: "A",
+            }),
+          ],
           expectedStepsRun: ["A"],
         },
 
@@ -445,7 +493,7 @@ describe("runFn", () => {
               expect.objectContaining({
                 id: C,
                 name: "C",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
             ],
           ],
@@ -463,7 +511,15 @@ describe("runFn", () => {
               data: "A",
             },
           ],
-          expectedReturn: ["multi-run", { data: "C" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: C,
+              name: "C",
+              op: StepOpCode.StepPlanned,
+              data: "C",
+            }),
+          ],
           expectedStepsRun: ["C"],
         },
 
@@ -525,12 +581,12 @@ describe("runFn", () => {
               expect.objectContaining({
                 id: A,
                 name: "A",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
               expect.objectContaining({
                 id: B,
                 name: "B",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
             ],
           ],
@@ -538,7 +594,15 @@ describe("runFn", () => {
 
         "requesting to run B runs B": {
           runStep: B,
-          expectedReturn: ["multi-run", { data: "B" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: B,
+              name: "B",
+              op: StepOpCode.StepPlanned,
+              data: "B",
+            }),
+          ],
           expectedStepsRun: ["B"],
         },
 
@@ -555,7 +619,7 @@ describe("runFn", () => {
               expect.objectContaining({
                 id: BWins,
                 name: "B wins",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
             ],
           ],
@@ -563,7 +627,15 @@ describe("runFn", () => {
 
         "requesting to run A runs A": {
           runStep: A,
-          expectedReturn: ["multi-run", { data: "A" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.StepPlanned,
+              data: "A",
+            }),
+          ],
           expectedStepsRun: ["A"],
         },
 
@@ -589,7 +661,15 @@ describe("runFn", () => {
               data: "B",
             },
           ],
-          expectedReturn: ["multi-run", { data: "B wins" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: BWins,
+              name: "B wins",
+              op: StepOpCode.StepPlanned,
+              data: "B wins",
+            }),
+          ],
           expectedStepsRun: ["BWins"],
         },
       })
@@ -630,12 +710,12 @@ describe("runFn", () => {
               expect.objectContaining({
                 id: A,
                 name: "A",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
               expect.objectContaining({
                 id: B,
                 name: "B",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
             ],
           ],
@@ -643,7 +723,15 @@ describe("runFn", () => {
 
         "requesting to run A runs A": {
           runStep: A,
-          expectedReturn: ["multi-run", { data: "A" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.StepPlanned,
+              data: "A",
+            }),
+          ],
           expectedStepsRun: ["A"],
         },
 
@@ -654,7 +742,15 @@ describe("runFn", () => {
 
         "requesting to run B runs B, which fails": {
           runStep: B,
-          expectedReturn: ["multi-run", { error: "B" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: B,
+              name: "B",
+              op: StepOpCode.StepPlanned,
+              error: "B",
+            }),
+          ],
           expectedStepsRun: ["B"],
         },
 
@@ -669,7 +765,7 @@ describe("runFn", () => {
               expect.objectContaining({
                 id: BFailed,
                 name: "B failed",
-                op: StepOpCode.ReportStep,
+                op: StepOpCode.StepPlanned,
               }),
             ],
           ],
@@ -681,7 +777,15 @@ describe("runFn", () => {
             { id: A, data: "A" },
             { id: B, error: "B" },
           ],
-          expectedReturn: ["multi-run", { data: "B failed" }],
+          expectedReturn: [
+            "multi-run",
+            expect.objectContaining({
+              id: BFailed,
+              name: "B failed",
+              op: StepOpCode.StepPlanned,
+              data: "B failed",
+            }),
+          ],
           expectedStepsRun: ["BFailed"],
         },
 

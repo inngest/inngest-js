@@ -99,7 +99,7 @@ describe("run", () => {
   test("return Step step op code", () => {
     void run("step", () => undefined);
     expect(getOp()).toMatchObject({
-      op: StepOpCode.ReportStep,
+      op: StepOpCode.StepPlanned,
     });
   });
 

@@ -13,7 +13,7 @@ import {
   OpStack,
   OutgoingOp,
 } from "../types";
-import { createStepTools } from "./InngestStepTools";
+import { createStepTools, TickOp } from "./InngestStepTools";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -87,8 +87,21 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
 
+    const { retries: attempts, ...opts } = this.#opts;
+
+    /**
+     * Convert retries into the format required when defining function
+     * configuration.
+     *
+     * While we define "retries" here, the executor wants to know the number of
+     * "attempts", so we add 1 to whatever value the user provides, e.g. 2
+     * retries means 3 attempts.
+     */
+    const retries =
+      typeof attempts === "undefined" ? undefined : { attempts: attempts + 1 };
+
     return {
-      ...this.#opts,
+      ...opts,
       id: fnId,
       name: this.name,
       triggers: [this.#trigger as FunctionTrigger],
@@ -100,6 +113,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
             type: "http",
             url: stepUrl.href,
           },
+          retries,
         },
       },
     };
@@ -146,7 +160,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
   ): Promise<
     | [type: "single", data: unknown]
     | [type: "multi-discovery", ops: OutgoingOp[]]
-    | [type: "multi-run", data: { data: any } | { error: any }]
+    | [type: "multi-run", op: OutgoingOp]
   > {
     /**
      * Create some values to be mutated and passed to the step tools. Once the
@@ -230,7 +244,8 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     } while (pos < opStack.length);
 
     if (runStep) {
-      const userFnToRun = state.allFoundOps[runStep]?.fn;
+      const userFnOp = state.allFoundOps[runStep];
+      const userFnToRun = userFnOp?.fn;
 
       if (!userFnToRun) {
         throw new Error("Bad stack; no fn to execute; re-execute pls");
@@ -266,18 +281,12 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
           }
         });
 
-      return ["multi-run", result];
+      return ["multi-run", { ...tickOpToOutgoing(userFnOp), ...result }];
     }
 
-    const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>((op) => {
-      return {
-        op: op.op,
-        id: op.id,
-        name: op.name,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        opts: op.opts,
-      };
-    });
+    const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>(
+      tickOpToOutgoing
+    );
 
     return ["multi-discovery", discoveredOps];
   }
@@ -289,3 +298,13 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     return slugify([prefix || "", this.#opts.name].join("-"));
   }
 }
+
+const tickOpToOutgoing = (op: TickOp): OutgoingOp => {
+  return {
+    op: op.op,
+    id: op.id,
+    name: op.name,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    opts: op.opts,
+  };
+};
