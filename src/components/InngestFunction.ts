@@ -85,7 +85,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
 
     const { retries: attempts, ...opts } = this.#opts;
 
-    // Convert retries into the format required when defining function configuration. 
+    // Convert retries into the format required when defining function configuration.
     const retries = attempts ? { attempts } : undefined;
 
     return {
