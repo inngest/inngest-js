@@ -134,7 +134,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     // Warning: (ae-forgotten-export) The symbol "ActionResponse" needs to be exported by the entry point index.d.ts
     readonly transformRes: (res: ActionResponse, ...args: Parameters<H>) => TransformedRes;
     // (undocumented)
-    protected validateSignature(): boolean;
+    protected validateSignature(sig: string | undefined, body: Record<string, any>): void;
 }
 
 // @public
