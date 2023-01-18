@@ -3,7 +3,7 @@ import {
   InngestCommHandler,
   ServeHandler,
 } from "./components/InngestCommHandler";
-import { queryKeys } from "./helpers/consts";
+import { queryKeys, signatureKey } from "./helpers/consts";
 import { allProcessEnv } from "./helpers/env";
 
 /**
@@ -35,6 +35,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
               env,
               isProduction,
               url,
+              signature: req.headers[signatureKey] as string,
             };
           }
         },

@@ -19,3 +19,5 @@ export enum prodEnvKeys {
 }
 
 export const defaultDevServerHost = "http://127.0.0.1:8288/";
+
+export const signatureKey = "x-inngest-signature";

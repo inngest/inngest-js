@@ -9,6 +9,7 @@ import httpMocks from "node-mocks-http";
 import { ulid } from "ulid";
 import { z } from "zod";
 import { ServeHandler } from "../components/InngestCommHandler";
+import { signatureKey } from "../helpers/consts";
 import { createFunction } from "../helpers/func";
 import { version } from "../version";
 
