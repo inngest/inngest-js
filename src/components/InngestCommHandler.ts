@@ -219,6 +219,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    */
   private readonly fns: Record<string, InngestFunction<any>> = {};
 
+  private allowExpiredSignatures: boolean;
+
   constructor(
     /**
      * The name of the framework this handler is designed for. Should be
@@ -317,6 +319,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
     this.handler = handler;
     this.transformRes = transformRes;
+    this.allowExpiredSignatures = false;
 
     this.fns = functions.reduce<Record<string, InngestFunction<any>>>(
       (acc, fn) => {
@@ -790,14 +793,16 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     const delta =
       (new Date().valueOf() - new Date(parseInt(map.t, 10) * 1000).valueOf()) /
       1000;
-    if (delta > 60 * 5) {
+    if (delta > 60 * 5 && this.allowExpiredSignatures !== true) {
       throw new Error("Request has expired");
     }
 
     // Calculate the HMAC of the request body ourselves.
     const encoded = typeof body === "string" ? body : JSON.stringify(body);
+    // Remove the /signkey-[test|prod]-/ prefix from our signing key to calculate the HMAC.
+    const key = (this.signingKey || "").replace(/signkey-\w+-/, "");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    const mac = hmac(sha256 as any, this.signingKey || "")
+    const mac = hmac(sha256 as any, key)
       .update(encoded)
       .update(map.t)
       .digest("hex");
