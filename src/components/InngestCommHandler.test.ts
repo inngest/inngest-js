@@ -1,7 +1,7 @@
 import { InngestCommHandler } from "./InngestCommHandler";
 
 describe("validateSignature", () => {
-  const ch = new InngestCommHandler("test", "appname", [], undefined, null as any, () => {});
+  const ch = new InngestCommHandler("test", "appname", [], undefined, null as any, () => { return null; });
 
   ch["signingKey"] = "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f";
 

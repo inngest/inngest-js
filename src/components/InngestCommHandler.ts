@@ -754,15 +754,19 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   }
 
   protected validateSignature(sig: string | undefined, body: Record<string, any>) {
+    if (this.isProd && !sig) {
+      throw new Error("No x-inngest-signature provided");
+    }
+
+    if (!this.isProd && !this.signingKey) {
+      return;
+    }
+
     if (!this.signingKey) {
       console.warn(
         "No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets"
       );
       return;
-    }
-
-    if (this.isProd && !sig) {
-      throw new Error("No x-inngest-signature provided");
     }
 
     if (!sig) {
