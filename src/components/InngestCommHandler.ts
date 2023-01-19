@@ -435,6 +435,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       const runRes = await actions.run();
 
       if (runRes) {
+        this._isProd = runRes.isProduction;
         this.upsertSigningKeyFromEnv(runRes.env);
         this.validateSignature(runRes.signature, runRes.data);
 
@@ -463,6 +464,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
       const viewRes = await actions.view();
       if (viewRes) {
+        this._isProd = viewRes.isProduction;
         this.upsertSigningKeyFromEnv(viewRes.env);
 
         const showLandingPage = this.shouldShowLandingPage(
@@ -506,6 +508,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
       const registerRes = await actions.register();
       if (registerRes) {
+        this._isProd = registerRes.isProduction;
         this.upsertSigningKeyFromEnv(registerRes.env);
 
         const { status, message } = await this.register(
