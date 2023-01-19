@@ -802,12 +802,12 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 }
 
 class RequestSignature {
-  public timestamp: number;
+  public timestamp: string;
   public signature: string;
 
   constructor(sig: string) {
     const params = new URLSearchParams(sig);
-    this.timestamp = Number(params.get("t"));
+    this.timestamp = params.get("t") || "";
     this.signature = params.get("s") || "";
 
     if (!this.timestamp || !this.signature) {
@@ -820,7 +820,8 @@ class RequestSignature {
       return false;
     }
 
-    const delta = Date.now() - new Date(this.timestamp * 1000).valueOf();
+    const delta =
+      Date.now() - new Date(parseInt(this.timestamp) * 1000).valueOf();
     return delta > 1000 * 60 * 5;
   }
 

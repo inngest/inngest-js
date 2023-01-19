@@ -605,7 +605,7 @@ export const testFramework = (
                   [signatureKey]:
                     "t=1674082860&s=88b6453463050d1846743cbba0925bae7c1cf807f9c74bbd41b3d5cfc9c70d11",
                 },
-                url: "/api/inngest?fnId=local-testing-local-cron&stepId=step",
+                url: "/api/inngest?fnId=test&stepId=step",
                 body,
               },
             ],
@@ -614,7 +614,7 @@ export const testFramework = (
 
           expect(ret).toMatchObject({
             status: 200,
-            body: "fn",
+            body: '"fn"',
           });
         });
       });
