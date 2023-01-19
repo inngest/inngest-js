@@ -319,7 +319,15 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
     this.handler = handler;
     this.transformRes = transformRes;
-    this.allowExpiredSignatures = false;
+
+    /**
+     * Provide a hidden option to allow expired signatures to be accepted during
+     * testing.
+     */
+    this.allowExpiredSignatures = Boolean(
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, prefer-rest-params
+      arguments["3"]?.__testingAllowExpiredSignatures
+    );
 
     this.fns = functions.reduce<Record<string, InngestFunction<any>>>(
       (acc, fn) => {
