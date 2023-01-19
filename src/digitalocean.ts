@@ -4,7 +4,7 @@ import { queryKeys, signatureKey } from "./helpers/consts";
 import { allProcessEnv } from "./helpers/env";
 
 type HTTP = {
-  headers: Record<string, string>,
+  headers: Record<string, string>;
   method: string;
   path: string;
 };
