@@ -2,7 +2,7 @@ import {
   InngestCommHandler,
   ServeHandler,
 } from "../components/InngestCommHandler";
-import { queryKeys, signatureKey } from "../helpers/consts";
+import { headerKeys, queryKeys } from "../helpers/consts";
 
 /**
  * With Deno's Fresh framework, serve and register any declared functions with
@@ -39,7 +39,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
               fnId: url.searchParams.get(queryKeys.FnId) as string,
               url,
               isProduction,
-              signature: req.headers.get(signatureKey) || undefined,
+              signature: req.headers.get(headerKeys.Signature) || undefined,
             };
           }
         },

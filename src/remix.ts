@@ -2,7 +2,7 @@ import {
   InngestCommHandler,
   ServeHandler,
 } from "./components/InngestCommHandler";
-import { queryKeys, signatureKey } from "./helpers/consts";
+import { headerKeys, queryKeys } from "./helpers/consts";
 import { allProcessEnv } from "./helpers/env";
 
 /**
@@ -60,7 +60,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
               fnId: url.searchParams.get(queryKeys.FnId) as string,
               isProduction,
               url,
-              signature: req.headers.get(signatureKey) || undefined,
+              signature: req.headers.get(headerKeys.Signature) || undefined,
             };
           }
         },

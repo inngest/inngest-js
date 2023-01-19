@@ -18,6 +18,8 @@ export enum prodEnvKeys {
   NetlifyEnvKey = "CONTEXT",
 }
 
-export const defaultDevServerHost = "http://127.0.0.1:8288/";
+export enum headerKeys {
+  Signature = "x-inngest-signature",
+}
 
-export const signatureKey = "x-inngest-signature";
+export const defaultDevServerHost = "http://127.0.0.1:8288/";

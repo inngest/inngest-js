@@ -10,7 +10,7 @@ import { ulid } from "ulid";
 import { z } from "zod";
 import { ServeHandler } from "../components/InngestCommHandler";
 import { InngestFunction } from "../components/InngestFunction";
-import { signatureKey } from "../helpers/consts";
+import { headerKeys } from "../helpers/consts";
 import { createFunction } from "../helpers/func";
 import { version } from "../version";
 
@@ -519,21 +519,23 @@ export const testFramework = (
 
           expect(ret).toMatchObject({
             status: 500,
-            body: expect.stringContaining("No x-inngest-signature provided"),
+            body: expect.stringContaining(
+              `No ${headerKeys.Signature} provided`
+            ),
           });
         });
 
         test("should throw an error with an invalid signature", async () => {
           const ret = await run(
             ["Test", [fn], { signingKey: "test" }],
-            [{ method: "POST", headers: { [signatureKey]: "t=&s=" } }],
+            [{ method: "POST", headers: { [headerKeys.Signature]: "t=&s=" } }],
             env
           );
 
           expect(ret).toMatchObject({
             status: 500,
             body: expect.stringContaining(
-              "Invalid x-inngest-signature provided"
+              `Invalid ${headerKeys.Signature} provided`
             ),
           });
         });
@@ -548,7 +550,7 @@ export const testFramework = (
               {
                 method: "POST",
                 headers: {
-                  [signatureKey]: `t=${Math.round(
+                  [headerKeys.Signature]: `t=${Math.round(
                     yesterday.getTime() / 1000
                   )}&s=expired`,
                 },
@@ -602,7 +604,7 @@ export const testFramework = (
               {
                 method: "POST",
                 headers: {
-                  [signatureKey]:
+                  [headerKeys.Signature]:
                     "t=1674082860&s=88b6453463050d1846743cbba0925bae7c1cf807f9c74bbd41b3d5cfc9c70d11",
                 },
                 url: "/api/inngest?fnId=test&stepId=step",

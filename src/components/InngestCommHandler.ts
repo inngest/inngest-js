@@ -1,6 +1,6 @@
 import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
-import { envKeys, queryKeys } from "../helpers/consts";
+import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import { strBoolean } from "../helpers/scalar";
 import type { MaybePromise } from "../helpers/types";
@@ -770,7 +770,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     body: Record<string, any>
   ) {
     if (this.isProd && !sig) {
-      throw new Error("No x-inngest-signature provided");
+      throw new Error(`No ${headerKeys.Signature} provided`);
     }
 
     if (!this.isProd && !this.signingKey) {
@@ -785,7 +785,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     }
 
     if (!sig) {
-      console.warn("No x-inngest-signature provided");
+      console.warn(`No ${headerKeys.Signature} provided`);
       return;
     }
 
@@ -811,7 +811,7 @@ class RequestSignature {
     this.signature = params.get("s") || "";
 
     if (!this.timestamp || !this.signature) {
-      throw new Error("Invalid x-inngest-signature provided");
+      throw new Error(`Invalid ${headerKeys.Signature} provided`);
     }
   }
 

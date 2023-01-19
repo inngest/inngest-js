@@ -1,6 +1,6 @@
 import type { ServeHandler } from "./components/InngestCommHandler";
 import { InngestCommHandler } from "./components/InngestCommHandler";
-import { queryKeys, signatureKey } from "./helpers/consts";
+import { headerKeys, queryKeys } from "./helpers/consts";
 import { allProcessEnv } from "./helpers/env";
 
 type HTTP = {
@@ -65,7 +65,7 @@ export const serve = (
               env,
               isProduction,
               url,
-              signature: http.headers[signatureKey] as string,
+              signature: http.headers[headerKeys.Signature] as string,
             };
           }
         },
