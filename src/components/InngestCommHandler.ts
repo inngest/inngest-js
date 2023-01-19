@@ -526,10 +526,11 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           },
         };
       }
-    } catch (err) {
+    } catch (err: any) {
       return {
         status: 500,
-        body: JSON.stringify(err),
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        body: JSON.stringify(err.stack || err.message || err),
         headers: {
           ...headers,
           "Content-Type": "application/json",
