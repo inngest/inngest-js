@@ -1,4 +1,4 @@
-import { sha256, hmac } from "hash.js";
+import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
 import { envKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
@@ -757,7 +757,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     return this.showLandingPage ?? strBoolean(strEnvVar) ?? true;
   }
 
-  protected validateSignature(sig: string | undefined, body: Record<string, any>) {
+  protected validateSignature(
+    sig: string | undefined,
+    body: Record<string, any>
+  ) {
     if (this.isProd && !sig) {
       throw new Error("No x-inngest-signature provided");
     }
@@ -778,50 +781,67 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       return;
     }
 
-    // sig should have a format of `t=${unixTS}&s=${signature}` to parse.
-    //
-    // We cant use URLSearchParams here because this needs to run directly in V8
-    // which may not have this defined.  This splits the signature into a map of
-    // t,s.
-    const map: { [k: string]: string } = {};
-    sig.split("&").forEach((item) => {
-      const kv = item.split("=");
-      if (kv.length < 2 || !kv[0] || !kv[1]) {
-        return;
-      }
-      map[kv[0]] = kv[1];
+    new RequestSignature(sig).verifySignature({
+      body,
+      allowExpiredSignatures: this.allowExpiredSignatures,
+      signingKey: this.signingKey,
     });
-    // Ensure that we have a time and signature field.
-    if (!map.t || !map.s) {
+  }
+
+  protected signResponse(): string {
+    return "";
+  }
+}
+
+class RequestSignature {
+  public timestamp: number;
+  public signature: string;
+
+  constructor(sig: string) {
+    const params = new URLSearchParams(sig);
+    this.timestamp = Number(params.get("t"));
+    this.signature = params.get("s") || "";
+
+    if (!this.timestamp || !this.signature) {
       throw new Error("Invalid x-inngest-signature provided");
     }
+  }
 
-    // Ensure that the request was created within the last 5 mintues by taking the
-    // difference in the unix timestamp, in seconds.
-    const delta =
-      (new Date().valueOf() - new Date(parseInt(map.t, 10) * 1000).valueOf()) /
-      1000;
-    if (delta > 60 * 5 && this.allowExpiredSignatures !== true) {
-      throw new Error("Request has expired");
+  private hasExpired(allowExpiredSignatures?: boolean) {
+    if (allowExpiredSignatures) {
+      return false;
+    }
+
+    const delta = Date.now() - new Date(this.timestamp * 1000).valueOf();
+    return delta > 1000 * 60 * 5;
+  }
+
+  public verifySignature({
+    body,
+    signingKey,
+    allowExpiredSignatures,
+  }: {
+    body: any;
+    signingKey: string;
+    allowExpiredSignatures: boolean;
+  }): void {
+    if (this.hasExpired(allowExpiredSignatures)) {
+      throw new Error("Signature has expired");
     }
 
     // Calculate the HMAC of the request body ourselves.
     const encoded = typeof body === "string" ? body : JSON.stringify(body);
     // Remove the /signkey-[test|prod]-/ prefix from our signing key to calculate the HMAC.
-    const key = (this.signingKey || "").replace(/signkey-\w+-/, "");
+    const key = signingKey.replace(/signkey-\w+-/, "");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     const mac = hmac(sha256 as any, key)
       .update(encoded)
-      .update(map.t)
+      .update(this.timestamp)
       .digest("hex");
 
-    if (mac !== map.s) {
+    if (mac !== this.signature) {
       throw new Error("Invalid signature");
     }
-  }
-
-  protected signResponse(): string {
-    return "";
   }
 }
 
