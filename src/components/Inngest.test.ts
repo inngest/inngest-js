@@ -1,4 +1,3 @@
-import nock from "nock";
 import { envKeys } from "../helpers/consts";
 import { EventPayload } from "../types";
 import { eventKeyWarning, Inngest } from "./Inngest";
@@ -50,37 +49,33 @@ describe("instantiation", () => {
 
 describe("send", () => {
   const originalEnvEventKey = process.env[envKeys.EventKey];
+  const originalFetch = global.fetch;
+
+  beforeAll(() => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        status: 200,
+        json: () => Promise.resolve({}),
+      })
+    ) as any;
+  });
 
   beforeEach(() => {
-    /**
-     * Ensure nock is active before each test. This is required after each
-     * use of `nock.restore()`.
-     *
-     * See https://www.npmjs.com/package/nock#restoring
-     */
-    try {
-      nock.activate();
-    } catch {
-      // no-op - will throw if Nock is already active
-    }
-
-    nock("https://inn.gs").post(`/e/${testEventKey}`).reply(200);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+    (global.fetch as any).mockClear();
   });
 
   afterEach(() => {
-    /**
-     * Reset nock state after each test.
-     *
-     * See https://www.npmjs.com/package/nock#memory-issues-with-jest
-     */
-    nock.restore();
-    nock.cleanAll();
-
     if (originalEnvEventKey) {
       process.env[envKeys.EventKey] = originalEnvEventKey;
     } else {
       delete process.env[envKeys.EventKey];
     }
+  });
+
+  afterAll(() => {
+    global.fetch = originalFetch;
   });
 
   test("should fail to send if event key not specified at instantiation", async () => {
@@ -95,6 +90,14 @@ describe("send", () => {
     const inngest = new Inngest({ name: "test", eventKey: testEventKey });
 
     await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(`/e/${testEventKey}`),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify([testEvent]),
+      })
+    );
   });
 
   test("should succeed if event key specified in env", async () => {
@@ -102,6 +105,14 @@ describe("send", () => {
     const inngest = new Inngest({ name: "test" });
 
     await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(`/e/${testEventKey}`),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify([testEvent]),
+      })
+    );
   });
 
   test("should succeed if event key given at runtime", async () => {
@@ -109,5 +120,13 @@ describe("send", () => {
     inngest.setEventKey(testEventKey);
 
     await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(`/e/${testEventKey}`),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify([testEvent]),
+      })
+    );
   });
 });
