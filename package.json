@@ -53,6 +53,7 @@
   "dependencies": {
     "buffer": "^6.0.3",
     "cross-fetch": "^3.1.5",
+    "h3": "^1.0.2",
     "hash.js": "^1.1.7",
     "json-stringify-deterministic": "^1.0.8",
     "ms": "^2.1.3",
