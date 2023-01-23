@@ -12,6 +12,7 @@ import {
   IncomingOp,
   OpStack,
   OutgoingOp,
+  StepOpCode,
 } from "../types";
 import { createStepTools, TickOp } from "./InngestStepTools";
 
@@ -299,7 +300,10 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
           runningStepStop();
         });
 
-      return ["multi-run", { ...tickOpToOutgoing(userFnOp), ...result }];
+      return [
+        "multi-run",
+        { ...tickOpToOutgoing(userFnOp), ...result, op: StepOpCode.RunStep },
+      ];
     }
 
     const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>(
