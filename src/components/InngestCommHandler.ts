@@ -2,6 +2,7 @@ import { sha256 } from "hash.js";
 import { z } from "zod";
 import { envKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+import { marshalError, stringifyError } from "../helpers/error";
 import { strBoolean } from "../helpers/scalar";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
@@ -438,7 +439,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         if (stepRes.status === 500 || stepRes.status === 400) {
           return {
             status: stepRes.status,
-            body: stepRes.error || "",
+            body: stringifyError(stepRes.error),
             headers: {
               ...headers,
               "Content-Type": "application/json",
@@ -521,7 +522,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     } catch (err) {
       return {
         status: 500,
-        body: JSON.stringify(err),
+        body: stringifyError(err),
         headers: {
           ...headers,
           "Content-Type": "application/json",
@@ -579,29 +580,12 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       if (err instanceof NonRetriableError) {
         return {
           status: 400,
-          error: JSON.stringify({
-            message: err.message,
-            stack: err.stack,
-            name: err.name,
-            cause: err.cause
-              ? err.cause instanceof Error
-                ? err.cause.stack || err.cause.message
-                : JSON.stringify(err.cause)
-              : undefined,
-          }),
+          error: stringifyError(err),
         };
       }
-
-      if (err instanceof Error) {
-        return {
-          status: 500,
-          error: err.stack || err.message,
-        };
-      }
-
       return {
         status: 500,
-        error: `Unknown error: ${JSON.stringify(err)}`,
+        error: stringifyError(err),
       };
     }
   }
