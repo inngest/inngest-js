@@ -125,8 +125,24 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       "User-Agent": `InngestJS v${version}`,
     };
 
+    this.fetch = Inngest.parseFetch(fetch);
+  }
+
+  /**
+   * Given a potential fetch function, return the fetch function to use based on
+   * this and the environment.
+   */
+  private static parseFetch(fetchArg: FetchT | undefined): FetchT {
+    if (fetchArg) {
+      return fetchArg;
+    }
+
+    if (typeof fetch !== "undefined") {
+      return fetch;
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    this.fetch = fetch || (require("cross-fetch") as FetchT);
+    return require("cross-fetch") as FetchT;
   }
 
   /**

@@ -55,6 +55,7 @@ jobs:
           - inngest/sdk-example-nextjs-netlify
           - inngest/sdk-example-remix-vercel
           - inngest/sdk-example-fresh-deno-deploy
+          - inngest/sdk-example-nuxt-vercel
     steps:
       # Checkout the repo
       - name: Checkout SDK
