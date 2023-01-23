@@ -4,6 +4,8 @@
 
 ```ts
 
+import { Jsonify } from 'type-fest';
+
 // @public
 export interface ClientOptions {
     eventKey?: string;
@@ -38,6 +40,7 @@ export interface FunctionOptions {
     id?: string;
     idempotency?: string;
     name: string;
+    retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
     throttle?: {
         key?: string;
         count: number;
@@ -103,7 +106,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     protected _isProd: boolean;
     readonly name: string;
     // (undocumented)
-    protected register(url: URL, devServerHost: string | undefined): Promise<{
+    protected register(url: URL, devServerHost: string | undefined, deployId?: string | undefined | null): Promise<{
         status: number;
         message: string;
     }>;
@@ -143,6 +146,14 @@ export interface MultiStepFnArgs<Events extends Record<string, EventPayload>, Ev
     //
     // (undocumented)
     tools: ReturnType<typeof createStepTools<Events, Event>>[0];
+}
+
+// @public
+export class NonRetriableError extends Error {
+    constructor(message: string, options?: {
+        cause?: any;
+    });
+    readonly cause?: any;
 }
 
 // @public

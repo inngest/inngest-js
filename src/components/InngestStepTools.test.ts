@@ -1,4 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import ms from "ms";
+import { assertType } from "type-plus";
 import { StepOpCode } from "../types";
 import { createStepTools, StepFlowInterrupt } from "./InngestStepTools";
 
@@ -97,7 +100,7 @@ describe("waitForEvent", () => {
   });
 });
 
-describe("step", () => {
+describe("run", () => {
   let run: ReturnType<typeof createStepTools>[0]["run"];
   let state: ReturnType<typeof createStepTools>[1];
 
@@ -137,6 +140,53 @@ describe("step", () => {
       data: "foo",
     });
   });
+
+  test("types returned from run are the result of (de)serialization", () => {
+    const input = {
+      str: "",
+      num: 0,
+      bool: false,
+      date: new Date(),
+      fn: () => undefined,
+      obj: {
+        str: "",
+        num: 0,
+      },
+      arr: [0, 1, 2, () => undefined, true],
+      infinity: Infinity,
+      nan: NaN,
+      undef: undefined,
+      null: null,
+      symbol: Symbol("foo"),
+      map: new Map(),
+      set: new Set(),
+    };
+
+    const fn = () => run("step", () => input);
+
+    let output: ReturnType<typeof fn>;
+
+    expect(() => {
+      output = fn();
+    }).toThrow(StepFlowInterrupt);
+
+    assertType<{
+      str: string;
+      num: number;
+      bool: boolean;
+      date: string;
+      obj: {
+        str: string;
+        num: number;
+      };
+      arr: (number | null | boolean)[];
+      infinity: number;
+      nan: number;
+      null: null;
+      map: Record<string, never>;
+      set: Record<string, never>;
+    }>(output!);
+  });
 });
 
 describe("sleep", () => {
@@ -173,21 +223,43 @@ describe("sleepUntil", () => {
   test("return Sleep step op code", async () => {
     const future = new Date();
     future.setDate(future.getDate() + 1);
-
     expect(() => sleepUntil(future)).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
       op: StepOpCode.Sleep,
     });
   });
 
-  test("return time string as ID given a date", async () => {
-    const upcoming = new Date();
-    upcoming.setDate(upcoming.getDate() + 6);
-    upcoming.setHours(upcoming.getHours() + 1);
+  test("parses dates", async () => {
+    const next = new Date();
 
-    expect(() => sleepUntil(upcoming)).toThrow(StepFlowInterrupt);
+    expect(() => sleepUntil(next)).toThrow(StepFlowInterrupt);
     await expect(state.nextOp).resolves.toMatchObject({
-      name: expect.stringContaining("6d"),
+      name: next.toISOString(),
     });
+  });
+
+  test("parses ISO strings", async () => {
+    const next = new Date(new Date().valueOf() + ms("6d")).toISOString();
+
+    expect(() => sleepUntil(next)).toThrow(StepFlowInterrupt);
+    await expect(state.nextOp).resolves.toMatchObject({
+      name: next,
+    });
+  });
+
+  test("throws if invalid date given", () => {
+    const next = new Date("bad");
+
+    expect(() => sleepUntil(next)).toThrow(
+      "Invalid date or date string passed"
+    );
+  });
+
+  test("throws if invalid time string given", () => {
+    const next = "bad";
+
+    expect(() => sleepUntil(next)).toThrow(
+      "Invalid date or date string passed"
+    );
   });
 });

@@ -28,7 +28,6 @@ import { allProcessEnv } from "./helpers/env";
  * @public
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
-  // return defaultServe(new RemixCommHandler(nameOrInngest, fns, opts));
   const handler = new InngestCommHandler(
     "remix",
     nameOrInngest,
@@ -49,6 +48,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
               env,
               isProduction,
               url,
+              deployId: url.searchParams.get(queryKeys.DeployId),
             };
           }
         },

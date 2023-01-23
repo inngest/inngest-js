@@ -15,6 +15,7 @@ import type {
 import { version } from "../version";
 import type { Inngest } from "./Inngest";
 import type { InngestFunction } from "./InngestFunction";
+import { NonRetriableError } from "./NonRetriableError";
 
 /**
  * A handler for serving Inngest functions. This type should be used
@@ -434,9 +435,9 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
         const stepRes = await this.runStep(runRes.fnId, "step", runRes.data);
 
-        if (stepRes.status === 500) {
+        if (stepRes.status === 500 || stepRes.status === 400) {
           return {
-            status: 500,
+            status: stepRes.status,
             body: stepRes.error || "",
             headers: {
               ...headers,
@@ -504,7 +505,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
         const { status, message } = await this.register(
           this.reqUrl(registerRes.url),
-          registerRes.env[envKeys.DevServerUrl]
+          registerRes.env[envKeys.DevServerUrl],
+          registerRes.deployId
         );
 
         return {
@@ -567,6 +569,29 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         body: ret[1],
       };
     } catch (err: unknown) {
+      /**
+       * If we've caught a non-retriable error, we'll return a 400 to Inngest
+       * to indicate that the error is not transient and should not be retried.
+       *
+       * The errors caught here are caught from the main function as well as
+       * inside individual steps, so this safely catches all areas.
+       */
+      if (err instanceof NonRetriableError) {
+        return {
+          status: 400,
+          error: JSON.stringify({
+            message: err.message,
+            stack: err.stack,
+            name: err.name,
+            cause: err.cause
+              ? err.cause instanceof Error
+                ? err.cause.stack || err.cause.message
+                : JSON.stringify(err.cause)
+              : undefined,
+          }),
+        };
+      }
+
       if (err instanceof Error) {
         return {
           status: 500,
@@ -638,7 +663,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
   protected async register(
     url: URL,
-    devServerHost: string | undefined
+    devServerHost: string | undefined,
+    deployId?: string | undefined | null
   ): Promise<{ status: number; message: string }> {
     const body = this.registerBody(url);
 
@@ -653,6 +679,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       if (hasDevServer) {
         registerURL = devServerUrl(devServerHost, "/fn/register");
       }
+    }
+
+    if (deployId) {
+      registerURL.searchParams.set("deployId", deployId);
     }
 
     try {
@@ -744,7 +774,7 @@ type Handler = (...args: any[]) => {
  * The response from the Inngest SDK before it is transformed in to a
  * framework-compatible response by an {@link InngestCommHandler} instance.
  */
-interface ActionResponse {
+export interface ActionResponse {
   /**
    * The HTTP status code to return.
    */
@@ -785,6 +815,7 @@ type HandlerAction =
       env: Record<string, string | undefined>;
       url: URL;
       isProduction: boolean;
+      deployId?: null | string;
     }
   | {
       action: "run";

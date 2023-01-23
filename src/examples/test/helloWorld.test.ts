@@ -9,7 +9,7 @@ import {
 
 describe("introspection", () => {
   const specs = [
-    { label: "SDK UI", url: "http://localhost:3000/api/inngest?introspect" },
+    { label: "SDK UI", url: "http://127.0.0.1:3000/api/inngest?introspect" },
     { label: "Dev server UI", url: "http://localhost:8288/dev" },
   ];
 
@@ -57,7 +57,7 @@ describe("run", () => {
       runHasTimeline(runId, {
         __typename: "StepEvent",
         stepType: "COMPLETED",
-        output: JSON.stringify({ body: '"Hello, Inngest!"', status: 200 }),
+        output: JSON.stringify({ body: "Hello, Inngest!", status: 200 }),
       })
     ).resolves.toBe(true);
   });
