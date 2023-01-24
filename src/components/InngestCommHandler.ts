@@ -522,7 +522,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     } catch (err) {
       return {
         status: 500,
-        body: JSON.stringify(err),
+        body: JSON.stringify({
+          type: "internal",
+          ...serializeError(err as Error),
+        }),
         headers: {
           ...headers,
           "Content-Type": "application/json",
