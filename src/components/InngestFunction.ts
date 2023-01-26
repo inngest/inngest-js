@@ -162,6 +162,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     | [type: "single", data: unknown]
     | [type: "multi-discovery", ops: OutgoingOp[]]
     | [type: "multi-run", op: OutgoingOp]
+    | [type: "multi-complete", data: unknown]
   > {
     /**
      * Create some values to be mutated and passed to the step tools. Once the
@@ -293,6 +294,22 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>(
       tickOpToOutgoing
     );
+
+    /**
+     * If we haven't discovered any ops, it's possible that the user's function
+     * has completed. In this case, we should return any returned data to
+     * Inngest as the response.
+     */
+    if (!discoveredOps.length) {
+      const fnRet = await Promise.race([
+        userFnPromise.then((data) => ({ type: "complete", data } as const)),
+        resolveNextTick().then(() => ({ type: "incomplete" } as const)),
+      ]);
+
+      if (fnRet.type === "complete") {
+        return ["multi-complete", fnRet.data];
+      }
+    }
 
     return ["multi-discovery", discoveredOps];
   }

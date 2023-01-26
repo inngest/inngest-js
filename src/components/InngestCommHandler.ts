@@ -626,7 +626,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         stepId === "step" ? null : stepId || null
       );
 
-      if (ret[0] === "single") {
+      if (ret[0] === "single" || ret[0] === "multi-complete") {
         return {
           status: 200,
           body: ret[1],
