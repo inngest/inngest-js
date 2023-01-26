@@ -228,7 +228,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         state.currentOp = state.allFoundOps[incomingOp.id];
 
         if (!state.currentOp) {
-          throw new Error("BAD STACK; COULD NOT FIND OP TO RESOLVE");
+          throw new Error(
+            `Bad stack; could not find local op "${incomingOp.id}" at position ${pos}`
+          );
         }
 
         if (typeof incomingOp.data !== "undefined") {
