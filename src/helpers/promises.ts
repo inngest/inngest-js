@@ -12,6 +12,10 @@ export const createFrozenPromise = (): Promise<unknown> => {
   return new Promise(() => undefined);
 };
 
-export const resolveNextTick = (): Promise<void> => {
-  return new Promise((resolve) => setTimeout(resolve));
+/**
+ * Returns a Promise that resolves after the current event loop's microtasks
+ * have finished, but before the next event loop tick.
+ */
+export const resolveAfterPending = (): Promise<void> => {
+  return new Promise((resolve) => queueMicrotask(resolve));
 };

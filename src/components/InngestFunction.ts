@@ -1,6 +1,6 @@
 import { serializeError } from "serialize-error-cjs";
 import { queryKeys } from "../helpers/consts";
-import { resolveNextTick } from "../helpers/promises";
+import { resolveAfterPending } from "../helpers/promises";
 import { slugify } from "../helpers/strings";
 import {
   EventData,
@@ -241,7 +241,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         }
       }
 
-      await resolveNextTick();
+      await resolveAfterPending();
 
       state.reset();
       pos++;
@@ -303,7 +303,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     if (!discoveredOps.length) {
       const fnRet = await Promise.race([
         userFnPromise.then((data) => ({ type: "complete", data } as const)),
-        resolveNextTick().then(() => ({ type: "incomplete" } as const)),
+        resolveAfterPending().then(() => ({ type: "incomplete" } as const)),
       ]);
 
       if (fnRet.type === "complete") {
