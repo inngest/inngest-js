@@ -227,7 +227,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: A,
               name: "A",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               data: "A",
             }),
           ],
@@ -264,7 +264,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: B,
               name: "B",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               data: "B",
             }),
           ],
@@ -281,7 +281,7 @@ describe("runFn", () => {
               data: "B",
             },
           ],
-          expectedReturn: ["multi-discovery", []],
+          expectedReturn: ["multi-complete", undefined],
         },
       })
     );
@@ -347,7 +347,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: A,
               name: "A",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               data: "A",
             }),
           ],
@@ -374,7 +374,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: B,
               name: "B",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               data: "B",
             }),
           ],
@@ -391,7 +391,7 @@ describe("runFn", () => {
               data: "B",
             },
           ],
-          expectedReturn: ["multi-discovery", []],
+          expectedReturn: ["multi-complete", undefined],
         },
       })
     );
@@ -445,7 +445,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: B,
               name: "B",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               data: "B",
             }),
           ],
@@ -469,7 +469,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: A,
               name: "A",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               data: "A",
             }),
           ],
@@ -516,7 +516,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: C,
               name: "C",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               data: "C",
             }),
           ],
@@ -538,7 +538,7 @@ describe("runFn", () => {
               data: "C",
             },
           ],
-          expectedReturn: ["multi-discovery", []],
+          expectedReturn: ["multi-complete", undefined],
         },
       })
     );
@@ -599,7 +599,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: B,
               name: "B",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               data: "B",
             }),
           ],
@@ -632,7 +632,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: A,
               name: "A",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               data: "A",
             }),
           ],
@@ -666,7 +666,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: BWins,
               name: "B wins",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               data: "B wins",
             }),
           ],
@@ -728,7 +728,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: A,
               name: "A",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               data: "A",
             }),
           ],
@@ -747,7 +747,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: B,
               name: "B",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               error: "B",
             }),
           ],
@@ -782,7 +782,7 @@ describe("runFn", () => {
             expect.objectContaining({
               id: BFailed,
               name: "B failed",
-              op: StepOpCode.StepPlanned,
+              op: StepOpCode.RunStep,
               data: "B failed",
             }),
           ],
