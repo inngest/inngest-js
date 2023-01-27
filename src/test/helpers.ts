@@ -658,7 +658,7 @@ export const runHasTimeline = async (
     functionType?: string;
     output?: string;
   }
-): Promise<boolean> => {
+): Promise<any> => {
   for (let i = 0; i < 5; i++) {
     const start = new Date();
 
@@ -699,18 +699,18 @@ export const runHasTimeline = async (
 
     const data = await res.json();
 
-    if (
-      data?.data?.functionRun?.timeline?.some((entry: any) =>
-        Object.keys(timeline).every(
-          (key) => entry[key] === (timeline as any)[key]
-        )
+    const timelineItem = data?.data?.functionRun?.timeline?.find((entry: any) =>
+      Object.keys(timeline).every(
+        (key) => entry[key] === (timeline as any)[key]
       )
-    ) {
-      return true;
+    );
+
+    if (timelineItem) {
+      return timelineItem;
     }
 
     await waitUpTo(1000, start);
   }
 
-  return false;
+  return;
 };

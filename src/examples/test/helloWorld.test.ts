@@ -59,6 +59,6 @@ describe("run", () => {
         stepType: "COMPLETED",
         output: JSON.stringify({ body: "Hello, Inngest!", status: 200 }),
       })
-    ).resolves.toBe(true);
+    ).resolves.toBeDefined();
   });
 });
