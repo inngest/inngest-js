@@ -253,7 +253,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       const userFnToRun = userFnOp?.fn;
 
       if (!userFnToRun) {
-        throw new Error("Bad stack; no fn to execute; re-execute pls");
+        throw new Error(
+          `Bad stack; executor requesting to run unknown step "${runStep}"`
+        );
       }
 
       const result = await new Promise((resolve) => {
