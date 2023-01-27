@@ -28,7 +28,7 @@ export type HandlerArgs<
   Opts extends FunctionOptions
 > = EventData<Events[Event]> & {
   /**
-   * @deprecated
+   * @deprecated Use `step` instead.
    */
   tools: ReturnType<typeof createStepTools<Events, Event>>[0];
 
