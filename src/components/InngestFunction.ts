@@ -178,6 +178,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     const fnArg = {
       ...(data as EventData<string>),
       tools,
+      step: tools,
     } as Partial<HandlerArgs<any, any, any>>;
 
     /**

@@ -27,7 +27,12 @@ export type HandlerArgs<
   Event extends keyof Events,
   Opts extends FunctionOptions
 > = EventData<Events[Event]> & {
+  /**
+   * @deprecated
+   */
   tools: ReturnType<typeof createStepTools<Events, Event>>[0];
+
+  step: ReturnType<typeof createStepTools<Events, Event>>[0];
 } & (Opts["fns"] extends Record<string, any>
     ? {
         /**
