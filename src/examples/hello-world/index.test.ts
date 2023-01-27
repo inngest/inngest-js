@@ -21,7 +21,7 @@ describe("introspection", () => {
       expect(data.functions).toContainEqual({
         name: "Hello World",
         id: expect.stringMatching(/^.*-hello-world$/),
-        triggers: [{ event: "demo/event.sent" }],
+        triggers: [{ event: "demo/hello.world" }],
         steps: {
           step: {
             id: "step",
@@ -44,10 +44,10 @@ describe("run", () => {
   let runId: string;
 
   beforeAll(async () => {
-    eventId = await sendEvent("demo/event.sent");
+    eventId = await sendEvent("demo/hello.world");
   });
 
-  test("runs in response to 'demo/event.sent'", async () => {
+  test("runs in response to 'demo/hello.world'", async () => {
     runId = await eventRunWithName(eventId, "Hello World");
     expect(runId).toEqual(expect.any(String));
   });

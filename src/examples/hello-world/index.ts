@@ -1,7 +1,7 @@
-import { inngest } from "./client";
+import { inngest } from "../client";
 
 export default inngest.createFunction(
   { name: "Hello World" },
-  { event: "demo/event.sent" },
+  { event: "demo/hello.world" },
   () => "Hello, Inngest!"
 );

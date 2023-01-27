@@ -1,10 +1,10 @@
-import helloWorld from "./helloWorld";
-import parallelReduce from "./parallelReduce";
-import parallelWork from "./parallelWork";
+import helloWorld from "./hello-world";
+import parallelReduce from "./parallel-reduce";
+import parallelWork from "./parallel-work";
 import polling from "./polling";
-import promiseAll from "./Promise.all";
-import promiseRace from "./Promise.race";
-import sequentialReduce from "./sequentialReduce";
+import promiseAll from "./promise-all";
+import promiseRace from "./promise-race";
+import sequentialReduce from "./sequential-reduce";
 
 export default [
   helloWorld,

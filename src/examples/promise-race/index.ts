@@ -1,4 +1,4 @@
-import { inngest } from "./client";
+import { inngest } from "../client";
 
 export default inngest.createFunction(
   { name: "Promise.race" },
