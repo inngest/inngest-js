@@ -30,5 +30,5 @@ Function -->|Run steps| getScore & getFruits
 
 getFruits ----> ret[Accumulate results]
 score3 --> ret
-ret -->|Returns| done["[ 5, 'Apple, Banana, Orange' ]"]
+ret -->|Returns| done["[ 6, 'Apple, Banana, Orange' ]"]
 ```

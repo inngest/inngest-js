@@ -1,7 +1,7 @@
 import { inngest } from "../client";
 
 export default inngest.createFunction(
-  { name: "Parallel Reduce" },
+  { name: "Polling" },
   { event: "demo/polling" },
   async ({ step }) => {
     const poll = async () => {
