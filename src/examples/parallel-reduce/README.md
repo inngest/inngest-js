@@ -4,8 +4,6 @@ This example demonstrates how to run multiple steps in parallel to accumulate a 
 
 It is triggered by a `demo/parallel.reduce` event, runs three steps in parallel to fetch scores from a database, and accumulates the total of all of the scores.
 
-To see a sequential version of this pattern, see the [sequential reduce example](/src/examples/sequential-reduce).
-
 ```mermaid
 graph TD
 Inngest -->|demo/parallel.reduce| Function

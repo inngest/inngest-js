@@ -56,14 +56,15 @@ describe("run", () => {
     const name = `${scoreStep} score`;
 
     test(`ran "${name}" step`, async () => {
-      await expect(
-        runHasTimeline(runId, {
-          __typename: "StepEvent",
-          stepType: "COMPLETED",
-          name,
-          output: expect.any(String),
-        })
-      ).resolves.toBeDefined();
+      const step = await runHasTimeline(runId, {
+        __typename: "StepEvent",
+        stepType: "COMPLETED",
+        name,
+      });
+
+      expect(step).toBeDefined();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(step.output).toEqual(expect.any(String));
     });
   });
 
@@ -78,7 +79,7 @@ describe("run", () => {
           __typename: "StepEvent",
           stepType: "COMPLETED",
           name,
-          output: `"${fruit}}"`,
+          output: `"${fruit}"`,
         })
       ).resolves.toBeDefined();
     });
@@ -89,7 +90,10 @@ describe("run", () => {
       runHasTimeline(runId, {
         __typename: "StepEvent",
         stepType: "COMPLETED",
-        output: `[6,"${fruits.join(", ")}"]`,
+        output: JSON.stringify({
+          body: [6, `${fruits.join(", ")}`],
+          status: 200,
+        }),
       })
     ).resolves.toBeDefined();
   });

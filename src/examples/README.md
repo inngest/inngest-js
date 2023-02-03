@@ -10,4 +10,3 @@ They are copied to various example repos to test against when building releases.
 - [**Polling**](/src/examples/polling) - Poll an external API for a change, timing out after a given period
 - [**Promise.all**](/src/examples/promise-all) - Basic usage of `Promise.all` with step tooling
 - [**Promise.race**](/src/examples/promise-race) - Basic usage of `Promise.race` with step tooling
-- [**Sequential reduce**](/src/examples/sequential-reduce) - Accumulate values using reduce in sequence

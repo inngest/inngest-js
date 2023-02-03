@@ -54,14 +54,15 @@ describe("run", () => {
 
   ["blue", "red", "green"].forEach((team) => {
     test(`ran "Get ${team} team score" step`, async () => {
-      await expect(
-        runHasTimeline(runId, {
-          __typename: "StepEvent",
-          stepType: "COMPLETED",
-          name: `Get ${team} team score`,
-          output: expect.any(String),
-        })
-      ).resolves.toBeDefined();
+      const step = await runHasTimeline(runId, {
+        __typename: "StepEvent",
+        stepType: "COMPLETED",
+        name: `Get ${team} team score`,
+      });
+
+      expect(step).toBeDefined();
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(step.output).toEqual(expect.any(String));
     });
   });
 
@@ -70,7 +71,7 @@ describe("run", () => {
       runHasTimeline(runId, {
         __typename: "StepEvent",
         stepType: "COMPLETED",
-        output: "150",
+        output: JSON.stringify({ body: "150", status: 200 }),
       })
     ).resolves.toBeDefined();
   });
