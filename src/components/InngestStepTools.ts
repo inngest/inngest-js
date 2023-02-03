@@ -7,6 +7,7 @@ import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
 
 export interface TickOp extends HashedOp {
   fn?: (...args: any[]) => any;
+  fulfilled: boolean;
   resolve: (value: any | PromiseLike<any>) => void;
   reject: (reason?: any) => void;
 }
@@ -173,6 +174,7 @@ export const createStepTools = <
           ...(fn ? { fn: () => fn(...args) } : {}),
           resolve,
           reject,
+          fulfilled: false,
         };
       });
     }) as T;

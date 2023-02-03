@@ -1,6 +1,6 @@
 import { serializeError } from "serialize-error-cjs";
 import { queryKeys } from "../helpers/consts";
-import { resolveAfterPending } from "../helpers/promises";
+import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { slugify } from "../helpers/strings";
 import {
   EventData,
@@ -235,6 +235,8 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
           );
         }
 
+        state.currentOp.fulfilled = true;
+
         if (typeof incomingOp.data !== "undefined") {
           state.currentOp.resolve(incomingOp.data);
         } else {
@@ -306,11 +308,23 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     if (!discoveredOps.length) {
       const fnRet = await Promise.race([
         userFnPromise.then((data) => ({ type: "complete", data } as const)),
-        resolveAfterPending().then(() => ({ type: "incomplete" } as const)),
+        resolveNextTick().then(() => ({ type: "incomplete" } as const)),
       ]);
 
       if (fnRet.type === "complete") {
-        return ["multi-complete", fnRet.data];
+        /**
+         * The function has returned a value, so we should return this to
+         * Inngest. Doing this will cause the function to be marked as
+         * complete, so we should only do this if we're sure that all registered
+         * ops have been resolved.
+         */
+        const allOpsFulfilled = Object.values(state.allFoundOps).every((op) => {
+          return op.fulfilled;
+        });
+
+        if (allOpsFulfilled) {
+          return ["multi-complete", fnRet.data];
+        }
       }
     }
 

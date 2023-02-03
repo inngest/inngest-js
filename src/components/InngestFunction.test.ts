@@ -688,7 +688,7 @@ describe("runFn", () => {
           "name",
           "foo",
           async ({ tools: { run } }) => {
-            await Promise.all([
+            return Promise.all([
               run("A", A),
               run("B", B).catch(() => run("B failed", BFailed)),
             ]);
@@ -795,7 +795,7 @@ describe("runFn", () => {
             { id: B, error: "B" },
             { id: BFailed, data: "B failed" },
           ],
-          expectedReturn: ["multi-discovery", []],
+          expectedReturn: ["multi-complete", ["A", "B failed"]],
         },
       })
     );
