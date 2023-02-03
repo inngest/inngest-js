@@ -1,4 +1,5 @@
 import { sha256 } from "hash.js";
+import { serializeError } from "serialize-error-cjs";
 import { z } from "zod";
 import { envKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
@@ -521,7 +522,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     } catch (err) {
       return {
         status: 500,
-        body: JSON.stringify(err),
+        body: JSON.stringify({
+          type: "internal",
+          ...serializeError(err as Error),
+        }),
         headers: {
           ...headers,
           "Content-Type": "application/json",
@@ -568,7 +572,16 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         status: 200,
         body: ret[1],
       };
-    } catch (err: unknown) {
+    } catch (unserializedErr: any) {
+      /**
+       * Always serialize the error before sending it back to Inngest. Errors,
+       * by default, do not niceley serialize to JSON, so we use the a package
+       * to do this.
+       *
+       * See {@link https://www.npmjs.com/package/serialize-error}
+       */
+      const error = JSON.stringify(serializeError(unserializedErr as Error));
+
       /**
        * If we've caught a non-retriable error, we'll return a 400 to Inngest
        * to indicate that the error is not transient and should not be retried.
@@ -576,32 +589,9 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
        * The errors caught here are caught from the main function as well as
        * inside individual steps, so this safely catches all areas.
        */
-      if (err instanceof NonRetriableError) {
-        return {
-          status: 400,
-          error: JSON.stringify({
-            message: err.message,
-            stack: err.stack,
-            name: err.name,
-            cause: err.cause
-              ? err.cause instanceof Error
-                ? err.cause.stack || err.cause.message
-                : JSON.stringify(err.cause)
-              : undefined,
-          }),
-        };
-      }
-
-      if (err instanceof Error) {
-        return {
-          status: 500,
-          error: err.stack || err.message,
-        };
-      }
-
       return {
-        status: 500,
-        error: `Unknown error: ${JSON.stringify(err)}`,
+        status: unserializedErr instanceof NonRetriableError ? 400 : 500,
+        error,
       };
     }
   }

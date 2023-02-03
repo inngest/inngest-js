@@ -88,13 +88,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     /**
      * Convert retries into the format required when defining function
      * configuration.
-     *
-     * While we define "retries" here, the executor wants to know the number of
-     * "attempts", so we add 1 to whatever value the user provides, e.g. 2
-     * retries means 3 attempts.
      */
     const retries =
-      typeof attempts === "undefined" ? undefined : { attempts: attempts + 1 };
+      typeof attempts === "undefined" ? undefined : { attempts };
 
     return {
       ...opts,
