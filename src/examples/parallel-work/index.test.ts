@@ -19,7 +19,7 @@ describe("introspection", () => {
       const data = introspectionSchema.parse(await res.json());
 
       expect(data.functions).toContainEqual({
-        name: "Parallel Reduce",
+        name: "Parallel Work",
         id: expect.stringMatching(/^.*-parallel-work$/),
         triggers: [{ event: "demo/parallel.work" }],
         steps: {
@@ -48,7 +48,7 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/parallel.work'", async () => {
-    runId = await eventRunWithName(eventId, "Parallel Reduce");
+    runId = await eventRunWithName(eventId, "Parallel Work");
     expect(runId).toEqual(expect.any(String));
   });
 
