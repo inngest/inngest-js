@@ -273,7 +273,12 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
            * If the user-defined code throws an error, we should return this
            * to Inngest as the response for this step. The function didn't
            * fail, only this step, so Inngest can decide what we do next.
+           *
+           * Make sure to log this so the user sees what has happened in the
+           * console.
            */
+          console.error(err);
+
           try {
             return {
               error: serializeError(err),
