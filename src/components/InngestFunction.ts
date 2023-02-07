@@ -325,6 +325,20 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         if (allOpsFulfilled) {
           return ["multi-complete", fnRet.data];
         }
+
+        /**
+         * If we're here, it means that the user's function has returned a value
+         * but not all ops have been resolved. This might be intentional if they
+         * are purposefully pushing work to the background, but also might be
+         * unintentional and a bug in the user's code where they expected an
+         * order to be maintained.
+         *
+         * To be safe, we'll show a warning here to tell users that this might
+         * be unintentional, but otherwise carry on as normal.
+         */
+        console.warn(
+          `Warning: Your "${this.name}" function has returned a value, but not all ops have been resolved, i.e. you have used step tooling without \`await\`. This may be intentional, but if you expect your ops to be resolved in order, you should \`await\` them. If you are knowingly leaving ops unresolved using \`.catch()\` or \`void\`, you can ignore this warning.`
+        );
       }
     }
 
