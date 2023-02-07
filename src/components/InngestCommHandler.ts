@@ -1,8 +1,8 @@
 import { sha256 } from "hash.js";
-import { serializeError } from "serialize-error-cjs";
 import { z } from "zod";
 import { envKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+import { serializeError } from "../helpers/errors";
 import { strBoolean } from "../helpers/scalar";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
@@ -645,7 +645,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
        * comment and check and functionality should resume as normal.
        */
       if (ret[0] === "multi-run" && ret[1].error) {
-        throw new Error("Step returned error; not yet supported");
+        throw ret[1].error;
       }
 
       return {
@@ -660,7 +660,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
        *
        * See {@link https://www.npmjs.com/package/serialize-error}
        */
-      const error = JSON.stringify(serializeError(unserializedErr as Error));
+
+      const error = JSON.stringify(serializeError(unserializedErr));
 
       /**
        * If we've caught a non-retriable error, we'll return a 400 to Inngest

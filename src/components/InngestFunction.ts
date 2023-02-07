@@ -1,5 +1,5 @@
-import { serializeError } from "serialize-error-cjs";
 import { queryKeys } from "../helpers/consts";
+import { serializeError } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { slugify } from "../helpers/strings";
 import {
