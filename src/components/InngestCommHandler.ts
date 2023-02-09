@@ -1,13 +1,14 @@
 import { sha256 } from "hash.js";
-import { serializeError } from "serialize-error-cjs";
 import { z } from "zod";
 import { envKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+import { serializeError } from "../helpers/errors";
 import { strBoolean } from "../helpers/scalar";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
-import type {
+import {
   FunctionConfig,
+  IncomingOp,
   IntrospectRequest,
   RegisterOptions,
   RegisterRequest,
@@ -434,7 +435,11 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       if (runRes) {
         this.upsertSigningKeyFromEnv(runRes.env);
 
-        const stepRes = await this.runStep(runRes.fnId, "step", runRes.data);
+        const stepRes = await this.runStep(
+          runRes.fnId,
+          runRes.stepId,
+          runRes.data
+        );
 
         if (stepRes.status === 500 || stepRes.status === 400) {
           return {
@@ -542,7 +547,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
   protected async runStep(
     functionId: string,
-    stepId: string,
+    stepId: string | null,
     data: any
   ): Promise<StepRunResponse> {
     try {
@@ -551,26 +556,101 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         throw new Error(`Could not find function with ID "${functionId}"`);
       }
 
-      const { event, steps } = z
+      const { event, steps, ctx } = z
         .object({
           event: z.object({}).passthrough(),
-          steps: z.object({}).passthrough().optional().nullable(),
+          /**
+           * When handling per-step errors, steps will need to be an object with
+           * either a `data` or an `error` key.
+           *
+           * For now, we support the current method of steps just being a map of
+           * step ID to step data.
+           *
+           * TODO When the executor does support per-step errors, we can uncomment
+           * the expected schema below.
+           */
+          steps: z
+            .record(
+              z.any().refine((v) => typeof v !== "undefined", {
+                message: "Values in steps must be defined",
+              })
+            )
+            .optional()
+            .nullable(),
+          // steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
+          ctx: z
+            .object({
+              stack: z
+                .object({
+                  stack: z
+                    .array(z.string())
+                    .nullable()
+                    .transform((v) => (Array.isArray(v) ? v : [])),
+                  current: z.number(),
+                })
+                .passthrough()
+                .optional()
+                .nullable(),
+            })
+            .optional()
+            .nullable(),
         })
         .parse(data);
 
-      const ret = await fn["runFn"]({ event }, steps || {});
-      const isOp = ret[0];
+      /**
+       * TODO When the executor does support per-step errors, this map will need
+       * to adjust to ensure we're not double-stacking the op inside `data`.
+       */
+      const opStack =
+        ctx?.stack?.stack
+          .slice(0, ctx.stack.current)
+          .map<IncomingOp>((opId) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            const step = steps?.[opId];
+            if (typeof step === "undefined") {
+              throw new Error(`Could not find step with ID "${opId}"`);
+            }
 
-      if (isOp) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            return { id: opId, data: step };
+          }) ?? [];
+
+      const ret = await fn["runFn"](
+        { event },
+        opStack,
+        /**
+         * TODO The executor is sending `"step"` as the step ID when it is not
+         * wanting to run a specific step. This is not needed and we should
+         * remove this on the executor side.
+         */
+        stepId === "step" ? null : stepId || null
+      );
+
+      if (ret[0] === "single" || ret[0] === "multi-complete") {
         return {
-          status: 206,
+          status: 200,
           body: ret[1],
         };
       }
 
+      /**
+       * If the function has run user code and is intending to return an error,
+       * interrupt this flow and instead throw a 500 to Inngest.
+       *
+       * The executor doesn't yet support per-step errors, so returning an
+       * `error` key here would cause the executor to misunderstand what is
+       * happening.
+       *
+       * TODO When the executor does support per-step errors, we can remove this
+       * comment and check and functionality should resume as normal.
+       */
+      if (ret[0] === "multi-run" && ret[1].error) {
+        throw ret[1].error;
+      }
+
       return {
-        status: 200,
-        body: ret[1],
+        status: 206,
+        body: Array.isArray(ret[1]) ? ret[1] : [ret[1]],
       };
     } catch (unserializedErr: any) {
       /**
@@ -580,7 +660,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
        *
        * See {@link https://www.npmjs.com/package/serialize-error}
        */
-      const error = JSON.stringify(serializeError(unserializedErr as Error));
+
+      const error = JSON.stringify(serializeError(unserializedErr));
 
       /**
        * If we've caught a non-retriable error, we'll return a 400 to Inngest
@@ -810,6 +891,7 @@ type HandlerAction =
   | {
       action: "run";
       fnId: string;
+      stepId: string | null;
       data: Record<string, any>;
       env: Record<string, string | undefined>;
       isProduction: boolean;

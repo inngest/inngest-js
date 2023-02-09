@@ -1,5 +1,5 @@
 import type { H3Event } from "h3";
-import { readBody, setHeaders, send, getMethod, getQuery, getHeader } from "h3";
+import { getHeader, getMethod, getQuery, readBody, send, setHeaders } from "h3";
 import {
   InngestCommHandler,
   ServeHandler,
@@ -34,6 +34,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
           if (method === "POST") {
             return {
               fnId: query[queryKeys.FnId]?.toString() ?? "",
+              stepId: query[queryKeys.StepId]?.toString() ?? "",
               data: await readBody(event),
               env,
               isProduction,

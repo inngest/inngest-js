@@ -19,9 +19,9 @@ describe("introspection", () => {
       const data = introspectionSchema.parse(await res.json());
 
       expect(data.functions).toContainEqual({
-        name: "Hello World",
-        id: expect.stringMatching(/^.*-hello-world$/),
-        triggers: [{ event: "demo/event.sent" }],
+        name: "Promise.all",
+        id: expect.stringMatching(/^.*-promise-all$/),
+        triggers: [{ event: "demo/promise.all" }],
         steps: {
           step: {
             id: "step",
@@ -29,7 +29,7 @@ describe("introspection", () => {
             runtime: {
               type: "http",
               url: expect.stringMatching(
-                /^http.+\?fnId=.+-hello-world&stepId=step$/
+                /^http.+\?fnId=.+-promise-all&stepId=step$/
               ),
             },
           },
@@ -44,21 +44,44 @@ describe("run", () => {
   let runId: string;
 
   beforeAll(async () => {
-    eventId = await sendEvent("demo/event.sent");
+    eventId = await sendEvent("demo/promise.all");
   });
 
-  test("runs in response to 'demo/event.sent'", async () => {
-    runId = await eventRunWithName(eventId, "Hello World");
+  test("runs in response to 'demo/promise.all'", async () => {
+    runId = await eventRunWithName(eventId, "Promise.all");
     expect(runId).toEqual(expect.any(String));
   });
 
-  test("returns 'Hello, Inngest!'", async () => {
+  test("ran Step 1", async () => {
     await expect(
       runHasTimeline(runId, {
         __typename: "StepEvent",
         stepType: "COMPLETED",
-        output: JSON.stringify({ body: "Hello, Inngest!", status: 200 }),
+        name: "Step 1",
+        output: "1",
       })
-    ).resolves.toBe(true);
+    ).resolves.toBeDefined();
+  });
+
+  test("ran Step 2", async () => {
+    await expect(
+      runHasTimeline(runId, {
+        __typename: "StepEvent",
+        stepType: "COMPLETED",
+        name: "Step 2",
+        output: "2",
+      })
+    ).resolves.toBeDefined();
+  });
+
+  test("ran Step 3", async () => {
+    await expect(
+      runHasTimeline(runId, {
+        __typename: "StepEvent",
+        stepType: "COMPLETED",
+        name: "Step 3",
+        output: "3",
+      })
+    ).resolves.toBeDefined();
   });
 });

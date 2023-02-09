@@ -70,6 +70,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
               url,
               data,
               fnId: event.queryStringParameters?.[queryKeys.FnId] as string,
+              stepId: event.queryStringParameters?.[queryKeys.StepId] as string,
             };
           }
         },

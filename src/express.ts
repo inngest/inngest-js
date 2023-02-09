@@ -31,6 +31,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
           if (req.method === "POST") {
             return {
               fnId: req.query[queryKeys.FnId] as string,
+              stepId: req.query[queryKeys.StepId] as string,
               data: req.body as Record<string, any>,
               env,
               isProduction,
