@@ -183,6 +183,7 @@ jobs:
         run: |
           find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i 's/from "inngest/from "npm:inngest/g' {} \;
           find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i -E 's/from "\.(.+)"/from "\.\1\/index\.ts"/g' {} \;
+          find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i -E 's/from "\.(.+)client\/index\.ts"/from "\.\1client\.ts"/g' {} \;
         working-directory: examples/${{ matrix.repo }}
 
       # Try to build the example
