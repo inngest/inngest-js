@@ -62,6 +62,7 @@ export const serve = (
             return {
               data: data as Record<string, any>,
               fnId: (main[queryKeys.FnId] as string) || "",
+              stepId: (main[queryKeys.StepId] as string) || "",
               env,
               isProduction,
               url,

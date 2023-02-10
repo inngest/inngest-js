@@ -35,9 +35,9 @@ Inngest allows you to:
 <br />
 
 <p align="center">
-<a href="#getting-started">Getting started</a> · 
-<a href="#features">Features</a> · 
-<a href="#contributing">Contributing</a> · 
+<a href="#getting-started">Getting started</a> ·
+<a href="#features">Features</a> ·
+<a href="#contributing">Contributing</a> ·
 <a href="https://www.inngest.com/docs">Documentation</a>
 </p>
 

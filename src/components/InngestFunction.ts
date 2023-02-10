@@ -1,15 +1,20 @@
 import { queryKeys } from "../helpers/consts";
+import { serializeError } from "../helpers/errors";
+import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { slugify } from "../helpers/strings";
 import {
+  EventData,
   EventPayload,
   FunctionConfig,
   FunctionOptions,
   FunctionTrigger,
-  HashedOp,
+  HandlerArgs,
+  IncomingOp,
   OpStack,
-  SingleStepFnArgs,
+  OutgoingOp,
+  StepOpCode,
 } from "../types";
-import { createStepTools, StepFlowInterrupt } from "./InngestStepTools";
+import { createStepTools, TickOp } from "./InngestStepTools";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -88,13 +93,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     /**
      * Convert retries into the format required when defining function
      * configuration.
-     *
-     * While we define "retries" here, the executor wants to know the number of
-     * "attempts", so we add 1 to whatever value the user provides, e.g. 2
-     * retries means 3 attempts.
      */
     const retries =
-      typeof attempts === "undefined" ? undefined : { attempts: attempts + 1 };
+      typeof attempts === "undefined" ? undefined : { attempts };
 
     return {
       ...opts,
@@ -130,10 +131,6 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
    * given to this instance of `InngestFunction`, though will check whether an
    * op has been submitted for use (or a Promise is pending, such as a step
    * running) after the function has completed.
-   *
-   * In both cases, an unknown error (i.e. anything except a
-   * `StepFlowInterrupt` error) will bubble up to the caller, meaning the caller
-   * must handle what to do with the error.
    */
   private async runFn(
     /**
@@ -148,80 +145,205 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * This must be provided in order to always be cognizant of step function
      * state and to allow for multi-step functions.
      */
-    opStack: OpStack
-  ): Promise<[isOp: true, op: HashedOp] | [isOp: false, data: unknown]> {
+    opStack: OpStack,
+
+    /**
+     * The step ID that Inngest wants to run and receive data from. If this is
+     * defined, the step's user code will be run after filling the op stack. If
+     * this is `null`, the function will be run and next operations will be
+     * returned instead.
+     */
+    runStep: string | null
+  ): Promise<
+    | [type: "single", data: unknown]
+    | [type: "multi-discovery", ops: OutgoingOp[]]
+    | [type: "multi-run", op: OutgoingOp]
+    | [type: "multi-complete", data: unknown]
+  > {
     /**
      * Create some values to be mutated and passed to the step tools. Once the
      * user's function has run, we can check the mutated state of these to see
      * if an op has been submitted or not.
      */
-    const [tools, state] = createStepTools(opStack);
+    const [tools, state] = createStepTools();
 
     /**
      * Create args to pass in to our function. We blindly pass in the data and
      * add tools.
      */
     const fnArg = {
-      ...(data as SingleStepFnArgs<string, string, string>),
+      ...(data as EventData<string>),
       tools,
-    };
-
-    let ret;
+      step: tools,
+    } as Partial<HandlerArgs<any, any, any>>;
 
     /**
-     * Attempt to run the function. If this is a step function, we expect to
-     * catch `StepFlowInterrupt` errors and ignore them, as they are used to
-     * interrupt function execution safely.
+     * If the user has passed functions they wish to use in their step, add them
+     * here.
+     *
+     * We simply place a thin `tools.run()` wrapper around the function and
+     * nothing else.
      */
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      ret = await this.#fn(fnArg);
-    } catch (err) {
-      if (!(err instanceof StepFlowInterrupt)) {
+    if (this.#opts.fns) {
+      fnArg.fns = Object.entries(this.#opts.fns).reduce((acc, [key, fn]) => {
+        if (typeof fn !== "function") {
+          return acc;
+        }
+
+        return {
+          ...acc,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
+          [key]: (...args: any[]) => tools.run(key, () => fn(...args)),
+        };
+      }, {});
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
+    const userFnPromise = new Promise(async (resolve, reject) => {
+      try {
+        resolve(await this.#fn(fnArg));
+      } catch (err) {
+        reject(err);
+      }
+    });
+
+    /**
+     * If we haven't sychronously touched any tools yet, we can assume we're not
+     * looking at a step function.
+     *
+     * Await the user function as normal.
+     */
+    if (!state.hasUsedTools) {
+      return ["single", await userFnPromise];
+    }
+
+    let pos = -1;
+
+    do {
+      if (pos >= 0) {
+        state.tickOps = {};
+        const incomingOp = opStack[pos] as IncomingOp;
+        state.currentOp = state.allFoundOps[incomingOp.id];
+
+        if (!state.currentOp) {
+          throw new Error(
+            `Bad stack; could not find local op "${incomingOp.id}" at position ${pos}`
+          );
+        }
+
+        state.currentOp.fulfilled = true;
+
+        if (typeof incomingOp.data !== "undefined") {
+          state.currentOp.resolve(incomingOp.data);
+        } else {
+          state.currentOp.reject(incomingOp.error);
+        }
+      }
+
+      await resolveAfterPending();
+
+      state.reset();
+      pos++;
+    } while (pos < opStack.length);
+
+    if (runStep) {
+      const userFnOp = state.allFoundOps[runStep];
+      const userFnToRun = userFnOp?.fn;
+
+      if (!userFnToRun) {
+        throw new Error(
+          `Bad stack; executor requesting to run unknown step "${runStep}"`
+        );
+      }
+
+      const result = await new Promise((resolve) => {
+        return resolve(userFnToRun());
+      })
+        .then((data) => {
+          return {
+            data: typeof data === "undefined" ? null : data,
+          };
+        })
+        .catch((err: Error) => {
+          /**
+           * If the user-defined code throws an error, we should return this
+           * to Inngest as the response for this step. The function didn't
+           * fail, only this step, so Inngest can decide what we do next.
+           *
+           * Make sure to log this so the user sees what has happened in the
+           * console.
+           */
+          console.error(err);
+
+          try {
+            return {
+              error: serializeError(err),
+            };
+          } catch (serializationErr) {
+            console.warn(
+              "Could not serialize error to return to Inngest; stringifying instead",
+              serializationErr
+            );
+
+            return {
+              error: err,
+            };
+          }
+        });
+
+      return [
+        "multi-run",
+        { ...tickOpToOutgoing(userFnOp), ...result, op: StepOpCode.RunStep },
+      ];
+    }
+
+    const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>(
+      tickOpToOutgoing
+    );
+
+    /**
+     * If we haven't discovered any ops, it's possible that the user's function
+     * has completed. In this case, we should return any returned data to
+     * Inngest as the response.
+     */
+    if (!discoveredOps.length) {
+      const fnRet = await Promise.race([
+        userFnPromise.then((data) => ({ type: "complete", data } as const)),
+        resolveNextTick().then(() => ({ type: "incomplete" } as const)),
+      ]);
+
+      if (fnRet.type === "complete") {
         /**
-         * If the error is not a StepFlowInterrupt, then it is an error that we
-         * should probably bubble up.
-         *
-         * An exception is if the error has been somehow caused after
-         * successfully submitting a new op. This might happen if a user
-         * attempts to catch step errors with a try/catch block. In that case,
-         * we should warn of this but continue on.
+         * The function has returned a value, so we should return this to
+         * Inngest. Doing this will cause the function to be marked as
+         * complete, so we should only do this if we're sure that all registered
+         * ops have been resolved.
          */
-        if (!state.nextOp) {
-          throw err;
+        const allOpsFulfilled = Object.values(state.allFoundOps).every((op) => {
+          return op.fulfilled;
+        });
+
+        if (allOpsFulfilled) {
+          return ["multi-complete", fnRet.data];
         }
 
         /**
-         * If we're here, then this unknown error was caused after successfully
-         * submitting an op.
+         * If we're here, it means that the user's function has returned a value
+         * but not all ops have been resolved. This might be intentional if they
+         * are purposefully pushing work to the background, but also might be
+         * unintentional and a bug in the user's code where they expected an
+         * order to be maintained.
          *
-         * In this case, we warn the user that trying to catch these is not a
-         * good idea and continue on; the step tool itself will attempt to throw
-         * again to stop execution.
+         * To be safe, we'll show a warning here to tell users that this might
+         * be unintentional, but otherwise carry on as normal.
          */
         console.warn(
-          "An error occurred after submitting a new op. Continuing on.",
-          err
+          `Warning: Your "${this.name}" function has returned a value, but not all ops have been resolved, i.e. you have used step tooling without \`await\`. This may be intentional, but if you expect your ops to be resolved in order, you should \`await\` them. If you are knowingly leaving ops unresolved using \`.catch()\` or \`void\`, you can ignore this warning.`
         );
       }
     }
 
-    /**
-     * This could be a step function that has triggered an asynchronous step
-     * right at this moment.
-     *
-     * If this is the case, the above function will have now resolved and the
-     * async step function might still be running.
-     *
-     * Let's check for this occurence by checking the toolset we created to see
-     * if there is a pending op. If there is, wait for that, otherwise continue
-     * straight to the end.
-     */
-    if (state.nextOp) {
-      return [true, await state.nextOp];
-    }
-
-    return [false, ret];
+    return ["multi-discovery", discoveredOps];
   }
 
   /**
@@ -231,3 +353,13 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     return slugify([prefix || "", this.#opts.name].join("-"));
   }
 }
+
+const tickOpToOutgoing = (op: TickOp): OutgoingOp => {
+  return {
+    op: op.op,
+    id: op.id,
+    name: op.name,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    opts: op.opts,
+  };
+};

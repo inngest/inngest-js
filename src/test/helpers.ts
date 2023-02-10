@@ -8,10 +8,10 @@ import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ulid } from "ulid";
 import { z } from "zod";
+import { Inngest } from "../components/Inngest";
 import { ServeHandler } from "../components/InngestCommHandler";
 import { InngestFunction } from "../components/InngestFunction";
 import { headerKeys } from "../helpers/consts";
-import { createFunction } from "../helpers/func";
 import { version } from "../version";
 
 interface HandlerStandardReturn {
@@ -27,6 +27,8 @@ const createReqRes = (...args: Parameters<typeof httpMocks.createRequest>) => {
 
   return [req, res] as [typeof req, typeof res];
 };
+
+const inngest = new Inngest({ name: "test", eventKey: "event-key-123" });
 
 export const testFramework = (
   /**
@@ -393,7 +395,11 @@ export const testFramework = (
               status: 200,
             });
 
-          const fn1 = createFunction("fn1", "demo/event.sent", () => "fn1");
+          const fn1 = inngest.createFunction(
+            "fn1",
+            "demo/event.sent",
+            () => "fn1"
+          );
           const serveHost = "https://example.com";
           const stepId = "step";
 
@@ -429,7 +435,11 @@ export const testFramework = (
               status: 200,
             });
 
-          const fn1 = createFunction("fn1", "demo/event.sent", () => "fn1");
+          const fn1 = inngest.createFunction(
+            "fn1",
+            "demo/event.sent",
+            () => "fn1"
+          );
           const servePath = "/foo/bar/inngest/endpoint";
           const stepId = "step";
 
@@ -466,7 +476,11 @@ export const testFramework = (
             status: 200,
           });
 
-        const fn1 = createFunction("fn1", "demo/event.sent", () => "fn1");
+        const fn1 = inngest.createFunction(
+          "fn1",
+          "demo/event.sent",
+          () => "fn1"
+        );
         const serveHost = "https://example.com";
         const servePath = "/foo/bar/inngest/endpoint";
         const stepId = "step";
@@ -768,7 +782,7 @@ export const runHasTimeline = async (
     functionType?: string;
     output?: string;
   }
-): Promise<boolean> => {
+): Promise<any> => {
   for (let i = 0; i < 5; i++) {
     const start = new Date();
 
@@ -809,18 +823,18 @@ export const runHasTimeline = async (
 
     const data = await res.json();
 
-    if (
-      data?.data?.functionRun?.timeline?.some((entry: any) =>
-        Object.keys(timeline).every(
-          (key) => entry[key] === (timeline as any)[key]
-        )
+    const timelineItem = data?.data?.functionRun?.timeline?.find((entry: any) =>
+      Object.keys(timeline).every(
+        (key) => entry[key] === (timeline as any)[key]
       )
-    ) {
-      return true;
+    );
+
+    if (timelineItem) {
+      return timelineItem;
     }
 
     await waitUpTo(1000, start);
   }
 
-  return false;
+  return;
 };

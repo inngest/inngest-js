@@ -55,7 +55,32 @@ jobs:
           - inngest/sdk-example-nextjs-netlify
           - inngest/sdk-example-remix-vercel
           - inngest/sdk-example-fresh-deno-deploy
+          - inngest/sdk-example-nuxt-vercel
     steps:
+      # Temporary for inngest@next
+      - name: Install GoReleaser
+        uses: goreleaser/goreleaser-action@v4
+        with:
+          install-only: true
+
+      # Temporary for inngest@next
+      # Checkout the CLI
+      - uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.EXAMPLES_GITHUB_TOKEN }}
+          repository: inngest/inngest
+          path: cli
+          ref: main
+
+      # Temporary for inngest@next
+      # Get the CLI ready
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.18
+      - run: make dev
+        working-directory: cli
+
       # Checkout the repo
       - name: Checkout SDK
         uses: actions/checkout@v3
@@ -157,7 +182,7 @@ jobs:
         if: ${{ steps.deno-check.outputs.isDeno == 'true' }}
         run: |
           find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i 's/from "inngest/from "npm:inngest/g' {} \;
-          find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i -E 's/from "\.(.+)"/from "\.\1\.ts"/g' {} \;
+          find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i -E 's/from "\.(.+)"/from "\.\1\/index\.ts"/g' {} \;
         working-directory: examples/${{ matrix.repo }}
 
       # Try to build the example
@@ -170,6 +195,19 @@ jobs:
             npm run build
           fi
         working-directory: examples/${{ matrix.repo }}
+
+      # Temporary for inngest@next
+      # Run the built Inngest CLI dev server
+      - name: Run Inngest CLI dev server
+        run: ./inngest dev &
+        working-directory: cli/dist/inngest_linux_amd64_v1
+        env:
+          DO_NOT_TRACK: 1
+      - name: Wait for the Inngest dev server to start
+        uses: mydea/action-wait-for-api@v1
+        with:
+          url: "http://localhost:8288"
+          timeout: "60"
 
       # Run the example
       - name: Run the example's dev server
@@ -195,18 +233,6 @@ jobs:
         run: cat dev.log
         working-directory: examples/${{ matrix.repo }}
 
-      # TODO Examples should run their own dev server, which means we can remove
-      # this.
-      - name: Run the Inngest dev server
-        run: npx inngest-cli@latest dev &
-        working-directory: examples/${{ matrix.repo }}
-        env:
-          DO_NOT_TRACK: 1
-      - name: Wait for the Inngest dev server to start
-        uses: mydea/action-wait-for-api@v1
-        with:
-          url: "http://localhost:8288"
-          timeout: "60"
       # Give the dev server 5 seconds to register with the example
       # TODO Check logs instead of sleeping
       - name: Wait 5 seconds for dev server registration
