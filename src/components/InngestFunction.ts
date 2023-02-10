@@ -1,6 +1,10 @@
-import { serializeError } from "serialize-error-cjs";
 import { queryKeys } from "../helpers/consts";
-import { resolveNextTick, ServerTiming } from "../helpers/promises";
+import { serializeError } from "../helpers/errors";
+import {
+  resolveAfterPending,
+  resolveNextTick,
+  ServerTiming,
+} from "../helpers/promises";
 import { slugify } from "../helpers/strings";
 import {
   EventData,
@@ -93,13 +97,8 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     /**
      * Convert retries into the format required when defining function
      * configuration.
-     *
-     * While we define "retries" here, the executor wants to know the number of
-     * "attempts", so we add 1 to whatever value the user provides, e.g. 2
-     * retries means 3 attempts.
      */
-    const retries =
-      typeof attempts === "undefined" ? undefined : { attempts: attempts + 1 };
+    const retries = typeof attempts === "undefined" ? undefined : { attempts };
 
     return {
       ...opts,
@@ -164,6 +163,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     | [type: "single", data: unknown]
     | [type: "multi-discovery", ops: OutgoingOp[]]
     | [type: "multi-run", op: OutgoingOp]
+    | [type: "multi-complete", data: unknown]
   > {
     const memoisingStop = timer.start("memoising");
 
@@ -181,6 +181,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     const fnArg = {
       ...(data as EventData<string>),
       tools,
+      step: tools,
     } as Partial<HandlerArgs<any, any, any>>;
 
     /**
@@ -191,12 +192,6 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * nothing else.
      */
     if (this.#opts.fns) {
-      /**
-       * TODO `tools.run()` is using the key here. Maybe it should also be
-       * creating a sigmund hash of `...args`.
-       *
-       * Would these args ever change? Should they? 🤔
-       */
       fnArg.fns = Object.entries(this.#opts.fns).reduce((acc, [key, fn]) => {
         if (typeof fn !== "function") {
           return acc;
@@ -239,8 +234,12 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         state.currentOp = state.allFoundOps[incomingOp.id];
 
         if (!state.currentOp) {
-          throw new Error("BAD STACK; COULD NOT FIND OP TO RESOLVE");
+          throw new Error(
+            `Bad stack; could not find local op "${incomingOp.id}" at position ${pos}`
+          );
         }
+
+        state.currentOp.fulfilled = true;
 
         if (typeof incomingOp.data !== "undefined") {
           state.currentOp.resolve(incomingOp.data);
@@ -249,7 +248,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         }
       }
 
-      await resolveNextTick();
+      await resolveAfterPending();
 
       state.reset();
       pos++;
@@ -262,7 +261,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       const userFnToRun = userFnOp?.fn;
 
       if (!userFnToRun) {
-        throw new Error("Bad stack; no fn to execute; re-execute pls");
+        throw new Error(
+          `Bad stack; executor requesting to run unknown step "${runStep}"`
+        );
       }
 
       const runningStepStop = timer.start("running-step");
@@ -280,7 +281,12 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
            * If the user-defined code throws an error, we should return this
            * to Inngest as the response for this step. The function didn't
            * fail, only this step, so Inngest can decide what we do next.
+           *
+           * Make sure to log this so the user sees what has happened in the
+           * console.
            */
+          console.error(err);
+
           try {
             return {
               error: serializeError(err),
@@ -309,6 +315,48 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>(
       tickOpToOutgoing
     );
+
+    /**
+     * If we haven't discovered any ops, it's possible that the user's function
+     * has completed. In this case, we should return any returned data to
+     * Inngest as the response.
+     */
+    if (!discoveredOps.length) {
+      const fnRet = await Promise.race([
+        userFnPromise.then((data) => ({ type: "complete", data } as const)),
+        resolveNextTick().then(() => ({ type: "incomplete" } as const)),
+      ]);
+
+      if (fnRet.type === "complete") {
+        /**
+         * The function has returned a value, so we should return this to
+         * Inngest. Doing this will cause the function to be marked as
+         * complete, so we should only do this if we're sure that all registered
+         * ops have been resolved.
+         */
+        const allOpsFulfilled = Object.values(state.allFoundOps).every((op) => {
+          return op.fulfilled;
+        });
+
+        if (allOpsFulfilled) {
+          return ["multi-complete", fnRet.data];
+        }
+
+        /**
+         * If we're here, it means that the user's function has returned a value
+         * but not all ops have been resolved. This might be intentional if they
+         * are purposefully pushing work to the background, but also might be
+         * unintentional and a bug in the user's code where they expected an
+         * order to be maintained.
+         *
+         * To be safe, we'll show a warning here to tell users that this might
+         * be unintentional, but otherwise carry on as normal.
+         */
+        console.warn(
+          `Warning: Your "${this.name}" function has returned a value, but not all ops have been resolved, i.e. you have used step tooling without \`await\`. This may be intentional, but if you expect your ops to be resolved in order, you should \`await\` them. If you are knowingly leaving ops unresolved using \`.catch()\` or \`void\`, you can ignore this warning.`
+        );
+      }
+    }
 
     return ["multi-discovery", discoveredOps];
   }

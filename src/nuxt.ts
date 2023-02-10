@@ -1,10 +1,10 @@
 import type { H3Event } from "h3";
-import { readBody, setHeaders, send, getMethod, getQuery, getHeader } from "h3";
+import { getHeader, getMethod, getQuery, readBody, send, setHeaders } from "h3";
 import {
   InngestCommHandler,
   ServeHandler,
 } from "./components/InngestCommHandler";
-import { queryKeys } from "./helpers/consts";
+import { headerKeys, queryKeys } from "./helpers/consts";
 import { allProcessEnv } from "./helpers/env";
 
 /**
@@ -34,6 +34,8 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
           if (method === "POST") {
             return {
               fnId: query[queryKeys.FnId]?.toString() ?? "",
+              stepId: query[queryKeys.StepId]?.toString() ?? "",
+              signature: getHeader(event, headerKeys.Signature),
               data: await readBody(event),
               env,
               isProduction,

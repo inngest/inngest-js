@@ -10,6 +10,8 @@ import { ulid } from "ulid";
 import { z } from "zod";
 import { Inngest } from "../components/Inngest";
 import { ServeHandler } from "../components/InngestCommHandler";
+import { InngestFunction } from "../components/InngestFunction";
+import { headerKeys } from "../helpers/consts";
 import { version } from "../version";
 
 interface HandlerStandardReturn {
@@ -509,7 +511,133 @@ export const testFramework = (
     });
 
     describe("POST (run function)", () => {
-      test.todo("...");
+      describe("signature validation", () => {
+        const fn = new InngestFunction(
+          { name: "Test", id: "test" },
+          { event: "demo/event.sent" },
+          () => "fn"
+        );
+
+        const env = {
+          DENO_DEPLOYMENT_ID: "1",
+          NODE_ENV: "production",
+          ENVIRONMENT: "production",
+        };
+
+        test("should throw an error in prod with no signature", async () => {
+          const ret = await run(
+            ["Test", [fn], { signingKey: "test" }],
+            [{ method: "POST", headers: {} }],
+            env
+          );
+
+          expect(ret.status).toEqual(500);
+
+          expect(JSON.parse(ret.body)).toMatchObject({
+            type: "internal",
+            message: expect.stringContaining(
+              `No ${headerKeys.Signature} provided`
+            ),
+          });
+        });
+
+        test("should throw an error with an invalid signature", async () => {
+          const ret = await run(
+            ["Test", [fn], { signingKey: "test" }],
+            [{ method: "POST", headers: { [headerKeys.Signature]: "t=&s=" } }],
+            env
+          );
+
+          expect(ret.status).toEqual(500);
+
+          expect(JSON.parse(ret.body)).toMatchObject({
+            type: "internal",
+            message: expect.stringContaining(
+              `Invalid ${headerKeys.Signature} provided`
+            ),
+          });
+        });
+
+        test("should throw an error with an expired signature", async () => {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+
+          const ret = await run(
+            ["Test", [fn], { signingKey: "test" }],
+            [
+              {
+                method: "POST",
+                headers: {
+                  [headerKeys.Signature]: `t=${Math.round(
+                    yesterday.getTime() / 1000
+                  )}&s=expired`,
+                },
+                url: "/api/inngest?fnId=test",
+                body: { event: {} },
+              },
+            ],
+            env
+          );
+
+          expect(ret).toMatchObject({
+            status: 500,
+            body: expect.stringContaining("Signature has expired"),
+          });
+        });
+
+        // These signatures are randomly generated within a local development environment, matching
+        // what is sent from the cloud.
+        //
+        // This prevents us from having to rewrite the signature creation function in JS, which may
+        // differ from the cloud/CLI version.
+        test("should validate a signature with a key successfully", async () => {
+          const body = {
+            ctx: {
+              fn_id: "local-testing-local-cron",
+              run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+              step_id: "step",
+            },
+            event: {
+              data: {},
+              id: "",
+              name: "inngest/scheduled.timer",
+              ts: 1674082830001,
+              user: {},
+              v: "1",
+            },
+            steps: {},
+          };
+
+          const ret = await run(
+            [
+              "Test",
+              [fn],
+              {
+                signingKey:
+                  "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+                __testingAllowExpiredSignatures: true,
+              } as any,
+            ],
+            [
+              {
+                method: "POST",
+                headers: {
+                  [headerKeys.Signature]:
+                    "t=1674082860&s=88b6453463050d1846743cbba0925bae7c1cf807f9c74bbd41b3d5cfc9c70d11",
+                },
+                url: "/api/inngest?fnId=test&stepId=step",
+                body,
+              },
+            ],
+            env
+          );
+
+          expect(ret).toMatchObject({
+            status: 200,
+            body: '"fn"',
+          });
+        });
+      });
     });
   });
 };
@@ -658,7 +786,7 @@ export const runHasTimeline = async (
     functionType?: string;
     output?: string;
   }
-): Promise<boolean> => {
+): Promise<any> => {
   for (let i = 0; i < 5; i++) {
     const start = new Date();
 
@@ -699,18 +827,18 @@ export const runHasTimeline = async (
 
     const data = await res.json();
 
-    if (
-      data?.data?.functionRun?.timeline?.some((entry: any) =>
-        Object.keys(timeline).every(
-          (key) => entry[key] === (timeline as any)[key]
-        )
+    const timelineItem = data?.data?.functionRun?.timeline?.find((entry: any) =>
+      Object.keys(timeline).every(
+        (key) => entry[key] === (timeline as any)[key]
       )
-    ) {
-      return true;
+    );
+
+    if (timelineItem) {
+      return timelineItem;
     }
 
     await waitUpTo(1000, start);
   }
 
-  return false;
+  return;
 };

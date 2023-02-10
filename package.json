@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "0.9.2",
+  "version": "1.0.0",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -20,7 +20,7 @@
     "pb:landing": "yarn build:landing && node -e 'const page = JSON.stringify(require(\"fs\").readFileSync(\"./landing/dist/index.html\").toString()); console.log(\"export const landing = \" + page);' > ./src/landing.ts && npx prettier ./src/landing.ts --write",
     "build": "yarn run clean && tsc --project tsconfig.build.json",
     "test": "node --expose-gc --max-old-space-size=4096 ./node_modules/.bin/jest --silent --logHeapUsage --maxWorkers=8 --coverage --ci --verbose",
-    "test:examples": "node --expose-gc --max-old-space-size=4096 ./node_modules/.bin/jest --silent --logHeapUsage --maxWorkers=8 --testMatch \"**/examples/test/*.test.ts\" --ci --verbose",
+    "test:examples": "node --expose-gc --max-old-space-size=4096 ./node_modules/.bin/jest --logHeapUsage --maxWorkers=8 --testMatch \"**/examples/**/*.test.ts\" --ci --verbose",
     "clean": "rm -rf ./dist",
     "lint": "eslint .",
     "postversion": "yarn run build && yarn run build:copy",

@@ -13,7 +13,26 @@ export const createFrozenPromise = (): Promise<unknown> => {
 };
 
 /**
- * Returns a Promise that will resolve next tick.
+ * Returns a Promise that resolves after the current event loop's microtasks
+ * have finished, but before the next event loop tick.
+ */
+export const resolveAfterPending = (): Promise<void> => {
+  return new Promise((resolve) =>
+    /**
+     * Testing found that enqueuing a single microtask would sometimes result in
+     * the Promise being resolved before the microtask queue was drained.
+     *
+     * Double enqueueing does not guarantee that the queue will be empty (e.g.
+     * if a microtask enqueues another microtask as this does), but this does
+     * ensure that step tooling that pushes to this stack intentionally will be
+     * correctly detected and supported.
+     */
+    queueMicrotask(() => queueMicrotask(() => resolve()))
+  );
+};
+
+/**
+ * Returns a Promise that resolve after the current event loop tick.
  */
 export const resolveNextTick = (): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve));
