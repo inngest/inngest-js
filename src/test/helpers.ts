@@ -531,9 +531,11 @@ export const testFramework = (
             env
           );
 
-          expect(ret).toMatchObject({
-            status: 500,
-            body: expect.stringContaining(
+          expect(ret.status).toEqual(500);
+
+          expect(JSON.parse(ret.body)).toMatchObject({
+            type: "internal",
+            message: expect.stringContaining(
               `No ${headerKeys.Signature} provided`
             ),
           });
@@ -546,9 +548,11 @@ export const testFramework = (
             env
           );
 
-          expect(ret).toMatchObject({
-            status: 500,
-            body: expect.stringContaining(
+          expect(ret.status).toEqual(500);
+
+          expect(JSON.parse(ret.body)).toMatchObject({
+            type: "internal",
+            message: expect.stringContaining(
               `Invalid ${headerKeys.Signature} provided`
             ),
           });
