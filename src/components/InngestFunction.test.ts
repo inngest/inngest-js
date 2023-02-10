@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { jest } from "@jest/globals";
-import { ServerTiming } from "../helpers/promises";
+import { ServerTiming } from "../helpers/ServerTiming";
 import { OpStack, StepOpCode } from "../types";
 import { Inngest } from "./Inngest";
 import { InngestFunction } from "./InngestFunction";

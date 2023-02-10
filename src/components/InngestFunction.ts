@@ -1,10 +1,7 @@
 import { queryKeys } from "../helpers/consts";
 import { serializeError } from "../helpers/errors";
-import {
-  resolveAfterPending,
-  resolveNextTick,
-  ServerTiming,
-} from "../helpers/promises";
+import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
+import { ServerTiming } from "../helpers/ServerTiming";
 import { slugify } from "../helpers/strings";
 import {
   EventData,

@@ -3,8 +3,8 @@ import { z } from "zod";
 import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import { serializeError } from "../helpers/errors";
-import { ServerTiming } from "../helpers/promises";
 import { strBoolean } from "../helpers/scalar";
+import { ServerTiming } from "../helpers/ServerTiming";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
 import {
