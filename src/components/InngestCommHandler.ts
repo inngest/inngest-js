@@ -1,6 +1,6 @@
-import { sha256 } from "hash.js";
+import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
-import { envKeys, queryKeys } from "../helpers/consts";
+import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import { serializeError } from "../helpers/errors";
 import { strBoolean } from "../helpers/scalar";
@@ -221,6 +221,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    */
   private readonly fns: Record<string, InngestFunction<any>> = {};
 
+  private allowExpiredSignatures: boolean;
+
   constructor(
     /**
      * The name of the framework this handler is designed for. Should be
@@ -319,6 +321,15 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
     this.handler = handler;
     this.transformRes = transformRes;
+
+    /**
+     * Provide a hidden option to allow expired signatures to be accepted during
+     * testing.
+     */
+    this.allowExpiredSignatures = Boolean(
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, prefer-rest-params
+      arguments["3"]?.__testingAllowExpiredSignatures
+    );
 
     this.fns = functions.reduce<Record<string, InngestFunction<any>>>(
       (acc, fn) => {
@@ -432,8 +443,11 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
     try {
       const runRes = await actions.run();
+
       if (runRes) {
+        this._isProd = runRes.isProduction;
         this.upsertSigningKeyFromEnv(runRes.env);
+        this.validateSignature(runRes.signature, runRes.data);
 
         const stepRes = await this.runStep(
           runRes.fnId,
@@ -464,6 +478,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
       const viewRes = await actions.view();
       if (viewRes) {
+        this._isProd = viewRes.isProduction;
         this.upsertSigningKeyFromEnv(viewRes.env);
 
         const showLandingPage = this.shouldShowLandingPage(
@@ -507,6 +522,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
       const registerRes = await actions.register();
       if (registerRes) {
+        this._isProd = registerRes.isProduction;
         this.upsertSigningKeyFromEnv(registerRes.env);
 
         const { status, message } = await this.register(
@@ -524,7 +540,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           },
         };
       }
-    } catch (err) {
+    } catch (err: any) {
       return {
         status: 500,
         body: JSON.stringify({
@@ -819,12 +835,92 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     return this.showLandingPage ?? strBoolean(strEnvVar) ?? true;
   }
 
-  protected validateSignature(): boolean {
-    return true;
+  protected validateSignature(
+    sig: string | undefined,
+    body: Record<string, any>
+  ) {
+    if (this.isProd && !sig) {
+      throw new Error(`No ${headerKeys.Signature} provided`);
+    }
+
+    if (!this.isProd && !this.signingKey) {
+      return;
+    }
+
+    if (!this.signingKey) {
+      console.warn(
+        "No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets"
+      );
+      return;
+    }
+
+    if (!sig) {
+      console.warn(`No ${headerKeys.Signature} provided`);
+      return;
+    }
+
+    new RequestSignature(sig).verifySignature({
+      body,
+      allowExpiredSignatures: this.allowExpiredSignatures,
+      signingKey: this.signingKey,
+    });
   }
 
   protected signResponse(): string {
     return "";
+  }
+}
+
+class RequestSignature {
+  public timestamp: string;
+  public signature: string;
+
+  constructor(sig: string) {
+    const params = new URLSearchParams(sig);
+    this.timestamp = params.get("t") || "";
+    this.signature = params.get("s") || "";
+
+    if (!this.timestamp || !this.signature) {
+      throw new Error(`Invalid ${headerKeys.Signature} provided`);
+    }
+  }
+
+  private hasExpired(allowExpiredSignatures?: boolean) {
+    if (allowExpiredSignatures) {
+      return false;
+    }
+
+    const delta =
+      Date.now() - new Date(parseInt(this.timestamp) * 1000).valueOf();
+    return delta > 1000 * 60 * 5;
+  }
+
+  public verifySignature({
+    body,
+    signingKey,
+    allowExpiredSignatures,
+  }: {
+    body: any;
+    signingKey: string;
+    allowExpiredSignatures: boolean;
+  }): void {
+    if (this.hasExpired(allowExpiredSignatures)) {
+      throw new Error("Signature has expired");
+    }
+
+    // Calculate the HMAC of the request body ourselves.
+    const encoded = typeof body === "string" ? body : JSON.stringify(body);
+    // Remove the /signkey-[test|prod]-/ prefix from our signing key to calculate the HMAC.
+    const key = signingKey.replace(/signkey-\w+-/, "");
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    const mac = hmac(sha256 as any, key)
+      .update(encoded)
+      .update(this.timestamp)
+      .digest("hex");
+
+    if (mac !== this.signature) {
+      throw new Error("Invalid signature");
+    }
   }
 }
 
@@ -896,6 +992,7 @@ type HandlerAction =
       env: Record<string, string | undefined>;
       isProduction: boolean;
       url: URL;
+      signature: string | undefined;
     }
   | {
       action: "bad-method";

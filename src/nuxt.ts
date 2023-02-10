@@ -4,7 +4,7 @@ import {
   InngestCommHandler,
   ServeHandler,
 } from "./components/InngestCommHandler";
-import { queryKeys } from "./helpers/consts";
+import { headerKeys, queryKeys } from "./helpers/consts";
 import { allProcessEnv } from "./helpers/env";
 
 /**
@@ -35,6 +35,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
             return {
               fnId: query[queryKeys.FnId]?.toString() ?? "",
               stepId: query[queryKeys.StepId]?.toString() ?? "",
+              signature: getHeader(event, headerKeys.Signature),
               data: await readBody(event),
               env,
               isProduction,
