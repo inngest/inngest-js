@@ -1,6 +1,7 @@
 import { queryKeys } from "../helpers/consts";
 import { serializeError } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
+import { ServerTiming } from "../helpers/ServerTiming";
 import { slugify } from "../helpers/strings";
 import {
   EventData,
@@ -94,8 +95,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * Convert retries into the format required when defining function
      * configuration.
      */
-    const retries =
-      typeof attempts === "undefined" ? undefined : { attempts };
+    const retries = typeof attempts === "undefined" ? undefined : { attempts };
 
     return {
       ...opts,
@@ -153,13 +153,17 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * this is `null`, the function will be run and next operations will be
      * returned instead.
      */
-    runStep: string | null
+    runStep: string | null,
+
+    timer: ServerTiming
   ): Promise<
     | [type: "single", data: unknown]
     | [type: "multi-discovery", ops: OutgoingOp[]]
     | [type: "multi-run", op: OutgoingOp]
     | [type: "multi-complete", data: unknown]
   > {
+    const memoisingStop = timer.start("memoising");
+
     /**
      * Create some values to be mutated and passed to the step tools. Once the
      * user's function has run, we can check the mutated state of these to see
@@ -214,6 +218,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * Await the user function as normal.
      */
     if (!state.hasUsedTools) {
+      memoisingStop();
       return ["single", await userFnPromise];
     }
 
@@ -246,6 +251,8 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       pos++;
     } while (pos < opStack.length);
 
+    memoisingStop();
+
     if (runStep) {
       const userFnOp = state.allFoundOps[runStep];
       const userFnToRun = userFnOp?.fn;
@@ -255,6 +262,8 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
           `Bad stack; executor requesting to run unknown step "${runStep}"`
         );
       }
+
+      const runningStepStop = timer.start("running-step");
 
       const result = await new Promise((resolve) => {
         return resolve(userFnToRun());
@@ -289,6 +298,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
               error: err,
             };
           }
+        })
+        .finally(() => {
+          runningStepStop();
         });
 
       return [
