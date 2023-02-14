@@ -851,24 +851,24 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     sig: string | undefined,
     body: Record<string, any>
   ) {
-    if (this.isProd && !sig) {
-      throw new Error(`No ${headerKeys.Signature} provided`);
-    }
+    if (!this.isProd) {
+      if (!this.signingKey) {
+        console.warn(
+          "No signing key provided to validate signature. Find your dev keys at https://app.inngest.com/test/secrets"
+        );
+      }
 
-    if (!this.isProd && !this.signingKey) {
       return;
     }
 
     if (!this.signingKey) {
-      console.warn(
-        "No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets"
+      throw new Error(
+        `No signing key found in client options or ${envKeys.SigningKey} env var. Find your keys at https://app.inngest.com/secrets`
       );
-      return;
     }
 
     if (!sig) {
-      console.warn(`No ${headerKeys.Signature} provided`);
-      return;
+      throw new Error(`No ${headerKeys.Signature} provided`);
     }
 
     new RequestSignature(sig).verifySignature({
