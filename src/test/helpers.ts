@@ -719,6 +719,51 @@ export const waitUpTo = (upTo: number, from?: Date): Promise<void> => {
 
 /**
  * A test helper used to query a local, unsecured dev server to see if a given
+ * event has been received.
+ *
+ * If found within 5 seconds, returns the event. Otherwise, throws an error.
+ */
+export const receivedEventWithName = async (name: string) => {
+  for (let i = 0; i < 5; i++) {
+    const res = await fetch("http://localhost:8288/v0/gql", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: `query Events($query: EventsQuery!) {
+  events(query: $query) {
+    id
+    name
+    payload
+  }
+}`,
+        variables: {
+          query: {},
+        },
+        operationName: "Events",
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+
+    const data = await res.json();
+    const event = data?.data?.events?.find((e: any) => e.name === name);
+
+    if (event) {
+      return event;
+    }
+
+    await waitUpTo(1000);
+  }
+
+  throw new Error("Event not received");
+};
+
+/**
+ * A test helper used to query a local, unsecured dev server to see if a given
  * event has triggered a function run with a particular name.
  *
  * If found within 5 seconds, returns the run ID, else throws.
