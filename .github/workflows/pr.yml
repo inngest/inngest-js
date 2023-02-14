@@ -197,7 +197,6 @@ jobs:
         env:
           PORT: 3000
           DO_NOT_TRACK: 1
-          INNGEST_EVENT_KEY: 123
       - name: Wait for the example to start
         uses: mydea/action-wait-for-api@v1
         with:
