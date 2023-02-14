@@ -162,7 +162,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     | [type: "multi-run", op: OutgoingOp]
     | [type: "multi-complete", data: unknown]
   > {
-    const memoisingStop = timer.start("memoising");
+    const memoizingStop = timer.start("memoizing");
 
     /**
      * Create some values to be mutated and passed to the step tools. Once the
@@ -218,7 +218,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * Await the user function as normal.
      */
     if (!state.hasUsedTools) {
-      memoisingStop();
+      memoizingStop();
       return ["single", await userFnPromise];
     }
 
@@ -251,7 +251,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       pos++;
     } while (pos < opStack.length);
 
-    memoisingStop();
+    memoizingStop();
 
     if (runStep) {
       const userFnOp = state.allFoundOps[runStep];
