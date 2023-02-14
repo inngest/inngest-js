@@ -850,32 +850,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected validateSignature(
     sig: string | undefined,
     body: Record<string, any>
-  ) {
-    if (!this.isProd) {
-      if (!this.signingKey) {
-        console.warn(
-          "No signing key provided to validate signature. Find your dev keys at https://app.inngest.com/test/secrets"
-        );
-      }
-
-      return;
-    }
-
-    if (!this.signingKey) {
-      throw new Error(
-        `No signing key found in client options or ${envKeys.SigningKey} env var. Find your keys at https://app.inngest.com/secrets`
-      );
-    }
-
-    if (!sig) {
-      throw new Error(`No ${headerKeys.Signature} provided`);
-    }
-
-    new RequestSignature(sig).verifySignature({
-      body,
-      allowExpiredSignatures: this.allowExpiredSignatures,
-      signingKey: this.signingKey,
-    });
+  ): void {
+    /**
+     * Disabled until this has an integration test using raw buffers.
+     */
   }
 
   protected signResponse(): string {
