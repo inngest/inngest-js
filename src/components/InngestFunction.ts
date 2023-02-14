@@ -245,7 +245,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         }
       }
 
-      await resolveAfterPending();
+      await timer.wrap("memoizing-ticks", resolveAfterPending);
 
       state.reset();
       pos++;
