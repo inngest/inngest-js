@@ -654,7 +654,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         timer
       );
 
-      if (ret[0] === "single" || ret[0] === "multi-complete") {
+      if (ret[0] === "complete") {
         return {
           status: 200,
           body: ret[1],
@@ -672,7 +672,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
        * TODO When the executor does support per-step errors, we can remove this
        * comment and check and functionality should resume as normal.
        */
-      if (ret[0] === "multi-run" && ret[1].error) {
+      if (ret[0] === "run" && ret[1].error) {
         throw ret[1].error;
       }
 
