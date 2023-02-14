@@ -23,6 +23,7 @@ describe("#generateID", () => {
   it("Returns a correct name", () => {
     const fn = () =>
       new InngestFunction(
+        new Inngest({ name: "test" }),
         { name: "HELLO 👋 there mr Wolf 🥳!" },
         { event: "test/event.name" },
         () => undefined
@@ -61,7 +62,8 @@ describe("runFn", () => {
           let ret: Awaited<ReturnType<typeof fn["runFn"]>>;
 
           beforeAll(async () => {
-            fn = new InngestFunction<TestEvents>(
+            fn = new InngestFunction(
+              new Inngest<TestEvents>({ name: "test" }),
               { name: "Foo" },
               { event: "foo" },
               flowFn
@@ -89,7 +91,8 @@ describe("runFn", () => {
           let fn: InngestFunction<TestEvents>;
 
           beforeAll(() => {
-            fn = new InngestFunction<TestEvents>(
+            fn = new InngestFunction(
+              new Inngest<TestEvents>({ name: "test" }),
               { name: "Foo" },
               { event: "foo" },
               badFlowFn

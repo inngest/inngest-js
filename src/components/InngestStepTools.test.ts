@@ -3,15 +3,17 @@
 import ms from "ms";
 import { assertType } from "type-plus";
 import { StepOpCode } from "../types";
+import { Inngest } from "./Inngest";
 import { createStepTools, TickOp } from "./InngestStepTools";
 
 describe("waitForEvent", () => {
+  const client = new Inngest({ name: "test" });
   let waitForEvent: ReturnType<typeof createStepTools>[0]["waitForEvent"];
   let state: ReturnType<typeof createStepTools>[1];
   let getOp: () => TickOp | undefined;
 
   beforeEach(() => {
-    [{ waitForEvent }, state] = createStepTools();
+    [{ waitForEvent }, state] = createStepTools(client);
     getOp = () => Object.values(state.tickOps)[0];
   });
 
@@ -87,12 +89,13 @@ describe("waitForEvent", () => {
 });
 
 describe("run", () => {
+  const client = new Inngest({ name: "test" });
   let run: ReturnType<typeof createStepTools>[0]["run"];
   let state: ReturnType<typeof createStepTools>[1];
   let getOp: () => TickOp | undefined;
 
   beforeEach(() => {
-    [{ run }, state] = createStepTools();
+    [{ run }, state] = createStepTools(client);
     getOp = () => Object.values(state.tickOps)[0];
   });
 
@@ -155,12 +158,13 @@ describe("run", () => {
 });
 
 describe("sleep", () => {
+  const client = new Inngest({ name: "test" });
   let sleep: ReturnType<typeof createStepTools>[0]["sleep"];
   let state: ReturnType<typeof createStepTools>[1];
   let getOp: () => TickOp | undefined;
 
   beforeEach(() => {
-    [{ sleep }, state] = createStepTools();
+    [{ sleep }, state] = createStepTools(client);
     getOp = () => Object.values(state.tickOps)[0];
   });
 
@@ -180,12 +184,13 @@ describe("sleep", () => {
 });
 
 describe("sleepUntil", () => {
+  const client = new Inngest({ name: "test" });
   let sleepUntil: ReturnType<typeof createStepTools>[0]["sleepUntil"];
   let state: ReturnType<typeof createStepTools>[1];
   let getOp: () => TickOp | undefined;
 
   beforeEach(() => {
-    [{ sleepUntil }, state] = createStepTools();
+    [{ sleepUntil }, state] = createStepTools(client);
     getOp = () => Object.values(state.tickOps)[0];
   });
 
@@ -231,5 +236,31 @@ describe("sleepUntil", () => {
     expect(() => sleepUntil(next)).toThrow(
       "Invalid date or date string passed"
     );
+  });
+});
+
+describe("sendEvent", () => {
+  const client = new Inngest({ name: "test" });
+  let sendEvent: ReturnType<typeof createStepTools>[0]["sendEvent"];
+  let state: ReturnType<typeof createStepTools>[1];
+  let getOp: () => TickOp | undefined;
+
+  beforeEach(() => {
+    [{ sendEvent }, state] = createStepTools(client);
+    getOp = () => Object.values(state.tickOps)[0];
+  });
+
+  test("return Step step op code", () => {
+    void sendEvent("step", { data: "foo" });
+    expect(getOp()).toMatchObject({
+      op: StepOpCode.StepPlanned,
+    });
+  });
+
+  test("return step name as name", () => {
+    void sendEvent("step", { data: "foo" });
+    expect(getOp()).toMatchObject({
+      name: "step",
+    });
   });
 });

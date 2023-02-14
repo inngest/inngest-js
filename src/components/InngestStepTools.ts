@@ -2,8 +2,9 @@ import { sha1 } from "hash.js";
 import stringify from "json-stringify-deterministic";
 import { Jsonify } from "type-fest";
 import { timeStr } from "../helpers/strings";
-import type { ObjectPaths } from "../helpers/types";
+import type { ObjectPaths, PartialK, SingleOrArray } from "../helpers/types";
 import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
+import { Inngest } from "./Inngest";
 
 export interface TickOp extends HashedOp {
   fn?: (...args: any[]) => any;
@@ -23,7 +24,9 @@ export interface TickOp extends HashedOp {
 export const createStepTools = <
   Events extends Record<string, EventPayload>,
   TriggeringEvent extends keyof Events
->() => {
+>(
+  client: Inngest<Events>
+) => {
   const state: {
     /**
      * The tree of all found ops in the entire invocation.
@@ -187,6 +190,37 @@ export const createStepTools = <
    * a generic type for that function as it will appear in the user's code.
    */
   const tools = {
+    /**
+     * Send one or many events to Inngest. Should always be used in place of
+     * `inngest.send()` to ensure that the event send is successfully retried
+     * and not sent multiple times due to memoisation.
+     *
+     * @example
+     * ```ts
+     * await step.sendEvent("app/user.created", { data: { id: 123 } });
+     * ```
+     *
+     * Returns a promise that will resolve once the event has been sent.
+     */
+    sendEvent: createTool<
+      <Event extends keyof Events & string>(
+        name: Event,
+        payload: SingleOrArray<
+          PartialK<Omit<Events[Event], "name" | "v">, "ts">
+        >
+      ) => Promise<void>
+    >(
+      (name, _payload) => {
+        return {
+          op: StepOpCode.StepPlanned,
+          name,
+        };
+      },
+      (name, payload) => {
+        return client.send(name, payload);
+      }
+    ),
+
     /**
      * Wait for a particular event to be received before continuing. When the
      * event is received, it will be returned.
