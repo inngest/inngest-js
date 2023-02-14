@@ -513,6 +513,7 @@ export const testFramework = (
     describe("POST (run function)", () => {
       describe("signature validation", () => {
         const fn = new InngestFunction(
+          new Inngest({ name: "test" }),
           { name: "Test", id: "test" },
           { event: "demo/event.sent" },
           () => "fn"
