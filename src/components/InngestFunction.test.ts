@@ -78,7 +78,7 @@ describe("runFn", () => {
           });
 
           test("returns is not op on success", () => {
-            expect(ret[0]).toBe("single");
+            expect(ret[0]).toBe("complete");
           });
 
           test("returns data on success", () => {
@@ -114,7 +114,7 @@ describe("runFn", () => {
     });
   });
 
-  describe("multi-step functions", () => {
+  describe("step functions", () => {
     const runFnWithStack = (
       fn: InngestFunction<any>,
       stack: OpStack,
@@ -219,7 +219,7 @@ describe("runFn", () => {
       ({ A, B }) => ({
         "first run reports A step": {
           expectedReturn: [
-            "multi-discovery",
+            "discovery",
             [
               expect.objectContaining({
                 id: A,
@@ -232,7 +232,7 @@ describe("runFn", () => {
         "requesting to run A runs A": {
           runStep: A,
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: A,
               name: "A",
@@ -250,7 +250,7 @@ describe("runFn", () => {
             },
           ],
           expectedReturn: [
-            "multi-discovery",
+            "discovery",
             [
               expect.objectContaining({
                 id: B,
@@ -269,7 +269,7 @@ describe("runFn", () => {
           ],
           runStep: B,
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: B,
               name: "B",
@@ -290,7 +290,7 @@ describe("runFn", () => {
               data: "B",
             },
           ],
-          expectedReturn: ["multi-complete", undefined],
+          expectedReturn: ["complete", undefined],
         },
       })
     );
@@ -325,7 +325,7 @@ describe("runFn", () => {
       ({ foo, A, B }) => ({
         "first run reports waitForEvent": {
           expectedReturn: [
-            "multi-discovery",
+            "discovery",
             [
               expect.objectContaining({
                 op: StepOpCode.WaitForEvent,
@@ -338,7 +338,7 @@ describe("runFn", () => {
         "request with event foo.data.foo:foo reports A step": {
           stack: [{ id: foo, data: { data: { foo: "foo" } } }],
           expectedReturn: [
-            "multi-discovery",
+            "discovery",
             [
               expect.objectContaining({
                 id: A,
@@ -352,7 +352,7 @@ describe("runFn", () => {
           stack: [{ id: foo, data: { data: { foo: "foo" } } }],
           runStep: A,
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: A,
               name: "A",
@@ -365,7 +365,7 @@ describe("runFn", () => {
         "request with event foo.data.foo:bar reports B step": {
           stack: [{ id: foo, data: { data: { foo: "bar" } } }],
           expectedReturn: [
-            "multi-discovery",
+            "discovery",
             [
               expect.objectContaining({
                 id: B,
@@ -379,7 +379,7 @@ describe("runFn", () => {
           stack: [{ id: foo, data: { data: { foo: "bar" } } }],
           runStep: B,
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: B,
               name: "B",
@@ -400,7 +400,7 @@ describe("runFn", () => {
               data: "B",
             },
           ],
-          expectedReturn: ["multi-complete", undefined],
+          expectedReturn: ["complete", undefined],
         },
       })
     );
@@ -431,7 +431,7 @@ describe("runFn", () => {
       ({ A, B, C }) => ({
         "first run reports A and B steps": {
           expectedReturn: [
-            "multi-discovery",
+            "discovery",
             [
               expect.objectContaining({
                 id: A,
@@ -450,7 +450,7 @@ describe("runFn", () => {
         "requesting to run B runs B": {
           runStep: B,
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: B,
               name: "B",
@@ -468,13 +468,13 @@ describe("runFn", () => {
               data: "B",
             },
           ],
-          expectedReturn: ["multi-discovery", []],
+          expectedReturn: ["discovery", []],
         },
 
         "requesting to run A runs A": {
           runStep: A,
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: A,
               name: "A",
@@ -497,7 +497,7 @@ describe("runFn", () => {
             },
           ],
           expectedReturn: [
-            "multi-discovery",
+            "discovery",
             [
               expect.objectContaining({
                 id: C,
@@ -521,7 +521,7 @@ describe("runFn", () => {
             },
           ],
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: C,
               name: "C",
@@ -547,7 +547,7 @@ describe("runFn", () => {
               data: "C",
             },
           ],
-          expectedReturn: ["multi-complete", undefined],
+          expectedReturn: ["complete", undefined],
         },
       })
     );
@@ -585,7 +585,7 @@ describe("runFn", () => {
       ({ A, B, BWins }) => ({
         "first run reports A and B steps": {
           expectedReturn: [
-            "multi-discovery",
+            "discovery",
             [
               expect.objectContaining({
                 id: A,
@@ -604,7 +604,7 @@ describe("runFn", () => {
         "requesting to run B runs B": {
           runStep: B,
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: B,
               name: "B",
@@ -623,7 +623,7 @@ describe("runFn", () => {
             },
           ],
           expectedReturn: [
-            "multi-discovery",
+            "discovery",
             [
               expect.objectContaining({
                 id: BWins,
@@ -637,7 +637,7 @@ describe("runFn", () => {
         "requesting to run A runs A": {
           runStep: A,
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: A,
               name: "A",
@@ -659,7 +659,7 @@ describe("runFn", () => {
               data: "A",
             },
           ],
-          expectedReturn: ["multi-discovery", []],
+          expectedReturn: ["discovery", []],
         },
 
         "requesting to run 'B wins' runs 'B wins'": {
@@ -671,7 +671,7 @@ describe("runFn", () => {
             },
           ],
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: BWins,
               name: "B wins",
@@ -714,7 +714,7 @@ describe("runFn", () => {
       ({ A, B, BFailed }) => ({
         "first run reports A and B steps": {
           expectedReturn: [
-            "multi-discovery",
+            "discovery",
             [
               expect.objectContaining({
                 id: A,
@@ -733,7 +733,7 @@ describe("runFn", () => {
         "requesting to run A runs A": {
           runStep: A,
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: A,
               name: "A",
@@ -746,13 +746,13 @@ describe("runFn", () => {
 
         "request following A returns empty response": {
           stack: [{ id: A, data: "A" }],
-          expectedReturn: ["multi-discovery", []],
+          expectedReturn: ["discovery", []],
         },
 
         "requesting to run B runs B, which fails": {
           runStep: B,
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: B,
               name: "B",
@@ -769,7 +769,7 @@ describe("runFn", () => {
             { id: B, error: "B" },
           ],
           expectedReturn: [
-            "multi-discovery",
+            "discovery",
             [
               expect.objectContaining({
                 id: BFailed,
@@ -787,7 +787,7 @@ describe("runFn", () => {
             { id: B, error: "B" },
           ],
           expectedReturn: [
-            "multi-run",
+            "run",
             expect.objectContaining({
               id: BFailed,
               name: "B failed",
@@ -804,7 +804,7 @@ describe("runFn", () => {
             { id: B, error: "B" },
             { id: BFailed, data: "B failed" },
           ],
-          expectedReturn: ["multi-complete", ["A", "B failed"]],
+          expectedReturn: ["complete", ["A", "B failed"]],
         },
       })
     );
