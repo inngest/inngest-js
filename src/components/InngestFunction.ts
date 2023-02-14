@@ -162,12 +162,11 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
 
     timer: ServerTiming
   ): Promise<
-    | [type: "single", data: unknown]
-    | [type: "multi-discovery", ops: OutgoingOp[]]
-    | [type: "multi-run", op: OutgoingOp]
-    | [type: "multi-complete", data: unknown]
+    | [type: "complete", data: unknown]
+    | [type: "discovery", ops: OutgoingOp[]]
+    | [type: "run", op: OutgoingOp]
   > {
-    const memoisingStop = timer.start("memoising");
+    const memoizingStop = timer.start("memoizing");
 
     /**
      * Create some values to be mutated and passed to the step tools. Once the
@@ -216,17 +215,6 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       }
     });
 
-    /**
-     * If we haven't sychronously touched any tools yet, we can assume we're not
-     * looking at a step function.
-     *
-     * Await the user function as normal.
-     */
-    if (!state.hasUsedTools) {
-      memoisingStop();
-      return ["single", await userFnPromise];
-    }
-
     let pos = -1;
 
     do {
@@ -250,13 +238,13 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         }
       }
 
-      await resolveAfterPending();
+      await timer.wrap("memoizing-ticks", resolveAfterPending);
 
       state.reset();
       pos++;
     } while (pos < opStack.length);
 
-    memoisingStop();
+    memoizingStop();
 
     if (runStep) {
       const userFnOp = state.allFoundOps[runStep];
@@ -309,7 +297,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         });
 
       return [
-        "multi-run",
+        "run",
         { ...tickOpToOutgoing(userFnOp), ...result, op: StepOpCode.RunStep },
       ];
     }
@@ -319,9 +307,20 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     );
 
     /**
-     * If we haven't discovered any ops, it's possible that the user's function
-     * has completed. In this case, we should return any returned data to
-     * Inngest as the response.
+     * Now we're here, we've memoised any function state and we know that this
+     * request was a discovery call to find out next steps.
+     *
+     * We've already given the user's function a lot of chance to register any
+     * more ops, so we can assume that this list of discovered ops is final.
+     *
+     * With that in mind, if this list is empty AND we haven't previously used
+     * any step tools, we can assume that the user's function is not one that'll
+     * be using step tooling, so we'll just wait for it to complete and return
+     * the result.
+     *
+     * An empty list while also using step tooling is a valid state when the end
+     * of a chain of promises is reached, so we MUST also check if step tooling
+     * has previously been used.
      */
     if (!discoveredOps.length) {
       const fnRet = await Promise.race([
@@ -333,23 +332,23 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         /**
          * The function has returned a value, so we should return this to
          * Inngest. Doing this will cause the function to be marked as
-         * complete, so we should only do this if we're sure that all registered
-         * ops have been resolved.
+         * complete, so we should only do this if we're sure that all
+         * registered ops have been resolved.
          */
         const allOpsFulfilled = Object.values(state.allFoundOps).every((op) => {
           return op.fulfilled;
         });
 
         if (allOpsFulfilled) {
-          return ["multi-complete", fnRet.data];
+          return ["complete", fnRet.data];
         }
 
         /**
-         * If we're here, it means that the user's function has returned a value
-         * but not all ops have been resolved. This might be intentional if they
-         * are purposefully pushing work to the background, but also might be
-         * unintentional and a bug in the user's code where they expected an
-         * order to be maintained.
+         * If we're here, it means that the user's function has returned a
+         * value but not all ops have been resolved. This might be intentional
+         * if they are purposefully pushing work to the background, but also
+         * might be unintentional and a bug in the user's code where they
+         * expected an order to be maintained.
          *
          * To be safe, we'll show a warning here to tell users that this might
          * be unintentional, but otherwise carry on as normal.
@@ -357,10 +356,20 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         console.warn(
           `Warning: Your "${this.name}" function has returned a value, but not all ops have been resolved, i.e. you have used step tooling without \`await\`. This may be intentional, but if you expect your ops to be resolved in order, you should \`await\` them. If you are knowingly leaving ops unresolved using \`.catch()\` or \`void\`, you can ignore this warning.`
         );
+      } else if (!state.hasUsedTools) {
+        /**
+         * If we're here, it means that the user's function has not returned
+         * a value, but also has not used step tooling. This is a valid
+         * state, indicating that the function is a single-action async
+         * function.
+         *
+         * We should wait for the result and return it.
+         */
+        return ["complete", await userFnPromise];
       }
     }
 
-    return ["multi-discovery", discoveredOps];
+    return ["discovery", discoveredOps];
   }
 
   /**

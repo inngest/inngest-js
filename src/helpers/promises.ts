@@ -17,18 +17,32 @@ export const createFrozenPromise = (): Promise<unknown> => {
  * have finished, but before the next event loop tick.
  */
 export const resolveAfterPending = (): Promise<void> => {
-  return new Promise((resolve) =>
-    /**
-     * Testing found that enqueuing a single microtask would sometimes result in
-     * the Promise being resolved before the microtask queue was drained.
-     *
-     * Double enqueueing does not guarantee that the queue will be empty (e.g.
-     * if a microtask enqueues another microtask as this does), but this does
-     * ensure that step tooling that pushes to this stack intentionally will be
-     * correctly detected and supported.
-     */
-    queueMicrotask(() => queueMicrotask(() => resolve()))
-  );
+  /**
+   * This uses a brute force implementation that will continue to enqueue
+   * microtasks 1000 times before resolving. This is to ensure that the
+   * microtask queue is drained, even if the microtask queue is being
+   * manipulated by other code.
+   *
+   * While this still doesn't guarantee that the microtask queue is drained,
+   * it's our best bet for giving other non-controlled promises a chance to
+   * resolve before we continue without resorting to falling in to the next
+   * tick.
+   */
+  return new Promise((resolve) => {
+    let i = 0;
+
+    const iterate = () => {
+      queueMicrotask(() => {
+        if (i++ > 1000) {
+          return resolve();
+        }
+
+        iterate();
+      });
+    };
+
+    iterate();
+  });
 };
 
 /**
