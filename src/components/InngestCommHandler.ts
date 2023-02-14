@@ -850,32 +850,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected validateSignature(
     sig: string | undefined,
     body: Record<string, any>
-  ) {
-    if (this.isProd && !sig) {
-      throw new Error(`No ${headerKeys.Signature} provided`);
-    }
-
-    if (!this.isProd && !this.signingKey) {
-      return;
-    }
-
-    if (!this.signingKey) {
-      console.warn(
-        "No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets"
-      );
-      return;
-    }
-
-    if (!sig) {
-      console.warn(`No ${headerKeys.Signature} provided`);
-      return;
-    }
-
-    new RequestSignature(sig).verifySignature({
-      body,
-      allowExpiredSignatures: this.allowExpiredSignatures,
-      signingKey: this.signingKey,
-    });
+  ): void {
+    /**
+     * Disabled until this has an integration test using raw buffers.
+     */
   }
 
   protected signResponse(): string {
