@@ -4,6 +4,7 @@ import parallelWork from "./parallel-work";
 import polling from "./polling";
 import promiseAll from "./promise-all";
 import promiseRace from "./promise-race";
+import sendEvent from "./send-event";
 import sequentialReduce from "./sequential-reduce";
 
 export default [
@@ -14,4 +15,5 @@ export default [
   parallelReduce,
   sequentialReduce,
   polling,
+  sendEvent,
 ];

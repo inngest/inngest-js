@@ -172,7 +172,7 @@ jobs:
         working-directory: examples/${{ matrix.repo }}
 
       - name: Run the Inngest dev server
-        run: npx inngest-cli@latest dev &
+        run: npx inngest-cli@latest dev > cli.log 2>&1 &
         working-directory: examples/${{ matrix.repo }}
         env:
           DO_NOT_TRACK: 1
@@ -202,9 +202,6 @@ jobs:
         with:
           url: "http://localhost:3000/api/inngest"
           timeout: "60"
-      - if: ${{ always() }}
-        run: cat dev.log
-        working-directory: examples/${{ matrix.repo }}
 
       # Give the dev server 5 seconds to register with the example
       # TODO Check logs instead of sleeping
@@ -215,3 +212,11 @@ jobs:
       - name: Run integration test suite
         run: yarn test:examples
         working-directory: sdk
+
+      - if: ${{ always() }}
+        run: cat dev.log
+        working-directory: examples/${{ matrix.repo }}
+
+      - if: ${{ always() }}
+        run: cat cli.log
+        working-directory: examples/${{ matrix.repo }}
