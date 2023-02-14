@@ -723,8 +723,16 @@ export const waitUpTo = (upTo: number, from?: Date): Promise<void> => {
  *
  * If found within 5 seconds, returns the event. Otherwise, throws an error.
  */
-export const receivedEventWithName = async (name: string) => {
+export const receivedEventWithName = async (
+  name: string
+): Promise<{
+  id: string;
+  name: string;
+  payload: string;
+}> => {
   for (let i = 0; i < 5; i++) {
+    const start = new Date();
+
     const res = await fetch("http://localhost:8288/v0/gql", {
       method: "POST",
       headers: {
@@ -756,7 +764,7 @@ export const receivedEventWithName = async (name: string) => {
       return event;
     }
 
-    await waitUpTo(1000);
+    await waitUpTo(1000, start);
   }
 
   throw new Error("Event not received");

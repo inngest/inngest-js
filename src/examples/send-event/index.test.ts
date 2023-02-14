@@ -68,6 +68,6 @@ describe("run", () => {
   test("sent event 'app/my.event.happened'", async () => {
     const event = await receivedEventWithName("app/my.event.happened");
     expect(event).toBeDefined();
-    expect(event?.payload?.data).toMatchObject({ foo: "bar" });
+    expect(JSON.parse(event?.payload ?? {})).toMatchObject({ foo: "bar" });
   });
 });
