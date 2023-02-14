@@ -1,3 +1,11 @@
+interface Timing {
+  description: string;
+  timers: {
+    start?: number;
+    end?: number;
+  }[];
+}
+
 /**
  * A class to manage timing functions and arbitrary periods of time before
  * generating a `Server-Timing` header for use in HTTP responses.
@@ -6,34 +14,37 @@
  * fractions of a millisecond.
  */
 export class ServerTiming {
-  #timings: Record<
-    string,
-    { description: string; start?: number; end?: number }
-  > = {};
+  #timings: Record<string, Timing> = {};
 
   /**
    * Start a timing. Returns a function that, when called, will stop the timing
    * and add it to the header.
    */
   public start(name: string, description?: string): () => void {
-    if (this.#timings[name]) {
-      console.warn(`Timing "${name}" already exists`);
-      return (): void => undefined;
+    if (!this.#timings[name]) {
+      this.#timings[name] = {
+        description: description ?? "",
+        timers: [],
+      };
     }
 
-    this.#timings[name] = {
-      description: description ?? "",
-      start: Date.now(),
-    };
+    const index =
+      (this.#timings[name] as Timing).timers.push({ start: Date.now() }) - 1;
 
     return (): void => {
       const target = this.#timings[name];
-
       if (!target) {
         return console.warn(`Timing "${name}" does not exist`);
       }
 
-      target.end = Date.now();
+      const timer = target.timers[index];
+      if (!timer) {
+        return console.warn(
+          `Timer ${index} for timing "${name}" does not exist`
+        );
+      }
+
+      timer.end = Date.now();
     };
   }
 
@@ -49,6 +60,7 @@ export class ServerTiming {
   public append(key: string, value: string): void {
     this.#timings[key] = {
       description: value,
+      timers: [],
     };
   }
 
@@ -78,16 +90,24 @@ export class ServerTiming {
    */
   public getHeader(): string {
     const entries = Object.entries(this.#timings).reduce<string[]>(
-      (acc, [name, { description, start, end }]) => {
+      (acc, [name, { description, timers }]) => {
         /**
-         * Ignore timings that started but never ended.
+         * Ignore timers that had no end.
          */
-        if (start && !end) return acc;
+        const hasTimersWithEnd = timers.some((timer) => timer.end);
+        if (!hasTimersWithEnd) {
+          return acc;
+        }
+
+        const dur = timers.reduce((acc, { start, end }) => {
+          if (!start || !end) return acc;
+          return acc + (end - start);
+        }, 0);
 
         const entry = [
           name,
           description ? `desc="${description}"` : "",
-          start && end ? `dur=${end - start}` : "",
+          dur ? `dur=${dur}` : "",
         ]
           .filter(Boolean)
           .join(";");
