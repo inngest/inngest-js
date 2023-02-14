@@ -350,7 +350,8 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       NameOrOpts extends FunctionOptions ? NameOrOpts : never
     >
   ): InngestFunction<Events> {
-    return new InngestFunction<Events>(
+    return new InngestFunction(
+      this,
       typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
       typeof trigger === "string" ? { event: trigger } : trigger,
       fn

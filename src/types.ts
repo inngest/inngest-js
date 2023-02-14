@@ -98,7 +98,6 @@ export enum StepOpCode {
   RunStep = "Step",
   StepPlanned = "StepPlanned",
   Sleep = "Sleep",
-  SendEvent = "SendEvent",
 }
 
 /**

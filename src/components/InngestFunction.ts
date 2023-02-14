@@ -15,6 +15,7 @@ import {
   OutgoingOp,
   StepOpCode,
 } from "../types";
+import { Inngest } from "./Inngest";
 import { createStepTools, TickOp } from "./InngestStepTools";
 
 /**
@@ -32,6 +33,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
   readonly #opts: FunctionOptions;
   readonly #trigger: FunctionTrigger<keyof Events>;
   readonly #fn: (...args: any[]) => any;
+  readonly #client: Inngest<Events>;
 
   /**
    * A stateless Inngest function, wrapping up function configuration and any
@@ -41,6 +43,8 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
    * trigger remotely.
    */
   constructor(
+    client: Inngest<Events>,
+
     /**
      * Options
      */
@@ -48,6 +52,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     trigger: FunctionTrigger<keyof Events>,
     fn: (...args: any[]) => any
   ) {
+    this.#client = client;
     this.#opts = opts;
     this.#trigger = trigger;
     this.#fn = fn;
@@ -169,7 +174,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * user's function has run, we can check the mutated state of these to see
      * if an op has been submitted or not.
      */
-    const [tools, state] = createStepTools();
+    const [tools, state] = createStepTools(this.#client);
 
     /**
      * Create args to pass in to our function. We blindly pass in the data and
