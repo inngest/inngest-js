@@ -33,7 +33,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
   readonly #opts: FunctionOptions;
   readonly #trigger: FunctionTrigger<keyof Events>;
   readonly #fn: (...args: any[]) => any;
-  readonly #client: Inngest<Events>;
+  readonly #client: Inngest<any, Events>;
 
   /**
    * A stateless Inngest function, wrapping up function configuration and any
@@ -43,7 +43,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
    * trigger remotely.
    */
   constructor(
-    client: Inngest<Events>,
+    client: Inngest<any, Events>,
 
     /**
      * Options

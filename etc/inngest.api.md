@@ -44,6 +44,7 @@ export interface FunctionOptions {
     id?: string;
     idempotency?: string;
     name: string;
+    retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
     throttle?: {
         key?: string;
         count: number;
@@ -107,10 +108,11 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     // (undocumented)
     protected registerBody(url: URL): RegisterRequest;
     protected reqUrl(url: URL): URL;
+    // Warning: (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "StepRunResponse" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    protected runStep(functionId: string, stepId: string | null, data: any): Promise<StepRunResponse>;
+    protected runStep(functionId: string, stepId: string | null, data: any, timer: ServerTiming): Promise<StepRunResponse>;
     // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
     protected get sdkHeader(): [
     prefix: string,
@@ -128,7 +130,15 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     // Warning: (ae-forgotten-export) The symbol "ActionResponse" needs to be exported by the entry point index.d.ts
     readonly transformRes: (res: ActionResponse, ...args: Parameters<H>) => TransformedRes;
     // (undocumented)
-    protected validateSignature(): boolean;
+    protected validateSignature(sig: string | undefined, body: Record<string, any>): void;
+}
+
+// @public
+export class NonRetriableError extends Error {
+    constructor(message: string, options?: {
+        cause?: any;
+    });
+    readonly cause?: any;
 }
 
 // @public

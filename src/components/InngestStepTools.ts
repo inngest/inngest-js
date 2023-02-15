@@ -25,7 +25,7 @@ export const createStepTools = <
   Events extends Record<string, EventPayload>,
   TriggeringEvent extends keyof Events
 >(
-  client: Inngest<Events>
+  client: Inngest<any, Events>
 ) => {
   const state: {
     /**
