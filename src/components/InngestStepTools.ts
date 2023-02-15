@@ -2,7 +2,13 @@ import { sha1 } from "hash.js";
 import stringify from "json-stringify-deterministic";
 import { Jsonify } from "type-fest";
 import { timeStr } from "../helpers/strings";
-import type { ObjectPaths, PartialK, SingleOrArray } from "../helpers/types";
+import type {
+  ObjectPaths,
+  PartialK,
+  SendEventPayload,
+  SingleOrArray,
+  ValueOf,
+} from "../helpers/types";
 import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
 import { Inngest } from "./Inngest";
 
@@ -198,26 +204,75 @@ export const createStepTools = <
      * @example
      * ```ts
      * await step.sendEvent("app/user.created", { data: { id: 123 } });
+     *
+     * await step.sendEvent({ name: "app/user.created", data: { id: 123 } });
+     *
+     * await step.sendEvent([
+     *   {
+     *     name: "app/user.created",
+     *     data: { id: 123 },
+     *   },
+     *   {
+     *     name: "app/user.feed.created",
+     *     data: { id: 123 },
+     *   },
+     * ]);
      * ```
      *
      * Returns a promise that will resolve once the event has been sent.
      */
-    sendEvent: createTool<
+    sendEvent: createTool<{
+      <Payload extends SendEventPayload<Events>>(
+        payload: Payload
+      ): Promise<void>;
       <Event extends keyof Events & string>(
         name: Event,
         payload: SingleOrArray<
           PartialK<Omit<Events[Event], "name" | "v">, "ts">
         >
-      ) => Promise<void>
-    >(
-      (name, _payload) => {
+      ): Promise<void>;
+    }>(
+      (nameOrPayload, maybePayload) => {
+        let payloads: ValueOf<Events>[];
+
+        if (typeof nameOrPayload === "string") {
+          /**
+           * Add our payloads and ensure they all have a name.
+           */
+          payloads = (
+            Array.isArray(maybePayload)
+              ? maybePayload
+              : maybePayload
+              ? [maybePayload]
+              : []
+          ).map((payload) => ({
+            ...payload,
+            name: nameOrPayload,
+          })) as typeof payloads;
+        } else {
+          /**
+           * Grab our payloads straight from the args.
+           */
+          payloads = (
+            Array.isArray(nameOrPayload)
+              ? nameOrPayload
+              : nameOrPayload
+              ? [nameOrPayload]
+              : []
+          ) as typeof payloads;
+        }
+
         return {
           op: StepOpCode.StepPlanned,
-          name,
+          name: payloads[0]?.name || "sendEvent",
         };
       },
-      (name, payload) => {
-        return client.send(name, payload);
+      (nameOrPayload, maybePayload) => {
+        return client.send(
+          nameOrPayload as any,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          maybePayload as unknown as any
+        );
       }
     ),
 
