@@ -6,7 +6,7 @@ import {
   InngestCommHandler,
   ServeHandler,
 } from "./components/InngestCommHandler";
-import { queryKeys } from "./helpers/consts";
+import { headerKeys, queryKeys } from "./helpers/consts";
 import { allProcessEnv } from "./helpers/env";
 
 export interface RedwoodResponse {
@@ -46,6 +46,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
               env,
               isProduction,
               url,
+              deployId: event.queryStringParameters?.[queryKeys.DeployId],
             };
           }
         },
@@ -69,6 +70,8 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
               url,
               data,
               fnId: event.queryStringParameters?.[queryKeys.FnId] as string,
+              signature: event.headers[headerKeys.Signature] as string,
+              stepId: event.queryStringParameters?.[queryKeys.StepId] as string,
             };
           }
         },

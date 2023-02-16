@@ -1,12 +1,15 @@
-import { sha256 } from "hash.js";
+import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
-import { envKeys, queryKeys } from "../helpers/consts";
+import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+import { serializeError } from "../helpers/errors";
 import { strBoolean } from "../helpers/scalar";
+import { ServerTiming } from "../helpers/ServerTiming";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
-import type {
+import {
   FunctionConfig,
+  IncomingOp,
   IntrospectRequest,
   RegisterOptions,
   RegisterRequest,
@@ -15,6 +18,7 @@ import type {
 import { version } from "../version";
 import type { Inngest } from "./Inngest";
 import type { InngestFunction } from "./InngestFunction";
+import { NonRetriableError } from "./NonRetriableError";
 
 /**
  * A handler for serving Inngest functions. This type should be used
@@ -218,6 +222,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    */
   private readonly fns: Record<string, InngestFunction<any>> = {};
 
+  private allowExpiredSignatures: boolean;
+
   constructor(
     /**
      * The name of the framework this handler is designed for. Should be
@@ -317,6 +323,15 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     this.handler = handler;
     this.transformRes = transformRes;
 
+    /**
+     * Provide a hidden option to allow expired signatures to be accepted during
+     * testing.
+     */
+    this.allowExpiredSignatures = Boolean(
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, prefer-rest-params
+      arguments["3"]?.__testingAllowExpiredSignatures
+    );
+
     this.fns = functions.reduce<Record<string, InngestFunction<any>>>(
       (acc, fn) => {
         const id = fn.id(this.name);
@@ -398,18 +413,20 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    */
   public createHandler(): (...args: Parameters<H>) => Promise<TransformedRes> {
     return async (...args: Parameters<H>) => {
+      const timer = new ServerTiming();
+
       /**
        * We purposefully `await` the handler, as it could be either sync or
        * async.
        */
       // eslint-disable-next-line @typescript-eslint/await-thenable
-      const actions = await this.handler(...args);
+      const actions = await timer.wrap("handler", () => this.handler(...args));
 
-      const actionRes = await this.handleAction(
-        actions as ReturnType<Awaited<H>>
+      const actionRes = await timer.wrap("action", () =>
+        this.handleAction(actions as ReturnType<Awaited<H>>, timer)
       );
 
-      return this.transformRes(actionRes, ...args);
+      return timer.wrap("res", () => this.transformRes(actionRes, ...args));
     };
   }
 
@@ -424,22 +441,36 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    * will decide whether the UI should be visible based on the payload it has
    * found (e.g. env vars, options, etc).
    */
-  private async handleAction(actions: ReturnType<H>): Promise<ActionResponse> {
-    const headers = { "x-inngest-sdk": this.sdkHeader.join("") };
+  private async handleAction(
+    actions: ReturnType<H>,
+    timer: ServerTiming
+  ): Promise<ActionResponse> {
+    const getHeaders = () => ({
+      "x-inngest-sdk": this.sdkHeader.join(""),
+      "Server-Timing": timer.getHeader(),
+    });
 
     try {
       const runRes = await actions.run();
+
       if (runRes) {
+        this._isProd = runRes.isProduction;
         this.upsertSigningKeyFromEnv(runRes.env);
+        this.validateSignature(runRes.signature, runRes.data);
 
-        const stepRes = await this.runStep(runRes.fnId, "step", runRes.data);
+        const stepRes = await this.runStep(
+          runRes.fnId,
+          runRes.stepId,
+          runRes.data,
+          timer
+        );
 
-        if (stepRes.status === 500) {
+        if (stepRes.status === 500 || stepRes.status === 400) {
           return {
-            status: 500,
+            status: stepRes.status,
             body: stepRes.error || "",
             headers: {
-              ...headers,
+              ...getHeaders(),
               "Content-Type": "application/json",
             },
           };
@@ -449,7 +480,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status: stepRes.status,
           body: JSON.stringify(stepRes.body),
           headers: {
-            ...headers,
+            ...getHeaders(),
             "Content-Type": "application/json",
           },
         };
@@ -457,6 +488,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
       const viewRes = await actions.view();
       if (viewRes) {
+        this._isProd = viewRes.isProduction;
         this.upsertSigningKeyFromEnv(viewRes.env);
 
         const showLandingPage = this.shouldShowLandingPage(
@@ -467,7 +499,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           return {
             status: 405,
             body: "",
-            headers,
+            headers: getHeaders(),
           };
         }
 
@@ -482,7 +514,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
             status: 200,
             body: JSON.stringify(introspection),
             headers: {
-              ...headers,
+              ...getHeaders(),
               "Content-Type": "application/json",
             },
           };
@@ -492,7 +524,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status: 200,
           body: landing,
           headers: {
-            ...headers,
+            ...getHeaders(),
             "Content-Type": "text/html; charset=utf-8",
           },
         };
@@ -500,28 +532,33 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
       const registerRes = await actions.register();
       if (registerRes) {
+        this._isProd = registerRes.isProduction;
         this.upsertSigningKeyFromEnv(registerRes.env);
 
         const { status, message } = await this.register(
           this.reqUrl(registerRes.url),
-          registerRes.env[envKeys.DevServerUrl]
+          registerRes.env[envKeys.DevServerUrl],
+          registerRes.deployId
         );
 
         return {
           status,
           body: JSON.stringify({ message }),
           headers: {
-            ...headers,
+            ...getHeaders(),
             "Content-Type": "application/json",
           },
         };
       }
-    } catch (err) {
+    } catch (err: any) {
       return {
         status: 500,
-        body: JSON.stringify(err),
+        body: JSON.stringify({
+          type: "internal",
+          ...serializeError(err as Error),
+        }),
         headers: {
-          ...headers,
+          ...getHeaders(),
           "Content-Type": "application/json",
         },
       };
@@ -530,14 +567,15 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     return {
       status: 405,
       body: "",
-      headers,
+      headers: getHeaders(),
     };
   }
 
   protected async runStep(
     functionId: string,
-    stepId: string,
-    data: any
+    stepId: string | null,
+    data: any,
+    timer: ServerTiming
   ): Promise<StepRunResponse> {
     try {
       const fn = this.fns[functionId];
@@ -545,38 +583,124 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         throw new Error(`Could not find function with ID "${functionId}"`);
       }
 
-      const { event, steps } = z
+      const { event, steps, ctx } = z
         .object({
           event: z.object({}).passthrough(),
-          steps: z.object({}).passthrough().optional().nullable(),
+          /**
+           * When handling per-step errors, steps will need to be an object with
+           * either a `data` or an `error` key.
+           *
+           * For now, we support the current method of steps just being a map of
+           * step ID to step data.
+           *
+           * TODO When the executor does support per-step errors, we can uncomment
+           * the expected schema below.
+           */
+          steps: z
+            .record(
+              z.any().refine((v) => typeof v !== "undefined", {
+                message: "Values in steps must be defined",
+              })
+            )
+            .optional()
+            .nullable(),
+          // steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
+          ctx: z
+            .object({
+              stack: z
+                .object({
+                  stack: z
+                    .array(z.string())
+                    .nullable()
+                    .transform((v) => (Array.isArray(v) ? v : [])),
+                  current: z.number(),
+                })
+                .passthrough()
+                .optional()
+                .nullable(),
+            })
+            .optional()
+            .nullable(),
         })
         .parse(data);
 
-      const ret = await fn["runFn"]({ event }, steps || {});
-      const isOp = ret[0];
+      /**
+       * TODO When the executor does support per-step errors, this map will need
+       * to adjust to ensure we're not double-stacking the op inside `data`.
+       */
+      const opStack =
+        ctx?.stack?.stack
+          .slice(0, ctx.stack.current)
+          .map<IncomingOp>((opId) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            const step = steps?.[opId];
+            if (typeof step === "undefined") {
+              throw new Error(`Could not find step with ID "${opId}"`);
+            }
 
-      if (isOp) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            return { id: opId, data: step };
+          }) ?? [];
+
+      const ret = await fn["runFn"](
+        { event },
+        opStack,
+        /**
+         * TODO The executor is sending `"step"` as the step ID when it is not
+         * wanting to run a specific step. This is not needed and we should
+         * remove this on the executor side.
+         */
+        stepId === "step" ? null : stepId || null,
+        timer
+      );
+
+      if (ret[0] === "complete") {
         return {
-          status: 206,
+          status: 200,
           body: ret[1],
         };
       }
 
-      return {
-        status: 200,
-        body: ret[1],
-      };
-    } catch (err: unknown) {
-      if (err instanceof Error) {
-        return {
-          status: 500,
-          error: err.stack || err.message,
-        };
+      /**
+       * If the function has run user code and is intending to return an error,
+       * interrupt this flow and instead throw a 500 to Inngest.
+       *
+       * The executor doesn't yet support per-step errors, so returning an
+       * `error` key here would cause the executor to misunderstand what is
+       * happening.
+       *
+       * TODO When the executor does support per-step errors, we can remove this
+       * comment and check and functionality should resume as normal.
+       */
+      if (ret[0] === "run" && ret[1].error) {
+        throw ret[1].error;
       }
 
       return {
-        status: 500,
-        error: `Unknown error: ${JSON.stringify(err)}`,
+        status: 206,
+        body: Array.isArray(ret[1]) ? ret[1] : [ret[1]],
+      };
+    } catch (unserializedErr: any) {
+      /**
+       * Always serialize the error before sending it back to Inngest. Errors,
+       * by default, do not niceley serialize to JSON, so we use the a package
+       * to do this.
+       *
+       * See {@link https://www.npmjs.com/package/serialize-error}
+       */
+
+      const error = JSON.stringify(serializeError(unserializedErr));
+
+      /**
+       * If we've caught a non-retriable error, we'll return a 400 to Inngest
+       * to indicate that the error is not transient and should not be retried.
+       *
+       * The errors caught here are caught from the main function as well as
+       * inside individual steps, so this safely catches all areas.
+       */
+      return {
+        status: unserializedErr instanceof NonRetriableError ? 400 : 500,
+        error,
       };
     }
   }
@@ -638,7 +762,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
   protected async register(
     url: URL,
-    devServerHost: string | undefined
+    devServerHost: string | undefined,
+    deployId?: string | undefined | null
   ): Promise<{ status: number; message: string }> {
     const body = this.registerBody(url);
 
@@ -653,6 +778,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       if (hasDevServer) {
         registerURL = devServerUrl(devServerHost, "/fn/register");
       }
+    }
+
+    if (deployId) {
+      registerURL.searchParams.set("deployId", deployId);
     }
 
     try {
@@ -718,12 +847,70 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     return this.showLandingPage ?? strBoolean(strEnvVar) ?? true;
   }
 
-  protected validateSignature(): boolean {
-    return true;
+  protected validateSignature(
+    sig: string | undefined,
+    body: Record<string, any>
+  ): void {
+    /**
+     * Disabled until this has an integration test using raw buffers.
+     */
   }
 
   protected signResponse(): string {
     return "";
+  }
+}
+
+class RequestSignature {
+  public timestamp: string;
+  public signature: string;
+
+  constructor(sig: string) {
+    const params = new URLSearchParams(sig);
+    this.timestamp = params.get("t") || "";
+    this.signature = params.get("s") || "";
+
+    if (!this.timestamp || !this.signature) {
+      throw new Error(`Invalid ${headerKeys.Signature} provided`);
+    }
+  }
+
+  private hasExpired(allowExpiredSignatures?: boolean) {
+    if (allowExpiredSignatures) {
+      return false;
+    }
+
+    const delta =
+      Date.now() - new Date(parseInt(this.timestamp) * 1000).valueOf();
+    return delta > 1000 * 60 * 5;
+  }
+
+  public verifySignature({
+    body,
+    signingKey,
+    allowExpiredSignatures,
+  }: {
+    body: any;
+    signingKey: string;
+    allowExpiredSignatures: boolean;
+  }): void {
+    if (this.hasExpired(allowExpiredSignatures)) {
+      throw new Error("Signature has expired");
+    }
+
+    // Calculate the HMAC of the request body ourselves.
+    const encoded = typeof body === "string" ? body : JSON.stringify(body);
+    // Remove the /signkey-[test|prod]-/ prefix from our signing key to calculate the HMAC.
+    const key = signingKey.replace(/signkey-\w+-/, "");
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    const mac = hmac(sha256 as any, key)
+      .update(encoded)
+      .update(this.timestamp)
+      .digest("hex");
+
+    if (mac !== this.signature) {
+      throw new Error("Invalid signature");
+    }
   }
 }
 
@@ -744,7 +931,7 @@ type Handler = (...args: any[]) => {
  * The response from the Inngest SDK before it is transformed in to a
  * framework-compatible response by an {@link InngestCommHandler} instance.
  */
-interface ActionResponse {
+export interface ActionResponse {
   /**
    * The HTTP status code to return.
    */
@@ -785,14 +972,17 @@ type HandlerAction =
       env: Record<string, string | undefined>;
       url: URL;
       isProduction: boolean;
+      deployId?: null | string;
     }
   | {
       action: "run";
       fnId: string;
+      stepId: string | null;
       data: Record<string, any>;
       env: Record<string, string | undefined>;
       isProduction: boolean;
       url: URL;
+      signature: string | undefined;
     }
   | {
       action: "bad-method";

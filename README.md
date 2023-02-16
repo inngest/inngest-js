@@ -7,7 +7,7 @@
     Serverless event-driven queues, background jobs, and scheduled jobs for Typescript.<br />
     Works with any framework and platform.
   </p>
-  Read the <a href="https://www.inngest.com/docs">documentation</a> and get started in minutes.
+  Read the <a href="https://www.inngest.com/docs?ref=github-inngest-js-readme">documentation</a> and get started in minutes.
   <br/>
   <p>
 
@@ -35,15 +35,13 @@ Inngest allows you to:
 <br />
 
 <p align="center">
-<a href="#getting-started">Getting started</a> · 
-<a href="#features">Features</a> · 
-<a href="#contributing">Contributing</a> · 
-<a href="https://www.inngest.com/docs">Documentation</a>
+<a href="#getting-started">Getting started</a> ·
+<a href="#features">Features</a> ·
+<a href="#contributing">Contributing</a> ·
+<a href="https://www.inngest.com/docs?ref=github-inngest-js-readme">Documentation</a>
 </p>
 
 <br />
-
-<img width="1489" alt="Screen Shot 2022-10-05 at 17 06 32" src="https://user-images.githubusercontent.com/306177/194185480-a942a175-0adb-42cb-9cfd-355aa03332d5.png">
 
 ## Getting started
 
@@ -52,30 +50,56 @@ Inngest allows you to:
 Install Inngest:
 
 ```bash
-npm install inngest  # or yarn install inngest
+npm install inngest  # or yarn add inngest
 ```
 
-<br />
+### Writing functions
 
-**Writing functions**: Write serverless functions and background jobs right in your own code:
+Write serverless functions and background jobs right in your own code:
 
 ```ts
-import { createFunction } from "inngest";
+import { Inngest } from "inngest";
 
-export default createFunction(
-  "Send welcome email",
-  "app/user.created", // Subscribe to the `app/user.created` event.
-  ({ event }) => {
-    sendEmailTo(event.data.id, "Welcome!");
+const inngest = new Inngest({ name: "My App" });
+
+// This function will be invoked by Inngest via HTTP any time
+// the "app/user.signup" event is sent to to Inngest
+export default inngest.createFunction(
+  { name: "User onboarding communication" },
+  { event: "app/user.signup" },
+  async ({ event, step }) => {
+    await step.run("Send welcome email", async () => {
+      await sendEmail({
+        email: event.data.email,
+        template: "welcome",
+      });
+    });
   }
 );
 ```
 
-Functions listen to events which can be triggered by API calls, webhooks, integrations, or external services. When a matching event is received, the serverless function runs automatically, with built in retries.
+- Functions are triggered by events which can be sent via this SDK, webhooks, integrations, or with a simple HTTP request.
+- When a matching event is received, Inngest invokes the function automatically, with built-in retries.
 
-<br />
+### Serving your functions
 
-**Triggering functions by events:**
+Inngest invokes functions via HTTP, so you need to _serve_ them using an adapter for the framework of your choice. [See all frameworks here in our docs](https://www.inngest.com/docs/sdk/serve?ref=github-inngest-js-readme). Here is an example using the Next.js serve handler:
+
+```ts
+// /pages/api/inngest.ts
+import { Inngest } from "inngest";
+// See the "inngest/next" adapter imported here:
+import { serve } from "inngest/next";
+import myFunction from "../userOnboardingCOmmunication"; // see above function
+
+// You can create this in a single file and import where it's needed
+const inngest = new Inngest({ name: "My App" });
+
+// Securely serve your Inngest functions for remote invocation:
+export default serve(inngest, [myFunction]);
+```
+
+### Sending events to trigger functions
 
 ```ts
 // Send events
@@ -83,22 +107,24 @@ import { Inngest } from "inngest";
 const inngest = new Inngest({ name: "My App" });
 
 // This will run the function above automatically, in the background
-inngest.send("app/user.created", { data: { id: 123 } });
+inngest.send("app/user.signup", {
+  data: { email: "text@example.com", user_id: "12345" },
+});
 ```
 
-Events trigger any number of functions automatically, in parallel, in the background. Inngest also stores a history of all events for observability, testing, and replay.
+- Events can trigger one or more functions automatically, enabling you to fan-out work.
+- Inngest stores a history of all events for observability, testing, and replay.
 
 <br />
 
 ## Features
 
 - **Fully serverless:** Run background jobs, scheduled functions, and build event-driven systems without any servers, state, or setup
-- **Deploy anywhere**: works with NextJS, Netlify, Vercel, Redwood, Express, Cloudflare, and Lambda
-- **Use your existing code:** write functions within your current project, zero learning required
-- **A complete platform**: complex functionality built in, such as **event replay**, **canary deploys**, **version management** and **git integration**
+- **Works with your framework**: Works with [Next.js, Redwood, Express, Cloudflare Pages, Nuxt, Fresh (Deno), and Remix](https://www.inngest.com/docs/sdk/serve?ref=github-inngest-js-readme)
+- **Deploy anywhere**: Keep [deploying to your existing platform](https://www.inngest.com/docs/deploy?ref=github-inngest-js-readme): Vercel, Netlify, Cloudflalre, Deno, Digital Ocean, etc.
+- **Use your existing code:** Write functions within your current project and repo
 - **Fully typed**: Event schemas, versioning, and governance out of the box
 - **Observable**: A full UI for managing and inspecting your functions
-- **Any language:** Use our CLI to write functions using any language
 
 <br />
 

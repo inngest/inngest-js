@@ -1,3 +1,4 @@
+import { Inngest } from "./components/Inngest";
 import { InngestCommHandler } from "./components/InngestCommHandler";
 import { InngestFunction } from "./components/InngestFunction";
 import * as ExpressHandler from "./express";
@@ -17,6 +18,7 @@ describe("InngestCommHandler", () => {
   describe("registerBody", () => {
     it("Includes correct base URL for functions", () => {
       const fn = new InngestFunction(
+        new Inngest({ name: "test" }),
         { name: "Test Express Function" },
         { event: "test/event.name" },
         () => undefined

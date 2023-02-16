@@ -9,7 +9,8 @@ testFramework("Redwood.js", RedwoodHandler, {
         headers: req.headers,
         httpMethod: req.method,
         queryStringParameters: req.query,
-        body: req.body as string,
+        body:
+          typeof req.body === "string" ? req.body : JSON.stringify(req.body),
       },
       {},
     ];

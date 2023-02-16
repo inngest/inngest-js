@@ -1,14 +1,17 @@
 import { sha1 } from "hash.js";
-import sigmund from "sigmund";
+import stringify from "json-stringify-deterministic";
+import { Jsonify } from "type-fest";
 import { timeStr } from "../helpers/strings";
-import type { ObjectPaths } from "../helpers/types";
-import { EventPayload, HashedOp, Op, OpStack, StepOpCode } from "../types";
+import type { ObjectPaths, PartialK, SingleOrArray } from "../helpers/types";
+import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
+import { Inngest } from "./Inngest";
 
-/**
- * A unique class used to interrupt the flow of a step. It is intended to be
- * thrown and caught using `instanceof StepFlowInterrupt`.
- */
-export class StepFlowInterrupt {}
+export interface TickOp extends HashedOp {
+  fn?: (...args: any[]) => any;
+  fulfilled: boolean;
+  resolve: (value: any | PromiseLike<any>) => void;
+  reject: (reason?: any) => void;
+}
 
 /**
  * Create a new set of step function tools ready to be used in a step function.
@@ -17,76 +20,116 @@ export class StepFlowInterrupt {}
  *
  * An op stack (function state) is passed in as well as some mutable properties
  * that the tools can use to submit a new op.
- *
- * Broadly, each tool is responsible for potentially filling itself with data
- * from the op stack and submitting an op, interrupting the step function when
- * it does so.
- *
- * This feels better being a class, but class bindings are lost (i.e. `this`
- * becomes `undefined`) if a user destructures the tools within their step
- * function. Thus, we must instead use closures for this functionality.
  */
 export const createStepTools = <
   Events extends Record<string, EventPayload>,
   TriggeringEvent extends keyof Events
 >(
-  _opStack: OpStack
+  client: Inngest<Events>
 ) => {
-  /**
-   * A boolean to represent that we're currently running through the op stack of
-   * the function to decide what to do next.
-   *
-   * When we've finished reading the op stack to set the function's state and
-   * have a new operation to run, we set this to `false` to indicate that we've
-   * found the next operation and will no longer attempt any other actions.
-   *
-   * We use this instead of `Boolean(state.nextOp)` because some operations may
-   * accidentally not set `state.nextOp`, so we need another way to know that we
-   * have found the next potential operation.
-   */
-  let readingFromStack = true;
+  const state: {
+    /**
+     * The tree of all found ops in the entire invocation.
+     */
+    allFoundOps: Record<string, TickOp>;
+
+    /**
+     * All synchronous operations found in this particular tick. The array is
+     * reset every tick.
+     */
+    tickOps: Record<string, TickOp>;
+
+    /**
+     * A hash of operations found within this tick, with keys being the hashed
+     * ops themselves (without a position) and the values being the number of
+     * times that op has been found.
+     *
+     * This is used to provide some mutation resilience to the op stack,
+     * allowing us to survive same-tick mutations of code by ensuring per-tick
+     * hashes are based on uniqueness rather than order.
+     */
+    tickOpHashes: Record<string, number>;
+
+    /**
+     * Tracks the current operation being processed. This can be used to
+     * understand the contextual parent of any recorded operations.
+     */
+    currentOp: TickOp | undefined;
+
+    /**
+     * If we've found a user function to run, we'll store it here so a component
+     * higher up can invoke and await it.
+     */
+    userFnToRun?: (...args: any[]) => any;
+
+    /**
+     * A boolean to represent whether the user's function is using any step
+     * tools.
+     *
+     * If the function survives an entire tick of the event loop and hasn't
+     * touched any tools, we assume that it is a single-step async function and
+     * should be awaited as usual.
+     */
+    hasUsedTools: boolean;
+
+    /**
+     * A function that should be used to reset the state of the tools after a
+     * tick has completed.
+     */
+    reset: () => void;
+  } = {
+    allFoundOps: {},
+    tickOps: {},
+    tickOpHashes: {},
+    currentOp: undefined,
+    hasUsedTools: false,
+    reset: () => {
+      state.tickOpHashes = {};
+      state.allFoundOps = { ...state.allFoundOps, ...state.tickOps };
+    },
+  };
+
+  // Start referencing everything
+  state.tickOps = state.allFoundOps;
 
   /**
-   * We use pos to ensure that hashes are unique for each step and a function
-   * will produce the same IDs and outputs every time.
-   *
-   * Each time attempt to fetch data for an operation, we increment this value
-   * and include it in the hash for that op.
+   * Create a unique hash of an operation using only a subset of the operation's
+   * properties; will never use `data` and will guarantee the order of the object
+   * so we don't rely on individual tools for that.
    */
-  let pos = 0;
+  const hashOp = (
+    /**
+     * The op to generate a hash from. We only use a subset of the op's properties
+     * when creating the hash.
+     */
+    op: Op
+  ): HashedOp => {
+    const obj = {
+      parent: state.currentOp?.id ?? null,
+      op: op.op,
+      name: op.name,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      opts: op.opts ?? null,
+    };
 
-  /**
-   * Perform a shallow clone of the opstack to ensure we're not removing
-   * elements from the original.
-   */
-  const opStack = { ..._opStack };
+    const collisionHash = _internals.hashData(obj);
 
-  /**
-   * Returns [true, any] if the next op matches the next past op.
-   *
-   * Returns [false, undefined] if the next op didn't match or we ran out of
-   * stack. In either case, we should run the next op.
-   */
-  const getNextPastOpData = (
-    op: HashedOp
-  ): [found: false, data: undefined] | [found: true, data: any] => {
-    const next: unknown = opStack[op.id];
-    // if the data is undefined, it hasn't ran.  Any other data, such
-    // as false, null, etc. indicates that the step has already ran as
-    // state was persisted.
-    return [next !== undefined, next as any];
+    const pos = (state.tickOpHashes[collisionHash] =
+      (state.tickOpHashes[collisionHash] ?? -1) + 1);
+
+    return {
+      ...op,
+      id: _internals.hashData({ pos, ...obj }),
+    };
   };
 
   /**
    * A local helper used to create tools that can be used to submit an op.
    *
-   * It will handle filling any data from the op stack and will provide tools to
-   * a given function to safely submit synchronous or asynchronous ops.
-   *
    * When using this function, a generic type should be provided which is the
    * function signature exposed to the user.
    */
-  const createTool = <T extends (...args: any[]) => any>(
+  const createTool = <T extends (...args: any[]) => Promise<any>>(
     /**
      * A function that returns an ID for this op. This is used to ensure that
      * the op stack is correctly filled, submitted, and retrieved with the same
@@ -101,116 +144,43 @@ export const createStepTools = <
        * Arguments passed by the user.
        */
       ...args: Parameters<T>
-    ) => Op,
+    ) => Omit<Op, "data" | "error">,
 
     /**
-     * Optionally, we can also provide a function that will be called with the
-     * data passed by the user in order to submit a new op.
+     * Optionally, we can also provide a function that will be called when
+     * Inngest tells us to run this operation.
      *
-     * By default - if this is not provided - this will be a simple function
-     * that runs the `submitOp()` tool passed to it.
+     * If this function is defined, the first time the tool is used it will
+     * report the desired operation (including options) to the Inngest. Inngest
+     * will then call back to the function to tell it to run the step and then
+     * retrieve data.
      *
-     * This is useful for tools that need to do some kind of async processing
-     * before submitting an op, or tools that need to adjust the op they're
-     * submitting.
+     * We do this in order to allow functionality such as per-step retries; this
+     * gives the SDK the opportunity to tell Inngest what it wants to do before
+     * it does it.
+     *
+     * This function is passed the arguments passed by the user. It will be run
+     * when we receive an operation matching this one that does not contain a
+     * `data` property.
      */
-    fn?: (
-      {
-        submitOp,
-      }: {
-        /**
-         * Use this to submit the next operation for the step function to
-         * Inngest.
-         *
-         * If the `fn` containing this parameter isn't defined, the entire
-         * function will default to just running this `submitOp` tool, so if
-         * that's all you're doing then you might not need to define this.
-         */
-        submitOp: (data?: Op["data"]) => void;
-      },
-      ...args: Parameters<T>
-    ) => any
+    fn?: (...args: Parameters<T>) => any
   ): T => {
-    return ((...args: Parameters<T>) => {
-      /**
-       * If we already have the next op to run, then we've already received
-       * output from another tool and should no longer continue.
-       */
-      if (!readingFromStack) {
-        throw new StepFlowInterrupt();
-      }
+    return ((...args: Parameters<T>): Promise<any> => {
+      state.hasUsedTools = true;
 
-      /**
-       * Fetch the next op to run from the tool we want to run.
-       */
-      const unhashedOpId: Op = matchOp(...args);
+      const opId = hashOp(matchOp(...args));
 
-      /**
-       * Hash the operation ID.
-       */
-      const opId: HashedOp = {
-        ...unhashedOpId,
-        id: hashOp(unhashedOpId, pos++),
-      };
-
-      const [found, data] = getNextPastOpData(opId);
-
-      if (found) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-        return data;
-      }
-
-      /**
-       * Set `readingFromStack` to false to indicate that we've found the next
-       * op to run.
-       */
-      readingFromStack = false;
-
-      const submitOp: Parameters<
-        NonNullable<Parameters<typeof createTool>[1]>
-      >[0]["submitOp"] = (...args) => {
-        state.nextOp = new Promise((resolve) => resolve(args[0])).then(
-          (data) => ({
-            ...opId,
-            ...(args.length ? { data } : {}),
-          })
-        );
-      };
-
-      /**
-       * If we've been passed a custom function to run in response to user data,
-       * run that now. That function will then be responsible for submitting an
-       * op.
-       *
-       * If we haven't been given this, simply submit the op.
-       */
-      if (fn) {
-        fn({ submitOp }, ...args);
-      } else {
-        submitOp();
-      }
-
-      /**
-       * If we've run the tool and it hasn't submitted an op, then we should
-       * throw. This is exceedingly unexpected and indicates that a tool has
-       * a bug.
-       */
-      if (!state.nextOp) {
-        throw new Error("No operation was submitted by a tool");
-      }
-
-      /**
-       * If we're here, we've attempted to use a tool and should therefore throw
-       * an error to stop the function from running.
-       */
-      throw new StepFlowInterrupt();
+      return new Promise<any>((resolve, reject) => {
+        state.tickOps[opId.id] = {
+          ...opId,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+          ...(fn ? { fn: () => fn(...args) } : {}),
+          resolve,
+          reject,
+          fulfilled: false,
+        };
+      });
     }) as T;
-  };
-
-  const state: {
-    nextOp: Promise<HashedOp> | undefined;
-  } = {
-    nextOp: undefined,
   };
 
   /**
@@ -220,6 +190,37 @@ export const createStepTools = <
    * a generic type for that function as it will appear in the user's code.
    */
   const tools = {
+    /**
+     * Send one or many events to Inngest. Should always be used in place of
+     * `inngest.send()` to ensure that the event send is successfully retried
+     * and not sent multiple times due to memoisation.
+     *
+     * @example
+     * ```ts
+     * await step.sendEvent("app/user.created", { data: { id: 123 } });
+     * ```
+     *
+     * Returns a promise that will resolve once the event has been sent.
+     */
+    sendEvent: createTool<
+      <Event extends keyof Events & string>(
+        name: Event,
+        payload: SingleOrArray<
+          PartialK<Omit<Events[Event], "name" | "v">, "ts">
+        >
+      ) => Promise<void>
+    >(
+      (name, _payload) => {
+        return {
+          op: StepOpCode.StepPlanned,
+          name,
+        };
+      },
+      (name, payload) => {
+        return client.send(name, payload);
+      }
+    ),
+
     /**
      * Wait for a particular event to be received before continuing. When the
      * event is received, it will be returned.
@@ -237,6 +238,7 @@ export const createStepTools = <
           ? IncomingEvent["name"]
           : never,
         opts:
+          | string
           | ((IncomingEvent extends keyof Events
               ? WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>
               : IncomingEvent extends EventPayload
@@ -251,9 +253,11 @@ export const createStepTools = <
               : never) & {
               match?: never;
             })
-      ) => IncomingEvent extends keyof Events
-        ? Events[IncomingEvent] | null
-        : IncomingEvent | null
+      ) => Promise<
+        IncomingEvent extends keyof Events
+          ? Events[IncomingEvent] | null
+          : IncomingEvent | null
+      >
     >(
       (
         /**
@@ -264,16 +268,18 @@ export const createStepTools = <
         /**
          * Options to control the event we're waiting for.
          */
-        opts: WaitForEventOpts<any, any>
+        opts: WaitForEventOpts<any, any> | string
       ) => {
         const matchOpts: { timeout: string; if?: string } = {
-          timeout: timeStr(opts.timeout),
+          timeout: timeStr(typeof opts === "string" ? opts : opts.timeout),
         };
 
-        if (opts?.match) {
-          matchOpts.if = `event.${opts.match} == async.${opts.match}`;
-        } else if (opts?.if) {
-          matchOpts.if = opts.if;
+        if (typeof opts !== "string") {
+          if (opts?.match) {
+            matchOpts.if = `event.${opts.match} == async.${opts.match}`;
+          } else if (opts?.if) {
+            matchOpts.if = opts.if;
+          }
         }
 
         return {
@@ -297,7 +303,7 @@ export const createStepTools = <
      * for next steps.
      */
     run: createTool<
-      <T extends (...args: any[]) => any>(
+      <T extends () => any>(
         /**
          * The name of this step as it will appear in the Inngest Cloud UI. This
          * is also used as a unique identifier for the step and should not match
@@ -314,21 +320,24 @@ export const createStepTools = <
          * for next steps.
          */
         fn: T
-      ) => T extends (...args: any[]) => Promise<infer U>
-        ? Awaited<U extends void ? null : U>
-        : ReturnType<T> extends void
-        ? null
-        : ReturnType<T>
+      ) => Promise<
+        Jsonify<
+          T extends () => Promise<infer U>
+            ? Awaited<U extends void ? null : U>
+            : ReturnType<T> extends void
+            ? null
+            : ReturnType<T>
+        >
+      >
     >(
       (name) => {
         return {
-          op: StepOpCode.RunStep,
+          op: StepOpCode.StepPlanned,
           name,
         };
       },
-      ({ submitOp }, _name, fn) => {
-        submitOp(fn());
-      }
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      (_, fn) => fn()
     ),
 
     /**
@@ -347,7 +356,7 @@ export const createStepTools = <
          * The amount of time to wait before continuing.
          */
         time: number | string
-      ) => void
+      ) => Promise<void>
     >((time) => {
       /**
        * The presence of this operation in the returned stack indicates that the
@@ -362,24 +371,39 @@ export const createStepTools = <
     /**
      * Wait until a particular date before continuing by passing a `Date`.
      *
-     * To wait for a particular amount of time, use `sleep` instead.
+     * To wait for a particular amount of time from now, always use `sleep`
+     * instead.
      */
     sleepUntil: createTool<
       (
         /**
          * The date to wait until before continuing.
          */
-        time: Date
-      ) => void
+        time: Date | string
+      ) => Promise<void>
     >((time) => {
+      const date = typeof time === "string" ? new Date(time) : time;
+
       /**
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
-      return {
-        op: StepOpCode.Sleep,
-        name: timeStr(time),
-      };
+      try {
+        return {
+          op: StepOpCode.Sleep,
+          name: date.toISOString(),
+        };
+      } catch (err) {
+        /**
+         * If we're here, it's because the date is invalid. We'll throw a custom
+         * error here to standardise this response.
+         */
+        console.warn("Invalid date or date string passed to sleepUntil;", err);
+
+        throw new Error(
+          `Invalid date or date string passed to sleepUntil: ${time.toString()}`
+        );
+      }
     }),
   };
 
@@ -412,7 +436,7 @@ interface WaitForEventOpts<
    * the step function will wait for another event.
    *
    * It must be a string of a dot-notation field name within both events to
-   * compare, e.g. `"date.id"` or `"user.email"`.
+   * compare, e.g. `"data.id"` or `"user.email"`.
    *
    * ```
    * // Wait for an event where the `user.email` field matches
@@ -445,28 +469,23 @@ interface WaitForEventOpts<
 }
 
 /**
- * Create a unique hash of an operation using only a subset of the operation's
- * properties; will never use `data` and will guarantee the order of the object
- * so we don't rely on individual tools for that.
+ * An operation ready to hash to be used to memoise step function progress.
+ *
+ * @internal
  */
-const hashOp = (
-  /**
-   * The op to generate a hash from. We only use a subset of the op's properties
-   * when creating the hash.
-   */
-  op: Op,
-
-  /**
-   * The position in the "stack" that this was called from. We use this to
-   * ensure that the hash is unique for each step and in-line with what we
-   * expect the stack to be.
-   */
-  pos: number
-): string => {
-  return (
-    sha1()
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      .update(sigmund({ pos, op: op.op, name: op.name, opts: op.opts }))
-      .digest("hex")
-  );
+export type UnhashedOp = {
+  name: string;
+  op: StepOpCode;
+  opts: Record<string, any> | null;
+  parent: string | null;
+  pos?: number;
 };
+
+const hashData = (op: UnhashedOp): string => {
+  return sha1().update(stringify(op)).digest("hex");
+};
+
+/**
+ * Exported for testing.
+ */
+export const _internals = { hashData };

@@ -2,6 +2,7 @@ export enum queryKeys {
   FnId = "fnId",
   StepId = "stepId",
   Introspect = "introspect",
+  DeployId = "deployId",
 }
 
 export enum envKeys {
@@ -15,6 +16,10 @@ export enum prodEnvKeys {
   NodeEnvKey = "NODE_ENV",
   VercelEnvKey = "VERCEL_ENV",
   NetlifyEnvKey = "CONTEXT",
+}
+
+export enum headerKeys {
+  Signature = "x-inngest-signature",
 }
 
 export const defaultDevServerHost = "http://127.0.0.1:8288/";
