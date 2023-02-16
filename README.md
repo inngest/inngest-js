@@ -121,7 +121,7 @@ inngest.send("app/user.signup", {
 
 - **Fully serverless:** Run background jobs, scheduled functions, and build event-driven systems without any servers, state, or setup
 - **Works with your framework**: Works with [Next.js, Redwood, Express, Cloudflare Pages, Nuxt, Fresh (Deno), and Remix](https://www.inngest.com/docs/sdk/serve?ref=github-inngest-js-readme)
-- **Deploy anywhere**: Keep [deploying to your existing platform](https://www.inngest.com/docs/deploy?ref=github-inngest-js-readme): Vercel, Netlify, Cloudflalre, Deno, Digital Ocean, etc.
+- **Deploy anywhere**: Keep [deploying to your existing platform](https://www.inngest.com/docs/deploy?ref=github-inngest-js-readme): Vercel, Netlify, Cloudflare, Deno, Digital Ocean, etc.
 - **Use your existing code:** Write functions within your current project and repo
 - **Fully typed**: Event schemas, versioning, and governance out of the box
 - **Observable**: A full UI for managing and inspecting your functions
