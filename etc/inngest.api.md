@@ -48,6 +48,10 @@ export type FailureEventPayload<P extends EventPayload> = {
 
 // @public
 export interface FunctionOptions {
+    // Warning: (ae-forgotten-export) The symbol "Cancel" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    cancel?: Cancel[];
     // (undocumented)
     fns?: Record<string, any>;
     id?: string;

@@ -527,6 +527,8 @@ export interface FunctionOptions {
     period: TimeStr;
   };
 
+  cancel?: Cancel[];
+
   /**
    * Specifies the maximum number of retries for all steps across this function.
    *
@@ -555,6 +557,36 @@ export interface FunctionOptions {
     | 19
     | 20;
 }
+
+export type Cancel = {
+  /**
+   * The name of the event that should cancel the function run.
+   */
+  event: string;
+
+  /**
+   * The expression that must evaluate to true in order to cancel the function run. There
+   * are two variables available in this expression:
+   * - event, referencing the original function's event trigger
+   * - async, referencing the new cancel event.
+   *
+   * @example
+   *
+   * Ensures the cancel event's data.user_id field matches the triggering event's data.user_id
+   * field:
+   *
+   * ```ts
+   * "async.data.user_id == event.data.user_id"
+   * ```
+   */
+  if?: string;
+
+  /**
+   * An optional timeout that the cancel is valid for.  If this isn't specified, cancellation
+   * triggers are valid for up to a year or until the function ends. 
+   */
+  timeout?: TimeStr
+};
 
 /**
  * Expected responses to be used within an `InngestCommHandler` in order to
