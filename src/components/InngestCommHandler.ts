@@ -114,7 +114,11 @@ const registerResSchema = z.object({
  *
  * @public
  */
-export class InngestCommHandler<H extends Handler, TransformedRes> {
+export class InngestCommHandler<
+  H extends Handler,
+  TransformedRes,
+  Opts extends RegisterOptions
+> {
   /**
    * The name of this serve handler, e.g. `"My App"`. It's recommended that this
    * value represents the overarching app/service that this set of functions is
@@ -131,7 +135,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    * The response transformer specified during instantiation of the class.
    */
   public readonly transformRes: (
-    res: ActionResponse,
+    actionRes: ActionResponse,
     ...args: Parameters<H>
   ) => TransformedRes;
 
@@ -222,6 +226,12 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    */
   private readonly fns: Record<string, InngestFunction<any>> = {};
 
+  /**
+   * If `true`, will stream the response back to Inngest as your functions are
+   * run.
+   */
+  private readonly stream: boolean;
+
   private allowExpiredSignatures: boolean;
 
   constructor(
@@ -257,7 +267,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       signingKey,
       serveHost,
       servePath,
-    }: RegisterOptions = {},
+      stream,
+    }: Opts = {} as Opts,
 
     /**
      * The `handler` is the function your framework requires to handle a
@@ -321,7 +332,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         : appNameOrInngest.name;
 
     this.handler = handler;
-    this.transformRes = transformRes;
+    this.transformRes = transformRes.bind(this);
 
     /**
      * Provide a hidden option to allow expired signatures to be accepted during
@@ -358,6 +369,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     this.showLandingPage = landingPage;
     this.serveHost = serveHost;
     this.servePath = servePath;
+    this.stream = Boolean(stream);
 
     this.headers = {
       "Content-Type": "application/json",
@@ -422,6 +434,11 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       // eslint-disable-next-line @typescript-eslint/await-thenable
       const actions = await timer.wrap("handler", () => this.handler(...args));
 
+      /**
+       * Now we know
+       */
+      // actions.run
+
       const actionRes = await timer.wrap("action", () =>
         this.handleAction(actions as ReturnType<Awaited<H>>, timer)
       );
@@ -445,10 +462,35 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     actions: ReturnType<H>,
     timer: ServerTiming
   ): Promise<ActionResponse> {
-    const getHeaders = () => ({
-      "x-inngest-sdk": this.sdkHeader.join(""),
-      "Server-Timing": timer.getHeader(),
-    });
+    const getHeaders = (
+      /**
+       * If unspecified (`undefined)`, will return all headers.
+       *
+       * If `true`, will return headers that should be sent at the end of a
+       * chunked body.
+       *
+       * If `false`, will return headers that should be sent at the beginning of
+       * a chunked body.
+       */
+      trailing?: boolean
+    ) => {
+      const allHeaders = Object.fromEntries(
+        Object.entries({
+          "x-inngest-sdk": { value: this.sdkHeader.join(""), trailing: false },
+          "Server-Timing": { value: timer.getHeader(), trailing: true },
+        } satisfies Record<string, { value: string; trailing: boolean }>).filter(
+          ([, value]) => {
+            return (
+              typeof trailing === "undefined" || value.trailing === trailing
+            );
+          }
+        )
+      );
+
+      return Object.fromEntries(
+        Object.entries(allHeaders).map(([key, val]) => [key, val.value])
+      );
+    };
 
     try {
       const runRes = await actions.run();
@@ -458,12 +500,38 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         this.upsertSigningKeyFromEnv(runRes.env);
         this.validateSignature(runRes.signature, runRes.data);
 
-        const stepRes = await this.runStep(
+        const stepResP = this.runStep(
           runRes.fnId,
           runRes.stepId,
           runRes.data,
           timer
         );
+
+        const stream = new ReadableStream({
+          start(controller) {
+            stepResP
+              .then((res) => {
+                controller.enqueue(
+                  res.status === 400 || res.status === 500
+                    ? res.error || ""
+                    : JSON.stringify(res.body)
+                );
+                controller.close();
+              })
+              .catch((err) => controller.error(err));
+          },
+        });
+
+        if (this.stream) {
+        }
+
+        /**
+         * If we should be streaming the response, we wish to return a response
+         * immediately. If not, wait for the step to complete first.
+         */
+        if (!this.stream) {
+          stepRes = await stepResP;
+        }
 
         if (stepRes.status === 500 || stepRes.status === 400) {
           return {
@@ -931,7 +999,7 @@ type Handler = (...args: any[]) => {
  * The response from the Inngest SDK before it is transformed in to a
  * framework-compatible response by an {@link InngestCommHandler} instance.
  */
-export interface ActionResponse {
+export interface ActionResponse<Body = string | ReadableStream> {
   /**
    * The HTTP status code to return.
    */
@@ -945,7 +1013,7 @@ export interface ActionResponse {
   /**
    * A stringified body to return.
    */
-  body: string;
+  body: Body;
 }
 
 /**

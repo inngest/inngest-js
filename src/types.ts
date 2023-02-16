@@ -411,6 +411,12 @@ export interface RegisterOptions {
    * To also provide a custom path, use `servePath`.
    */
   serveHost?: string;
+
+  /**
+   * If `true`, will stream the response back to Inngest as your functions are
+   * run.
+   */
+  stream?: boolean;
 }
 
 export type TriggerOptions<T extends string> =
