@@ -38,7 +38,7 @@ export interface FunctionOptions {
     };
 }
 
-// @public (undocumented)
+// @public
 export enum headerKeys {
     // (undocumented)
     SdkVersion = "x-inngest-sdk",
@@ -128,7 +128,7 @@ export class NonRetriableError extends Error {
     readonly cause?: any;
 }
 
-// @public (undocumented)
+// @public
 export enum queryKeys {
     // (undocumented)
     DeployId = "deployId",
