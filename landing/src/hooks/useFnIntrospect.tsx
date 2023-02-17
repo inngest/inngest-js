@@ -1,4 +1,5 @@
 import { useAsyncRetry } from "react-use";
+import { queryKeys } from "../../../src/helpers/consts";
 import {
   ExpectedIntrospection,
   FunctionConfigErr,
@@ -11,7 +12,7 @@ import {
 export const useIntrospect = () => {
   const state = useAsyncRetry(async () => {
     const url = new URL(window.location.href);
-    url.searchParams.set("introspect", "true");
+    url.searchParams.set(queryKeys.Introspect, "true");
 
     const res = await fetch(url);
     const result: ExpectedIntrospection = await res.json();

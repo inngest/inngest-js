@@ -446,7 +446,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     timer: ServerTiming
   ): Promise<ActionResponse> {
     const getHeaders = () => ({
-      "x-inngest-sdk": this.sdkHeader.join(""),
+      [headerKeys.SdkVersion]: this.sdkHeader.join(""),
       "Server-Timing": timer.getHeader(),
     });
 
@@ -781,7 +781,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     }
 
     if (deployId) {
-      registerURL.searchParams.set("deployId", deployId);
+      registerURL.searchParams.set(queryKeys.DeployId, deployId);
     }
 
     try {

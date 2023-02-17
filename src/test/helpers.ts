@@ -10,6 +10,7 @@ import { ulid } from "ulid";
 import { z } from "zod";
 import { Inngest } from "../components/Inngest";
 import { ServeHandler } from "../components/InngestCommHandler";
+import { headerKeys } from "../helpers/consts";
 import { version } from "../version";
 
 interface HandlerStandardReturn {
@@ -104,7 +105,7 @@ export const testFramework = (
    * Create a helper function for running tests against the given serve handler.
    */
   const run = async (
-    handlerOpts: Parameters<typeof handler["serve"]>,
+    handlerOpts: Parameters<(typeof handler)["serve"]>,
     reqOpts: Parameters<typeof httpMocks.createRequest>,
     env: Record<string, string | undefined> = {}
   ): Promise<HandlerStandardReturn> => {
@@ -198,7 +199,7 @@ export const testFramework = (
           status: 200,
           body: expect.stringContaining("<!DOCTYPE html>"),
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -214,7 +215,7 @@ export const testFramework = (
           status: 200,
           body: expect.stringContaining("<!DOCTYPE html>"),
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -228,7 +229,7 @@ export const testFramework = (
         expect(ret).toMatchObject({
           status: 405,
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -243,7 +244,7 @@ export const testFramework = (
         expect(ret).toMatchObject({
           status: 405,
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -257,7 +258,7 @@ export const testFramework = (
           status: 200,
           body: expect.stringContaining("<!DOCTYPE html>"),
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -270,7 +271,7 @@ export const testFramework = (
         expect(ret).toMatchObject({
           status: 405,
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -288,7 +289,7 @@ export const testFramework = (
         expect(ret).toMatchObject({
           status: 200,
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
 
@@ -328,7 +329,7 @@ export const testFramework = (
           expect(ret).toMatchObject({
             status: 200,
             headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+              [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
             }),
           });
 
@@ -366,7 +367,7 @@ export const testFramework = (
           expect(ret).toMatchObject({
             status: 200,
             headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+              [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
             }),
           });
 
