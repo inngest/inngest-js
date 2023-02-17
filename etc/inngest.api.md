@@ -38,6 +38,14 @@ export interface FunctionOptions {
     };
 }
 
+// @public (undocumented)
+export enum headerKeys {
+    // (undocumented)
+    SdkVersion = "x-inngest-sdk",
+    // (undocumented)
+    Signature = "x-inngest-signature"
+}
+
 // @public
 export class Inngest<Events extends Record<string, EventPayload>> {
     constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
@@ -118,6 +126,18 @@ export class NonRetriableError extends Error {
         cause?: any;
     });
     readonly cause?: any;
+}
+
+// @public (undocumented)
+export enum queryKeys {
+    // (undocumented)
+    DeployId = "deployId",
+    // (undocumented)
+    FnId = "fnId",
+    // (undocumented)
+    Introspect = "introspect",
+    // (undocumented)
+    StepId = "stepId"
 }
 
 // @public
