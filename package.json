@@ -85,6 +85,7 @@
     "np": "^7.6.1",
     "prettier": "^2.8.4",
     "shx": "^0.3.4",
+    "solid-start": "^0.2.21",
     "ts-jest": "^29.0.3",
     "type-plus": "^5.1.0",
     "typescript": "^4.9.4",

@@ -18,6 +18,7 @@
     "resolveJsonModule": true,
     "noUncheckedIndexedAccess": true,
     "strictNullChecks": true,
+    "jsx": "preserve",
     "paths": {
       "inngest": ["./src"]
     }
