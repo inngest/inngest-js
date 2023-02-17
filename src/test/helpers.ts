@@ -200,7 +200,7 @@ export const testFramework = (
           status: 200,
           body: expect.stringContaining("<!DOCTYPE html>"),
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -216,7 +216,7 @@ export const testFramework = (
           status: 200,
           body: expect.stringContaining("<!DOCTYPE html>"),
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -230,7 +230,7 @@ export const testFramework = (
         expect(ret).toMatchObject({
           status: 405,
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -245,7 +245,7 @@ export const testFramework = (
         expect(ret).toMatchObject({
           status: 405,
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -259,7 +259,7 @@ export const testFramework = (
           status: 200,
           body: expect.stringContaining("<!DOCTYPE html>"),
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -272,7 +272,7 @@ export const testFramework = (
         expect(ret).toMatchObject({
           status: 405,
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -290,7 +290,7 @@ export const testFramework = (
         expect(ret).toMatchObject({
           status: 200,
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
 
@@ -330,7 +330,7 @@ export const testFramework = (
           expect(ret).toMatchObject({
             status: 200,
             headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+              [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
             }),
           });
 
@@ -368,7 +368,7 @@ export const testFramework = (
           expect(ret).toMatchObject({
             status: 200,
             headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+              [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
             }),
           });
 

@@ -39,6 +39,14 @@ export interface FunctionOptions {
 }
 
 // @public
+export enum headerKeys {
+    // (undocumented)
+    SdkVersion = "x-inngest-sdk",
+    // (undocumented)
+    Signature = "x-inngest-signature"
+}
+
+// @public
 export class Inngest<Events extends Record<string, EventPayload>> {
     constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
     // Warning: (ae-forgotten-export) The symbol "TriggerOptions" needs to be exported by the entry point index.d.ts
@@ -118,6 +126,18 @@ export class NonRetriableError extends Error {
         cause?: any;
     });
     readonly cause?: any;
+}
+
+// @public
+export enum queryKeys {
+    // (undocumented)
+    DeployId = "deployId",
+    // (undocumented)
+    FnId = "fnId",
+    // (undocumented)
+    Introspect = "introspect",
+    // (undocumented)
+    StepId = "stepId"
 }
 
 // @public
