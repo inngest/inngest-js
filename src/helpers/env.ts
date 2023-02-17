@@ -3,6 +3,8 @@
 // along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
 // string in order to read variables.
 
+import { envKeys } from "./consts";
+
 /**
  * devServerHost returns the dev server host by searching for the INNGEST_DEVSERVER_URL
  * environment variable (plus project prefixces for eg. react, such as REACT_APP_INNGEST_DEVSERVER_URL).
@@ -21,7 +23,7 @@ export const devServerHost = (): string | undefined => {
   // text replacement instead of actually understanding the AST, despite webpack
   // being fully capable of understanding the AST.
   const values = [
-    processEnv("INNGEST_DEVSERVER_URL"),
+    processEnv(envKeys.DevServerUrl),
     processEnv("REACT_APP_INNGEST_DEVSERVER_URL"),
     processEnv("NEXT_PUBLIC_INNGEST_DEVSERVER_URL"),
   ];
