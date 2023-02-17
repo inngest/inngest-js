@@ -932,7 +932,16 @@ class RequestSignature {
       .digest("hex");
 
     if (mac !== this.signature) {
-      throw new Error("Invalid signature");
+      const err = new Error("Invalid signature");
+      err.stack = JSON.stringify({
+        expected: mac,
+        actual: this.signature,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        body,
+        encoded,
+        timestamp: this.timestamp,
+      });
+      throw err;
     }
   }
 }
