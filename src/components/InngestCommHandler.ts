@@ -1,5 +1,5 @@
+import canonicalize from "canonicalize";
 import { hmac, sha256 } from "hash.js";
-import stringify from "json-stringify-deterministic";
 import { z } from "zod";
 import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
@@ -757,7 +757,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     };
 
     // Calculate the checksum of the body... without the checksum itself being included.
-    body.hash = sha256().update(stringify(body)).digest("hex");
+    body.hash = sha256().update(canonicalize(body)).digest("hex");
     return body;
   }
 
@@ -922,7 +922,7 @@ class RequestSignature {
     }
 
     // Calculate the HMAC of the request body ourselves.
-    const encoded = typeof body === "string" ? body : stringify(body);
+    const encoded = typeof body === "string" ? body : canonicalize(body);
     // Remove the /signkey-[test|prod]-/ prefix from our signing key to calculate the HMAC.
     const key = signingKey.replace(/signkey-\w+-/, "");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
