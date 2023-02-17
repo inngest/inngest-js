@@ -57,6 +57,8 @@ export const testFramework = (
      * If the function returns an array, the array will be used as args to the
      * serve handler. If it returns void, the default request and response args
      * will be used.
+     * Can also return a function which will be run the send the request in case
+     * the handler requires even more setup or local context.
      *
      * Returning void is useful if you need to make environment changes but
      * are still fine with the default behaviour past that point.
@@ -64,8 +66,9 @@ export const testFramework = (
     transformReq?: (
       req: Request,
       res: Response,
-      env: Record<string, string | undefined>
-    ) => any[] | void;
+      env: Record<string, string | undefined>,
+      handler: any
+    ) => any[] | void | (() => any);
 
     /**
      * Specify a transformer for a given response, which will be used to
@@ -104,7 +107,7 @@ export const testFramework = (
    * Create a helper function for running tests against the given serve handler.
    */
   const run = async (
-    handlerOpts: Parameters<typeof handler["serve"]>,
+    handlerOpts: Parameters<(typeof handler)["serve"]>,
     reqOpts: Parameters<typeof httpMocks.createRequest>,
     env: Record<string, string | undefined> = {}
   ): Promise<HandlerStandardReturn> => {
@@ -132,8 +135,12 @@ export const testFramework = (
       envToPass = { ...process.env };
     }
 
-    const args = opts?.transformReq?.(req, res, envToPass) ?? [req, res];
-    const ret = await serveHandler(...args);
+    const args = opts?.transformReq?.(req, res, envToPass, serveHandler) ?? [
+      req,
+      res,
+    ];
+
+    const ret = await (Array.isArray(args) ? serveHandler(...args) : args());
 
     return (
       opts?.transformRes?.(res, ret) ?? {
