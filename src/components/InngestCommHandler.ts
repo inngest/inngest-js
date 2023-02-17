@@ -934,8 +934,8 @@ class RequestSignature {
     if (mac !== this.signature) {
       const err = new Error("Invalid signature");
       err.stack = JSON.stringify({
-        expected: mac,
-        actual: this.signature,
+        expected: this.signature,
+        actual: mac,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         body,
         encoded,
