@@ -55,6 +55,7 @@ jobs:
           - inngest/sdk-example-nextjs-netlify
           - inngest/sdk-example-remix-vercel
           - inngest/sdk-example-nuxt-vercel
+          - inngest/sdk-example-solidstart-vercel
     steps:
       # Checkout the repo
       - name: Checkout SDK
