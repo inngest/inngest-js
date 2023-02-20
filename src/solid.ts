@@ -34,9 +34,12 @@ export const serve: ServeHandler = (nameOrInngest, functions, opts) => {
       ...opts,
     },
     (method: "GET" | "POST" | "PUT", event: Parameters<ApiHandler>[0]) => {
-      const isProduction = Boolean(event.env.manifest);
       const env = allProcessEnv();
-      const scheme = isProduction ? "https" : "http";
+      const isProduction =
+        env.VERCEL_ENV === "production" ||
+        env.CONTEXT === "production" ||
+        env.ENVIRONMENT === "production";
+      const scheme = env.NODE_ENV === "development" ? "http" : "https";
       const url = new URL(
         event.request.url,
         `${scheme}://${event.request.headers.get("Host") || ""}`
