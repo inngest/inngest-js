@@ -78,8 +78,8 @@ jobs:
       - name: Prepare SDK for linking
         run: yarn prelink
         working-directory: sdk
-      - name: Create link to SDK
-        run: yarn link
+      - name: Pack SDK
+        run: yarn pack
         working-directory: sdk/dist
 
       # If we find a deno.json file in the example repo, we need to pull Deno on
@@ -127,13 +127,10 @@ jobs:
           if test -f deno.json; then
             deno run --allow-read --allow-write ../../../sdk/deno_compat/link.ts
           else
-            yarnv=$(volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn -v)
-
-            if [[ $yarnv == 3* ]]; then
-              touch ../../../sdk/dist/yarn.lock
-              yarn link ../../../sdk/dist
-            else
-              volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
+            if test -f yarn.lock; then
+              yarn add $(find ../../../sdk/dist/ -type f -name *.tgz)
+            elif test -f package-lock.json; then
+              npm install $(find ../../../sdk/dist/ -type f -name *.tgz)
             fi
           fi
         working-directory: examples/${{ matrix.repo }}
