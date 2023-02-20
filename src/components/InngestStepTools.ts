@@ -15,8 +15,8 @@ import { Inngest } from "./Inngest";
 export interface TickOp extends HashedOp {
   fn?: (...args: any[]) => any;
   fulfilled: boolean;
-  resolve: (value: any | PromiseLike<any>) => void;
-  reject: (reason?: any) => void;
+  resolve?: (value: any | PromiseLike<any>) => void;
+  reject?: (reason?: any) => void;
 }
 
 /**
@@ -63,12 +63,6 @@ export const createStepTools = <
     currentOp: TickOp | undefined;
 
     /**
-     * If we've found a user function to run, we'll store it here so a component
-     * higher up can invoke and await it.
-     */
-    userFnToRun?: (...args: any[]) => any;
-
-    /**
      * A boolean to represent whether the user's function is using any step
      * tools.
      *
@@ -83,6 +77,18 @@ export const createStepTools = <
      * tick has completed.
      */
     reset: () => void;
+
+    /**
+     * A boolean to represent whether this is the final memoization loop that
+     * the tools will run in. This is used to ensure we can run local commands
+     * such as `console.log()` an appropriate times without delay.
+     *
+     * This should be set externally by `InngestFunction` during the final
+     * memoization. If a step is to be run in this execution, it should be set
+     * to `true` just before running the step, allowing any logs inside the
+     * function to run.
+     */
+    allowLogs: boolean;
   } = {
     allFoundOps: {},
     tickOps: {},
@@ -93,6 +99,7 @@ export const createStepTools = <
       state.tickOpHashes = {};
       state.allFoundOps = { ...state.allFoundOps, ...state.tickOps };
     },
+    allowLogs: false,
   };
 
   // Start referencing everything
@@ -462,7 +469,63 @@ export const createStepTools = <
     }),
   };
 
-  return [tools, state] as [typeof tools, typeof state];
+  const proxiedConsoleKeys = new Set<keyof typeof console>([
+    "debug",
+    "error",
+    "info",
+    "log",
+    "trace",
+    "warn",
+  ]);
+
+  const consoleLogger = new Proxy(console, {
+    get: (target, p, _receiver) => {
+      const key = p as keyof typeof target;
+
+      const isProxiedKey = proxiedConsoleKeys.has(key);
+      if (!isProxiedKey) {
+        return target[key];
+      }
+
+      return (...data: any[]): void => {
+        /**
+         * TODO This likely shouldn't count as a tool. We also need to support
+         * single-action functions here that don't use step tooling, in which
+         * case we probably want to send logs back to the server with the final
+         * payload.
+         *
+         * Once we add streaming, we can send these back live.
+         */
+        // state.hasUsedTools = true;
+
+        const op = hashOp({
+          op: StepOpCode.Log,
+          name: key,
+          data,
+        });
+
+        state.tickOps[op.id] = {
+          ...op,
+          fulfilled: true,
+        };
+
+        /**
+         * Introspect state and understand if we're on the final loop. If so,
+         * make sure to log live here so that dev logs appear as expected.
+         *
+         * If we defer this until later, they might appear out of order compared
+         * to other logs in the user's codebase, so we must log them as soon as
+         * possible.
+         */
+        if (state.allowLogs) {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          (target[key] as typeof console.log)(...data);
+        }
+      };
+    },
+  });
+
+  return [tools, state, consoleLogger] as const;
 };
 
 /**

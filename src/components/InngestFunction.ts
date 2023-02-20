@@ -173,7 +173,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      * user's function has run, we can check the mutated state of these to see
      * if an op has been submitted or not.
      */
-    const [tools, state] = createStepTools(this.#client);
+    const [tools, state, consoleLogger] = createStepTools(this.#client);
 
     /**
      * Create args to pass in to our function. We blindly pass in the data and
@@ -183,6 +183,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       ...(data as EventData<string>),
       tools,
       step: tools,
+      console: consoleLogger,
     } as Partial<HandlerArgs<any, any, any>>;
 
     /**
@@ -206,6 +207,10 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       }, {});
     }
 
+    if (opStack.length === 0 && !runStep) {
+      state.allowLogs = true;
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
     const userFnPromise = new Promise(async (resolve, reject) => {
       try {
@@ -218,6 +223,10 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     let pos = -1;
 
     do {
+      if (!runStep && pos === opStack.length - 1) {
+        state.allowLogs = true;
+      }
+
       if (pos >= 0) {
         state.tickOps = {};
         const incomingOp = opStack[pos] as IncomingOp;
@@ -232,9 +241,9 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         state.currentOp.fulfilled = true;
 
         if (typeof incomingOp.data !== "undefined") {
-          state.currentOp.resolve(incomingOp.data);
+          state.currentOp.resolve?.(incomingOp.data);
         } else {
-          state.currentOp.reject(incomingOp.error);
+          state.currentOp.reject?.(incomingOp.error);
         }
       }
 
@@ -257,6 +266,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       }
 
       const runningStepStop = timer.start("running-step");
+      state.allowLogs = true;
 
       const result = await new Promise((resolve) => {
         return resolve(userFnToRun());
