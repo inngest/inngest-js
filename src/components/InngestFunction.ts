@@ -94,7 +94,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
 
-    const { retries: attempts, ...opts } = this.#opts;
+    const { retries: attempts, fns: _, ...opts } = this.#opts;
 
     /**
      * Convert retries into the format required when defining function
