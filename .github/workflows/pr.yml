@@ -203,16 +203,19 @@ jobs:
         env:
           PORT: 3000
           DO_NOT_TRACK: 1
-      - name: Wait for the example to start
-        uses: mydea/action-wait-for-api@v1
-        with:
-          url: "http://localhost:3000/api/inngest"
-          timeout: "60"
 
-      # Give the dev server 5 seconds to register with the example
-      # TODO Check logs instead of sleeping
-      - name: Wait 5 seconds for dev server registration
-        run: sleep 5
+      - name: Wait 30 seconds
+        run: sleep 30
+      # - name: Wait for the example to start
+      #   uses: mydea/action-wait-for-api@v1
+      #   with:
+      #     url: "http://localhost:3000/api/inngest"
+      #     timeout: "60"
+
+      # # Give the dev server 5 seconds to register with the example
+      # # TODO Check logs instead of sleeping
+      # - name: Wait 5 seconds for dev server registration
+      #   run: sleep 5
 
       # Run the examples test suite against the dev server
       - name: Run integration test suite
