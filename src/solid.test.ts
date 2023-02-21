@@ -1,3 +1,4 @@
+import { Headers } from "cross-fetch";
 import * as SolidHandler from "./solid";
 import { testFramework } from "./test/helpers";
 
