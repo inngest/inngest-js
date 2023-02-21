@@ -1,3 +1,4 @@
+import canonicalize from "canonicalize";
 import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
 import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
@@ -756,7 +757,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     };
 
     // Calculate the checksum of the body... without the checksum itself being included.
-    body.hash = sha256().update(JSON.stringify(body)).digest("hex");
+    body.hash = sha256().update(canonicalize(body)).digest("hex");
     return body;
   }
 
@@ -851,9 +852,31 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     sig: string | undefined,
     body: Record<string, any>
   ): void {
-    /**
-     * Disabled until this has an integration test using raw buffers.
-     */
+    if (this.isProd && !sig) {
+      throw new Error(`No ${headerKeys.Signature} provided`);
+    }
+
+    if (!this.isProd && !this.signingKey) {
+      return;
+    }
+
+    if (!this.signingKey) {
+      console.warn(
+        "No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets"
+      );
+      return;
+    }
+
+    if (!sig) {
+      console.warn(`No ${headerKeys.Signature} provided`);
+      return;
+    }
+
+    new RequestSignature(sig).verifySignature({
+      body,
+      allowExpiredSignatures: this.allowExpiredSignatures,
+      signingKey: this.signingKey,
+    });
   }
 
   protected signResponse(): string {
@@ -899,7 +922,10 @@ class RequestSignature {
     }
 
     // Calculate the HMAC of the request body ourselves.
-    const encoded = typeof body === "string" ? body : JSON.stringify(body);
+    // We make the assumption here that a stringified body is the same as the
+    // raw bytes; it may be pertinent in the future to always parse, then
+    // canonicalize the body to ensure it's consistent.
+    const encoded = typeof body === "string" ? body : canonicalize(body);
     // Remove the /signkey-[test|prod]-/ prefix from our signing key to calculate the HMAC.
     const key = signingKey.replace(/signkey-\w+-/, "");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
