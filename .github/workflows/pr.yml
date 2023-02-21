@@ -127,10 +127,18 @@ jobs:
           if test -f deno.json; then
             deno run --allow-read --allow-write ../../../sdk/deno_compat/link.ts
           else
+            pathprefix=.
+
+            if test -f .inngest.integration; then
+              origpath=$(pwd)
+              cd $(jq -r '.install_dir // "."' .inngest.integration)
+              pathprefix=$(realpath --relative-to=. $origpath)
+            fi
+
             if test -f yarn.lock; then
-              yarn add $(find ../../../sdk/dist/ -type f -name *.tgz)
+              yarn add $(find $pathprefix/../../../sdk/dist/ -type f -name *.tgz)
             elif test -f package-lock.json; then
-              npm install $(find ../../../sdk/dist/ -type f -name *.tgz)
+              npm install $(find $pathprefix/../../../sdk/dist/ -type f -name *.tgz)
             fi
           fi
         working-directory: examples/${{ matrix.repo }}
