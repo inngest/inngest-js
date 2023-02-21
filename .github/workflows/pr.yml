@@ -46,6 +46,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
         repo:
           - inngest/sdk-example-cloudflare-workers
@@ -55,6 +56,7 @@ jobs:
           - inngest/sdk-example-nextjs-netlify
           - inngest/sdk-example-remix-vercel
           - inngest/sdk-example-nuxt-vercel
+          - inngest/sdk-example-solidstart-vercel
     steps:
       # Checkout the repo
       - name: Checkout SDK
@@ -77,8 +79,8 @@ jobs:
       - name: Prepare SDK for linking
         run: yarn prelink
         working-directory: sdk
-      - name: Create link to SDK
-        run: yarn link
+      - name: Pack SDK
+        run: yarn pack
         working-directory: sdk/dist
 
       # If we find a deno.json file in the example repo, we need to pull Deno on
@@ -126,13 +128,18 @@ jobs:
           if test -f deno.json; then
             deno run --allow-read --allow-write ../../../sdk/deno_compat/link.ts
           else
-            yarnv=$(volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn -v)
+            pathprefix=.
 
-            if [[ $yarnv == 3* ]]; then
-              touch ../../../sdk/dist/yarn.lock
-              yarn link ../../../sdk/dist
-            else
-              volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
+            if test -f .inngest.integration; then
+              origpath=$(pwd)
+              cd $(jq -r '.install_dir // "."' .inngest.integration)
+              pathprefix=$(realpath --relative-to=. $origpath)
+            fi
+
+            if test -f yarn.lock; then
+              yarn add $(find $pathprefix/../../../sdk/dist/ -type f -name *.tgz)
+            elif test -f package-lock.json; then
+              npm install $(find $pathprefix/../../../sdk/dist/ -type f -name *.tgz)
             fi
           fi
         working-directory: examples/${{ matrix.repo }}
@@ -186,27 +193,32 @@ jobs:
       - name: Run the example's dev server
         run: |
           if test -f yarn.lock; then
-            (yarn dev > dev.log 2>&1 &)
+            (nohup yarn dev > dev.log 2>&1 &)
           elif test -f package-lock.json; then
-            (npm run dev > dev.log 2>&1 &)
+            (nohup npm run dev > dev.log 2>&1 &)
           else
-            (deno task start > dev.log 2>&1 &)
+            (nohup deno task start > dev.log 2>&1 &)
           fi
         working-directory: examples/${{ matrix.repo }}
         # Provide the example any env vars it might need
         env:
           PORT: 3000
           DO_NOT_TRACK: 1
+
+
       - name: Wait for the example to start
         uses: mydea/action-wait-for-api@v1
         with:
-          url: "http://localhost:3000/api/inngest"
+          url: "http://127.0.0.1:3000/api/inngest"
           timeout: "60"
 
-      # Give the dev server 5 seconds to register with the example
-      # TODO Check logs instead of sleeping
-      - name: Wait 5 seconds for dev server registration
-        run: sleep 5
+      # # Give the dev server 5 seconds to register with the example
+      # # TODO Check logs instead of sleeping
+      # - name: Wait 5 seconds for dev server registration
+      #   run: sleep 5
+
+      - if: ${{ always() }}
+        run: lsof -i :3000
 
       # Run the examples test suite against the dev server
       - name: Run integration test suite
