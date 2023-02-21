@@ -922,6 +922,9 @@ class RequestSignature {
     }
 
     // Calculate the HMAC of the request body ourselves.
+    // We make the assumption here that a stringified body is the same as the
+    // raw bytes; it may be pertinent in the future to always parse, then
+    // canonicalize the body to ensure it's consistent.
     const encoded = typeof body === "string" ? body : canonicalize(body);
     // Remove the /signkey-[test|prod]-/ prefix from our signing key to calculate the HMAC.
     const key = signingKey.replace(/signkey-\w+-/, "");
@@ -932,16 +935,7 @@ class RequestSignature {
       .digest("hex");
 
     if (mac !== this.signature) {
-      const err = new Error("Invalid signature");
-      err.stack = JSON.stringify({
-        expected: this.signature,
-        actual: mac,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        body,
-        encoded,
-        timestamp: this.timestamp,
-      });
-      throw err;
+      throw new Error("Invalid signature");
     }
   }
 }
