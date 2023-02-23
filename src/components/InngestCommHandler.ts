@@ -892,6 +892,14 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     return "";
   }
 
+  /**
+   * Log to stdout/stderr if the log level is set to include the given level.
+   * The default log level is `"info"`.
+   *
+   * This is an abstraction over `console.log` and will try to use the correct
+   * method for the given log level.  For example, `log("error", "foo")` will
+   * call `console.error("foo")`.
+   */
   protected log(level: LogLevel, ...args: any[]) {
     const logLevels: LogLevel[] = [
       "debug",

@@ -75,7 +75,7 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     constructor(
     frameworkName: string,
     appNameOrInngest: string | Inngest<any>,
-    functions: InngestFunction<any>[], { inngestRegisterUrl, fetch, landingPage, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
+    functions: InngestFunction<any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
     handler: H,
     transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
@@ -86,6 +86,8 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     protected readonly frameworkName: string;
     readonly handler: H;
     protected _isProd: boolean;
+    protected log(level: LogLevel, ...args: any[]): void;
+    protected readonly logLevel: LogLevel;
     readonly name: string;
     // (undocumented)
     protected register(url: URL, devServerHost: string | undefined, deployId?: string | undefined | null): Promise<{
@@ -121,6 +123,9 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
 }
 
 // @public
+export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
+
+// @public
 export class NonRetriableError extends Error {
     constructor(message: string, options?: {
         cause?: any;
@@ -145,6 +150,7 @@ export interface RegisterOptions {
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
     landingPage?: boolean;
+    logLevel?: LogLevel;
     serveHost?: string;
     servePath?: string;
     signingKey?: string;
