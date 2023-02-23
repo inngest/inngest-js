@@ -901,10 +901,18 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       "fatal",
       "silent",
     ];
+
     const logLevelSetting = logLevels.indexOf(this.logLevel);
     const currentLevel = logLevels.indexOf(level);
+
     if (currentLevel >= logLevelSetting) {
-      console.log(`inngest ${level as string}: `, ...(args as unknown[]));
+      let logger = console.log;
+
+      if (Object.hasOwnProperty.call(console, level)) {
+        logger = console[level as keyof typeof console] as typeof logger;
+      }
+
+      logger(`inngest ${level as string}: `, ...(args as unknown[]));
     }
   }
 }
