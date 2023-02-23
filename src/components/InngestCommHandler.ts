@@ -12,6 +12,7 @@ import {
   FunctionConfig,
   IncomingOp,
   IntrospectRequest,
+  LogLevel,
   RegisterOptions,
   RegisterRequest,
   StepRunResponse,
@@ -218,6 +219,11 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected readonly servePath: string | undefined;
 
   /**
+   * The minimum level to log from the Inngest serve handler.
+   */
+  protected readonly logLevel: LogLevel;
+
+  /**
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
    */
@@ -255,6 +261,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       inngestRegisterUrl,
       fetch,
       landingPage,
+      logLevel = "info",
       signingKey,
       serveHost,
       servePath,
@@ -359,6 +366,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     this.showLandingPage = landingPage;
     this.serveHost = serveHost;
     this.servePath = servePath;
+    this.logLevel = logLevel;
 
     this.headers = {
       "Content-Type": "application/json",
@@ -796,7 +804,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         redirect: "follow",
       });
     } catch (err: unknown) {
-      console.error(err);
+      this.log("error", err);
 
       return {
         status: 500,
@@ -813,7 +821,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data = await res.json();
     } catch (err) {
-      console.warn("Couldn't unpack register response:", err);
+      this.log("warn", "Couldn't unpack register response:", err);
     }
     const { status, error, skipped } = registerResSchema.parse(data);
 
@@ -823,7 +831,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     // during registration with the body of the current functions and refuse
     // to register if the functions are the same.
     if (!skipped) {
-      console.log(
+      this.log(
+        "debug",
         "registered inngest functions:",
         res.status,
         res.statusText,
@@ -861,14 +870,15 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     }
 
     if (!this.signingKey) {
-      console.warn(
+      this.log(
+        "warn",
         "No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets"
       );
       return;
     }
 
     if (!sig) {
-      console.warn(`No ${headerKeys.Signature} provided`);
+      this.log("warn", `No ${headerKeys.Signature} provided`);
       return;
     }
 
@@ -881,6 +891,38 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
   protected signResponse(): string {
     return "";
+  }
+
+  /**
+   * Log to stdout/stderr if the log level is set to include the given level.
+   * The default log level is `"info"`.
+   *
+   * This is an abstraction over `console.log` and will try to use the correct
+   * method for the given log level.  For example, `log("error", "foo")` will
+   * call `console.error("foo")`.
+   */
+  protected log(level: LogLevel, ...args: any[]) {
+    const logLevels: LogLevel[] = [
+      "debug",
+      "info",
+      "warn",
+      "error",
+      "fatal",
+      "silent",
+    ];
+
+    const logLevelSetting = logLevels.indexOf(this.logLevel);
+    const currentLevel = logLevels.indexOf(level);
+
+    if (currentLevel >= logLevelSetting) {
+      let logger = console.log;
+
+      if (Object.hasOwnProperty.call(console, level)) {
+        logger = console[level as keyof typeof console] as typeof logger;
+      }
+
+      logger(`inngest ${level as string}: `, ...(args as unknown[]));
+    }
   }
 }
 
