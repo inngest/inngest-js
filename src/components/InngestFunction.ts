@@ -391,11 +391,22 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
 }
 
 const tickOpToOutgoing = (op: TickOp): OutgoingOp => {
-  return {
+  const outgoingOp: OutgoingOp = {
     op: op.op,
     id: op.id,
     name: op.name,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     opts: op.opts,
   };
+
+  /**
+   * Some ops (such as logs) return data immediately; make sure we add that here
+   * if we have a non-undefined data value.
+   */
+  if (typeof op.data !== "undefined") {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    outgoingOp.data = op.data;
+  }
+
+  return outgoingOp;
 };
