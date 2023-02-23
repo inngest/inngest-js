@@ -1,4 +1,0 @@
-[submodule "examples/nextjs-netlify"]
-	path = examples/nextjs-netlify
-	url = https://github.com/inngest/sdk-example-nextjs-netlify
-	branch = main

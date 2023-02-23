@@ -2,7 +2,7 @@ import {
   InngestCommHandler,
   ServeHandler,
 } from "./components/InngestCommHandler";
-import { queryKeys } from "./helpers/consts";
+import { headerKeys, queryKeys } from "./helpers/consts";
 
 /**
  * In Cloudflare, serve and register any declared functions with Inngest, making
@@ -60,10 +60,12 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
           if (req.method === "POST") {
             return {
               fnId: url.searchParams.get(queryKeys.FnId) as string,
+              stepId: url.searchParams.get(queryKeys.StepId) as string,
               data: (await req.json()) as Record<string, any>,
               env,
               isProduction,
               url,
+              signature: req.headers.get(headerKeys.Signature) || undefined,
             };
           }
         },

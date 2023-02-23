@@ -8,8 +8,10 @@ import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ulid } from "ulid";
 import { z } from "zod";
+import { Inngest } from "../components/Inngest";
 import { ServeHandler } from "../components/InngestCommHandler";
-import { createFunction } from "../helpers/func";
+import { InngestFunction } from "../components/InngestFunction";
+import { headerKeys } from "../helpers/consts";
 import { version } from "../version";
 
 interface HandlerStandardReturn {
@@ -25,6 +27,8 @@ const createReqRes = (...args: Parameters<typeof httpMocks.createRequest>) => {
 
   return [req, res] as [typeof req, typeof res];
 };
+
+const inngest = new Inngest({ name: "test", eventKey: "event-key-123" });
 
 export const testFramework = (
   /**
@@ -102,7 +106,7 @@ export const testFramework = (
    * Create a helper function for running tests against the given serve handler.
    */
   const run = async (
-    handlerOpts: Parameters<typeof handler["serve"]>,
+    handlerOpts: Parameters<(typeof handler)["serve"]>,
     reqOpts: Parameters<typeof httpMocks.createRequest>,
     env: Record<string, string | undefined> = {}
   ): Promise<HandlerStandardReturn> => {
@@ -196,7 +200,7 @@ export const testFramework = (
           status: 200,
           body: expect.stringContaining("<!DOCTYPE html>"),
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -212,7 +216,7 @@ export const testFramework = (
           status: 200,
           body: expect.stringContaining("<!DOCTYPE html>"),
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -226,7 +230,7 @@ export const testFramework = (
         expect(ret).toMatchObject({
           status: 405,
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -241,7 +245,7 @@ export const testFramework = (
         expect(ret).toMatchObject({
           status: 405,
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -255,7 +259,7 @@ export const testFramework = (
           status: 200,
           body: expect.stringContaining("<!DOCTYPE html>"),
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -268,7 +272,7 @@ export const testFramework = (
         expect(ret).toMatchObject({
           status: 405,
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
       });
@@ -286,7 +290,7 @@ export const testFramework = (
         expect(ret).toMatchObject({
           status: 200,
           headers: expect.objectContaining({
-            "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+            [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
           }),
         });
 
@@ -326,7 +330,7 @@ export const testFramework = (
           expect(ret).toMatchObject({
             status: 200,
             headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+              [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
             }),
           });
 
@@ -364,7 +368,7 @@ export const testFramework = (
           expect(ret).toMatchObject({
             status: 200,
             headers: expect.objectContaining({
-              "x-inngest-sdk": expect.stringContaining("inngest-js:v"),
+              [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
             }),
           });
 
@@ -391,7 +395,11 @@ export const testFramework = (
               status: 200,
             });
 
-          const fn1 = createFunction("fn1", "demo/event.sent", () => "fn1");
+          const fn1 = inngest.createFunction(
+            "fn1",
+            "demo/event.sent",
+            () => "fn1"
+          );
           const serveHost = "https://example.com";
           const stepId = "step";
 
@@ -427,7 +435,11 @@ export const testFramework = (
               status: 200,
             });
 
-          const fn1 = createFunction("fn1", "demo/event.sent", () => "fn1");
+          const fn1 = inngest.createFunction(
+            "fn1",
+            "demo/event.sent",
+            () => "fn1"
+          );
           const servePath = "/foo/bar/inngest/endpoint";
           const stepId = "step";
 
@@ -464,7 +476,11 @@ export const testFramework = (
             status: 200,
           });
 
-        const fn1 = createFunction("fn1", "demo/event.sent", () => "fn1");
+        const fn1 = inngest.createFunction(
+          "fn1",
+          "demo/event.sent",
+          () => "fn1"
+        );
         const serveHost = "https://example.com";
         const servePath = "/foo/bar/inngest/endpoint";
         const stepId = "step";
@@ -495,7 +511,121 @@ export const testFramework = (
     });
 
     describe("POST (run function)", () => {
-      test.todo("...");
+      describe("signature validation", () => {
+        const fn = new InngestFunction(
+          new Inngest({ name: "test" }),
+          { name: "Test", id: "test" },
+          { event: "demo/event.sent" },
+          () => "fn"
+        );
+        const env = {
+          DENO_DEPLOYMENT_ID: "1",
+          NODE_ENV: "production",
+          ENVIRONMENT: "production",
+        };
+        test("should throw an error in prod with no signature", async () => {
+          const ret = await run(
+            ["Test", [fn], { signingKey: "test" }],
+            [{ method: "POST", headers: {} }],
+            env
+          );
+          expect(ret.status).toEqual(500);
+          expect(JSON.parse(ret.body)).toMatchObject({
+            type: "internal",
+            message: expect.stringContaining(
+              `No ${headerKeys.Signature} provided`
+            ),
+          });
+        });
+        test("should throw an error with an invalid signature", async () => {
+          const ret = await run(
+            ["Test", [fn], { signingKey: "test" }],
+            [{ method: "POST", headers: { [headerKeys.Signature]: "t=&s=" } }],
+            env
+          );
+          expect(ret.status).toEqual(500);
+          expect(JSON.parse(ret.body)).toMatchObject({
+            type: "internal",
+            message: expect.stringContaining(
+              `Invalid ${headerKeys.Signature} provided`
+            ),
+          });
+        });
+        test("should throw an error with an expired signature", async () => {
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const ret = await run(
+            ["Test", [fn], { signingKey: "test" }],
+            [
+              {
+                method: "POST",
+                headers: {
+                  [headerKeys.Signature]: `t=${Math.round(
+                    yesterday.getTime() / 1000
+                  )}&s=expired`,
+                },
+                url: "/api/inngest?fnId=test",
+                body: { event: {} },
+              },
+            ],
+            env
+          );
+          expect(ret).toMatchObject({
+            status: 500,
+            body: expect.stringContaining("Signature has expired"),
+          });
+        });
+        // These signatures are randomly generated within a local development environment, matching
+        // what is sent from the cloud.
+        //
+        // This prevents us from having to rewrite the signature creation function in JS, which may
+        // differ from the cloud/CLI version.
+        test("should validate a signature with a key successfully", async () => {
+          const body = {
+            ctx: {
+              fn_id: "local-testing-local-cron",
+              run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+              step_id: "step",
+            },
+            event: {
+              data: {},
+              id: "",
+              name: "inngest/scheduled.timer",
+              ts: 1674082830001,
+              user: {},
+              v: "1",
+            },
+            steps: {},
+          };
+          const ret = await run(
+            [
+              "Test",
+              [fn],
+              {
+                signingKey:
+                  "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+                __testingAllowExpiredSignatures: true,
+              } as any,
+            ],
+            [
+              {
+                method: "POST",
+                headers: {
+                  [headerKeys.Signature]:
+                    "t=1674082860&s=88b6453463050d1846743cbba0925bae7c1cf807f9c74bbd41b3d5cfc9c70d11",
+                },
+                url: "/api/inngest?fnId=test&stepId=step",
+                body,
+              },
+            ],
+            env
+          );
+          expect(ret).toMatchObject({
+            status: 200,
+            body: '"fn"',
+          });
+        });
+      });
     });
   });
 };
@@ -576,6 +706,59 @@ export const waitUpTo = (upTo: number, from?: Date): Promise<void> => {
 
 /**
  * A test helper used to query a local, unsecured dev server to see if a given
+ * event has been received.
+ *
+ * If found within 5 seconds, returns the event. Otherwise, throws an error.
+ */
+export const receivedEventWithName = async (
+  name: string
+): Promise<{
+  id: string;
+  name: string;
+  payload: string;
+}> => {
+  for (let i = 0; i < 5; i++) {
+    const start = new Date();
+
+    const res = await fetch("http://localhost:8288/v0/gql", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: `query Events($query: EventsQuery!) {
+  events(query: $query) {
+    id
+    name
+    payload
+  }
+}`,
+        variables: {
+          query: {},
+        },
+        operationName: "Events",
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+
+    const data = await res.json();
+    const event = data?.data?.events?.find((e: any) => e.name === name);
+
+    if (event) {
+      return event;
+    }
+
+    await waitUpTo(1000, start);
+  }
+
+  throw new Error("Event not received");
+};
+
+/**
+ * A test helper used to query a local, unsecured dev server to see if a given
  * event has triggered a function run with a particular name.
  *
  * If found within 5 seconds, returns the run ID, else throws.
@@ -644,7 +827,7 @@ export const runHasTimeline = async (
     functionType?: string;
     output?: string;
   }
-): Promise<boolean> => {
+): Promise<any> => {
   for (let i = 0; i < 5; i++) {
     const start = new Date();
 
@@ -685,18 +868,18 @@ export const runHasTimeline = async (
 
     const data = await res.json();
 
-    if (
-      data?.data?.functionRun?.timeline?.some((entry: any) =>
-        Object.keys(timeline).every(
-          (key) => entry[key] === (timeline as any)[key]
-        )
+    const timelineItem = data?.data?.functionRun?.timeline?.find((entry: any) =>
+      Object.keys(timeline).every(
+        (key) => entry[key] === (timeline as any)[key]
       )
-    ) {
-      return true;
+    );
+
+    if (timelineItem) {
+      return timelineItem;
     }
 
     await waitUpTo(1000, start);
   }
 
-  return false;
+  return;
 };

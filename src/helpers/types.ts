@@ -78,3 +78,11 @@ type Path<T> = T extends Array<infer V>
  * paths of known objects.
  */
 export type ObjectPaths<T extends Record<string, any>> = Path<T>;
+
+/**
+ * Filter out all keys from `T` where the associated value does not match type
+ * `U`.
+ */
+export type KeysNotOfType<T, U> = {
+  [P in keyof T]: T[P] extends U ? never : P;
+}[keyof T];

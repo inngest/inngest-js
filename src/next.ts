@@ -3,7 +3,7 @@ import {
   InngestCommHandler,
   ServeHandler,
 } from "./components/InngestCommHandler";
-import { queryKeys } from "./helpers/consts";
+import { headerKeys, queryKeys } from "./helpers/consts";
 import { allProcessEnv } from "./helpers/env";
 
 /**
@@ -46,9 +46,11 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
             return {
               data: req.body as Record<string, any>,
               fnId: req.query[queryKeys.FnId] as string,
+              stepId: req.query[queryKeys.StepId] as string,
               env,
               isProduction,
               url,
+              signature: req.headers[headerKeys.Signature] as string,
             };
           }
         },
