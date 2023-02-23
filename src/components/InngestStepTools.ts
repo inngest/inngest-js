@@ -1,5 +1,5 @@
+import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
-import stringify from "json-stringify-deterministic";
 import { Jsonify } from "type-fest";
 import { timeStr } from "../helpers/strings";
 import type {
@@ -600,7 +600,7 @@ export type UnhashedOp = {
 };
 
 const hashData = (op: UnhashedOp): string => {
-  return sha1().update(stringify(op)).digest("hex");
+  return sha1().update(canonicalize(op)).digest("hex");
 };
 
 /**

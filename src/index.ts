@@ -7,6 +7,7 @@ export type {
   ClientOptions,
   EventPayload,
   FunctionOptions,
+  LogLevel,
   RegisterOptions,
   TimeStr,
 } from "./types";

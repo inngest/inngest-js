@@ -330,6 +330,14 @@ export interface ClientOptions {
 }
 
 /**
+ * A set of log levels that can be used to control the amount of logging output
+ * from various parts of the Inngest library.
+ *
+ * @public
+ */
+export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
+
+/**
  * A set of options for configuring the registration of Inngest functions.
  *
  * @public
@@ -406,7 +414,7 @@ export interface RegisterOptions {
    * By default, the library will try to infer this using request details such
    * as the "Host" header and request path, but sometimes this isn't possible
    * (e.g. when running in a more controlled environments such as AWS Lambda or
-   * when dealing with proxies/rediects).
+   * when dealing with proxies/redirects).
    *
    * Provide the custom hostname here to ensure that the path is reported
    * correctly when registering functions with Inngest.
@@ -414,6 +422,13 @@ export interface RegisterOptions {
    * To also provide a custom path, use `servePath`.
    */
   serveHost?: string;
+
+  /**
+   * The minimum level to log from the Inngest serve endpoint.
+   *
+   * Default level: "info"
+   */
+  logLevel?: LogLevel;
 }
 
 export type TriggerOptions<T extends string> =
