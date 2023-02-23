@@ -870,14 +870,15 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     }
 
     if (!this.signingKey) {
-      console.warn(
+      this.log(
+        "warn",
         "No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets"
       );
       return;
     }
 
     if (!sig) {
-      console.warn(`No ${headerKeys.Signature} provided`);
+      this.log("warn", `No ${headerKeys.Signature} provided`);
       return;
     }
 
