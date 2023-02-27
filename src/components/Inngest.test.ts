@@ -130,3 +130,48 @@ describe("send", () => {
     );
   });
 });
+
+describe("createFunction", () => {
+  describe("types", () => {
+    const inngest = new Inngest({ name: "test" });
+
+    test("allows name to be a string", () => {
+      inngest.createFunction("test", { event: "test" }, () => "test");
+    });
+
+    test("allows name to be an object", () => {
+      inngest.createFunction({ name: "test" }, { event: "test" }, () => "test");
+    });
+
+    test("name as an object must contain a name property", () => {
+      // @ts-expect-error Must contain name property
+      inngest.createFunction({ foo: "bar" }, { event: "test" }, () => "test");
+    });
+
+    test("allows trigger to be a string", () => {
+      inngest.createFunction("test", "test", () => "test");
+    });
+
+    test("allows trigger to be an object with an event property", () => {
+      inngest.createFunction("test", { event: "test" }, () => "test");
+    });
+
+    test("allows trigger to be an object with a cron property", () => {
+      inngest.createFunction("test", { cron: "test" }, () => "test");
+    });
+
+    test("disallows trigger with unknown properties", () => {
+      // @ts-expect-error Unknown property
+      inngest.createFunction("test", { foo: "bar" }, () => "test");
+    });
+
+    test("disallows trigger with both event and cron properties", () => {
+      inngest.createFunction(
+        "test",
+        // @ts-expect-error Both event and cron
+        { event: "test", cron: "test" },
+        () => "test"
+      );
+    });
+  });
+});
