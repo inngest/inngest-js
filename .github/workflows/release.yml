@@ -1,23 +1,11 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      type:
-        type: choice
-        description: What kind of release?
-        required: true
-        options:
-          - patch
-          - minor
-          - major
-      npm_tag:
-        type: choice
-        description: What npm tag do you want to target?
-        default: latest
-        options:
-          - latest
-          - beta
+  push:
+    branches:
+      - main
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 env:
   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -33,15 +21,12 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
-      - run: |
-          git config user.name "botbot"
-          git config user.email "<>"
-      - run: |
-          echo "//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}" >> .npmrc
-          echo "registry=https://registry.npmjs.org/" >> .npmrc
-          echo "always-auth=true" >> .npmrc
-          cat .npmrc
-          yarn run release ${{ github.event.inputs.type }} --tag=${{ github.event.inputs.npm_tag }} --any-branch --no-tests
+      - run: yarn prelink
+      - uses: changesets/action@v1
+        with:
+          cwd: dist
+          publish: yarn release
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_ENV: test # disable npm access checks; they don't work in CI
-
