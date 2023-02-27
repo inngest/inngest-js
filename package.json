@@ -62,6 +62,7 @@
     "zod": "^3.19.1"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.26.0",
     "@inngest/eslint-plugin": "./rules",
     "@microsoft/api-extractor": "^7.33.7",
     "@types/aws-lambda": "^8.10.108",
