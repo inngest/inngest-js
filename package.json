@@ -29,7 +29,7 @@
     "build:api": "api-extractor run --local --verbose",
     "build:landing": "cd landing && yarn run build",
     "build:check": "api-extractor run --verbose",
-    "build:copy": "cp package.json LICENSE.md README.md dist",
+    "build:copy": "cp -r package.json LICENSE.md README.md CHANGELOG.md .changeset dist",
     "prelink": "yarn run build:copy"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
