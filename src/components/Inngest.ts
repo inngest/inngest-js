@@ -336,11 +336,10 @@ export class Inngest<Events extends Record<string, EventPayload>> {
 
   public createFunction<
     Trigger extends TriggerOptions<keyof Events & string>,
-    NameOrOpts extends string | FunctionOptions,
-    T extends TriggerOptions<keyof Events & string>
+    NameOrOpts extends string | FunctionOptions
   >(
     nameOrOpts: NameOrOpts,
-    trigger: Trigger extends T ? T : T extends string ? T : never,
+    trigger: Trigger,
     fn: Handler<
       Events,
       Trigger extends string

@@ -54,7 +54,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    createFunction<Trigger extends TriggerOptions<keyof Events & string>, NameOrOpts extends string | FunctionOptions, T extends TriggerOptions<keyof Events & string>>(nameOrOpts: NameOrOpts, trigger: Trigger extends T ? T : T extends string ? T : never, fn: Handler<Events, Trigger extends string ? Trigger : Trigger extends {
+    createFunction<Trigger extends TriggerOptions<keyof Events & string>, NameOrOpts extends string | FunctionOptions>(nameOrOpts: NameOrOpts, trigger: Trigger, fn: Handler<Events, Trigger extends string ? Trigger : Trigger extends {
         event: string;
     } ? Trigger["event"] : string, NameOrOpts extends FunctionOptions ? NameOrOpts : never>): InngestFunction<Events>;
     readonly inngestBaseUrl: URL;
