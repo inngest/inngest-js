@@ -7,6 +7,10 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
+  "np": {
+    "yarn": true,
+    "contents": "dist"
+  },
   "bin": {
     "inngest-init": "./init.js"
   },
@@ -20,7 +24,7 @@
     "clean": "rm -rf ./dist",
     "lint": "eslint .",
     "postversion": "yarn run build && yarn run build:copy",
-    "release": "yarn changeset publish",
+    "release": "yarn run np",
     "api-extractor": "api-extractor",
     "dev": "yarn && sh -c 'cd ./landing && yarn' && concurrently --names Build,Lint,Landing --prefix-colors \"green.inverse,magenta.inverse,blue.inverse\" --handle-input \"yarn run dev:build\" \"yarn run dev:lint\" \"yarn run dev:landing\"",
     "dev:build": "nodemon -w src -e ts -i version.ts -i landing.ts --delay 300ms -x 'yarn run build && yarn run build:check --local'",
@@ -29,7 +33,7 @@
     "build:api": "api-extractor run --local --verbose",
     "build:landing": "cd landing && yarn run build",
     "build:check": "api-extractor run --verbose",
-    "build:copy": "cp -r package.json LICENSE.md README.md CHANGELOG.md .changeset dist",
+    "build:copy": "cp package.json LICENSE.md README.md dist",
     "prelink": "yarn run build:copy"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
@@ -79,6 +83,7 @@
     "nock": "^13.2.9",
     "node-mocks-http": "^1.11.0",
     "nodemon": "^2.0.20",
+    "np": "^7.6.1",
     "prettier": "^2.7.1",
     "shx": "^0.3.4",
     "ts-jest": "^29.0.3",
