@@ -860,28 +860,32 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected validateSignature(
     sig: string | undefined,
     body: Record<string, any>
-  ): void {
-    if (this.isProd && !sig) {
+  ) {
+    // Never validate signatures in development.
+    if (!this.isProd) {
+      // In dev, warning users about signing keys ensures that it's considered
+      if (!this.signingKey) {
+        console.warn(
+          "No signing key provided to validate signature. Find your dev keys at https://app.inngest.com/test/secrets"
+        );
+      }
+
+      return;
+    }
+
+    // If we're here, we're in production; lack of a signing key is an error.
+    if (!this.signingKey) {
+      throw new Error(
+        `No signing key found in client options or ${envKeys.SigningKey} env var. Find your keys at https://app.inngest.com/secrets`
+      );
+    }
+
+    // If we're here, we're in production; lack of a req signature is an error.
+    if (!sig) {
       throw new Error(`No ${headerKeys.Signature} provided`);
     }
 
-    if (!this.isProd && !this.signingKey) {
-      return;
-    }
-
-    if (!this.signingKey) {
-      this.log(
-        "warn",
-        "No signing key provided to validate signature.  Find your dev keys at https://app.inngest.com/test/secrets"
-      );
-      return;
-    }
-
-    if (!sig) {
-      this.log("warn", `No ${headerKeys.Signature} provided`);
-      return;
-    }
-
+    // Validate the signature
     new RequestSignature(sig).verifySignature({
       body,
       allowExpiredSignatures: this.allowExpiredSignatures,
