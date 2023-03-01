@@ -1,5 +1,11 @@
 # inngest
 
+## 1.3.4
+
+### Patch Changes
+
+- 24cb7e2: Test to release
+
 ## 1.3.3
 
 ### Patch Changes
