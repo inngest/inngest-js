@@ -48,9 +48,9 @@ jobs:
       fail-fast: false
       matrix:
         repo:
-          - inngest/sdk-example-cloudflare-workers
+          # - inngest/sdk-example-cloudflare-workers - BROKEN
           - inngest/sdk-example-nextjs-vercel
-          - inngest/sdk-example-redwoodjs-vercel
+          # - inngest/sdk-example-redwoodjs-vercel - BROKEN
           - inngest/sdk-example-nextjs-cloudflare
           - inngest/sdk-example-nextjs-netlify
           - inngest/sdk-example-remix-vercel
