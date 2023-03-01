@@ -86,3 +86,24 @@ export type ObjectPaths<T extends Record<string, any>> = Path<T>;
 export type KeysNotOfType<T, U> = {
   [P in keyof T]: T[P] extends U ? never : P;
 }[keyof T];
+
+/**
+ * Returns all keys from objects in the union `T`.
+ */
+type UnionKeys<T> = T extends T ? keyof T : never;
+
+/**
+ * Enforces strict union comformity by ensuring that all potential keys in a
+ * union of objects are accounted for in every object.
+ *
+ * Requires two generics to be used, so is abstracted by {@link StrictUnion}.
+ */
+type StrictUnionHelper<T, TAll> = T extends any
+  ? T & Partial<Record<Exclude<UnionKeys<TAll>, keyof T>, never>>
+  : never;
+
+/**
+ * Enforces strict union comformity by ensuring that all potential keys in a
+ * union of objects are accounted for in every object.
+ */
+export type StrictUnion<T> = StrictUnionHelper<T, T>;

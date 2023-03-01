@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { createStepTools } from "./components/InngestStepTools";
-import type { KeysNotOfType } from "./helpers/types";
+import type { KeysNotOfType, StrictUnion } from "./helpers/types";
 
 /**
  * Arguments for a single-step function.
@@ -430,12 +430,14 @@ export interface RegisterOptions {
 
 export type TriggerOptions<T extends string> =
   | T
-  | {
-      event: T;
-    }
-  | {
-      cron: string;
-    };
+  | StrictUnion<
+      | {
+          event: T;
+        }
+      | {
+          cron: string;
+        }
+    >;
 
 /**
  * A set of options for configuring an Inngest function.
