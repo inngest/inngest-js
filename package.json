@@ -33,8 +33,9 @@
     "build:api": "api-extractor run --local --verbose",
     "build:landing": "cd landing && yarn run build",
     "build:check": "api-extractor run --verbose",
-    "build:copy": "cp package.json LICENSE.md README.md dist",
-    "prelink": "yarn run build:copy"
+    "build:copy": "cp -r package.json LICENSE.md README.md CHANGELOG.md .changeset dist && (cp .npmrc dist | true)",
+    "prelink": "yarn run build:copy",
+    "cs": "yarn build && yarn prelink && node scripts/release.js"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
@@ -62,6 +63,8 @@
     "zod": "^3.19.1"
   },
   "devDependencies": {
+    "@actions/core": "^1.10.0",
+    "@actions/exec": "^1.1.1",
     "@changesets/cli": "^2.26.0",
     "@inngest/eslint-plugin": "./rules",
     "@microsoft/api-extractor": "^7.33.7",

@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     branches:
-      - main
+      - changesets-release
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -21,11 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
-      - run: yarn prelink
       - uses: changesets/action@v1
+        id: changesets
         with:
-          cwd: dist
-          publish: yarn release
+          publish: yarn cs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
