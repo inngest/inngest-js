@@ -1,16 +1,20 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:js-lib",
-    ":disableDependencyDashboard",
-    "npm:unpublishSafe",
-    ":preserveSemverRanges"
-  ],
+  "extends": ["config:js-lib", "npm:unpublishSafe", ":preserveSemverRanges"],
   "packageRules": [
+    {
+      "matchPackagePatterns": ["*"],
+      "excludePackagePatterns": [
+        "typescript",
+        "eslint*",
+        "@typescript-eslint/*"
+      ],
+      "dependencyDashboardApproval": true
+    },
     {
       "groupName": "TypeScript",
       "groupSlug": "typescript",
-      "matchPackageNames": ["typescript"],
+      "matchPackagePatterns": ["typescript"],
       "matchUpdateTypes": ["major", "minor", "patch"],
       "dependencyDashboardApproval": false,
       "automerge": true,
@@ -21,7 +25,7 @@
     {
       "groupName": "Linting",
       "groupSlug": "linting",
-      "matchPackagePrefixes": ["eslint", "@typescript-eslint/"],
+      "matchPackagePatterns": ["eslint*", "@typescript-eslint/*"],
       "matchUpdateTypes": ["major", "minor", "patch"],
       "dependencyDashboardApproval": false,
       "automerge": true,
