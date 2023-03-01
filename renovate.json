@@ -3,7 +3,8 @@
   "extends": [
     "config:js-lib",
     ":disableDependencyDashboard",
-    "npm:unpublishSafe"
+    "npm:unpublishSafe",
+    ":preserveSemverRanges"
   ],
   "packageRules": [
     {
