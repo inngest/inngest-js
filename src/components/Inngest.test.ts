@@ -129,6 +129,22 @@ describe("send", () => {
       })
     );
   });
+
+  test("should succeed if an event name is given with an empty list of payloads", async () => {
+    const inngest = new Inngest({ name: "test" });
+    inngest.setEventKey(testEventKey);
+
+    await expect(inngest.send("test", [])).resolves.toBeUndefined();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test("should succeed if an empty list of payloads is given", async () => {
+    const inngest = new Inngest({ name: "test" });
+    inngest.setEventKey(testEventKey);
+
+    await expect(inngest.send([])).resolves.toBeUndefined();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
 });
 
 describe("createFunction", () => {

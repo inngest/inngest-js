@@ -298,12 +298,12 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     }
 
     /**
-     * The two overload types should never allow this to happen, but in the case
-     * the user is in JS Land and it does, let's throw.
+     * It can be valid for a user to send an empty list of events; if this
+     * happens, show a warning that this may not be intended, but don't throw.
      */
     if (!payloads.length) {
-      throw new Error(
-        "Provided a name but no events to send; make sure to send an event payload too"
+      return console.warn(
+        "Warning: You have called `inngest.send()` with an empty array; the operation will resolve, but no events have been sent. This may be intentional, in which case you can ignore this warning."
       );
     }
 
