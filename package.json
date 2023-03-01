@@ -24,7 +24,7 @@
     "clean": "rm -rf ./dist",
     "lint": "eslint .",
     "postversion": "yarn run build && yarn run build:copy",
-    "release": "yarn run np",
+    "release": "yarn build && yarn prelink && node scripts/release.js",
     "api-extractor": "api-extractor",
     "dev": "yarn && sh -c 'cd ./landing && yarn' && concurrently --names Build,Lint,Landing --prefix-colors \"green.inverse,magenta.inverse,blue.inverse\" --handle-input \"yarn run dev:build\" \"yarn run dev:lint\" \"yarn run dev:landing\"",
     "dev:build": "nodemon -w src -e ts -i version.ts -i landing.ts --delay 300ms -x 'yarn run build && yarn run build:check --local'",
@@ -34,8 +34,7 @@
     "build:landing": "cd landing && yarn run build",
     "build:check": "api-extractor run --verbose",
     "build:copy": "cp -r package.json LICENSE.md README.md CHANGELOG.md dist",
-    "prelink": "yarn run build:copy",
-    "cs": "yarn build && yarn prelink && node scripts/release.js"
+    "prelink": "yarn run build:copy"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
