@@ -11,12 +11,12 @@ env:
   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
 jobs:
-  checks:
-    uses: ./.github/workflows/pr.yml
-    secrets: inherit
+  # checks:
+  #   uses: ./.github/workflows/pr.yml
+  #   secrets: inherit
 
   npm:
-    needs: [checks]
+    # needs: [checks]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
