@@ -1289,10 +1289,10 @@ util-deprecate@^1.0.2:
   resolved "https://registry.yarnpkg.com/util-deprecate/-/util-deprecate-1.0.2.tgz#450d4dc9fa70de732762fbd2d4a28981419a0ccf"
   integrity sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==
 
-vite-plugin-singlefile@^0.12.1:
-  version "0.12.1"
-  resolved "https://registry.yarnpkg.com/vite-plugin-singlefile/-/vite-plugin-singlefile-0.12.1.tgz#d5a9bf5d2dcda3c577db0a6d76f8224f302fc548"
-  integrity sha512-PNP8ZVjwBQ2E0o+jOOOfuYhrQSohBTKRreVTvrT1igC6DjJzqKzkqb+hcZY/hmByKHjZzV+470xkV62/HLMrGQ==
+vite-plugin-singlefile@^0.13.0:
+  version "0.13.3"
+  resolved "https://registry.yarnpkg.com/vite-plugin-singlefile/-/vite-plugin-singlefile-0.13.3.tgz#b9c170765e7dc0ecc466f4a2fff212154a1e6f13"
+  integrity sha512-5rfYJKnFa4h1E/uas6k7f8Ku9NRdL4SCPYaVlAwt4khYJ5yzQcs9xRRIha/OXVyVL2iDSPRMRqoijjGPVURR0w==
   dependencies:
     micromatch "^4.0.5"
 
