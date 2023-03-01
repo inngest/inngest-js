@@ -45,8 +45,6 @@ const exec = async (...args) => {
   });
 
   // Tag and push the release commit
-  await exec("git", ["add", "."]);
-  await exec("git", ["commit", "-m", tag]);
   await exec("changeset", ["tag"]);
   await exec("git", ["push", "--follow-tags", "origin", "changesets-release"]);
 })();
