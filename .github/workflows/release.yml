@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     branches:
-      - changesets-release
+      - main
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -11,32 +11,15 @@ env:
   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
 jobs:
-  changesets:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
       - uses: changesets/action@v1
         id: changesets
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NODE_ENV: test # disable npm access checks; they don't work in CI
-    outputs:
-      hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
-
-  checks:
-    uses: ./.github/workflows/pr.yml
-    secrets: inherit
-    needs: [changesets]
-    if: ${{ needs.changesets.outputs.hasChangesets == 'true' }}
-
-  release:
-    runs-on: ubuntu-latest
-    needs: [changesets, checks]
-    steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
-      - run: yarn release
+        with:
+          publish: yarn release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
