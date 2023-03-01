@@ -3,7 +3,10 @@ const { exec: rawExec, getExecOutput } = require("@actions/exec");
 
 const { version } = require("../package.json");
 const tag = `v${version}`;
-const distPath = path.join(__dirname, "dist");
+
+const rootDir = path.join(__dirname, "..");
+const distDir = path.join(rootDir, "dist");
+process.chdir(rootDir);
 
 const exec = async (...args) => {
   const exitCode = await rawExec(...args);
@@ -35,10 +38,10 @@ const exec = async (...args) => {
 
   // Release to npm
   await exec("npm", ["config", "set", "git-tag-version", "false"], {
-    cwd: distPath,
+    cwd: distDir,
   });
   await exec("npm", ["publish", "--tag", "changeset", "--access", "public"], {
-    cwd: distPath,
+    cwd: distDir,
   });
 
   // Tag and push the release commit
