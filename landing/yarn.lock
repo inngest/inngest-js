@@ -304,10 +304,10 @@
     "@nodelib/fs.scandir" "2.1.5"
     fastq "^1.6.0"
 
-"@preact/preset-vite@^2.3.0":
-  version "2.4.0"
-  resolved "https://registry.yarnpkg.com/@preact/preset-vite/-/preset-vite-2.4.0.tgz#36215e966ced8690ffc8951f8a9cb6a134d81afd"
-  integrity sha512-EiUMHuiCThuTuK+eH2r5uDg+CJbbt4aWJGePuszrHuXUpRv6WAeO4S+/DTJsEHtPtGmPRR3cLQ68N5097eOSRA==
+"@preact/preset-vite@^2.4.0":
+  version "2.5.0"
+  resolved "https://registry.yarnpkg.com/@preact/preset-vite/-/preset-vite-2.5.0.tgz#6ff815558c16062a36e2d5da4b1225d7b216478d"
+  integrity sha512-BUhfB2xQ6ex0yPkrT1Z3LbfPzjpJecOZwQ/xJrXGFSZD84+ObyS//41RdEoQCMWsM0t7UHGaujUxUBub7WM1Jw==
   dependencies:
     "@babel/plugin-transform-react-jsx" "^7.14.9"
     "@babel/plugin-transform-react-jsx-development" "^7.16.7"
