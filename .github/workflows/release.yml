@@ -11,20 +11,14 @@ env:
   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
 jobs:
-  checks:
-    uses: ./.github/workflows/pr.yml
-    secrets: inherit
-
-  npm:
-    needs: [checks]
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
-      - run: yarn prelink
       - uses: changesets/action@v1
+        id: changesets
         with:
-          cwd: dist
           publish: yarn release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
