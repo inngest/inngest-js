@@ -25,6 +25,7 @@ export interface EventPayload {
 
 // @public
 export interface FunctionOptions {
+    concurrency?: number;
     // (undocumented)
     fns?: Record<string, any>;
     id?: string;
