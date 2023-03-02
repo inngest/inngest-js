@@ -5,16 +5,16 @@
     {
       "matchPackagePatterns": ["*"],
       "excludePackagePatterns": [
-        "typescript",
-        "eslint*",
-        "@typescript-eslint/*"
+        "^typescript$",
+        "^eslint*",
+        "^@typescript-eslint/*"
       ],
       "dependencyDashboardApproval": true
     },
     {
       "groupName": "TypeScript",
       "groupSlug": "typescript",
-      "matchPackagePatterns": ["typescript"],
+      "matchPackageNames": ["typescript"],
       "matchUpdateTypes": ["major", "minor", "patch"],
       "dependencyDashboardApproval": false,
       "automerge": true,
@@ -25,7 +25,7 @@
     {
       "groupName": "Linting",
       "groupSlug": "linting",
-      "matchPackagePatterns": ["eslint*", "@typescript-eslint/*"],
+      "matchPackagePrefixes": ["eslint", "@typescript-eslint"],
       "matchUpdateTypes": ["major", "minor", "patch"],
       "dependencyDashboardApproval": false,
       "automerge": true,
