@@ -1,5 +1,11 @@
 # inngest
 
+## 1.4.0-concurrency.0
+
+### Minor Changes
+
+- fd8df7a: Add ability to control the concurrency of a specific function via the `concurrency` option when creating an Inngest function
+
 ## 1.3.5
 
 ### Patch Changes

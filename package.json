@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "1.3.5",
+  "version": "1.4.0-concurrency.0",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
