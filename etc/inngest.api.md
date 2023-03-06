@@ -14,6 +14,13 @@ export interface ClientOptions {
     name: string;
 }
 
+// Warning: (ae-forgotten-export) The symbol "TriggerOptions" needs to be exported by the entry point index.d.ts
+//
+// @public
+export type EventNameFromTrigger<Events extends Record<string, EventPayload>, T extends TriggerOptions<keyof Events & string>> = T extends string ? T : T extends {
+    event: string;
+} ? T["event"] : string;
+
 // @public
 export interface EventPayload {
     data: any;
@@ -22,6 +29,22 @@ export interface EventPayload {
     user?: any;
     v?: string;
 }
+
+// @public
+export type FailureEventPayload<P extends EventPayload> = {
+    name: "inngest/function.failed";
+    data: {
+        function_id: string;
+        run_id: string;
+        error: {
+            message: string;
+            stack?: string;
+            cause?: string;
+            status?: number;
+        };
+        event: P;
+    };
+};
 
 // @public
 export interface FunctionOptions {
@@ -49,14 +72,11 @@ export enum headerKeys {
 // @public
 export class Inngest<Events extends Record<string, EventPayload>> {
     constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
-    // Warning: (ae-forgotten-export) The symbol "TriggerOptions" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    createFunction<Trigger extends TriggerOptions<keyof Events & string>, NameOrOpts extends string | FunctionOptions>(nameOrOpts: NameOrOpts, trigger: Trigger, fn: Handler<Events, Trigger extends string ? Trigger : Trigger extends {
-        event: string;
-    } ? Trigger["event"] : string, NameOrOpts extends FunctionOptions ? NameOrOpts : never>): InngestFunction<Events>;
+    createFunction<Trigger extends TriggerOptions<keyof Events & string>, NameOrOpts extends string | FunctionOptions>(nameOrOpts: NameOrOpts, trigger: Trigger, fn: Handler<Events, EventNameFromTrigger<Events, Trigger>, NameOrOpts extends FunctionOptions ? NameOrOpts : never>, onFailure?: Handler<Events, "inngest/function.failed", NameOrOpts extends FunctionOptions ? NameOrOpts : never, FailureEventPayload<Events[EventNameFromTrigger<Events, Trigger>]>>): InngestFunction<Events>[];
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
@@ -75,7 +95,7 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     constructor(
     frameworkName: string,
     appNameOrInngest: string | Inngest<any>,
-    functions: InngestFunction<any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
+    functions: InngestFunction<any>[][], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
     handler: H,
     transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
@@ -159,7 +179,7 @@ export interface RegisterOptions {
 // @public
 export type ServeHandler = (
 nameOrInngest: string | Inngest<any>,
-functions: InngestFunction<any>[],
+functions: InngestFunction<any>[][],
 opts?: RegisterOptions) => any;
 
 // @public

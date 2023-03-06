@@ -17,6 +17,26 @@ export type EventData<Event> = Event extends never
     };
 
 /**
+ * The payload for an internal Inngest event that is sent when a function fails.
+ *
+ * @public
+ */
+export type FailureEventPayload<P extends EventPayload> = {
+  name: "inngest/function.failed";
+  data: {
+    function_id: string;
+    run_id: string;
+    error: {
+      message: string;
+      stack?: string;
+      cause?: string;
+      status?: number;
+    };
+    event: P;
+  };
+};
+
+/**
  * Arguments for a multi-step function, extending the single-step args and
  * including step function tooling.
  *
@@ -25,8 +45,9 @@ export type EventData<Event> = Event extends never
 export type HandlerArgs<
   Events extends Record<string, EventPayload>,
   Event extends keyof Events,
-  Opts extends FunctionOptions
-> = EventData<Events[Event]> & {
+  Opts extends FunctionOptions,
+  Payload = Events[Event]
+> = EventData<Payload> & {
   /**
    * @deprecated Use `step` instead.
    */
@@ -199,8 +220,9 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
 export type Handler<
   Events extends Record<string, EventPayload>,
   Event extends keyof Events,
-  Opts extends FunctionOptions
-> = (arg: HandlerArgs<Events, Event, Opts>) => any | Promise<any>;
+  Opts extends FunctionOptions,
+  Payload = Events[Event]
+> = (arg: HandlerArgs<Events, Event, Opts, Payload>) => any | Promise<any>;
 
 /**
  * The shape of a single event's payload. It should be extended to enforce
@@ -428,6 +450,9 @@ export interface RegisterOptions {
   logLevel?: LogLevel;
 }
 
+/**
+ * A user-friendly method of specifying a trigger for an Inngest function.
+ */
 export type TriggerOptions<T extends string> =
   | T
   | StrictUnion<
@@ -684,3 +709,14 @@ export interface DevServerInfo {
   functions: FunctionConfig[];
   handlers: RegisterRequest[];
 }
+
+/**
+ * Given a set of events and a user-friendly trigger paramter, returns the name
+ * of the event that the user intends to listen to.
+ *
+ * @public
+ */
+export type EventNameFromTrigger<
+  Events extends Record<string, EventPayload>,
+  T extends TriggerOptions<keyof Events & string>
+> = T extends string ? T : T extends { event: string } ? T["event"] : string;

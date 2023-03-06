@@ -9,7 +9,9 @@ import type {
 } from "../helpers/types";
 import type {
   ClientOptions,
+  EventNameFromTrigger,
   EventPayload,
+  FailureEventPayload,
   FunctionOptions,
   Handler,
   TriggerOptions,
@@ -342,19 +344,42 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     trigger: Trigger,
     fn: Handler<
       Events,
-      Trigger extends string
-        ? Trigger
-        : Trigger extends { event: string }
-        ? Trigger["event"]
-        : string,
+      EventNameFromTrigger<Events, Trigger>,
       NameOrOpts extends FunctionOptions ? NameOrOpts : never
+    >,
+    onFailure?: Handler<
+      Events,
+      "inngest/function.failed",
+      NameOrOpts extends FunctionOptions ? NameOrOpts : never,
+      FailureEventPayload<Events[EventNameFromTrigger<Events, Trigger>]>
     >
-  ): InngestFunction<Events> {
-    return new InngestFunction(
-      this,
-      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
-      typeof trigger === "string" ? { event: trigger } : trigger,
-      fn
-    );
+  ): InngestFunction<Events>[] {
+    const opts: FunctionOptions =
+      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts;
+
+    const ret: InngestFunction<Events>[] = [
+      new InngestFunction(
+        this,
+        opts,
+        typeof trigger === "string" ? { event: trigger } : trigger,
+        fn
+      ),
+    ];
+
+    if (onFailure) {
+      const failureOpts = { ...opts };
+      failureOpts.name = `${failureOpts.name} (failure)`;
+
+      ret.push(
+        new InngestFunction(
+          this,
+          failureOpts,
+          { event: "inngest/function.failed", expression: "TODO" },
+          onFailure
+        )
+      );
+    }
+
+    return ret;
   }
 }

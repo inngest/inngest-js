@@ -5,7 +5,9 @@ export { NonRetriableError } from "./components/NonRetriableError";
 export { headerKeys, queryKeys } from "./helpers/consts";
 export type {
   ClientOptions,
+  EventNameFromTrigger,
   EventPayload,
+  FailureEventPayload,
   FunctionOptions,
   LogLevel,
   RegisterOptions,
