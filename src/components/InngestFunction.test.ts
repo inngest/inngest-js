@@ -132,7 +132,7 @@ describe("runFn", () => {
 
     const testFn = <
       T extends {
-        fn: InngestFunction<any>;
+        fn: InngestFunction<any>[];
         steps: Record<
           string,
           jest.Mock<() => string> | jest.Mock<() => Promise<string>>
@@ -164,7 +164,11 @@ describe("runFn", () => {
             beforeAll(async () => {
               hashDataSpy = getHashDataSpy();
               tools = createTools();
-              ret = await runFnWithStack(tools.fn, t.stack || [], t.runStep);
+              ret = await runFnWithStack(
+                tools.fn[0] as InngestFunction<any>,
+                t.stack || [],
+                t.runStep
+              );
             });
 
             test("returns expected value", () => {
@@ -808,5 +812,9 @@ describe("runFn", () => {
         },
       })
     );
+  });
+
+  describe("onFailure functions", () => {
+    test.todo("specifying an onFailure function registers correctly");
   });
 });
