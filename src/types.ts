@@ -471,6 +471,13 @@ export interface FunctionOptions {
    */
   name: string;
 
+  /**
+   * Concurrency specifies a limit on the total number of concurrent steps that
+   * can occur across all runs of the function.  A value of 0 (or undefined) means
+   * use the maximum available concurrency.
+   */
+  concurrency?: number;
+
   fns?: Record<string, any>;
 
   /**

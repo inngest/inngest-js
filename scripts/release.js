@@ -4,6 +4,9 @@ const { exec: rawExec, getExecOutput } = require("@actions/exec");
 const { version } = require("../package.json");
 const tag = `v${version}`;
 
+const [, tagEnd = ""] = version.split("-");
+const distTag = tagEnd.split(".")[0] || "latest";
+
 const rootDir = path.join(__dirname, "..");
 const distDir = path.join(rootDir, "dist");
 process.chdir(rootDir);
@@ -40,7 +43,7 @@ const exec = async (...args) => {
   await exec("npm", ["config", "set", "git-tag-version", "false"], {
     cwd: distDir,
   });
-  await exec("npm", ["publish", "--tag", "latest", "--access", "public"], {
+  await exec("npm", ["publish", "--tag", distTag, "--access", "public"], {
     cwd: distDir,
   });
 
