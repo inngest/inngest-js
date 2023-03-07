@@ -161,7 +161,7 @@ export class InngestFunction<
         triggers: [
           {
             event: internalEvents.FunctionFailed,
-            expression: `data.function_id == '${fnId}'`,
+            expression: `async.data.function_id == '${fnId}'`,
           },
         ],
         steps: {
