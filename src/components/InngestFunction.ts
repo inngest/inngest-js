@@ -2,9 +2,10 @@ import { internalEvents, queryKeys } from "../helpers/consts";
 import { serializeError } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { ServerTiming } from "../helpers/ServerTiming";
-import { slugify } from "../helpers/strings";
+import { slugify, timeStr } from "../helpers/strings";
 import {
   EventData,
+  EventNameFromTrigger,
   EventPayload,
   FunctionConfig,
   FunctionOptions,
@@ -27,12 +28,16 @@ import { createStepTools, TickOp } from "./InngestStepTools";
  *
  * @public
  */
-export class InngestFunction<Events extends Record<string, EventPayload>> {
+export class InngestFunction<
+  Events extends Record<string, EventPayload>,
+  Trigger extends FunctionTrigger<keyof Events & string>,
+  Opts extends FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>
+> {
   static stepId = "step";
   static failureSuffix = "-failure";
 
-  readonly #opts: FunctionOptions;
-  readonly #trigger: FunctionTrigger<keyof Events>;
+  readonly #opts: Opts;
+  readonly #trigger: Trigger;
   readonly #fn: (...args: any[]) => any;
   readonly #onFailureFn?: (...args: any[]) => any;
   readonly #client: Inngest<Events>;
@@ -50,8 +55,8 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     /**
      * Options
      */
-    opts: FunctionOptions,
-    trigger: FunctionTrigger<keyof Events>,
+    opts: Opts,
+    trigger: Trigger,
     fn: (...args: any[]) => any,
     onFailureFn?: (...args: any[]) => any
   ) {
@@ -93,7 +98,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
 
-    const { retries: attempts, fns: _, ...opts } = this.#opts;
+    const { retries: attempts, cancelOn, fns: _, ...opts } = this.#opts;
 
     /**
      * Convert retries into the format required when defining function
@@ -118,6 +123,26 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         },
       },
     };
+
+    if (cancelOn) {
+      fn.cancel = cancelOn.map(({ event, timeout, if: ifStr, match }) => {
+        const ret: NonNullable<FunctionConfig["cancel"]>[number] = {
+          event,
+        };
+
+        if (timeout) {
+          ret.timeout = timeStr(timeout);
+        }
+
+        if (match) {
+          ret.if = `event.${match} == async.${match}`;
+        } else if (ifStr) {
+          ret.if = ifStr;
+        }
+
+        return ret;
+      }, []);
+    }
 
     const config: FunctionConfig[] = [fn];
 

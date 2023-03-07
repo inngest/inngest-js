@@ -58,7 +58,7 @@ export type ServeHandler = (
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: InngestFunction<any>[],
+  functions: InngestFunction<any, any, any>[],
 
   /**
    * A set of options to further configure the registration of Inngest
@@ -227,7 +227,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
    */
-  private readonly fns: Record<string, InngestFunction<any>> = {};
+  private readonly fns: Record<string, InngestFunction<any, any, any>> = {};
 
   private allowExpiredSignatures: boolean;
 
@@ -256,7 +256,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     /**
      * An array of the functions to serve and register with Inngest.
      */
-    functions: InngestFunction<any>[],
+    functions: InngestFunction<any, any, any>[],
     {
       inngestRegisterUrl,
       fetch,
@@ -340,7 +340,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       arguments["3"]?.__testingAllowExpiredSignatures
     );
 
-    this.fns = functions.reduce<Record<string, InngestFunction<any>>>(
+    this.fns = functions.reduce<Record<string, InngestFunction<any, any, any>>>(
       (acc, fn) => {
         const id = fn.id(this.name);
 

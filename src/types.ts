@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { createStepTools } from "./components/InngestStepTools";
 import { internalEvents } from "./helpers/consts";
-import type { KeysNotOfType, StrictUnion } from "./helpers/types";
+import type { KeysNotOfType, ObjectPaths, StrictUnion } from "./helpers/types";
 
 /**
  * Arguments for a single-step function.
@@ -22,7 +22,7 @@ export type EventData<Event> = Event extends never
  *
  * @public
  */
-export type FailureEventPayload<P extends EventPayload> = {
+export type FailureEventPayload<P extends EventPayload = EventPayload> = {
   name: `${internalEvents.FunctionFailed}`;
   data: {
     function_id: string;
@@ -45,8 +45,8 @@ export type FailureEventPayload<P extends EventPayload> = {
  */
 export type HandlerArgs<
   Events extends Record<string, EventPayload>,
-  Event extends keyof Events,
-  Opts extends FunctionOptions,
+  Event extends keyof Events & string,
+  Opts extends FunctionOptions<Events, Event>,
   Payload = Events[Event]
 > = EventData<Payload> & {
   /**
@@ -220,8 +220,8 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
  */
 export type Handler<
   Events extends Record<string, EventPayload>,
-  Event extends keyof Events,
-  Opts extends FunctionOptions,
+  Event extends keyof Events & string,
+  Opts extends FunctionOptions<Events, Event>,
   Payload = Events[Event]
 > = (arg: HandlerArgs<Events, Event, Opts, Payload>) => any | Promise<any>;
 
@@ -470,7 +470,10 @@ export type TriggerOptions<T extends string> =
  *
  * @public
  */
-export interface FunctionOptions {
+export interface FunctionOptions<
+  Events extends Record<string, EventPayload>,
+  Event extends keyof Events & string
+> {
   /**
    * An optional unique ID used to identify the function. This is used
    * internally for versioning and referring to your function, so should not
@@ -527,7 +530,7 @@ export interface FunctionOptions {
     period: TimeStr;
   };
 
-  cancel?: Cancel[];
+  cancelOn?: Cancellation<Events, Event>[];
 
   /**
    * Specifies the maximum number of retries for all steps across this function.
@@ -558,35 +561,75 @@ export interface FunctionOptions {
     | 20;
 }
 
-export type Cancel = {
-  /**
-   * The name of the event that should cancel the function run.
-   */
-  event: string;
+/**
+ * Configuration for cancelling a function run based on an incoming event.
+ *
+ * @public
+ */
+export type Cancellation<
+  Events extends Record<string, EventPayload>,
+  TriggeringEvent extends keyof Events & string
+> = {
+  [K in keyof Events]: {
+    /**
+     * The name of the event that should cancel the function run.
+     */
+    event: K & string;
 
-  /**
-   * The expression that must evaluate to true in order to cancel the function run. There
-   * are two variables available in this expression:
-   * - event, referencing the original function's event trigger
-   * - async, referencing the new cancel event.
-   *
-   * @example
-   *
-   * Ensures the cancel event's data.user_id field matches the triggering event's data.user_id
-   * field:
-   *
-   * ```ts
-   * "async.data.user_id == event.data.user_id"
-   * ```
-   */
-  if?: string;
+    /**
+     * The expression that must evaluate to true in order to cancel the function run. There
+     * are two variables available in this expression:
+     * - event, referencing the original function's event trigger
+     * - async, referencing the new cancel event.
+     *
+     * @example
+     *
+     * Ensures the cancel event's data.user_id field matches the triggering event's data.user_id
+     * field:
+     *
+     * ```ts
+     * "async.data.user_id == event.data.user_id"
+     * ```
+     */
+    if?: string;
 
-  /**
-   * An optional timeout that the cancel is valid for.  If this isn't specified, cancellation
-   * triggers are valid for up to a year or until the function ends. 
-   */
-  timeout?: TimeStr
-};
+    /**
+     * If provided, the step function will wait for the incoming event to match
+     * particular criteria. If the event does not match, it will be ignored and
+     * the step function will wait for another event.
+     *
+     * It must be a string of a dot-notation field name within both events to
+     * compare, e.g. `"data.id"` or `"user.email"`.
+     *
+     * ```
+     * // Wait for an event where the `user.email` field matches
+     * match: "user.email"
+     * ```
+     *
+     * All of these are helpers for the `if` option, which allows you to specify
+     * a custom condition to check. This can be useful if you need to compare
+     * multiple fields or use a more complex condition.
+     *
+     * See the Inngest expressions docs for more information.
+     *
+     * {@link https://www.inngest.com/docs/functions/expressions}
+     */
+    match?: ObjectPaths<Events[TriggeringEvent]> & ObjectPaths<Events[K]>;
+
+    /**
+     * An optional timeout that the cancel is valid for.  If this isn't
+     * specified, cancellation triggers are valid for up to a year or until the
+     * function ends.
+     *
+     * The time to wait can be specified using a `number` of milliseconds, an
+     * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
+     * a `Date` object.
+     *
+     * {@link https://npm.im/ms}
+     */
+    timeout?: number | string | Date;
+  };
+}[keyof Events];
 
 /**
  * Expected responses to be used within an `InngestCommHandler` in order to
@@ -726,6 +769,11 @@ export interface FunctionConfig {
     count: number;
     period: TimeStr;
   };
+  cancel?: {
+    event: string;
+    if?: string;
+    timeout?: TimeStr;
+  }[];
 }
 
 export interface DevServerInfo {

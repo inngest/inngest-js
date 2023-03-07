@@ -65,7 +65,7 @@ describe("runFn", () => {
     ].forEach(({ type, flowFn, badFlowFn }) => {
       describe(`${type} function`, () => {
         describe("success", () => {
-          let fn: InngestFunction<TestEvents>;
+          let fn: InngestFunction<TestEvents, any, any>;
           let ret: Awaited<ReturnType<typeof fn["runFn"]>>;
 
           beforeAll(async () => {
@@ -95,7 +95,7 @@ describe("runFn", () => {
 
         describe("throws", () => {
           const stepErr = new Error("step error");
-          let fn: InngestFunction<TestEvents>;
+          let fn: InngestFunction<TestEvents, any, any>;
 
           beforeAll(() => {
             fn = new InngestFunction(
@@ -123,7 +123,7 @@ describe("runFn", () => {
 
   describe("step functions", () => {
     const runFnWithStack = (
-      fn: InngestFunction<any>,
+      fn: InngestFunction<any, any, any>,
       stack: OpStack,
       runStep?: string
     ) => {
@@ -139,7 +139,7 @@ describe("runFn", () => {
 
     const testFn = <
       T extends {
-        fn: InngestFunction<any>;
+        fn: InngestFunction<any, any, any>;
         steps: Record<
           string,
           jest.Mock<() => string> | jest.Mock<() => Promise<string>>
@@ -933,6 +933,150 @@ describe("runFn", () => {
             expression: "CONFIRM VALIDITY",
           },
         ],
+      });
+    });
+  });
+
+  describe("cancellation", () => {
+    describe("types", () => {
+      describe("no custom types", () => {
+        const inngest = new Inngest({ name: "test" });
+
+        test("allows any event name", () => {
+          inngest.createFunction(
+            { name: "test", cancelOn: [{ event: "anything" }] },
+            { event: "test" },
+            () => {
+              // no-op
+            }
+          );
+        });
+
+        test("allows any match", () => {
+          inngest.createFunction(
+            {
+              name: "test",
+              cancelOn: [{ event: "anything", match: "data.anything" }],
+            },
+            { event: "test" },
+            () => {
+              // no-op
+            }
+          );
+        });
+      });
+
+      describe("multiple custom types", () => {
+        const inngest = new Inngest<{
+          foo: {
+            name: "foo";
+            data: { title: string; foo: string };
+          };
+          bar: {
+            name: "bar";
+            data: { message: string; bar: string };
+          };
+          baz: {
+            name: "baz";
+            data: { title: string; baz: string };
+          };
+          qux: {
+            name: "qux";
+            data: { title: string; qux: string };
+          };
+        }>({ name: "test" });
+
+        test("disallows unknown event name", () => {
+          inngest.createFunction(
+            // @ts-expect-error Unknown event name
+            { name: "test", cancelOn: [{ event: "unknown" }] },
+            { event: "foo" },
+            () => {
+              // no-op
+            }
+          );
+        });
+
+        test("allows known event name", () => {
+          inngest.createFunction(
+            { name: "test", cancelOn: [{ event: "bar" }] },
+            { event: "foo" },
+            () => {
+              // no-op
+            }
+          );
+        });
+
+        test("disallows known event name with bad field match", () => {
+          inngest.createFunction(
+            {
+              name: "test",
+              // @ts-expect-error Unknown match field
+              cancelOn: [{ event: "bar", match: "data.title" }],
+            },
+            { event: "foo" },
+            () => {
+              // no-op
+            }
+          );
+        });
+
+        test("allows known event name with good field match", () => {
+          inngest.createFunction(
+            {
+              name: "test",
+              cancelOn: [{ event: "baz", match: "data.title" }],
+            },
+            { event: "foo" },
+            () => {
+              // no-op
+            }
+          );
+        });
+      });
+    });
+
+    test("specifying a cancellation event registers correctly", () => {
+      const inngest = new Inngest<{
+        foo: {
+          name: "foo";
+          data: { title: string };
+        };
+        bar: {
+          name: "bar";
+          data: { message: string };
+        };
+        baz: {
+          name: "baz";
+          data: { title: string };
+        };
+      }>({ name: "test" });
+
+      const fn = inngest.createFunction(
+        { name: "test", cancelOn: [{ event: "baz", match: "data.title" }] },
+        { event: "foo" },
+        () => {
+          // no-op
+        }
+      );
+
+      const [fnConfig] = fn["getConfig"](new URL("https://example.com"));
+
+      expect(fnConfig).toMatchObject({
+        id: "test",
+        name: "test",
+        steps: {
+          [InngestFunction.stepId]: {
+            id: InngestFunction.stepId,
+            name: InngestFunction.stepId,
+            runtime: {
+              type: "http",
+              url: `https://example.com/?fnId=test&stepId=${InngestFunction.stepId}`,
+            },
+          },
+        },
+        triggers: [{ event: "foo" }],
+        cancel: [{ event: "baz", if: "event.data.title == async.data.title" }],
       });
     });
   });

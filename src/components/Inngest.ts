@@ -338,28 +338,40 @@ export class Inngest<Events extends Record<string, EventPayload>> {
 
   public createFunction<
     Trigger extends TriggerOptions<keyof Events & string>,
-    NameOrOpts extends string | FunctionOptions
+    NameOrOpts extends
+      | string
+      | FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>
   >(
     nameOrOpts: NameOrOpts,
     trigger: Trigger,
     fn: Handler<
       Events,
       EventNameFromTrigger<Events, Trigger>,
-      NameOrOpts extends FunctionOptions ? NameOrOpts : never
+      NameOrOpts extends FunctionOptions<
+        Events,
+        EventNameFromTrigger<Events, Trigger>
+      >
+        ? NameOrOpts
+        : never
     >,
     onFailure?: Handler<
       Events,
       `${internalEvents.FunctionFailed}`,
-      NameOrOpts extends FunctionOptions ? NameOrOpts : never,
+      NameOrOpts extends FunctionOptions<
+        Events,
+        `${internalEvents.FunctionFailed}`
+      >
+        ? NameOrOpts
+        : never,
       FailureEventPayload<Events[EventNameFromTrigger<Events, Trigger>]>
     >
-  ): InngestFunction<Events> {
-    const opts: FunctionOptions =
+  ): InngestFunction<any, any, any> {
+    const opts =
       typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts;
 
     return new InngestFunction(
       this,
-      opts,
+      opts as FunctionOptions<any, any>,
       typeof trigger === "string" ? { event: trigger } : trigger,
       fn,
       onFailure
