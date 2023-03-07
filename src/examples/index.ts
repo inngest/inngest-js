@@ -1,3 +1,4 @@
+import errorHandler from "./error-handler";
 import helloWorld from "./hello-world";
 import parallelReduce from "./parallel-reduce";
 import parallelWork from "./parallel-work";
@@ -16,4 +17,5 @@ export default [
   sequentialReduce,
   polling,
   sendEvent,
+  errorHandler,
 ];
