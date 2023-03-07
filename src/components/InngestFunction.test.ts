@@ -930,7 +930,7 @@ describe("runFn", () => {
         triggers: [
           {
             event: internalEvents.FunctionFailed,
-            expression: "CONFIRM VALIDITY",
+            expression: "async.data.function_id == 'test'",
           },
         ],
       });
