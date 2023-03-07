@@ -1,4 +1,4 @@
-import { queryKeys } from "../helpers/consts";
+import { internalEvents, queryKeys } from "../helpers/consts";
 import { serializeError } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { ServerTiming } from "../helpers/ServerTiming";
@@ -29,10 +29,12 @@ import { createStepTools, TickOp } from "./InngestStepTools";
  */
 export class InngestFunction<Events extends Record<string, EventPayload>> {
   static stepId = "step";
+  static failureSuffix = "-failure";
 
   readonly #opts: FunctionOptions;
   readonly #trigger: FunctionTrigger<keyof Events>;
   readonly #fn: (...args: any[]) => any;
+  readonly #onFailureFn?: (...args: any[]) => any;
   readonly #client: Inngest<Events>;
 
   /**
@@ -50,23 +52,21 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      */
     opts: FunctionOptions,
     trigger: FunctionTrigger<keyof Events>,
-    fn: (...args: any[]) => any
+    fn: (...args: any[]) => any,
+    onFailureFn?: (...args: any[]) => any
   ) {
     this.#client = client;
     this.#opts = opts;
     this.#trigger = trigger;
     this.#fn = fn;
+    this.#onFailureFn = onFailureFn;
   }
 
   /**
    * The generated or given ID for this function.
    */
   public id(prefix?: string) {
-    if (!this.#opts.id) {
-      this.#opts.id = this.#generateId(prefix);
-    }
-
-    return this.#opts.id;
+    return this.#opts.id || this.#generateId(prefix);
   }
 
   /**
@@ -87,9 +87,8 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      */
     baseUrl: URL,
     appPrefix?: string
-  ): FunctionConfig {
+  ): FunctionConfig[] {
     const fnId = this.id(appPrefix);
-
     const stepUrl = new URL(baseUrl.href);
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
@@ -102,7 +101,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      */
     const retries = typeof attempts === "undefined" ? undefined : { attempts };
 
-    return {
+    const fn: FunctionConfig = {
       ...opts,
       id: fnId,
       name: this.name,
@@ -119,6 +118,42 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         },
       },
     };
+
+    const config: FunctionConfig[] = [fn];
+
+    if (this.#onFailureFn) {
+      const failureOpts = { ...opts };
+      const id = `${fn.id}${InngestFunction.failureSuffix}`;
+      const name = `${fn.name} (failure)`;
+
+      const failureStepUrl = new URL(stepUrl.href);
+      failureStepUrl.searchParams.set(queryKeys.FnId, id);
+
+      config.push({
+        ...failureOpts,
+        id,
+        name,
+        triggers: [
+          {
+            event: internalEvents.FunctionFailed,
+            expression: `data.function_id == '${fnId}'`,
+          },
+        ],
+        steps: {
+          [InngestFunction.stepId]: {
+            id: InngestFunction.stepId,
+            name: InngestFunction.stepId,
+            runtime: {
+              type: "http",
+              url: failureStepUrl.href,
+            },
+            retries: { attempts: 1 },
+          },
+        },
+      });
+    }
+
+    return config;
   }
 
   /**

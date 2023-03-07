@@ -1,7 +1,14 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { jest } from "@jest/globals";
+import { assertType } from "type-plus";
+import { internalEvents } from "../helpers/consts";
 import { ServerTiming } from "../helpers/ServerTiming";
-import { OpStack, StepOpCode } from "../types";
+import {
+  EventPayload,
+  FailureEventPayload,
+  OpStack,
+  StepOpCode,
+} from "../types";
 import { Inngest } from "./Inngest";
 import { InngestFunction } from "./InngestFunction";
 import { UnhashedOp, _internals } from "./InngestStepTools";
@@ -132,7 +139,7 @@ describe("runFn", () => {
 
     const testFn = <
       T extends {
-        fn: InngestFunction<any>[];
+        fn: InngestFunction<any>;
         steps: Record<
           string,
           jest.Mock<() => string> | jest.Mock<() => Promise<string>>
@@ -164,11 +171,7 @@ describe("runFn", () => {
             beforeAll(async () => {
               hashDataSpy = getHashDataSpy();
               tools = createTools();
-              ret = await runFnWithStack(
-                tools.fn[0] as InngestFunction<any>,
-                t.stack || [],
-                t.runStep
-              );
+              ret = await runFnWithStack(tools.fn, t.stack || [], t.runStep);
             });
 
             test("returns expected value", () => {
@@ -815,6 +818,122 @@ describe("runFn", () => {
   });
 
   describe("onFailure functions", () => {
-    test.todo("specifying an onFailure function registers correctly");
+    describe("types", () => {
+      describe("no custom types", () => {
+        const inngest = new Inngest({ name: "test" });
+
+        test("onFailure function has unknown internal event", () => {
+          inngest.createFunction(
+            { name: "test" },
+            { event: "test" },
+            () => {
+              // no-op
+            },
+            ({ event }) => {
+              assertType<`${internalEvents.FunctionFailed}`>(event.name);
+              assertType<FailureEventPayload<EventPayload>>(event);
+            }
+          );
+        });
+      });
+
+      describe("multiple custom types", () => {
+        const inngest = new Inngest<{
+          foo: {
+            name: "foo";
+            data: { title: string };
+          };
+          bar: {
+            name: "bar";
+            data: { message: string };
+          };
+        }>({ name: "test" });
+
+        test("onFailure function has known internal event", () => {
+          inngest.createFunction(
+            { name: "test" },
+            { event: "foo" },
+            () => {
+              // no-op
+            },
+            ({ event }) => {
+              assertType<`${internalEvents.FunctionFailed}`>(event.name);
+              assertType<FailureEventPayload<EventPayload>>(event);
+
+              assertType<"foo">(event.data.event.name);
+              assertType<EventPayload>(event.data.event);
+              assertType<{ title: string }>(event.data.event.data);
+            }
+          );
+        });
+      });
+    });
+
+    test("specifying an onFailure function registers correctly", () => {
+      const inngest = new Inngest<{
+        foo: {
+          name: "foo";
+          data: { title: string };
+        };
+        bar: {
+          name: "bar";
+          data: { message: string };
+        };
+      }>({ name: "test" });
+
+      const fn = inngest.createFunction(
+        { name: "test" },
+        { event: "foo" },
+        () => {
+          // no-op
+        },
+        () => {
+          // no-op
+        }
+      );
+
+      expect(fn).toBeInstanceOf(InngestFunction);
+
+      const exampleUrl = new URL("https://example.com");
+
+      const [fnConfig, failureFnConfig] = fn["getConfig"](exampleUrl);
+
+      expect(fnConfig).toMatchObject({
+        id: "test",
+        name: "test",
+        steps: {
+          [InngestFunction.stepId]: {
+            id: InngestFunction.stepId,
+            name: InngestFunction.stepId,
+            runtime: {
+              type: "http",
+              url: `https://example.com/?fnId=test&stepId=${InngestFunction.stepId}`,
+            },
+          },
+        },
+        triggers: [{ event: "foo" }],
+      });
+
+      expect(failureFnConfig).toMatchObject({
+        id: "test-failure",
+        name: "test (failure)",
+        steps: {
+          [InngestFunction.stepId]: {
+            id: InngestFunction.stepId,
+            name: InngestFunction.stepId,
+            runtime: {
+              type: "http",
+              url: `https://example.com/?fnId=test-failure&stepId=${InngestFunction.stepId}`,
+            },
+          },
+        },
+        triggers: [
+          {
+            event: internalEvents.FunctionFailed,
+            expression: "CONFIRM VALIDITY",
+          },
+        ],
+      });
+    });
   });
 });

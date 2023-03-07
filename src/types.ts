@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { createStepTools } from "./components/InngestStepTools";
+import { internalEvents } from "./helpers/consts";
 import type { KeysNotOfType, StrictUnion } from "./helpers/types";
 
 /**
@@ -22,7 +23,7 @@ export type EventData<Event> = Event extends never
  * @public
  */
 export type FailureEventPayload<P extends EventPayload> = {
-  name: "inngest/function.failed";
+  name: `${internalEvents.FunctionFailed}`;
   data: {
     function_id: string;
     run_id: string;

@@ -1,4 +1,4 @@
-import { envKeys } from "../helpers/consts";
+import { envKeys, internalEvents } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import { devServerHost, isProd, processEnv } from "../helpers/env";
 import type {
@@ -349,37 +349,20 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     >,
     onFailure?: Handler<
       Events,
-      "inngest/function.failed",
+      `${internalEvents.FunctionFailed}`,
       NameOrOpts extends FunctionOptions ? NameOrOpts : never,
       FailureEventPayload<Events[EventNameFromTrigger<Events, Trigger>]>
     >
-  ): InngestFunction<Events>[] {
+  ): InngestFunction<Events> {
     const opts: FunctionOptions =
       typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts;
 
-    const ret: InngestFunction<Events>[] = [
-      new InngestFunction(
-        this,
-        opts,
-        typeof trigger === "string" ? { event: trigger } : trigger,
-        fn
-      ),
-    ];
-
-    if (onFailure) {
-      const failureOpts = { ...opts };
-      failureOpts.name = `${failureOpts.name} (failure)`;
-
-      ret.push(
-        new InngestFunction(
-          this,
-          failureOpts,
-          { event: "inngest/function.failed", expression: "TODO" },
-          onFailure
-        )
-      );
-    }
-
-    return ret;
+    return new InngestFunction(
+      this,
+      opts,
+      typeof trigger === "string" ? { event: trigger } : trigger,
+      fn,
+      onFailure
+    );
   }
 }

@@ -32,7 +32,7 @@ export interface EventPayload {
 
 // @public
 export type FailureEventPayload<P extends EventPayload> = {
-    name: "inngest/function.failed";
+    name: `${internalEvents.FunctionFailed}`;
     data: {
         function_id: string;
         run_id: string;
@@ -76,7 +76,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    createFunction<Trigger extends TriggerOptions<keyof Events & string>, NameOrOpts extends string | FunctionOptions>(nameOrOpts: NameOrOpts, trigger: Trigger, fn: Handler<Events, EventNameFromTrigger<Events, Trigger>, NameOrOpts extends FunctionOptions ? NameOrOpts : never>, onFailure?: Handler<Events, "inngest/function.failed", NameOrOpts extends FunctionOptions ? NameOrOpts : never, FailureEventPayload<Events[EventNameFromTrigger<Events, Trigger>]>>): InngestFunction<Events>[];
+    createFunction<Trigger extends TriggerOptions<keyof Events & string>, NameOrOpts extends string | FunctionOptions>(nameOrOpts: NameOrOpts, trigger: Trigger, fn: Handler<Events, EventNameFromTrigger<Events, Trigger>, NameOrOpts extends FunctionOptions ? NameOrOpts : never>, onFailure?: Handler<Events, `${internalEvents.FunctionFailed}`, NameOrOpts extends FunctionOptions ? NameOrOpts : never, FailureEventPayload<Events[EventNameFromTrigger<Events, Trigger>]>>): InngestFunction<Events>;
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
@@ -95,7 +95,7 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     constructor(
     frameworkName: string,
     appNameOrInngest: string | Inngest<any>,
-    functions: InngestFunction<any>[][], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
+    functions: InngestFunction<any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
     handler: H,
     transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
@@ -143,6 +143,11 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
 }
 
 // @public
+export enum internalEvents {
+    FunctionFailed = "inngest/function.failed"
+}
+
+// @public
 export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
 
 // @public
@@ -179,7 +184,7 @@ export interface RegisterOptions {
 // @public
 export type ServeHandler = (
 nameOrInngest: string | Inngest<any>,
-functions: InngestFunction<any>[][],
+functions: InngestFunction<any>[],
 opts?: RegisterOptions) => any;
 
 // @public

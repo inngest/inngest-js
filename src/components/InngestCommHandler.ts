@@ -58,7 +58,7 @@ export type ServeHandler = (
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: InngestFunction<any>[][],
+  functions: InngestFunction<any>[],
 
   /**
    * A set of options to further configure the registration of Inngest
@@ -256,7 +256,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     /**
      * An array of the functions to serve and register with Inngest.
      */
-    functions: InngestFunction<any>[][],
+    functions: InngestFunction<any>[],
     {
       inngestRegisterUrl,
       fetch,
@@ -341,27 +341,18 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     );
 
     this.fns = functions.reduce<Record<string, InngestFunction<any>>>(
-      (acc, fns) => {
-        const fnMap = fns.reduce<Record<string, InngestFunction<any>>>(
-          (fnAcc, fn) => {
-            const id = fn.id(this.name);
+      (acc, fn) => {
+        const id = fn.id(this.name);
 
-            if (acc[id]) {
-              throw new Error(
-                `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`
-              );
-            }
-
-            return {
-              [id]: fn,
-            };
-          },
-          {}
-        );
+        if (acc[id]) {
+          throw new Error(
+            `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`
+          );
+        }
 
         return {
           ...acc,
-          ...fnMap,
+          [id]: fn,
         };
       },
       {}
@@ -724,7 +715,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    return Object.values(this.fns).map((fn) => fn["getConfig"](url, this.name));
+    return Object.values(this.fns).reduce<FunctionConfig[]>(
+      (acc, fn) => [...acc, ...fn["getConfig"](url, this.name)],
+      []
+    );
   }
 
   /**

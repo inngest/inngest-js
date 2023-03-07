@@ -42,3 +42,17 @@ export enum headerKeys {
 }
 
 export const defaultDevServerHost = "http://127.0.0.1:8288/";
+
+/**
+ * Events that Inngest may send internally that can be used to trigger
+ * functions.
+ *
+ * @public
+ */
+export enum internalEvents {
+  /**
+   * A function has failed after exhausting all available retries. This event
+   * will contain the original event and the error that caused the failure.
+   */
+  FunctionFailed = "inngest/function.failed",
+}
