@@ -136,7 +136,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         triggers: [
           {
             event: internalEvents.FunctionFailed,
-            expression: `data.function_id == '${fnId}'`,
+            expression: `async.data.function_id == '${fnId}'`,
           },
         ],
         steps: {
