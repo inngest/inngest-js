@@ -152,6 +152,7 @@ describe("runFn", () => {
           jest.Mock<() => string> | jest.Mock<() => Promise<string>>
         >;
         event?: EventPayload;
+        onFailure?: boolean;
       },
       U extends Record<keyof T["steps"], string>
     >(
@@ -183,8 +184,8 @@ describe("runFn", () => {
               tools = createTools();
               ret = await runFnWithStack(tools.fn, t.stack || [], {
                 runStep: t.runStep,
-                onFailure: t.onFailure,
-                event: t.event || tools.event || undefined,
+                onFailure: t.onFailure || tools.onFailure,
+                event: t.event || tools.event,
               });
             });
 
@@ -861,7 +862,7 @@ describe("runFn", () => {
           },
         };
 
-        return { fn, steps: { A, B }, event };
+        return { fn, steps: { A, B }, event, onFailure: true };
       },
       {
         A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
@@ -869,7 +870,6 @@ describe("runFn", () => {
       },
       ({ A, B }) => ({
         "first run reports A step": {
-          onFailure: true,
           expectedReturn: [
             "discovery",
             [
@@ -882,7 +882,6 @@ describe("runFn", () => {
           ],
         },
         "requesting to run A runs A": {
-          onFailure: true,
           runStep: A,
           expectedReturn: [
             "run",
@@ -896,7 +895,6 @@ describe("runFn", () => {
           expectedStepsRun: ["A"],
         },
         "request with A in stack reports B step": {
-          onFailure: true,
           stack: [
             {
               id: A,
@@ -915,7 +913,6 @@ describe("runFn", () => {
           ],
         },
         "requesting to run B runs B": {
-          onFailure: true,
           stack: [
             {
               id: A,
@@ -935,7 +932,6 @@ describe("runFn", () => {
           expectedStepsRun: ["B"],
         },
         "final request returns empty response": {
-          onFailure: true,
           stack: [
             {
               id: A,
