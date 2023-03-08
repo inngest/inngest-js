@@ -352,6 +352,36 @@
     estree-walker "^2.0.1"
     picomatch "^2.2.2"
 
+"@rometools/cli-darwin-arm64@11.0.0":
+  version "11.0.0"
+  resolved "https://registry.yarnpkg.com/@rometools/cli-darwin-arm64/-/cli-darwin-arm64-11.0.0.tgz#8f916df0580fede2325434a50ed5b1f2cf972696"
+  integrity sha512-F3vkdY+s3FLIEnAjSbyHTuIPB88cLpccimW4ecid5I7S6GzGG3iUJI4xT00JhH73K4P/qW20/9r+kH1T9Du8Xg==
+
+"@rometools/cli-darwin-x64@11.0.0":
+  version "11.0.0"
+  resolved "https://registry.yarnpkg.com/@rometools/cli-darwin-x64/-/cli-darwin-x64-11.0.0.tgz#1393a5bba26e8c5352737270a1a98f2759f40d14"
+  integrity sha512-X6jhtS6Iml4GOzgNtnLwIp/KXXhSdqeVyfv69m/AHnIzx3gQAjPZ7BPnJLvTCbhe4SKHL+uTZYFSCJpkUUKE6w==
+
+"@rometools/cli-linux-arm64@11.0.0":
+  version "11.0.0"
+  resolved "https://registry.yarnpkg.com/@rometools/cli-linux-arm64/-/cli-linux-arm64-11.0.0.tgz#efbfd36013455fc5d940b24b1b195a43aba87bcb"
+  integrity sha512-dktTJJlTpmycBZ2TwhJBcAO8ztK8DdevdyZnFFxdYRvtmJgTjIsC2UFayf/SbKew8B8q1IhI0it+D6ihAeIpeg==
+
+"@rometools/cli-linux-x64@11.0.0":
+  version "11.0.0"
+  resolved "https://registry.yarnpkg.com/@rometools/cli-linux-x64/-/cli-linux-x64-11.0.0.tgz#675532d9f603b88ab0686da800ec711b45d22085"
+  integrity sha512-WVcnXPNdWGUWo0p4NU8YzuthjYR7q+b4vRcjdxtP1DlpphZmSsoC/RSE85nEqRAz8hChcKUansVzOPM8BSsuGA==
+
+"@rometools/cli-win32-arm64@11.0.0":
+  version "11.0.0"
+  resolved "https://registry.yarnpkg.com/@rometools/cli-win32-arm64/-/cli-win32-arm64-11.0.0.tgz#4d50f446acf2bc126cb58b5cff5a4d53b7c6a378"
+  integrity sha512-tPj6RThQzS7Q45jqQll7NlTYvNcsg/BEP3LYiiazqSh9FAFnMkrV6ewUcMPKWyAfiyLs7jlz4rRvdNRUSygzfQ==
+
+"@rometools/cli-win32-x64@11.0.0":
+  version "11.0.0"
+  resolved "https://registry.yarnpkg.com/@rometools/cli-win32-x64/-/cli-win32-x64-11.0.0.tgz#c6d48db5ea52b393dae7fe04bfe803ad8cee71a5"
+  integrity sha512-bmBai8WHxYjsGk1+je7ZTfCUCWq30WJI3pQM8pzTA674lfGTZ9ymJoZwTaIMSO4rL5V9mlO6uLunsBKso9VqOg==
+
 "@types/js-cookie@^2.2.6":
   version "2.2.7"
   resolved "https://registry.yarnpkg.com/@types/js-cookie/-/js-cookie-2.2.7.tgz#226a9e31680835a6188e887f3988e60c04d3f6a3"
@@ -1110,6 +1140,18 @@ rollup@~2.78.0:
   integrity sha512-VeeCgtGi4P+o9hIg+xz4qQpRl6R401LWEXBmxYKOV4zlF82lyhgh2hTZnheFUbANE8l2A41F458iwj2vEYaXJg==
   optionalDependencies:
     fsevents "~2.3.2"
+
+rome@^11.0.0:
+  version "11.0.0"
+  resolved "https://registry.yarnpkg.com/rome/-/rome-11.0.0.tgz#cd2f00fadfd3611399eba9a2f87612e1f3299a23"
+  integrity sha512-rRo6JOwpMLc3OkeTDRXkrmrDqnxDvZ75GS4f0jLDBNmRgDXWbu0F8eVnJoRn+VbK2AE7vWvhVOMBjnWowcopkQ==
+  optionalDependencies:
+    "@rometools/cli-darwin-arm64" "11.0.0"
+    "@rometools/cli-darwin-x64" "11.0.0"
+    "@rometools/cli-linux-arm64" "11.0.0"
+    "@rometools/cli-linux-x64" "11.0.0"
+    "@rometools/cli-win32-arm64" "11.0.0"
+    "@rometools/cli-win32-x64" "11.0.0"
 
 rtl-css-js@^1.14.0:
   version "1.16.0"
