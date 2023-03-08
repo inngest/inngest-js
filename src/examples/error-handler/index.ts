@@ -19,9 +19,9 @@ export default inngest.createFunction(
    * You could pass a common function in here to send alerts to an engineering
    * team, or that notified a user that something has failed.
    */
-  async ({ event, step }) => {
+  async ({ err, event, step }) => {
+    err; // details of the error that caused the function to fail
     event.name; // "inngest/function.failed"
-    event.data.error; // details of the error that caused the function to fail
     event.data.event; // the original event that triggered the function
 
     /**

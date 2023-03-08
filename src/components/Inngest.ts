@@ -11,7 +11,7 @@ import type {
   ClientOptions,
   EventNameFromTrigger,
   EventPayload,
-  FailureEventPayload,
+  FailureEventArgs,
   FunctionOptions,
   Handler,
   TriggerOptions,
@@ -351,7 +351,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       Events,
       `${internalEvents.FunctionFailed}`,
       NameOrOpts extends FunctionOptions ? NameOrOpts : never,
-      FailureEventPayload<Events[EventNameFromTrigger<Events, Trigger>]>
+      FailureEventArgs<Events[EventNameFromTrigger<Events, Trigger>]>
     >
   ): InngestFunction<Events> {
     const opts: FunctionOptions =

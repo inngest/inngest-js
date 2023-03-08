@@ -31,7 +31,7 @@ export interface EventPayload {
 }
 
 // @public
-export type FailureEventPayload<P extends EventPayload> = {
+export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     name: `${internalEvents.FunctionFailed}`;
     data: {
         function_id: string;
@@ -73,10 +73,11 @@ export enum headerKeys {
 export class Inngest<Events extends Record<string, EventPayload>> {
     constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "FailureEventArgs" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    createFunction<Trigger extends TriggerOptions<keyof Events & string>, NameOrOpts extends string | FunctionOptions>(nameOrOpts: NameOrOpts, trigger: Trigger, fn: Handler<Events, EventNameFromTrigger<Events, Trigger>, NameOrOpts extends FunctionOptions ? NameOrOpts : never>, onFailure?: Handler<Events, `${internalEvents.FunctionFailed}`, NameOrOpts extends FunctionOptions ? NameOrOpts : never, FailureEventPayload<Events[EventNameFromTrigger<Events, Trigger>]>>): InngestFunction<Events>;
+    createFunction<Trigger extends TriggerOptions<keyof Events & string>, NameOrOpts extends string | FunctionOptions>(nameOrOpts: NameOrOpts, trigger: Trigger, fn: Handler<Events, EventNameFromTrigger<Events, Trigger>, NameOrOpts extends FunctionOptions ? NameOrOpts : never>, onFailure?: Handler<Events, `${internalEvents.FunctionFailed}`, NameOrOpts extends FunctionOptions ? NameOrOpts : never, FailureEventArgs<Events[EventNameFromTrigger<Events, Trigger>]>>): InngestFunction<Events>;
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts

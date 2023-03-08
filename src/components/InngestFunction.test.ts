@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { jest } from "@jest/globals";
-import { assertType } from "type-plus";
 import { internalEvents } from "../helpers/consts";
 import { ServerTiming } from "../helpers/ServerTiming";
 import {
@@ -12,6 +9,9 @@ import {
 import { Inngest } from "./Inngest";
 import { InngestFunction } from "./InngestFunction";
 import { UnhashedOp, _internals } from "./InngestStepTools";
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import { jest } from "@jest/globals";
+import { assertType } from "type-plus";
 
 type TestEvents = {
   foo: { name: "foo"; data: { foo: string } };
@@ -80,7 +80,8 @@ describe("runFn", () => {
               { event: { name: "foo", data: { foo: "foo" } } },
               [],
               null,
-              timer
+              timer,
+              false
             );
           });
 
@@ -112,7 +113,8 @@ describe("runFn", () => {
                 { event: { name: "foo", data: { foo: "foo" } } },
                 [],
                 null,
-                timer
+                timer,
+                false
               )
             ).rejects.toThrow(stepErr);
           });
@@ -125,13 +127,18 @@ describe("runFn", () => {
     const runFnWithStack = (
       fn: InngestFunction<any>,
       stack: OpStack,
-      runStep?: string
+      opts?: {
+        runStep?: string;
+        onFailure?: boolean;
+        event?: EventPayload;
+      }
     ) => {
       return fn["runFn"](
-        { event: { name: "foo", data: {} } },
+        { event: opts?.event || { name: "foo", data: {} } },
         stack,
-        runStep || null,
-        timer
+        opts?.runStep || null,
+        timer,
+        Boolean(opts?.onFailure)
       );
     };
 
@@ -144,6 +151,7 @@ describe("runFn", () => {
           string,
           jest.Mock<() => string> | jest.Mock<() => Promise<string>>
         >;
+        event?: EventPayload;
       },
       U extends Record<keyof T["steps"], string>
     >(
@@ -154,10 +162,12 @@ describe("runFn", () => {
         string,
         {
           stack?: OpStack;
+          onFailure?: boolean;
           runStep?: string;
           expectedReturn: Awaited<ReturnType<typeof runFnWithStack>>;
           expectedHashOps?: UnhashedOp[];
           expectedStepsRun?: (keyof T["steps"])[];
+          event?: EventPayload;
         }
       >
     ) => {
@@ -171,7 +181,11 @@ describe("runFn", () => {
             beforeAll(async () => {
               hashDataSpy = getHashDataSpy();
               tools = createTools();
-              ret = await runFnWithStack(tools.fn, t.stack || [], t.runStep);
+              ret = await runFnWithStack(tools.fn, t.stack || [], {
+                runStep: t.runStep,
+                onFailure: t.onFailure,
+                event: t.event || tools.event || undefined,
+              });
             });
 
             test("returns expected value", () => {
@@ -815,6 +829,127 @@ describe("runFn", () => {
         },
       })
     );
+
+    testFn(
+      "handle onFailure calls",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => "B");
+
+        const fn = inngest.createFunction(
+          "name",
+          "foo",
+          () => undefined,
+          async ({ step: { run } }) => {
+            await run("A", A);
+            await run("B", B);
+          }
+        );
+
+        const event: FailureEventPayload = {
+          name: internalEvents.FunctionFailed,
+          data: {
+            event: {
+              name: "foo",
+              data: {},
+            },
+            function_id: "123",
+            run_id: "456",
+            error: {
+              message: "Something went wrong",
+            },
+          },
+        };
+
+        return { fn, steps: { A, B }, event };
+      },
+      {
+        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+        B: "b494def3936f5c59986e81bc29443609bfc2384a",
+      },
+      ({ A, B }) => ({
+        "first run reports A step": {
+          onFailure: true,
+          expectedReturn: [
+            "discovery",
+            [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          ],
+        },
+        "requesting to run A runs A": {
+          onFailure: true,
+          runStep: A,
+          expectedReturn: [
+            "run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "A",
+            }),
+          ],
+          expectedStepsRun: ["A"],
+        },
+        "request with A in stack reports B step": {
+          onFailure: true,
+          stack: [
+            {
+              id: A,
+              data: "A",
+            },
+          ],
+          expectedReturn: [
+            "discovery",
+            [
+              expect.objectContaining({
+                id: B,
+                name: "B",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          ],
+        },
+        "requesting to run B runs B": {
+          onFailure: true,
+          stack: [
+            {
+              id: A,
+              data: "A",
+            },
+          ],
+          runStep: B,
+          expectedReturn: [
+            "run",
+            expect.objectContaining({
+              id: B,
+              name: "B",
+              op: StepOpCode.RunStep,
+              data: "B",
+            }),
+          ],
+          expectedStepsRun: ["B"],
+        },
+        "final request returns empty response": {
+          onFailure: true,
+          stack: [
+            {
+              id: A,
+              data: "A",
+            },
+            {
+              id: B,
+              data: "B",
+            },
+          ],
+          expectedReturn: ["complete", undefined],
+        },
+      })
+    );
   });
 
   describe("onFailure functions", () => {
@@ -829,9 +964,10 @@ describe("runFn", () => {
             () => {
               // no-op
             },
-            ({ event }) => {
+            ({ err, event }) => {
               assertType<`${internalEvents.FunctionFailed}`>(event.name);
-              assertType<FailureEventPayload<EventPayload>>(event);
+              assertType<FailureEventPayload>(event);
+              assertType<FailureEventPayload["data"]["error"]>(err);
             }
           );
         });
@@ -856,9 +992,10 @@ describe("runFn", () => {
             () => {
               // no-op
             },
-            ({ event }) => {
+            ({ err, event }) => {
               assertType<`${internalEvents.FunctionFailed}`>(event.name);
-              assertType<FailureEventPayload<EventPayload>>(event);
+              assertType<FailureEventPayload>(event);
+              assertType<FailureEventPayload["data"]["error"]>(err);
 
               assertType<"foo">(event.data.event.name);
               assertType<EventPayload>(event.data.event);
@@ -894,9 +1031,9 @@ describe("runFn", () => {
 
       expect(fn).toBeInstanceOf(InngestFunction);
 
-      const exampleUrl = new URL("https://example.com");
-
-      const [fnConfig, failureFnConfig] = fn["getConfig"](exampleUrl);
+      const [fnConfig, failureFnConfig] = fn["getConfig"](
+        new URL("https://example.com")
+      );
 
       expect(fnConfig).toMatchObject({
         id: "test",

@@ -6,6 +6,7 @@ import { slugify } from "../helpers/strings";
 import {
   EventData,
   EventPayload,
+  FailureEventArgs,
   FunctionConfig,
   FunctionOptions,
   FunctionTrigger,
@@ -195,7 +196,12 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      */
     runStep: string | null,
 
-    timer: ServerTiming
+    timer: ServerTiming,
+
+    /**
+     * TODO Ugly boolean option; wrap this.
+     */
+    isFailureHandler: boolean
   ): Promise<
     | [type: "complete", data: unknown]
     | [type: "discovery", ops: OutgoingOp[]]
@@ -219,6 +225,34 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       tools,
       step: tools,
     } as Partial<HandlerArgs<any, any, any>>;
+
+    let userFnToRun = this.#fn;
+
+    /**
+     * If the incoming event is an Inngest function failure event, we also want
+     * to pass some extra data to the function to act as shortcuts to the event
+     * payload.
+     */
+    if (isFailureHandler) {
+      /**
+       * The user could have created a function that intentionally listens for
+       * these events. In this case, we may want to use the original handler.
+       *
+       * We only use the onFailure handler if
+       */
+
+      if (!this.#onFailureFn) {
+        throw new Error(
+          `Function "${this.name}" received a failure event to handle, but no failure handler was defined.`
+        );
+      }
+
+      userFnToRun = this.#onFailureFn;
+
+      (fnArg as FailureEventArgs).err = (
+        fnArg as FailureEventArgs
+      ).event.data.error;
+    }
 
     /**
      * If the user has passed functions they wish to use in their step, add them
@@ -244,7 +278,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
     const userFnPromise = new Promise(async (resolve, reject) => {
       try {
-        resolve(await this.#fn(fnArg));
+        resolve(await userFnToRun(fnArg));
       } catch (err) {
         reject(err);
       }

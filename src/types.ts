@@ -10,6 +10,13 @@ import type { KeysNotOfType, StrictUnion } from "./helpers/types";
  */
 export type EventData<Event> = Event extends never
   ? Record<string, never>
+  : "event" extends keyof Event
+  ? {
+      /**
+       * The event data present in the payload.
+       */
+      event: Event["event"];
+    }
   : {
       /**
        * The event data present in the payload.
@@ -22,7 +29,7 @@ export type EventData<Event> = Event extends never
  *
  * @public
  */
-export type FailureEventPayload<P extends EventPayload> = {
+export type FailureEventPayload<P extends EventPayload = EventPayload> = {
   name: `${internalEvents.FunctionFailed}`;
   data: {
     function_id: string;
@@ -37,6 +44,18 @@ export type FailureEventPayload<P extends EventPayload> = {
   };
 };
 
+export type FailureEventArgs<P extends EventPayload = EventPayload> = {
+  /**
+   * The event data present in the payload.
+   */
+  event: FailureEventPayload<P>;
+
+  /**
+   * The final error that caused this function to exhaust all retries.
+   */
+  err: FailureEventPayload<P>["data"]["error"];
+};
+
 /**
  * Arguments for a multi-step function, extending the single-step args and
  * including step function tooling.
@@ -47,8 +66,8 @@ export type HandlerArgs<
   Events extends Record<string, EventPayload>,
   Event extends keyof Events,
   Opts extends FunctionOptions,
-  Payload = Events[Event]
-> = EventData<Payload> & {
+  Payload extends { event: any } = { event: Events[Event] }
+> = Payload & {
   /**
    * @deprecated Use `step` instead.
    */
@@ -222,7 +241,7 @@ export type Handler<
   Events extends Record<string, EventPayload>,
   Event extends keyof Events,
   Opts extends FunctionOptions,
-  Payload = Events[Event]
+  Payload extends { event: any } = { event: Events[Event] }
 > = (arg: HandlerArgs<Events, Event, Opts, Payload>) => any | Promise<any>;
 
 /**
