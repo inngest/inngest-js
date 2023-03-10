@@ -92,6 +92,7 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     // (undocumented)
     createFunction<TFns extends Record<string, any>, TTrigger extends TriggerOptions<keyof Events & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof Events & string = EventNameFromTrigger<Events, TTrigger>>(nameOrOpts: string | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
         fns?: TFns;
+        onFailure?: Handler<Events, TTriggerName, TShimmedFns, FailureEventArgs<Events[TTriggerName]>>;
     }), trigger: TTrigger, handler: Handler<Events, TTriggerName, TShimmedFns>): InngestFunction<Events, any, any>;
     readonly inngestBaseUrl: URL;
     readonly name: string;

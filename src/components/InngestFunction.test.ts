@@ -1,10 +1,17 @@
+import { internalEvents } from "../helpers/consts";
 import { ServerTiming } from "../helpers/ServerTiming";
-import { EventPayload, OpStack, StepOpCode } from "../types";
+import {
+  EventPayload,
+  FailureEventPayload,
+  OpStack,
+  StepOpCode,
+} from "../types";
 import { Inngest } from "./Inngest";
 import { InngestFunction } from "./InngestFunction";
 import { UnhashedOp, _internals } from "./InngestStepTools";
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { jest } from "@jest/globals";
+import { assertType } from "type-plus";
 
 type TestEvents = {
   foo: { name: "foo"; data: { foo: string } };
@@ -824,295 +831,295 @@ describe("runFn", () => {
       })
     );
 
-    // testFn(
-    //   "handle onFailure calls",
-    //   () => {
-    //     const A = jest.fn(() => "A");
-    //     const B = jest.fn(() => "B");
+    testFn(
+      "handle onFailure calls",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => "B");
 
-    //     const fn = inngest.createFunction(
-    //       {
-    //         name: "name",
-    //         onFailure: async ({ step: { run } }) => {
-    //           await run("A", A);
-    //           await run("B", B);
-    //         },
-    //       },
-    //       "foo",
-    //       () => undefined
-    //     );
+        const fn = inngest.createFunction(
+          {
+            name: "name",
+            onFailure: async ({ step: { run } }) => {
+              await run("A", A);
+              await run("B", B);
+            },
+          },
+          "foo",
+          () => undefined
+        );
 
-    //     const event: FailureEventPayload = {
-    //       name: internalEvents.FunctionFailed,
-    //       data: {
-    //         event: {
-    //           name: "foo",
-    //           data: {},
-    //         },
-    //         function_id: "123",
-    //         run_id: "456",
-    //         error: {
-    //           message: "Something went wrong",
-    //         },
-    //       },
-    //     };
+        const event: FailureEventPayload = {
+          name: internalEvents.FunctionFailed,
+          data: {
+            event: {
+              name: "foo",
+              data: {},
+            },
+            function_id: "123",
+            run_id: "456",
+            error: {
+              message: "Something went wrong",
+            },
+          },
+        };
 
-    //     return { fn, steps: { A, B }, event, onFailure: true };
-    //   },
-    //   {
-    //     A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
-    //     B: "b494def3936f5c59986e81bc29443609bfc2384a",
-    //   },
-    //   ({ A, B }) => ({
-    //     "first run reports A step": {
-    //       expectedReturn: [
-    //         "discovery",
-    //         [
-    //           expect.objectContaining({
-    //             id: A,
-    //             name: "A",
-    //             op: StepOpCode.StepPlanned,
-    //           }),
-    //         ],
-    //       ],
-    //     },
-    //     "requesting to run A runs A": {
-    //       runStep: A,
-    //       expectedReturn: [
-    //         "run",
-    //         expect.objectContaining({
-    //           id: A,
-    //           name: "A",
-    //           op: StepOpCode.RunStep,
-    //           data: "A",
-    //         }),
-    //       ],
-    //       expectedStepsRun: ["A"],
-    //     },
-    //     "request with A in stack reports B step": {
-    //       stack: [
-    //         {
-    //           id: A,
-    //           data: "A",
-    //         },
-    //       ],
-    //       expectedReturn: [
-    //         "discovery",
-    //         [
-    //           expect.objectContaining({
-    //             id: B,
-    //             name: "B",
-    //             op: StepOpCode.StepPlanned,
-    //           }),
-    //         ],
-    //       ],
-    //     },
-    //     "requesting to run B runs B": {
-    //       stack: [
-    //         {
-    //           id: A,
-    //           data: "A",
-    //         },
-    //       ],
-    //       runStep: B,
-    //       expectedReturn: [
-    //         "run",
-    //         expect.objectContaining({
-    //           id: B,
-    //           name: "B",
-    //           op: StepOpCode.RunStep,
-    //           data: "B",
-    //         }),
-    //       ],
-    //       expectedStepsRun: ["B"],
-    //     },
-    //     "final request returns empty response": {
-    //       stack: [
-    //         {
-    //           id: A,
-    //           data: "A",
-    //         },
-    //         {
-    //           id: B,
-    //           data: "B",
-    //         },
-    //       ],
-    //       expectedReturn: ["complete", undefined],
-    //     },
-    //   })
-    // );
+        return { fn, steps: { A, B }, event, onFailure: true };
+      },
+      {
+        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+        B: "b494def3936f5c59986e81bc29443609bfc2384a",
+      },
+      ({ A, B }) => ({
+        "first run reports A step": {
+          expectedReturn: [
+            "discovery",
+            [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          ],
+        },
+        "requesting to run A runs A": {
+          runStep: A,
+          expectedReturn: [
+            "run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "A",
+            }),
+          ],
+          expectedStepsRun: ["A"],
+        },
+        "request with A in stack reports B step": {
+          stack: [
+            {
+              id: A,
+              data: "A",
+            },
+          ],
+          expectedReturn: [
+            "discovery",
+            [
+              expect.objectContaining({
+                id: B,
+                name: "B",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          ],
+        },
+        "requesting to run B runs B": {
+          stack: [
+            {
+              id: A,
+              data: "A",
+            },
+          ],
+          runStep: B,
+          expectedReturn: [
+            "run",
+            expect.objectContaining({
+              id: B,
+              name: "B",
+              op: StepOpCode.RunStep,
+              data: "B",
+            }),
+          ],
+          expectedStepsRun: ["B"],
+        },
+        "final request returns empty response": {
+          stack: [
+            {
+              id: A,
+              data: "A",
+            },
+            {
+              id: B,
+              data: "B",
+            },
+          ],
+          expectedReturn: ["complete", undefined],
+        },
+      })
+    );
   });
 
-  // describe("onFailure functions", () => {
-  //   describe("types", () => {
-  //     describe("no custom types", () => {
-  //       const inngest = new Inngest({ name: "test" });
+  describe("onFailure functions", () => {
+    describe("types", () => {
+      describe("no custom types", () => {
+        const inngest = new Inngest({ name: "test" });
 
-  //       test("onFailure function has unknown internal event", () => {
-  //         inngest.createFunction(
-  //           {
-  //             name: "test",
-  //             onFailure: ({ err, event }) => {
-  //               assertType<`${internalEvents.FunctionFailed}`>(event.name);
-  //               assertType<FailureEventPayload>(event);
-  //               assertType<FailureEventPayload["data"]["error"]>(err);
-  //             },
-  //           },
-  //           { event: "test" },
-  //           () => {
-  //             // no-op
-  //           }
-  //         );
-  //       });
-  //     });
+        test("onFailure function has unknown internal event", () => {
+          inngest.createFunction(
+            {
+              name: "test",
+              onFailure: ({ err, event }) => {
+                assertType<`${internalEvents.FunctionFailed}`>(event.name);
+                assertType<FailureEventPayload>(event);
+                assertType<FailureEventPayload["data"]["error"]>(err);
+              },
+            },
+            { event: "test" },
+            () => {
+              // no-op
+            }
+          );
+        });
+      });
 
-  //     describe("multiple custom types", () => {
-  //       const inngest = new Inngest<{
-  //         foo: {
-  //           name: "foo";
-  //           data: { title: string };
-  //         };
-  //         bar: {
-  //           name: "bar";
-  //           data: { message: string };
-  //         };
-  //       }>({ name: "test" });
+      describe("multiple custom types", () => {
+        const inngest = new Inngest<{
+          foo: {
+            name: "foo";
+            data: { title: string };
+          };
+          bar: {
+            name: "bar";
+            data: { message: string };
+          };
+        }>({ name: "test" });
 
-  //       test("onFailure function has known internal event", () => {
-  //         inngest.createFunction(
-  //           {
-  //             name: "test",
-  //             onFailure: ({ err, event }) => {
-  //               assertType<`${internalEvents.FunctionFailed}`>(event.name);
-  //               assertType<FailureEventPayload>(event);
-  //               assertType<FailureEventPayload["data"]["error"]>(err);
+        test("onFailure function has known internal event", () => {
+          inngest.createFunction(
+            {
+              name: "test",
+              onFailure: ({ err, event }) => {
+                assertType<`${internalEvents.FunctionFailed}`>(event.name);
+                assertType<FailureEventPayload>(event);
+                assertType<FailureEventPayload["data"]["error"]>(err);
 
-  //               assertType<"foo">(event.data.event.name);
-  //               assertType<EventPayload>(event.data.event);
-  //               assertType<{ title: string }>(event.data.event.data);
-  //             },
-  //           },
-  //           { event: "foo" },
-  //           () => {
-  //             // no-op
-  //           }
-  //         );
-  //       });
-  //     });
+                assertType<"foo">(event.data.event.name);
+                assertType<EventPayload>(event.data.event);
+                assertType<{ title: string }>(event.data.event.data);
+              },
+            },
+            { event: "foo" },
+            () => {
+              // no-op
+            }
+          );
+        });
+      });
 
-  //     describe("passed fns have correct types", () => {
-  //       const inngest = new Inngest({ name: "test" });
+      describe("passed fns have correct types", () => {
+        const inngest = new Inngest({ name: "test" });
 
-  //       const lib = {
-  //         foo: true,
-  //         bar: 5,
-  //         baz: <T extends string>(name: T) => `Hello, ${name}!` as const,
-  //         qux: (name: string) => `Hello, ${name}!`,
-  //       };
+        const lib = {
+          foo: true,
+          bar: 5,
+          baz: <T extends string>(name: T) => `Hello, ${name}!` as const,
+          qux: (name: string) => `Hello, ${name}!`,
+        };
 
-  //       test("has shimmed fn types", () => {
-  //         inngest.createFunction(
-  //           {
-  //             name: "test",
-  //             fns: { ...lib },
-  //             onFailure: ({ fns: { qux } }) => {
-  //               assertType<Promise<string>>(qux("world"));
-  //             },
-  //           },
-  //           { event: "foo" },
-  //           () => {
-  //             // no-op
-  //           }
-  //         );
-  //       });
+        test("has shimmed fn types", () => {
+          inngest.createFunction(
+            {
+              name: "test",
+              fns: { ...lib },
+              onFailure: ({ fns: { qux } }) => {
+                assertType<Promise<string>>(qux("world"));
+              },
+            },
+            { event: "foo" },
+            () => {
+              // no-op
+            }
+          );
+        });
 
-  //       test.skip("has shimmed fn types that preserve generics", () => {
-  //         inngest.createFunction(
-  //           {
-  //             name: "test",
-  //             fns: { ...lib },
-  //             onFailure: ({ fns: { baz: _baz } }) => {
-  //               // assertType<Promise<"Hello, world!">>(baz("world"));
-  //             },
-  //           },
-  //           { event: "foo" },
-  //           () => {
-  //             // no-op
-  //           }
-  //         );
-  //       });
-  //     });
-  //   });
+        test.skip("has shimmed fn types that preserve generics", () => {
+          inngest.createFunction(
+            {
+              name: "test",
+              fns: { ...lib },
+              onFailure: ({ fns: { baz: _baz } }) => {
+                // assertType<Promise<"Hello, world!">>(baz("world"));
+              },
+            },
+            { event: "foo" },
+            () => {
+              // no-op
+            }
+          );
+        });
+      });
+    });
 
-  //   test("specifying an onFailure function registers correctly", () => {
-  //     const inngest = new Inngest<{
-  //       foo: {
-  //         name: "foo";
-  //         data: { title: string };
-  //       };
-  //       bar: {
-  //         name: "bar";
-  //         data: { message: string };
-  //       };
-  //     }>({ name: "test" });
+    test("specifying an onFailure function registers correctly", () => {
+      const inngest = new Inngest<{
+        foo: {
+          name: "foo";
+          data: { title: string };
+        };
+        bar: {
+          name: "bar";
+          data: { message: string };
+        };
+      }>({ name: "test" });
 
-  //     const fn = inngest.createFunction(
-  //       {
-  //         name: "test",
-  //         onFailure: () => {
-  //           // no-op
-  //         },
-  //       },
-  //       { event: "foo" },
-  //       () => {
-  //         // no-op
-  //       }
-  //     );
+      const fn = inngest.createFunction(
+        {
+          name: "test",
+          onFailure: () => {
+            // no-op
+          },
+        },
+        { event: "foo" },
+        () => {
+          // no-op
+        }
+      );
 
-  //     expect(fn).toBeInstanceOf(InngestFunction);
+      expect(fn).toBeInstanceOf(InngestFunction);
 
-  //     const [fnConfig, failureFnConfig] = fn["getConfig"](
-  //       new URL("https://example.com")
-  //     );
+      const [fnConfig, failureFnConfig] = fn["getConfig"](
+        new URL("https://example.com")
+      );
 
-  //     expect(fnConfig).toMatchObject({
-  //       id: "test",
-  //       name: "test",
-  //       steps: {
-  //         [InngestFunction.stepId]: {
-  //           id: InngestFunction.stepId,
-  //           name: InngestFunction.stepId,
-  //           runtime: {
-  //             type: "http",
-  //             url: `https://example.com/?fnId=test&stepId=${InngestFunction.stepId}`,
-  //           },
-  //         },
-  //       },
-  //       triggers: [{ event: "foo" }],
-  //     });
+      expect(fnConfig).toMatchObject({
+        id: "test",
+        name: "test",
+        steps: {
+          [InngestFunction.stepId]: {
+            id: InngestFunction.stepId,
+            name: InngestFunction.stepId,
+            runtime: {
+              type: "http",
+              url: `https://example.com/?fnId=test&stepId=${InngestFunction.stepId}`,
+            },
+          },
+        },
+        triggers: [{ event: "foo" }],
+      });
 
-  //     expect(failureFnConfig).toMatchObject({
-  //       id: "test-failure",
-  //       name: "test (failure)",
-  //       steps: {
-  //         [InngestFunction.stepId]: {
-  //           id: InngestFunction.stepId,
-  //           name: InngestFunction.stepId,
-  //           runtime: {
-  //             type: "http",
-  //             url: `https://example.com/?fnId=test-failure&stepId=${InngestFunction.stepId}`,
-  //           },
-  //         },
-  //       },
-  //       triggers: [
-  //         {
-  //           event: internalEvents.FunctionFailed,
-  //           expression: "async.data.function_id == 'test'",
-  //         },
-  //       ],
-  //     });
-  //   });
-  // });
+      expect(failureFnConfig).toMatchObject({
+        id: "test-failure",
+        name: "test (failure)",
+        steps: {
+          [InngestFunction.stepId]: {
+            id: InngestFunction.stepId,
+            name: InngestFunction.stepId,
+            runtime: {
+              type: "http",
+              url: `https://example.com/?fnId=test-failure&stepId=${InngestFunction.stepId}`,
+            },
+          },
+        },
+        triggers: [
+          {
+            event: internalEvents.FunctionFailed,
+            expression: "async.data.function_id == 'test'",
+          },
+        ],
+      });
+    });
+  });
 
   describe("cancellation", () => {
     describe("types", () => {

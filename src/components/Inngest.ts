@@ -11,6 +11,7 @@ import type {
   ClientOptions,
   EventNameFromTrigger,
   EventPayload,
+  FailureEventArgs,
   FunctionOptions,
   Handler,
   ShimmedFns,
@@ -391,12 +392,12 @@ export class Inngest<Events extends Record<string, EventPayload>> {
            *
            * TODO Add user-facing comments here.
            */
-          // onFailure?: Handler<
-          //   Events,
-          //   TTriggerName,
-          //   TShimmedFns,
-          //   FailureEventArgs<Events[TTriggerName]>
-          // >;
+          onFailure?: Handler<
+            Events,
+            TTriggerName,
+            TShimmedFns,
+            FailureEventArgs<Events[TTriggerName]>
+          >;
         }),
     trigger: TTrigger,
     handler: Handler<Events, TTriggerName, TShimmedFns>
