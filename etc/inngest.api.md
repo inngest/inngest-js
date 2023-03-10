@@ -30,7 +30,7 @@ export interface EventPayload {
     v?: string;
 }
 
-// @public (undocumented)
+// @public
 export type FailureEventArgs<P extends EventPayload = EventPayload> = {
     event: FailureEventPayload<P>;
     err: FailureEventPayload<P>["data"]["error"];

@@ -44,6 +44,11 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
   };
 };
 
+/**
+ * Context arguments specific to a failure event.
+ *
+ * @public
+ */
 export type FailureEventArgs<P extends EventPayload = EventPayload> = {
   /**
    * The event data present in the payload.
