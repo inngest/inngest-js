@@ -11,6 +11,7 @@ import {
   FunctionConfig,
   FunctionOptions,
   FunctionTrigger,
+  Handler,
   IncomingOp,
   OpStack,
   OutgoingOp,
@@ -29,17 +30,22 @@ import { createStepTools, TickOp } from "./InngestStepTools";
  * @public
  */
 export class InngestFunction<
-  Events extends Record<string, EventPayload>,
-  Trigger extends FunctionTrigger<keyof Events & string>,
-  Opts extends FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>
+  Events extends Record<string, EventPayload> = Record<string, EventPayload>,
+  Trigger extends FunctionTrigger<keyof Events & string> = FunctionTrigger<
+    keyof Events & string
+  >,
+  Opts extends FunctionOptions<
+    Events,
+    EventNameFromTrigger<Events, Trigger>
+  > = FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>
 > {
   static stepId = "step";
   static failureSuffix = "-failure";
 
   readonly #opts: Opts;
   readonly #trigger: Trigger;
-  readonly #fn: (...args: any[]) => any;
-  readonly #onFailureFn?: (...args: any[]) => any;
+  readonly #fn: Handler<Events, keyof Events & string>;
+  readonly #onFailureFn?: Handler<Events, keyof Events & string>;
   readonly #client: Inngest<Events>;
 
   /**
@@ -57,7 +63,7 @@ export class InngestFunction<
      */
     opts: Opts,
     trigger: Trigger,
-    fn: (...args: any[]) => any
+    fn: Handler<Events, keyof Events & string>
   ) {
     this.#client = client;
     this.#opts = opts;
@@ -200,7 +206,7 @@ export class InngestFunction<
     /**
      * The data to pass to the function, probably straight from Inngest.
      */
-    data: any,
+    data: unknown,
 
     /**
      * The op stack to pass to the function as state, likely stored in
@@ -247,6 +253,7 @@ export class InngestFunction<
       ...(data as { event: EventPayload }),
       tools,
       step: tools,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as Partial<Context<any, any, any>>;
 
     let userFnToRun = this.#fn;
@@ -293,7 +300,7 @@ export class InngestFunction<
         return {
           ...acc,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
-          [key]: (...args: any[]) => tools.run(key, () => fn(...args)),
+          [key]: (...args: unknown[]) => tools.run(key, () => fn(...args)),
         };
       }, {});
     }
@@ -301,7 +308,8 @@ export class InngestFunction<
     // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
     const userFnPromise = new Promise(async (resolve, reject) => {
       try {
-        resolve(await userFnToRun(fnArg));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        resolve(await userFnToRun(fnArg as Context<any, any, any>));
       } catch (err) {
         reject(err);
       }

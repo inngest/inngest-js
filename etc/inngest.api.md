@@ -23,10 +23,10 @@ export type EventNameFromTrigger<Events extends Record<string, EventPayload>, T 
 
 // @public
 export interface EventPayload {
-    data: any;
+    data: unknown;
     name: string;
     ts?: number;
-    user?: any;
+    user?: unknown;
     v?: string;
 }
 
@@ -60,12 +60,12 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     cancelOn?: Cancellation<Events, Event>[];
     concurrency?: number;
     // (undocumented)
-    fns?: Record<string, any>;
+    fns?: Record<string, unknown>;
     id?: string;
     idempotency?: string;
     name: string;
     // (undocumented)
-    onFailure?: (...args: any[]) => any;
+    onFailure?: (...args: unknown[]) => unknown;
     retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
     throttle?: {
         key?: string;
@@ -83,16 +83,16 @@ export enum headerKeys {
 }
 
 // @public
-export class Inngest<Events extends Record<string, EventPayload>> {
+export class Inngest<Events extends Record<string, EventPayload> = Record<string, EventPayload>> {
     constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
     // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    createFunction<TFns extends Record<string, any>, TTrigger extends TriggerOptions<keyof Events & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof Events & string = EventNameFromTrigger<Events, TTrigger>>(nameOrOpts: string | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
+    createFunction<TFns extends Record<string, unknown>, TTrigger extends TriggerOptions<keyof Events & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof Events & string = EventNameFromTrigger<Events, TTrigger>>(nameOrOpts: string | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
         fns?: TFns;
-    }), trigger: TTrigger, handler: Handler<Events, TTriggerName, TShimmedFns>): InngestFunction<Events, any, any>;
+    }), trigger: TTrigger, handler: Handler<Events, TTriggerName, TShimmedFns>): InngestFunction;
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
@@ -110,8 +110,8 @@ export class Inngest<Events extends Record<string, EventPayload>> {
 export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     constructor(
     frameworkName: string,
-    appNameOrInngest: string | Inngest<any>,
-    functions: InngestFunction<any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
+    appNameOrInngest: string | Inngest,
+    functions: InngestFunction[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
     handler: H,
     transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
@@ -122,7 +122,7 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     protected readonly frameworkName: string;
     readonly handler: H;
     protected _isProd: boolean;
-    protected log(level: LogLevel, ...args: any[]): void;
+    protected log(level: LogLevel, ...args: unknown[]): void;
     protected readonly logLevel: LogLevel;
     readonly name: string;
     // (undocumented)
@@ -137,7 +137,7 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     // Warning: (ae-forgotten-export) The symbol "StepRunResponse" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    protected runStep(functionId: string, stepId: string | null, data: any, timer: ServerTiming): Promise<StepRunResponse>;
+    protected runStep(functionId: string, stepId: string | null, data: unknown, timer: ServerTiming): Promise<StepRunResponse>;
     // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
     protected get sdkHeader(): [
     prefix: string,
@@ -155,7 +155,7 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     // Warning: (ae-forgotten-export) The symbol "ActionResponse" needs to be exported by the entry point index.d.ts
     readonly transformRes: (res: ActionResponse, ...args: Parameters<H>) => TransformedRes;
     // (undocumented)
-    protected validateSignature(sig: string | undefined, body: Record<string, any>): void;
+    protected validateSignature(sig: string | undefined, body: Record<string, unknown>): void;
 }
 
 // @public
@@ -169,9 +169,9 @@ export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
 // @public
 export class NonRetriableError extends Error {
     constructor(message: string, options?: {
-        cause?: any;
+        cause?: unknown;
     });
-    readonly cause?: any;
+    readonly cause?: unknown;
 }
 
 // @public
@@ -199,9 +199,9 @@ export interface RegisterOptions {
 
 // @public
 export type ServeHandler = (
-nameOrInngest: string | Inngest<any>,
-functions: InngestFunction<any, any, any>[],
-opts?: RegisterOptions) => any;
+nameOrInngest: string | Inngest,
+functions: InngestFunction[],
+opts?: RegisterOptions) => unknown;
 
 // @public
 export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${`${number}h` | ""}${`${number}m` | ""}${`${number}s` | ""}`;

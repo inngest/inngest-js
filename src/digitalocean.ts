@@ -12,7 +12,7 @@ type HTTP = {
 type Main = {
   http: HTTP;
   // data can include any JSON-decoded post-data, and query args/saerch params.
-  [data: string]: any;
+  [data: string]: unknown;
 };
 
 export const serve = (
@@ -60,7 +60,7 @@ export const serve = (
         run: () => {
           if (http.method === "POST") {
             return {
-              data: data as Record<string, any>,
+              data: data as Record<string, unknown>,
               fnId: (main[queryKeys.FnId] as string) || "",
               stepId: (main[queryKeys.StepId] as string) || "",
               env,

@@ -32,7 +32,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
             return {
               fnId: req.query[queryKeys.FnId] as string,
               stepId: req.query[queryKeys.StepId] as string,
-              data: req.body as Record<string, any>,
+              data: req.body as Record<string, unknown>,
               env,
               isProduction,
               url,

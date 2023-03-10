@@ -34,7 +34,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         run: async () => {
           if (req.method === "POST") {
             return {
-              data: (await req.json()) as Record<string, any>,
+              data: (await req.json()) as Record<string, unknown>,
               env,
               fnId: url.searchParams.get(queryKeys.FnId) as string,
               stepId: url.searchParams.get(queryKeys.StepId) as string,

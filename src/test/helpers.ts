@@ -66,7 +66,7 @@ export const testFramework = (
       req: Request,
       res: Response,
       env: Record<string, string | undefined>
-    ) => any[] | void;
+    ) => unknown[] | void;
 
     /**
      * Specify a transformer for a given response, which will be used to
@@ -84,6 +84,7 @@ export const testFramework = (
       /**
        * The returned value from the handler.
        */
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ret: any
     ) => Promise<HandlerStandardReturn>;
 
@@ -134,7 +135,8 @@ export const testFramework = (
     }
 
     const args = opts?.transformReq?.(req, res, envToPass) ?? [req, res];
-    const ret = await serveHandler(...args);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ret = await (serveHandler as (...args: any[]) => any)(...args);
 
     return (
       opts?.transformRes?.(res, ret) ?? {
@@ -605,6 +607,7 @@ export const testFramework = (
                 signingKey:
                   "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                 __testingAllowExpiredSignatures: true,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
               } as any,
             ],
             [
@@ -666,8 +669,8 @@ export const introspectionSchema = z.object({
  */
 export const sendEvent = async (
   name: string,
-  data?: Record<string, any>,
-  user?: Record<string, any>
+  data?: Record<string, unknown>,
+  user?: Record<string, unknown>
 ): Promise<string> => {
   const id = ulid();
 
@@ -745,6 +748,7 @@ export const receivedEventWithName = async (
     }
 
     const data = await res.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const event = data?.data?.events?.find((e: any) => e.name === name);
 
     if (event) {
@@ -799,6 +803,7 @@ export const eventRunWithName = async (
     const data = await res.json();
 
     const run = data?.data?.event?.functionRuns?.find(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (run: any) => run.name === name
     );
 
@@ -827,6 +832,7 @@ export const runHasTimeline = async (
     functionType?: string;
     output?: string;
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> => {
   for (let i = 0; i < 5; i++) {
     const start = new Date();
@@ -868,8 +874,10 @@ export const runHasTimeline = async (
 
     const data = await res.json();
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const timelineItem = data?.data?.functionRun?.timeline?.find((entry: any) =>
       Object.keys(timeline).every(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (key) => entry[key] === (timeline as any)[key]
       )
     );

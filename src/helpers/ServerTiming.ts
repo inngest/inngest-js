@@ -70,7 +70,7 @@ export class ServerTiming {
    *
    * The return value of the function will be returned from this function.
    */
-  public async wrap<T extends (...args: any[]) => any>(
+  public async wrap<T extends (...args: unknown[]) => unknown>(
     name: string,
     fn: T,
     description?: string
@@ -78,8 +78,7 @@ export class ServerTiming {
     const stop = this.start(name, description);
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-      return await Promise.resolve(fn());
+      return (await Promise.resolve(fn())) as Awaited<ReturnType<T>>;
     } finally {
       stop();
     }

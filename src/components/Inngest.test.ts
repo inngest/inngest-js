@@ -54,16 +54,18 @@ describe("send", () => {
 
   beforeAll(() => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    global.fetch = jest.fn(() =>
-      Promise.resolve({
-        status: 200,
-        json: () => Promise.resolve({}),
-      })
+    global.fetch = jest.fn(
+      () =>
+        Promise.resolve({
+          status: 200,
+          json: () => Promise.resolve({}),
+        })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ) as any;
   });
 
   beforeEach(() => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
     (global.fetch as any).mockClear();
   });
 
@@ -156,7 +158,7 @@ describe("createFunction", () => {
       test("allows name to be a string", () => {
         inngest.createFunction("test", { event: "test" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<any>(event.data);
+          assertType<unknown>(event.data);
         });
       });
 
@@ -166,7 +168,7 @@ describe("createFunction", () => {
           { event: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<any>(event.data);
+            assertType<unknown>(event.data);
           }
         );
       });
@@ -178,7 +180,7 @@ describe("createFunction", () => {
           { event: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<any>(event.data);
+            assertType<unknown>(event.data);
           }
         );
       });
@@ -186,21 +188,21 @@ describe("createFunction", () => {
       test("allows trigger to be a string", () => {
         inngest.createFunction("test", "test", ({ event }) => {
           assertType<string>(event.name);
-          assertType<any>(event.data);
+          assertType<unknown>(event.data);
         });
       });
 
       test("allows trigger to be an object with an event property", () => {
         inngest.createFunction("test", { event: "test" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<any>(event.data);
+          assertType<unknown>(event.data);
         });
       });
 
       test("allows trigger to be an object with a cron property", () => {
         inngest.createFunction("test", { cron: "test" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<any>(event.data);
+          assertType<unknown>(event.data);
         });
       });
 
@@ -208,7 +210,7 @@ describe("createFunction", () => {
         // @ts-expect-error Unknown property
         inngest.createFunction("test", { foo: "bar" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<any>(event.data);
+          assertType<unknown>(event.data);
         });
       });
 
@@ -219,7 +221,7 @@ describe("createFunction", () => {
           { event: "test", cron: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<any>(event.data);
+            assertType<unknown>(event.data);
           }
         );
       });

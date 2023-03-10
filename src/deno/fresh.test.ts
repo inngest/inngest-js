@@ -21,7 +21,7 @@ testFramework("Deno Fresh", DenoFreshHandler, {
        * `process.stderr`, we do need to provide some pieces of this, but we can
        * still remove any env vars.
        */
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
       process.env = undefined as any;
 
       Object.defineProperties(globalThis, {
@@ -33,7 +33,7 @@ testFramework("Deno Fresh", DenoFreshHandler, {
       /**
        * Fake a global Deno object, which is primarily used to access env vars.
        */
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
       (globalThis as any).Deno = {
         env: { toObject: () => originalProcess.env },
       };
@@ -49,7 +49,7 @@ testFramework("Deno Fresh", DenoFreshHandler, {
         Response: { value: originalResponse, configurable: true },
         Headers: { value: originalHeaders, configurable: true },
       });
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
       delete (globalThis as any).Deno;
     });
   },
@@ -60,9 +60,9 @@ testFramework("Deno Fresh", DenoFreshHandler, {
       headers.set(k, v as string);
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
     (req as any).headers = headers;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
     (req as any).json = () => Promise.resolve(req.body);
 
     return [req, env];
@@ -88,7 +88,7 @@ testFramework("Deno Fresh", DenoFreshHandler, {
     });
 
     test("Deno.env.toObject should be defined", () => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
       expect((globalThis as any).Deno.env.toObject).toBeDefined();
     });
   },

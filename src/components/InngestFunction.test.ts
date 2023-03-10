@@ -58,7 +58,7 @@ describe("runFn", () => {
     ].forEach(({ type, flowFn, badFlowFn }) => {
       describe(`${type} function`, () => {
         describe("success", () => {
-          let fn: InngestFunction<TestEvents, any, any>;
+          let fn: InngestFunction<TestEvents>;
           let ret: Awaited<ReturnType<typeof fn["runFn"]>>;
 
           beforeAll(async () => {
@@ -89,7 +89,7 @@ describe("runFn", () => {
 
         describe("throws", () => {
           const stepErr = new Error("step error");
-          let fn: InngestFunction<TestEvents, any, any>;
+          let fn: InngestFunction<TestEvents>;
 
           beforeAll(() => {
             fn = new InngestFunction(
@@ -118,7 +118,7 @@ describe("runFn", () => {
 
   describe("step functions", () => {
     const runFnWithStack = (
-      fn: InngestFunction<any, any, any>,
+      fn: InngestFunction,
       stack: OpStack,
       opts?: {
         runStep?: string;
@@ -139,7 +139,7 @@ describe("runFn", () => {
 
     const testFn = <
       T extends {
-        fn: InngestFunction<any, any, any>;
+        fn: InngestFunction;
         steps: Record<
           string,
           jest.Mock<() => string> | jest.Mock<() => Promise<string>>
