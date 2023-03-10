@@ -838,13 +838,15 @@ describe("runFn", () => {
         const B = jest.fn(() => "B");
 
         const fn = inngest.createFunction(
-          "name",
+          {
+            name: "name",
+            onFailure: async ({ step: { run } }) => {
+              await run("A", A);
+              await run("B", B);
+            },
+          },
           "foo",
-          () => undefined,
-          async ({ step: { run } }) => {
-            await run("A", A);
-            await run("B", B);
-          }
+          () => undefined
         );
 
         const event: FailureEventPayload = {
@@ -955,15 +957,17 @@ describe("runFn", () => {
 
         test("onFailure function has unknown internal event", () => {
           inngest.createFunction(
-            { name: "test" },
+            {
+              name: "test",
+              onFailure: ({ err, event }) => {
+                assertType<`${internalEvents.FunctionFailed}`>(event.name);
+                assertType<FailureEventPayload>(event);
+                assertType<FailureEventPayload["data"]["error"]>(err);
+              },
+            },
             { event: "test" },
             () => {
               // no-op
-            },
-            ({ err, event }) => {
-              assertType<`${internalEvents.FunctionFailed}`>(event.name);
-              assertType<FailureEventPayload>(event);
-              assertType<FailureEventPayload["data"]["error"]>(err);
             }
           );
         });
@@ -983,19 +987,64 @@ describe("runFn", () => {
 
         test("onFailure function has known internal event", () => {
           inngest.createFunction(
-            { name: "test" },
+            {
+              name: "test",
+              onFailure: ({ err, event }) => {
+                assertType<`${internalEvents.FunctionFailed}`>(event.name);
+                assertType<FailureEventPayload>(event);
+                assertType<FailureEventPayload["data"]["error"]>(err);
+
+                assertType<"foo">(event.data.event.name);
+                assertType<EventPayload>(event.data.event);
+                assertType<{ title: string }>(event.data.event.data);
+              },
+            },
             { event: "foo" },
             () => {
               // no-op
-            },
-            ({ err, event }) => {
-              assertType<`${internalEvents.FunctionFailed}`>(event.name);
-              assertType<FailureEventPayload>(event);
-              assertType<FailureEventPayload["data"]["error"]>(err);
+            }
+          );
+        });
+      });
 
-              assertType<"foo">(event.data.event.name);
-              assertType<EventPayload>(event.data.event);
-              assertType<{ title: string }>(event.data.event.data);
+      describe("passed fns have correct types", () => {
+        const inngest = new Inngest({ name: "test" });
+
+        const lib = {
+          foo: true,
+          bar: 5,
+          baz: <T extends string>(name: T) => `Hello, ${name}!` as const,
+          qux: (name: string) => `Hello, ${name}!`,
+        };
+
+        test("has shimmed fn types", () => {
+          inngest.createFunction(
+            {
+              name: "test",
+              fns: { ...lib },
+              onFailure: ({ fns: { qux } }) => {
+                assertType<Promise<string>>(qux("world"));
+              },
+            },
+            { event: "foo" },
+            () => {
+              // no-op
+            }
+          );
+        });
+
+        test.skip("has shimmed fn types that preserve generics", () => {
+          inngest.createFunction(
+            {
+              name: "test",
+              fns: { ...lib },
+              onFailure: ({ fns: { baz: _baz } }) => {
+                // assertType<Promise<"Hello, world!">>(baz("world"));
+              },
+            },
+            { event: "foo" },
+            () => {
+              // no-op
             }
           );
         });
@@ -1015,11 +1064,13 @@ describe("runFn", () => {
       }>({ name: "test" });
 
       const fn = inngest.createFunction(
-        { name: "test" },
-        { event: "foo" },
-        () => {
-          // no-op
+        {
+          name: "test",
+          onFailure: () => {
+            // no-op
+          },
         },
+        { event: "foo" },
         () => {
           // no-op
         }
