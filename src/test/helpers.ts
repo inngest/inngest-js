@@ -10,7 +10,6 @@ import { ulid } from "ulid";
 import { z } from "zod";
 import { Inngest } from "../components/Inngest";
 import { ServeHandler } from "../components/InngestCommHandler";
-import { InngestFunction } from "../components/InngestFunction";
 import { headerKeys } from "../helpers/consts";
 import { version } from "../version";
 
@@ -512,8 +511,9 @@ export const testFramework = (
 
     describe("POST (run function)", () => {
       describe("signature validation", () => {
-        const fn = new InngestFunction(
-          new Inngest({ name: "test" }),
+        const client = new Inngest({ name: "test" });
+
+        const fn = client.createFunction(
           { name: "Test", id: "test" },
           { event: "demo/event.sent" },
           () => "fn"
