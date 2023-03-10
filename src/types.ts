@@ -4,27 +4,6 @@ import { internalEvents } from "./helpers/consts";
 import type { KeysNotOfType, ObjectPaths, StrictUnion } from "./helpers/types";
 
 /**
- * Arguments for a single-step function.
- *
- * @public
- */
-export type EventData<Event> = Event extends never
-  ? Record<string, never>
-  : "event" extends keyof Event
-  ? {
-      /**
-       * The event data present in the payload.
-       */
-      event: Event["event"];
-    }
-  : {
-      /**
-       * The event data present in the payload.
-       */
-      event: Event;
-    };
-
-/**
  * The payload for an internal Inngest event that is sent when a function fails.
  *
  * @public
@@ -60,80 +39,6 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
    */
   err: FailureEventPayload<P>["data"]["error"];
 };
-
-/**
- * Arguments for a multi-step function, extending the single-step args and
- * including step function tooling.
- *
- * @public
- */
-export type HandlerArgs<
-  Events extends Record<string, EventPayload>,
-  Event extends keyof Events & string,
-  Opts extends FunctionOptions<Events, Event>,
-  Payload extends { event: any } = { event: Events[Event] }
-> = Payload & {
-  /**
-   * @deprecated Use `step` instead.
-   */
-  tools: ReturnType<typeof createStepTools<Events, Event>>[0];
-
-  step: ReturnType<typeof createStepTools<Events, Event>>[0];
-} & (Opts["fns"] extends Record<string, any>
-    ? {
-        /**
-         * Any `fns` passed when creating your Inngest function will be
-         * available here and can be used as normal.
-         *
-         * Every call to one of these functions will become a new retryable
-         * step.
-         *
-         * @example
-         *
-         * Both examples behave the same; it's preference as to which you
-         * prefer.
-         *
-         * ```ts
-         * import { userDb } from "./db";
-         *
-         * // Specify `fns` and be able to use them in your Inngest function
-         * inngest.createFunction(
-         *   { name: "Create user from PR", fns: { ...userDb } },
-         *   { event: "github/pull_request" },
-         *   async ({ tools: { run }, fns: { createUser } }) => {
-         *     await createUser("Alice");
-         *   }
-         * );
-         *
-         * // Or always use `run()` to run inline steps and use them directly
-         * inngest.createFunction(
-         *   { name: "Create user from PR" },
-         *   { event: "github/pull_request" },
-         *   async ({ tools: { run } }) => {
-         *     await run("createUser", () => userDb.createUser("Alice"));
-         *   }
-         * );
-         * ```
-         */
-        fns: {
-          /**
-           * The key omission here allows the user to pass anything to the `fns`
-           * object and have it be correctly understand and transformed.
-           *
-           * Crucially, we use a complex `Omit` here to ensure that function
-           * comments and metadata is preserved, meaning the user can still use
-           * the function exactly like they would in the rest of their codebase,
-           * even though we're shimming with `tools.run()`.
-           */
-          [K in keyof Omit<
-            Opts["fns"],
-            KeysNotOfType<Opts["fns"], (...args: any[]) => any>
-          >]: (
-            ...args: Parameters<Opts["fns"][K]>
-          ) => Promise<Awaited<ReturnType<Opts["fns"][K]>>>;
-        };
-      }
-    : Record<string, never>);
 
 /**
  * Unique codes for the different types of operation that can be sent to Inngest
@@ -421,12 +326,12 @@ export interface Response {
  *
  * @internal
  */
-export type Step<Context = any> = (
+export type Step<TContext = any> = (
   /**
    * The context for this step, including the triggering event and any previous
    * step output.
    */
-  context: Context
+  context: TContext
 ) => Promise<Response> | Response;
 
 /**

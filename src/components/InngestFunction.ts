@@ -4,14 +4,13 @@ import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { ServerTiming } from "../helpers/ServerTiming";
 import { slugify, timeStr } from "../helpers/strings";
 import {
-  EventData,
+  Context,
   EventNameFromTrigger,
   EventPayload,
   FailureEventArgs,
   FunctionConfig,
   FunctionOptions,
   FunctionTrigger,
-  HandlerArgs,
   IncomingOp,
   OpStack,
   OutgoingOp,
@@ -245,10 +244,10 @@ export class InngestFunction<
      * add tools.
      */
     const fnArg = {
-      ...(data as EventData<string>),
+      ...(data as { event: EventPayload }),
       tools,
       step: tools,
-    } as Partial<HandlerArgs<any, any, any>>;
+    } as Partial<Context<any, any, any>>;
 
     let userFnToRun = this.#fn;
 
