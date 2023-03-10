@@ -1,4 +1,5 @@
 import ms from "ms";
+import { TimeStr } from "../types";
 
 /**
  * Returns a slugified string used ot generate consistent IDs.
@@ -50,7 +51,7 @@ export const timeStr = (
    * Optionally provide a date to use as the base for the calculation.
    */
   now = new Date()
-): string => {
+): TimeStr => {
   let date = input;
 
   if (typeof date === "string" || typeof date === "number") {
@@ -82,5 +83,5 @@ export const timeStr = (
     [timeNum, ""]
   );
 
-  return timeStr;
+  return timeStr as TimeStr;
 };

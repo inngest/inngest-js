@@ -1,93 +1,44 @@
 import { z } from "zod";
 import type { createStepTools } from "./components/InngestStepTools";
-import type { KeysNotOfType, StrictUnion } from "./helpers/types";
+import { internalEvents } from "./helpers/consts";
+import type { KeysNotOfType, ObjectPaths, StrictUnion } from "./helpers/types";
 
 /**
- * Arguments for a single-step function.
+ * The payload for an internal Inngest event that is sent when a function fails.
  *
  * @public
  */
-export type EventData<Event> = Event extends never
-  ? Record<string, never>
-  : {
-      /**
-       * The event data present in the payload.
-       */
-      event: Event;
+export type FailureEventPayload<P extends EventPayload = EventPayload> = {
+  name: `${internalEvents.FunctionFailed}`;
+  data: {
+    function_id: string;
+    run_id: string;
+    error: {
+      message: string;
+      stack?: string;
+      cause?: string;
+      status?: number;
     };
+    event: P;
+  };
+};
 
 /**
- * Arguments for a multi-step function, extending the single-step args and
- * including step function tooling.
+ * Context arguments specific to a failure event.
  *
  * @public
  */
-export type HandlerArgs<
-  Events extends Record<string, EventPayload>,
-  Event extends keyof Events,
-  Opts extends FunctionOptions
-> = EventData<Events[Event]> & {
+export type FailureEventArgs<P extends EventPayload = EventPayload> = {
   /**
-   * @deprecated Use `step` instead.
+   * The event data present in the payload.
    */
-  tools: ReturnType<typeof createStepTools<Events, Event>>[0];
+  event: FailureEventPayload<P>;
 
-  step: ReturnType<typeof createStepTools<Events, Event>>[0];
-} & (Opts["fns"] extends Record<string, any>
-    ? {
-        /**
-         * Any `fns` passed when creating your Inngest function will be
-         * available here and can be used as normal.
-         *
-         * Every call to one of these functions will become a new retryable
-         * step.
-         *
-         * @example
-         *
-         * Both examples behave the same; it's preference as to which you
-         * prefer.
-         *
-         * ```ts
-         * import { userDb } from "./db";
-         *
-         * // Specify `fns` and be able to use them in your Inngest function
-         * inngest.createFunction(
-         *   { name: "Create user from PR", fns: { ...userDb } },
-         *   { event: "github/pull_request" },
-         *   async ({ tools: { run }, fns: { createUser } }) => {
-         *     await createUser("Alice");
-         *   }
-         * );
-         *
-         * // Or always use `run()` to run inline steps and use them directly
-         * inngest.createFunction(
-         *   { name: "Create user from PR" },
-         *   { event: "github/pull_request" },
-         *   async ({ tools: { run } }) => {
-         *     await run("createUser", () => userDb.createUser("Alice"));
-         *   }
-         * );
-         * ```
-         */
-        fns: {
-          /**
-           * The key omission here allows the user to pass anything to the `fns`
-           * object and have it be correctly understand and transformed.
-           *
-           * Crucially, we use a complex `Omit` here to ensure that function
-           * comments and metadata is preserved, meaning the user can still use
-           * the function exactly like they would in the rest of their codebase,
-           * even though we're shimming with `tools.run()`.
-           */
-          [K in keyof Omit<
-            Opts["fns"],
-            KeysNotOfType<Opts["fns"], (...args: any[]) => any>
-          >]: (
-            ...args: Parameters<Opts["fns"][K]>
-          ) => Promise<Awaited<ReturnType<Opts["fns"][K]>>>;
-        };
-      }
-    : Record<string, never>);
+  /**
+   * The final error that caused this function to exhaust all retries.
+   */
+  err: FailureEventPayload<P>["data"]["error"];
+};
 
 /**
  * Unique codes for the different types of operation that can be sent to Inngest
@@ -188,19 +139,113 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
   | `${number}h`
   | ""}${`${number}m` | ""}${`${number}s` | ""}`;
 
+export type BaseContext<
+  TEvents extends Record<string, EventPayload>,
+  TTrigger extends keyof TEvents & string,
+  TShimmedFns extends Record<string, (...args: any[]) => any>
+> = {
+  /**
+   * The event data present in the payload.
+   */
+  event: TEvents[TTrigger];
+
+  /**
+   * @deprecated Use `step` instead.
+   */
+  tools: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
+  step: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
+
+  /**
+   * Any `fns` passed when creating your Inngest function will be
+   * available here and can be used as normal.
+   *
+   * Every call to one of these functions will become a new retryable
+   * step.
+   *
+   * @example
+   *
+   * Both examples behave the same; it's preference as to which you
+   * prefer.
+   *
+   * ```ts
+   * import { userDb } from "./db";
+   *
+   * // Specify `fns` and be able to use them in your Inngest function
+   * inngest.createFunction(
+   *   { name: "Create user from PR", fns: { ...userDb } },
+   *   { event: "github/pull_request" },
+   *   async ({ tools: { run }, fns: { createUser } }) => {
+   *     await createUser("Alice");
+   *   }
+   * );
+   *
+   * // Or always use `run()` to run inline steps and use them directly
+   * inngest.createFunction(
+   *   { name: "Create user from PR" },
+   *   { event: "github/pull_request" },
+   *   async ({ tools: { run } }) => {
+   *     await run("createUser", () => userDb.createUser("Alice"));
+   *   }
+   * );
+   * ```
+   */
+  fns: TShimmedFns;
+};
+
 /**
- * The shape of a multi-step function, taking in event, step, ctx, and tools.
- *
- * Multi-step functions are not expected to return any data themselves, as all
- * logic is expected to be placed within steps.
+ * Given a set of generic objects, extract any top-level functions and
+ * appropriately shim their types.
+ */
+export type ShimmedFns<Fns extends Record<string, any>> = Fns extends Record<
+  string,
+  any
+>
+  ? {
+      /**
+       * The key omission here allows the user to pass anything to the `fns`
+       * object and have it be correctly understand and transformed.
+       *
+       * Crucially, we use a complex `Omit` here to ensure that function
+       * comments and metadata is preserved, meaning the user can still use
+       * the function exactly like they would in the rest of their codebase,
+       * even though we're shimming with `tools.run()`.
+       */
+      [K in keyof Omit<Fns, KeysNotOfType<Fns, (...args: any[]) => any>>]: (
+        ...args: Parameters<Fns[K]>
+      ) => Promise<Awaited<ReturnType<Fns[K]>>>;
+    }
+  : Record<string, never>;
+
+/**
+ * Builds a context object for an Inngest handler, optionally overriding some
+ * keys.
+ */
+export type Context<
+  TEvents extends Record<string, EventPayload>,
+  TTrigger extends keyof TEvents & string,
+  TShimmedFns extends Record<string, (...args: any[]) => any>,
+  TOverrides extends Record<string, any> = Record<never, never>
+> = Omit<BaseContext<TEvents, TTrigger, TShimmedFns>, keyof TOverrides> &
+  TOverrides;
+
+/**
+ * The shape of a Inngest function, taking in event, step, ctx, and step
+ * tooling.
  *
  * @public
  */
 export type Handler<
-  Events extends Record<string, EventPayload>,
-  Event extends keyof Events,
-  Opts extends FunctionOptions
-> = (arg: HandlerArgs<Events, Event, Opts>) => any | Promise<any>;
+  TEvents extends Record<string, EventPayload>,
+  TTrigger extends keyof TEvents & string,
+  TShimmedFns extends Record<string, (...args: any[]) => any>,
+  TOverrides extends Record<string, any> = Record<never, never>
+> = (
+  /**
+   * The context argument provides access to all data and tooling available to
+   * the function.
+   */
+  ctx: Context<TEvents, TTrigger, TShimmedFns, TOverrides>
+) => any;
 
 /**
  * The shape of a single event's payload. It should be extended to enforce
@@ -281,12 +326,12 @@ export interface Response {
  *
  * @internal
  */
-export type Step<Context = any> = (
+export type Step<TContext = any> = (
   /**
    * The context for this step, including the triggering event and any previous
    * step output.
    */
-  context: Context
+  context: TContext
 ) => Promise<Response> | Response;
 
 /**
@@ -428,6 +473,9 @@ export interface RegisterOptions {
   logLevel?: LogLevel;
 }
 
+/**
+ * A user-friendly method of specifying a trigger for an Inngest function.
+ */
 export type TriggerOptions<T extends string> =
   | T
   | StrictUnion<
@@ -444,7 +492,10 @@ export type TriggerOptions<T extends string> =
  *
  * @public
  */
-export interface FunctionOptions {
+export interface FunctionOptions<
+  Events extends Record<string, EventPayload>,
+  Event extends keyof Events & string
+> {
   /**
    * An optional unique ID used to identify the function. This is used
    * internally for versioning and referring to your function, so should not
@@ -508,6 +559,8 @@ export interface FunctionOptions {
     period: TimeStr;
   };
 
+  cancelOn?: Cancellation<Events, Event>[];
+
   /**
    * Specifies the maximum number of retries for all steps across this function.
    *
@@ -535,7 +588,79 @@ export interface FunctionOptions {
     | 18
     | 19
     | 20;
+
+  onFailure?: (...args: any[]) => any;
 }
+
+/**
+ * Configuration for cancelling a function run based on an incoming event.
+ *
+ * @public
+ */
+export type Cancellation<
+  Events extends Record<string, EventPayload>,
+  TriggeringEvent extends keyof Events & string
+> = {
+  [K in keyof Events]: {
+    /**
+     * The name of the event that should cancel the function run.
+     */
+    event: K & string;
+
+    /**
+     * The expression that must evaluate to true in order to cancel the function run. There
+     * are two variables available in this expression:
+     * - event, referencing the original function's event trigger
+     * - async, referencing the new cancel event.
+     *
+     * @example
+     *
+     * Ensures the cancel event's data.user_id field matches the triggering event's data.user_id
+     * field:
+     *
+     * ```ts
+     * "async.data.user_id == event.data.user_id"
+     * ```
+     */
+    if?: string;
+
+    /**
+     * If provided, the step function will wait for the incoming event to match
+     * particular criteria. If the event does not match, it will be ignored and
+     * the step function will wait for another event.
+     *
+     * It must be a string of a dot-notation field name within both events to
+     * compare, e.g. `"data.id"` or `"user.email"`.
+     *
+     * ```
+     * // Wait for an event where the `user.email` field matches
+     * match: "user.email"
+     * ```
+     *
+     * All of these are helpers for the `if` option, which allows you to specify
+     * a custom condition to check. This can be useful if you need to compare
+     * multiple fields or use a more complex condition.
+     *
+     * See the Inngest expressions docs for more information.
+     *
+     * {@link https://www.inngest.com/docs/functions/expressions}
+     */
+    match?: ObjectPaths<Events[TriggeringEvent]> & ObjectPaths<Events[K]>;
+
+    /**
+     * An optional timeout that the cancel is valid for.  If this isn't
+     * specified, cancellation triggers are valid for up to a year or until the
+     * function ends.
+     *
+     * The time to wait can be specified using a `number` of milliseconds, an
+     * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
+     * a `Date` object.
+     *
+     * {@link https://npm.im/ms}
+     */
+    timeout?: number | string | Date;
+  };
+}[keyof Events];
 
 /**
  * Expected responses to be used within an `InngestCommHandler` in order to
@@ -675,6 +800,11 @@ export interface FunctionConfig {
     count: number;
     period: TimeStr;
   };
+  cancel?: {
+    event: string;
+    if?: string;
+    timeout?: TimeStr;
+  }[];
 }
 
 export interface DevServerInfo {
@@ -691,3 +821,14 @@ export interface DevServerInfo {
   functions: FunctionConfig[];
   handlers: RegisterRequest[];
 }
+
+/**
+ * Given a set of events and a user-friendly trigger paramter, returns the name
+ * of the event that the user intends to listen to.
+ *
+ * @public
+ */
+export type EventNameFromTrigger<
+  Events extends Record<string, EventPayload>,
+  T extends TriggerOptions<keyof Events & string>
+> = T extends string ? T : T extends { event: string } ? T["event"] : string;
