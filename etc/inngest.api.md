@@ -30,6 +30,12 @@ export interface EventPayload {
     v?: string;
 }
 
+// @public (undocumented)
+export type FailureEventArgs<P extends EventPayload = EventPayload> = {
+    event: FailureEventPayload<P>;
+    err: FailureEventPayload<P>["data"]["error"];
+};
+
 // @public
 export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     name: `${internalEvents.FunctionFailed}`;
@@ -53,6 +59,8 @@ export interface FunctionOptions {
     id?: string;
     idempotency?: string;
     name: string;
+    // (undocumented)
+    onFailure?: (...args: any[]) => any;
     retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
     throttle?: {
         key?: string;
@@ -72,12 +80,15 @@ export enum headerKeys {
 // @public
 export class Inngest<Events extends Record<string, EventPayload>> {
     constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
+    // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "FailureEventArgs" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    createFunction<Trigger extends TriggerOptions<keyof Events & string>, NameOrOpts extends string | FunctionOptions>(nameOrOpts: NameOrOpts, trigger: Trigger, fn: Handler<Events, EventNameFromTrigger<Events, Trigger>, NameOrOpts extends FunctionOptions ? NameOrOpts : never>, onFailure?: Handler<Events, `${internalEvents.FunctionFailed}`, NameOrOpts extends FunctionOptions ? NameOrOpts : never, FailureEventArgs<Events[EventNameFromTrigger<Events, Trigger>]>>): InngestFunction<Events>;
+    createFunction<TFns extends Record<string, any>, TTrigger extends TriggerOptions<keyof Events & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof Events & string = EventNameFromTrigger<Events, TTrigger>>(nameOrOpts: string | (Omit<FunctionOptions, "fns" | "onFailure"> & {
+        fns?: TFns;
+        onFailure?: Handler<Events, TTriggerName, TShimmedFns, FailureEventArgs<Events[TTriggerName]>>;
+    }), trigger: TTrigger, handler: Handler<Events, TTriggerName, TShimmedFns>): InngestFunction<Events>;
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts

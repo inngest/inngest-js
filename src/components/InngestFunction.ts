@@ -53,14 +53,13 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      */
     opts: FunctionOptions,
     trigger: FunctionTrigger<keyof Events>,
-    fn: (...args: any[]) => any,
-    onFailureFn?: (...args: any[]) => any
+    fn: (...args: any[]) => any
   ) {
     this.#client = client;
     this.#opts = opts;
     this.#trigger = trigger;
     this.#fn = fn;
-    this.#onFailureFn = onFailureFn;
+    this.#onFailureFn = this.#opts.onFailure;
   }
 
   /**
