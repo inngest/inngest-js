@@ -1,11 +1,13 @@
-import { queryKeys } from "../helpers/consts";
+import { internalEvents, queryKeys } from "../helpers/consts";
 import { serializeError } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { ServerTiming } from "../helpers/ServerTiming";
-import { slugify } from "../helpers/strings";
+import { slugify, timeStr } from "../helpers/strings";
 import {
   EventData,
+  EventNameFromTrigger,
   EventPayload,
+  FailureEventArgs,
   FunctionConfig,
   FunctionOptions,
   FunctionTrigger,
@@ -27,12 +29,18 @@ import { createStepTools, TickOp } from "./InngestStepTools";
  *
  * @public
  */
-export class InngestFunction<Events extends Record<string, EventPayload>> {
+export class InngestFunction<
+  Events extends Record<string, EventPayload>,
+  Trigger extends FunctionTrigger<keyof Events & string>,
+  Opts extends FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>
+> {
   static stepId = "step";
+  static failureSuffix = "-failure";
 
-  readonly #opts: FunctionOptions;
-  readonly #trigger: FunctionTrigger<keyof Events>;
+  readonly #opts: Opts;
+  readonly #trigger: Trigger;
   readonly #fn: (...args: any[]) => any;
+  readonly #onFailureFn?: (...args: any[]) => any;
   readonly #client: Inngest<Events>;
 
   /**
@@ -48,25 +56,22 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     /**
      * Options
      */
-    opts: FunctionOptions,
-    trigger: FunctionTrigger<keyof Events>,
+    opts: Opts,
+    trigger: Trigger,
     fn: (...args: any[]) => any
   ) {
     this.#client = client;
     this.#opts = opts;
     this.#trigger = trigger;
     this.#fn = fn;
+    this.#onFailureFn = this.#opts.onFailure;
   }
 
   /**
    * The generated or given ID for this function.
    */
   public id(prefix?: string) {
-    if (!this.#opts.id) {
-      this.#opts.id = this.#generateId(prefix);
-    }
-
-    return this.#opts.id;
+    return this.#opts.id || this.#generateId(prefix);
   }
 
   /**
@@ -87,14 +92,13 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      */
     baseUrl: URL,
     appPrefix?: string
-  ): FunctionConfig {
+  ): FunctionConfig[] {
     const fnId = this.id(appPrefix);
-
     const stepUrl = new URL(baseUrl.href);
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
 
-    const { retries: attempts, fns: _, ...opts } = this.#opts;
+    const { retries: attempts, cancelOn, fns: _, ...opts } = this.#opts;
 
     /**
      * Convert retries into the format required when defining function
@@ -102,7 +106,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      */
     const retries = typeof attempts === "undefined" ? undefined : { attempts };
 
-    return {
+    const fn: FunctionConfig = {
       ...opts,
       id: fnId,
       name: this.name,
@@ -119,6 +123,62 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
         },
       },
     };
+
+    if (cancelOn) {
+      fn.cancel = cancelOn.map(({ event, timeout, if: ifStr, match }) => {
+        const ret: NonNullable<FunctionConfig["cancel"]>[number] = {
+          event,
+        };
+
+        if (timeout) {
+          ret.timeout = timeStr(timeout);
+        }
+
+        if (match) {
+          ret.if = `event.${match} == async.${match}`;
+        } else if (ifStr) {
+          ret.if = ifStr;
+        }
+
+        return ret;
+      }, []);
+    }
+
+    const config: FunctionConfig[] = [fn];
+
+    if (this.#onFailureFn) {
+      const failureOpts = { ...opts };
+      const id = `${fn.id}${InngestFunction.failureSuffix}`;
+      const name = `${fn.name} (failure)`;
+
+      const failureStepUrl = new URL(stepUrl.href);
+      failureStepUrl.searchParams.set(queryKeys.FnId, id);
+
+      config.push({
+        ...failureOpts,
+        id,
+        name,
+        triggers: [
+          {
+            event: internalEvents.FunctionFailed,
+            expression: `async.data.function_id == '${fnId}'`,
+          },
+        ],
+        steps: {
+          [InngestFunction.stepId]: {
+            id: InngestFunction.stepId,
+            name: InngestFunction.stepId,
+            runtime: {
+              type: "http",
+              url: failureStepUrl.href,
+            },
+            retries: { attempts: 1 },
+          },
+        },
+      });
+    }
+
+    return config;
   }
 
   /**
@@ -160,7 +220,12 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
      */
     runStep: string | null,
 
-    timer: ServerTiming
+    timer: ServerTiming,
+
+    /**
+     * TODO Ugly boolean option; wrap this.
+     */
+    isFailureHandler: boolean
   ): Promise<
     | [type: "complete", data: unknown]
     | [type: "discovery", ops: OutgoingOp[]]
@@ -184,6 +249,34 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
       tools,
       step: tools,
     } as Partial<HandlerArgs<any, any, any>>;
+
+    let userFnToRun = this.#fn;
+
+    /**
+     * If the incoming event is an Inngest function failure event, we also want
+     * to pass some extra data to the function to act as shortcuts to the event
+     * payload.
+     */
+    if (isFailureHandler) {
+      /**
+       * The user could have created a function that intentionally listens for
+       * these events. In this case, we may want to use the original handler.
+       *
+       * We only use the onFailure handler if
+       */
+
+      if (!this.#onFailureFn) {
+        throw new Error(
+          `Function "${this.name}" received a failure event to handle, but no failure handler was defined.`
+        );
+      }
+
+      userFnToRun = this.#onFailureFn;
+
+      (fnArg as FailureEventArgs).err = (
+        fnArg as FailureEventArgs
+      ).event.data.error;
+    }
 
     /**
      * If the user has passed functions they wish to use in their step, add them
@@ -209,7 +302,7 @@ export class InngestFunction<Events extends Record<string, EventPayload>> {
     // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
     const userFnPromise = new Promise(async (resolve, reject) => {
       try {
-        resolve(await this.#fn(fnArg));
+        resolve(await userFnToRun(fnArg));
       } catch (err) {
         reject(err);
       }

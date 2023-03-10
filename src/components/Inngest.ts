@@ -9,9 +9,11 @@ import type {
 } from "../helpers/types";
 import type {
   ClientOptions,
+  EventNameFromTrigger,
   EventPayload,
   FunctionOptions,
   Handler,
+  ShimmedFns,
   TriggerOptions,
 } from "../types";
 import { version } from "../version";
@@ -335,26 +337,78 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   }
 
   public createFunction<
-    Trigger extends TriggerOptions<keyof Events & string>,
-    NameOrOpts extends string | FunctionOptions
-  >(
-    nameOrOpts: NameOrOpts,
-    trigger: Trigger,
-    fn: Handler<
+    TFns extends Record<string, any>,
+    TTrigger extends TriggerOptions<keyof Events & string>,
+    TShimmedFns extends Record<
+      string,
+      (...args: any[]) => any
+    > = ShimmedFns<TFns>,
+    TTriggerName extends keyof Events & string = EventNameFromTrigger<
       Events,
-      Trigger extends string
-        ? Trigger
-        : Trigger extends { event: string }
-        ? Trigger["event"]
-        : string,
-      NameOrOpts extends FunctionOptions ? NameOrOpts : never
+      TTrigger
     >
-  ): InngestFunction<Events> {
+  >(
+    nameOrOpts:
+      | string
+      | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
+          /**
+           * Pass in an object of functions that will be wrapped in Inngest
+           * tooling and passes to your handler. This wrapping ensures that each
+           * function is automatically separated and retried.
+           *
+           * @example
+           *
+           * Both examples behave the same; it's preference as to which you
+           * prefer.
+           *
+           * ```ts
+           * import { userDb } from "./db";
+           *
+           * // Specify `fns` and be able to use them in your Inngest function
+           * inngest.createFunction(
+           *   { name: "Create user from PR", fns: { ...userDb } },
+           *   { event: "github/pull_request" },
+           *   async ({ fns: { createUser } }) => {
+           *     await createUser("Alice");
+           *   }
+           * );
+           *
+           * // Or always use `run()` to run inline steps and use them directly
+           * inngest.createFunction(
+           *   { name: "Create user from PR" },
+           *   { event: "github/pull_request" },
+           *   async ({ step: { run } }) => {
+           *     await run("createUser", () => userDb.createUser("Alice"));
+           *   }
+           * );
+           * ```
+           */
+          fns?: TFns;
+
+          /**
+           * Leaving commented out; the feature can be added in a small PR
+           * when ready.
+           *
+           * TODO Add user-facing comments here.
+           */
+          // onFailure?: Handler<
+          //   Events,
+          //   TTriggerName,
+          //   TShimmedFns,
+          //   FailureEventArgs<Events[TTriggerName]>
+          // >;
+        }),
+    trigger: TTrigger,
+    handler: Handler<Events, TTriggerName, TShimmedFns>
+  ): InngestFunction<Events, any, any> {
+    const opts: FunctionOptions<Events, TTriggerName> =
+      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts;
+
     return new InngestFunction(
       this,
-      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
+      opts as FunctionOptions<any, any>,
       typeof trigger === "string" ? { event: trigger } : trigger,
-      fn
+      handler
     );
   }
 }
