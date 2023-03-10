@@ -10,6 +10,13 @@ import type { KeysNotOfType, ObjectPaths, StrictUnion } from "./helpers/types";
  */
 export type EventData<Event> = Event extends never
   ? Record<string, never>
+  : "event" extends keyof Event
+  ? {
+      /**
+       * The event data present in the payload.
+       */
+      event: Event["event"];
+    }
   : {
       /**
        * The event data present in the payload.
@@ -37,6 +44,18 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
   };
 };
 
+export type FailureEventArgs<P extends EventPayload = EventPayload> = {
+  /**
+   * The event data present in the payload.
+   */
+  event: FailureEventPayload<P>;
+
+  /**
+   * The final error that caused this function to exhaust all retries.
+   */
+  err: FailureEventPayload<P>["data"]["error"];
+};
+
 /**
  * Arguments for a multi-step function, extending the single-step args and
  * including step function tooling.
@@ -47,8 +66,8 @@ export type HandlerArgs<
   Events extends Record<string, EventPayload>,
   Event extends keyof Events & string,
   Opts extends FunctionOptions<Events, Event>,
-  Payload = Events[Event]
-> = EventData<Payload> & {
+  Payload extends { event: any } = { event: Events[Event] }
+> = Payload & {
   /**
    * @deprecated Use `step` instead.
    */
@@ -210,20 +229,113 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
   | `${number}h`
   | ""}${`${number}m` | ""}${`${number}s` | ""}`;
 
+export type BaseContext<
+  TEvents extends Record<string, EventPayload>,
+  TTrigger extends keyof TEvents & string,
+  TShimmedFns extends Record<string, (...args: any[]) => any>
+> = {
+  /**
+   * The event data present in the payload.
+   */
+  event: TEvents[TTrigger];
+
+  /**
+   * @deprecated Use `step` instead.
+   */
+  tools: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
+  step: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
+
+  /**
+   * Any `fns` passed when creating your Inngest function will be
+   * available here and can be used as normal.
+   *
+   * Every call to one of these functions will become a new retryable
+   * step.
+   *
+   * @example
+   *
+   * Both examples behave the same; it's preference as to which you
+   * prefer.
+   *
+   * ```ts
+   * import { userDb } from "./db";
+   *
+   * // Specify `fns` and be able to use them in your Inngest function
+   * inngest.createFunction(
+   *   { name: "Create user from PR", fns: { ...userDb } },
+   *   { event: "github/pull_request" },
+   *   async ({ tools: { run }, fns: { createUser } }) => {
+   *     await createUser("Alice");
+   *   }
+   * );
+   *
+   * // Or always use `run()` to run inline steps and use them directly
+   * inngest.createFunction(
+   *   { name: "Create user from PR" },
+   *   { event: "github/pull_request" },
+   *   async ({ tools: { run } }) => {
+   *     await run("createUser", () => userDb.createUser("Alice"));
+   *   }
+   * );
+   * ```
+   */
+  fns: TShimmedFns;
+};
+
 /**
- * The shape of a multi-step function, taking in event, step, ctx, and tools.
- *
- * Multi-step functions are not expected to return any data themselves, as all
- * logic is expected to be placed within steps.
+ * Given a set of generic objects, extract any top-level functions and
+ * appropriately shim their types.
+ */
+export type ShimmedFns<Fns extends Record<string, any>> = Fns extends Record<
+  string,
+  any
+>
+  ? {
+      /**
+       * The key omission here allows the user to pass anything to the `fns`
+       * object and have it be correctly understand and transformed.
+       *
+       * Crucially, we use a complex `Omit` here to ensure that function
+       * comments and metadata is preserved, meaning the user can still use
+       * the function exactly like they would in the rest of their codebase,
+       * even though we're shimming with `tools.run()`.
+       */
+      [K in keyof Omit<Fns, KeysNotOfType<Fns, (...args: any[]) => any>>]: (
+        ...args: Parameters<Fns[K]>
+      ) => Promise<Awaited<ReturnType<Fns[K]>>>;
+    }
+  : Record<string, never>;
+
+/**
+ * Builds a context object for an Inngest handler, optionally overriding some
+ * keys.
+ */
+export type Context<
+  TEvents extends Record<string, EventPayload>,
+  TTrigger extends keyof TEvents & string,
+  TShimmedFns extends Record<string, (...args: any[]) => any>,
+  TOverrides extends Record<string, any> = Record<never, never>
+> = Omit<BaseContext<TEvents, TTrigger, TShimmedFns>, keyof TOverrides> &
+  TOverrides;
+
+/**
+ * The shape of a Inngest function, taking in event, step, ctx, and step
+ * tooling.
  *
  * @public
  */
 export type Handler<
-  Events extends Record<string, EventPayload>,
-  Event extends keyof Events & string,
-  Opts extends FunctionOptions<Events, Event>,
-  Payload = Events[Event]
-> = (arg: HandlerArgs<Events, Event, Opts, Payload>) => any | Promise<any>;
+  TEvents extends Record<string, EventPayload>,
+  TTrigger extends keyof TEvents & string,
+  TShimmedFns extends Record<string, (...args: any[]) => any>,
+  TOverrides extends Record<string, any> = Record<never, never>
+> = (
+  /**
+   * The context argument provides access to all data and tooling available to
+   * the function.
+   */
+  ctx: Context<TEvents, TTrigger, TShimmedFns, TOverrides>
+) => any;
 
 /**
  * The shape of a single event's payload. It should be extended to enforce
@@ -559,6 +671,8 @@ export interface FunctionOptions<
     | 18
     | 19
     | 20;
+
+  onFailure?: (...args: any[]) => any;
 }
 
 /**

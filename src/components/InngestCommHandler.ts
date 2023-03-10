@@ -227,7 +227,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
    */
-  private readonly fns: Record<string, InngestFunction<any, any, any>> = {};
+  private readonly fns: Record<
+    string,
+    { fn: InngestFunction<any, any, any>; onFailure: boolean }
+  > = {};
 
   private allowExpiredSignatures: boolean;
 
@@ -340,23 +343,31 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       arguments["3"]?.__testingAllowExpiredSignatures
     );
 
-    this.fns = functions.reduce<Record<string, InngestFunction<any, any, any>>>(
-      (acc, fn) => {
-        const id = fn.id(this.name);
+    this.fns = functions.reduce<
+      Record<string, { fn: InngestFunction<any, any, any>; onFailure: boolean }>
+    >((acc, fn) => {
+      const configs = fn["getConfig"](
+        new URL("https://example.com"),
+        this.name
+      );
 
+      const fns = configs.reduce((acc, { id }, index) => {
+        return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
+      }, {});
+
+      configs.forEach(({ id }) => {
         if (acc[id]) {
           throw new Error(
             `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`
           );
         }
+      });
 
-        return {
-          ...acc,
-          [id]: fn,
-        };
-      },
-      {}
-    );
+      return {
+        ...acc,
+        ...fns,
+      };
+    }, {});
 
     this.inngestRegisterUrl = new URL(
       inngestRegisterUrl || "https://api.inngest.com/fn/register"
@@ -651,7 +662,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
             return { id: opId, data: step };
           }) ?? [];
 
-      const ret = await fn["runFn"](
+      const ret = await fn.fn["runFn"](
         { event },
         opStack,
         /**
@@ -660,7 +671,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
          * remove this on the executor side.
          */
         stepId === "step" ? null : stepId || null,
-        timer
+        timer,
+        fn.onFailure
       );
 
       if (ret[0] === "complete") {
@@ -716,7 +728,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
   protected configs(url: URL): FunctionConfig[] {
     return Object.values(this.fns).reduce<FunctionConfig[]>(
-      (acc, fn) => [...acc, ...fn["getConfig"](url, this.name)],
+      (acc, fn) => [...acc, ...fn.fn["getConfig"](url, this.name)],
       []
     );
   }

@@ -7,6 +7,7 @@ export type {
   ClientOptions,
   EventNameFromTrigger,
   EventPayload,
+  FailureEventArgs,
   FailureEventPayload,
   FunctionOptions,
   LogLevel,

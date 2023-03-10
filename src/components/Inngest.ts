@@ -1,4 +1,4 @@
-import { envKeys, internalEvents } from "../helpers/consts";
+import { envKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import { devServerHost, isProd, processEnv } from "../helpers/env";
 import type {
@@ -11,9 +11,10 @@ import type {
   ClientOptions,
   EventNameFromTrigger,
   EventPayload,
-  FailureEventPayload,
+  FailureEventArgs,
   FunctionOptions,
   Handler,
+  ShimmedFns,
   TriggerOptions,
 } from "../types";
 import { version } from "../version";
@@ -337,44 +338,46 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   }
 
   public createFunction<
-    Trigger extends TriggerOptions<keyof Events & string>,
-    NameOrOpts extends
-      | string
-      | FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>
-  >(
-    nameOrOpts: NameOrOpts,
-    trigger: Trigger,
-    fn: Handler<
+    TFns extends Record<string, any>,
+    TTrigger extends TriggerOptions<keyof Events & string>,
+    TShimmedFns extends Record<
+      string,
+      (...args: any[]) => any
+    > = ShimmedFns<TFns>,
+    TTriggerName extends keyof Events & string = EventNameFromTrigger<
       Events,
-      EventNameFromTrigger<Events, Trigger>,
-      NameOrOpts extends FunctionOptions<
-        Events,
-        EventNameFromTrigger<Events, Trigger>
-      >
-        ? NameOrOpts
-        : never
-    >,
-    onFailure?: Handler<
-      Events,
-      `${internalEvents.FunctionFailed}`,
-      NameOrOpts extends FunctionOptions<
-        Events,
-        `${internalEvents.FunctionFailed}`
-      >
-        ? NameOrOpts
-        : never,
-      FailureEventPayload<Events[EventNameFromTrigger<Events, Trigger>]>
+      TTrigger
     >
-  ): InngestFunction<any, any, any> {
-    const opts =
+  >(
+    nameOrOpts:
+      | string
+      | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
+          /**
+           * TODO Comment
+           */
+          fns?: TFns;
+
+          /**
+           * TODO Comment
+           */
+          onFailure?: Handler<
+            Events,
+            TTriggerName,
+            TShimmedFns,
+            FailureEventArgs<Events[TTriggerName]>
+          >;
+        }),
+    trigger: TTrigger,
+    handler: Handler<Events, TTriggerName, TShimmedFns>
+  ): InngestFunction<Events, any, any> {
+    const opts: FunctionOptions<Events, TTriggerName> =
       typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts;
 
     return new InngestFunction(
       this,
       opts as FunctionOptions<any, any>,
       typeof trigger === "string" ? { event: trigger } : trigger,
-      fn,
-      onFailure
+      handler
     );
   }
 }
