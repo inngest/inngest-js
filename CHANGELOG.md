@@ -1,5 +1,12 @@
 # inngest
 
+## 1.4.0
+
+### Minor Changes
+
+- ebb8740: Add ability to control the concurrency of a specific function via the `concurrency` option when creating an Inngest function
+- e61cf0f: Add `cancelOn` option when creating a function, allowing you cancel execution of a function based on incoming events.
+
 ## 1.3.5
 
 ### Patch Changes
