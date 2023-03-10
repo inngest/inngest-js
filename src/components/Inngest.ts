@@ -11,7 +11,6 @@ import type {
   ClientOptions,
   EventNameFromTrigger,
   EventPayload,
-  FailureEventArgs,
   FunctionOptions,
   Handler,
   ShimmedFns,
@@ -353,19 +352,51 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       | string
       | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
           /**
-           * TODO Comment
+           * Pass in an object of functions that will be wrapped in Inngest
+           * tooling and passes to your handler. This wrapping ensures that each
+           * function is automatically separated and retried.
+           *
+           * @example
+           *
+           * Both examples behave the same; it's preference as to which you
+           * prefer.
+           *
+           * ```ts
+           * import { userDb } from "./db";
+           *
+           * // Specify `fns` and be able to use them in your Inngest function
+           * inngest.createFunction(
+           *   { name: "Create user from PR", fns: { ...userDb } },
+           *   { event: "github/pull_request" },
+           *   async ({ fns: { createUser } }) => {
+           *     await createUser("Alice");
+           *   }
+           * );
+           *
+           * // Or always use `run()` to run inline steps and use them directly
+           * inngest.createFunction(
+           *   { name: "Create user from PR" },
+           *   { event: "github/pull_request" },
+           *   async ({ step: { run } }) => {
+           *     await run("createUser", () => userDb.createUser("Alice"));
+           *   }
+           * );
+           * ```
            */
           fns?: TFns;
 
           /**
-           * TODO Comment
+           * Leaving commented out; the feature can be added in a small PR
+           * when ready.
+           *
+           * TODO Add user-facing comments here.
            */
-          onFailure?: Handler<
-            Events,
-            TTriggerName,
-            TShimmedFns,
-            FailureEventArgs<Events[TTriggerName]>
-          >;
+          // onFailure?: Handler<
+          //   Events,
+          //   TTriggerName,
+          //   TShimmedFns,
+          //   FailureEventArgs<Events[TTriggerName]>
+          // >;
         }),
     trigger: TTrigger,
     handler: Handler<Events, TTriggerName, TShimmedFns>
