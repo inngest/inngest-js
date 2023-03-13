@@ -268,13 +268,15 @@ export interface EventPayload {
   /**
    * Any data pertinent to the event
    */
-  data: unknown;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: any;
 
   /**
    * Any user data associated with the event
    * All fields ending in "_id" will be used to attribute the event to a particular user
    */
-  user?: unknown;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  user?: any;
 
   /**
    * A specific event schema version

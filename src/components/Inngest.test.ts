@@ -1,5 +1,6 @@
 import { assertType } from "type-plus";
 import { envKeys } from "../helpers/consts";
+import { IsAny } from "../helpers/types";
 import { EventPayload } from "../types";
 import { eventKeyWarning, Inngest } from "./Inngest";
 
@@ -158,7 +159,7 @@ describe("createFunction", () => {
       test("allows name to be a string", () => {
         inngest.createFunction("test", { event: "test" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<unknown>(event.data);
+          assertType<IsAny<typeof event.data>>(true);
         });
       });
 
@@ -168,7 +169,7 @@ describe("createFunction", () => {
           { event: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<unknown>(event.data);
+            assertType<IsAny<typeof event.data>>(true);
           }
         );
       });
@@ -180,7 +181,7 @@ describe("createFunction", () => {
           { event: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<unknown>(event.data);
+            assertType<IsAny<typeof event.data>>(true);
           }
         );
       });
@@ -188,21 +189,21 @@ describe("createFunction", () => {
       test("allows trigger to be a string", () => {
         inngest.createFunction("test", "test", ({ event }) => {
           assertType<string>(event.name);
-          assertType<unknown>(event.data);
+          assertType<IsAny<typeof event.data>>(true);
         });
       });
 
       test("allows trigger to be an object with an event property", () => {
         inngest.createFunction("test", { event: "test" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<unknown>(event.data);
+          assertType<IsAny<typeof event.data>>(true);
         });
       });
 
       test("allows trigger to be an object with a cron property", () => {
         inngest.createFunction("test", { cron: "test" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<unknown>(event.data);
+          assertType<IsAny<typeof event.data>>(true);
         });
       });
 
@@ -210,7 +211,7 @@ describe("createFunction", () => {
         // @ts-expect-error Unknown property
         inngest.createFunction("test", { foo: "bar" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<unknown>(event.data);
+          assertType<IsAny<typeof event.data>>(true);
         });
       });
 
@@ -221,7 +222,7 @@ describe("createFunction", () => {
           { event: "test", cron: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<unknown>(event.data);
+            assertType<IsAny<typeof event.data>>(true);
           }
         );
       });
@@ -241,8 +242,8 @@ describe("createFunction", () => {
 
       test("disallows unknown event as object", () => {
         // @ts-expect-error Unknown event
-        inngest.createFunction("test", { event: "unknown" }, ({ event }) => {
-          assertType<unknown>(event);
+        inngest.createFunction("test", { event: "unknown" }, () => {
+          // no-op
         });
       });
 

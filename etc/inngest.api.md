@@ -23,10 +23,10 @@ export type EventNameFromTrigger<Events extends Record<string, EventPayload>, T 
 
 // @public
 export interface EventPayload {
-    data: unknown;
+    data: any;
     name: string;
     ts?: number;
-    user?: unknown;
+    user?: any;
     v?: string;
 }
 
