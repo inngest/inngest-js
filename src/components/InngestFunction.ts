@@ -3,6 +3,7 @@ import { serializeError } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { ServerTiming } from "../helpers/ServerTiming";
 import { slugify, timeStr } from "../helpers/strings";
+import { IsAny, SendEventPayload } from "../helpers/types";
 import {
   Context,
   EventNameFromTrigger,
@@ -15,7 +16,7 @@ import {
   IncomingOp,
   OpStack,
   OutgoingOp,
-  StepOpCode,
+  StepOpCode
 } from "../types";
 import { Inngest } from "./Inngest";
 import { createStepTools, TickOp } from "./InngestStepTools";
@@ -478,14 +479,52 @@ export class InngestFunction<
   #generateId(prefix?: string) {
     return slugify([prefix || "", this.#opts.name].join("-"));
   }
+
+  public async defer(...args: FnDeferArgs<Events, Trigger>) {
+    // Build an event payload for `this.#client.send()` and pass it through.
+    const [data, user] = args;
+
+    if ("event" in this.#trigger) {
+      return this.#client.send({
+        name: this.#trigger.event,
+        data,
+        user,
+      } as unknown as SendEventPayload<Events>);
+    }
+  }
 }
+
+type IsMaybeOptional<T> = T extends undefined
+  ? true
+  : unknown extends T
+  ? true
+  : IsAny<T>;
+
+type FnDeferArgs<
+  TEvents extends Record<string, EventPayload>,
+  TTrigger extends FunctionTrigger<keyof TEvents & string>
+> = TTrigger extends { event: keyof TEvents & string }
+  ? IsMaybeOptional<TEvents[TTrigger["event"]]["user"]> extends true
+    ? IsMaybeOptional<TEvents[TTrigger["event"]]["data"]> extends true
+      ? [
+          data?: TEvents[TTrigger["event"]]["data"],
+          user?: TEvents[TTrigger["event"]]["user"]
+        ]
+      : [
+          data: TEvents[TTrigger["event"]]["data"],
+          user?: TEvents[TTrigger["event"]]["user"]
+        ]
+    : [
+        data: TEvents[TTrigger["event"]]["data"],
+        user: TEvents[TTrigger["event"]]["user"]
+      ]
+  : [];
 
 const tickOpToOutgoing = (op: TickOp): OutgoingOp => {
   return {
     op: op.op,
     id: op.id,
     name: op.name,
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     opts: op.opts,
   };
 };

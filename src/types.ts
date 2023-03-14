@@ -840,4 +840,8 @@ export interface DevServerInfo {
 export type EventNameFromTrigger<
   Events extends Record<string, EventPayload>,
   T extends TriggerOptions<keyof Events & string>
-> = T extends string ? T : T extends { event: string } ? T["event"] : string;
+> = T extends keyof Events & string
+  ? T
+  : T extends { event: keyof Events & string }
+  ? T["event"]
+  : string;

@@ -349,7 +349,16 @@ export class Inngest<
     TTriggerName extends keyof Events & string = EventNameFromTrigger<
       Events,
       TTrigger
-    >
+    >,
+    TRetFn = InngestFunction<
+      Events,
+      TTrigger extends string ? { event: TTrigger } : TTrigger
+    >,
+    TRet = TTrigger extends string
+      ? TRetFn
+      : TTrigger extends { event: string }
+      ? TRetFn
+      : Omit<TRetFn, "defer">
   >(
     nameOrOpts:
       | string
@@ -403,16 +412,25 @@ export class Inngest<
         }),
     trigger: TTrigger,
     handler: Handler<Events, TTriggerName, TShimmedFns>
-  ): InngestFunction {
+  ): TRet {
     const opts = (
       typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts
-    ) as FunctionOptions<Events, keyof Events & string>;
+    ) as FunctionOptions<
+      Events,
+      EventNameFromTrigger<
+        Events,
+        TTrigger extends string ? { event: TTrigger } : TTrigger
+      >
+    >;
 
-    return new InngestFunction(
-      this,
-      opts,
-      typeof trigger === "string" ? { event: trigger } : trigger,
-      handler as Handler<Events, keyof Events & string>
-    ) as unknown as InngestFunction;
+    const triggerOpts = (
+      typeof trigger === "string" ? { event: trigger } : trigger
+    ) as TTrigger extends string ? { event: TTrigger } : TTrigger;
+
+    return new InngestFunction<
+      Events,
+      TTrigger extends string ? { event: TTrigger } : TTrigger
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+    >(this, opts, triggerOpts, handler as any) as TRet;
   }
 }
