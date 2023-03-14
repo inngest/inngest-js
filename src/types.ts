@@ -42,7 +42,7 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
   /**
    * The final error that caused this function to exhaust all retries.
    */
-  err: FailureEventPayload<P>["data"]["error"];
+  error: FailureEventPayload<P>["data"]["error"];
 };
 
 /**

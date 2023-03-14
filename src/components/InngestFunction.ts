@@ -279,7 +279,7 @@ export class InngestFunction<
 
       userFnToRun = this.#onFailureFn;
 
-      (fnArg as FailureEventArgs).err = (
+      (fnArg as FailureEventArgs).error = (
         fnArg as FailureEventArgs
       ).event.data.error;
     }

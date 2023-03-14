@@ -33,7 +33,7 @@ export interface EventPayload {
 // @public
 export type FailureEventArgs<P extends EventPayload = EventPayload> = {
     event: FailureEventPayload<P>;
-    err: FailureEventPayload<P>["data"]["error"];
+    error: FailureEventPayload<P>["data"]["error"];
 };
 
 // @public

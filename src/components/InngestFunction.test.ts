@@ -959,10 +959,10 @@ describe("runFn", () => {
           inngest.createFunction(
             {
               name: "test",
-              onFailure: ({ err, event }) => {
+              onFailure: ({ error, event }) => {
                 assertType<`${internalEvents.FunctionFailed}`>(event.name);
                 assertType<FailureEventPayload>(event);
-                assertType<FailureEventPayload["data"]["error"]>(err);
+                assertType<FailureEventPayload["data"]["error"]>(error);
               },
             },
             { event: "test" },
@@ -989,10 +989,10 @@ describe("runFn", () => {
           inngest.createFunction(
             {
               name: "test",
-              onFailure: ({ err, event }) => {
+              onFailure: ({ error, event }) => {
                 assertType<`${internalEvents.FunctionFailed}`>(event.name);
                 assertType<FailureEventPayload>(event);
-                assertType<FailureEventPayload["data"]["error"]>(err);
+                assertType<FailureEventPayload["data"]["error"]>(error);
 
                 assertType<"foo">(event.data.event.name);
                 assertType<EventPayload>(event.data.event);
