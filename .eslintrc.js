@@ -16,7 +16,6 @@ module.exports = {
   ignorePatterns: ["dist/", "*.d.ts", "*.js", "deno_compat/"],
   rules: {
     "prettier/prettier": "warn",
-    "@typescript-eslint/no-explicit-any": "off",
     "@inngest/process-warn": "off",
     "@typescript-eslint/no-unused-vars": [
       "warn",

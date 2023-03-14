@@ -55,7 +55,9 @@ export const eventKeyError =
  *
  * @public
  */
-export class Inngest<Events extends Record<string, EventPayload>> {
+export class Inngest<
+  Events extends Record<string, EventPayload> = Record<string, EventPayload>
+> {
   /**
    * The name of this instance, most commonly the name of the application it
    * resides in.
@@ -276,16 +278,15 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       /**
        * Add our payloads and ensure they all have a name.
        */
-      payloads = (
-        Array.isArray(maybePayload)
-          ? maybePayload
-          : maybePayload
-          ? [maybePayload]
-          : []
+      payloads = (Array.isArray(maybePayload)
+        ? maybePayload
+        : maybePayload
+        ? [maybePayload]
+        : []
       ).map((payload) => ({
         ...payload,
         name: nameOrPayload,
-      })) as typeof payloads;
+      })) as unknown as typeof payloads;
     } else {
       /**
        * Grab our payloads straight from the args.
@@ -337,10 +338,11 @@ export class Inngest<Events extends Record<string, EventPayload>> {
   }
 
   public createFunction<
-    TFns extends Record<string, any>,
+    TFns extends Record<string, unknown>,
     TTrigger extends TriggerOptions<keyof Events & string>,
     TShimmedFns extends Record<
       string,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (...args: any[]) => any
     > = ShimmedFns<TFns>,
     TTriggerName extends keyof Events & string = EventNameFromTrigger<
@@ -400,15 +402,16 @@ export class Inngest<Events extends Record<string, EventPayload>> {
         }),
     trigger: TTrigger,
     handler: Handler<Events, TTriggerName, TShimmedFns>
-  ): InngestFunction<Events, any, any> {
-    const opts: FunctionOptions<Events, TTriggerName> =
-      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts;
+  ): InngestFunction {
+    const opts = (
+      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts
+    ) as FunctionOptions<Events, keyof Events & string>;
 
     return new InngestFunction(
       this,
-      opts as FunctionOptions<any, any>,
+      opts,
       typeof trigger === "string" ? { event: trigger } : trigger,
-      handler
-    );
+      handler as Handler<Events, keyof Events & string>
+    ) as unknown as InngestFunction;
   }
 }

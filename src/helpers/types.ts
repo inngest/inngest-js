@@ -3,7 +3,7 @@ import { EventPayload } from "../types";
 /**
  * Returns a union of all of the values in a given object, regardless of key.
  */
-export type ValueOf<T> = T extends Record<string, any>
+export type ValueOf<T> = T extends Record<string, unknown>
   ? {
       [K in keyof T]: T[K];
     }[keyof T]
@@ -77,6 +77,7 @@ type Path<T> = T extends Array<infer V>
  * This is an exported helper method to ensure we only try to access object
  * paths of known objects.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ObjectPaths<T extends Record<string, any>> = Path<T>;
 
 /**
@@ -98,6 +99,7 @@ type UnionKeys<T> = T extends T ? keyof T : never;
  *
  * Requires two generics to be used, so is abstracted by {@link StrictUnion}.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type StrictUnionHelper<T, TAll> = T extends any
   ? T & Partial<Record<Exclude<UnionKeys<TAll>, keyof T>, never>>
   : never;
@@ -107,3 +109,25 @@ type StrictUnionHelper<T, TAll> = T extends any
  * union of objects are accounted for in every object.
  */
 export type StrictUnion<T> = StrictUnionHelper<T, T>;
+
+/**
+ * Returns `true` if the given generic `T` is a string literal, e.g. `"foo"`, or
+ * `false` if it is a string type, e.g. `string`.
+ *
+ * Useful for checking whether the keys of an object are known or not.
+ *
+ * @example
+ * ```ts
+ * // false
+ * type ObjIsGeneric = IsStringLiteral<keyof Record<string, boolean>>;
+ *
+ * // true
+ * type ObjIsKnown = IsStringLiteral<keyof { foo: boolean; }>; // true
+ * ```
+ */
+export type IsStringLiteral<T extends string> = string extends T ? false : true;
+
+/**
+ * Returns `true` if the given generic `T` is `any`, or `false` if it is not.
+ */
+export type IsAny<T> = 0 extends 1 & T ? true : false;

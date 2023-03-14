@@ -9,9 +9,9 @@ testFramework("Remix", RemixHandler, {
       headers.set(k, v as string);
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
     (req as any).headers = headers;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
     (req as any).json = () => Promise.resolve(req.body);
 
     return [{ request: req }];

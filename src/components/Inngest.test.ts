@@ -1,5 +1,6 @@
 import { assertType } from "type-plus";
 import { envKeys } from "../helpers/consts";
+import { IsAny } from "../helpers/types";
 import { EventPayload } from "../types";
 import { eventKeyWarning, Inngest } from "./Inngest";
 
@@ -55,16 +56,18 @@ describe("send", () => {
 
     beforeAll(() => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      global.fetch = jest.fn(() =>
-        Promise.resolve({
-          status: 200,
-          json: () => Promise.resolve({}),
-        })
+      global.fetch = jest.fn(
+        () =>
+          Promise.resolve({
+            status: 200,
+            json: () => Promise.resolve({}),
+          })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ) as any;
     });
 
     beforeEach(() => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
       (global.fetch as any).mockClear();
     });
 
@@ -154,18 +157,19 @@ describe("send", () => {
       const inngest = new Inngest({ name: "test", eventKey: testEventKey });
 
       test("allows sending a single event with a string", () => {
-        void inngest.send("anything", { data: "foo" });
+        const _fn = () => inngest.send("anything", { data: "foo" });
       });
 
       test("allows sending a single event with an object", () => {
-        void inngest.send({ name: "anything", data: "foo" });
+        const _fn = () => inngest.send({ name: "anything", data: "foo" });
       });
 
       test("allows sending multiple events", () => {
-        void inngest.send([
-          { name: "anything", data: "foo" },
-          { name: "anything", data: "foo" },
-        ]);
+        const _fn = () =>
+          inngest.send([
+            { name: "anything", data: "foo" },
+            { name: "anything", data: "foo" },
+          ]);
       });
     });
 
@@ -183,63 +187,67 @@ describe("send", () => {
 
       test("disallows sending a single unknown event with a string", () => {
         // @ts-expect-error Unknown event
-        void inngest.send("unknown", { data: { foo: "" } });
+        const _fn = () => inngest.send("unknown", { data: { foo: "" } });
       });
 
       test("disallows sending a single unknown event with an object", () => {
         // @ts-expect-error Unknown event
-        void inngest.send({ name: "unknown", data: { foo: "" } });
+        const _fn = () => inngest.send({ name: "unknown", data: { foo: "" } });
       });
 
       test("disallows sending multiple unknown events", () => {
-        void inngest.send([
-          // @ts-expect-error Unknown event
-          { name: "unknown", data: { foo: "" } },
-          // @ts-expect-error Unknown event
-          { name: "unknown2", data: { foo: "" } },
-        ]);
+        const _fn = () =>
+          inngest.send([
+            // @ts-expect-error Unknown event
+            { name: "unknown", data: { foo: "" } },
+            // @ts-expect-error Unknown event
+            { name: "unknown2", data: { foo: "" } },
+          ]);
       });
 
       test("disallows sending one unknown event with multiple known events", () => {
-        void inngest.send([
-          { name: "foo", data: { foo: "" } },
-          // @ts-expect-error Unknown event
-          { name: "unknown", data: { foo: "" } },
-        ]);
+        const _fn = () =>
+          inngest.send([
+            { name: "foo", data: { foo: "" } },
+            // @ts-expect-error Unknown event
+            { name: "unknown", data: { foo: "" } },
+          ]);
       });
 
       test("disallows sending a single known event with a string and invalid data", () => {
         // @ts-expect-error Invalid data
-        void inngest.send("foo", { data: { foo: 1 } });
+        const _fn = () => inngest.send("foo", { data: { foo: 1 } });
       });
 
       test("disallows sending a single known event with an object and invalid data", () => {
         // @ts-expect-error Invalid data
-        void inngest.send({ name: "foo", data: { foo: 1 } });
+        const _fn = () => inngest.send({ name: "foo", data: { foo: 1 } });
       });
 
       test("disallows sending multiple known events with invalid data", () => {
-        void inngest.send([
-          // @ts-expect-error Invalid data
-          { name: "foo", data: { bar: "" } },
-          // @ts-expect-error Invalid data
-          { name: "bar", data: { foo: "" } },
-        ]);
+        const _fn = () =>
+          inngest.send([
+            // @ts-expect-error Invalid data
+            { name: "foo", data: { bar: "" } },
+            // @ts-expect-error Invalid data
+            { name: "bar", data: { foo: "" } },
+          ]);
       });
 
       test("allows sending a single known event with a string", () => {
-        void inngest.send("foo", { data: { foo: "" } });
+        const _fn = () => inngest.send("foo", { data: { foo: "" } });
       });
 
       test("allows sending a single known event with an object", () => {
-        void inngest.send({ name: "foo", data: { foo: "" } });
+        const _fn = () => inngest.send({ name: "foo", data: { foo: "" } });
       });
 
       test("allows sending multiple known events", () => {
-        void inngest.send([
-          { name: "foo", data: { foo: "" } },
-          { name: "bar", data: { bar: "" } },
-        ]);
+        const _fn = () =>
+          inngest.send([
+            { name: "foo", data: { foo: "" } },
+            { name: "bar", data: { bar: "" } },
+          ]);
       });
     });
   });
@@ -253,7 +261,7 @@ describe("createFunction", () => {
       test("allows name to be a string", () => {
         inngest.createFunction("test", { event: "test" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<any>(event.data);
+          assertType<IsAny<typeof event.data>>(true);
         });
       });
 
@@ -263,7 +271,7 @@ describe("createFunction", () => {
           { event: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<any>(event.data);
+            assertType<IsAny<typeof event.data>>(true);
           }
         );
       });
@@ -275,7 +283,7 @@ describe("createFunction", () => {
           { event: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<any>(event.data);
+            assertType<IsAny<typeof event.data>>(true);
           }
         );
       });
@@ -283,21 +291,21 @@ describe("createFunction", () => {
       test("allows trigger to be a string", () => {
         inngest.createFunction("test", "test", ({ event }) => {
           assertType<string>(event.name);
-          assertType<any>(event.data);
+          assertType<IsAny<typeof event.data>>(true);
         });
       });
 
       test("allows trigger to be an object with an event property", () => {
         inngest.createFunction("test", { event: "test" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<any>(event.data);
+          assertType<IsAny<typeof event.data>>(true);
         });
       });
 
       test("allows trigger to be an object with a cron property", () => {
         inngest.createFunction("test", { cron: "test" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<any>(event.data);
+          assertType<IsAny<typeof event.data>>(true);
         });
       });
 
@@ -305,7 +313,7 @@ describe("createFunction", () => {
         // @ts-expect-error Unknown property
         inngest.createFunction("test", { foo: "bar" }, ({ event }) => {
           assertType<string>(event.name);
-          assertType<any>(event.data);
+          assertType<IsAny<typeof event.data>>(true);
         });
       });
 
@@ -316,7 +324,7 @@ describe("createFunction", () => {
           { event: "test", cron: "test" },
           ({ event }) => {
             assertType<string>(event.name);
-            assertType<any>(event.data);
+            assertType<IsAny<typeof event.data>>(true);
           }
         );
       });
@@ -336,8 +344,8 @@ describe("createFunction", () => {
 
       test("disallows unknown event as object", () => {
         // @ts-expect-error Unknown event
-        inngest.createFunction("test", { event: "unknown" }, ({ event }) => {
-          assertType<unknown>(event);
+        inngest.createFunction("test", { event: "unknown" }, () => {
+          // no-op
         });
       });
 

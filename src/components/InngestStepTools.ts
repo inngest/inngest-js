@@ -13,10 +13,10 @@ import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
 import { Inngest } from "./Inngest";
 
 export interface TickOp extends HashedOp {
-  fn?: (...args: any[]) => any;
+  fn?: (...args: unknown[]) => unknown;
   fulfilled: boolean;
-  resolve: (value: any | PromiseLike<any>) => void;
-  reject: (reason?: any) => void;
+  resolve: (value: unknown | PromiseLike<unknown>) => void;
+  reject: (reason?: unknown) => void;
 }
 
 /**
@@ -29,7 +29,7 @@ export interface TickOp extends HashedOp {
  */
 export const createStepTools = <
   Events extends Record<string, EventPayload>,
-  TriggeringEvent extends keyof Events
+  TriggeringEvent extends keyof Events & string
 >(
   client: Inngest<Events>
 ) => {
@@ -66,7 +66,7 @@ export const createStepTools = <
      * If we've found a user function to run, we'll store it here so a component
      * higher up can invoke and await it.
      */
-    userFnToRun?: (...args: any[]) => any;
+    userFnToRun?: (...args: unknown[]) => unknown;
 
     /**
      * A boolean to represent whether the user's function is using any step
@@ -135,7 +135,8 @@ export const createStepTools = <
    * When using this function, a generic type should be provided which is the
    * function signature exposed to the user.
    */
-  const createTool = <T extends (...args: any[]) => Promise<any>>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const createTool = <T extends (...args: any[]) => Promise<unknown>>(
     /**
      * A function that returns an ID for this op. This is used to ensure that
      * the op stack is correctly filled, submitted, and retrieved with the same
@@ -169,14 +170,14 @@ export const createStepTools = <
      * when we receive an operation matching this one that does not contain a
      * `data` property.
      */
-    fn?: (...args: Parameters<T>) => any
+    fn?: (...args: Parameters<T>) => unknown
   ): T => {
-    return ((...args: Parameters<T>): Promise<any> => {
+    return ((...args: Parameters<T>): Promise<unknown> => {
       state.hasUsedTools = true;
 
       const opId = hashOp(matchOp(...args));
 
-      return new Promise<any>((resolve, reject) => {
+      return new Promise<unknown>((resolve, reject) => {
         state.tickOps[opId.id] = {
           ...opId,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return
@@ -239,16 +240,15 @@ export const createStepTools = <
           /**
            * Add our payloads and ensure they all have a name.
            */
-          payloads = (
-            Array.isArray(maybePayload)
-              ? maybePayload
-              : maybePayload
-              ? [maybePayload]
-              : []
+          payloads = (Array.isArray(maybePayload)
+            ? maybePayload
+            : maybePayload
+            ? [maybePayload]
+            : []
           ).map((payload) => ({
             ...payload,
             name: nameOrPayload,
-          })) as typeof payloads;
+          })) as unknown as typeof payloads;
         } else {
           /**
            * Grab our payloads straight from the args.
@@ -268,11 +268,7 @@ export const createStepTools = <
         };
       },
       (nameOrPayload, maybePayload) => {
-        return client.send(
-          nameOrPayload as any,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          maybePayload as unknown as any
-        );
+        return client.send(nameOrPayload, maybePayload);
       }
     ),
 
@@ -323,6 +319,7 @@ export const createStepTools = <
         /**
          * Options to control the event we're waiting for.
          */
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         opts: WaitForEventOpts<any, any> | string
       ) => {
         const matchOpts: { timeout: string; if?: string } = {
@@ -358,7 +355,7 @@ export const createStepTools = <
      * for next steps.
      */
     run: createTool<
-      <T extends () => any>(
+      <T extends () => unknown>(
         /**
          * The name of this step as it will appear in the Inngest Cloud UI. This
          * is also used as a unique identifier for the step and should not match
@@ -531,7 +528,7 @@ interface WaitForEventOpts<
 export type UnhashedOp = {
   name: string;
   op: StepOpCode;
-  opts: Record<string, any> | null;
+  opts: Record<string, unknown> | null;
   parent: string | null;
   pos?: number;
 };

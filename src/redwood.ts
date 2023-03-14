@@ -21,7 +21,7 @@ export interface RedwoodResponse {
  *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
+export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
   const handler = new InngestCommHandler(
     "redwoodjs",
     nameOrInngest,
@@ -62,7 +62,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
                   ? Buffer.from(event.body, "base64").toString()
                   : event.body
                 : "{}"
-            ) as Record<string, any>;
+            ) as Record<string, unknown>;
 
             return {
               env,

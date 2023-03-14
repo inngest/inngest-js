@@ -53,19 +53,19 @@ export type ServeHandler = (
    * The name of this app, used to scope and group Inngest functions, or
    * the `Inngest` instance used to declare all functions.
    */
-  nameOrInngest: string | Inngest<any>,
+  nameOrInngest: string | Inngest,
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: InngestFunction<any, any, any>[],
+  functions: InngestFunction[],
 
   /**
    * A set of options to further configure the registration of Inngest
    * functions.
    */
   opts?: RegisterOptions
-) => any;
+) => unknown;
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -229,7 +229,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    */
   private readonly fns: Record<
     string,
-    { fn: InngestFunction<any, any, any>; onFailure: boolean }
+    { fn: InngestFunction; onFailure: boolean }
   > = {};
 
   private allowExpiredSignatures: boolean;
@@ -254,12 +254,12 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
      * receiving events from the same service, as you can reuse a single
      * definition of Inngest.
      */
-    appNameOrInngest: string | Inngest<any>,
+    appNameOrInngest: string | Inngest,
 
     /**
      * An array of the functions to serve and register with Inngest.
      */
-    functions: InngestFunction<any, any, any>[],
+    functions: InngestFunction[],
     {
       inngestRegisterUrl,
       fetch,
@@ -344,7 +344,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     );
 
     this.fns = functions.reduce<
-      Record<string, { fn: InngestFunction<any, any, any>; onFailure: boolean }>
+      Record<string, { fn: InngestFunction; onFailure: boolean }>
     >((acc, fn) => {
       const configs = fn["getConfig"](
         new URL("https://example.com"),
@@ -570,7 +570,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           },
         };
       }
-    } catch (err: any) {
+    } catch (err) {
       return {
         status: 500,
         body: JSON.stringify({
@@ -594,7 +594,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected async runStep(
     functionId: string,
     stepId: string | null,
-    data: any,
+    data: unknown,
     timer: ServerTiming
   ): Promise<StepRunResponse> {
     try {
@@ -701,7 +701,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         status: 206,
         body: Array.isArray(ret[1]) ? ret[1] : [ret[1]],
       };
-    } catch (unserializedErr: any) {
+    } catch (unserializedErr) {
       /**
        * Always serialize the error before sending it back to Inngest. Errors,
        * by default, do not niceley serialize to JSON, so we use the a package
@@ -874,7 +874,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
   protected validateSignature(
     sig: string | undefined,
-    body: Record<string, any>
+    body: Record<string, unknown>
   ) {
     // Never validate signatures in development.
     if (!this.isProd) {
@@ -920,7 +920,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    * method for the given log level.  For example, `log("error", "foo")` will
    * call `console.error("foo")`.
    */
-  protected log(level: LogLevel, ...args: any[]) {
+  protected log(level: LogLevel, ...args: unknown[]) {
     const logLevels: LogLevel[] = [
       "debug",
       "info",
@@ -940,7 +940,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         logger = console[level as keyof typeof console] as typeof logger;
       }
 
-      logger(`inngest ${level as string}: `, ...(args as unknown[]));
+      logger(`inngest ${level as string}: `, ...args);
     }
   }
 }
@@ -974,7 +974,7 @@ class RequestSignature {
     signingKey,
     allowExpiredSignatures,
   }: {
-    body: any;
+    body: unknown;
     signingKey: string;
     allowExpiredSignatures: boolean;
   }): void {
@@ -989,7 +989,7 @@ class RequestSignature {
     const encoded = typeof body === "string" ? body : canonicalize(body);
     // Remove the /signkey-[test|prod]-/ prefix from our signing key to calculate the HMAC.
     const key = signingKey.replace(/signkey-\w+-/, "");
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
     const mac = hmac(sha256 as any, key)
       .update(encoded)
       .update(this.timestamp)
@@ -1005,6 +1005,7 @@ class RequestSignature {
  * The broad definition of a handler passed when instantiating an
  * {@link InngestCommHandler} instance.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Handler = (...args: any[]) => {
   [K in Extract<
     HandlerAction,
@@ -1065,7 +1066,7 @@ type HandlerAction =
       action: "run";
       fnId: string;
       stepId: string | null;
-      data: Record<string, any>;
+      data: Record<string, unknown>;
       env: Record<string, string | undefined>;
       isProduction: boolean;
       url: URL;

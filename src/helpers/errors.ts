@@ -39,12 +39,13 @@ export const serializeError = (subject: unknown): SerializedError => {
 /**
  * Check if an object is a serialised error created by {@link serializeError}.
  */
-export const isSerializedError = (value: any): boolean => {
+export const isSerializedError = (value: unknown): boolean => {
   try {
     return (
       Object.prototype.hasOwnProperty.call(value, SERIALIZED_KEY) &&
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      value[SERIALIZED_KEY] === SERIALIZED_VALUE
+      (value as { [SERIALIZED_KEY]: unknown })[SERIALIZED_KEY] ===
+        SERIALIZED_VALUE
     );
   } catch {
     return false;
