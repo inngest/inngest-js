@@ -44,7 +44,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         run: () => {
           if (req.method === "POST") {
             return {
-              data: req.body as Record<string, any>,
+              data: req.body as Record<string, unknown>,
               fnId: req.query[queryKeys.FnId] as string,
               stepId: req.query[queryKeys.StepId] as string,
               env,

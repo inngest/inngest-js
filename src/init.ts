@@ -23,7 +23,7 @@ async function init() {
   const { run } = (await import(
     path.join(process.cwd(), fnPath)
   )) as unknown as {
-    run: (...args: any[]) => unknown;
+    run: (...args: unknown[]) => unknown;
   };
 
   const result = await run(context);

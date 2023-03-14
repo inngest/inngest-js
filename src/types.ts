@@ -1,7 +1,12 @@
 import { z } from "zod";
 import type { createStepTools } from "./components/InngestStepTools";
 import { internalEvents } from "./helpers/consts";
-import type { KeysNotOfType, ObjectPaths, StrictUnion } from "./helpers/types";
+import type {
+  IsStringLiteral,
+  KeysNotOfType,
+  ObjectPaths,
+  StrictUnion,
+} from "./helpers/types";
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -71,13 +76,13 @@ export type Op = {
    * is not compared when confirming that the operation was completed; use `id`
    * for this.
    */
-  opts?: any;
+  opts?: Record<string, unknown>;
 
   /**
    * Any data present for this operation. If data is present, this operation is
    * treated as completed.
    */
-  data?: any;
+  data?: unknown;
 
   /**
    * An error present for this operation. If an error is present, this operation
@@ -87,7 +92,7 @@ export type Op = {
    * This allows users to handle step failures using common tools such as
    * try/catch or `.catch()`.
    */
-  error?: any;
+  error?: unknown;
 };
 
 export const incomingOpSchema = z.object({
@@ -142,7 +147,7 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
 export type BaseContext<
   TEvents extends Record<string, EventPayload>,
   TTrigger extends keyof TEvents & string,
-  TShimmedFns extends Record<string, (...args: any[]) => any>
+  TShimmedFns extends Record<string, (...args: unknown[]) => unknown>
 > = {
   /**
    * The event data present in the payload.
@@ -196,25 +201,22 @@ export type BaseContext<
  * Given a set of generic objects, extract any top-level functions and
  * appropriately shim their types.
  */
-export type ShimmedFns<Fns extends Record<string, any>> = Fns extends Record<
-  string,
-  any
->
-  ? {
-      /**
-       * The key omission here allows the user to pass anything to the `fns`
-       * object and have it be correctly understand and transformed.
-       *
-       * Crucially, we use a complex `Omit` here to ensure that function
-       * comments and metadata is preserved, meaning the user can still use
-       * the function exactly like they would in the rest of their codebase,
-       * even though we're shimming with `tools.run()`.
-       */
-      [K in keyof Omit<Fns, KeysNotOfType<Fns, (...args: any[]) => any>>]: (
-        ...args: Parameters<Fns[K]>
-      ) => Promise<Awaited<ReturnType<Fns[K]>>>;
-    }
-  : Record<string, never>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ShimmedFns<Fns extends Record<string, any>> = {
+  /**
+   * The key omission here allows the user to pass anything to the `fns`
+   * object and have it be correctly understand and transformed.
+   *
+   * Crucially, we use a complex `Omit` here to ensure that function
+   * comments and metadata is preserved, meaning the user can still use
+   * the function exactly like they would in the rest of their codebase,
+   * even though we're shimming with `tools.run()`.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [K in keyof Omit<Fns, KeysNotOfType<Fns, (...args: any[]) => any>>]: (
+    ...args: Parameters<Fns[K]>
+  ) => Promise<Awaited<ReturnType<Fns[K]>>>;
+};
 
 /**
  * Builds a context object for an Inngest handler, optionally overriding some
@@ -223,8 +225,8 @@ export type ShimmedFns<Fns extends Record<string, any>> = Fns extends Record<
 export type Context<
   TEvents extends Record<string, EventPayload>,
   TTrigger extends keyof TEvents & string,
-  TShimmedFns extends Record<string, (...args: any[]) => any>,
-  TOverrides extends Record<string, any> = Record<never, never>
+  TShimmedFns extends Record<string, (...args: unknown[]) => unknown>,
+  TOverrides extends Record<string, unknown> = Record<never, never>
 > = Omit<BaseContext<TEvents, TTrigger, TShimmedFns>, keyof TOverrides> &
   TOverrides;
 
@@ -237,15 +239,18 @@ export type Context<
 export type Handler<
   TEvents extends Record<string, EventPayload>,
   TTrigger extends keyof TEvents & string,
-  TShimmedFns extends Record<string, (...args: any[]) => any>,
-  TOverrides extends Record<string, any> = Record<never, never>
+  TShimmedFns extends Record<string, (...args: unknown[]) => unknown> = Record<
+    never,
+    never
+  >,
+  TOverrides extends Record<string, unknown> = Record<never, never>
 > = (
   /**
    * The context argument provides access to all data and tooling available to
    * the function.
    */
   ctx: Context<TEvents, TTrigger, TShimmedFns, TOverrides>
-) => any;
+) => unknown;
 
 /**
  * The shape of a single event's payload. It should be extended to enforce
@@ -263,12 +268,14 @@ export interface EventPayload {
   /**
    * Any data pertinent to the event
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any;
 
   /**
    * Any user data associated with the event
    * All fields ending in "_id" will be used to attribute the event to a particular user
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   user?: any;
 
   /**
@@ -318,7 +325,7 @@ export interface Response {
    *
    * {@link https://www.inngest.com/docs/functions/function-input-and-output#response-format}
    */
-  body?: any;
+  body?: unknown;
 }
 
 /**
@@ -326,7 +333,7 @@ export interface Response {
  *
  * @internal
  */
-export type Step<TContext = any> = (
+export type Step<TContext = unknown> = (
   /**
    * The context for this step, including the triggering event and any previous
    * step output.
@@ -529,7 +536,7 @@ export interface FunctionOptions<
    */
   concurrency?: number;
 
-  fns?: Record<string, any>;
+  fns?: Record<string, unknown>;
 
   /**
    * Allow the specification of an idempotency key using event data. If
@@ -589,7 +596,7 @@ export interface FunctionOptions<
     | 19
     | 20;
 
-  onFailure?: (...args: any[]) => any;
+  onFailure?: (...args: unknown[]) => unknown;
 }
 
 /**
@@ -601,11 +608,11 @@ export type Cancellation<
   Events extends Record<string, EventPayload>,
   TriggeringEvent extends keyof Events & string
 > = {
-  [K in keyof Events]: {
+  [K in keyof Events & string]: {
     /**
      * The name of the event that should cancel the function run.
      */
-    event: K & string;
+    event: K;
 
     /**
      * The expression that must evaluate to true in order to cancel the function run. There
@@ -645,7 +652,9 @@ export type Cancellation<
      *
      * {@link https://www.inngest.com/docs/functions/expressions}
      */
-    match?: ObjectPaths<Events[TriggeringEvent]> & ObjectPaths<Events[K]>;
+    match?: IsStringLiteral<keyof Events & string> extends true
+      ? ObjectPaths<Events[TriggeringEvent]> & ObjectPaths<Events[K]>
+      : string;
 
     /**
      * An optional timeout that the cancel is valid for.  If this isn't
@@ -660,7 +669,7 @@ export type Cancellation<
      */
     timeout?: number | string | Date;
   };
-}[keyof Events];
+}[keyof Events & string];
 
 /**
  * Expected responses to be used within an `InngestCommHandler` in order to
@@ -675,7 +684,7 @@ export type StepRunResponse =
     }
   | {
       status: 200;
-      body?: any;
+      body?: unknown;
     }
   | {
       status: 206;

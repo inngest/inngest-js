@@ -2,18 +2,10 @@ import { Inngest } from "./components/Inngest";
 import { InngestCommHandler } from "./components/InngestCommHandler";
 import * as ExpressHandler from "./express";
 import { testFramework } from "./test/helpers";
-import { RegisterRequest } from "./types";
 
 testFramework("Express", ExpressHandler);
 
 describe("InngestCommHandler", () => {
-  // Enable testing of protected methods
-  class InngestCommHandlerPublic extends InngestCommHandler<any, any> {
-    public override registerBody(url: URL): RegisterRequest {
-      return super.registerBody(url);
-    }
-  }
-
   describe("registerBody", () => {
     it("Includes correct base URL for functions", () => {
       const client = new Inngest({ name: "test" });
@@ -23,18 +15,19 @@ describe("InngestCommHandler", () => {
         { event: "test/event.name" },
         () => undefined
       );
-      const ch = new InngestCommHandlerPublic(
+      const ch = new InngestCommHandler(
         "test-framework",
         "test-1",
         [fn],
         {},
-        () => undefined,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-return
+        () => undefined as unknown as any,
         () => undefined
       );
 
       const url = new URL("http://localhost:8000/api/inngest");
 
-      const body = ch.registerBody(url);
+      const body = ch["registerBody"](url);
       expect(body.appName).toBe("test-1");
       expect(body.url).toBe("http://localhost:8000/api/inngest");
     });
