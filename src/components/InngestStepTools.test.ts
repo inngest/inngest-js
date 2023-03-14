@@ -269,6 +269,7 @@ describe("sendEvent", () => {
   describe("types", () => {
     describe("no custom types", () => {
       const sendEvent: ReturnType<typeof createStepTools>[0]["sendEvent"] =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (() => undefined) as any;
 
       test("allows sending a single event with a string", () => {
@@ -302,6 +303,7 @@ describe("sendEvent", () => {
           },
           "foo"
         >
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
       >[0]["sendEvent"] = (() => undefined) as any;
 
       test("disallows sending a single unknown event with a string", () => {
