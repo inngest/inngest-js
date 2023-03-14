@@ -1,3 +1,4 @@
+import nock from "nock";
 import { assertType } from "type-plus";
 import { envKeys } from "../helpers/consts";
 import { IsAny } from "../helpers/types";
@@ -153,19 +154,48 @@ describe("send", () => {
   });
 
   describe("types", () => {
+    const mockIngestionApi = () => {
+      beforeEach(() => {
+        nock(`https://inn.gs`).post(`/e/${testEventKey}`).reply(200);
+
+        /**
+         * Ensure nock is active before each test. This is required after each
+         * use of `nock.restore()`.
+         *
+         * See https://www.npmjs.com/package/nock#restoring
+         */
+        try {
+          nock.activate();
+        } catch {
+          // no-op - will throw if Nock is already active
+        }
+      });
+
+      afterEach(() => {
+        /**
+         * Reset nock state after each test.
+         *
+         * See https://www.npmjs.com/package/nock#memory-issues-with-jest
+         */
+        nock.restore();
+        nock.cleanAll();
+      });
+    };
+
     describe("no custom types", () => {
       const inngest = new Inngest({ name: "test", eventKey: testEventKey });
+      mockIngestionApi();
 
-      test("allows sending a single event with a string", () => {
-        void inngest.send("anything", { data: "foo" });
+      test("allows sending a single event with a string", async () => {
+        await inngest.send("anything", { data: "foo" });
       });
 
-      test("allows sending a single event with an object", () => {
-        void inngest.send({ name: "anything", data: "foo" });
+      test("allows sending a single event with an object", async () => {
+        await inngest.send({ name: "anything", data: "foo" });
       });
 
-      test("allows sending multiple events", () => {
-        void inngest.send([
+      test("allows sending multiple events", async () => {
+        await inngest.send([
           { name: "anything", data: "foo" },
           { name: "anything", data: "foo" },
         ]);
@@ -184,18 +214,20 @@ describe("send", () => {
         };
       }>({ name: "test", eventKey: testEventKey });
 
-      test("disallows sending a single unknown event with a string", () => {
+      mockIngestionApi();
+
+      test("disallows sending a single unknown event with a string", async () => {
         // @ts-expect-error Unknown event
-        void inngest.send("unknown", { data: { foo: "" } });
+        await inngest.send("unknown", { data: { foo: "" } });
       });
 
-      test("disallows sending a single unknown event with an object", () => {
+      test("disallows sending a single unknown event with an object", async () => {
         // @ts-expect-error Unknown event
-        void inngest.send({ name: "unknown", data: { foo: "" } });
+        await inngest.send({ name: "unknown", data: { foo: "" } });
       });
 
-      test("disallows sending multiple unknown events", () => {
-        void inngest.send([
+      test("disallows sending multiple unknown events", async () => {
+        await inngest.send([
           // @ts-expect-error Unknown event
           { name: "unknown", data: { foo: "" } },
           // @ts-expect-error Unknown event
@@ -203,26 +235,26 @@ describe("send", () => {
         ]);
       });
 
-      test("disallows sending one unknown event with multiple known events", () => {
-        void inngest.send([
+      test("disallows sending one unknown event with multiple known events", async () => {
+        await inngest.send([
           { name: "foo", data: { foo: "" } },
           // @ts-expect-error Unknown event
           { name: "unknown", data: { foo: "" } },
         ]);
       });
 
-      test("disallows sending a single known event with a string and invalid data", () => {
+      test("disallows sending a single known event with a string and invalid data", async () => {
         // @ts-expect-error Invalid data
-        void inngest.send("foo", { data: { foo: 1 } });
+        await inngest.send("foo", { data: { foo: 1 } });
       });
 
-      test("disallows sending a single known event with an object and invalid data", () => {
+      test("disallows sending a single known event with an object and invalid data", async () => {
         // @ts-expect-error Invalid data
-        void inngest.send({ name: "foo", data: { foo: 1 } });
+        await inngest.send({ name: "foo", data: { foo: 1 } });
       });
 
-      test("disallows sending multiple known events with invalid data", () => {
-        void inngest.send([
+      test("disallows sending multiple known events with invalid data", async () => {
+        await inngest.send([
           // @ts-expect-error Invalid data
           { name: "foo", data: { bar: "" } },
           // @ts-expect-error Invalid data
@@ -230,16 +262,16 @@ describe("send", () => {
         ]);
       });
 
-      test("allows sending a single known event with a string", () => {
-        void inngest.send("foo", { data: { foo: "" } });
+      test("allows sending a single known event with a string", async () => {
+        await inngest.send("foo", { data: { foo: "" } });
       });
 
-      test("allows sending a single known event with an object", () => {
-        void inngest.send({ name: "foo", data: { foo: "" } });
+      test("allows sending a single known event with an object", async () => {
+        await inngest.send({ name: "foo", data: { foo: "" } });
       });
 
-      test("allows sending multiple known events", () => {
-        void inngest.send([
+      test("allows sending multiple known events", async () => {
+        await inngest.send([
           { name: "foo", data: { foo: "" } },
           { name: "bar", data: { bar: "" } },
         ]);
