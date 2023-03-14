@@ -240,27 +240,130 @@ describe("sleepUntil", () => {
 });
 
 describe("sendEvent", () => {
-  const client = new Inngest({ name: "test" });
-  let sendEvent: ReturnType<typeof createStepTools>[0]["sendEvent"];
-  let state: ReturnType<typeof createStepTools>[1];
-  let getOp: () => TickOp | undefined;
+  describe("runtime", () => {
+    const client = new Inngest({ name: "test" });
+    let sendEvent: ReturnType<typeof createStepTools>[0]["sendEvent"];
+    let state: ReturnType<typeof createStepTools>[1];
+    let getOp: () => TickOp | undefined;
 
-  beforeEach(() => {
-    [{ sendEvent }, state] = createStepTools(client);
-    getOp = () => Object.values(state.tickOps)[0];
-  });
+    beforeEach(() => {
+      [{ sendEvent }, state] = createStepTools(client);
+      getOp = () => Object.values(state.tickOps)[0];
+    });
 
-  test("return Step step op code", () => {
-    void sendEvent("step", { data: "foo" });
-    expect(getOp()).toMatchObject({
-      op: StepOpCode.StepPlanned,
+    test("return Step step op code", () => {
+      void sendEvent("step", { data: "foo" });
+      expect(getOp()).toMatchObject({
+        op: StepOpCode.StepPlanned,
+      });
+    });
+
+    test("return step name as name", () => {
+      void sendEvent("step", { data: "foo" });
+      expect(getOp()).toMatchObject({
+        name: "step",
+      });
     });
   });
 
-  test("return step name as name", () => {
-    void sendEvent("step", { data: "foo" });
-    expect(getOp()).toMatchObject({
-      name: "step",
+  describe("types", () => {
+    describe("no custom types", () => {
+      const sendEvent: ReturnType<typeof createStepTools>[0]["sendEvent"] =
+        (() => undefined) as any;
+
+      test("allows sending a single event with a string", () => {
+        void sendEvent("anything", { data: "foo" });
+      });
+
+      test("allows sending a single event with an object", () => {
+        void sendEvent({ name: "anything", data: "foo" });
+      });
+
+      test("allows sending multiple events", () => {
+        void sendEvent([
+          { name: "anything", data: "foo" },
+          { name: "anything", data: "foo" },
+        ]);
+      });
+    });
+
+    describe("multiple custom types", () => {
+      const sendEvent: ReturnType<
+        typeof createStepTools<
+          {
+            foo: {
+              name: "foo";
+              data: { foo: string };
+            };
+            bar: {
+              name: "bar";
+              data: { bar: string };
+            };
+          },
+          "foo"
+        >
+      >[0]["sendEvent"] = (() => undefined) as any;
+
+      test("disallows sending a single unknown event with a string", () => {
+        // @ts-expect-error Unknown event
+        void sendEvent("unknown", { data: { foo: "" } });
+      });
+
+      test("disallows sending a single unknown event with an object", () => {
+        // @ts-expect-error Unknown event
+        void sendEvent({ name: "unknown", data: { foo: "" } });
+      });
+
+      test("disallows sending multiple unknown events", () => {
+        void sendEvent([
+          // @ts-expect-error Unknown event
+          { name: "unknown", data: { foo: "" } },
+          // @ts-expect-error Unknown event
+          { name: "unknown2", data: { foo: "" } },
+        ]);
+      });
+
+      test("disallows sending one unknown event with multiple known events", () => {
+        void sendEvent([
+          { name: "foo", data: { foo: "" } },
+          // @ts-expect-error Unknown event
+          { name: "unknown", data: { foo: "" } },
+        ]);
+      });
+
+      test("disallows sending a single known event with a string and invalid data", () => {
+        // @ts-expect-error Invalid data
+        void sendEvent("foo", { data: { foo: 1 } });
+      });
+
+      test("disallows sending a single known event with an object and invalid data", () => {
+        // @ts-expect-error Invalid data
+        void sendEvent({ name: "foo", data: { foo: 1 } });
+      });
+
+      test("disallows sending multiple known events with invalid data", () => {
+        void sendEvent([
+          // @ts-expect-error Invalid data
+          { name: "foo", data: { bar: "" } },
+          // @ts-expect-error Invalid data
+          { name: "bar", data: { foo: "" } },
+        ]);
+      });
+
+      test("allows sending a single known event with a string", () => {
+        void sendEvent("foo", { data: { foo: "" } });
+      });
+
+      test("allows sending a single known event with an object", () => {
+        void sendEvent({ name: "foo", data: { foo: "" } });
+      });
+
+      test("allows sending multiple known events", () => {
+        void sendEvent([
+          { name: "foo", data: { foo: "" } },
+          { name: "bar", data: { bar: "" } },
+        ]);
+      });
     });
   });
 });

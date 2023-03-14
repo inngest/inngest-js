@@ -49,102 +49,199 @@ describe("instantiation", () => {
 });
 
 describe("send", () => {
-  const originalEnvEventKey = process.env[envKeys.EventKey];
-  const originalFetch = global.fetch;
+  describe("runtime", () => {
+    const originalEnvEventKey = process.env[envKeys.EventKey];
+    const originalFetch = global.fetch;
 
-  beforeAll(() => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    global.fetch = jest.fn(() =>
-      Promise.resolve({
-        status: 200,
-        json: () => Promise.resolve({}),
-      })
-    ) as any;
+    beforeAll(() => {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      global.fetch = jest.fn(() =>
+        Promise.resolve({
+          status: 200,
+          json: () => Promise.resolve({}),
+        })
+      ) as any;
+    });
+
+    beforeEach(() => {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+      (global.fetch as any).mockClear();
+    });
+
+    afterEach(() => {
+      if (originalEnvEventKey) {
+        process.env[envKeys.EventKey] = originalEnvEventKey;
+      } else {
+        delete process.env[envKeys.EventKey];
+      }
+    });
+
+    afterAll(() => {
+      global.fetch = originalFetch;
+    });
+
+    test("should fail to send if event key not specified at instantiation", async () => {
+      const inngest = new Inngest({ name: "test" });
+
+      await expect(() => inngest.send(testEvent)).rejects.toThrowError(
+        "Could not find an event key"
+      );
+    });
+
+    test("should succeed if event key specified at instantiation", async () => {
+      const inngest = new Inngest({ name: "test", eventKey: testEventKey });
+
+      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/e/${testEventKey}`),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify([testEvent]),
+        })
+      );
+    });
+
+    test("should succeed if event key specified in env", async () => {
+      process.env[envKeys.EventKey] = testEventKey;
+      const inngest = new Inngest({ name: "test" });
+
+      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/e/${testEventKey}`),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify([testEvent]),
+        })
+      );
+    });
+
+    test("should succeed if event key given at runtime", async () => {
+      const inngest = new Inngest({ name: "test" });
+      inngest.setEventKey(testEventKey);
+
+      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/e/${testEventKey}`),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify([testEvent]),
+        })
+      );
+    });
+
+    test("should succeed if an event name is given with an empty list of payloads", async () => {
+      const inngest = new Inngest({ name: "test" });
+      inngest.setEventKey(testEventKey);
+
+      await expect(inngest.send("test", [])).resolves.toBeUndefined();
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test("should succeed if an empty list of payloads is given", async () => {
+      const inngest = new Inngest({ name: "test" });
+      inngest.setEventKey(testEventKey);
+
+      await expect(inngest.send([])).resolves.toBeUndefined();
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
   });
 
-  beforeEach(() => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-    (global.fetch as any).mockClear();
-  });
+  describe("types", () => {
+    describe("no custom types", () => {
+      const inngest = new Inngest({ name: "test", eventKey: testEventKey });
 
-  afterEach(() => {
-    if (originalEnvEventKey) {
-      process.env[envKeys.EventKey] = originalEnvEventKey;
-    } else {
-      delete process.env[envKeys.EventKey];
-    }
-  });
+      test("allows sending a single event with a string", () => {
+        void inngest.send("anything", { data: "foo" });
+      });
 
-  afterAll(() => {
-    global.fetch = originalFetch;
-  });
+      test("allows sending a single event with an object", () => {
+        void inngest.send({ name: "anything", data: "foo" });
+      });
 
-  test("should fail to send if event key not specified at instantiation", async () => {
-    const inngest = new Inngest({ name: "test" });
+      test("allows sending multiple events", () => {
+        void inngest.send([
+          { name: "anything", data: "foo" },
+          { name: "anything", data: "foo" },
+        ]);
+      });
+    });
 
-    await expect(() => inngest.send(testEvent)).rejects.toThrowError(
-      "Could not find an event key"
-    );
-  });
+    describe("multiple custom types", () => {
+      const inngest = new Inngest<{
+        foo: {
+          name: "foo";
+          data: { foo: string };
+        };
+        bar: {
+          name: "bar";
+          data: { bar: string };
+        };
+      }>({ name: "test", eventKey: testEventKey });
 
-  test("should succeed if event key specified at instantiation", async () => {
-    const inngest = new Inngest({ name: "test", eventKey: testEventKey });
+      test("disallows sending a single unknown event with a string", () => {
+        // @ts-expect-error Unknown event
+        void inngest.send("unknown", { data: { foo: "" } });
+      });
 
-    await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      test("disallows sending a single unknown event with an object", () => {
+        // @ts-expect-error Unknown event
+        void inngest.send({ name: "unknown", data: { foo: "" } });
+      });
 
-    expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining(`/e/${testEventKey}`),
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify([testEvent]),
-      })
-    );
-  });
+      test("disallows sending multiple unknown events", () => {
+        void inngest.send([
+          // @ts-expect-error Unknown event
+          { name: "unknown", data: { foo: "" } },
+          // @ts-expect-error Unknown event
+          { name: "unknown2", data: { foo: "" } },
+        ]);
+      });
 
-  test("should succeed if event key specified in env", async () => {
-    process.env[envKeys.EventKey] = testEventKey;
-    const inngest = new Inngest({ name: "test" });
+      test("disallows sending one unknown event with multiple known events", () => {
+        void inngest.send([
+          { name: "foo", data: { foo: "" } },
+          // @ts-expect-error Unknown event
+          { name: "unknown", data: { foo: "" } },
+        ]);
+      });
 
-    await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      test("disallows sending a single known event with a string and invalid data", () => {
+        // @ts-expect-error Invalid data
+        void inngest.send("foo", { data: { foo: 1 } });
+      });
 
-    expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining(`/e/${testEventKey}`),
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify([testEvent]),
-      })
-    );
-  });
+      test("disallows sending a single known event with an object and invalid data", () => {
+        // @ts-expect-error Invalid data
+        void inngest.send({ name: "foo", data: { foo: 1 } });
+      });
 
-  test("should succeed if event key given at runtime", async () => {
-    const inngest = new Inngest({ name: "test" });
-    inngest.setEventKey(testEventKey);
+      test("disallows sending multiple known events with invalid data", () => {
+        void inngest.send([
+          // @ts-expect-error Invalid data
+          { name: "foo", data: { bar: "" } },
+          // @ts-expect-error Invalid data
+          { name: "bar", data: { foo: "" } },
+        ]);
+      });
 
-    await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      test("allows sending a single known event with a string", () => {
+        void inngest.send("foo", { data: { foo: "" } });
+      });
 
-    expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining(`/e/${testEventKey}`),
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify([testEvent]),
-      })
-    );
-  });
+      test("allows sending a single known event with an object", () => {
+        void inngest.send({ name: "foo", data: { foo: "" } });
+      });
 
-  test("should succeed if an event name is given with an empty list of payloads", async () => {
-    const inngest = new Inngest({ name: "test" });
-    inngest.setEventKey(testEventKey);
-
-    await expect(inngest.send("test", [])).resolves.toBeUndefined();
-    expect(global.fetch).not.toHaveBeenCalled();
-  });
-
-  test("should succeed if an empty list of payloads is given", async () => {
-    const inngest = new Inngest({ name: "test" });
-    inngest.setEventKey(testEventKey);
-
-    await expect(inngest.send([])).resolves.toBeUndefined();
-    expect(global.fetch).not.toHaveBeenCalled();
+      test("allows sending multiple known events", () => {
+        void inngest.send([
+          { name: "foo", data: { foo: "" } },
+          { name: "bar", data: { bar: "" } },
+        ]);
+      });
+    });
   });
 });
 
