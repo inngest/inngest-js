@@ -224,6 +224,12 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected readonly logLevel: LogLevel;
 
   /**
+   * A private collection of just Inngest functions, as they have been passed
+   * when instantiating the class.
+   */
+  private readonly rawFns: InngestFunction[];
+
+  /**
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
    */
@@ -343,7 +349,9 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       arguments["3"]?.__testingAllowExpiredSignatures
     );
 
-    this.fns = functions.reduce<
+    this.rawFns = functions;
+
+    this.fns = this.rawFns.reduce<
       Record<string, { fn: InngestFunction; onFailure: boolean }>
     >((acc, fn) => {
       const configs = fn["getConfig"](
@@ -727,8 +735,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    return Object.values(this.fns).reduce<FunctionConfig[]>(
-      (acc, fn) => [...acc, ...fn.fn["getConfig"](url, this.name)],
+    return Object.values(this.rawFns).reduce<FunctionConfig[]>(
+      (acc, fn) => [...acc, ...fn["getConfig"](url, this.name)],
       []
     );
   }
