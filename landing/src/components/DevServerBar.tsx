@@ -57,7 +57,7 @@ const DevServerPill = ({ introspect }: { introspect: IntrospectValue }) => {
           <div>
             Connected to <code>inngest dev</code> on{" "}
             <code>
-              {url.hostname}:{url.port}
+              <a href={`http://${url.hostname}:${url.port}`}>{url.hostname}:{url.port}</a>
             </code>
           </div>
         ) : (
