@@ -19,8 +19,9 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     function_id: string;
     run_id: string;
     error: {
+      name: string;
       message: string;
-      stack?: string;
+      stack: string;
       cause?: string;
       status?: number;
     };
@@ -42,7 +43,7 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
   /**
    * The final error that caused this function to exhaust all retries.
    */
-  error: FailureEventPayload<P>["data"]["error"];
+  error: Error;
 };
 
 /**
@@ -680,7 +681,7 @@ export type Cancellation<
 export type StepRunResponse =
   | {
       status: 500;
-      error?: string;
+      error?: unknown;
     }
   | {
       status: 200;

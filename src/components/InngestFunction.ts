@@ -1,5 +1,5 @@
 import { internalEvents, queryKeys } from "../helpers/consts";
-import { serializeError } from "../helpers/errors";
+import { deserializeError, serializeError } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { ServerTiming } from "../helpers/ServerTiming";
 import { slugify, timeStr } from "../helpers/strings";
@@ -8,6 +8,7 @@ import {
   EventNameFromTrigger,
   EventPayload,
   FailureEventArgs,
+  FailureEventPayload,
   FunctionConfig,
   FunctionOptions,
   FunctionTrigger,
@@ -279,9 +280,9 @@ export class InngestFunction<
 
       userFnToRun = this.#onFailureFn;
 
-      (fnArg as FailureEventArgs).error = (
-        fnArg as FailureEventArgs
-      ).event.data.error;
+      (fnArg as FailureEventArgs).error = deserializeError(
+        (fnArg.event as FailureEventPayload).data.error
+      );
     }
 
     /**
