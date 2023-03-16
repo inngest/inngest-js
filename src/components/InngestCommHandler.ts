@@ -496,7 +496,14 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         if (stepRes.status === 500 || stepRes.status === 400) {
           return {
             status: stepRes.status,
-            body: stepRes.error || "",
+            body: JSON.stringify(
+              stepRes.error ||
+                serializeError(
+                  new Error(
+                    "Unknown error; function failed but no error was returned"
+                  )
+                )
+            ),
             headers: {
               ...getHeaders(),
               "Content-Type": "application/json",
