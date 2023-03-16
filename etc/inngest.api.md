@@ -33,7 +33,7 @@ export interface EventPayload {
 // @public
 export type FailureEventArgs<P extends EventPayload = EventPayload> = {
     event: FailureEventPayload<P>;
-    error: FailureEventPayload<P>["data"]["error"];
+    error: Error;
 };
 
 // @public
@@ -43,8 +43,9 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
         function_id: string;
         run_id: string;
         error: {
+            name: string;
             message: string;
-            stack?: string;
+            stack: string;
             cause?: string;
             status?: number;
         };
