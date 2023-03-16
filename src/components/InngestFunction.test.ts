@@ -859,7 +859,9 @@ describe("runFn", () => {
             function_id: "123",
             run_id: "456",
             error: {
+              name: "Error",
               message: "Something went wrong",
+              stack: "",
             },
           },
         };
@@ -962,7 +964,7 @@ describe("runFn", () => {
               onFailure: ({ error, event }) => {
                 assertType<`${internalEvents.FunctionFailed}`>(event.name);
                 assertType<FailureEventPayload>(event);
-                assertType<FailureEventPayload["data"]["error"]>(error);
+                assertType<Error>(error);
               },
             },
             { event: "test" },
@@ -992,7 +994,7 @@ describe("runFn", () => {
               onFailure: ({ error, event }) => {
                 assertType<`${internalEvents.FunctionFailed}`>(event.name);
                 assertType<FailureEventPayload>(event);
-                assertType<FailureEventPayload["data"]["error"]>(error);
+                assertType<Error>(error);
 
                 assertType<"foo">(event.data.event.name);
                 assertType<EventPayload>(event.data.event);
@@ -1114,7 +1116,7 @@ describe("runFn", () => {
         triggers: [
           {
             event: internalEvents.FunctionFailed,
-            expression: "async.data.function_id == 'test'",
+            expression: "event.data.function_id == 'test'",
           },
         ],
       });
