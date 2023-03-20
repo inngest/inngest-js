@@ -2,7 +2,7 @@ import {
   InngestCommHandler,
   ServeHandler,
 } from "./components/InngestCommHandler";
-import { queryKeys } from "./helpers/consts";
+import { headerKeys, queryKeys } from "./helpers/consts";
 import { allProcessEnv } from "./helpers/env";
 
 /**
@@ -45,17 +45,20 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
               env,
               isProduction,
               url,
+              deployId: url.searchParams.get(queryKeys.DeployId) as string,
             };
           }
         },
         run: async () => {
           if (req.method === "POST") {
             return {
-              data: (await req.json()) as Record<string, any>,
+              data: (await req.json()) as Record<string, unknown>,
               env,
               fnId: url.searchParams.get(queryKeys.FnId) as string,
               isProduction,
               url,
+              stepId: url.searchParams.get(queryKeys.StepId) as string,
+              signature: req.headers.get(headerKeys.Signature) as string,
             };
           }
         },
