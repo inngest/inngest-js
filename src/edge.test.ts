@@ -11,32 +11,36 @@ testFramework("Edge", EdgeHandler, {
     beforeEach(() => {
       jest.resetModules();
 
-      /**
-       * Fake a global `fetch` value, which is available as as a Web Standard
-       * API.
-       */
-      globalThis.fetch = fetch;
+      Object.defineProperties(globalThis, {
+        /**
+         * Fake a global `fetch` value, which is available as as a Web Standard
+         * API.
+         */
+        fetch: { value: fetch, configurable: true },
 
-      /**
-       * Fake a global `Response` class, which is used to create new responses
-       * for the handler.
-       */
-      globalThis.Response = Response;
+        /**
+         * Fake a global `Response` class, which is used to create new responses
+         * for the handler.
+         */
+        Response: { value: Response, configurable: true },
 
-      /**
-       * Fake a global `Headers` class, which is used to create new Headers
-       * objects during response building.
-       */
-      globalThis.Headers = Headers;
+        /**
+         * Fake a global `Headers` class, which is used to create new Headers
+         * objects during response building.
+         */
+        Headers: { value: Headers, configurable: true },
+      });
     });
 
     afterEach(() => {
       /**
        * Reset all changes made to the global scope
        */
-      globalThis.fetch = originalFetch;
-      globalThis.Response = originalResponse;
-      globalThis.Headers = originalHeaders;
+      Object.defineProperties(globalThis, {
+        fetch: { value: originalFetch, configurable: true },
+        Response: { value: originalResponse, configurable: true },
+        Headers: { value: originalHeaders, configurable: true },
+      });
     });
   },
   transformReq: (req) => {
@@ -45,8 +49,11 @@ testFramework("Edge", EdgeHandler, {
       headers.set(k, v as string);
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
     (req as any).headers = headers;
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    (req as any).json = () => Promise.resolve(req.body);
 
     return [req];
   },
