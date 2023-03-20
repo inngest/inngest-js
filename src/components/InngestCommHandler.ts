@@ -1,14 +1,18 @@
-import { sha256 } from "hash.js";
-import { serializeError } from "serialize-error-cjs";
+import canonicalize from "canonicalize";
+import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
-import { envKeys, queryKeys } from "../helpers/consts";
+import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+import { serializeError } from "../helpers/errors";
 import { strBoolean } from "../helpers/scalar";
+import { ServerTiming } from "../helpers/ServerTiming";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
-import type {
+import {
   FunctionConfig,
+  IncomingOp,
   IntrospectRequest,
+  LogLevel,
   RegisterOptions,
   RegisterRequest,
   StepRunResponse,
@@ -49,19 +53,19 @@ export type ServeHandler = (
    * The name of this app, used to scope and group Inngest functions, or
    * the `Inngest` instance used to declare all functions.
    */
-  nameOrInngest: string | Inngest<any>,
+  nameOrInngest: string | Inngest,
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: InngestFunction<any>[],
+  functions: InngestFunction[],
 
   /**
    * A set of options to further configure the registration of Inngest
    * functions.
    */
   opts?: RegisterOptions
-) => any;
+) => unknown;
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -215,10 +219,20 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected readonly servePath: string | undefined;
 
   /**
+   * The minimum level to log from the Inngest serve handler.
+   */
+  protected readonly logLevel: LogLevel;
+
+  /**
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
    */
-  private readonly fns: Record<string, InngestFunction<any>> = {};
+  private readonly fns: Record<
+    string,
+    { fn: InngestFunction; onFailure: boolean }
+  > = {};
+
+  private allowExpiredSignatures: boolean;
 
   constructor(
     /**
@@ -240,16 +254,17 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
      * receiving events from the same service, as you can reuse a single
      * definition of Inngest.
      */
-    appNameOrInngest: string | Inngest<any>,
+    appNameOrInngest: string | Inngest,
 
     /**
      * An array of the functions to serve and register with Inngest.
      */
-    functions: InngestFunction<any>[],
+    functions: InngestFunction[],
     {
       inngestRegisterUrl,
       fetch,
       landingPage,
+      logLevel = "info",
       signingKey,
       serveHost,
       servePath,
@@ -319,23 +334,40 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     this.handler = handler;
     this.transformRes = transformRes;
 
-    this.fns = functions.reduce<Record<string, InngestFunction<any>>>(
-      (acc, fn) => {
-        const id = fn.id(this.name);
+    /**
+     * Provide a hidden option to allow expired signatures to be accepted during
+     * testing.
+     */
+    this.allowExpiredSignatures = Boolean(
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, prefer-rest-params
+      arguments["3"]?.__testingAllowExpiredSignatures
+    );
 
+    this.fns = functions.reduce<
+      Record<string, { fn: InngestFunction; onFailure: boolean }>
+    >((acc, fn) => {
+      const configs = fn["getConfig"](
+        new URL("https://example.com"),
+        this.name
+      );
+
+      const fns = configs.reduce((acc, { id }, index) => {
+        return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
+      }, {});
+
+      configs.forEach(({ id }) => {
         if (acc[id]) {
           throw new Error(
             `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`
           );
         }
+      });
 
-        return {
-          ...acc,
-          [id]: fn,
-        };
-      },
-      {}
-    );
+      return {
+        ...acc,
+        ...fns,
+      };
+    }, {});
 
     this.inngestRegisterUrl = new URL(
       inngestRegisterUrl || "https://api.inngest.com/fn/register"
@@ -345,6 +377,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     this.showLandingPage = landingPage;
     this.serveHost = serveHost;
     this.servePath = servePath;
+    this.logLevel = logLevel;
 
     this.headers = {
       "Content-Type": "application/json",
@@ -400,18 +433,20 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    */
   public createHandler(): (...args: Parameters<H>) => Promise<TransformedRes> {
     return async (...args: Parameters<H>) => {
+      const timer = new ServerTiming();
+
       /**
        * We purposefully `await` the handler, as it could be either sync or
        * async.
        */
       // eslint-disable-next-line @typescript-eslint/await-thenable
-      const actions = await this.handler(...args);
+      const actions = await timer.wrap("handler", () => this.handler(...args));
 
-      const actionRes = await this.handleAction(
-        actions as ReturnType<Awaited<H>>
+      const actionRes = await timer.wrap("action", () =>
+        this.handleAction(actions as ReturnType<Awaited<H>>, timer)
       );
 
-      return this.transformRes(actionRes, ...args);
+      return timer.wrap("res", () => this.transformRes(actionRes, ...args));
     };
   }
 
@@ -426,22 +461,36 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    * will decide whether the UI should be visible based on the payload it has
    * found (e.g. env vars, options, etc).
    */
-  private async handleAction(actions: ReturnType<H>): Promise<ActionResponse> {
-    const headers = { "x-inngest-sdk": this.sdkHeader.join("") };
+  private async handleAction(
+    actions: ReturnType<H>,
+    timer: ServerTiming
+  ): Promise<ActionResponse> {
+    const getHeaders = () => ({
+      [headerKeys.SdkVersion]: this.sdkHeader.join(""),
+      "Server-Timing": timer.getHeader(),
+    });
 
     try {
       const runRes = await actions.run();
-      if (runRes) {
-        this.upsertSigningKeyFromEnv(runRes.env);
 
-        const stepRes = await this.runStep(runRes.fnId, "step", runRes.data);
+      if (runRes) {
+        this._isProd = runRes.isProduction;
+        this.upsertSigningKeyFromEnv(runRes.env);
+        this.validateSignature(runRes.signature, runRes.data);
+
+        const stepRes = await this.runStep(
+          runRes.fnId,
+          runRes.stepId,
+          runRes.data,
+          timer
+        );
 
         if (stepRes.status === 500 || stepRes.status === 400) {
           return {
             status: stepRes.status,
             body: stepRes.error || "",
             headers: {
-              ...headers,
+              ...getHeaders(),
               "Content-Type": "application/json",
             },
           };
@@ -451,7 +500,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status: stepRes.status,
           body: JSON.stringify(stepRes.body),
           headers: {
-            ...headers,
+            ...getHeaders(),
             "Content-Type": "application/json",
           },
         };
@@ -459,6 +508,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
       const viewRes = await actions.view();
       if (viewRes) {
+        this._isProd = viewRes.isProduction;
         this.upsertSigningKeyFromEnv(viewRes.env);
 
         const showLandingPage = this.shouldShowLandingPage(
@@ -469,7 +519,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           return {
             status: 405,
             body: "",
-            headers,
+            headers: getHeaders(),
           };
         }
 
@@ -484,7 +534,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
             status: 200,
             body: JSON.stringify(introspection),
             headers: {
-              ...headers,
+              ...getHeaders(),
               "Content-Type": "application/json",
             },
           };
@@ -494,7 +544,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status: 200,
           body: landing,
           headers: {
-            ...headers,
+            ...getHeaders(),
             "Content-Type": "text/html; charset=utf-8",
           },
         };
@@ -502,6 +552,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
       const registerRes = await actions.register();
       if (registerRes) {
+        this._isProd = registerRes.isProduction;
         this.upsertSigningKeyFromEnv(registerRes.env);
 
         const { status, message } = await this.register(
@@ -514,7 +565,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status,
           body: JSON.stringify({ message }),
           headers: {
-            ...headers,
+            ...getHeaders(),
             "Content-Type": "application/json",
           },
         };
@@ -527,7 +578,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           ...serializeError(err as Error),
         }),
         headers: {
-          ...headers,
+          ...getHeaders(),
           "Content-Type": "application/json",
         },
       };
@@ -536,14 +587,15 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     return {
       status: 405,
       body: "",
-      headers,
+      headers: getHeaders(),
     };
   }
 
   protected async runStep(
     functionId: string,
-    stepId: string,
-    data: any
+    stepId: string | null,
+    data: unknown,
+    timer: ServerTiming
   ): Promise<StepRunResponse> {
     try {
       const fn = this.fns[functionId];
@@ -551,28 +603,105 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         throw new Error(`Could not find function with ID "${functionId}"`);
       }
 
-      const { event, steps } = z
+      const { event, steps, ctx } = z
         .object({
           event: z.object({}).passthrough(),
-          steps: z.object({}).passthrough().optional().nullable(),
+          /**
+           * When handling per-step errors, steps will need to be an object with
+           * either a `data` or an `error` key.
+           *
+           * For now, we support the current method of steps just being a map of
+           * step ID to step data.
+           *
+           * TODO When the executor does support per-step errors, we can uncomment
+           * the expected schema below.
+           */
+          steps: z
+            .record(
+              z.any().refine((v) => typeof v !== "undefined", {
+                message: "Values in steps must be defined",
+              })
+            )
+            .optional()
+            .nullable(),
+          // steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
+          ctx: z
+            .object({
+              stack: z
+                .object({
+                  stack: z
+                    .array(z.string())
+                    .nullable()
+                    .transform((v) => (Array.isArray(v) ? v : [])),
+                  current: z.number(),
+                })
+                .passthrough()
+                .optional()
+                .nullable(),
+            })
+            .optional()
+            .nullable(),
         })
         .parse(data);
 
-      const ret = await fn["runFn"]({ event }, steps || {});
-      const isOp = ret[0];
+      /**
+       * TODO When the executor does support per-step errors, this map will need
+       * to adjust to ensure we're not double-stacking the op inside `data`.
+       */
+      const opStack =
+        ctx?.stack?.stack
+          .slice(0, ctx.stack.current)
+          .map<IncomingOp>((opId) => {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            const step = steps?.[opId];
+            if (typeof step === "undefined") {
+              throw new Error(`Could not find step with ID "${opId}"`);
+            }
 
-      if (isOp) {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            return { id: opId, data: step };
+          }) ?? [];
+
+      const ret = await fn.fn["runFn"](
+        { event },
+        opStack,
+        /**
+         * TODO The executor is sending `"step"` as the step ID when it is not
+         * wanting to run a specific step. This is not needed and we should
+         * remove this on the executor side.
+         */
+        stepId === "step" ? null : stepId || null,
+        timer,
+        fn.onFailure
+      );
+
+      if (ret[0] === "complete") {
         return {
-          status: 206,
+          status: 200,
           body: ret[1],
         };
       }
 
+      /**
+       * If the function has run user code and is intending to return an error,
+       * interrupt this flow and instead throw a 500 to Inngest.
+       *
+       * The executor doesn't yet support per-step errors, so returning an
+       * `error` key here would cause the executor to misunderstand what is
+       * happening.
+       *
+       * TODO When the executor does support per-step errors, we can remove this
+       * comment and check and functionality should resume as normal.
+       */
+      if (ret[0] === "run" && ret[1].error) {
+        throw ret[1].error;
+      }
+
       return {
-        status: 200,
-        body: ret[1],
+        status: 206,
+        body: Array.isArray(ret[1]) ? ret[1] : [ret[1]],
       };
-    } catch (unserializedErr: any) {
+    } catch (unserializedErr) {
       /**
        * Always serialize the error before sending it back to Inngest. Errors,
        * by default, do not niceley serialize to JSON, so we use the a package
@@ -580,7 +709,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
        *
        * See {@link https://www.npmjs.com/package/serialize-error}
        */
-      const error = JSON.stringify(serializeError(unserializedErr as Error));
+
+      const error = JSON.stringify(serializeError(unserializedErr));
 
       /**
        * If we've caught a non-retriable error, we'll return a 400 to Inngest
@@ -597,7 +727,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    return Object.values(this.fns).map((fn) => fn["getConfig"](url, this.name));
+    return Object.values(this.fns).reduce<FunctionConfig[]>(
+      (acc, fn) => [...acc, ...fn.fn["getConfig"](url, this.name)],
+      []
+    );
   }
 
   /**
@@ -647,7 +780,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     };
 
     // Calculate the checksum of the body... without the checksum itself being included.
-    body.hash = sha256().update(JSON.stringify(body)).digest("hex");
+    body.hash = sha256().update(canonicalize(body)).digest("hex");
     return body;
   }
 
@@ -672,7 +805,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     }
 
     if (deployId) {
-      registerURL.searchParams.set("deployId", deployId);
+      registerURL.searchParams.set(queryKeys.DeployId, deployId);
     }
 
     try {
@@ -686,7 +819,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         redirect: "follow",
       });
     } catch (err: unknown) {
-      console.error(err);
+      this.log("error", err);
 
       return {
         status: 500,
@@ -703,7 +836,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data = await res.json();
     } catch (err) {
-      console.warn("Couldn't unpack register response:", err);
+      this.log("warn", "Couldn't unpack register response:", err);
     }
     const { status, error, skipped } = registerResSchema.parse(data);
 
@@ -713,7 +846,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     // during registration with the body of the current functions and refuse
     // to register if the functions are the same.
     if (!skipped) {
-      console.log(
+      this.log(
+        "debug",
         "registered inngest functions:",
         res.status,
         res.statusText,
@@ -738,12 +872,132 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     return this.showLandingPage ?? strBoolean(strEnvVar) ?? true;
   }
 
-  protected validateSignature(): boolean {
-    return true;
+  protected validateSignature(
+    sig: string | undefined,
+    body: Record<string, unknown>
+  ) {
+    // Never validate signatures in development.
+    if (!this.isProd) {
+      // In dev, warning users about signing keys ensures that it's considered
+      if (!this.signingKey) {
+        console.warn(
+          "No signing key provided to validate signature. Find your dev keys at https://app.inngest.com/test/secrets"
+        );
+      }
+
+      return;
+    }
+
+    // If we're here, we're in production; lack of a signing key is an error.
+    if (!this.signingKey) {
+      throw new Error(
+        `No signing key found in client options or ${envKeys.SigningKey} env var. Find your keys at https://app.inngest.com/secrets`
+      );
+    }
+
+    // If we're here, we're in production; lack of a req signature is an error.
+    if (!sig) {
+      throw new Error(`No ${headerKeys.Signature} provided`);
+    }
+
+    // Validate the signature
+    new RequestSignature(sig).verifySignature({
+      body,
+      allowExpiredSignatures: this.allowExpiredSignatures,
+      signingKey: this.signingKey,
+    });
   }
 
   protected signResponse(): string {
     return "";
+  }
+
+  /**
+   * Log to stdout/stderr if the log level is set to include the given level.
+   * The default log level is `"info"`.
+   *
+   * This is an abstraction over `console.log` and will try to use the correct
+   * method for the given log level.  For example, `log("error", "foo")` will
+   * call `console.error("foo")`.
+   */
+  protected log(level: LogLevel, ...args: unknown[]) {
+    const logLevels: LogLevel[] = [
+      "debug",
+      "info",
+      "warn",
+      "error",
+      "fatal",
+      "silent",
+    ];
+
+    const logLevelSetting = logLevels.indexOf(this.logLevel);
+    const currentLevel = logLevels.indexOf(level);
+
+    if (currentLevel >= logLevelSetting) {
+      let logger = console.log;
+
+      if (Object.hasOwnProperty.call(console, level)) {
+        logger = console[level as keyof typeof console] as typeof logger;
+      }
+
+      logger(`inngest ${level as string}: `, ...args);
+    }
+  }
+}
+
+class RequestSignature {
+  public timestamp: string;
+  public signature: string;
+
+  constructor(sig: string) {
+    const params = new URLSearchParams(sig);
+    this.timestamp = params.get("t") || "";
+    this.signature = params.get("s") || "";
+
+    if (!this.timestamp || !this.signature) {
+      throw new Error(`Invalid ${headerKeys.Signature} provided`);
+    }
+  }
+
+  private hasExpired(allowExpiredSignatures?: boolean) {
+    if (allowExpiredSignatures) {
+      return false;
+    }
+
+    const delta =
+      Date.now() - new Date(parseInt(this.timestamp) * 1000).valueOf();
+    return delta > 1000 * 60 * 5;
+  }
+
+  public verifySignature({
+    body,
+    signingKey,
+    allowExpiredSignatures,
+  }: {
+    body: unknown;
+    signingKey: string;
+    allowExpiredSignatures: boolean;
+  }): void {
+    if (this.hasExpired(allowExpiredSignatures)) {
+      throw new Error("Signature has expired");
+    }
+
+    // Calculate the HMAC of the request body ourselves.
+    // We make the assumption here that a stringified body is the same as the
+    // raw bytes; it may be pertinent in the future to always parse, then
+    // canonicalize the body to ensure it's consistent.
+    const encoded = typeof body === "string" ? body : canonicalize(body);
+    // Remove the /signkey-[test|prod]-/ prefix from our signing key to calculate the HMAC.
+    const key = signingKey.replace(/signkey-\w+-/, "");
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+    const mac = hmac(sha256 as any, key)
+      .update(encoded)
+      .update(this.timestamp)
+      .digest("hex");
+
+    if (mac !== this.signature) {
+      throw new Error("Invalid signature");
+    }
   }
 }
 
@@ -751,6 +1005,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
  * The broad definition of a handler passed when instantiating an
  * {@link InngestCommHandler} instance.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Handler = (...args: any[]) => {
   [K in Extract<
     HandlerAction,
@@ -810,10 +1065,12 @@ type HandlerAction =
   | {
       action: "run";
       fnId: string;
-      data: Record<string, any>;
+      stepId: string | null;
+      data: Record<string, unknown>;
       env: Record<string, string | undefined>;
       isProduction: boolean;
       url: URL;
+      signature: string | undefined;
     }
   | {
       action: "bad-method";

@@ -1,12 +1,10 @@
 import type { ServeHandler } from "./components/InngestCommHandler";
 import { InngestCommHandler } from "./components/InngestCommHandler";
-import { queryKeys } from "./helpers/consts";
+import { headerKeys, queryKeys } from "./helpers/consts";
 import { allProcessEnv } from "./helpers/env";
 
 type HTTP = {
-  headers: {
-    host?: string;
-  };
+  headers: Record<string, string>;
   method: string;
   path: string;
 };
@@ -14,7 +12,7 @@ type HTTP = {
 type Main = {
   http: HTTP;
   // data can include any JSON-decoded post-data, and query args/saerch params.
-  [data: string]: any;
+  [data: string]: unknown;
 };
 
 export const serve = (
@@ -62,11 +60,13 @@ export const serve = (
         run: () => {
           if (http.method === "POST") {
             return {
-              data: data as Record<string, any>,
+              data: data as Record<string, unknown>,
               fnId: (main[queryKeys.FnId] as string) || "",
+              stepId: (main[queryKeys.StepId] as string) || "",
               env,
               isProduction,
               url,
+              signature: http.headers[headerKeys.Signature] as string,
             };
           }
         },

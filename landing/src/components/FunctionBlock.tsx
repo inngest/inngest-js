@@ -1,8 +1,9 @@
 import { useMemo } from "preact/hooks";
+import { queryKeys } from "../../../src/helpers/consts";
 import { FunctionConfig } from "../types";
 import { classNames } from "../utils/classnames";
-import { configErrors } from "./ConfigErrors";
 import { Button } from "./Button";
+import { configErrors } from "./ConfigErrors";
 import useToast from "./Toast";
 
 interface Props {
@@ -52,8 +53,8 @@ export const FunctionBlock = ({ config, altBg }: Props) => {
     const url = new URL(window.location.href);
 
     // Default to the default step name for crons
-    url.searchParams.set("fnId", config.id);
-    url.searchParams.set("stepId", config.steps.step.id);
+    url.searchParams.set(queryKeys.FnId, config.id);
+    url.searchParams.set(queryKeys.StepId, config.steps.step.id);
 
     push({
       type: "default",

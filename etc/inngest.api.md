@@ -14,32 +14,58 @@ export interface ClientOptions {
     name: string;
 }
 
-// Warning: (ae-forgotten-export) The symbol "EventName" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "TriggerOptions" needs to be exported by the entry point index.d.ts
 //
 // @public
-export const createFunction: <Event_1 extends EventPayload>(nameOrOpts: string | FunctionOptions, event: EventName<Event_1>, fn: SingleStepFn<Event_1, string, "step">) => InngestFunction<any>;
-
-// @public
-export const createScheduledFunction: (nameOrOpts: string | FunctionOptions, cron: string, fn: SingleStepFn<null, string, "step">) => InngestFunction<any>;
-
-// @public
-export const createStepFunction: <T extends EventPayload>(nameOrOpts: string | FunctionOptions, event: EventName<T>, fn: MultiStepFn<Record<T["name"], T>, T["name"], string, "step">) => InngestFunction<any>;
+export type EventNameFromTrigger<Events extends Record<string, EventPayload>, T extends TriggerOptions<keyof Events & string>> = T extends string ? T : T extends {
+    event: string;
+} ? T["event"] : string;
 
 // @public
 export interface EventPayload {
     data: any;
     name: string;
     ts?: number;
-    user?: Record<string, any>;
+    user?: any;
     v?: string;
 }
 
 // @public
-export interface FunctionOptions {
+export type FailureEventArgs<P extends EventPayload = EventPayload> = {
+    event: FailureEventPayload<P>;
+    err: FailureEventPayload<P>["data"]["error"];
+};
+
+// @public
+export type FailureEventPayload<P extends EventPayload = EventPayload> = {
+    name: `${internalEvents.FunctionFailed}`;
+    data: {
+        function_id: string;
+        run_id: string;
+        error: {
+            message: string;
+            stack?: string;
+            cause?: string;
+            status?: number;
+        };
+        event: P;
+    };
+};
+
+// @public
+export interface FunctionOptions<Events extends Record<string, EventPayload>, Event extends keyof Events & string> {
+    // Warning: (ae-forgotten-export) The symbol "Cancellation" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    cancelOn?: Cancellation<Events, Event>[];
+    concurrency?: number;
+    // (undocumented)
+    fns?: Record<string, unknown>;
     id?: string;
     idempotency?: string;
     name: string;
+    // (undocumented)
+    onFailure?: (...args: unknown[]) => unknown;
     retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
     throttle?: {
         key?: string;
@@ -49,32 +75,24 @@ export interface FunctionOptions {
 }
 
 // @public
-export class Inngest<Events extends Record<string, EventPayload>> {
+export enum headerKeys {
+    // (undocumented)
+    SdkVersion = "x-inngest-sdk",
+    // (undocumented)
+    Signature = "x-inngest-signature"
+}
+
+// @public
+export class Inngest<Events extends Record<string, EventPayload> = Record<string, EventPayload>> {
     constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
-    createFunction<Event extends keyof Events, Name extends string, Fn extends SingleStepFn<Events[Event], Name, "step">>(
-    name: Name,
-    event: Event,
-    fn: Fn): InngestFunction<Events>;
-    createFunction<Event extends keyof Events, Opts extends FunctionOptions, Fn extends SingleStepFn<Events[Event], Opts extends FunctionOptions ? Opts["name"] : string, "step">>(
-    opts: Opts,
-    event: Event,
-    fn: Fn): InngestFunction<Events>;
-    createScheduledFunction<Name extends string>(
-    name: Name,
-    cron: string,
-    fn: SingleStepFn<null, Name, "step">): InngestFunction<Events>;
-    createScheduledFunction<Opts extends FunctionOptions>(
-    opts: Opts,
-    cron: string,
-    fn: SingleStepFn<null, Opts extends FunctionOptions ? Opts["name"] : string, "step">): InngestFunction<Events>;
-    createStepFunction<Event extends keyof Events, Name extends string, Fn extends MultiStepFn<Events, Event, Name, "step">>(
-    name: Name,
-    event: Event,
-    fn: Fn): InngestFunction<Events>;
-    createStepFunction<Event extends keyof Events, Opts extends FunctionOptions, Fn extends MultiStepFn<Events, Event, Opts extends FunctionOptions ? Opts["name"] : string, "step">>(
-    opts: Opts,
-    event: Event,
-    fn: Fn): InngestFunction<Events>;
+    // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    createFunction<TFns extends Record<string, unknown>, TTrigger extends TriggerOptions<keyof Events & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof Events & string = EventNameFromTrigger<Events, TTrigger>>(nameOrOpts: string | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
+        fns?: TFns;
+    }), trigger: TTrigger, handler: Handler<Events, TTriggerName, TShimmedFns>): InngestFunction;
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
@@ -86,14 +104,14 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     eventKey: string): void;
 }
 
-// Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "Handler_2" needs to be exported by the entry point index.d.ts
 //
 // @public
-export class InngestCommHandler<H extends Handler, TransformedRes> {
+export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     constructor(
     frameworkName: string,
-    appNameOrInngest: string | Inngest<any>,
-    functions: InngestFunction<any>[], { inngestRegisterUrl, fetch, landingPage, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
+    appNameOrInngest: string | Inngest,
+    functions: InngestFunction[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
     handler: H,
     transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
@@ -104,6 +122,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     protected readonly frameworkName: string;
     readonly handler: H;
     protected _isProd: boolean;
+    protected log(level: LogLevel, ...args: unknown[]): void;
+    protected readonly logLevel: LogLevel;
     readonly name: string;
     // (undocumented)
     protected register(url: URL, devServerHost: string | undefined, deployId?: string | undefined | null): Promise<{
@@ -113,10 +133,11 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     // (undocumented)
     protected registerBody(url: URL): RegisterRequest;
     protected reqUrl(url: URL): URL;
+    // Warning: (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "StepRunResponse" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    protected runStep(functionId: string, stepId: string, data: any): Promise<StepRunResponse>;
+    protected runStep(functionId: string, stepId: string | null, data: unknown, timer: ServerTiming): Promise<StepRunResponse>;
     // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
     protected get sdkHeader(): [
     prefix: string,
@@ -134,26 +155,35 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     // Warning: (ae-forgotten-export) The symbol "ActionResponse" needs to be exported by the entry point index.d.ts
     readonly transformRes: (res: ActionResponse, ...args: Parameters<H>) => TransformedRes;
     // (undocumented)
-    protected validateSignature(): boolean;
+    protected validateSignature(sig: string | undefined, body: Record<string, unknown>): void;
 }
 
 // @public
-export type MultiStepFn<Events extends Record<string, EventPayload>, Event extends keyof Events, FnId, StepId> = (arg: MultiStepFnArgs<Events, Event, FnId, StepId>) => void;
+export enum internalEvents {
+    FunctionFailed = "inngest/function.failed"
+}
 
 // @public
-export interface MultiStepFnArgs<Events extends Record<string, EventPayload>, Event extends keyof Events, FnId, StepId> extends SingleStepFnArgs<Events[Event], FnId, StepId> {
-    // Warning: (ae-forgotten-export) The symbol "createStepTools" needs to be exported by the entry point index.d.ts
-    //
-    // (undocumented)
-    tools: ReturnType<typeof createStepTools<Events, Event>>[0];
-}
+export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
 
 // @public
 export class NonRetriableError extends Error {
     constructor(message: string, options?: {
-        cause?: any;
+        cause?: unknown;
     });
-    readonly cause?: any;
+    readonly cause?: unknown;
+}
+
+// @public
+export enum queryKeys {
+    // (undocumented)
+    DeployId = "deployId",
+    // (undocumented)
+    FnId = "fnId",
+    // (undocumented)
+    Introspect = "introspect",
+    // (undocumented)
+    StepId = "stepId"
 }
 
 // @public
@@ -161,6 +191,7 @@ export interface RegisterOptions {
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
     landingPage?: boolean;
+    logLevel?: LogLevel;
     serveHost?: string;
     servePath?: string;
     signingKey?: string;
@@ -168,25 +199,12 @@ export interface RegisterOptions {
 
 // @public
 export type ServeHandler = (
-nameOrInngest: string | Inngest<any>,
-functions: InngestFunction<any>[],
-opts?: RegisterOptions) => any;
+nameOrInngest: string | Inngest,
+functions: InngestFunction[],
+opts?: RegisterOptions) => unknown;
 
 // @public
-export type SingleStepFn<Event, FnId, StepId> = (arg: SingleStepFnArgs<Event, FnId, StepId>) => any;
-
-// @public
-export interface SingleStepFnArgs<Event, FnId, StepId> {
-    ctx: {
-        fn_id: FnId;
-        step_id: StepId;
-    };
-    event: Event;
-    steps: Record<string, never>;
-}
-
-// @public
-export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${`${number}h` | ""}${`${number}m` | ""}${`${number}s` | ""}${`${number}ms` | ""}`;
+export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${`${number}h` | ""}${`${number}m` | ""}${`${number}s` | ""}`;
 
 // (No @packageDocumentation comment for this package)
 

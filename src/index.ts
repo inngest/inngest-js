@@ -2,19 +2,15 @@ export { Inngest } from "./components/Inngest";
 export { InngestCommHandler } from "./components/InngestCommHandler";
 export type { ServeHandler } from "./components/InngestCommHandler";
 export { NonRetriableError } from "./components/NonRetriableError";
-export {
-  createFunction,
-  createScheduledFunction,
-  createStepFunction,
-} from "./helpers/func";
+export { headerKeys, internalEvents, queryKeys } from "./helpers/consts";
 export type {
   ClientOptions,
+  EventNameFromTrigger,
   EventPayload,
+  FailureEventArgs,
+  FailureEventPayload,
   FunctionOptions,
-  MultiStepFn,
-  MultiStepFnArgs,
+  LogLevel,
   RegisterOptions,
-  SingleStepFn,
-  SingleStepFnArgs,
   TimeStr,
 } from "./types";

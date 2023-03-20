@@ -20,7 +20,7 @@ testFramework("Cloudflare", CloudflareHandler, {
        * `process.stderr`, we do need to provide some pieces of this, but we can
        * still remove any env vars.
        */
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
       process.env = undefined as any;
 
       Object.defineProperties(globalThis, {
@@ -48,8 +48,10 @@ testFramework("Cloudflare", CloudflareHandler, {
       headers.set(k, v as string);
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
     (req as any).headers = headers;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    (req as any).json = () => Promise.resolve(req.body);
 
     return [
       {

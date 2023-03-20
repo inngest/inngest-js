@@ -6,7 +6,7 @@ import {
   InngestCommHandler,
   ServeHandler,
 } from "./components/InngestCommHandler";
-import { queryKeys } from "./helpers/consts";
+import { headerKeys, queryKeys } from "./helpers/consts";
 import { allProcessEnv } from "./helpers/env";
 
 export interface RedwoodResponse {
@@ -21,7 +21,7 @@ export interface RedwoodResponse {
  *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
+export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
   const handler = new InngestCommHandler(
     "redwoodjs",
     nameOrInngest,
@@ -62,7 +62,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
                   ? Buffer.from(event.body, "base64").toString()
                   : event.body
                 : "{}"
-            ) as Record<string, any>;
+            ) as Record<string, unknown>;
 
             return {
               env,
@@ -70,6 +70,8 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): any => {
               url,
               data,
               fnId: event.queryStringParameters?.[queryKeys.FnId] as string,
+              signature: event.headers[headerKeys.Signature] as string,
+              stepId: event.queryStringParameters?.[queryKeys.StepId] as string,
             };
           }
         },

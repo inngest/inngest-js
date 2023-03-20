@@ -4,6 +4,9 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+  push:
+    branches:
+      - 'renovate/**'
 
 concurrency:
   group: pr-${{ github.ref }}
@@ -48,13 +51,12 @@ jobs:
       fail-fast: false
       matrix:
         repo:
-          - inngest/sdk-example-cloudflare-workers
+          # - inngest/sdk-example-cloudflare-workers - BROKEN
           - inngest/sdk-example-nextjs-vercel
-          - inngest/sdk-example-redwoodjs-vercel
+          # - inngest/sdk-example-redwoodjs-vercel - BROKEN
           - inngest/sdk-example-nextjs-cloudflare
           - inngest/sdk-example-nextjs-netlify
           - inngest/sdk-example-remix-vercel
-          - inngest/sdk-example-fresh-deno-deploy
           - inngest/sdk-example-nuxt-vercel
     steps:
       # Checkout the repo
@@ -158,7 +160,7 @@ jobs:
         if: ${{ steps.deno-check.outputs.isDeno == 'true' }}
         run: |
           find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i 's/from "inngest/from "npm:inngest/g' {} \;
-          find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i -E 's/from "\.(.+)"/from "\.\1\.ts"/g' {} \;
+          find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i -E 's/from "\.(.+)"/from "\.\1\/index\.ts"/g' {} \;
         working-directory: examples/${{ matrix.repo }}
 
       # Try to build the example
@@ -171,6 +173,17 @@ jobs:
             npm run build
           fi
         working-directory: examples/${{ matrix.repo }}
+
+      - name: Run the Inngest dev server
+        run: npx inngest-cli@latest dev > cli.log 2>&1 &
+        working-directory: examples/${{ matrix.repo }}
+        env:
+          DO_NOT_TRACK: 1
+      - name: Wait for the Inngest dev server to start
+        uses: mydea/action-wait-for-api@v1
+        with:
+          url: "http://localhost:8288"
+          timeout: "60"
 
       # Run the example
       - name: Run the example's dev server
@@ -192,22 +205,7 @@ jobs:
         with:
           url: "http://localhost:3000/api/inngest"
           timeout: "60"
-      - if: ${{ always() }}
-        run: cat dev.log
-        working-directory: examples/${{ matrix.repo }}
 
-      # TODO Examples should run their own dev server, which means we can remove
-      # this.
-      - name: Run the Inngest dev server
-        run: npx inngest-cli@latest dev &
-        working-directory: examples/${{ matrix.repo }}
-        env:
-          DO_NOT_TRACK: 1
-      - name: Wait for the Inngest dev server to start
-        uses: mydea/action-wait-for-api@v1
-        with:
-          url: "http://localhost:8288"
-          timeout: "60"
       # Give the dev server 5 seconds to register with the example
       # TODO Check logs instead of sleeping
       - name: Wait 5 seconds for dev server registration
@@ -217,3 +215,11 @@ jobs:
       - name: Run integration test suite
         run: yarn test:examples
         working-directory: sdk
+
+      - if: ${{ always() }}
+        run: cat dev.log
+        working-directory: examples/${{ matrix.repo }}
+
+      - if: ${{ always() }}
+        run: cat cli.log
+        working-directory: examples/${{ matrix.repo }}

@@ -9,10 +9,12 @@ import type {
 } from "../helpers/types";
 import type {
   ClientOptions,
+  EventNameFromTrigger,
   EventPayload,
   FunctionOptions,
-  MultiStepFn,
-  SingleStepFn,
+  Handler,
+  ShimmedFns,
+  TriggerOptions,
 } from "../types";
 import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
@@ -53,7 +55,9 @@ export const eventKeyError =
  *
  * @public
  */
-export class Inngest<Events extends Record<string, EventPayload>> {
+export class Inngest<
+  Events extends Record<string, EventPayload> = Record<string, EventPayload>
+> {
   /**
    * The name of this instance, most commonly the name of the application it
    * resides in.
@@ -274,16 +278,15 @@ export class Inngest<Events extends Record<string, EventPayload>> {
       /**
        * Add our payloads and ensure they all have a name.
        */
-      payloads = (
-        Array.isArray(maybePayload)
-          ? maybePayload
-          : maybePayload
-          ? [maybePayload]
-          : []
+      payloads = (Array.isArray(maybePayload)
+        ? maybePayload
+        : maybePayload
+        ? [maybePayload]
+        : []
       ).map((payload) => ({
         ...payload,
         name: nameOrPayload,
-      })) as typeof payloads;
+      })) as unknown as typeof payloads;
     } else {
       /**
        * Grab our payloads straight from the args.
@@ -298,12 +301,12 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     }
 
     /**
-     * The two overload types should never allow this to happen, but in the case
-     * the user is in JS Land and it does, let's throw.
+     * It can be valid for a user to send an empty list of events; if this
+     * happens, show a warning that this may not be intended, but don't throw.
      */
     if (!payloads.length) {
-      throw new Error(
-        "Provided a name but no events to send; make sure to send an event payload too"
+      return console.warn(
+        "Warning: You have called `inngest.send()` with an empty array; the operation will resolve, but no events have been sent. This may be intentional, in which case you can ignore this warning."
       );
     }
 
@@ -334,245 +337,81 @@ export class Inngest<Events extends Record<string, EventPayload>> {
     throw await this.#getResponseError(response);
   }
 
-  /**
-   * Given an event to listen to, run the given step function when that event is
-   * seen.
-   *
-   * These can be used to build multi-step, serverless workflows with delays,
-   * conditional logic, and coordination between events.
-   */
-  public createStepFunction<
-    Event extends keyof Events,
-    Name extends string,
-    Fn extends MultiStepFn<Events, Event, Name, "step">
-  >(
-    /**
-     * The name of this function as it will appear in the Inngst Cloud UI.
-     */
-    name: Name,
-
-    /**
-     * The event to listen for.
-     */
-    event: Event,
-
-    /**
-     * The step function flow to run when the event is received.
-     */
-    fn: Fn
-  ): InngestFunction<Events>;
-  /**
-   * Given an event to listen to, run the given step function when that event is
-   * seen.
-   *
-   * These can be used to build multi-step, serverless workflows with delays,
-   * conditional logic, and coordination between events.
-   */
-  public createStepFunction<
-    Event extends keyof Events,
-    Opts extends FunctionOptions,
-    Fn extends MultiStepFn<
+  public createFunction<
+    TFns extends Record<string, unknown>,
+    TTrigger extends TriggerOptions<keyof Events & string>,
+    TShimmedFns extends Record<
+      string,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (...args: any[]) => any
+    > = ShimmedFns<TFns>,
+    TTriggerName extends keyof Events & string = EventNameFromTrigger<
       Events,
-      Event,
-      Opts extends FunctionOptions ? Opts["name"] : string,
-      "step"
+      TTrigger
     >
   >(
-    /**
-     * Options for this Inngest function - useful for defining a custom ID.
-     */
-    opts: Opts,
+    nameOrOpts:
+      | string
+      | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
+          /**
+           * Pass in an object of functions that will be wrapped in Inngest
+           * tooling and passes to your handler. This wrapping ensures that each
+           * function is automatically separated and retried.
+           *
+           * @example
+           *
+           * Both examples behave the same; it's preference as to which you
+           * prefer.
+           *
+           * ```ts
+           * import { userDb } from "./db";
+           *
+           * // Specify `fns` and be able to use them in your Inngest function
+           * inngest.createFunction(
+           *   { name: "Create user from PR", fns: { ...userDb } },
+           *   { event: "github/pull_request" },
+           *   async ({ fns: { createUser } }) => {
+           *     await createUser("Alice");
+           *   }
+           * );
+           *
+           * // Or always use `run()` to run inline steps and use them directly
+           * inngest.createFunction(
+           *   { name: "Create user from PR" },
+           *   { event: "github/pull_request" },
+           *   async ({ step: { run } }) => {
+           *     await run("createUser", () => userDb.createUser("Alice"));
+           *   }
+           * );
+           * ```
+           */
+          fns?: TFns;
 
-    /**
-     * The event to listen for.
-     */
-    event: Event,
+          /**
+           * Leaving commented out; the feature can be added in a small PR
+           * when ready.
+           *
+           * TODO Add user-facing comments here.
+           */
+          // onFailure?: Handler<
+          //   Events,
+          //   TTriggerName,
+          //   TShimmedFns,
+          //   FailureEventArgs<Events[TTriggerName]>
+          // >;
+        }),
+    trigger: TTrigger,
+    handler: Handler<Events, TTriggerName, TShimmedFns>
+  ): InngestFunction {
+    const opts = (
+      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts
+    ) as FunctionOptions<Events, keyof Events & string>;
 
-    /**
-     * The function to run when the event is received.
-     */
-    fn: Fn
-  ): InngestFunction<Events>;
-  /**
-   * Given an event to listen to, run the given step function when that event is
-   * seen.
-   *
-   * These can be used to build multi-step, serverless workflows with delays,
-   * conditional logic, and coordination between events.
-   */
-  public createStepFunction<
-    Event extends keyof Events,
-    Opts extends FunctionOptions | string,
-    Fn extends MultiStepFn<
-      Events,
-      Event,
-      Opts extends FunctionOptions
-        ? Opts["name"]
-        : Opts extends string
-        ? Opts
-        : string,
-      "step"
-    >
-  >(nameOrOpts: Opts, event: Event, fn: Fn): InngestFunction<Events> {
-    return new InngestFunction<Events>(
-      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
-      { event: event as string },
-      fn
-    );
-  }
-
-  /**
-   * Given an event to listen to, run the given function when that event is
-   * seen.
-   */
-  public createFunction<
-    Event extends keyof Events,
-    Name extends string,
-    Fn extends SingleStepFn<Events[Event], Name, "step">
-  >(
-    /**
-     * The name of this function as it will appear in the Inngst Cloud UI.
-     */
-    name: Name,
-
-    /**
-     * The event to listen for.
-     */
-    event: Event,
-
-    /**
-     * The function to run when the event is received.
-     */
-    fn: Fn
-  ): InngestFunction<Events>;
-  /**
-   * Given an event to listen to, run the given function when that event is
-   * seen.
-   */
-  public createFunction<
-    Event extends keyof Events,
-    Opts extends FunctionOptions,
-    Fn extends SingleStepFn<
-      Events[Event],
-      Opts extends FunctionOptions ? Opts["name"] : string,
-      "step"
-    >
-  >(
-    /**
-     * Options for this Inngest function - useful for defining a custom ID.
-     */
-    opts: Opts,
-
-    /**
-     * The event to listen for.
-     */
-    event: Event,
-
-    /**
-     * The function to run when the event is received.
-     */
-    fn: Fn
-  ): InngestFunction<Events>;
-  /**
-   * Given an event to listen to, run the given function when that event is
-   * seen.
-   */
-  public createFunction<
-    Event extends keyof Events,
-    Opts extends FunctionOptions | string,
-    Fn extends SingleStepFn<
-      Events[Event],
-      Opts extends FunctionOptions
-        ? Opts["name"]
-        : Opts extends string
-        ? Opts
-        : string,
-      "step"
-    >
-  >(nameOrOpts: Opts, event: Event, fn: Fn): InngestFunction<Events> {
-    return new InngestFunction<Events>(
-      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
-      { event: event as string },
-      fn
-    );
-  }
-
-  /**
-   * Run the given `fn` at a specified time or on a schedule given by `cron`.
-   */
-  public createScheduledFunction<Name extends string>(
-    /**
-     * The name of this function as it will appear in the Inngest Cloud UI.
-     */
-    name: Name,
-
-    /**
-     * The cron definition to schedule your function.
-     *
-     * @example
-     *
-     * "* * * * *" // Every minute
-     * "0 * * * *" // Every hour
-     * "0 0 * * *" // At the start of every day
-     * "0 0 0 * *" // At the start of the first day of the month
-     */
-    cron: string,
-
-    /**
-     * The function to run.
-     */
-    fn: SingleStepFn<null, Name, "step">
-  ): InngestFunction<Events>;
-  /**
-   * Run the given `fn` at a specified time or on a schedule given by `cron`.
-   */
-  public createScheduledFunction<Opts extends FunctionOptions>(
-    /**
-     * Options for this Inngest function - useful for defining a custom ID.
-     */
-    opts: Opts,
-
-    /**
-     * The cron definition to schedule your function.
-     *
-     * @example
-     *
-     * "* * * * *" // Every minute
-     * "0 * * * *" // Every hour
-     * "0 0 * * *" // At the start of every day
-     * "0 0 0 * *" // At the start of the first day of the month
-     */
-    cron: string,
-
-    /**
-     * The function to run.
-     */
-    fn: SingleStepFn<
-      null,
-      Opts extends FunctionOptions ? Opts["name"] : string,
-      "step"
-    >
-  ): InngestFunction<Events>;
-  /**
-   * Run the given `fn` at a specified time or on a schedule given by `cron`.
-   */
-  public createScheduledFunction<Opts extends FunctionOptions | string>(
-    nameOrOpts: Opts,
-    cron: string,
-    fn: SingleStepFn<
-      null,
-      Opts extends FunctionOptions
-        ? Opts["name"]
-        : Opts extends string
-        ? Opts
-        : string,
-      "step"
-    >
-  ): InngestFunction<Events> {
-    return new InngestFunction<Events>(
-      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts,
-      { cron },
-      fn
-    );
+    return new InngestFunction(
+      this,
+      opts,
+      typeof trigger === "string" ? { event: trigger } : trigger,
+      handler as Handler<Events, keyof Events & string>
+    ) as unknown as InngestFunction;
   }
 }
