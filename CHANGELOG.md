@@ -1,5 +1,23 @@
 # inngest
 
+## 1.4.1
+
+### Patch Changes
+
+- 43162d3: The "_Connected to `inngest dev`_" pill at the top of the SDK's landing page now links to the connected dev server.
+
+  _Thanks, [**@khill-fbmc**](https://github.com/khill-fbmc)!_
+
+  ![image](https://user-images.githubusercontent.com/1736957/225711717-fdc87dda-b8df-4aa4-a76b-233729f4d547.png)
+
+- 56b8e9a: Removes many `any` types from the internal and public APIs.
+
+  Affects the public API, so will therefore be a package bump, but shouldn't affect any expected areas of use.
+
+- a45601e: Update dependency typescript to v5
+
+  Including a bump for this as it does seem to fix some complex inference for future features.
+
 ## 1.4.0
 
 ### Minor Changes
