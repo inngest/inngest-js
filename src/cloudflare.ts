@@ -32,26 +32,20 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
       env: Record<string, string | undefined>;
     }) => {
       const url = new URL(req.url, `https://${req.headers.get("host") || ""}`);
-      const isProduction =
-        env.CF_PAGES === "1" || env.ENVIRONMENT === "production";
 
       return {
+        env,
+        url,
         view: () => {
           if (req.method === "GET") {
             return {
-              url,
-              env,
               isIntrospection: url.searchParams.has(queryKeys.Introspect),
-              isProduction,
             };
           }
         },
         register: () => {
           if (req.method === "PUT") {
             return {
-              env,
-              url,
-              isProduction,
               deployId: url.searchParams.get(queryKeys.DeployId),
             };
           }
@@ -62,9 +56,6 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
               fnId: url.searchParams.get(queryKeys.FnId) as string,
               stepId: url.searchParams.get(queryKeys.StepId) as string,
               data: (await req.json()) as Record<string, unknown>,
-              env,
-              isProduction,
-              url,
               signature: req.headers.get(headerKeys.Signature) || undefined,
             };
           }

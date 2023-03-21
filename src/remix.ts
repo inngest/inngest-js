@@ -3,7 +3,6 @@ import {
   ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
-import { allProcessEnv } from "./helpers/env";
 
 /**
  * In Remix, serve and register any declared functions with Inngest, making them
@@ -34,20 +33,13 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
     fns,
     opts,
     ({ request: req }: { request: Request }) => {
-      const env = allProcessEnv();
       const url = new URL(req.url, `https://${req.headers.get("host") || ""}`);
-      const isProduction =
-        env.VERCEL_ENV === "production" ||
-        env.CONTEXT === "production" ||
-        env.ENVIRONMENT === "production";
 
       return {
+        url,
         register: () => {
           if (req.method === "PUT") {
             return {
-              env,
-              isProduction,
-              url,
               deployId: url.searchParams.get(queryKeys.DeployId),
             };
           }
@@ -56,11 +48,8 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
           if (req.method === "POST") {
             return {
               data: (await req.json()) as Record<string, unknown>,
-              env,
               fnId: url.searchParams.get(queryKeys.FnId) as string,
               stepId: url.searchParams.get(queryKeys.StepId) as string,
-              isProduction,
-              url,
               signature: req.headers.get(headerKeys.Signature) || undefined,
             };
           }
@@ -68,10 +57,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
         view: () => {
           if (req.method === "GET") {
             return {
-              env,
               isIntrospection: url.searchParams.has(queryKeys.Introspect),
-              isProduction,
-              url,
             };
           }
         },
