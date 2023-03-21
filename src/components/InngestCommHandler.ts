@@ -1,11 +1,12 @@
 import canonicalize from "canonicalize";
 import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
+import { ServerTiming } from "../helpers/ServerTiming";
 import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+import { allProcessEnv, isProd } from "../helpers/env";
 import { serializeError } from "../helpers/errors";
 import { strBoolean } from "../helpers/scalar";
-import { ServerTiming } from "../helpers/ServerTiming";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
 import {
@@ -470,12 +471,14 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       "Server-Timing": timer.getHeader(),
     });
 
+    const env = actions.env ?? allProcessEnv();
+    this._isProd = actions.isProduction ?? isProd(env);
+
     try {
       const runRes = await actions.run();
 
       if (runRes) {
-        this._isProd = runRes.isProduction;
-        this.upsertSigningKeyFromEnv(runRes.env);
+        this.upsertSigningKeyFromEnv(env);
         this.validateSignature(runRes.signature, runRes.data);
 
         const stepRes = await this.runStep(
@@ -508,11 +511,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
       const viewRes = await actions.view();
       if (viewRes) {
-        this._isProd = viewRes.isProduction;
-        this.upsertSigningKeyFromEnv(viewRes.env);
+        this.upsertSigningKeyFromEnv(env);
 
         const showLandingPage = this.shouldShowLandingPage(
-          viewRes.env[envKeys.LandingPage]
+          env[envKeys.LandingPage]?.toString()
         );
 
         if (this._isProd || !showLandingPage) {
@@ -525,8 +527,9 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
         if (viewRes.isIntrospection) {
           const introspection: IntrospectRequest = {
-            ...this.registerBody(this.reqUrl(viewRes.url)),
-            devServerURL: devServerUrl(viewRes.env[envKeys.DevServerUrl]).href,
+            ...this.registerBody(this.reqUrl(actions.url)),
+            devServerURL: devServerUrl(env[envKeys.DevServerUrl]?.toString())
+              .href,
             hasSigningKey: Boolean(this.signingKey),
           };
 
@@ -552,12 +555,11 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
       const registerRes = await actions.register();
       if (registerRes) {
-        this._isProd = registerRes.isProduction;
-        this.upsertSigningKeyFromEnv(registerRes.env);
+        this.upsertSigningKeyFromEnv(env);
 
         const { status, message } = await this.register(
-          this.reqUrl(registerRes.url),
-          registerRes.env[envKeys.DevServerUrl],
+          this.reqUrl(actions.url),
+          env[envKeys.DevServerUrl]?.toString(),
           registerRes.deployId
         );
 
@@ -862,9 +864,9 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     return this._isProd;
   }
 
-  private upsertSigningKeyFromEnv(env: Record<string, string | undefined>) {
+  private upsertSigningKeyFromEnv(env: Record<string, unknown>) {
     if (!this.signingKey && env[envKeys.SigningKey]) {
-      this.signingKey = env[envKeys.SigningKey];
+      this.signingKey = env[envKeys.SigningKey].toString();
     }
   }
 
@@ -1007,6 +1009,10 @@ class RequestSignature {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Handler = (...args: any[]) => {
+  env?: Record<string, unknown>;
+  isProduction?: boolean;
+  url: URL;
+} & {
   [K in Extract<
     HandlerAction,
     { action: "run" | "register" | "view" }
@@ -1044,22 +1050,13 @@ type HandlerAction =
   | {
       action: "error";
       data: Record<string, string>;
-      env: Record<string, string | undefined>;
-      isProduction: boolean;
-      url: URL;
     }
   | {
       action: "view";
-      env: Record<string, string | undefined>;
-      url: URL;
       isIntrospection: boolean;
-      isProduction: boolean;
     }
   | {
       action: "register";
-      env: Record<string, string | undefined>;
-      url: URL;
-      isProduction: boolean;
       deployId?: null | string;
     }
   | {
@@ -1067,14 +1064,8 @@ type HandlerAction =
       fnId: string;
       stepId: string | null;
       data: Record<string, unknown>;
-      env: Record<string, string | undefined>;
-      isProduction: boolean;
-      url: URL;
       signature: string | undefined;
     }
   | {
       action: "bad-method";
-      env: Record<string, string | undefined>;
-      isProduction: boolean;
-      url: URL;
     };

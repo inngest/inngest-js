@@ -31,14 +31,44 @@ export const devServerHost = (): string | undefined => {
   return values.find((a) => !!a);
 };
 
-export const isProd = (): boolean => {
-  const values = [
-    processEnv("NODE_ENV"),
-    processEnv("VERCEL_ENV"),
-    processEnv("CONTEXT"),
-  ];
+const prodCheckFns = {
+  equals: (actual, expected) => actual === expected,
+  "starts with": (actual, expected) =>
+    expected ? actual?.startsWith(expected) ?? false : false,
+  "is truthy": (actual) => Boolean(actual),
+} satisfies Record<
+  string,
+  (actual: string | undefined, expected: string | undefined) => boolean
+>;
 
-  return values.includes("production");
+const prodChecks: [
+  key: string,
+  customCheck: keyof typeof prodCheckFns,
+  value?: string
+][] = [
+  ["CF_PAGES", "equals", "1"],
+  ["CONTEXT", "starts with", "prod"],
+  ["ENVIRONMENT", "starts with", "prod"],
+  ["NODE_ENV", "starts with", "prod"],
+  ["VERCEL_ENV", "starts with", "prod"],
+  ["DENO_DEPLOYMENT_ID", "is truthy"],
+];
+
+/**
+ * Returns `true` if we believe the current environment is production based on
+ * either passed environment variables or `process.env`.
+ */
+export const isProd = (
+  /**
+   * The optional environment variables to use instead of `process.env`.
+   */
+  env?: Record<string, unknown>
+): boolean => {
+  const envToCheck = env ?? allProcessEnv();
+
+  return prodChecks.some(([key, checkKey, expected]) => {
+    return prodCheckFns[checkKey](envToCheck[key]?.toString(), expected);
+  });
 };
 
 const hasProcessEnv = (): boolean => {
