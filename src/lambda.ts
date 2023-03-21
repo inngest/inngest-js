@@ -61,9 +61,15 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
       const path = eventIsV2 ? event.requestContext.http.path : event.path;
 
       const env = allProcessEnv();
-      const proto = event.headers["x-forwarded-proto"] || "https";
 
-      const url = new URL(path, `${proto}://${event.headers.host || ""}`);
+      let url: URL;
+
+      try {
+        const proto = event.headers["x-forwarded-proto"] || "https";
+        url = new URL(path, `${proto}://${event.headers.host || ""}`);
+      } catch (err) {
+        throw new Error("Could not parse URL from `event.headers.host`");
+      }
 
       const isProduction =
         env.CONTEXT === "production" ||
