@@ -62,12 +62,10 @@ export const isProd = (
   /**
    * The optional environment variables to use instead of `process.env`.
    */
-  env?: Record<string, unknown>
+  env: Record<string, unknown> = allProcessEnv()
 ): boolean => {
-  const envToCheck = env ?? allProcessEnv();
-
   return prodChecks.some(([key, checkKey, expected]) => {
-    return prodCheckFns[checkKey](envToCheck[key]?.toString(), expected);
+    return prodCheckFns[checkKey](env[key]?.toString(), expected);
   });
 };
 
