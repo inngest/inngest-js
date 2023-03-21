@@ -1,5 +1,12 @@
 # inngest
 
+## 1.5.0
+
+### Minor Changes
+
+- ac81320: Add `"inngest/lambda"` serve handler for AWS Lambda environments
+- f73a346: Add `"inngest/edge"` serve handler for use in v8 edge runtimes
+
 ## 1.4.1
 
 ### Patch Changes
