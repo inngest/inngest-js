@@ -106,7 +106,7 @@ export const testFramework = (
    * Create a helper function for running tests against the given serve handler.
    */
   const run = async (
-    handlerOpts: Parameters<typeof handler["serve"]>,
+    handlerOpts: Parameters<(typeof handler)["serve"]>,
     reqOpts: Parameters<typeof httpMocks.createRequest>,
     env: Record<string, string | undefined> = {}
   ): Promise<HandlerStandardReturn> => {
