@@ -5,7 +5,7 @@ import {
   ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
-import { allProcessEnv } from "./helpers/env";
+import { processEnv } from "./helpers/env";
 
 /**
  * In Nuxt 3, serve and register any declared functions with Inngest, making
@@ -20,16 +20,15 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
     fns,
     opts,
     (event: H3Event) => {
-      const env = allProcessEnv();
       const host = String(getHeader(event, "host"));
-      const protocol = env.NODE_ENV === "development" ? "http" : "https";
+      const protocol =
+        processEnv("NODE_ENV") === "development" ? "http" : "https";
       const url = new URL(String(event.path), `${protocol}://${host}`);
-      const isProduction =
-        env.ENVIRONMENT === "production" || env.NODE_ENV === "production";
       const method = getMethod(event);
       const query = getQuery(event);
 
       return {
+        url,
         run: async () => {
           if (method === "POST") {
             return {
@@ -37,18 +36,12 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
               stepId: query[queryKeys.StepId]?.toString() ?? "",
               signature: getHeader(event, headerKeys.Signature),
               data: await readBody(event),
-              env,
-              isProduction,
-              url,
             };
           }
         },
         register: () => {
           if (method === "PUT") {
             return {
-              env,
-              url,
-              isProduction,
               deployId: query[queryKeys.DeployId]?.toString(),
             };
           }
@@ -56,10 +49,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         view: () => {
           if (method === "GET") {
             return {
-              env,
-              url,
               isIntrospection: query && queryKeys.Introspect in query,
-              isProduction,
             };
           }
         },

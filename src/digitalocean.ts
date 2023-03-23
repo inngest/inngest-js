@@ -1,7 +1,6 @@
 import type { ServeHandler } from "./components/InngestCommHandler";
 import { InngestCommHandler } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
-import { allProcessEnv } from "./helpers/env";
 
 type HTTP = {
   headers: Record<string, string>;
@@ -37,9 +36,6 @@ export const serve = (
         data = {};
       }
 
-      const env = allProcessEnv();
-      const isProduction = env.NODE_ENV !== "development";
-
       // serveHost and servePath must be defined when running in DigitalOcean in order
       // for the SDK to properly register and run functions.
       //
@@ -47,12 +43,10 @@ export const serve = (
       const url = new URL(`${opts.serveHost}${opts?.servePath || "/"}`);
 
       return {
+        url,
         register: () => {
           if (http.method === "PUT") {
             return {
-              env,
-              url,
-              isProduction,
               deployId: main[queryKeys.DeployId] as string,
             };
           }
@@ -63,9 +57,6 @@ export const serve = (
               data: data as Record<string, unknown>,
               fnId: (main[queryKeys.FnId] as string) || "",
               stepId: (main[queryKeys.StepId] as string) || "",
-              env,
-              isProduction,
-              url,
               signature: http.headers[headerKeys.Signature] as string,
             };
           }
@@ -73,13 +64,10 @@ export const serve = (
         view: () => {
           if (http.method === "GET") {
             return {
-              env,
               isIntrospection: Object.hasOwnProperty.call(
                 main,
                 queryKeys.Introspect
               ),
-              url,
-              isProduction,
             };
           }
         },

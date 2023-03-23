@@ -59,7 +59,7 @@ describe("runFn", () => {
       describe(`${type} function`, () => {
         describe("success", () => {
           let fn: InngestFunction<TestEvents>;
-          let ret: Awaited<ReturnType<typeof fn["runFn"]>>;
+          let ret: Awaited<ReturnType<(typeof fn)["runFn"]>>;
 
           beforeAll(async () => {
             fn = new InngestFunction(

@@ -76,34 +76,38 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
      */
     (req: Request) => {
       /**
-       * We grab some details from the request that we'll use in our returned
-       * value later on.
-       */
-      /**
-       * First is the environment variables. We use the `process.env` global
-       * here, but you can use whatever method you want to get the environment
-       * variables in your framework/runtime. Inngest needs access to these to be
-       * able to find event keys, signing keys, and other important details.
-       */
-      const env = process.env;
-
-      /**
        * Next we grab the URL of the endpoint. Function registration isn't
-       * always triggered by Inngest, so
+       * always triggered by Inngest, so the SDK needs to be able to self-report
+       * its endpoint.
        */
       const url = new URL(req.url, `https://${req.headers.get("host") || ""}`);
-      const isProduction =
-        env.VERCEL_ENV === "production" ||
-        env.CONTEXT === "production" ||
-        env.ENVIRONMENT === "production";
 
       /**
-       * This function enforces that we return an object with this shape. These
-       * returned functions are used by Inngest to decide what kind of request
-       * is incoming, ensuring you can control how the framework's input should
-       * be interpreted.
+       * This function enforces that we return an object with this shape. We
+       * always need a URL, then a function for each action that can be provided
+       * by the SDK.
+       *
+       * These returned functions are used by Inngest to decide what kind of
+       * request is incoming, ensuring you can control how the framework's input
+       * should be interpreted.
+       *
+       * We can also specify some overrides:
+       *
+       * `env` provides environment variables if env vars in this
+       * framework/runtime are not available at `process.env`. Inngest needs
+       * access to these to be able to find event keys, signing keys, and other
+       * important details.
+       *
+       * `isProduction` is a boolean that tells Inngest whether or not this is a
+       * production environment. This is used to determine whether or not to
+       * utilise local development functionality such as the SDK's landing page
+       * or attempting to contact the development server. By default, we'll try
+       * to use environment variables such as `NODE_ENV` to infer this.
+       *
        */
       return {
+        url,
+
         /**
          * When wanting to register a function, Inngest will send a `PUT`
          * request to the endpoint. This function should either return
@@ -113,10 +117,6 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         register: () => {
           if (req.method === "PUT") {
             return {
-              env,
-              isProduction,
-              url,
-
               /**
                * See what we use the `queryKeys` enum here to access search
                * param variables - make sure to always use these enums to ensure
@@ -145,10 +145,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
                * `Promise`; any of these methods can be async if needed.
                */
               data: (await req.json()) as Record<string, unknown>,
-              env,
               fnId: url.searchParams.get(queryKeys.FnId) as string,
-              isProduction,
-              url,
               stepId: url.searchParams.get(queryKeys.StepId) as string,
               signature: req.headers.get(headerKeys.Signature) as string,
             };
@@ -164,10 +161,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         view: () => {
           if (req.method === "GET") {
             return {
-              env,
               isIntrospection: url.searchParams.has(queryKeys.Introspect),
-              isProduction,
-              url,
             };
           }
         },
