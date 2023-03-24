@@ -59,7 +59,8 @@ export type ServeHandler = (
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: InngestFunction[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  functions: InngestFunction<any, any, any, any>[],
 
   /**
    * A set of options to further configure the registration of Inngest
@@ -260,7 +261,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     /**
      * An array of the functions to serve and register with Inngest.
      */
-    functions: InngestFunction[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    functions: InngestFunction<any, any, any, any>[],
     {
       inngestRegisterUrl,
       fetch,

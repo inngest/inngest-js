@@ -12,11 +12,13 @@ import type {
   EventNameFromTrigger,
   EventPayload,
   FunctionOptions,
+  FunctionTrigger,
   Handler,
   ShimmedFns,
   TriggerOptions,
 } from "../types";
 import { version } from "../version";
+import { EventSchemas } from "./EventSchemas";
 import { InngestFunction } from "./InngestFunction";
 
 /**
@@ -29,6 +31,11 @@ export const eventKeyWarning =
 
 export const eventKeyError =
   "Could not find an event key to send events. Please pass one to the constructor, set the INNGEST_EVENT_KEY environment variable, or use inngest.setEventKey() at runtime.";
+
+export type EventsFromOpts<TOpts extends ClientOptions> =
+  TOpts["schemas"] extends EventSchemas<infer U>
+    ? U
+    : Record<string, EventPayload>;
 
 /**
  * A client used to interact with the Inngest API by sending or reacting to
@@ -55,9 +62,7 @@ export const eventKeyError =
  *
  * @public
  */
-export class Inngest<
-  Events extends Record<string, EventPayload> = Record<string, EventPayload>
-> {
+export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   /**
    * The name of this instance, most commonly the name of the application it
    * resides in.
@@ -111,7 +116,7 @@ export class Inngest<
     eventKey,
     inngestBaseUrl = "https://inn.gs/",
     fetch,
-  }: ClientOptions) {
+  }: TOpts) {
     if (!name) {
       throw new Error("A name must be passed to create an Inngest instance.");
     }
@@ -225,9 +230,11 @@ export class Inngest<
    * }>("My App", "API_KEY");
    * ```
    */
-  public async send<Event extends keyof Events>(
+  public async send<Event extends keyof EventsFromOpts<TOpts>>(
     name: Event,
-    payload: SingleOrArray<PartialK<Omit<Events[Event], "name" | "v">, "ts">>
+    payload: SingleOrArray<
+      PartialK<Omit<EventsFromOpts<TOpts>[Event], "name" | "v">, "ts">
+    >
   ): Promise<void>;
   /**
    * Send one or many events to Inngest. Takes an entire payload (including
@@ -253,26 +260,29 @@ export class Inngest<
    * }>("My App", "API_KEY");
    * ```
    */
-  public async send<Payload extends SendEventPayload<Events>>(
+  public async send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
     payload: Payload
   ): Promise<void>;
-  public async send<Event extends keyof Events>(
+  public async send<Event extends keyof EventsFromOpts<TOpts>>(
     nameOrPayload:
       | Event
       | SingleOrArray<
           ValueOf<{
-            [K in keyof Events]: PartialK<Omit<Events[K], "v">, "ts">;
+            [K in keyof EventsFromOpts<TOpts>]: PartialK<
+              Omit<EventsFromOpts<TOpts>[K], "v">,
+              "ts"
+            >;
           }>
         >,
     maybePayload?: SingleOrArray<
-      PartialK<Omit<Events[Event], "name" | "v">, "ts">
+      PartialK<Omit<EventsFromOpts<TOpts>[Event], "name" | "v">, "ts">
     >
   ): Promise<void> {
     if (!this.eventKey) {
       throw new Error(eventKeyError);
     }
 
-    let payloads: ValueOf<Events>[];
+    let payloads: ValueOf<EventsFromOpts<TOpts>>[];
 
     if (typeof nameOrPayload === "string") {
       /**
@@ -339,20 +349,21 @@ export class Inngest<
 
   public createFunction<
     TFns extends Record<string, unknown>,
-    TTrigger extends TriggerOptions<keyof Events & string>,
+    TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>,
     TShimmedFns extends Record<
       string,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (...args: any[]) => any
     > = ShimmedFns<TFns>,
-    TTriggerName extends keyof Events & string = EventNameFromTrigger<
-      Events,
-      TTrigger
-    >
+    TTriggerName extends keyof EventsFromOpts<TOpts> &
+      string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
   >(
     nameOrOpts:
       | string
-      | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
+      | (Omit<
+          FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>,
+          "fns" | "onFailure"
+        > & {
           /**
            * Pass in an object of functions that will be wrapped in Inngest
            * tooling and passes to your handler. This wrapping ensures that each
@@ -401,17 +412,22 @@ export class Inngest<
           // >;
         }),
     trigger: TTrigger,
-    handler: Handler<Events, TTriggerName, TShimmedFns>
-  ): InngestFunction {
-    const opts = (
-      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts
-    ) as FunctionOptions<Events, keyof Events & string>;
+    handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns>
+  ): InngestFunction<
+    TOpts,
+    EventsFromOpts<TOpts>,
+    FunctionTrigger<keyof EventsFromOpts<TOpts> & string>,
+    FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>
+  > {
+    const sanitizedOpts =
+      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts;
 
     return new InngestFunction(
       this,
-      opts,
+      sanitizedOpts,
       typeof trigger === "string" ? { event: trigger } : trigger,
-      handler as Handler<Events, keyof Events & string>
-    ) as unknown as InngestFunction;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+      handler as any
+    );
   }
 }

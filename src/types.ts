@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { EventSchemas } from "./components/EventSchemas";
+import { EventsFromOpts } from "./components/Inngest";
 import type { createStepTools } from "./components/InngestStepTools";
 import { internalEvents } from "./helpers/consts";
 import type {
@@ -7,6 +9,13 @@ import type {
   ObjectPaths,
   StrictUnion,
 } from "./helpers/types";
+
+export const failureEventErrorSchema = z.object({
+  message: z.string(),
+  stack: z.string().optional(),
+  cause: z.string().optional(),
+  status: z.number().optional(),
+});
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -18,12 +27,7 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
   data: {
     function_id: string;
     run_id: string;
-    error: {
-      message: string;
-      stack?: string;
-      cause?: string;
-      status?: number;
-    };
+    error: z.output<typeof failureEventErrorSchema>;
     event: P;
   };
 };
@@ -145,20 +149,24 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
   | ""}${`${number}m` | ""}${`${number}s` | ""}`;
 
 export type BaseContext<
-  TEvents extends Record<string, EventPayload>,
-  TTrigger extends keyof TEvents & string,
+  TOpts extends ClientOptions,
+  TTrigger extends keyof EventsFromOpts<TOpts> & string,
   TShimmedFns extends Record<string, (...args: unknown[]) => unknown>
 > = {
   /**
    * The event data present in the payload.
    */
-  event: TEvents[TTrigger];
+  event: EventsFromOpts<TOpts>[TTrigger];
 
   /**
    * @deprecated Use `step` instead.
    */
-  tools: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
-  step: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
+  tools: ReturnType<
+    typeof createStepTools<TOpts, EventsFromOpts<TOpts>, TTrigger>
+  >[0];
+  step: ReturnType<
+    typeof createStepTools<TOpts, EventsFromOpts<TOpts>, TTrigger>
+  >[0];
 
   /**
    * Any `fns` passed when creating your Inngest function will be
@@ -223,11 +231,12 @@ export type ShimmedFns<Fns extends Record<string, any>> = {
  * keys.
  */
 export type Context<
+  TOpts extends ClientOptions,
   TEvents extends Record<string, EventPayload>,
   TTrigger extends keyof TEvents & string,
   TShimmedFns extends Record<string, (...args: unknown[]) => unknown>,
   TOverrides extends Record<string, unknown> = Record<never, never>
-> = Omit<BaseContext<TEvents, TTrigger, TShimmedFns>, keyof TOverrides> &
+> = Omit<BaseContext<TOpts, TTrigger, TShimmedFns>, keyof TOverrides> &
   TOverrides;
 
 /**
@@ -237,7 +246,8 @@ export type Context<
  * @public
  */
 export type Handler<
-  TEvents extends Record<string, EventPayload>,
+  TOpts extends ClientOptions,
+  TEvents extends EventsFromOpts<TOpts>,
   TTrigger extends keyof TEvents & string,
   TShimmedFns extends Record<string, (...args: unknown[]) => unknown> = Record<
     never,
@@ -249,7 +259,7 @@ export type Handler<
    * The context argument provides access to all data and tooling available to
    * the function.
    */
-  ctx: Context<TEvents, TTrigger, TShimmedFns, TOverrides>
+  ctx: Context<TOpts, TEvents, TTrigger, TShimmedFns, TOverrides>
 ) => unknown;
 
 /**
@@ -376,6 +386,8 @@ export interface ClientOptions {
    * back to a Node implementation if no global fetch can be found.
    */
   fetch?: typeof fetch;
+
+  schemas?: EventSchemas<Record<string, EventPayload>>;
 }
 
 /**

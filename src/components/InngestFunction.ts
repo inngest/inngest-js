@@ -1,9 +1,11 @@
+import { z } from "zod";
+import { ServerTiming } from "../helpers/ServerTiming";
 import { internalEvents, queryKeys } from "../helpers/consts";
 import { serializeError } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
-import { ServerTiming } from "../helpers/ServerTiming";
 import { slugify, timeStr } from "../helpers/strings";
 import {
+  ClientOptions,
   Context,
   EventNameFromTrigger,
   EventPayload,
@@ -16,9 +18,10 @@ import {
   OpStack,
   OutgoingOp,
   StepOpCode,
+  failureEventErrorSchema,
 } from "../types";
-import { Inngest } from "./Inngest";
-import { createStepTools, TickOp } from "./InngestStepTools";
+import { EventsFromOpts, Inngest } from "./Inngest";
+import { TickOp, createStepTools } from "./InngestStepTools";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -30,7 +33,8 @@ import { createStepTools, TickOp } from "./InngestStepTools";
  * @public
  */
 export class InngestFunction<
-  Events extends Record<string, EventPayload> = Record<string, EventPayload>,
+  TOpts extends ClientOptions = ClientOptions,
+  Events extends EventsFromOpts<TOpts> = EventsFromOpts<TOpts>,
   Trigger extends FunctionTrigger<keyof Events & string> = FunctionTrigger<
     keyof Events & string
   >,
@@ -44,9 +48,9 @@ export class InngestFunction<
 
   readonly #opts: Opts;
   readonly #trigger: Trigger;
-  readonly #fn: Handler<Events, keyof Events & string>;
-  readonly #onFailureFn?: Handler<Events, keyof Events & string>;
-  readonly #client: Inngest<Events>;
+  readonly #fn: Handler<TOpts, Events, keyof Events & string>;
+  readonly #onFailureFn?: Handler<TOpts, Events, keyof Events & string>;
+  readonly #client: Inngest<TOpts>;
 
   /**
    * A stateless Inngest function, wrapping up function configuration and any
@@ -56,14 +60,14 @@ export class InngestFunction<
    * trigger remotely.
    */
   constructor(
-    client: Inngest<Events>,
+    client: Inngest<TOpts>,
 
     /**
      * Options
      */
     opts: Opts,
     trigger: Trigger,
-    fn: Handler<Events, keyof Events & string>
+    fn: Handler<TOpts, Events, keyof Events & string>
   ) {
     this.#client = client;
     this.#opts = opts;
@@ -249,12 +253,12 @@ export class InngestFunction<
      * Create args to pass in to our function. We blindly pass in the data and
      * add tools.
      */
-    const fnArg = {
+    let fnArg = {
       ...(data as { event: EventPayload }),
       tools,
       step: tools,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as Partial<Context<any, any, any>>;
+    } as Context<TOpts, Events, any, any>;
 
     let userFnToRun = this.#fn;
 
@@ -279,9 +283,14 @@ export class InngestFunction<
 
       userFnToRun = this.#onFailureFn;
 
-      (fnArg as FailureEventArgs).err = (
-        fnArg as FailureEventArgs
-      ).event.data.error;
+      const eventData = z
+        .object({ error: failureEventErrorSchema })
+        .parse(fnArg.event?.data);
+
+      (fnArg as Partial<Pick<FailureEventArgs, "err">>) = {
+        ...fnArg,
+        err: eventData.error,
+      };
     }
 
     /**
@@ -308,8 +317,8 @@ export class InngestFunction<
     // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
     const userFnPromise = new Promise(async (resolve, reject) => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        resolve(await userFnToRun(fnArg as Context<any, any, any>));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
+        resolve(await userFnToRun(fnArg));
       } catch (err) {
         reject(err);
       }

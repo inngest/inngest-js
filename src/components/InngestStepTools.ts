@@ -9,8 +9,14 @@ import type {
   SingleOrArray,
   ValueOf,
 } from "../helpers/types";
-import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
-import { Inngest } from "./Inngest";
+import {
+  ClientOptions,
+  EventPayload,
+  HashedOp,
+  Op,
+  StepOpCode,
+} from "../types";
+import { EventsFromOpts, Inngest } from "./Inngest";
 
 export interface TickOp extends HashedOp {
   fn?: (...args: unknown[]) => unknown;
@@ -28,10 +34,11 @@ export interface TickOp extends HashedOp {
  * that the tools can use to submit a new op.
  */
 export const createStepTools = <
-  Events extends Record<string, EventPayload>,
+  TOpts extends ClientOptions,
+  Events extends EventsFromOpts<TOpts>,
   TriggeringEvent extends keyof Events & string
 >(
-  client: Inngest<Events>
+  client: Inngest<TOpts>
 ) => {
   const state: {
     /**
