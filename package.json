@@ -95,5 +95,8 @@
   "volta": {
     "node": "18.12.1",
     "yarn": "1.22.19"
+  },
+  "peerDependencies": {
+    "typescript": ">=4.7.2"
   }
 }
