@@ -124,6 +124,8 @@ export type StrictUnion<T> = StrictUnionHelper<T, T>;
  * // true
  * type ObjIsKnown = IsStringLiteral<keyof { foo: boolean; }>; // true
  * ```
+ *
+ * @internal
  */
 export type IsStringLiteral<T extends string> = string extends T ? false : true;
 

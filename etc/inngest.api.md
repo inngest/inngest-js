@@ -5,6 +5,8 @@
 ```ts
 
 import { Jsonify } from 'type-fest';
+import { Simplify } from 'type-fest';
+import { z } from 'zod';
 
 // @public
 export interface ClientOptions {
@@ -12,7 +14,13 @@ export interface ClientOptions {
     fetch?: typeof fetch;
     inngestBaseUrl?: string;
     name: string;
+    schemas?: EventSchemas<Record<string, EventPayload>>;
 }
+
+// Warning: (ae-incompatible-release-tags) The symbol "Combine" is marked as @public, but its signature references "IsStringLiteral" which is marked as @internal
+//
+// @public
+export type Combine<TCurr extends Record<string, EventPayload>, TInc extends StandardEventSchemas> = IsStringLiteral<keyof TCurr & string> extends true ? Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> & StandardEventSchemaToPayload<TInc> : StandardEventSchemaToPayload<TInc>;
 
 // Warning: (ae-forgotten-export) The symbol "TriggerOptions" needs to be exported by the entry point index.d.ts
 //
@@ -31,6 +39,13 @@ export interface EventPayload {
 }
 
 // @public
+export class EventSchemas<S extends Record<string, EventPayload>> {
+    fromGenerated<T extends StandardEventSchemas>(): EventSchemas<Combine<S, T>>;
+    fromTypes<T extends StandardEventSchemas>(): EventSchemas<Combine<S, T>>;
+    fromZod<T extends ZodEventSchemas>(schemas: T): EventSchemas<Combine<S, { [EventName in keyof T & string]: { [Key in keyof T[EventName] & string]: T[EventName][Key] extends z.ZodTypeAny ? z.TypeOf<T[EventName][Key]> : T[EventName][Key]; }; }>>;
+}
+
+// @public
 export type FailureEventArgs<P extends EventPayload = EventPayload> = {
     event: FailureEventPayload<P>;
     err: FailureEventPayload<P>["data"]["error"];
@@ -42,12 +57,7 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     data: {
         function_id: string;
         run_id: string;
-        error: {
-            message: string;
-            stack?: string;
-            cause?: string;
-            status?: number;
-        };
+        error: z.output<typeof failureEventErrorSchema>;
         event: P;
     };
 };
@@ -83,23 +93,25 @@ export enum headerKeys {
 }
 
 // @public
-export class Inngest<Events extends Record<string, EventPayload> = Record<string, EventPayload>> {
-    constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
+export class Inngest<TOpts extends ClientOptions = ClientOptions> {
+    constructor({ name, eventKey, inngestBaseUrl, fetch, }: TOpts);
     // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "FunctionTrigger" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    createFunction<TFns extends Record<string, unknown>, TTrigger extends TriggerOptions<keyof Events & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof Events & string = EventNameFromTrigger<Events, TTrigger>>(nameOrOpts: string | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
+    createFunction<TFns extends Record<string, unknown>, TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof EventsFromOpts<TOpts> & string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>>(nameOrOpts: string | (Omit<FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>, "fns" | "onFailure"> & {
         fns?: TFns;
-    }), trigger: TTrigger, handler: Handler<Events, TTriggerName, TShimmedFns>): InngestFunction;
+    }), trigger: TTrigger, handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
     readonly inngestBaseUrl: URL;
     readonly name: string;
+    // Warning: (ae-forgotten-export) The symbol "EventsFromOpts" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "PartialK" needs to be exported by the entry point index.d.ts
-    send<Event extends keyof Events>(name: Event, payload: SingleOrArray<PartialK<Omit<Events[Event], "name" | "v">, "ts">>): Promise<void>;
+    send<Event extends keyof EventsFromOpts<TOpts>>(name: Event, payload: SingleOrArray<PartialK<Omit<EventsFromOpts<TOpts>[Event], "name" | "v">, "ts">>): Promise<void>;
     // Warning: (ae-forgotten-export) The symbol "SendEventPayload" needs to be exported by the entry point index.d.ts
-    send<Payload extends SendEventPayload<Events>>(payload: Payload): Promise<void>;
+    send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(payload: Payload): Promise<void>;
     setEventKey(
     eventKey: string): void;
 }
@@ -111,7 +123,7 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     constructor(
     frameworkName: string,
     appNameOrInngest: string | Inngest,
-    functions: InngestFunction[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
+    functions: InngestFunction<any, any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
     handler: H,
     transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
@@ -163,6 +175,11 @@ export enum internalEvents {
     FunctionFailed = "inngest/function.failed"
 }
 
+// Warning: (ae-internal-missing-underscore) The name "IsStringLiteral" should be prefixed with an underscore because the declaration is marked as @internal
+//
+// @internal
+export type IsStringLiteral<T extends string> = string extends T ? false : true;
+
 // @public
 export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
 
@@ -200,11 +217,38 @@ export interface RegisterOptions {
 // @public
 export type ServeHandler = (
 nameOrInngest: string | Inngest,
-functions: InngestFunction[],
+functions: InngestFunction<any, any, any, any>[],
 opts?: RegisterOptions) => unknown;
 
 // @public
+export type StandardEventSchemas = Record<string, {
+    data: Record<string, any>;
+    user?: Record<string, any>;
+}>;
+
+// @public
+export type StandardEventSchemaToPayload<T> = Simplify<{
+    [K in keyof T & string]: {
+        [K2 in keyof (Omit<EventPayload, keyof T[K]> & T[K] & {
+            name: K;
+        })]: (Omit<EventPayload, keyof T[K]> & T[K] & {
+            name: K;
+        })[K2];
+    };
+}>;
+
+// @public
 export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${`${number}h` | ""}${`${number}m` | ""}${`${number}s` | ""}`;
+
+// @public
+export type ZodEventSchemas = Record<string, {
+    data: z.AnyZodObject | z.ZodAny;
+    user?: z.AnyZodObject | z.ZodAny;
+}>;
+
+// Warnings were encountered during analysis:
+//
+// src/types.ts:30:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

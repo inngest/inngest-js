@@ -387,6 +387,29 @@ export interface ClientOptions {
    */
   fetch?: typeof fetch;
 
+  /**
+   * Provide an `EventSchemas` class to type events, providing type safety when
+   * sending events and running functions via Inngest.
+   *
+   * You can provide generated Inngest types, custom types, types using Zod, or
+   * a combination of the above. See {@link EventSchemas} for more information.
+   *
+   * @example
+   *
+   * ```ts
+   * export const inngest = new Inngest({
+   *   name: "My App",
+   *   schemas: new EventSchemas().fromZod({
+   *     "app/user.created": {
+   *       data: z.object({
+   *         id: z.string(),
+   *         name: z.string(),
+   *       }),
+   *     },
+   *   }),
+   * });
+   * ```
+   */
   schemas?: EventSchemas<Record<string, EventPayload>>;
 }
 
