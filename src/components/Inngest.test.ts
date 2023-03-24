@@ -2,6 +2,7 @@ import { assertType } from "type-plus";
 import { envKeys } from "../helpers/consts";
 import { IsAny } from "../helpers/types";
 import { EventPayload } from "../types";
+import { EventSchemas } from "./EventSchemas";
 import { eventKeyWarning, Inngest } from "./Inngest";
 
 const testEvent: EventPayload = {
@@ -174,16 +175,20 @@ describe("send", () => {
     });
 
     describe("multiple custom types", () => {
-      const inngest = new Inngest<{
-        foo: {
-          name: "foo";
-          data: { foo: string };
-        };
-        bar: {
-          name: "bar";
-          data: { bar: string };
-        };
-      }>({ name: "test", eventKey: testEventKey });
+      const inngest = new Inngest({
+        name: "test",
+        eventKey: testEventKey,
+        schemas: new EventSchemas().fromTypes<{
+          foo: {
+            name: "foo";
+            data: { foo: string };
+          };
+          bar: {
+            name: "bar";
+            data: { bar: string };
+          };
+        }>(),
+      });
 
       test("disallows sending a single unknown event with a string", () => {
         // @ts-expect-error Unknown event
@@ -331,16 +336,19 @@ describe("createFunction", () => {
     });
 
     describe("multiple custom types", () => {
-      const inngest = new Inngest<{
-        foo: {
-          name: "foo";
-          data: { title: string };
-        };
-        bar: {
-          name: "bar";
-          data: { message: string };
-        };
-      }>({ name: "test" });
+      const inngest = new Inngest({
+        name: "test",
+        schemas: new EventSchemas().fromTypes<{
+          foo: {
+            name: "foo";
+            data: { title: string };
+          };
+          bar: {
+            name: "bar";
+            data: { message: string };
+          };
+        }>(),
+      });
 
       test("disallows unknown event as object", () => {
         // @ts-expect-error Unknown event

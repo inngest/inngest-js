@@ -1,5 +1,6 @@
 import { ServerTiming } from "../helpers/ServerTiming";
-import { EventPayload, OpStack, StepOpCode } from "../types";
+import { ClientOptions, EventPayload, OpStack, StepOpCode } from "../types";
+import { EventSchemas } from "./EventSchemas";
 import { Inngest } from "./Inngest";
 import { InngestFunction } from "./InngestFunction";
 import { UnhashedOp, _internals } from "./InngestStepTools";
@@ -7,15 +8,20 @@ import { UnhashedOp, _internals } from "./InngestStepTools";
 import { jest } from "@jest/globals";
 
 type TestEvents = {
-  foo: { name: "foo"; data: { foo: string } };
-  bar: { name: "bar"; data: { bar: string } };
-  baz: { name: "baz"; data: { baz: string } };
+  foo: { data: { foo: string } };
+  bar: { data: { bar: string } };
+  baz: { data: { baz: string } };
 };
 
-const inngest = new Inngest<TestEvents>({
+const schemas = new EventSchemas().fromTypes<TestEvents>();
+
+const opts = {
   name: "test",
   eventKey: "event-key-123",
-});
+  schemas,
+} satisfies ClientOptions;
+
+const inngest = new Inngest(opts);
 
 const timer = new ServerTiming();
 
@@ -58,12 +64,12 @@ describe("runFn", () => {
     ].forEach(({ type, flowFn, badFlowFn }) => {
       describe(`${type} function`, () => {
         describe("success", () => {
-          let fn: InngestFunction<TestEvents>;
+          let fn: InngestFunction<typeof opts>;
           let ret: Awaited<ReturnType<(typeof fn)["runFn"]>>;
 
           beforeAll(async () => {
             fn = new InngestFunction(
-              new Inngest<TestEvents>({ name: "test" }),
+              new Inngest(opts),
               { name: "Foo" },
               { event: "foo" },
               flowFn
@@ -89,11 +95,11 @@ describe("runFn", () => {
 
         describe("throws", () => {
           const stepErr = new Error("step error");
-          let fn: InngestFunction<TestEvents>;
+          let fn: InngestFunction<typeof opts>;
 
           beforeAll(() => {
             fn = new InngestFunction(
-              new Inngest<TestEvents>({ name: "test" }),
+              new Inngest(opts),
               { name: "Foo" },
               { event: "foo" },
               badFlowFn
@@ -118,7 +124,8 @@ describe("runFn", () => {
 
   describe("step functions", () => {
     const runFnWithStack = (
-      fn: InngestFunction,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fn: InngestFunction<any, any, any, any>,
       stack: OpStack,
       opts?: {
         runStep?: string;
@@ -139,7 +146,8 @@ describe("runFn", () => {
 
     const testFn = <
       T extends {
-        fn: InngestFunction;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        fn: InngestFunction<any, any, any, any>;
         steps: Record<
           string,
           jest.Mock<() => string> | jest.Mock<() => Promise<string>>
@@ -1144,24 +1152,27 @@ describe("runFn", () => {
       });
 
       describe("multiple custom types", () => {
-        const inngest = new Inngest<{
-          foo: {
-            name: "foo";
-            data: { title: string; foo: string };
-          };
-          bar: {
-            name: "bar";
-            data: { message: string; bar: string };
-          };
-          baz: {
-            name: "baz";
-            data: { title: string; baz: string };
-          };
-          qux: {
-            name: "qux";
-            data: { title: string; qux: string };
-          };
-        }>({ name: "test" });
+        const inngest = new Inngest({
+          name: "test",
+          schemas: new EventSchemas().fromTypes<{
+            foo: {
+              name: "foo";
+              data: { title: string; foo: string };
+            };
+            bar: {
+              name: "bar";
+              data: { message: string; bar: string };
+            };
+            baz: {
+              name: "baz";
+              data: { title: string; baz: string };
+            };
+            qux: {
+              name: "qux";
+              data: { title: string; qux: string };
+            };
+          }>(),
+        });
 
         test("disallows unknown event name", () => {
           inngest.createFunction(
@@ -1214,20 +1225,23 @@ describe("runFn", () => {
     });
 
     test("specifying a cancellation event registers correctly", () => {
-      const inngest = new Inngest<{
-        foo: {
-          name: "foo";
-          data: { title: string };
-        };
-        bar: {
-          name: "bar";
-          data: { message: string };
-        };
-        baz: {
-          name: "baz";
-          data: { title: string };
-        };
-      }>({ name: "test" });
+      const inngest = new Inngest({
+        name: "test",
+        schemas: new EventSchemas().fromTypes<{
+          foo: {
+            name: "foo";
+            data: { title: string };
+          };
+          bar: {
+            name: "bar";
+            data: { message: string };
+          };
+          baz: {
+            name: "baz";
+            data: { title: string };
+          };
+        }>(),
+      });
 
       const fn = inngest.createFunction(
         { name: "test", cancelOn: [{ event: "baz", match: "data.title" }] },

@@ -2,9 +2,10 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import ms from "ms";
 import { assertType } from "type-plus";
-import { StepOpCode } from "../types";
-import { Inngest } from "./Inngest";
-import { createStepTools, TickOp } from "./InngestStepTools";
+import { ClientOptions, StepOpCode } from "../types";
+import { EventSchemas } from "./EventSchemas";
+import { EventsFromOpts, Inngest } from "./Inngest";
+import { TickOp, createStepTools } from "./InngestStepTools";
 
 describe("waitForEvent", () => {
   const client = new Inngest({ name: "test" });
@@ -289,20 +290,21 @@ describe("sendEvent", () => {
     });
 
     describe("multiple custom types", () => {
+      const schemas = new EventSchemas().fromTypes<{
+        foo: {
+          name: "foo";
+          data: { foo: string };
+        };
+        bar: {
+          name: "bar";
+          data: { bar: string };
+        };
+      }>();
+
+      const opts = { name: "", schemas } satisfies ClientOptions;
+
       const sendEvent: ReturnType<
-        typeof createStepTools<
-          {
-            foo: {
-              name: "foo";
-              data: { foo: string };
-            };
-            bar: {
-              name: "bar";
-              data: { bar: string };
-            };
-          },
-          "foo"
-        >
+        typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       >[0]["sendEvent"] = (() => undefined) as any;
 
