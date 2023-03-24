@@ -31,15 +31,19 @@ export const devServerHost = (): string | undefined => {
   return values.find((a) => !!a);
 };
 
-const prodCheckFns = {
+const prodCheckFns = (<
+  T extends Record<
+    string,
+    (actual: string | undefined, expected: string | undefined) => boolean
+  >
+>(
+  checks: T
+): T => checks)({
   equals: (actual, expected) => actual === expected,
   "starts with": (actual, expected) =>
     expected ? actual?.startsWith(expected) ?? false : false,
   "is truthy": (actual) => Boolean(actual),
-} satisfies Record<
-  string,
-  (actual: string | undefined, expected: string | undefined) => boolean
->;
+});
 
 const prodChecks: [
   key: string,

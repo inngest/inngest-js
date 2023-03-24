@@ -866,7 +866,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
   private upsertSigningKeyFromEnv(env: Record<string, unknown>) {
     if (!this.signingKey && env[envKeys.SigningKey]) {
-      this.signingKey = env[envKeys.SigningKey].toString();
+      this.signingKey = String(env[envKeys.SigningKey]);
     }
   }
 
