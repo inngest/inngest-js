@@ -1,5 +1,11 @@
 # inngest
 
+## 1.5.1
+
+### Patch Changes
+
+- 0836145: Refactor `InngestCommHandler` to better detect env and reduce duplication (INN-997)
+
 ## 1.5.0
 
 ### Minor Changes
