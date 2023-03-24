@@ -4,6 +4,7 @@
 // string in order to read variables.
 
 import { envKeys } from "./consts";
+import { stringifyUnknown } from "./strings";
 
 /**
  * devServerHost returns the dev server host by searching for the INNGEST_DEVSERVER_URL
@@ -69,7 +70,7 @@ export const isProd = (
   env: Record<string, unknown> = allProcessEnv()
 ): boolean => {
   return prodChecks.some(([key, checkKey, expected]) => {
-    return prodCheckFns[checkKey](env[key]?.toString(), expected);
+    return prodCheckFns[checkKey](stringifyUnknown(env[key]), expected);
   });
 };
 
