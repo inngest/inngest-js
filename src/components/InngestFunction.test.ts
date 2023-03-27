@@ -1,4 +1,4 @@
-import { EventPayload, Inngest } from "inngest";
+import { EventPayload } from "inngest";
 import { ServerTiming } from "../helpers/ServerTiming";
 import { OpStack, StepOpCode } from "../types";
 import { InngestFunction } from "./InngestFunction";
@@ -947,7 +947,7 @@ describe("runFn", () => {
   // describe("onFailure functions", () => {
   //   describe("types", () => {
   //     describe("no custom types", () => {
-  //       const inngest = new Inngest({ name: "test" });
+  //       const inngest = createClient({ name: "test" });
 
   //       test("onFailure function has unknown internal event", () => {
   //         inngest.createFunction(
@@ -968,7 +968,7 @@ describe("runFn", () => {
   //     });
 
   //     describe("multiple custom types", () => {
-  //       const inngest = new Inngest<{
+  //       const inngest = createClient<{
   //         foo: {
   //           name: "foo";
   //           data: { title: string };
@@ -1002,7 +1002,7 @@ describe("runFn", () => {
   //     });
 
   //     describe("passed fns have correct types", () => {
-  //       const inngest = new Inngest({ name: "test" });
+  //       const inngest = createClient({ name: "test" });
 
   //       const lib = {
   //         foo: true,
@@ -1046,7 +1046,7 @@ describe("runFn", () => {
   //   });
 
   //   test("specifying an onFailure function registers correctly", () => {
-  //     const inngest = new Inngest<{
+  //     const inngest = createClient<{
   //       foo: {
   //         name: "foo";
   //         data: { title: string };
@@ -1118,7 +1118,7 @@ describe("runFn", () => {
   describe("cancellation", () => {
     describe("types", () => {
       describe("no custom types", () => {
-        const inngest = new Inngest({ name: "test" });
+        const inngest = createClient({ name: "test" });
 
         test("allows any event name", () => {
           inngest.createFunction(
@@ -1145,7 +1145,7 @@ describe("runFn", () => {
       });
 
       describe("multiple custom types", () => {
-        const inngest = new Inngest<{
+        const inngest = createClient<{
           foo: {
             name: "foo";
             data: { title: string; foo: string };
@@ -1215,7 +1215,7 @@ describe("runFn", () => {
     });
 
     test("specifying a cancellation event registers correctly", () => {
-      const inngest = new Inngest<{
+      const inngest = createClient<{
         foo: {
           name: "foo";
           data: { title: string };

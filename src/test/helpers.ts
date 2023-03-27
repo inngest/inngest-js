@@ -527,7 +527,7 @@ export const testFramework = (
 
     describe("POST (run function)", () => {
       describe("signature validation", () => {
-        const client = new Inngest({ name: "test" });
+        const client = createClient({ name: "test" });
 
         const fn = client.createFunction(
           { name: "Test", id: "test" },
