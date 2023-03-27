@@ -8,7 +8,17 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: volta-cli/action@v4
+    - uses: actions/cache@v3
+      id: volta-cache # use this to check for `cache-hit` (`steps.yarn-cache.outputs.cache-hit != 'true'`)
+      with:
+        path: ~/.volta
+        key: ${{ runner.os }}-volta-${{ hashFiles('**/package.json') }}
+        restore-keys: |
+          ${{ runner.os }}-volta-
+
+    - name: Install volta
+      shell: bash
+      run: curl https://get.volta.sh | bash
 
     - name: Get yarn cache directory path
       id: yarn-cache-dir-path
