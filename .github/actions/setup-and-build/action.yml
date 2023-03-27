@@ -16,9 +16,23 @@ runs:
         restore-keys: |
           ${{ runner.os }}-volta-
 
-    - name: Install volta
+    - name: Install Volta
       shell: bash
       run: curl https://get.volta.sh | bash
+      env:
+        VOLTA_HOME: ~/.volta
+
+    - name: List dirs
+      shell: bash
+      run: |
+        ls -lah ~/.volta
+        ls -lah ~/.volta/bin
+
+    - name: Add Volta to path
+      shell: bash
+      run: ~/.volta/bin/volta setup
+      env:
+        VOLTA_HOME: ~/.volta
 
     - name: Get yarn cache directory path
       id: yarn-cache-dir-path
