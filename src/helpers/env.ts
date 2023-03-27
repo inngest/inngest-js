@@ -78,30 +78,20 @@ export const processEnv = (key: string): string | undefined => {
   return allProcessEnv()[key];
 };
 
-declare const Deno: unknown;
+declare const Deno: {
+  env: { toObject: () => Record<string, string | undefined> };
+};
 
 export const allProcessEnv = (): Record<string, string | undefined> => {
   try {
-    if (typeof process === "object" && process && "env" in process) {
-      // eslint-disable-next-line @inngest/process-warn
-      return process.env;
-    }
+    // eslint-disable-next-line @inngest/process-warn
+    return process.env;
   } catch (_err) {
     // noop
   }
 
   try {
-    if (
-      typeof Deno === "object" &&
-      Deno &&
-      "env" in Deno &&
-      typeof Deno.env === "object" &&
-      Deno.env &&
-      "toObject" in Deno.env &&
-      typeof Deno.env.toObject === "function"
-    ) {
-      return Deno.env.toObject() as Record<string, string | undefined>;
-    }
+    return Deno.env.toObject();
   } catch (_err) {
     // noop
   }
