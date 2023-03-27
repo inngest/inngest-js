@@ -55,12 +55,14 @@ export type ServeHandler = (
    * The name of this app, used to scope and group Inngest functions, or
    * the `Inngest` instance used to declare all functions.
    */
-  nameOrInngest: string | Inngest,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  nameOrInngest: string | Inngest<any>,
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: InngestFunction[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  functions: InngestFunction<any, any, any>[],
 
   /**
    * A set of options to further configure the registration of Inngest
@@ -256,12 +258,14 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
      * receiving events from the same service, as you can reuse a single
      * definition of Inngest.
      */
-    appNameOrInngest: string | Inngest,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    appNameOrInngest: string | Inngest<any>,
 
     /**
      * An array of the functions to serve and register with Inngest.
      */
-    functions: InngestFunction[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    functions: InngestFunction<any, any, any>[],
     {
       inngestRegisterUrl,
       fetch,
