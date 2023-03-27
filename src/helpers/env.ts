@@ -69,18 +69,36 @@ export const isProd = (
   });
 };
 
-const hasProcessEnv = (): boolean => {
-  return typeof process !== "undefined" && "env" in process;
-};
-
 export const processEnv = (key: string): string | undefined => {
   return allProcessEnv()[key];
 };
 
+declare const Deno: unknown;
+
 export const allProcessEnv = (): Record<string, string | undefined> => {
-  if (hasProcessEnv()) {
-    // eslint-disable-next-line @inngest/process-warn
-    return process.env;
+  try {
+    if (typeof process === "object" && process && "env" in process) {
+      // eslint-disable-next-line @inngest/process-warn
+      return process.env;
+    }
+  } catch (_err) {
+    // noop
+  }
+
+  try {
+    if (
+      typeof Deno === "object" &&
+      Deno &&
+      "env" in Deno &&
+      typeof Deno.env === "object" &&
+      Deno.env &&
+      "toObject" in Deno.env &&
+      typeof Deno.env.toObject === "function"
+    ) {
+      return Deno.env.toObject() as Record<string, string | undefined>;
+    }
+  } catch (_err) {
+    // noop
   }
 
   return {};
