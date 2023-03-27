@@ -47,8 +47,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
+      - run: yarn prelink
       - run: yarn add -D typescript@${{ matrix.tsVersion }}
-      - run: yarn test
+      - run: yarn test:types
 
   api_diff:
     name: Local API diff

@@ -1,6 +1,6 @@
+import { EventPayload, Inngest } from "inngest";
 import { ServerTiming } from "../helpers/ServerTiming";
-import { EventPayload, OpStack, StepOpCode } from "../types";
-import { Inngest } from "./Inngest";
+import { OpStack, StepOpCode } from "../types";
 import { InngestFunction } from "./InngestFunction";
 import { UnhashedOp, _internals } from "./InngestStepTools";
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */

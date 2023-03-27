@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import { Inngest } from "inngest";
 import ms from "ms";
 import { assertType } from "type-plus";
 import { StepOpCode } from "../types";
-import { Inngest } from "./Inngest";
 import { createStepTools, TickOp } from "./InngestStepTools";
 
 describe("waitForEvent", () => {

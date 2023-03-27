@@ -1,8 +1,8 @@
+import { EventPayload, Inngest } from "inngest";
 import { assertType } from "type-plus";
 import { envKeys } from "../helpers/consts";
 import { IsAny } from "../helpers/types";
-import { EventPayload } from "../types";
-import { eventKeyWarning, Inngest } from "./Inngest";
+import { eventKeyWarning } from "./Inngest";
 
 const testEvent: EventPayload = {
   name: "test",
