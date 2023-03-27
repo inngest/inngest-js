@@ -1,5 +1,11 @@
 # inngest
 
+## 1.5.2
+
+### Patch Changes
+
+- 2d6e0b5: Fix infinite type instantiation using a looping type in serve handlers (thanks for the report, @grempe)
+
 ## 1.5.1
 
 ### Patch Changes
