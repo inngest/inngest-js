@@ -5,6 +5,7 @@ import { InngestFunction } from "./InngestFunction";
 import { UnhashedOp, _internals } from "./InngestStepTools";
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { jest } from "@jest/globals";
+import { createClient } from "../test/helpers";
 
 type TestEvents = {
   foo: { name: "foo"; data: { foo: string } };
@@ -12,7 +13,7 @@ type TestEvents = {
   baz: { name: "baz"; data: { baz: string } };
 };
 
-const inngest = new Inngest<TestEvents>({
+const inngest = createClient<TestEvents>({
   name: "test",
   eventKey: "event-key-123",
 });
@@ -23,7 +24,7 @@ describe("#generateID", () => {
   it("Returns a correct name", () => {
     const fn = () =>
       new InngestFunction(
-        new Inngest({ name: "test" }),
+        createClient({ name: "test" }),
         { name: "HELLO 👋 there mr Wolf 🥳!" },
         { event: "test/event.name" },
         () => undefined
@@ -63,7 +64,7 @@ describe("runFn", () => {
 
           beforeAll(async () => {
             fn = new InngestFunction(
-              new Inngest<TestEvents>({ name: "test" }),
+              createClient<TestEvents>({ name: "test" }),
               { name: "Foo" },
               { event: "foo" },
               flowFn
@@ -93,7 +94,7 @@ describe("runFn", () => {
 
           beforeAll(() => {
             fn = new InngestFunction(
-              new Inngest<TestEvents>({ name: "test" }),
+              createClient<TestEvents>({ name: "test" }),
               { name: "Foo" },
               { event: "foo" },
               badFlowFn
