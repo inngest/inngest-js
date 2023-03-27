@@ -257,12 +257,14 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
      * receiving events from the same service, as you can reuse a single
      * definition of Inngest.
      */
-    appNameOrInngest: string | Inngest,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    appNameOrInngest: string | Inngest<any>,
 
     /**
      * An array of the functions to serve and register with Inngest.
      */
-    functions: InngestFunction[],
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    functions: InngestFunction<any, any, any>[],
     {
       inngestRegisterUrl,
       fetch,
