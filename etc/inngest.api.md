@@ -110,8 +110,8 @@ export class Inngest<Events extends Record<string, EventPayload> = Record<string
 export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     constructor(
     frameworkName: string,
-    appNameOrInngest: string | Inngest,
-    functions: InngestFunction[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
+    appNameOrInngest: string | Inngest<any>,
+    functions: InngestFunction<any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
     handler: H,
     transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
@@ -199,8 +199,8 @@ export interface RegisterOptions {
 
 // @public
 export type ServeHandler = (
-nameOrInngest: string | Inngest,
-functions: InngestFunction[],
+nameOrInngest: string | Inngest<any>,
+functions: InngestFunction<any, any, any>[],
 opts?: RegisterOptions) => unknown;
 
 // @public
