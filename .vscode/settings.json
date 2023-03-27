@@ -1,3 +1,4 @@
 {
-  "deno.enablePaths": ["./deno_compat"]
+  "deno.enablePaths": ["./deno_compat"],
+  "typescript.tsdk": "node_modules/typescript/lib"
 }

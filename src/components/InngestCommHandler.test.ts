@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { serve } from "../next";
-import { Inngest } from "./Inngest";
+import { createClient } from "../test/helpers";
 
 describe("#153", () => {
   test('does not throw "type instantiation is excessively deep and possibly infinite" for looping type', () => {
@@ -13,7 +13,7 @@ describe("#153", () => {
     type Literal = z.infer<typeof literalSchema>;
     type Json = Literal | { [key: string]: Json } | Json[];
 
-    const inngest = new Inngest<{
+    const inngest = createClient<{
       foo: {
         name: "foo";
         data: {

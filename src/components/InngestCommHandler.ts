@@ -7,6 +7,7 @@ import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import { allProcessEnv, isProd } from "../helpers/env";
 import { serializeError } from "../helpers/errors";
 import { strBoolean } from "../helpers/scalar";
+import { stringifyUnknown } from "../helpers/strings";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
 import {
@@ -518,7 +519,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         this.upsertSigningKeyFromEnv(env);
 
         const showLandingPage = this.shouldShowLandingPage(
-          env[envKeys.LandingPage]?.toString()
+          stringifyUnknown(env[envKeys.LandingPage])
         );
 
         if (this._isProd || !showLandingPage) {
@@ -532,8 +533,9 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         if (viewRes.isIntrospection) {
           const introspection: IntrospectRequest = {
             ...this.registerBody(this.reqUrl(actions.url)),
-            devServerURL: devServerUrl(env[envKeys.DevServerUrl]?.toString())
-              .href,
+            devServerURL: devServerUrl(
+              stringifyUnknown(env[envKeys.DevServerUrl])
+            ).href,
             hasSigningKey: Boolean(this.signingKey),
           };
 
@@ -563,7 +565,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
         const { status, message } = await this.register(
           this.reqUrl(actions.url),
-          env[envKeys.DevServerUrl]?.toString(),
+          stringifyUnknown(env[envKeys.DevServerUrl]),
           registerRes.deployId
         );
 
@@ -870,7 +872,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
   private upsertSigningKeyFromEnv(env: Record<string, unknown>) {
     if (!this.signingKey && env[envKeys.SigningKey]) {
-      this.signingKey = env[envKeys.SigningKey].toString();
+      this.signingKey = String(env[envKeys.SigningKey]);
     }
   }
 

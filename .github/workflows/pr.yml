@@ -17,16 +17,39 @@ env:
 
 jobs:
   test:
-    name: Test
+    name: Runtime
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        nodeVersion: [14, 16, 18, lts]
+        nodeVersion:
+          - 14
+          - 16
+          - 18
+          - lts
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
       - run: volta run --node ${{ matrix.nodeVersion }} yarn test
+
+  types:
+    name: Types
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tsVersion:
+         - 'latest'
+         - '~5.0.0'
+         - '~4.9.0'
+         - '~4.8.0'
+         - "~4.7.0"
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: yarn prelink
+      - run: yarn add -D typescript@${{ matrix.tsVersion }}
+      - run: yarn test:types
 
   api_diff:
     name: Local API diff

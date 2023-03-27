@@ -4,6 +4,7 @@
 // string in order to read variables.
 
 import { envKeys } from "./consts";
+import { stringifyUnknown } from "./strings";
 
 /**
  * devServerHost returns the dev server host by searching for the INNGEST_DEVSERVER_URL
@@ -31,15 +32,19 @@ export const devServerHost = (): string | undefined => {
   return values.find((a) => !!a);
 };
 
-const prodCheckFns = {
+const prodCheckFns = (<
+  T extends Record<
+    string,
+    (actual: string | undefined, expected: string | undefined) => boolean
+  >
+>(
+  checks: T
+): T => checks)({
   equals: (actual, expected) => actual === expected,
   "starts with": (actual, expected) =>
     expected ? actual?.startsWith(expected) ?? false : false,
   "is truthy": (actual) => Boolean(actual),
-} satisfies Record<
-  string,
-  (actual: string | undefined, expected: string | undefined) => boolean
->;
+});
 
 const prodChecks: [
   key: string,
@@ -65,7 +70,7 @@ export const isProd = (
   env: Record<string, unknown> = allProcessEnv()
 ): boolean => {
   return prodChecks.some(([key, checkKey, expected]) => {
-    return prodCheckFns[checkKey](env[key]?.toString(), expected);
+    return prodCheckFns[checkKey](stringifyUnknown(env[key]), expected);
   });
 };
 
@@ -73,30 +78,20 @@ export const processEnv = (key: string): string | undefined => {
   return allProcessEnv()[key];
 };
 
-declare const Deno: unknown;
+declare const Deno: {
+  env: { toObject: () => Record<string, string | undefined> };
+};
 
 export const allProcessEnv = (): Record<string, string | undefined> => {
   try {
-    if (typeof process === "object" && process && "env" in process) {
-      // eslint-disable-next-line @inngest/process-warn
-      return process.env;
-    }
+    // eslint-disable-next-line @inngest/process-warn
+    return process.env;
   } catch (_err) {
     // noop
   }
 
   try {
-    if (
-      typeof Deno === "object" &&
-      Deno &&
-      "env" in Deno &&
-      typeof Deno.env === "object" &&
-      Deno.env &&
-      "toObject" in Deno.env &&
-      typeof Deno.env.toObject === "function"
-    ) {
-      return Deno.env.toObject() as Record<string, string | undefined>;
-    }
+    return Deno.env.toObject();
   } catch (_err) {
     // noop
   }

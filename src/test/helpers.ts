@@ -4,11 +4,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import fetch from "cross-fetch";
 import type { Request, Response } from "express";
+import { EventPayload, Inngest } from "inngest";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ulid } from "ulid";
 import { z } from "zod";
-import { Inngest } from "../components/Inngest";
+import type { Inngest as InternalInngest } from "../components/Inngest";
 import { ServeHandler } from "../components/InngestCommHandler";
 import { headerKeys } from "../helpers/consts";
 import { version } from "../version";
@@ -27,7 +28,20 @@ const createReqRes = (...args: Parameters<typeof httpMocks.createRequest>) => {
   return [req, res] as [typeof req, typeof res];
 };
 
-const inngest = new Inngest({ name: "test", eventKey: "event-key-123" });
+/**
+ * This is hack to get around the fact that the internal Inngest class exposes
+ * certain methods that aren't exposed outside of the library. This is
+ * exacerbated by the fact that we import from `"inngest"` and use a mapping in
+ * the `tsconfig.json` to point to the local version of the library, which we do
+ * to ensure we can test types against multiple TypeScript versions.
+ */
+export const createClient = <T extends Record<string, EventPayload>>(
+  ...args: ConstructorParameters<typeof InternalInngest>
+): InternalInngest<T> => {
+  return new Inngest(...args) as unknown as InternalInngest<T>;
+};
+
+const inngest = createClient({ name: "test", eventKey: "event-key-123" });
 
 export const testFramework = (
   /**
@@ -513,7 +527,7 @@ export const testFramework = (
 
     describe("POST (run function)", () => {
       describe("signature validation", () => {
-        const client = new Inngest({ name: "test" });
+        const client = createClient({ name: "test" });
 
         const fn = client.createFunction(
           { name: "Test", id: "test" },
