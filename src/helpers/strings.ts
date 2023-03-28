@@ -85,3 +85,17 @@ export const timeStr = (
 
   return timeStr as TimeStr;
 };
+
+/**
+ * Given an unknown input, stringify it if it's a boolean, a number, or a
+ * string, else return `undefined`.
+ */
+export const stringifyUnknown = (input: unknown): string | undefined => {
+  if (
+    typeof input === "boolean" ||
+    typeof input === "number" ||
+    typeof input === "string"
+  ) {
+    return input.toString();
+  }
+};

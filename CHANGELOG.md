@@ -1,5 +1,21 @@
 # inngest
 
+## 1.5.3
+
+### Patch Changes
+
+- 906aca5: INN-1009 Show warnings when using the package with TS versions `<4.7.2` and Node versions `<14`
+
+  This includes tests to assert we appropriately support these versions now and in the future.
+
+- ca7d79e: Detect env vars from Node and Deno in serve handlers (INN-1012)
+
+## 1.5.2
+
+### Patch Changes
+
+- 2d6e0b5: Fix infinite type instantiation using a looping type in serve handlers (thanks for the report, @grempe)
+
 ## 1.5.1
 
 ### Patch Changes

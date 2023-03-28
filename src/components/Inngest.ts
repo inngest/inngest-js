@@ -301,13 +301,11 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       /**
        * Grab our payloads straight from the args.
        */
-      payloads = (
-        Array.isArray(nameOrPayload)
-          ? nameOrPayload
-          : nameOrPayload
-          ? [nameOrPayload]
-          : []
-      ) as typeof payloads;
+      payloads = (Array.isArray(nameOrPayload)
+        ? nameOrPayload
+        : nameOrPayload
+        ? [nameOrPayload]
+        : []) as unknown as typeof payloads;
     }
 
     /**

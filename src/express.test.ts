@@ -1,14 +1,13 @@
-import { Inngest } from "./components/Inngest";
 import { InngestCommHandler } from "./components/InngestCommHandler";
 import * as ExpressHandler from "./express";
-import { testFramework } from "./test/helpers";
+import { createClient, testFramework } from "./test/helpers";
 
 testFramework("Express", ExpressHandler);
 
 describe("InngestCommHandler", () => {
   describe("registerBody", () => {
     it("Includes correct base URL for functions", () => {
-      const client = new Inngest({ name: "test" });
+      const client = createClient({ name: "test" });
 
       const fn = client.createFunction(
         { name: "Test Express Function" },

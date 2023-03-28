@@ -122,7 +122,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     constructor(
     frameworkName: string,
-    appNameOrInngest: string | Inngest,
+    appNameOrInngest: string | Inngest<any>,
     functions: InngestFunction<any, any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
     handler: H,
     transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
@@ -216,7 +216,7 @@ export interface RegisterOptions {
 
 // @public
 export type ServeHandler = (
-nameOrInngest: string | Inngest,
+nameOrInngest: string | Inngest<any>,
 functions: InngestFunction<any, any, any, any>[],
 opts?: RegisterOptions) => unknown;
 

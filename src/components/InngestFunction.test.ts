@@ -1,11 +1,11 @@
+import { EventPayload, EventSchemas } from "inngest";
 import { ServerTiming } from "../helpers/ServerTiming";
-import { ClientOptions, EventPayload, OpStack, StepOpCode } from "../types";
-import { EventSchemas } from "./EventSchemas";
-import { Inngest } from "./Inngest";
+import { ClientOptions, OpStack, StepOpCode } from "../types";
 import { InngestFunction } from "./InngestFunction";
 import { UnhashedOp, _internals } from "./InngestStepTools";
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { jest } from "@jest/globals";
+import { createClient } from "../test/helpers";
 
 type TestEvents = {
   foo: { data: { foo: string } };
@@ -21,7 +21,7 @@ const opts = {
   schemas,
 } satisfies ClientOptions;
 
-const inngest = new Inngest(opts);
+const inngest = createClient(opts);
 
 const timer = new ServerTiming();
 
@@ -29,7 +29,7 @@ describe("#generateID", () => {
   it("Returns a correct name", () => {
     const fn = () =>
       new InngestFunction(
-        new Inngest({ name: "test" }),
+        createClient({ name: "test" }),
         { name: "HELLO 👋 there mr Wolf 🥳!" },
         { event: "test/event.name" },
         () => undefined
@@ -69,7 +69,7 @@ describe("runFn", () => {
 
           beforeAll(async () => {
             fn = new InngestFunction(
-              new Inngest(opts),
+              createClient(opts),
               { name: "Foo" },
               { event: "foo" },
               flowFn
@@ -99,7 +99,7 @@ describe("runFn", () => {
 
           beforeAll(() => {
             fn = new InngestFunction(
-              new Inngest(opts),
+              createClient(opts),
               { name: "Foo" },
               { event: "foo" },
               badFlowFn
@@ -954,7 +954,7 @@ describe("runFn", () => {
   // describe("onFailure functions", () => {
   //   describe("types", () => {
   //     describe("no custom types", () => {
-  //       const inngest = new Inngest({ name: "test" });
+  //       const inngest = createClient({ name: "test" });
 
   //       test("onFailure function has unknown internal event", () => {
   //         inngest.createFunction(
@@ -975,7 +975,7 @@ describe("runFn", () => {
   //     });
 
   //     describe("multiple custom types", () => {
-  //       const inngest = new Inngest<{
+  //       const inngest = createClient<{
   //         foo: {
   //           name: "foo";
   //           data: { title: string };
@@ -1009,7 +1009,7 @@ describe("runFn", () => {
   //     });
 
   //     describe("passed fns have correct types", () => {
-  //       const inngest = new Inngest({ name: "test" });
+  //       const inngest = createClient({ name: "test" });
 
   //       const lib = {
   //         foo: true,
@@ -1053,7 +1053,7 @@ describe("runFn", () => {
   //   });
 
   //   test("specifying an onFailure function registers correctly", () => {
-  //     const inngest = new Inngest<{
+  //     const inngest = createClient<{
   //       foo: {
   //         name: "foo";
   //         data: { title: string };
@@ -1125,7 +1125,7 @@ describe("runFn", () => {
   describe("cancellation", () => {
     describe("types", () => {
       describe("no custom types", () => {
-        const inngest = new Inngest({ name: "test" });
+        const inngest = createClient({ name: "test" });
 
         test("allows any event name", () => {
           inngest.createFunction(
@@ -1152,7 +1152,7 @@ describe("runFn", () => {
       });
 
       describe("multiple custom types", () => {
-        const inngest = new Inngest({
+        const inngest = createClient({
           name: "test",
           schemas: new EventSchemas().fromTypes<{
             foo: {
@@ -1225,7 +1225,7 @@ describe("runFn", () => {
     });
 
     test("specifying a cancellation event registers correctly", () => {
-      const inngest = new Inngest({
+      const inngest = createClient({
         name: "test",
         schemas: new EventSchemas().fromTypes<{
           foo: {

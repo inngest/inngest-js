@@ -1,9 +1,9 @@
+import { EventPayload, EventSchemas } from "inngest";
 import { assertType } from "type-plus";
 import { envKeys } from "../helpers/consts";
 import { IsAny } from "../helpers/types";
-import { EventPayload } from "../types";
-import { EventSchemas } from "./EventSchemas";
-import { eventKeyWarning, Inngest } from "./Inngest";
+import { createClient } from "../test/helpers";
+import { eventKeyWarning } from "./Inngest";
 
 const testEvent: EventPayload = {
   name: "test",
@@ -33,18 +33,18 @@ describe("instantiation", () => {
     });
 
     test("should log a warning if event key not specified", () => {
-      new Inngest({ name: "test" });
+      createClient({ name: "test" });
       expect(warnSpy).toHaveBeenCalledWith(eventKeyWarning);
     });
 
     test("should not log a warning if event key is specified", () => {
-      new Inngest({ name: "test", eventKey: testEventKey });
+      createClient({ name: "test", eventKey: testEventKey });
       expect(warnSpy).not.toHaveBeenCalled();
     });
 
     test("should not log a warning if event key is specified in env", () => {
       process.env[envKeys.EventKey] = testEventKey;
-      new Inngest({ name: "test" });
+      createClient({ name: "test" });
       expect(warnSpy).not.toHaveBeenCalled();
     });
   });
@@ -85,7 +85,7 @@ describe("send", () => {
     });
 
     test("should fail to send if event key not specified at instantiation", async () => {
-      const inngest = new Inngest({ name: "test" });
+      const inngest = createClient({ name: "test" });
 
       await expect(() => inngest.send(testEvent)).rejects.toThrowError(
         "Could not find an event key"
@@ -93,7 +93,7 @@ describe("send", () => {
     });
 
     test("should succeed if event key specified at instantiation", async () => {
-      const inngest = new Inngest({ name: "test", eventKey: testEventKey });
+      const inngest = createClient({ name: "test", eventKey: testEventKey });
 
       await expect(inngest.send(testEvent)).resolves.toBeUndefined();
 
@@ -108,7 +108,7 @@ describe("send", () => {
 
     test("should succeed if event key specified in env", async () => {
       process.env[envKeys.EventKey] = testEventKey;
-      const inngest = new Inngest({ name: "test" });
+      const inngest = createClient({ name: "test" });
 
       await expect(inngest.send(testEvent)).resolves.toBeUndefined();
 
@@ -122,7 +122,7 @@ describe("send", () => {
     });
 
     test("should succeed if event key given at runtime", async () => {
-      const inngest = new Inngest({ name: "test" });
+      const inngest = createClient({ name: "test" });
       inngest.setEventKey(testEventKey);
 
       await expect(inngest.send(testEvent)).resolves.toBeUndefined();
@@ -137,7 +137,7 @@ describe("send", () => {
     });
 
     test("should succeed if an event name is given with an empty list of payloads", async () => {
-      const inngest = new Inngest({ name: "test" });
+      const inngest = createClient({ name: "test" });
       inngest.setEventKey(testEventKey);
 
       await expect(inngest.send("test", [])).resolves.toBeUndefined();
@@ -145,7 +145,7 @@ describe("send", () => {
     });
 
     test("should succeed if an empty list of payloads is given", async () => {
-      const inngest = new Inngest({ name: "test" });
+      const inngest = createClient({ name: "test" });
       inngest.setEventKey(testEventKey);
 
       await expect(inngest.send([])).resolves.toBeUndefined();
@@ -155,7 +155,7 @@ describe("send", () => {
 
   describe("types", () => {
     describe("no custom types", () => {
-      const inngest = new Inngest({ name: "test", eventKey: testEventKey });
+      const inngest = createClient({ name: "test", eventKey: testEventKey });
 
       test("allows sending a single event with a string", () => {
         const _fn = () => inngest.send("anything", { data: "foo" });
@@ -175,7 +175,7 @@ describe("send", () => {
     });
 
     describe("multiple custom types", () => {
-      const inngest = new Inngest({
+      const inngest = createClient({
         name: "test",
         eventKey: testEventKey,
         schemas: new EventSchemas().fromTypes<{
@@ -261,7 +261,7 @@ describe("send", () => {
 describe("createFunction", () => {
   describe("types", () => {
     describe("no custom types", () => {
-      const inngest = new Inngest({ name: "test" });
+      const inngest = createClient({ name: "test" });
 
       test("allows name to be a string", () => {
         inngest.createFunction("test", { event: "test" }, ({ event }) => {
@@ -336,7 +336,7 @@ describe("createFunction", () => {
     });
 
     describe("multiple custom types", () => {
-      const inngest = new Inngest({
+      const inngest = createClient({
         name: "test",
         schemas: new EventSchemas().fromTypes<{
           foo: {
