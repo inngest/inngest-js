@@ -1,12 +1,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import { EventSchemas, EventsFromOpts } from "@local";
+import { TickOp, createStepTools } from "@local/components/InngestStepTools";
+import { ClientOptions, StepOpCode } from "@local/types";
 import ms from "ms";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
-import { ClientOptions, StepOpCode } from "../types";
-import { EventSchemas } from "./EventSchemas";
-import { EventsFromOpts } from "./Inngest";
-import { TickOp, createStepTools } from "./InngestStepTools";
 
 describe("waitForEvent", () => {
   const client = createClient({ name: "test" });
@@ -302,7 +301,10 @@ describe("sendEvent", () => {
         };
       }>();
 
-      const opts = { name: "", schemas } satisfies ClientOptions;
+      const opts = (<T extends ClientOptions>(x: T): T => x)({
+        name: "",
+        schemas,
+      });
 
       const sendEvent: ReturnType<
         typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">

@@ -46,6 +46,9 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
 }
 
 // @public
+export type EventsFromOpts<TOpts extends ClientOptions> = TOpts["schemas"] extends EventSchemas<infer U> ? U : Record<string, EventPayload>;
+
+// @public
 export type FailureEventArgs<P extends EventPayload = EventPayload> = {
     event: FailureEventPayload<P>;
     err: FailureEventPayload<P>["data"]["error"];
@@ -106,7 +109,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     }), trigger: TTrigger, handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
     readonly inngestBaseUrl: URL;
     readonly name: string;
-    // Warning: (ae-forgotten-export) The symbol "EventsFromOpts" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "PartialK" needs to be exported by the entry point index.d.ts
     send<Event extends keyof EventsFromOpts<TOpts>>(name: Event, payload: SingleOrArray<PartialK<Omit<EventsFromOpts<TOpts>[Event], "name" | "v">, "ts">>): Promise<void>;

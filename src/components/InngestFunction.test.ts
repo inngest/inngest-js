@@ -1,8 +1,11 @@
-import { EventPayload, EventSchemas } from "inngest";
-import { ServerTiming } from "../helpers/ServerTiming";
-import { ClientOptions, OpStack, StepOpCode } from "../types";
-import { InngestFunction } from "./InngestFunction";
-import { UnhashedOp, _internals } from "./InngestStepTools";
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import { EventPayload, EventSchemas } from "@local";
+import { InngestFunction } from "@local/components/InngestFunction";
+import { UnhashedOp, _internals } from "@local/components/InngestStepTools";
+import { ServerTiming } from "@local/helpers/ServerTiming";
+import { ClientOptions, OpStack, StepOpCode } from "@local/types";
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { jest } from "@jest/globals";
 import { createClient } from "../test/helpers";
@@ -15,11 +18,11 @@ type TestEvents = {
 
 const schemas = new EventSchemas().fromTypes<TestEvents>();
 
-const opts = {
+const opts = (<T extends ClientOptions>(x: T): T => x)({
   name: "test",
   eventKey: "event-key-123",
   schemas,
-} satisfies ClientOptions;
+});
 
 const inngest = createClient(opts);
 

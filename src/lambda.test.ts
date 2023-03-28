@@ -1,5 +1,5 @@
+import * as LambdaHandler from "@local/lambda";
 import type { APIGatewayProxyResult } from "aws-lambda";
-import * as LambdaHandler from "./lambda";
 import { testFramework } from "./test/helpers";
 
 testFramework("AWS Lambda", LambdaHandler, {

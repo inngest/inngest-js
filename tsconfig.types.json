@@ -3,7 +3,8 @@
   "include": ["dist/**/*", "src/**/*.test.ts"],
   "compilerOptions": {
     "paths": {
-      "inngest": ["./dist"]
+      "@local": ["./dist"],
+      "@local/*": ["./dist/*"]
     }
   }
 }

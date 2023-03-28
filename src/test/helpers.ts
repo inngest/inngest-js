@@ -2,17 +2,16 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
+import { Inngest } from "@local";
+import { ServeHandler } from "@local/components/InngestCommHandler";
+import { headerKeys } from "@local/helpers/consts";
+import { version } from "@local/version";
 import fetch from "cross-fetch";
 import type { Request, Response } from "express";
-import { Inngest } from "inngest";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ulid } from "ulid";
 import { z } from "zod";
-import type { Inngest as InternalInngest } from "../components/Inngest";
-import { ServeHandler } from "../components/InngestCommHandler";
-import { headerKeys } from "../helpers/consts";
-import { version } from "../version";
 
 interface HandlerStandardReturn {
   status: number;
@@ -35,14 +34,12 @@ const createReqRes = (...args: Parameters<typeof httpMocks.createRequest>) => {
  * the `tsconfig.json` to point to the local version of the library, which we do
  * to ensure we can test types against multiple TypeScript versions.
  */
-export const createClient = <
-  T extends ConstructorParameters<typeof InternalInngest>
->(
+export const createClient = <T extends ConstructorParameters<typeof Inngest>>(
   ...args: T
-): InternalInngest<T["0"]> => {
+): Inngest<T["0"]> => {
   return new Inngest(
-    ...(args as ConstructorParameters<typeof InternalInngest>)
-  ) as unknown as InternalInngest<T["0"]>;
+    ...(args as ConstructorParameters<typeof Inngest>)
+  ) as unknown as Inngest<T["0"]>;
 };
 
 const inngest = createClient({ name: "test", eventKey: "event-key-123" });

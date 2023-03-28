@@ -32,6 +32,12 @@ export const eventKeyWarning =
 export const eventKeyError =
   "Could not find an event key to send events. Please pass one to the constructor, set the INNGEST_EVENT_KEY environment variable, or use inngest.setEventKey() at runtime.";
 
+/**
+ * Given a set of client options for Inngest, return the event types that can
+ * be sent or received.
+ *
+ * @public
+ */
 export type EventsFromOpts<TOpts extends ClientOptions> =
   TOpts["schemas"] extends EventSchemas<infer U>
     ? U
