@@ -1,6 +1,11 @@
-import { envKeys } from "../helpers/consts";
+import { envKeys, headerKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
-import { devServerHost, isProd, processEnv } from "../helpers/env";
+import {
+  devServerHost,
+  getBranchName,
+  isProd,
+  processEnv,
+} from "../helpers/env";
 import type {
   PartialK,
   SendEventPayload,
@@ -83,6 +88,8 @@ export class Inngest<
 
   private readonly fetch: FetchT;
 
+  private readonly env: string | undefined;
+
   /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
@@ -111,6 +118,7 @@ export class Inngest<
     eventKey,
     inngestBaseUrl = "https://inn.gs/",
     fetch,
+    env,
   }: ClientOptions) {
     if (!name) {
       throw new Error("A name must be passed to create an Inngest instance.");
@@ -130,6 +138,11 @@ export class Inngest<
     };
 
     this.fetch = Inngest.parseFetch(fetch);
+
+    this.env = env || getBranchName();
+    if (this.env) {
+      this.headers[headerKeys.Environment] = this.env;
+    }
   }
 
   /**

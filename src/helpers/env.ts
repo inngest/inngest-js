@@ -74,6 +74,24 @@ export const isProd = (
   });
 };
 
+/**
+ * getBranchName returns the suspected branch name for this environment by
+ * searching through a set of common environment variables.
+ */
+export const getBranchName = (
+  env: Record<string, string | undefined> = allProcessEnv()
+): string | undefined => {
+  /**
+   * Order is important; more than one of these env vars may be set, so ensure
+   * that we check the most specific, most reliable env vars first.
+   */
+  return (
+    env[envKeys.Environment] ||
+    env[envKeys.BranchName] ||
+    env[envKeys.VercelGitCommitRef]
+  );
+};
+
 export const processEnv = (key: string): string | undefined => {
   return allProcessEnv()[key];
 };

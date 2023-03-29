@@ -8,6 +8,7 @@ import { Jsonify } from 'type-fest';
 
 // @public
 export interface ClientOptions {
+    env?: string;
     eventKey?: string;
     fetch?: typeof fetch;
     inngestBaseUrl?: string;
@@ -77,6 +78,8 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
 // @public
 export enum headerKeys {
     // (undocumented)
+    Environment = "x-inngest-env",
+    // (undocumented)
     SdkVersion = "x-inngest-sdk",
     // (undocumented)
     Signature = "x-inngest-signature"
@@ -84,7 +87,7 @@ export enum headerKeys {
 
 // @public
 export class Inngest<Events extends Record<string, EventPayload> = Record<string, EventPayload>> {
-    constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
+    constructor({ name, eventKey, inngestBaseUrl, fetch, env, }: ClientOptions);
     // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
