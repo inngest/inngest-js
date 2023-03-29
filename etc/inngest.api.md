@@ -201,7 +201,19 @@ export interface RegisterOptions {
 export type ServeHandler = (
 nameOrInngest: string | Inngest<any>,
 functions: InngestFunction<any, any, any>[],
-opts?: RegisterOptions) => unknown;
+opts?: RegisterOptions
+/**
+* This `any` return is appropriate.
+*
+* While we can infer the signature of the returned value, we cannot guarantee
+* that we have used the same types as the framework we are integrating with,
+* which sometimes can cause frustrating collisions for a user that result in
+* `as unknown as X` casts.
+*
+* Instead, we will use `any` here and have the user be able to place it
+* anywhere they need.
+*/
+) => any;
 
 // @public
 export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${`${number}h` | ""}${`${number}m` | ""}${`${number}s` | ""}`;
