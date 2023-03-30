@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["dist/**/*", "src/**/*.test.ts"],
+  "compilerOptions": {
+    "paths": {
+      "inngest": ["./dist"]
+    }
+  }
+}

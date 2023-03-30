@@ -1,31 +1,43 @@
 import {
   InngestCommHandler,
   ServeHandler,
-} from "../components/InngestCommHandler";
-import { headerKeys, queryKeys } from "../helpers/consts";
+} from "./components/InngestCommHandler";
+import { headerKeys, queryKeys } from "./helpers/consts";
 
 /**
- * With Deno's Fresh framework, serve and register any declared functions with
- * Inngest, making them available to be triggered by events.
+ * In an edge runtime, serve and register any declared functions with Inngest,
+ * making them available to be triggered by events.
  *
- * @public
+ * The edge runtime is a generic term for any serverless runtime that supports
+ * only standard Web APIs such as `fetch`, `Request`, and `Response`, such as
+ * Cloudflare Workers, Vercel Edge Functions, and AWS Lambda@Edge.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/edge";
+ * import fns from "~/inngest";
+ *
+ * export const handler = serve("My Edge App", fns);
+ * ```
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
   const handler = new InngestCommHandler(
-    "deno/fresh",
+    "edge",
     nameOrInngest,
     fns,
-    opts,
-    (req: Request, env: { [index: string]: string }) => {
+    {
+      fetch: fetch.bind(globalThis),
+      ...opts,
+    },
+    (req: Request) => {
       const url = new URL(req.url, `https://${req.headers.get("host") || ""}`);
 
       return {
         url,
-        env,
         register: () => {
           if (req.method === "PUT") {
             return {
-              deployId: url.searchParams.get(queryKeys.DeployId),
+              deployId: url.searchParams.get(queryKeys.DeployId) as string,
             };
           }
         },
@@ -35,7 +47,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
               data: (await req.json()) as Record<string, unknown>,
               fnId: url.searchParams.get(queryKeys.FnId) as string,
               stepId: url.searchParams.get(queryKeys.StepId) as string,
-              signature: req.headers.get(headerKeys.Signature) || undefined,
+              signature: req.headers.get(headerKeys.Signature) as string,
             };
           }
         },
@@ -51,9 +63,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
     ({ body, status, headers }): Response => {
       return new Response(body, { status, headers });
     }
-  ).createHandler();
+  );
 
-  return (req: Request) => handler(req, Deno.env.toObject());
+  return handler.createHandler();
 };
-
-declare const Deno: { env: { toObject: () => { [index: string]: string } } };

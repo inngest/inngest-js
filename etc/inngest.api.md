@@ -112,8 +112,8 @@ export class Inngest<Events extends Record<string, EventPayload> = Record<string
 export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     constructor(
     frameworkName: string,
-    appNameOrInngest: string | Inngest,
-    functions: InngestFunction[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
+    appNameOrInngest: string | Inngest<any>,
+    functions: InngestFunction<any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
     handler: H,
     transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
@@ -201,9 +201,21 @@ export interface RegisterOptions {
 
 // @public
 export type ServeHandler = (
-nameOrInngest: string | Inngest,
-functions: InngestFunction[],
-opts?: RegisterOptions) => unknown;
+nameOrInngest: string | Inngest<any>,
+functions: InngestFunction<any, any, any>[],
+opts?: RegisterOptions
+/**
+* This `any` return is appropriate.
+*
+* While we can infer the signature of the returned value, we cannot guarantee
+* that we have used the same types as the framework we are integrating with,
+* which sometimes can cause frustrating collisions for a user that result in
+* `as unknown as X` casts.
+*
+* Instead, we will use `any` here and have the user be able to place it
+* anywhere they need.
+*/
+) => any;
 
 // @public
 export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${`${number}h` | ""}${`${number}m` | ""}${`${number}s` | ""}`;

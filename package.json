@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "1.4.1",
+  "version": "1.5.4",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -21,6 +21,7 @@
     "build": "yarn run clean && tsc --project tsconfig.build.json",
     "test": "node --expose-gc --max-old-space-size=4096 ./node_modules/.bin/jest --silent --logHeapUsage --maxWorkers=8 --coverage --ci --verbose",
     "test:examples": "node --expose-gc --max-old-space-size=4096 ./node_modules/.bin/jest --logHeapUsage --maxWorkers=8 --testMatch \"**/examples/**/*.test.ts\" --ci --verbose",
+    "test:types": "tsc --noEmit --project tsconfig.types.json",
     "clean": "rm -rf ./dist",
     "lint": "eslint .",
     "postversion": "yarn run build && yarn run build:copy",
@@ -95,5 +96,11 @@
   "volta": {
     "node": "18.12.1",
     "yarn": "1.22.19"
+  },
+  "peerDependencies": {
+    "typescript": ">=4.7.2"
+  },
+  "engines": {
+    "node": ">=14"
   }
 }

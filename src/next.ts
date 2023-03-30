@@ -4,7 +4,7 @@ import {
   ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
-import { allProcessEnv } from "./helpers/env";
+import { processEnv } from "./helpers/env";
 
 /**
  * In Next.js, serve and register any declared functions with Inngest, making
@@ -19,24 +19,18 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
     fns,
     opts,
     (req: NextApiRequest, _res: NextApiResponse) => {
-      const env = allProcessEnv();
-      const scheme = env.NODE_ENV === "development" ? "http" : "https";
+      const scheme =
+        processEnv("NODE_ENV") === "development" ? "http" : "https";
       const url = new URL(
         req.url as string,
         `${scheme}://${req.headers.host || ""}`
       );
-      const isProduction =
-        env.VERCEL_ENV === "production" ||
-        env.CONTEXT === "production" ||
-        env.ENVIRONMENT === "production";
 
       return {
+        url,
         register: () => {
           if (req.method === "PUT") {
             return {
-              env,
-              url,
-              isProduction,
               deployId: req.query[queryKeys.DeployId]?.toString(),
             };
           }
@@ -47,9 +41,6 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
               data: req.body as Record<string, unknown>,
               fnId: req.query[queryKeys.FnId] as string,
               stepId: req.query[queryKeys.StepId] as string,
-              env,
-              isProduction,
-              url,
               signature: req.headers[headerKeys.Signature] as string,
             };
           }
@@ -57,13 +48,10 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         view: () => {
           if (req.method === "GET") {
             return {
-              env,
               isIntrospection: Object.hasOwnProperty.call(
                 req.query,
                 queryKeys.Introspect
               ),
-              url,
-              isProduction,
             };
           }
         },

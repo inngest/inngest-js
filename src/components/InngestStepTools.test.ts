@@ -2,12 +2,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import ms from "ms";
 import { assertType } from "type-plus";
+import { createClient } from "../test/helpers";
 import { StepOpCode } from "../types";
-import { Inngest } from "./Inngest";
 import { createStepTools, TickOp } from "./InngestStepTools";
 
 describe("waitForEvent", () => {
-  const client = new Inngest({ name: "test" });
+  const client = createClient({ name: "test" });
   let waitForEvent: ReturnType<typeof createStepTools>[0]["waitForEvent"];
   let state: ReturnType<typeof createStepTools>[1];
   let getOp: () => TickOp | undefined;
@@ -89,7 +89,7 @@ describe("waitForEvent", () => {
 });
 
 describe("run", () => {
-  const client = new Inngest({ name: "test" });
+  const client = createClient({ name: "test" });
   let run: ReturnType<typeof createStepTools>[0]["run"];
   let state: ReturnType<typeof createStepTools>[1];
   let getOp: () => TickOp | undefined;
@@ -158,7 +158,7 @@ describe("run", () => {
 });
 
 describe("sleep", () => {
-  const client = new Inngest({ name: "test" });
+  const client = createClient({ name: "test" });
   let sleep: ReturnType<typeof createStepTools>[0]["sleep"];
   let state: ReturnType<typeof createStepTools>[1];
   let getOp: () => TickOp | undefined;
@@ -184,7 +184,7 @@ describe("sleep", () => {
 });
 
 describe("sleepUntil", () => {
-  const client = new Inngest({ name: "test" });
+  const client = createClient({ name: "test" });
   let sleepUntil: ReturnType<typeof createStepTools>[0]["sleepUntil"];
   let state: ReturnType<typeof createStepTools>[1];
   let getOp: () => TickOp | undefined;
@@ -241,7 +241,7 @@ describe("sleepUntil", () => {
 
 describe("sendEvent", () => {
   describe("runtime", () => {
-    const client = new Inngest({ name: "test" });
+    const client = createClient({ name: "test" });
     let sendEvent: ReturnType<typeof createStepTools>[0]["sendEvent"];
     let state: ReturnType<typeof createStepTools>[1];
     let getOp: () => TickOp | undefined;

@@ -1,5 +1,40 @@
 # inngest
 
+## 1.5.4
+
+### Patch Changes
+
+- 071fe89: INN-1054 Ensure serve handlers return `any` instead of `unknown` so that they don't needlessly conflict with user types
+
+## 1.5.3
+
+### Patch Changes
+
+- 906aca5: INN-1009 Show warnings when using the package with TS versions `<4.7.2` and Node versions `<14`
+
+  This includes tests to assert we appropriately support these versions now and in the future.
+
+- ca7d79e: Detect env vars from Node and Deno in serve handlers (INN-1012)
+
+## 1.5.2
+
+### Patch Changes
+
+- 2d6e0b5: Fix infinite type instantiation using a looping type in serve handlers (thanks for the report, @grempe)
+
+## 1.5.1
+
+### Patch Changes
+
+- 0836145: Refactor `InngestCommHandler` to better detect env and reduce duplication (INN-997)
+
+## 1.5.0
+
+### Minor Changes
+
+- ac81320: Add `"inngest/lambda"` serve handler for AWS Lambda environments
+- f73a346: Add `"inngest/edge"` serve handler for use in v8 edge runtimes
+
 ## 1.4.1
 
 ### Patch Changes
