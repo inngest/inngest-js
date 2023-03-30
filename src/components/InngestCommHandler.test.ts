@@ -1,6 +1,9 @@
+import { assertType } from "type-plus";
 import { z } from "zod";
+import { IsAny } from "../helpers/types";
 import { serve } from "../next";
 import { createClient } from "../test/helpers";
+import { ServeHandler } from "./InngestCommHandler";
 
 describe("#153", () => {
   test('does not throw "type instantiation is excessively deep and possibly infinite" for looping type', () => {
@@ -27,5 +30,11 @@ describe("#153", () => {
      * "Type instantiation is excessively deep and possibly infinite.ts(2589)"
      */
     serve(inngest, []);
+  });
+});
+
+describe("ServeHandler", () => {
+  test("serve handlers return any", () => {
+    assertType<IsAny<ReturnType<ServeHandler>>>(true);
   });
 });

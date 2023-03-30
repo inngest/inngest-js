@@ -69,7 +69,19 @@ export type ServeHandler = (
    * functions.
    */
   opts?: RegisterOptions
-) => unknown;
+  /**
+   * This `any` return is appropriate.
+   *
+   * While we can infer the signature of the returned value, we cannot guarantee
+   * that we have used the same types as the framework we are integrating with,
+   * which sometimes can cause frustrating collisions for a user that result in
+   * `as unknown as X` casts.
+   *
+   * Instead, we will use `any` here and have the user be able to place it
+   * anywhere they need.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+) => any;
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.

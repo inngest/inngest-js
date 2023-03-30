@@ -1,5 +1,11 @@
 # inngest
 
+## 1.5.4
+
+### Patch Changes
+
+- 071fe89: INN-1054 Ensure serve handlers return `any` instead of `unknown` so that they don't needlessly conflict with user types
+
 ## 1.5.3
 
 ### Patch Changes
