@@ -88,7 +88,11 @@ export const getBranchName = (
   return (
     env[envKeys.Environment] ||
     env[envKeys.BranchName] ||
-    env[envKeys.VercelGitCommitRef]
+    env[envKeys.VercelBranch] ||
+    env[envKeys.NetlifyBranch] ||
+    env[envKeys.CloudflarePagesBranch] ||
+    env[envKeys.RenderBranch] ||
+    env[envKeys.RailwayBranch]
   );
 };
 

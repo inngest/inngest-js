@@ -28,7 +28,36 @@ export enum envKeys {
    *
    * {@link https://vercel.com/docs/concepts/projects/environment-variables/system-environment-variables#system-environment-variables}
    */
-  VercelGitCommitRef = "VERCEL_GIT_COMMIT_REF",
+  VercelBranch = "VERCEL_GIT_COMMIT_REF",
+
+  /**
+   * The branch name of the current deployment. May only be accessible at build
+   * time, but included here just in case.
+   *
+   * {@link https://developers.cloudflare.com/pages/platform/build-configuration/#environment-variables}
+   */
+  CloudflarePagesBranch = "CF_PAGES_BRANCH",
+
+  /**
+   * The branch name of the deployment from Git to Netlify, if available.
+   *
+   * {@link https://docs.netlify.com/configure-builds/environment-variables/#git-metadata}
+   */
+  NetlifyBranch = "BRANCH",
+
+  /**
+   * The Git branch for a service or deploy.
+   *
+   * {@link https://render.com/docs/environment-variables#all-services}
+   */
+  RenderBranch = "RENDER_GIT_BRANCH",
+
+  /**
+   * The branch that triggered the deployment. Example: `main`
+   *
+   * {@link https://docs.railway.app/develop/variables#railway-provided-variables}
+   */
+  RailwayBranch = "RAILWAY_GIT_BRANCH",
 }
 
 export enum prodEnvKeys {
