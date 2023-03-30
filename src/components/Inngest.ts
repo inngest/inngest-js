@@ -1,11 +1,6 @@
 import { envKeys, headerKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
-import {
-  devServerHost,
-  getBranchName,
-  isProd,
-  processEnv,
-} from "../helpers/env";
+import { devServerHost, isProd, processEnv } from "../helpers/env";
 import type {
   PartialK,
   SendEventPayload,
@@ -139,7 +134,7 @@ export class Inngest<
 
     this.fetch = Inngest.parseFetch(fetch);
 
-    this.env = env || getBranchName();
+    this.env = env || undefined;
     if (this.env) {
       this.headers[headerKeys.Environment] = this.env;
     }
