@@ -98,3 +98,12 @@ export const allProcessEnv = (): Record<string, string | undefined> => {
 
   return {};
 };
+
+declare const EdgeRuntime: string | undefined;
+
+/**
+ * Tries to detect whether this is running in an Edge runtime.
+ */
+export const isEdgeRuntime = (): boolean => {
+  return typeof EdgeRuntime === "string";
+};
