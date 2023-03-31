@@ -33,7 +33,7 @@ export interface EventPayload {
 // @public
 export type FailureEventArgs<P extends EventPayload = EventPayload> = {
     event: FailureEventPayload<P>;
-    err: FailureEventPayload<P>["data"]["error"];
+    error: Error;
 };
 
 // @public
@@ -43,8 +43,9 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
         function_id: string;
         run_id: string;
         error: {
+            name: string;
             message: string;
-            stack?: string;
+            stack: string;
             cause?: string;
             status?: number;
         };
@@ -92,6 +93,7 @@ export class Inngest<Events extends Record<string, EventPayload> = Record<string
     // (undocumented)
     createFunction<TFns extends Record<string, unknown>, TTrigger extends TriggerOptions<keyof Events & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof Events & string = EventNameFromTrigger<Events, TTrigger>>(nameOrOpts: string | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
         fns?: TFns;
+        onFailure?: Handler<Events, TTriggerName, TShimmedFns, FailureEventArgs<Events[TTriggerName]>>;
     }), trigger: TTrigger, handler: Handler<Events, TTriggerName, TShimmedFns>): InngestFunction;
     readonly inngestBaseUrl: URL;
     readonly name: string;
