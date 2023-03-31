@@ -51,7 +51,7 @@ export type EventsFromOpts<TOpts extends ClientOptions> = TOpts["schemas"] exten
 // @public
 export type FailureEventArgs<P extends EventPayload = EventPayload> = {
     event: FailureEventPayload<P>;
-    err: FailureEventPayload<P>["data"]["error"];
+    error: Error;
 };
 
 // @public
@@ -106,6 +106,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     // (undocumented)
     createFunction<TFns extends Record<string, unknown>, TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof EventsFromOpts<TOpts> & string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>>(nameOrOpts: string | (Omit<FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>, "fns" | "onFailure"> & {
         fns?: TFns;
+        onFailure?: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>>;
     }), trigger: TTrigger, handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
     readonly inngestBaseUrl: URL;
     readonly name: string;
@@ -220,7 +221,19 @@ export interface RegisterOptions {
 export type ServeHandler = (
 nameOrInngest: string | Inngest<any>,
 functions: InngestFunction<any, any, any, any>[],
-opts?: RegisterOptions) => unknown;
+opts?: RegisterOptions
+/**
+* This `any` return is appropriate.
+*
+* While we can infer the signature of the returned value, we cannot guarantee
+* that we have used the same types as the framework we are integrating with,
+* which sometimes can cause frustrating collisions for a user that result in
+* `as unknown as X` casts.
+*
+* Instead, we will use `any` here and have the user be able to place it
+* anywhere they need.
+*/
+) => any;
 
 // @public
 export type StandardEventSchemas = Record<string, {
@@ -250,7 +263,7 @@ export type ZodEventSchemas = Record<string, {
 
 // Warnings were encountered during analysis:
 //
-// src/types.ts:30:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:31:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

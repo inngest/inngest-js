@@ -11,6 +11,7 @@ import type {
 } from "./helpers/types";
 
 export const failureEventErrorSchema = z.object({
+  name: z.string(),
   message: z.string(),
   stack: z.string().optional(),
   cause: z.string().optional(),
@@ -46,7 +47,7 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
   /**
    * The final error that caused this function to exhaust all retries.
    */
-  err: FailureEventPayload<P>["data"]["error"];
+  error: Error;
 };
 
 /**
@@ -715,7 +716,7 @@ export type Cancellation<
 export type StepRunResponse =
   | {
       status: 500;
-      error?: string;
+      error?: unknown;
     }
   | {
       status: 200;

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import { internalEvents, queryKeys } from "../helpers/consts";
-import { serializeError } from "../helpers/errors";
+import { deserializeError, serializeError } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { slugify, timeStr } from "../helpers/strings";
 import {
@@ -170,7 +170,7 @@ export class InngestFunction<
         triggers: [
           {
             event: internalEvents.FunctionFailed,
-            expression: `async.data.function_id == '${fnId}'`,
+            expression: `event.data.function_id == '${fnId}'`,
           },
         ],
         steps: {
@@ -287,9 +287,9 @@ export class InngestFunction<
         .object({ error: failureEventErrorSchema })
         .parse(fnArg.event?.data);
 
-      (fnArg as Partial<Pick<FailureEventArgs, "err">>) = {
+      (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
         ...fnArg,
-        err: eventData.error,
+        error: deserializeError(eventData.error),
       };
     }
 

@@ -11,6 +11,7 @@ import type {
   ClientOptions,
   EventNameFromTrigger,
   EventPayload,
+  FailureEventArgs,
   FunctionOptions,
   FunctionTrigger,
   Handler,
@@ -403,17 +404,20 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
           fns?: TFns;
 
           /**
-           * Leaving commented out; the feature can be added in a small PR
-           * when ready.
+           * Provide a function to be called if your function fails, meaning
+           * that it ran out of retries and was unable to complete successfully.
            *
-           * TODO Add user-facing comments here.
+           * This is useful for sending warning notifications or cleaning up
+           * after a failure and supports all the same functionality as a
+           * regular handler.
            */
-          // onFailure?: Handler<
-          //   Events,
-          //   TTriggerName,
-          //   TShimmedFns,
-          //   FailureEventArgs<Events[TTriggerName]>
-          // >;
+          onFailure?: Handler<
+            TOpts,
+            EventsFromOpts<TOpts>,
+            TTriggerName,
+            TShimmedFns,
+            FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
+          >;
         }),
     trigger: TTrigger,
     handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns>
@@ -423,8 +427,12 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     FunctionTrigger<keyof EventsFromOpts<TOpts> & string>,
     FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>
   > {
-    const sanitizedOpts =
-      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts;
+    const sanitizedOpts = (
+      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts
+    ) as FunctionOptions<
+      EventsFromOpts<TOpts>,
+      keyof EventsFromOpts<TOpts> & string
+    >;
 
     return new InngestFunction(
       this,
