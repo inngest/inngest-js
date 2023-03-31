@@ -4,7 +4,7 @@ import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
-import { allProcessEnv, isProd } from "../helpers/env";
+import { allProcessEnv, isEdgeRuntime, isProd } from "../helpers/env";
 import { serializeError } from "../helpers/errors";
 import { strBoolean } from "../helpers/scalar";
 import { stringifyUnknown } from "../helpers/strings";
@@ -239,6 +239,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    */
   protected readonly logLevel: LogLevel;
 
+  protected readonly allowEdgeStreaming: boolean;
+
   /**
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
@@ -286,6 +288,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       signingKey,
       serveHost,
       servePath,
+      allowEdgeStreaming,
     }: RegisterOptions = {},
 
     /**
@@ -396,6 +399,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     this.serveHost = serveHost;
     this.servePath = servePath;
     this.logLevel = logLevel;
+    this.allowEdgeStreaming = allowEdgeStreaming ?? true;
 
     this.headers = {
       "Content-Type": "application/json",
@@ -458,14 +462,93 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
        * async.
        */
       // eslint-disable-next-line @typescript-eslint/await-thenable
-      const actions = await timer.wrap("handler", () => this.handler(...args));
+      const rawActions = await timer.wrap("handler", () =>
+        this.handler(...args)
+      );
 
-      const actionRes = await timer.wrap("action", () =>
+      /**
+       * For each function within the actions returned, ensure that its value
+       * caches when run. This ensures that the function is only run once, even
+       * if it's called multiple times throughout this handler's invocation.
+       *
+       * Many frameworks have issues with multiple calls to req/res objects;
+       * reading a request's body multiple times is a common example. This makes
+       * sure to handle this without having to pass around references.
+       */
+      const actions = Object.fromEntries(
+        Object.entries(rawActions).map(([key, val]) => [
+          key,
+          typeof val === "function" ? cacheFn(val) : val,
+        ])
+      ) as typeof rawActions;
+
+      /**
+       * TODO Allow trailing header ONLY IF the incoming request allows it
+       */
+      const getHeaders = () => ({
+        [headerKeys.SdkVersion]: this.sdkHeader.join(""),
+        "Server-Timing": timer.getHeader(),
+      });
+
+      const actionRes = timer.wrap("action", () =>
         this.handleAction(actions as ReturnType<Awaited<H>>, timer)
       );
 
-      return timer.wrap("res", () => this.transformRes(actionRes, ...args));
+      let res: ActionResponse | undefined;
+
+      if (this.allowEdgeStreaming && isEdgeRuntime()) {
+        const runRes = await actions.run();
+        if (runRes) {
+          const { stream, finalize } = await this.createStream();
+          /**
+           * Is it okay if this throws?
+           */
+          void actionRes.then(finalize);
+          res = { status: 200, body: stream, headers: getHeaders() };
+        }
+      }
+
+      return timer.wrap("res", async () =>
+        this.transformRes(
+          res ?? {
+            ...(await actionRes),
+            headers: {
+              ...getHeaders(),
+              ...(await actionRes).headers,
+            },
+          },
+          ...args
+        )
+      );
     };
+  }
+
+  private createStream(
+    heartbeatInterval = 3000
+  ): Promise<{ finalize: (data: unknown) => void; stream: ReadableStream }> {
+    return new Promise((resolve, reject) => {
+      try {
+        const stream = new ReadableStream({
+          start(controller) {
+            const encoder = new TextEncoder();
+
+            const heartbeat = setInterval(() => {
+              controller.enqueue(encoder.encode(" "));
+            }, heartbeatInterval);
+
+            const finalize = (data: unknown) => {
+              clearInterval(heartbeat);
+              controller.enqueue(encoder.encode(JSON.stringify(data)));
+              controller.close();
+            };
+
+            resolve({ stream, finalize });
+          },
+        });
+      } catch (err) {
+        reject(err);
+      }
+    });
   }
 
   /**
@@ -483,11 +566,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     actions: ReturnType<H>,
     timer: ServerTiming
   ): Promise<ActionResponse> {
-    const getHeaders = () => ({
-      [headerKeys.SdkVersion]: this.sdkHeader.join(""),
-      "Server-Timing": timer.getHeader(),
-    });
-
     const env = actions.env ?? allProcessEnv();
     this._isProd = actions.isProduction ?? isProd(env);
 
@@ -510,7 +588,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
             status: stepRes.status,
             body: stepRes.error || "",
             headers: {
-              ...getHeaders(),
               "Content-Type": "application/json",
             },
           };
@@ -520,7 +597,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status: stepRes.status,
           body: JSON.stringify(stepRes.body),
           headers: {
-            ...getHeaders(),
             "Content-Type": "application/json",
           },
         };
@@ -538,7 +614,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           return {
             status: 405,
             body: "",
-            headers: getHeaders(),
+            headers: {},
           };
         }
 
@@ -555,7 +631,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
             status: 200,
             body: JSON.stringify(introspection),
             headers: {
-              ...getHeaders(),
               "Content-Type": "application/json",
             },
           };
@@ -565,7 +640,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status: 200,
           body: landing,
           headers: {
-            ...getHeaders(),
             "Content-Type": "text/html; charset=utf-8",
           },
         };
@@ -585,7 +659,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status,
           body: JSON.stringify({ message }),
           headers: {
-            ...getHeaders(),
             "Content-Type": "application/json",
           },
         };
@@ -598,7 +671,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           ...serializeError(err as Error),
         }),
         headers: {
-          ...getHeaders(),
           "Content-Type": "application/json",
         },
       };
@@ -607,7 +679,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     return {
       status: 405,
       body: "",
-      headers: getHeaders(),
+      headers: {},
     };
   }
 
@@ -1057,7 +1129,7 @@ export interface ActionResponse {
   /**
    * A stringified body to return.
    */
-  body: string;
+  body: string | ReadableStream;
 }
 
 /**
@@ -1087,3 +1159,16 @@ type HandlerAction =
   | {
       action: "bad-method";
     };
+
+const cacheFn = <T extends (...args: unknown[]) => unknown>(fn: T): T => {
+  const key = "value";
+  const cache = new Map<typeof key, ReturnType<T>>();
+
+  return ((...args) => {
+    if (!cache.has(key)) {
+      cache.set(key, fn(...args) as ReturnType<T>);
+    }
+
+    return cache.get(key);
+  }) as T;
+};

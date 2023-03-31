@@ -478,6 +478,8 @@ export interface RegisterOptions {
    * Default level: "info"
    */
   logLevel?: LogLevel;
+
+  allowEdgeStreaming?: boolean;
 }
 
 /**
