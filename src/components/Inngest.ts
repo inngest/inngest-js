@@ -387,10 +387,12 @@ export class Inngest<
           fns?: TFns;
 
           /**
-           * Leaving commented out; the feature can be added in a small PR
-           * when ready.
+           * Provide a function to be called if your function fails, meaning
+           * that it ran out of retries and was unable to complete successfully.
            *
-           * TODO Add user-facing comments here.
+           * This is useful for sending warning notifications or cleaning up
+           * after a failure and supports all the same functionality as a
+           * regular handler.
            */
           onFailure?: Handler<
             Events,
