@@ -224,7 +224,7 @@ export class InngestFunction<
      * this is `null`, the function will be run and next operations will be
      * returned instead.
      */
-    runStep: string | null,
+    requestedRunStep: string | null,
 
     timer: ServerTiming,
 
@@ -347,6 +347,17 @@ export class InngestFunction<
 
     memoizingStop();
 
+    const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>(
+      tickOpToOutgoing
+    );
+
+    /**
+     * We make an optimization here by immediately invoking an op if it's the
+     * only one we've discovered. The alternative is to plan the step and then
+     * complete it, so we skip at least one entire execution with this.
+     */
+    const runStep = requestedRunStep || getEarlyExecRunStep(discoveredOps);
+
     if (runStep) {
       const userFnOp = state.allFoundOps[runStep];
       const userFnToRun = userFnOp?.fn;
@@ -402,10 +413,6 @@ export class InngestFunction<
         { ...tickOpToOutgoing(userFnOp), ...result, op: StepOpCode.RunStep },
       ];
     }
-
-    const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>(
-      tickOpToOutgoing
-    );
 
     /**
      * Now we're here, we've memoised any function state and we know that this
@@ -489,4 +496,23 @@ const tickOpToOutgoing = (op: TickOp): OutgoingOp => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     opts: op.opts,
   };
+};
+
+/**
+ * Given the list of outgoing ops, decide if we can execute an op early and
+ * return the ID of the step to run if we can.
+ */
+const getEarlyExecRunStep = (ops: OutgoingOp[]): string | undefined => {
+  // TODO What if there are logs pending?
+  if (ops.length !== 1) return;
+
+  const op = ops[0];
+
+  if (
+    op &&
+    op.op === StepOpCode.StepPlanned &&
+    typeof op.opts === "undefined"
+  ) {
+    return op.id;
+  }
 };
