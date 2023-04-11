@@ -75,13 +75,13 @@ export const isProd = (
 };
 
 /**
- * getBranchName returns the suspected branch name for this environment by
+ * getEnvironmentName returns the suspected branch name for this environment by
  * searching through a set of common environment variables.
  *
  * This could be used to determine if we're on a branch deploy or not, though it
  * should be noted that we don't know if this is the default branch or not.
  */
-export const getBranchName = (
+export const getEnvironmentName = (
   env: Record<string, string | undefined> = allProcessEnv()
 ): string | undefined => {
   /**
