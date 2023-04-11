@@ -503,7 +503,6 @@ const tickOpToOutgoing = (op: TickOp): OutgoingOp => {
  * return the ID of the step to run if we can.
  */
 const getEarlyExecRunStep = (ops: OutgoingOp[]): string | undefined => {
-  // TODO What if there are logs pending?
   if (ops.length !== 1) return;
 
   const op = ops[0];
