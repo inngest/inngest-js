@@ -1,5 +1,11 @@
 # inngest
 
+## 1.6.0
+
+### Minor Changes
+
+- c7d1bee: Add `onFailure` handler to `createFunction` options, allowing you to specify a new function to run when the initial handler fails
+
 ## 1.5.4
 
 ### Patch Changes
