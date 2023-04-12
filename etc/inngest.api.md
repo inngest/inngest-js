@@ -20,7 +20,7 @@ export interface ClientOptions {
 // Warning: (ae-incompatible-release-tags) The symbol "Combine" is marked as @public, but its signature references "IsStringLiteral" which is marked as @internal
 //
 // @public
-export type Combine<TCurr extends Record<string, EventPayload>, TInc extends StandardEventSchemas> = IsStringLiteral<keyof TCurr & string> extends true ? Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> & StandardEventSchemaToPayload<TInc> : StandardEventSchemaToPayload<TInc>;
+export type Combine<TCurr extends Record<string, EventPayload>, TInc extends StandardEventSchemas> = IsStringLiteral<keyof TCurr & string> extends true ? Simplify<Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> & StandardEventSchemaToPayload<TInc>> : StandardEventSchemaToPayload<TInc>;
 
 // Warning: (ae-forgotten-export) The symbol "TriggerOptions" needs to be exported by the entry point index.d.ts
 //
@@ -42,6 +42,12 @@ export interface EventPayload {
 export class EventSchemas<S extends Record<string, EventPayload>> {
     fromGenerated<T extends StandardEventSchemas>(): EventSchemas<Combine<S, T>>;
     fromTypes<T extends StandardEventSchemas>(): EventSchemas<Combine<S, T>>;
+    // Warning: (ae-forgotten-export) The symbol "StandardEventSchema" needs to be exported by the entry point index.d.ts
+    fromUnion<T extends {
+        name: string;
+    } & StandardEventSchema>(): EventSchemas<Combine<S, { [K in T["name"]]: Extract<T, {
+            name: K;
+        }>; }>>;
     fromZod<T extends ZodEventSchemas>(schemas: T): EventSchemas<Combine<S, { [EventName in keyof T & string]: { [Key in keyof T[EventName] & string]: T[EventName][Key] extends z.ZodTypeAny ? z.TypeOf<T[EventName][Key]> : T[EventName][Key]; }; }>>;
 }
 
@@ -86,6 +92,9 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
         period: TimeStr;
     };
 }
+
+// @public
+export type GetEvents<T extends Inngest<any>> = T extends Inngest<infer U> ? EventsFromOpts<U> : never;
 
 // @public
 export enum headerKeys {
@@ -236,10 +245,7 @@ opts?: RegisterOptions
 ) => any;
 
 // @public
-export type StandardEventSchemas = Record<string, {
-    data: Record<string, any>;
-    user?: Record<string, any>;
-}>;
+export type StandardEventSchemas = Record<string, StandardEventSchema>;
 
 // @public
 export type StandardEventSchemaToPayload<T> = Simplify<{
@@ -263,7 +269,7 @@ export type ZodEventSchemas = Record<string, {
 
 // Warnings were encountered during analysis:
 //
-// src/types.ts:31:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:41:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

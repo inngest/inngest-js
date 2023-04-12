@@ -12,6 +12,8 @@ import type {
 
 /**
  * TODO
+ *
+ * @public
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type GetEvents<T extends Inngest<any>> = T extends Inngest<infer U>
