@@ -1,15 +1,14 @@
 import { IsEqual, assertType } from "type-plus";
 import { z } from "zod";
 import { IsAny } from "../helpers/types";
-import { EventPayload } from "../types";
+import { EventPayload, GetEvents } from "../types";
 import { EventSchemas } from "./EventSchemas";
-import { EventsFromOpts, Inngest } from "./Inngest";
+import { Inngest } from "./Inngest";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Schemas<T extends EventSchemas<any>> = EventsFromOpts<{
-  name: "";
-  schemas: T;
-}>;
+type Schemas<T extends EventSchemas<any>> = GetEvents<
+  Inngest<{ name: "test"; schemas: T }>
+>;
 
 describe("EventSchemas", () => {
   test("creates generic types by default", () => {
