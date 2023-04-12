@@ -3,16 +3,19 @@ import { z } from "zod";
 import { IsStringLiteral } from "../helpers/types";
 import { EventPayload } from "../types";
 
+export type StandardEventSchema = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  user?: Record<string, any>;
+};
+
 /**
  * A helper type that declares a standardised custom part of the event schema.
  *
  * @public
  */
-export type StandardEventSchemas = Record<
-  string,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  { data: Record<string, any>; user?: Record<string, any> }
->;
+export type StandardEventSchemas = Record<string, StandardEventSchema>;
 
 /**
  * A helper type that declares a standardised custom part of the event schema,
@@ -103,6 +106,20 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
    */
   public fromTypes<T extends StandardEventSchemas>() {
     return new EventSchemas<Combine<S, T>>();
+  }
+
+  /**
+   * TODO
+   */
+  public fromUnion<T extends { name: string } & StandardEventSchema>() {
+    return new EventSchemas<
+      Combine<
+        S,
+        {
+          [K in T["name"]]: Extract<T, { name: K }>;
+        }
+      >
+    >();
   }
 
   /**
