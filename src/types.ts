@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EventSchemas } from "./components/EventSchemas";
-import { EventsFromOpts } from "./components/Inngest";
+import { EventsFromOpts, Inngest } from "./components/Inngest";
 import type { createStepTools } from "./components/InngestStepTools";
 import { internalEvents } from "./helpers/consts";
 import type {
@@ -9,6 +9,13 @@ import type {
   ObjectPaths,
   StrictUnion,
 } from "./helpers/types";
+
+/**
+ * TODO
+ */
+export type GetEvents<T extends Inngest<any>> = T extends Inngest<infer U>
+  ? EventsFromOpts<U>
+  : never;
 
 export const failureEventErrorSchema = z.object({
   name: z.string(),

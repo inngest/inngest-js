@@ -19,6 +19,7 @@ export type {
   FailureEventArgs,
   FailureEventPayload,
   FunctionOptions,
+  GetEvents,
   LogLevel,
   RegisterOptions,
   TimeStr,
