@@ -59,8 +59,10 @@ export type Combine<
   TCurr extends Record<string, EventPayload>,
   TInc extends StandardEventSchemas
 > = IsStringLiteral<keyof TCurr & string> extends true
-  ? Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> &
-      StandardEventSchemaToPayload<TInc>
+  ? Simplify<
+      Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> &
+        StandardEventSchemaToPayload<TInc>
+    >
   : StandardEventSchemaToPayload<TInc>;
 
 /**
