@@ -1,5 +1,13 @@
 # inngest
 
+## 1.6.1
+
+### Patch Changes
+
+- a840e67: INN-1126 Execute a step early if it's the only pending item during a discovery
+
+  This reduces the number of "Function steps" used for simple step functions.
+
 ## 1.6.0
 
 ### Minor Changes
