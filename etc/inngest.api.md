@@ -81,6 +81,10 @@ export enum headerKeys {
     // (undocumented)
     Environment = "x-inngest-env",
     // (undocumented)
+    Framework = "x-inngest-framework",
+    // (undocumented)
+    Platform = "x-inngest-platform",
+    // (undocumented)
     SdkVersion = "x-inngest-sdk",
     // (undocumented)
     Signature = "x-inngest-signature"
@@ -131,10 +135,12 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     protected readonly logLevel: LogLevel;
     readonly name: string;
     // (undocumented)
-    protected register(url: URL, devServerHost: string | undefined, deployId?: string | undefined | null): Promise<{
+    protected register(url: URL, devServerHost: string | undefined, deployId: string | undefined | null, getHeaders: () => Record<string, string>): Promise<{
         status: number;
         message: string;
     }>;
+    // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
+    //
     // (undocumented)
     protected registerBody(url: URL): RegisterRequest;
     protected reqUrl(url: URL): URL;
@@ -143,12 +149,6 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     //
     // (undocumented)
     protected runStep(functionId: string, stepId: string | null, data: unknown, timer: ServerTiming): Promise<StepRunResponse>;
-    // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
-    protected get sdkHeader(): [
-    prefix: string,
-    version: RegisterRequest["sdk"],
-    suffix: string
-    ];
     protected readonly serveHost: string | undefined;
     protected readonly servePath: string | undefined;
     // (undocumented)
