@@ -19,7 +19,9 @@
     "noUncheckedIndexedAccess": true,
     "strictNullChecks": true,
     "paths": {
-      "inngest": ["./src"]
+      "inngest": ["./src"],
+      "@local": ["./src"],
+      "@local/*": ["./src/*"]
     }
   },
   "include": ["src/**/*"]
