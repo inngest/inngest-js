@@ -3,7 +3,8 @@
 // along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
 // string in order to read variables.
 
-import { envKeys } from "./consts";
+import { version } from "../version";
+import { envKeys, headerKeys } from "./consts";
 import { stringifyUnknown } from "./strings";
 
 /**
@@ -122,4 +123,77 @@ export const allProcessEnv = (): Record<string, string | undefined> => {
   }
 
   return {};
+};
+
+/**
+ * Generate a standardised set of headers based on input and environment
+ * variables.
+ *
+ *
+ */
+export const inngestHeaders = (opts?: {
+  /**
+   * The environment variables to use instead of `process.env` or any other
+   * default source. Useful for platforms where environment variables are passed
+   * in alongside requests.
+   */
+  env?: Record<string, string | undefined>;
+
+  /**
+   * The framework name to use in the `X-Inngest-Framework` header. This is not
+   * always available, hence being optional.
+   */
+  framework?: string;
+
+  /**
+   * The environment name to use in the `X-Inngest-Env` header. This is likely
+   * to be representative of the target preview environment.
+   */
+  inngestEnv?: string;
+}): Record<string, string> => {
+  const sdkVersion = `inngest-js:v${version}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "User-Agent": sdkVersion,
+    [headerKeys.SdkVersion]: sdkVersion,
+  };
+
+  if (opts?.framework) {
+    headers[headerKeys.Framework] = opts.framework;
+  }
+
+  const env = opts?.env || allProcessEnv();
+
+  const inngestEnv = opts?.inngestEnv || getEnvironmentName(env);
+  if (inngestEnv) {
+    headers[headerKeys.Environment] = inngestEnv;
+  }
+
+  const platform = getPlatformName(env);
+  if (platform) {
+    headers[headerKeys.Platform] = platform;
+  }
+
+  return headers;
+};
+
+const getPlatformName = (
+  env: Record<string, string | undefined>
+): string | undefined => {
+  const platformChecks = {
+    vercel: (env) => Boolean(env[envKeys.IsVercel]),
+    netlify: (env) => env[envKeys.IsNetlify] === "true",
+    "cloudflare-pages": (env) => Boolean(env[envKeys.IsCloudflarePages]),
+    render: (env) => env[envKeys.IsRender] === "true",
+    railway: (env) => Boolean(env[envKeys.RailwayEnvironment]),
+  } satisfies Record<
+    string,
+    (env: Record<string, string | undefined>) => boolean
+  >;
+
+  return (Object.keys(platformChecks) as (keyof typeof platformChecks)[]).find(
+    (key) => {
+      return platformChecks[key](env);
+    }
+  );
 };
