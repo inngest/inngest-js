@@ -108,6 +108,14 @@ declare const Deno: {
   env: { toObject: () => Record<string, string | undefined> };
 };
 
+/**
+ * allProcessEnv returns the current process environment variables, or an empty
+ * object if they cannot be read, making sure we support environments other than
+ * Node such as Deno, too.
+ *
+ * Using this ensures we don't dangerously access `process.env` in environments
+ * where it may not be defined, such as Deno or the browser.
+ */
 export const allProcessEnv = (): Record<string, string | undefined> => {
   try {
     // eslint-disable-next-line @inngest/process-warn
