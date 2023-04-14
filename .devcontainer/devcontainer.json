@@ -1,0 +1,56 @@
+{
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/enricosecondulfo/devcontainer-features/volta:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "deno.enablePaths": ["./deno_compat"],
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "eslint.validate": [
+          "javascript",
+          "javascriptreact",
+          "typescript",
+          "typescriptreact",
+          "graphql"
+        ],
+        "editor.rulers": [80],
+        "typescript.format.enable": false,
+        "eslint.format.enable": true,
+        "editor.codeActionsOnSave": {
+          "source.organizeImports": true,
+          "source.fixAll": true
+        },
+        "search.exclude": {
+          "**/dist": true,
+          "**/etc": true
+        },
+        "[javascript]": {
+          "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+        },
+        "[javascriptreact]": {
+          "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+        },
+        "[typescript]": {
+          "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+        },
+        "[typescriptreact]": {
+          "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+        },
+        "[yaml]": {
+          "editor.defaultFormatter": "redhat.vscode-yaml"
+        },
+        "files.eol": "\n"
+      },
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "kumar-harsh.graphql-for-vscode",
+        "wix.vscode-import-cost",
+        "esbenp.prettier-vscode",
+        "OfHumanBondage.react-proptypes-intellisense",
+        "redhat.vscode-yaml"
+      ]
+    }
+  }
+}
