@@ -243,6 +243,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    * A private collection of just Inngest functions, as they have been passed
    * when instantiating the class.
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly rawFns: InngestFunction<any, any, any>[];
 
   /**
