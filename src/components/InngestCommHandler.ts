@@ -4,7 +4,7 @@ import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
-import { allProcessEnv, isProd } from "../helpers/env";
+import { allProcessEnv, inngestHeaders, isProd } from "../helpers/env";
 import { serializeError } from "../helpers/errors";
 import { strBoolean } from "../helpers/scalar";
 import { stringifyUnknown } from "../helpers/strings";
@@ -181,13 +181,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected _isProd = false;
 
   /**
-   * A set of headers sent back with every request. Usually includes generic
-   * functionality such as `"Content-Type"`, alongside informational headers
-   * such as Inngest SDK version.
-   */
-  private readonly headers: Record<string, string>;
-
-  /**
    * The localized `fetch` implementation used by this handler.
    */
   private readonly fetch: FetchT;
@@ -243,6 +236,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    * A private collection of just Inngest functions, as they have been passed
    * when instantiating the class.
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly rawFns: InngestFunction<any, any, any>[];
 
   /**
@@ -405,11 +399,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     this.servePath = servePath;
     this.logLevel = logLevel;
 
-    this.headers = {
-      "Content-Type": "application/json",
-      "User-Agent": `inngest-js:v${version} (${this.frameworkName})`,
-    };
-
     this.fetch =
       fetch ||
       (typeof appNameOrInngest === "string"
@@ -491,12 +480,16 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     actions: ReturnType<H>,
     timer: ServerTiming
   ): Promise<ActionResponse> {
+    const env = actions.env ?? allProcessEnv();
+
     const getHeaders = () => ({
-      [headerKeys.SdkVersion]: this.sdkHeader.join(""),
+      ...inngestHeaders({
+        env: env as Record<string, string | undefined>,
+        framework: this.frameworkName,
+      }),
       "Server-Timing": timer.getHeader(),
     });
 
-    const env = actions.env ?? allProcessEnv();
     this._isProd = actions.isProduction ?? isProd(env);
 
     try {
@@ -593,7 +586,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         const { status, message } = await this.register(
           this.reqUrl(actions.url),
           stringifyUnknown(env[envKeys.DevServerUrl]),
-          registerRes.deployId
+          registerRes.deployId,
+          getHeaders
         );
 
         return {
@@ -769,20 +763,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   }
 
   /**
-   * Returns an SDK header split in to three parts so that they can be used for
-   * different purposes.
-   *
-   * To use the entire string, run `this.sdkHeader.join("")`.
-   */
-  protected get sdkHeader(): [
-    prefix: string,
-    version: RegisterRequest["sdk"],
-    suffix: string
-  ] {
-    return ["inngest-", `js:v${version}`, ` (${this.frameworkName})`];
-  }
-
-  /**
    * Return an Inngest serve endpoint URL given a potential `path` and `host`.
    *
    * Will automatically use the `serveHost` and `servePath` if they have been
@@ -810,7 +790,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       framework: this.frameworkName,
       appName: this.name,
       functions: this.configs(url),
-      sdk: this.sdkHeader[1],
+      sdk: `js:v${version}`,
       v: "0.1",
     };
 
@@ -822,7 +802,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected async register(
     url: URL,
     devServerHost: string | undefined,
-    deployId?: string | undefined | null
+    deployId: string | undefined | null,
+    getHeaders: () => Record<string, string>
   ): Promise<{ status: number; message: string }> {
     const body = this.registerBody(url);
 
@@ -848,7 +829,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         method: "POST",
         body: JSON.stringify(body),
         headers: {
-          ...this.headers,
+          ...getHeaders(),
           Authorization: `Bearer ${this.hashedSigningKey}`,
         },
         redirect: "follow",

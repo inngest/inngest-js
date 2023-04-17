@@ -1,7 +1,7 @@
+import { serve } from "@local/next";
 import { assertType } from "type-plus";
 import { z } from "zod";
 import { IsAny } from "../helpers/types";
-import { serve } from "../next";
 import { createClient } from "../test/helpers";
 import { ServeHandler } from "./InngestCommHandler";
 

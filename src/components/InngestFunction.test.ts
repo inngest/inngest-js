@@ -1,16 +1,16 @@
 import { jest } from "@jest/globals";
-import { assertType } from "type-plus";
-import { ServerTiming } from "../helpers/ServerTiming";
-import { internalEvents } from "../helpers/consts";
-import { createClient } from "../test/helpers";
+import { InngestFunction } from "@local/components/InngestFunction";
+import { UnhashedOp, _internals } from "@local/components/InngestStepTools";
+import { internalEvents } from "@local/helpers/consts";
+import { ServerTiming } from "@local/helpers/ServerTiming";
 import {
   EventPayload,
   FailureEventPayload,
   OpStack,
   StepOpCode,
-} from "../types";
-import { InngestFunction } from "./InngestFunction";
-import { UnhashedOp, _internals } from "./InngestStepTools";
+} from "@local/types";
+import { assertType } from "type-plus";
+import { createClient } from "../test/helpers";
 
 type TestEvents = {
   foo: { name: "foo"; data: { foo: string } };

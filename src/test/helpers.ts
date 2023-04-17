@@ -2,17 +2,17 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
+import { EventPayload, Inngest } from "@local";
+import type { Inngest as InternalInngest } from "@local/components/Inngest";
+import { ServeHandler } from "@local/components/InngestCommHandler";
+import { headerKeys } from "@local/helpers/consts";
+import { version } from "@local/version";
 import fetch from "cross-fetch";
 import type { Request, Response } from "express";
-import { EventPayload, Inngest } from "inngest";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ulid } from "ulid";
 import { z } from "zod";
-import type { Inngest as InternalInngest } from "../components/Inngest";
-import { ServeHandler } from "../components/InngestCommHandler";
-import { headerKeys } from "../helpers/consts";
-import { version } from "../version";
 
 interface HandlerStandardReturn {
   status: number;

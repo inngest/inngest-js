@@ -1,8 +1,8 @@
-import { envKeys, headerKeys } from "../helpers/consts";
+import { envKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
   devServerHost,
-  getEnvironmentName,
+  inngestHeaders,
   isProd,
   processEnv,
 } from "../helpers/env";
@@ -22,7 +22,6 @@ import type {
   ShimmedFns,
   TriggerOptions,
 } from "../types";
-import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
 
 /**
@@ -89,8 +88,6 @@ export class Inngest<
 
   private readonly fetch: FetchT;
 
-  private readonly env: string | undefined;
-
   /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
@@ -133,17 +130,11 @@ export class Inngest<
       console.warn(eventKeyWarning);
     }
 
-    this.headers = {
-      "Content-Type": "application/json",
-      "User-Agent": `InngestJS v${version}`,
-    };
+    this.headers = inngestHeaders({
+      inngestEnv: env,
+    });
 
     this.fetch = Inngest.parseFetch(fetch);
-
-    this.env = env || getEnvironmentName();
-    if (this.env) {
-      this.headers[headerKeys.Environment] = this.env;
-    }
   }
 
   /**

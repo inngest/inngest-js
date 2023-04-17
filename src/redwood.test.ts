@@ -1,4 +1,4 @@
-import * as RedwoodHandler from "./redwood";
+import * as RedwoodHandler from "@local/redwood";
 import { testFramework } from "./test/helpers";
 
 testFramework("Redwood.js", RedwoodHandler, {
