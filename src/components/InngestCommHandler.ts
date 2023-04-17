@@ -427,7 +427,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     }
 
     const prefix =
-      this.signingKey.match(/^signkey-(test|prod|branch)-/)?.shift() || "";
+      this.signingKey.match(/^signkey-[\w]+-/)?.shift() || "";
     const key = this.signingKey.replace(/^signkey-[\w]+-/, "");
 
     // Decode the key from its hex representation into a bytestream
