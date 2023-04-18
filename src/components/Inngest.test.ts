@@ -52,7 +52,7 @@ describe("instantiation", () => {
 
 describe("send", () => {
   describe("runtime", () => {
-    const originalEnvEventKey = process.env[envKeys.EventKey];
+    const originalProcessEnv = process.env;
     const originalFetch = global.fetch;
 
     beforeAll(() => {
@@ -70,18 +70,12 @@ describe("send", () => {
     beforeEach(() => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
       (global.fetch as any).mockClear();
-    });
-
-    afterEach(() => {
-      if (originalEnvEventKey) {
-        process.env[envKeys.EventKey] = originalEnvEventKey;
-      } else {
-        delete process.env[envKeys.EventKey];
-      }
+      process.env = { ...originalProcessEnv };
     });
 
     afterAll(() => {
       global.fetch = originalFetch;
+      process.env = originalProcessEnv;
     });
 
     test("should fail to send if event key not specified at instantiation", async () => {
