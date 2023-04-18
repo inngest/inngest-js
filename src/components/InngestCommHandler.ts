@@ -367,7 +367,14 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       arguments["3"]?.__testingAllowExpiredSignatures
     );
 
-    this.rawFns = functions;
+    // Ensure we filter any undefined functions in case of missing imports.
+    this.rawFns = functions.filter(Boolean);
+
+    if (this.rawFns.length !== functions.length) {
+      console.warn(
+        `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`
+      );
+    }
 
     this.fns = this.rawFns.reduce<
       Record<string, { fn: InngestFunction; onFailure: boolean }>
