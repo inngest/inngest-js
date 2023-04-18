@@ -15,6 +15,8 @@ export interface RedwoodResponse {
   headers?: Record<string, string>;
 }
 
+export const name = "redwoodjs";
+
 /**
  * In Redwood.js, serve and register any declared functions with Inngest, making
  * them available to be triggered by events.
@@ -23,7 +25,7 @@ export interface RedwoodResponse {
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
   const handler = new InngestCommHandler(
-    "redwoodjs",
+    name,
     nameOrInngest,
     fns,
     opts,

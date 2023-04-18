@@ -1,5 +1,5 @@
+import * as RemixHandler from "@local/remix";
 import { Headers } from "cross-fetch";
-import * as RemixHandler from "./remix";
 import { testFramework } from "./test/helpers";
 
 testFramework("Remix", RemixHandler, {

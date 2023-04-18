@@ -4,6 +4,8 @@ import {
 } from "../components/InngestCommHandler";
 import { headerKeys, queryKeys } from "../helpers/consts";
 
+export const name = "deno/fresh";
+
 /**
  * With Deno's Fresh framework, serve and register any declared functions with
  * Inngest, making them available to be triggered by events.
@@ -12,7 +14,7 @@ import { headerKeys, queryKeys } from "../helpers/consts";
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
   const handler = new InngestCommHandler(
-    "deno/fresh",
+    name,
     nameOrInngest,
     fns,
     opts,

@@ -1,6 +1,11 @@
 import { envKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
-import { devServerHost, isProd, processEnv } from "../helpers/env";
+import {
+  devServerHost,
+  inngestHeaders,
+  isProd,
+  processEnv,
+} from "../helpers/env";
 import type {
   PartialK,
   SendEventPayload,
@@ -17,7 +22,6 @@ import type {
   ShimmedFns,
   TriggerOptions,
 } from "../types";
-import { version } from "../version";
 import { InngestFunction } from "./InngestFunction";
 
 /**
@@ -112,6 +116,7 @@ export class Inngest<
     eventKey,
     inngestBaseUrl = "https://inn.gs/",
     fetch,
+    env,
   }: ClientOptions) {
     if (!name) {
       throw new Error("A name must be passed to create an Inngest instance.");
@@ -125,10 +130,9 @@ export class Inngest<
       console.warn(eventKeyWarning);
     }
 
-    this.headers = {
-      "Content-Type": "application/json",
-      "User-Agent": `InngestJS v${version}`,
-    };
+    this.headers = inngestHeaders({
+      inngestEnv: env,
+    });
 
     this.fetch = Inngest.parseFetch(fetch);
   }

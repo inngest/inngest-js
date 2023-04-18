@@ -382,6 +382,15 @@ export interface ClientOptions {
    * back to a Node implementation if no global fetch can be found.
    */
   fetch?: typeof fetch;
+
+  /**
+   * The Inngest environment to send events to. Defaults to whichever
+   * environment this client's event key is associated with.
+   *
+   * It's likely you never need to change this unless you're trying to sync
+   * multiple systems together using branch names.
+   */
+  env?: string;
 }
 
 /**

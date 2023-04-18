@@ -1,5 +1,5 @@
+import * as ExpressHandler from "@local/express";
 import { InngestCommHandler } from "./components/InngestCommHandler";
-import * as ExpressHandler from "./express";
 import { createClient, testFramework } from "./test/helpers";
 
 testFramework("Express", ExpressHandler);

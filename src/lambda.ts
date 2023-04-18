@@ -10,6 +10,8 @@ import {
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 
+export const name = "aws-lambda";
+
 /**
  * With AWS Lambda, serve and register any declared functions with Inngest,
  * making them available to be triggered by events.
@@ -37,7 +39,7 @@ import { headerKeys, queryKeys } from "./helpers/consts";
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
   const handler = new InngestCommHandler(
-    "aws-lambda",
+    name,
     nameOrInngest,
     fns,
     { ...opts },
