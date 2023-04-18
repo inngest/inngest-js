@@ -156,6 +156,11 @@ export type BaseContext<
   event: TEvents[TTrigger];
 
   /**
+   * The run ID for the current function execution
+   */
+  runId: string;
+
+  /**
    * @deprecated Use `step` instead.
    */
   tools: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];

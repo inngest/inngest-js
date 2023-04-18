@@ -662,6 +662,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           // steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
           ctx: z
             .object({
+              run_id: z.string(),
               stack: z
                 .object({
                   stack: z
@@ -698,7 +699,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           }) ?? [];
 
       const ret = await fn.fn["runFn"](
-        { event },
+        { event, runId: ctx?.run_id },
         opStack,
         /**
          * TODO The executor is sending `"step"` as the step ID when it is not
