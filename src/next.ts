@@ -6,6 +6,8 @@ import {
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
 
+export const name = "nextjs";
+
 /**
  * In Next.js, serve and register any declared functions with Inngest, making
  * them available to be triggered by events.
@@ -14,7 +16,7 @@ import { processEnv } from "./helpers/env";
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
   const handler = new InngestCommHandler(
-    "nextjs",
+    name,
     nameOrInngest,
     fns,
     opts,

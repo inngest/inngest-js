@@ -189,9 +189,9 @@ const getPlatformName = (
   env: Record<string, string | undefined>
 ): string | undefined => {
   const platformChecks = {
-    vercel: (env) => Boolean(env[envKeys.IsVercel]),
+    vercel: (env) => env[envKeys.IsVercel] === "1",
     netlify: (env) => env[envKeys.IsNetlify] === "true",
-    "cloudflare-pages": (env) => Boolean(env[envKeys.IsCloudflarePages]),
+    "cloudflare-pages": (env) => env[envKeys.IsCloudflarePages] === "1",
     render: (env) => env[envKeys.IsRender] === "true",
     railway: (env) => Boolean(env[envKeys.RailwayEnvironment]),
   } satisfies Record<

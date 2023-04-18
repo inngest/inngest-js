@@ -4,6 +4,8 @@ import {
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 
+export const name = "edge";
+
 /**
  * In an edge runtime, serve and register any declared functions with Inngest,
  * making them available to be triggered by events.
@@ -22,7 +24,7 @@ import { headerKeys, queryKeys } from "./helpers/consts";
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
   const handler = new InngestCommHandler(
-    "edge",
+    name,
     nameOrInngest,
     fns,
     {
