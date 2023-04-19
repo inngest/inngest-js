@@ -43,9 +43,13 @@ const exec = async (...args) => {
   await exec("npm", ["config", "set", "git-tag-version", "false"], {
     cwd: distDir,
   });
-  await exec("npm", ["publish", "--tag", distTag, "--access", "public"], {
-    cwd: distDir,
-  });
+  await exec(
+    "npm",
+    ["publish", "--tag", distTag, "--access", "public", "--provenance"],
+    {
+      cwd: distDir,
+    }
+  );
 
   // Tag and push the release commit
   await exec("changeset", ["tag"]);
