@@ -1,12 +1,24 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import { NextRequest } from "next/server";
 import {
   InngestCommHandler,
   ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
+import { RegisterOptions } from "./types";
 
 export const name = "nextjs";
+
+/**
+ * Assert whether the given request is a Next.js API request or an `NextRequest`
+ * from an edge function.
+ */
+const isEdgeRequest = (
+  req: NextApiRequest | NextRequest
+): req is NextRequest => {
+  return typeof req.headers.get === "function";
+};
 
 /**
  * In Next.js, serve and register any declared functions with Inngest, making
@@ -15,56 +27,91 @@ export const name = "nextjs";
  * @public
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
+  const optsWithFetch: RegisterOptions = { ...opts };
+
+  if (typeof fetch !== "undefined") {
+    optsWithFetch.fetch = fetch.bind(globalThis);
+  }
+
   const handler = new InngestCommHandler(
     name,
     nameOrInngest,
     fns,
-    opts,
-    (req: NextApiRequest, _res: NextApiResponse) => {
-      const scheme =
-        processEnv("NODE_ENV") === "development" ? "http" : "https";
-      const url = new URL(
-        req.url as string,
-        `${scheme}://${req.headers.host || ""}`
-      );
+    optsWithFetch,
+    (req: NextApiRequest | NextRequest, _res: NextApiResponse) => {
+      const isEdge = isEdgeRequest(req);
+
+      const url = isEdge
+        ? new URL(req.url)
+        : new URL(
+            req.url as string,
+            `${processEnv("NODE_ENV") === "development" ? "http" : "https"}://${
+              req.headers.host || ""
+            }`
+          );
+
+      const getQueryParam = (key: string): string | undefined => {
+        return (
+          (isEdge ? url.searchParams.get(key) : req.query[key]?.toString()) ??
+          undefined
+        );
+      };
+
+      const hasQueryParam = (key: string): boolean => {
+        return (
+          (isEdge
+            ? url.searchParams.has(key)
+            : Object.hasOwnProperty.call(req.query, key)) ?? false
+        );
+      };
+
+      const getHeader = (key: string): string | undefined => {
+        return (
+          (isEdge ? req.headers.get(key) : req.headers[key]?.toString()) ??
+          undefined
+        );
+      };
 
       return {
         url,
         register: () => {
           if (req.method === "PUT") {
             return {
-              deployId: req.query[queryKeys.DeployId]?.toString(),
+              deployId: getQueryParam(queryKeys.DeployId)?.toString(),
             };
           }
         },
-        run: () => {
+        run: async () => {
           if (req.method === "POST") {
             return {
-              data: req.body as Record<string, unknown>,
-              fnId: req.query[queryKeys.FnId] as string,
-              stepId: req.query[queryKeys.StepId] as string,
-              signature: req.headers[headerKeys.Signature] as string,
+              data: isEdge
+                ? ((await req.json()) as Record<string, unknown>)
+                : (req.body as Record<string, unknown>),
+              fnId: getQueryParam(queryKeys.FnId) as string,
+              stepId: getQueryParam(queryKeys.StepId) as string,
+              signature: getHeader(headerKeys.Signature) as string,
             };
           }
         },
         view: () => {
           if (req.method === "GET") {
             return {
-              isIntrospection: Object.hasOwnProperty.call(
-                req.query,
-                queryKeys.Introspect
-              ),
+              isIntrospection: hasQueryParam(queryKeys.Introspect),
             };
           }
         },
       };
     },
-    (actionRes, req, res) => {
-      for (const [key, value] of Object.entries(actionRes.headers)) {
-        res.setHeader(key, value);
+    ({ body, headers, status }, _req, res) => {
+      if ("send" in res) {
+        for (const [key, value] of Object.entries(headers)) {
+          res.setHeader(key, value);
+        }
+
+        return void res.status(status).send(body);
       }
 
-      res.status(actionRes.status).send(actionRes.body);
+      return new Response(body, { status, headers });
     }
   );
 
