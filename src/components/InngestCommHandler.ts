@@ -12,6 +12,7 @@ import {
 } from "../helpers/env";
 import { serializeError } from "../helpers/errors";
 import { strBoolean } from "../helpers/scalar";
+import { createStream } from "../helpers/stream";
 import { stringifyUnknown } from "../helpers/strings";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
@@ -507,7 +508,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       if (this.allowEdgeStreaming && isEdgeRuntime()) {
         const runRes = await actions.run();
         if (runRes) {
-          const { stream, finalize } = await this.createStream();
+          const { stream, finalize } = await createStream();
 
           /**
            * Errors are handled by `handleAction` here to ensure that an
@@ -531,34 +532,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         )
       );
     };
-  }
-
-  private createStream(
-    heartbeatInterval = 3000
-  ): Promise<{ finalize: (data: unknown) => void; stream: ReadableStream }> {
-    return new Promise((resolve, reject) => {
-      try {
-        const stream = new ReadableStream({
-          start(controller) {
-            const encoder = new TextEncoder();
-
-            const heartbeat = setInterval(() => {
-              controller.enqueue(encoder.encode(" "));
-            }, heartbeatInterval);
-
-            const finalize = (data: unknown) => {
-              clearInterval(heartbeat);
-              controller.enqueue(encoder.encode(JSON.stringify(data)));
-              controller.close();
-            };
-
-            resolve({ stream, finalize });
-          },
-        });
-      } catch (err) {
-        reject(err);
-      }
-    });
   }
 
   /**
