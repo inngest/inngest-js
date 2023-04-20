@@ -1,4 +1,22 @@
 /**
+ * Some environments don't allow access to the global queueMicrotask(). While we
+ * had assumed this was only true for those powered by earlier versions of Node
+ * (<14) that we don't officially support, Vercel's Edge Functions also obscure
+ * the function, even though the platform it's based on (Cloudflare Workers)
+ * appropriately exposes it.
+ *
+ * Therefore, we can fall back to a reasonable alternative of
+ * `Promise.resolve().then(fn)` instead. This will be slightly slower, but at
+ * least we can still work in these environments.
+ *
+ * This package does exactly that, enabling us to use `queueMicrotask()` in all
+ * modern JS engines.
+ *
+ * See {@link https://www.npmjs.com/package/queue-microtask}.
+ */
+import queueMicrotask from "queue-microtask";
+
+/**
  * A helper function to create a `Promise` that will never settle.
  *
  * It purposefully creates no references to `resolve` or `reject` so that the
