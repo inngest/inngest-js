@@ -490,9 +490,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         ])
       ) as typeof rawActions;
 
-      /**
-       * TODO Allow trailing header ONLY IF the incoming request allows it
-       */
       const getHeaders = () => ({
         ...inngestHeaders({
           env: actions.env as Record<string, string | undefined>,
@@ -511,11 +508,13 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         const runRes = await actions.run();
         if (runRes) {
           const { stream, finalize } = await this.createStream();
+
           /**
-           * Is it okay if this throws?
+           * Errors are handled by `handleAction` here to ensure that an
+           * appropriate response is always given.
            */
           void actionRes.then(finalize);
-          res = { status: 200, body: stream, headers: getHeaders() };
+          res = { status: 201, body: stream, headers: getHeaders() };
         }
       }
 
