@@ -19,8 +19,9 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     function_id: string;
     run_id: string;
     error: {
+      name: string;
       message: string;
-      stack?: string;
+      stack: string;
       cause?: string;
       status?: number;
     };
@@ -42,7 +43,7 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
   /**
    * The final error that caused this function to exhaust all retries.
    */
-  err: FailureEventPayload<P>["data"]["error"];
+  error: Error;
 };
 
 /**
@@ -153,6 +154,11 @@ export type BaseContext<
    * The event data present in the payload.
    */
   event: TEvents[TTrigger];
+
+  /**
+   * The run ID for the current function execution
+   */
+  runId: string;
 
   /**
    * @deprecated Use `step` instead.
@@ -376,6 +382,15 @@ export interface ClientOptions {
    * back to a Node implementation if no global fetch can be found.
    */
   fetch?: typeof fetch;
+
+  /**
+   * The Inngest environment to send events to. Defaults to whichever
+   * environment this client's event key is associated with.
+   *
+   * It's likely you never need to change this unless you're trying to sync
+   * multiple systems together using branch names.
+   */
+  env?: string;
 }
 
 /**
@@ -682,7 +697,7 @@ export type Cancellation<
 export type StepRunResponse =
   | {
       status: 500;
-      error?: string;
+      error?: unknown;
     }
   | {
       status: 200;

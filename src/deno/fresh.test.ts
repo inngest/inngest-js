@@ -1,6 +1,6 @@
+import * as DenoFreshHandler from "@local/deno/fresh";
 import fetch, { Headers, Response } from "cross-fetch";
 import { testFramework } from "../test/helpers";
-import * as DenoFreshHandler from "./fresh";
 
 const originalProcess = process;
 const originalFetch = globalThis.fetch;

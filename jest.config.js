@@ -6,5 +6,7 @@ module.exports = {
   roots: ["<rootDir>/src"],
   moduleNameMapper: {
     inngest: "<rootDir>/src",
+    "^@local$": "<rootDir>/src",
+    "^@local/(.*)": "<rootDir>/src/$1",
   },
 };

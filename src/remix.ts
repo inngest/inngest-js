@@ -4,6 +4,8 @@ import {
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 
+export const name = "remix";
+
 /**
  * In Remix, serve and register any declared functions with Inngest, making them
  * available to be triggered by events.
@@ -28,7 +30,7 @@ import { headerKeys, queryKeys } from "./helpers/consts";
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
   const handler = new InngestCommHandler(
-    "remix",
+    name,
     nameOrInngest,
     fns,
     opts,

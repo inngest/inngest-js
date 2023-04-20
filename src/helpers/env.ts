@@ -3,7 +3,8 @@
 // along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
 // string in order to read variables.
 
-import { envKeys } from "./consts";
+import { version } from "../version";
+import { envKeys, headerKeys } from "./consts";
 import { stringifyUnknown } from "./strings";
 
 /**
@@ -74,6 +75,31 @@ export const isProd = (
   });
 };
 
+/**
+ * getEnvironmentName returns the suspected branch name for this environment by
+ * searching through a set of common environment variables.
+ *
+ * This could be used to determine if we're on a branch deploy or not, though it
+ * should be noted that we don't know if this is the default branch or not.
+ */
+export const getEnvironmentName = (
+  env: Record<string, string | undefined> = allProcessEnv()
+): string | undefined => {
+  /**
+   * Order is important; more than one of these env vars may be set, so ensure
+   * that we check the most specific, most reliable env vars first.
+   */
+  return (
+    env[envKeys.Environment] ||
+    env[envKeys.BranchName] ||
+    env[envKeys.VercelBranch] ||
+    env[envKeys.NetlifyBranch] ||
+    env[envKeys.CloudflarePagesBranch] ||
+    env[envKeys.RenderBranch] ||
+    env[envKeys.RailwayBranch]
+  );
+};
+
 export const processEnv = (key: string): string | undefined => {
   return allProcessEnv()[key];
 };
@@ -82,6 +108,14 @@ declare const Deno: {
   env: { toObject: () => Record<string, string | undefined> };
 };
 
+/**
+ * allProcessEnv returns the current process environment variables, or an empty
+ * object if they cannot be read, making sure we support environments other than
+ * Node such as Deno, too.
+ *
+ * Using this ensures we don't dangerously access `process.env` in environments
+ * where it may not be defined, such as Deno or the browser.
+ */
 export const allProcessEnv = (): Record<string, string | undefined> => {
   try {
     // eslint-disable-next-line @inngest/process-warn
@@ -106,4 +140,77 @@ declare const EdgeRuntime: string | undefined;
  */
 export const isEdgeRuntime = (): boolean => {
   return typeof EdgeRuntime === "string";
+};
+
+/**
+ * Generate a standardised set of headers based on input and environment
+ * variables.
+ *
+ *
+ */
+export const inngestHeaders = (opts?: {
+  /**
+   * The environment variables to use instead of `process.env` or any other
+   * default source. Useful for platforms where environment variables are passed
+   * in alongside requests.
+   */
+  env?: Record<string, string | undefined>;
+
+  /**
+   * The framework name to use in the `X-Inngest-Framework` header. This is not
+   * always available, hence being optional.
+   */
+  framework?: string;
+
+  /**
+   * The environment name to use in the `X-Inngest-Env` header. This is likely
+   * to be representative of the target preview environment.
+   */
+  inngestEnv?: string;
+}): Record<string, string> => {
+  const sdkVersion = `inngest-js:v${version}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "User-Agent": sdkVersion,
+    [headerKeys.SdkVersion]: sdkVersion,
+  };
+
+  if (opts?.framework) {
+    headers[headerKeys.Framework] = opts.framework;
+  }
+
+  const env = opts?.env || allProcessEnv();
+
+  const inngestEnv = opts?.inngestEnv || getEnvironmentName(env);
+  if (inngestEnv) {
+    headers[headerKeys.Environment] = inngestEnv;
+  }
+
+  const platform = getPlatformName(env);
+  if (platform) {
+    headers[headerKeys.Platform] = platform;
+  }
+
+  return headers;
+};
+
+const getPlatformName = (
+  env: Record<string, string | undefined>
+): string | undefined => {
+  const platformChecks = {
+    vercel: (env) => env[envKeys.IsVercel] === "1",
+    netlify: (env) => env[envKeys.IsNetlify] === "true",
+    "cloudflare-pages": (env) => env[envKeys.IsCloudflarePages] === "1",
+    render: (env) => env[envKeys.IsRender] === "true",
+    railway: (env) => Boolean(env[envKeys.RailwayEnvironment]),
+  } satisfies Record<
+    string,
+    (env: Record<string, string | undefined>) => boolean
+  >;
+
+  return (Object.keys(platformChecks) as (keyof typeof platformChecks)[]).find(
+    (key) => {
+      return platformChecks[key](env);
+    }
+  );
 };

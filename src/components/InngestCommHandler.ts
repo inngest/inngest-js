@@ -4,7 +4,12 @@ import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
-import { allProcessEnv, isEdgeRuntime, isProd } from "../helpers/env";
+import {
+  allProcessEnv,
+  inngestHeaders,
+  isEdgeRuntime,
+  isProd,
+} from "../helpers/env";
 import { serializeError } from "../helpers/errors";
 import { strBoolean } from "../helpers/scalar";
 import { stringifyUnknown } from "../helpers/strings";
@@ -181,13 +186,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected _isProd = false;
 
   /**
-   * A set of headers sent back with every request. Usually includes generic
-   * functionality such as `"Content-Type"`, alongside informational headers
-   * such as Inngest SDK version.
-   */
-  private readonly headers: Record<string, string>;
-
-  /**
    * The localized `fetch` implementation used by this handler.
    */
   private readonly fetch: FetchT;
@@ -240,6 +238,13 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected readonly logLevel: LogLevel;
 
   protected readonly allowEdgeStreaming: boolean;
+
+  /**
+   * A private collection of just Inngest functions, as they have been passed
+   * when instantiating the class.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private readonly rawFns: InngestFunction<any, any, any>[];
 
   /**
    * A private collection of functions that are being served. This map is used
@@ -364,7 +369,16 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       arguments["3"]?.__testingAllowExpiredSignatures
     );
 
-    this.fns = functions.reduce<
+    // Ensure we filter any undefined functions in case of missing imports.
+    this.rawFns = functions.filter(Boolean);
+
+    if (this.rawFns.length !== functions.length) {
+      console.warn(
+        `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`
+      );
+    }
+
+    this.fns = this.rawFns.reduce<
       Record<string, { fn: InngestFunction; onFailure: boolean }>
     >((acc, fn) => {
       const configs = fn["getConfig"](
@@ -401,11 +415,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     this.logLevel = logLevel;
     this.allowEdgeStreaming = allowEdgeStreaming ?? true;
 
-    this.headers = {
-      "Content-Type": "application/json",
-      "User-Agent": `inngest-js:v${version} (${this.frameworkName})`,
-    };
-
     this.fetch =
       fetch ||
       (typeof appNameOrInngest === "string"
@@ -422,9 +431,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       return "";
     }
 
-    const prefix =
-      this.signingKey.match(/^signkey-(test|prod)-/)?.shift() || "";
-    const key = this.signingKey.replace(/^signkey-(test|prod)-/, "");
+    const prefix = this.signingKey.match(/^signkey-[\w]+-/)?.shift() || "";
+    const key = this.signingKey.replace(/^signkey-[\w]+-/, "");
 
     // Decode the key from its hex representation into a bytestream
     return `${prefix}${sha256().update(key, "hex").digest("hex")}`;
@@ -486,7 +494,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
        * TODO Allow trailing header ONLY IF the incoming request allows it
        */
       const getHeaders = () => ({
-        [headerKeys.SdkVersion]: this.sdkHeader.join(""),
+        ...inngestHeaders({
+          env: actions.env as Record<string, string | undefined>,
+          framework: this.frameworkName,
+        }),
         "Server-Timing": timer.getHeader(),
       });
 
@@ -567,6 +578,15 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     timer: ServerTiming
   ): Promise<ActionResponse> {
     const env = actions.env ?? allProcessEnv();
+
+    const getHeaders = () => ({
+      ...inngestHeaders({
+        env: env as Record<string, string | undefined>,
+        framework: this.frameworkName,
+      }),
+      "Server-Timing": timer.getHeader(),
+    });
+
     this._isProd = actions.isProduction ?? isProd(env);
 
     try {
@@ -586,7 +606,14 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         if (stepRes.status === 500 || stepRes.status === 400) {
           return {
             status: stepRes.status,
-            body: stepRes.error || "",
+            body: JSON.stringify(
+              stepRes.error ||
+                serializeError(
+                  new Error(
+                    "Unknown error; function failed but no error was returned"
+                  )
+                )
+            ),
             headers: {
               "Content-Type": "application/json",
             },
@@ -652,7 +679,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         const { status, message } = await this.register(
           this.reqUrl(actions.url),
           stringifyUnknown(env[envKeys.DevServerUrl]),
-          registerRes.deployId
+          registerRes.deployId,
+          getHeaders
         );
 
         return {
@@ -719,6 +747,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           // steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
           ctx: z
             .object({
+              run_id: z.string(),
               stack: z
                 .object({
                   stack: z
@@ -755,7 +784,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           }) ?? [];
 
       const ret = await fn.fn["runFn"](
-        { event },
+        { event, runId: ctx?.run_id },
         opStack,
         /**
          * TODO The executor is sending `"step"` as the step ID when it is not
@@ -819,24 +848,10 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    return Object.values(this.fns).reduce<FunctionConfig[]>(
-      (acc, fn) => [...acc, ...fn.fn["getConfig"](url, this.name)],
+    return Object.values(this.rawFns).reduce<FunctionConfig[]>(
+      (acc, fn) => [...acc, ...fn["getConfig"](url, this.name)],
       []
     );
-  }
-
-  /**
-   * Returns an SDK header split in to three parts so that they can be used for
-   * different purposes.
-   *
-   * To use the entire string, run `this.sdkHeader.join("")`.
-   */
-  protected get sdkHeader(): [
-    prefix: string,
-    version: RegisterRequest["sdk"],
-    suffix: string
-  ] {
-    return ["inngest-", `js:v${version}`, ` (${this.frameworkName})`];
   }
 
   /**
@@ -867,7 +882,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       framework: this.frameworkName,
       appName: this.name,
       functions: this.configs(url),
-      sdk: this.sdkHeader[1],
+      sdk: `js:v${version}`,
       v: "0.1",
     };
 
@@ -879,7 +894,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   protected async register(
     url: URL,
     devServerHost: string | undefined,
-    deployId?: string | undefined | null
+    deployId: string | undefined | null,
+    getHeaders: () => Record<string, string>
   ): Promise<{ status: number; message: string }> {
     const body = this.registerBody(url);
 
@@ -905,7 +921,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         method: "POST",
         body: JSON.stringify(body),
         headers: {
-          ...this.headers,
+          ...getHeaders(),
           Authorization: `Bearer ${this.hashedSigningKey}`,
         },
         redirect: "follow",

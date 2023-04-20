@@ -15,6 +15,8 @@ export interface RedwoodResponse {
   headers?: Record<string, string>;
 }
 
+export const name = "redwoodjs";
+
 /**
  * In Redwood.js, serve and register any declared functions with Inngest, making
  * them available to be triggered by events.
@@ -23,10 +25,17 @@ export interface RedwoodResponse {
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
   const handler = new InngestCommHandler(
-    "redwoodjs",
+    name,
     nameOrInngest,
     fns,
-    opts,
+    {
+      ...opts,
+
+      /**
+       * RedwoodJS doesn't support streaming responses.
+       */
+      allowEdgeStreaming: false,
+    },
     (event: APIGatewayProxyEvent, _context: LambdaContext) => {
       const scheme =
         processEnv("NODE_ENV") === "development" ? "http" : "https";
@@ -81,7 +90,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
     (actionRes): RedwoodResponse => {
       return {
         statusCode: actionRes.status,
-        body: actionRes.body,
+        body: actionRes.body as string,
         headers: actionRes.headers,
       };
     }

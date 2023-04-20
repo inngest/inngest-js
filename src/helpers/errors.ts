@@ -1,4 +1,7 @@
-import { serializeError as cjsSerializeError } from "serialize-error-cjs";
+import {
+  deserializeError as cjsDeserializeError,
+  serializeError as cjsSerializeError,
+} from "serialize-error-cjs";
 
 const SERIALIZED_KEY = "__serialized";
 const SERIALIZED_VALUE = true;
@@ -49,5 +52,38 @@ export const isSerializedError = (value: unknown): boolean => {
     );
   } catch {
     return false;
+  }
+};
+
+/**
+ * Deserialise an error created by {@link serializeError}.
+ *
+ * Ensures we only deserialise errors that meet a minimum level of
+ * applicability, inclusive of error handling to ensure that badly serialized
+ * errors are still handled.
+ */
+export const deserializeError = (subject: Partial<SerializedError>): Error => {
+  const requiredFields: (keyof SerializedError)[] = ["name", "message"];
+
+  try {
+    const hasRequiredFields = requiredFields.every((field) => {
+      return Object.prototype.hasOwnProperty.call(subject, field);
+    });
+
+    if (!hasRequiredFields) {
+      throw new Error();
+    }
+
+    return cjsDeserializeError(subject as SerializedError);
+  } catch {
+    const err = new Error("Unknown error; could not reserialize");
+
+    /**
+     * Remove the stack so that it's not misleadingly shown as the Inngest
+     * internals.
+     */
+    err.stack = undefined;
+
+    return err;
   }
 };

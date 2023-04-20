@@ -11,8 +11,9 @@
   <br/>
   <p>
 
-<a href="http://www.typescriptlang.org/"><img src="https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg" /></a>
+<a href="http://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TS-%3E%3D4.7-blue" /></a>
 <a href="https://www.npmjs.com/package/inngest"><img src="https://img.shields.io/npm/v/inngest" /></a>
+<br/>
 <a href="https://discord.gg/EuesV2ZSnX"><img src="https://img.shields.io/discord/842170679536517141?label=discord" /></a>
 <a href="https://twitter.com/inngest"><img src="https://img.shields.io/twitter/follow/inngest?style=social" /></a>
 
@@ -21,14 +22,14 @@
 
 <hr />
 
-Inngest allows you to:
+On _any_ serverless platform ([Next.js](https://www.inngest.com/docs/sdk/serve#framework-next-js), [Deno Deploy](https://www.inngest.com/docs/sdk/serve#framework-fresh-deno), [RedwoodJS](https://www.inngest.com/docs/sdk/serve#framework-redwood), [AWS Lambda](https://www.inngest.com/docs/sdk/serve#framework-aws-lambda), and [anything else](https://www.inngest.com/docs/sdk/serve#custom-frameworks)) and with no extra infrastructure:
 
-- 👉 Write <b>background jobs</b> in any framework, on any platform <br />
-- 👉 Create <b>scheduled & cron jobs</b> for any serverless platform <br />
-- 👉 Build <b>serverless queues</b> without configuring infra <br />
-- 👉 Write complex <b>step functions</b> anywhere <br />
-- 👉 Build <b>serverless event-driven systems</b> <br />
-- 👉 Reliably respond to webhooks, with retries & payloads stored for history <br />
+- ⚡ Write <b>background jobs</b>
+- 🕐 Create <b>scheduled & cron jobs</b>
+- ♻️ Build <b>serverless queues</b>
+- 🪜 Write complex <b>step functions</b>
+- 🚘 Build <b>serverless event-driven systems</b>
+- 🪝 Reliably respond to webhooks, with retries & payloads stored for history
 
 👋 _Have a question or feature request? [Join our Discord](https://www.inngest.com/discord)!_
 

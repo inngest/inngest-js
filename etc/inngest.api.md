@@ -8,6 +8,7 @@ import { Jsonify } from 'type-fest';
 
 // @public
 export interface ClientOptions {
+    env?: string;
     eventKey?: string;
     fetch?: typeof fetch;
     inngestBaseUrl?: string;
@@ -33,7 +34,7 @@ export interface EventPayload {
 // @public
 export type FailureEventArgs<P extends EventPayload = EventPayload> = {
     event: FailureEventPayload<P>;
-    err: FailureEventPayload<P>["data"]["error"];
+    error: Error;
 };
 
 // @public
@@ -43,8 +44,9 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
         function_id: string;
         run_id: string;
         error: {
+            name: string;
             message: string;
-            stack?: string;
+            stack: string;
             cause?: string;
             status?: number;
         };
@@ -77,6 +79,12 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
 // @public
 export enum headerKeys {
     // (undocumented)
+    Environment = "x-inngest-env",
+    // (undocumented)
+    Framework = "x-inngest-framework",
+    // (undocumented)
+    Platform = "x-inngest-platform",
+    // (undocumented)
     SdkVersion = "x-inngest-sdk",
     // (undocumented)
     Signature = "x-inngest-signature"
@@ -84,7 +92,7 @@ export enum headerKeys {
 
 // @public
 export class Inngest<Events extends Record<string, EventPayload> = Record<string, EventPayload>> {
-    constructor({ name, eventKey, inngestBaseUrl, fetch, }: ClientOptions);
+    constructor({ name, eventKey, inngestBaseUrl, fetch, env, }: ClientOptions);
     // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
@@ -92,6 +100,7 @@ export class Inngest<Events extends Record<string, EventPayload> = Record<string
     // (undocumented)
     createFunction<TFns extends Record<string, unknown>, TTrigger extends TriggerOptions<keyof Events & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof Events & string = EventNameFromTrigger<Events, TTrigger>>(nameOrOpts: string | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
         fns?: TFns;
+        onFailure?: Handler<Events, TTriggerName, TShimmedFns, FailureEventArgs<Events[TTriggerName]>>;
     }), trigger: TTrigger, handler: Handler<Events, TTriggerName, TShimmedFns>): InngestFunction;
     readonly inngestBaseUrl: URL;
     readonly name: string;
@@ -111,9 +120,11 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     constructor(
     frameworkName: string,
     appNameOrInngest: string | Inngest<any>,
-    functions: InngestFunction<any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
+    functions: InngestFunction<any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, allowEdgeStreaming, }: RegisterOptions | undefined,
     handler: H,
     transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
+    // (undocumented)
+    protected readonly allowEdgeStreaming: boolean;
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
@@ -126,10 +137,12 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     protected readonly logLevel: LogLevel;
     readonly name: string;
     // (undocumented)
-    protected register(url: URL, devServerHost: string | undefined, deployId?: string | undefined | null): Promise<{
+    protected register(url: URL, devServerHost: string | undefined, deployId: string | undefined | null, getHeaders: () => Record<string, string>): Promise<{
         status: number;
         message: string;
     }>;
+    // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
+    //
     // (undocumented)
     protected registerBody(url: URL): RegisterRequest;
     protected reqUrl(url: URL): URL;
@@ -138,12 +151,6 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     //
     // (undocumented)
     protected runStep(functionId: string, stepId: string | null, data: unknown, timer: ServerTiming): Promise<StepRunResponse>;
-    // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
-    protected get sdkHeader(): [
-    prefix: string,
-    version: RegisterRequest["sdk"],
-    suffix: string
-    ];
     protected readonly serveHost: string | undefined;
     protected readonly servePath: string | undefined;
     // (undocumented)
@@ -188,6 +195,8 @@ export enum queryKeys {
 
 // @public
 export interface RegisterOptions {
+    // (undocumented)
+    allowEdgeStreaming?: boolean;
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
     landingPage?: boolean;

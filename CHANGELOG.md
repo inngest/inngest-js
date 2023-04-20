@@ -1,5 +1,33 @@
 # inngest
 
+## 1.7.0
+
+### Minor Changes
+
+- c999896: INN-1029 Add `env` option to `Inngest` client to explicitly push to a particular Inngest env
+
+### Patch Changes
+
+- 131727a: Adjust README to have a slightly clearer intro
+- c999896: INN-1186 Send `x-inngest-platform` and `x-inngest-framework` headers during registration
+- 0728308: Expose run ID to function executions for user-managed logging and tracing
+- 3ac579f: Warn users when some functions appear undefined when serving
+- eb1ea34: Allow signing keys with multiple prefixes, as required for branch environment support
+
+## 1.6.1
+
+### Patch Changes
+
+- a840e67: INN-1126 Execute a step early if it's the only pending item during a discovery
+
+  This reduces the number of "Function steps" used for simple step functions.
+
+## 1.6.0
+
+### Minor Changes
+
+- c7d1bee: Add `onFailure` handler to `createFunction` options, allowing you to specify a new function to run when the initial handler fails
+
 ## 1.5.4
 
 ### Patch Changes
