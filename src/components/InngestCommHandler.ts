@@ -490,7 +490,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         ])
       ) as typeof rawActions;
 
-      const getHeaders = () => ({
+      const getHeaders = (): Record<string, string> => ({
         ...inngestHeaders({
           env: actions.env as Record<string, string | undefined>,
           framework: this.frameworkName,
