@@ -146,6 +146,14 @@ export class Inngest<
       return fetchArg;
     }
 
+    try {
+      if (typeof globalThis !== "undefined" && "fetch" in globalThis) {
+        return fetch.bind(globalThis);
+      }
+    } catch (err) {
+      // no-op
+    }
+
     if (typeof fetch !== "undefined") {
       return fetch;
     }
