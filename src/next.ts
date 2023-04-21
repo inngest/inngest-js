@@ -1,24 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { NextRequest } from "next/server";
-import {
-  InngestCommHandler,
-  ServeHandler,
-} from "./components/InngestCommHandler";
+import type { NextRequest } from "next/server";
+import type { ServeHandler } from "./components/InngestCommHandler";
+import { InngestCommHandler } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
-import { isEdgeRuntime, processEnv } from "./helpers/env";
-import { RegisterOptions } from "./types";
+import { processEnv } from "./helpers/env";
+import type { RegisterOptions } from "./types";
 
 export const name = "nextjs";
-
-/**
- * Assert whether the given request is a Next.js API request or an `NextRequest`
- * from an edge function.
- */
-const isEdgeRequest = (
-  req: NextApiRequest | NextRequest
-): req is NextRequest => {
-  return typeof req?.headers?.get === "function";
-};
 
 /**
  * In Next.js, serve and register any declared functions with Inngest, making
@@ -29,17 +17,14 @@ const isEdgeRequest = (
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
   const optsWithFetch: RegisterOptions = { ...opts };
 
-  if (typeof fetch !== "undefined" && isEdgeRuntime()) {
-    optsWithFetch.fetch = fetch.bind(globalThis);
-  }
-
   const handler = new InngestCommHandler(
     name,
     nameOrInngest,
     fns,
     optsWithFetch,
     (req: NextApiRequest | NextRequest, _res: NextApiResponse) => {
-      const isEdge = isEdgeRequest(req);
+      const isEdge = ((req: NextApiRequest | NextRequest): req is NextRequest =>
+        typeof req?.headers?.get === "function")(req);
 
       const url = isEdge
         ? new URL(req.url)
@@ -103,14 +88,13 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
       };
     },
     ({ body, headers, status }, _req, res) => {
-      if ("send" in res) {
-        for (const [key, value] of Object.entries(headers)) {
-          res.setHeader(key, value);
-        }
-
-        return void res.status(status).send(body);
+      for (const [key, value] of Object.entries(headers)) {
+        res.setHeader(key, value);
       }
 
+      res.status(status).send(body);
+    },
+    ({ body, headers, status }) => {
       return new Response(body, { status, headers });
     }
   );
