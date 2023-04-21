@@ -114,22 +114,24 @@ export class Inngest<Events extends Record<string, EventPayload> = Record<string
 }
 
 // Warning: (ae-forgotten-export) The symbol "Handler_2" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "ActionResponse" needs to be exported by the entry point index.d.ts
 //
 // @public
-export class InngestCommHandler<H extends Handler_2, TransformedRes> {
+export class InngestCommHandler<H extends Handler_2, TResTransform extends (res: ActionResponse<string>, ...args: Parameters<H>) => any, TStreamTransform extends (res: ActionResponse<ReadableStream>, ...args: Parameters<H>) => any> {
     constructor(
     frameworkName: string,
     appNameOrInngest: string | Inngest<any>,
     functions: InngestFunction<any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, allowEdgeStreaming, }: RegisterOptions | undefined,
     handler: H,
-    transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
+    transformRes: TResTransform,
+    streamTransformRes?: TStreamTransform);
     // (undocumented)
     protected readonly allowEdgeStreaming: boolean;
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
     protected configs(url: URL): FunctionConfig[];
-    createHandler(): (...args: Parameters<H>) => Promise<TransformedRes>;
+    createHandler(): (...args: Parameters<H>) => Promise<Awaited<ReturnType<TResTransform>>>;
     protected readonly frameworkName: string;
     readonly handler: H;
     protected _isProd: boolean;
@@ -159,8 +161,9 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     protected signingKey: string | undefined;
     // (undocumented)
     protected signResponse(): string;
-    // Warning: (ae-forgotten-export) The symbol "ActionResponse" needs to be exported by the entry point index.d.ts
-    readonly transformRes: (res: ActionResponse, ...args: Parameters<H>) => TransformedRes;
+    // (undocumented)
+    readonly streamTransformRes: TStreamTransform | undefined;
+    readonly transformRes: TResTransform;
     // (undocumented)
     protected validateSignature(sig: string | undefined, body: Record<string, unknown>): void;
 }

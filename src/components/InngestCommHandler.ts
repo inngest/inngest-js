@@ -7,8 +7,8 @@ import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
   allProcessEnv,
   inngestHeaders,
-  isEdgeRuntime,
   isProd,
+  platformSupportsStreaming,
 } from "../helpers/env";
 import { serializeError } from "../helpers/errors";
 import { strBoolean } from "../helpers/scalar";
@@ -26,7 +26,7 @@ import {
   StepRunResponse,
 } from "../types";
 import { version } from "../version";
-import type { Inngest } from "./Inngest";
+import { Inngest } from "./Inngest";
 import type { InngestFunction } from "./InngestFunction";
 import { NonRetriableError } from "./NonRetriableError";
 
@@ -138,7 +138,19 @@ const registerResSchema = z.object({
  *
  * @public
  */
-export class InngestCommHandler<H extends Handler, TransformedRes> {
+export class InngestCommHandler<
+  H extends Handler,
+  TResTransform extends (
+    res: ActionResponse<string>,
+    ...args: Parameters<H>
+  ) => // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  TStreamTransform extends (
+    res: ActionResponse<ReadableStream>,
+    ...args: Parameters<H>
+  ) => // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any
+> {
   /**
    * The name of this serve handler, e.g. `"My App"`. It's recommended that this
    * value represents the overarching app/service that this set of functions is
@@ -154,10 +166,9 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   /**
    * The response transformer specified during instantiation of the class.
    */
-  public readonly transformRes: (
-    res: ActionResponse,
-    ...args: Parameters<H>
-  ) => TransformedRes;
+  public readonly transformRes: TResTransform;
+
+  public readonly streamTransformRes: TStreamTransform | undefined;
 
   /**
    * The URL of the Inngest function registration endpoint.
@@ -347,10 +358,12 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
      * This should never be defined by the user; a {@link ServeHandler} should
      * abstract this.
      */
-    transformRes: (
-      actionRes: ActionResponse,
-      ...args: Parameters<H>
-    ) => TransformedRes
+    transformRes: TResTransform,
+
+    /**
+     * TODO Document
+     */
+    streamTransformRes?: TStreamTransform
   ) {
     this.frameworkName = frameworkName;
     this.name =
@@ -360,6 +373,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
     this.handler = handler;
     this.transformRes = transformRes;
+    this.streamTransformRes = streamTransformRes;
 
     /**
      * Provide a hidden option to allow expired signatures to be accepted during
@@ -416,13 +430,12 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     this.logLevel = logLevel;
     this.allowEdgeStreaming = allowEdgeStreaming ?? true;
 
-    this.fetch =
+    this.fetch = Inngest["parseFetch"](
       fetch ||
-      (typeof appNameOrInngest === "string"
-        ? undefined
-        : appNameOrInngest["fetch"]) ||
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      (require("cross-fetch") as FetchT);
+        (typeof appNameOrInngest === "string"
+          ? undefined
+          : appNameOrInngest["fetch"])
+    );
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
@@ -462,7 +475,9 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    * };
    * ```
    */
-  public createHandler(): (...args: Parameters<H>) => Promise<TransformedRes> {
+  public createHandler(): (
+    ...args: Parameters<H>
+  ) => Promise<Awaited<ReturnType<TResTransform>>> {
     return async (...args: Parameters<H>) => {
       const timer = new ServerTiming();
 
@@ -503,9 +518,28 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
         this.handleAction(actions as ReturnType<Awaited<H>>, timer)
       );
 
-      let res: ActionResponse | undefined;
+      /**
+       * Prepares an action response by merging returned data to provide
+       * trailing information such as `Server-Timing` headers.
+       *
+       * It should always prioritize the headers returned by the action, as
+       * they may contain important information such as `Content-Type`.
+       */
+      const prepareActionRes = (res: ActionResponse): ActionResponse => ({
+        ...res,
+        headers: {
+          ...getHeaders(),
+          ...res.headers,
+        },
+      });
 
-      if (this.allowEdgeStreaming && isEdgeRuntime()) {
+      if (
+        this.allowEdgeStreaming &&
+        this.streamTransformRes &&
+        platformSupportsStreaming(
+          actions.env as Record<string, string | undefined>
+        )
+      ) {
         const runRes = await actions.run();
         if (runRes) {
           const { stream, finalize } = await createStream();
@@ -514,21 +548,26 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
            * Errors are handled by `handleAction` here to ensure that an
            * appropriate response is always given.
            */
-          void actionRes.then(finalize);
-          res = { status: 201, body: stream, headers: getHeaders() };
+          void actionRes.then((res) => finalize(prepareActionRes(res)));
+
+          return timer.wrap("res", () =>
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            this.streamTransformRes?.(
+              {
+                status: 201,
+                headers: getHeaders(),
+                body: stream,
+              },
+              ...args
+            )
+          );
         }
       }
 
       return timer.wrap("res", async () =>
-        this.transformRes(
-          res ?? {
-            ...(await actionRes),
-            headers: {
-              ...getHeaders(),
-              ...(await actionRes).headers,
-            },
-          },
-          ...args
+        actionRes.then((res) =>
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+          this.transformRes(prepareActionRes(res), ...args)
         )
       );
     };

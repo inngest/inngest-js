@@ -133,17 +133,6 @@ export const allProcessEnv = (): Record<string, string | undefined> => {
   return {};
 };
 
-declare const EdgeRuntime: string | undefined;
-
-/**
- * Tries to detect whether this is running in an Edge runtime.
- *
- * @public
- */
-export const isEdgeRuntime = (): boolean => {
-  return typeof EdgeRuntime === "string";
-};
-
 /**
  * Generate a standardised set of headers based on input and environment
  * variables.
@@ -196,23 +185,53 @@ export const inngestHeaders = (opts?: {
   return headers;
 };
 
-const getPlatformName = (
-  env: Record<string, string | undefined>
-): string | undefined => {
-  const platformChecks = {
-    vercel: (env) => env[envKeys.IsVercel] === "1",
-    netlify: (env) => env[envKeys.IsNetlify] === "true",
-    "cloudflare-pages": (env) => env[envKeys.IsCloudflarePages] === "1",
-    render: (env) => env[envKeys.IsRender] === "true",
-    railway: (env) => Boolean(env[envKeys.RailwayEnvironment]),
-  } satisfies Record<
-    string,
-    (env: Record<string, string | undefined>) => boolean
-  >;
+/**
+ * A set of checks that, given an environment, will return `true` if the current
+ * environment is running on the platform with the given name.
+ */
+const platformChecks = {
+  vercel: (env) => env[envKeys.IsVercel] === "1",
+  netlify: (env) => env[envKeys.IsNetlify] === "true",
+  "cloudflare-pages": (env) => env[envKeys.IsCloudflarePages] === "1",
+  render: (env) => env[envKeys.IsRender] === "true",
+  railway: (env) => Boolean(env[envKeys.RailwayEnvironment]),
+} satisfies Record<
+  string,
+  (env: Record<string, string | undefined>) => boolean
+>;
 
+declare const EdgeRuntime: string | undefined;
+
+/**
+ * A set of checks that, given an environment, will return `true` if the current
+ * environment and platform supports streaming responses back to Inngest.
+ *
+ * Streaming capability is both framework and platform-based. Frameworks are
+ * supported in serve handlers, and platforms are checked here.
+ */
+const streamingChecks = {
+  vercel: (_env) => typeof EdgeRuntime === "string",
+} satisfies Partial<
+  Record<
+    keyof typeof platformChecks,
+    (env: Record<string, string | undefined>) => boolean
+  >
+>;
+
+const getPlatformName = (env: Record<string, string | undefined>) => {
   return (Object.keys(platformChecks) as (keyof typeof platformChecks)[]).find(
     (key) => {
       return platformChecks[key](env);
     }
+  );
+};
+
+export const platformSupportsStreaming = (
+  env: Record<string, string | undefined> = allProcessEnv()
+): boolean => {
+  return (
+    streamingChecks[getPlatformName(env) as keyof typeof streamingChecks]?.(
+      env
+    ) ?? false
   );
 };
