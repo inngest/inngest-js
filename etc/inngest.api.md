@@ -198,7 +198,6 @@ export enum queryKeys {
 
 // @public
 export interface RegisterOptions {
-    // (undocumented)
     allowEdgeStreaming?: boolean;
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
