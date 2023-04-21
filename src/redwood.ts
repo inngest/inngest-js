@@ -90,7 +90,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
     (actionRes): RedwoodResponse => {
       return {
         statusCode: actionRes.status,
-        body: actionRes.body as string,
+        body: actionRes.body,
         headers: actionRes.headers,
       };
     }
