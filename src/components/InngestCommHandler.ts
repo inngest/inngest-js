@@ -1103,7 +1103,9 @@ type Handler = (...args: any[]) => {
  * The response from the Inngest SDK before it is transformed in to a
  * framework-compatible response by an {@link InngestCommHandler} instance.
  */
-export interface ActionResponse {
+export interface ActionResponse<
+  TBody extends string | ReadableStream = string
+> {
   /**
    * The HTTP status code to return.
    */
@@ -1117,7 +1119,7 @@ export interface ActionResponse {
   /**
    * A stringified body to return.
    */
-  body: string | ReadableStream;
+  body: TBody;
 }
 
 /**
