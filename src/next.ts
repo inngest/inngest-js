@@ -17,7 +17,7 @@ export const name = "nextjs";
 const isEdgeRequest = (
   req: NextApiRequest | NextRequest
 ): req is NextRequest => {
-  return typeof req.headers.get === "function";
+  return typeof req?.headers?.get === "function";
 };
 
 /**
