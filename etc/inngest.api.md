@@ -171,6 +171,9 @@ export enum internalEvents {
 }
 
 // @public
+export const isEdgeRuntime: () => boolean;
+
+// @public
 export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
 
 // @public
