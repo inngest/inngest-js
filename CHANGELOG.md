@@ -1,5 +1,11 @@
 # inngest
 
+## 1.7.1
+
+### Patch Changes
+
+- 34b6d39: INN-1240 Add `queueMicrotask()` fallback for restrictive environments
+
 ## 1.7.0
 
 ### Minor Changes
