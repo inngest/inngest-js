@@ -112,12 +112,12 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
       };
     },
 
-    ({ body, status, headers }, _req): Promise<APIGatewayProxyResult> => {
+    ({ body, status, headers }): Promise<APIGatewayProxyResult> => {
       return Promise.resolve({
         body,
         statusCode: status,
         headers,
-      } as APIGatewayProxyResult);
+      });
     }
   );
 
