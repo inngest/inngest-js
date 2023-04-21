@@ -5,7 +5,7 @@ import {
   ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
-import { processEnv } from "./helpers/env";
+import { isEdgeRuntime, processEnv } from "./helpers/env";
 import { RegisterOptions } from "./types";
 
 export const name = "nextjs";
@@ -29,7 +29,7 @@ const isEdgeRequest = (
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
   const optsWithFetch: RegisterOptions = { ...opts };
 
-  if (typeof fetch !== "undefined") {
+  if (typeof fetch !== "undefined" && isEdgeRuntime()) {
     optsWithFetch.fetch = fetch.bind(globalThis);
   }
 
