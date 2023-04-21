@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -58,6 +58,7 @@
     "h3": "^1.0.2",
     "hash.js": "^1.1.7",
     "ms": "^2.1.3",
+    "queue-microtask": "^1.2.3",
     "serialize-error-cjs": "^0.1.3",
     "type-fest": "^3.5.1",
     "zod": "^3.19.1"
@@ -95,7 +96,8 @@
   },
   "volta": {
     "node": "18.12.1",
-    "yarn": "1.22.19"
+    "yarn": "1.22.19",
+    "npm": "9.6.4"
   },
   "peerDependencies": {
     "typescript": ">=4.7.2"
