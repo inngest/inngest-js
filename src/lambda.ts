@@ -9,8 +9,9 @@ import {
   ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
+import { SupportedFrameworkName } from "./types";
 
-export const name = "aws-lambda";
+export const name: SupportedFrameworkName = "aws-lambda";
 
 /**
  * With AWS Lambda, serve and register any declared functions with Inngest,

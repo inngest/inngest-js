@@ -8,6 +8,7 @@ import {
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
+import type { SupportedFrameworkName } from "./types";
 
 export interface RedwoodResponse {
   statusCode: number;
@@ -15,7 +16,7 @@ export interface RedwoodResponse {
   headers?: Record<string, string>;
 }
 
-export const name = "redwoodjs";
+export const name: SupportedFrameworkName = "redwoodjs";
 
 /**
  * In Redwood.js, serve and register any declared functions with Inngest, making

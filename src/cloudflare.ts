@@ -3,8 +3,9 @@ import {
   ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
+import type { SupportedFrameworkName } from "./types";
 
-export const name = "cloudflare-pages";
+export const name: SupportedFrameworkName = "cloudflare-pages";
 
 /**
  * In Cloudflare, serve and register any declared functions with Inngest, making

@@ -872,3 +872,19 @@ export type EventNameFromTrigger<
   Events extends Record<string, EventPayload>,
   T extends TriggerOptions<keyof Events & string>
 > = T extends string ? T : T extends { event: string } ? T["event"] : string;
+
+/**
+ * A union to represent known names of supported frameworks that we can use
+ * internally to assess functionality based on a mix of framework and platform.
+ */
+export type SupportedFrameworkName =
+  | "cloudflare-pages"
+  | "digitalocean"
+  | "edge"
+  | "express"
+  | "aws-lambda"
+  | "nextjs"
+  | "nuxt"
+  | "redwoodjs"
+  | "remix"
+  | "deno/fresh";

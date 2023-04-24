@@ -26,6 +26,7 @@ import {
   RegisterOptions,
   RegisterRequest,
   StepRunResponse,
+  SupportedFrameworkName,
 } from "../types";
 import { version } from "../version";
 import { Inngest } from "./Inngest";
@@ -560,6 +561,7 @@ export class InngestCommHandler<
         this.allowEdgeStreaming &&
         this.streamTransformRes &&
         platformSupportsStreaming(
+          this.frameworkName as SupportedFrameworkName,
           actions.env as Record<string, string | undefined>
         )
       ) {

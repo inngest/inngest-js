@@ -3,6 +3,7 @@
 // along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
 // string in order to read variables.
 
+import { SupportedFrameworkName } from "../types";
 import { version } from "../version";
 import { envKeys, headerKeys } from "./consts";
 import { stringifyUnknown } from "./strings";
@@ -212,14 +213,24 @@ declare const EdgeRuntime: string | undefined;
  * As such, this record declares which platforms we explicitly support for
  * streaming and is used by {@link platformSupportsStreaming}.
  */
-const streamingChecks = {
-  vercel: (_env) => typeof EdgeRuntime === "string",
-} satisfies Partial<
+const streamingChecks: Partial<
   Record<
     keyof typeof platformChecks,
-    (env: Record<string, string | undefined>) => boolean
+    (
+      framework: SupportedFrameworkName,
+      env: Record<string, string | undefined>
+    ) => boolean
   >
->;
+> = {
+  /**
+   * "Vercel supports streaming for Serverless Functions, Edge Functions, and
+   * React Server Components in Next.js projects.""
+   *
+   * See {@link https://vercel.com/docs/frameworks/nextjs#streaming}
+   */
+  vercel: (framework) =>
+    framework === "nextjs" || typeof EdgeRuntime === "string",
+};
 
 const getPlatformName = (env: Record<string, string | undefined>) => {
   return (Object.keys(platformChecks) as (keyof typeof platformChecks)[]).find(
@@ -237,10 +248,12 @@ const getPlatformName = (env: Record<string, string | undefined>) => {
  * usually based on environment variables.
  */
 export const platformSupportsStreaming = (
+  framework: SupportedFrameworkName,
   env: Record<string, string | undefined> = allProcessEnv()
 ): boolean => {
   return (
     streamingChecks[getPlatformName(env) as keyof typeof streamingChecks]?.(
+      framework,
       env
     ) ?? false
   );

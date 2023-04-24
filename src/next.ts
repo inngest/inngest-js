@@ -4,9 +4,9 @@ import type { ServeHandler } from "./components/InngestCommHandler";
 import { InngestCommHandler } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
-import type { RegisterOptions } from "./types";
+import type { RegisterOptions, SupportedFrameworkName } from "./types";
 
-export const name = "nextjs";
+export const name: SupportedFrameworkName = "nextjs";
 
 /**
  * In Next.js, serve and register any declared functions with Inngest, making
