@@ -12,6 +12,16 @@ export const name = "nextjs";
  * In Next.js, serve and register any declared functions with Inngest, making
  * them available to be triggered by events.
  *
+ * @example Next.js <=12 can export the handler directly
+ * ```ts
+ * export default serve(inngest, [fn1, fn2]);
+ * ```
+ *
+ * @example Next.js >=13 with the `app` dir must export individual methods
+ * ```ts
+ * export const { GET, POST, PUT } = serve(inngest, [fn1, fn2]);
+ * ```
+ *
  * @public
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
@@ -22,7 +32,24 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
     nameOrInngest,
     fns,
     optsWithFetch,
-    (req: NextApiRequest | NextRequest, _res: NextApiResponse) => {
+    (
+      reqMethod: "GET" | "POST" | "PUT" | undefined,
+      req: NextApiRequest | NextRequest,
+      _res: NextApiResponse
+    ) => {
+      /**
+       * `req.method`, though types say otherwise, is not available in Next.js
+       * 13 {@link https://beta.nextjs.org/docs/routing/route-handlers Route Handlers}.
+       *
+       * Therefore, we must try to set the method ourselves where we know it.
+       */
+      const method = reqMethod || req.method;
+      if (!method) {
+        throw new Error(
+          "No method found on request; check that your exports are correct."
+        );
+      }
+
       const isEdge = ((req: NextApiRequest | NextRequest): req is NextRequest =>
         typeof req?.headers?.get === "function")(req);
 
@@ -60,14 +87,14 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
       return {
         url,
         register: () => {
-          if (req.method === "PUT") {
+          if (method === "PUT") {
             return {
               deployId: getQueryParam(queryKeys.DeployId)?.toString(),
             };
           }
         },
         run: async () => {
-          if (req.method === "POST") {
+          if (method === "POST") {
             return {
               data: isEdge
                 ? ((await req.json()) as Record<string, unknown>)
@@ -79,7 +106,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
           }
         },
         view: () => {
-          if (req.method === "GET") {
+          if (method === "GET") {
             return {
               isIntrospection: hasQueryParam(queryKeys.Introspect),
             };
@@ -87,7 +114,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         },
       };
     },
-    ({ body, headers, status }, _req, res) => {
+    ({ body, headers, status }, _method, _req, res) => {
       if ("send" in res) {
         for (const [key, value] of Object.entries(headers)) {
           res.setHeader(key, value);
@@ -103,5 +130,32 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
     }
   );
 
-  return handler.createHandler();
+  /**
+   * Next.js 13 uses
+   * {@link https://beta.nextjs.org/docs/routing/route-handlers Route Handlers}
+   * to declare API routes instead of a generic catch-all method that was
+   * available using the `pages/api` directory.
+   *
+   * This means that users must now export a function for each method supported
+   * by the endpoint. For us, this means requiring a user explicitly exports
+   * `GET`, `POST`, and `PUT` functions.
+   *
+   * Because of this, we'll add circular references to those property names of
+   * the returned handler, meaning we can write some succinct code to export
+   * them. Thanks, @goodoldneon.
+   *
+   * @example
+   * ```ts
+   * export const { GET, POST, PUT } = serve(...);
+   * ```
+   *
+   * See {@link https://beta.nextjs.org/docs/routing/route-handlers}
+   */
+  const fn = handler.createHandler();
+
+  return Object.defineProperties(fn.bind(null, undefined), {
+    GET: { value: fn.bind(null, "GET") },
+    POST: { value: fn.bind(null, "POST") },
+    PUT: { value: fn.bind(null, "PUT") },
+  });
 };
