@@ -88,11 +88,15 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
       };
     },
     ({ body, headers, status }, _req, res) => {
-      for (const [key, value] of Object.entries(headers)) {
-        res.setHeader(key, value);
+      if ("send" in res) {
+        for (const [key, value] of Object.entries(headers)) {
+          res.setHeader(key, value);
+        }
+
+        return void res.status(status).send(body);
       }
 
-      res.status(status).send(body);
+      return new Response(body, { status, headers });
     },
     ({ body, headers, status }) => {
       return new Response(body, { status, headers });
