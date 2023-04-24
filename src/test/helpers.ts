@@ -130,7 +130,7 @@ export const testFramework = (
       ...givenOpts,
 
       /**
-       * For testing, the fetch implementation has to be stable for just to
+       * For testing, the fetch implementation has to be stable for us to
        * appropriately mock out the network requests.
        */
       fetch,
