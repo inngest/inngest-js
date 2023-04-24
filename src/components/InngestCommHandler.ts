@@ -361,7 +361,28 @@ export class InngestCommHandler<
     transformRes: TResTransform,
 
     /**
-     * TODO Document
+     * The `streamTransformRes` function, if defined, declares that this handler
+     * supports streaming responses back to Inngest. This is useful for
+     * functions that are expected to take a long time, as edge streaming can
+     * often circumvent restrictive request timeouts and other limitations.
+     *
+     * If your handler does not support streaming, do not define this function.
+     *
+     * It receives the output of the Inngest SDK and can decide how to package
+     * up that information to appropriately return the information in a stream
+     * to Inngest.
+     *
+     * Mostly, this is taking the given parameters and returning a new
+     * `Response`.
+     *
+     * The function is passed an {@link ActionResponse} (an object containing a
+     * `status` code, a `headers` object, and `body`, a `ReadableStream`), as
+     * well as every parameter passed to the given `handler` function. This
+     * ensures you can appropriately handle the response, including use of any
+     * required parameters such as `res` in Express-/Connect-like frameworks.
+     *
+     * This should never be defined by the user; a {@link ServeHandler} should
+     * abstract this.
      */
     streamTransformRes?: TStreamTransform
   ) {
