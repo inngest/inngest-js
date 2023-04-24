@@ -12,6 +12,7 @@ import {
   platformSupportsStreaming,
 } from "../helpers/env";
 import { serializeError } from "../helpers/errors";
+import { cacheFn } from "../helpers/functions";
 import { strBoolean } from "../helpers/scalar";
 import { createStream } from "../helpers/stream";
 import { stringifyUnknown } from "../helpers/strings";
@@ -1210,16 +1211,3 @@ type HandlerAction =
   | {
       action: "bad-method";
     };
-
-const cacheFn = <T extends (...args: unknown[]) => unknown>(fn: T): T => {
-  const key = "value";
-  const cache = new Map<typeof key, ReturnType<T>>();
-
-  return ((...args) => {
-    if (!cache.has(key)) {
-      cache.set(key, fn(...args) as ReturnType<T>);
-    }
-
-    return cache.get(key);
-  }) as T;
-};
