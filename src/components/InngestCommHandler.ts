@@ -452,7 +452,7 @@ export class InngestCommHandler<
     this.serveHost = serveHost;
     this.servePath = servePath;
     this.logLevel = logLevel;
-    this.allowEdgeStreaming = allowEdgeStreaming ?? true;
+    this.allowEdgeStreaming = allowEdgeStreaming ?? false;
 
     this.fetch = getFetch(
       fetch ||
