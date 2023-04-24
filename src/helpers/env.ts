@@ -208,6 +208,9 @@ declare const EdgeRuntime: string | undefined;
  *
  * Streaming capability is both framework and platform-based. Frameworks are
  * supported in serve handlers, and platforms are checked here.
+ *
+ * As such, this record declares which platforms we explicitly support for
+ * streaming and is used by {@link platformSupportsStreaming}.
  */
 const streamingChecks = {
   vercel: (_env) => typeof EdgeRuntime === "string",
@@ -226,6 +229,13 @@ const getPlatformName = (env: Record<string, string | undefined>) => {
   );
 };
 
+/**
+ * Returns `true` if we believe the current environment supports streaming
+ * responses back to Inngest.
+ *
+ * We run a check directly related to the platform we believe we're running on,
+ * usually based on environment variables.
+ */
 export const platformSupportsStreaming = (
   env: Record<string, string | undefined> = allProcessEnv()
 ): boolean => {
