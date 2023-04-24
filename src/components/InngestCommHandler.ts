@@ -6,6 +6,7 @@ import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
   allProcessEnv,
+  getFetch,
   inngestHeaders,
   isProd,
   platformSupportsStreaming,
@@ -451,7 +452,7 @@ export class InngestCommHandler<
     this.logLevel = logLevel;
     this.allowEdgeStreaming = allowEdgeStreaming ?? true;
 
-    this.fetch = Inngest["parseFetch"](
+    this.fetch = getFetch(
       fetch ||
         (typeof appNameOrInngest === "string"
           ? undefined
