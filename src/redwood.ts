@@ -29,14 +29,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
     name,
     nameOrInngest,
     fns,
-    {
-      ...opts,
-
-      /**
-       * RedwoodJS doesn't support streaming responses.
-       */
-      allowEdgeStreaming: false,
-    },
+    opts,
     (event: APIGatewayProxyEvent, _context: LambdaContext) => {
       const scheme =
         processEnv("NODE_ENV") === "development" ? "http" : "https";
