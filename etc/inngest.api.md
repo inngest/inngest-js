@@ -121,12 +121,10 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     constructor(
     frameworkName: string,
     appNameOrInngest: string | Inngest<any>,
-    functions: InngestFunction<any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, allowEdgeStreaming, }: RegisterOptions | undefined,
+    functions: InngestFunction<any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, streaming, }: RegisterOptions | undefined,
     handler: H,
     transformRes: TResTransform,
     streamTransformRes?: TStreamTransform);
-    // (undocumented)
-    protected readonly allowEdgeStreaming: boolean;
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
@@ -161,6 +159,8 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     protected signingKey: string | undefined;
     // (undocumented)
     protected signResponse(): string;
+    // (undocumented)
+    protected readonly streaming: RegisterOptions["streaming"];
     // (undocumented)
     readonly streamTransformRes: TStreamTransform | undefined;
     readonly transformRes: TResTransform;
@@ -198,7 +198,6 @@ export enum queryKeys {
 
 // @public
 export interface RegisterOptions {
-    allowEdgeStreaming?: boolean;
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
     landingPage?: boolean;
@@ -206,6 +205,7 @@ export interface RegisterOptions {
     serveHost?: string;
     servePath?: string;
     signingKey?: string;
+    streaming?: "allow" | "force" | false;
 }
 
 // @public

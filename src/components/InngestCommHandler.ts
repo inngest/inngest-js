@@ -252,7 +252,7 @@ export class InngestCommHandler<
    */
   protected readonly logLevel: LogLevel;
 
-  protected readonly allowEdgeStreaming: boolean;
+  protected readonly streaming: RegisterOptions["streaming"];
 
   /**
    * A private collection of just Inngest functions, as they have been passed
@@ -308,7 +308,7 @@ export class InngestCommHandler<
       signingKey,
       serveHost,
       servePath,
-      allowEdgeStreaming,
+      streaming,
     }: RegisterOptions = {},
 
     /**
@@ -452,7 +452,7 @@ export class InngestCommHandler<
     this.serveHost = serveHost;
     this.servePath = servePath;
     this.logLevel = logLevel;
-    this.allowEdgeStreaming = allowEdgeStreaming ?? false;
+    this.streaming = streaming ?? false;
 
     this.fetch = getFetch(
       fetch ||
@@ -557,14 +557,15 @@ export class InngestCommHandler<
         },
       });
 
-      if (
-        this.allowEdgeStreaming &&
-        this.streamTransformRes &&
-        platformSupportsStreaming(
-          this.frameworkName as SupportedFrameworkName,
-          actions.env as Record<string, string | undefined>
-        )
-      ) {
+      const wantToStream =
+        this.streaming === "force" ||
+        (this.streaming === "allow" &&
+          platformSupportsStreaming(
+            this.frameworkName as SupportedFrameworkName,
+            actions.env as Record<string, string | undefined>
+          ));
+
+      if (wantToStream && this.streamTransformRes) {
         const runRes = await actions.run();
         if (runRes) {
           const { stream, finalize } = await createStream();

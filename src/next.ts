@@ -3,10 +3,15 @@ import type { NextRequest } from "next/server";
 import type { ServeHandler } from "./components/InngestCommHandler";
 import { InngestCommHandler } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
-import { processEnv } from "./helpers/env";
-import type { RegisterOptions, SupportedFrameworkName } from "./types";
+import type { SupportedFrameworkName } from "./types";
 
 export const name: SupportedFrameworkName = "nextjs";
+
+const isNextEdgeRequest = (
+  req: NextApiRequest | NextRequest
+): req is NextRequest => {
+  return typeof req?.headers?.get === "function";
+};
 
 /**
  * In Next.js, serve and register any declared functions with Inngest, making
@@ -25,13 +30,11 @@ export const name: SupportedFrameworkName = "nextjs";
  * @public
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-  const optsWithFetch: RegisterOptions = { ...opts };
-
   const handler = new InngestCommHandler(
     name,
     nameOrInngest,
     fns,
-    optsWithFetch,
+    opts,
     (
       reqMethod: "GET" | "POST" | "PUT" | undefined,
       req: NextApiRequest | NextRequest,
@@ -50,17 +53,22 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         );
       }
 
-      const isEdge = ((req: NextApiRequest | NextRequest): req is NextRequest =>
-        typeof req?.headers?.get === "function")(req);
+      const isEdge = isNextEdgeRequest(req);
+
+      let scheme: "http" | "https" = "https";
+
+      try {
+        // eslint-disable-next-line @inngest/process-warn
+        if (process.env.NODE_ENV === "development") {
+          scheme = "http";
+        }
+      } catch (err) {
+        // no-op
+      }
 
       const url = isEdge
         ? new URL(req.url)
-        : new URL(
-            req.url as string,
-            `${processEnv("NODE_ENV") === "development" ? "http" : "https"}://${
-              req.headers.host || ""
-            }`
-          );
+        : new URL(req.url as string, `${scheme}://${req.headers.host || ""}`);
 
       const getQueryParam = (key: string): string | undefined => {
         return (
@@ -84,7 +92,24 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         );
       };
 
+      /**
+       * Vercel Edge Functions do not allow dynamic access to environment
+       * variables, so we'll manage `isProd` directly here.
+       *
+       * We try/catch to avoid situations where Next.js is being used in
+       * environments where `process.env` is not accessible or polyfilled.
+       */
+      let isProduction: boolean | undefined;
+
+      try {
+        // eslint-disable-next-line @inngest/process-warn
+        isProduction = process.env.NODE_ENV === "production";
+      } catch (err) {
+        // no-op
+      }
+
       return {
+        isProduction,
         url,
         register: () => {
           if (method === "PUT") {

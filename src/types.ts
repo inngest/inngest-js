@@ -495,20 +495,25 @@ export interface RegisterOptions {
   logLevel?: LogLevel;
 
   /**
-   * If this is `true`, and streaming is supported by your serve handler (e.g.
-   * `"inngest/next"`) and your platform (e.g. Vercel), the SDK will attempt to
-   * stream responses back to Inngest.
+   * Some serverless providers (especially those with edge compute) may support
+   * streaming responses back to Inngest. This can be used to circumvent
+   * restrictive request timeouts and other limitations. It is only available if
+   * the serve handler being used supports streaming.
    *
-   * This is highly recommended for functions that are expected to take a long
-   * time, as edge streaming can often circumvent restrictive request timeouts
-   * and other limitations.
+   * If this is `"allow"`, the SDK will attempt to stream responses back to
+   * Inngest if it can confidently detect support for it by verifyng that the
+   * platform and the serve handler supports streaming.
    *
-   * Some serve handlers may override this to `false` if streaming is not
-   * supported.
+   * If this is `"force"`, the SDK will always attempt to stream responses back
+   * to Inngest regardless of whether we can detect support for it or not. This
+   * will override `allowStreaming`, but will still not attempt to stream if
+   * the serve handler does not support it.
    *
-   * Defaults to `true`.
+   * If this is `false`, streaming will never be used.
+   *
+   * Defaults to `false`.
    */
-  allowEdgeStreaming?: boolean;
+  streaming?: "allow" | "force" | false;
 }
 
 /**
