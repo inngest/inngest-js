@@ -589,12 +589,12 @@ export class InngestCommHandler<
         }
       }
 
-      return timer.wrap("res", async () =>
-        actionRes.then((res) =>
+      return timer.wrap("res", async () => {
+        return actionRes.then((res) => {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          this.transformRes(prepareActionRes(res), ...args)
-        )
-      );
+          return this.transformRes(prepareActionRes(res), ...args);
+        });
+      });
     };
   }
 
