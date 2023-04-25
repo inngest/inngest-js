@@ -232,10 +232,13 @@ const streamingChecks: Partial<
    * "Vercel supports streaming for Serverless Functions, Edge Functions, and
    * React Server Components in Next.js projects."
    *
+   * In practice, however, there are many reports of streaming not working as
+   * expected on Serverless Functions, so we resort to only allowing streaming
+   * for Edge Functions here.
+   *
    * See {@link https://vercel.com/docs/frameworks/nextjs#streaming}
    */
-  vercel: (framework) =>
-    framework === "nextjs" || typeof EdgeRuntime === "string",
+  vercel: (_framework, _env) => typeof EdgeRuntime === "string",
 };
 
 const getPlatformName = (env: Record<string, string | undefined>) => {
