@@ -35,7 +35,8 @@
     "build:landing": "cd landing && yarn run build",
     "build:check": "api-extractor run --verbose",
     "build:copy": "cp package.json LICENSE.md README.md CHANGELOG.md dist",
-    "prelink": "yarn run build:copy"
+    "prelink": "yarn run build:copy",
+    "local:pack": "yarn build && yarn prelink && yarn pack --verbose --frozen-lockfile --filename inngest.tgz --cwd dist"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
