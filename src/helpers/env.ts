@@ -224,7 +224,7 @@ const streamingChecks: Partial<
 > = {
   /**
    * "Vercel supports streaming for Serverless Functions, Edge Functions, and
-   * React Server Components in Next.js projects.""
+   * React Server Components in Next.js projects."
    *
    * See {@link https://vercel.com/docs/frameworks/nextjs#streaming}
    */
