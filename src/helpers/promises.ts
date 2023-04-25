@@ -14,7 +14,10 @@
  *
  * See {@link https://www.npmjs.com/package/queue-microtask}.
  */
-import queueMicrotask from "queue-microtask";
+// import queueMicrotask from "queue-microtask";
+const shimQueueMicrotask = (callback: () => void): void => {
+  void Promise.resolve().then(callback);
+};
 
 /**
  * A helper function to create a `Promise` that will never settle.
@@ -35,6 +38,10 @@ export const createFrozenPromise = (): Promise<unknown> => {
  * have finished, but before the next event loop tick.
  */
 export const resolveAfterPending = (): Promise<void> => {
+  console.log("resolveAfterPending() called;", {
+    "typeof queueMicrotask": typeof queueMicrotask,
+  });
+
   /**
    * This uses a brute force implementation that will continue to enqueue
    * microtasks 1000 times before resolving. This is to ensure that the
@@ -50,7 +57,7 @@ export const resolveAfterPending = (): Promise<void> => {
     let i = 0;
 
     const iterate = () => {
-      queueMicrotask(() => {
+      shimQueueMicrotask(() => {
         if (i++ > 1000) {
           return resolve();
         }

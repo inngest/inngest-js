@@ -191,7 +191,13 @@ export const inngestHeaders = (opts?: {
  * environment is running on the platform with the given name.
  */
 const platformChecks = {
-  vercel: (env) => env[envKeys.IsVercel] === "1",
+  /**
+   * Vercel Edge Functions don't have access to environment variables unless
+   * they are explicitly referenced in the top level code, but they do have a
+   * global `EdgeRuntime` variable set that we can use to detect this.
+   */
+  vercel: (env) =>
+    env[envKeys.IsVercel] === "1" || typeof EdgeRuntime === "string",
   netlify: (env) => env[envKeys.IsNetlify] === "true",
   "cloudflare-pages": (env) => env[envKeys.IsCloudflarePages] === "1",
   render: (env) => env[envKeys.IsRender] === "true",

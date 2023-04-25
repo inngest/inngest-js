@@ -8,6 +8,12 @@ import type { RegisterOptions, SupportedFrameworkName } from "./types";
 
 export const name: SupportedFrameworkName = "nextjs";
 
+const isNextEdgeRequest = (
+  req: NextApiRequest | NextRequest
+): req is NextRequest => {
+  return typeof req?.headers?.get === "function";
+};
+
 /**
  * In Next.js, serve and register any declared functions with Inngest, making
  * them available to be triggered by events.
@@ -50,8 +56,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         );
       }
 
-      const isEdge = ((req: NextApiRequest | NextRequest): req is NextRequest =>
-        typeof req?.headers?.get === "function")(req);
+      const isEdge = isNextEdgeRequest(req);
 
       const url = isEdge
         ? new URL(req.url)
@@ -95,6 +100,8 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         },
         run: async () => {
           if (method === "POST") {
+            console.log("Is a POST request", { isEdge });
+
             return {
               data: isEdge
                 ? ((await req.json()) as Record<string, unknown>)
@@ -114,16 +121,24 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         },
       };
     },
-    ({ body, headers, status }, _method, _req, res) => {
-      if ("send" in res) {
-        for (const [key, value] of Object.entries(headers)) {
-          res.setHeader(key, value);
-        }
-
-        return void res.status(status).send(body);
+    ({ body, headers, status }, _method, req, res) => {
+      if (isNextEdgeRequest(req)) {
+        console.log(
+          "res running and found is edge request; returning a response with:",
+          { body, status, headers }
+        );
+        return new Response(body, { status, headers });
       }
 
-      return new Response(body, { status, headers });
+      console.log(
+        "res running and found is not edge request; returning via res.send()"
+      );
+
+      for (const [key, value] of Object.entries(headers)) {
+        res.setHeader(key, value);
+      }
+
+      res.status(status).send(body);
     },
     ({ body, headers, status }) => {
       return new Response(body, { status, headers });

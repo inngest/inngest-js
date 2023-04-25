@@ -252,7 +252,8 @@ export class InngestCommHandler<
    */
   protected readonly logLevel: LogLevel;
 
-  protected readonly allowEdgeStreaming: boolean;
+  protected readonly allowStreaming: boolean;
+  protected readonly forceStreaming: boolean;
 
   /**
    * A private collection of just Inngest functions, as they have been passed
@@ -308,7 +309,8 @@ export class InngestCommHandler<
       signingKey,
       serveHost,
       servePath,
-      allowEdgeStreaming,
+      allowStreaming,
+      forceStreaming,
     }: RegisterOptions = {},
 
     /**
@@ -452,7 +454,8 @@ export class InngestCommHandler<
     this.serveHost = serveHost;
     this.servePath = servePath;
     this.logLevel = logLevel;
-    this.allowEdgeStreaming = allowEdgeStreaming ?? false;
+    this.allowStreaming = allowStreaming ?? false;
+    this.forceStreaming = forceStreaming ?? false;
 
     this.fetch = getFetch(
       fetch ||
@@ -538,9 +541,13 @@ export class InngestCommHandler<
         "Server-Timing": timer.getHeader(),
       });
 
+      console.log("running action now");
+
       const actionRes = timer.wrap("action", () =>
         this.handleAction(actions as ReturnType<Awaited<H>>, timer)
       );
+
+      console.log("triggered action");
 
       /**
        * Prepares an action response by merging returned data to provide
@@ -557,14 +564,31 @@ export class InngestCommHandler<
         },
       });
 
-      if (
-        this.allowEdgeStreaming &&
-        this.streamTransformRes &&
-        platformSupportsStreaming(
+      console.log("time to check if we are trying to stream...", {
+        forceStreaming: Boolean(this.forceStreaming),
+        allowStreaming: Boolean(this.allowStreaming),
+        streamTransformRes: Boolean(this.streamTransformRes),
+        platformSupportsStreaming: platformSupportsStreaming(
           this.frameworkName as SupportedFrameworkName,
           actions.env as Record<string, string | undefined>
-        )
-      ) {
+        ),
+      });
+
+      const wantToStream =
+        this.forceStreaming ||
+        (this.allowStreaming &&
+          platformSupportsStreaming(
+            this.frameworkName as SupportedFrameworkName,
+            actions.env as Record<string, string | undefined>
+          ));
+
+      console.log("wantToStream:", wantToStream);
+
+      if (wantToStream && this.streamTransformRes) {
+        console.log(
+          "detected edge streaming supported; seeing if we have a runRes"
+        );
+
         const runRes = await actions.run();
         if (runRes) {
           const { stream, finalize } = await createStream();
@@ -589,12 +613,18 @@ export class InngestCommHandler<
         }
       }
 
-      return timer.wrap("res", async () =>
-        actionRes.then((res) =>
+      console.log("non-edge response; waiting and then replying with a string");
+
+      return timer.wrap("res", async () => {
+        console.log("timer.wrap res trigger");
+
+        return actionRes.then((res) => {
+          console.log("actionRes returned; running transformRes");
+
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          this.transformRes(prepareActionRes(res), ...args)
-        )
-      );
+          return this.transformRes(prepareActionRes(res), ...args);
+        });
+      });
     };
   }
 

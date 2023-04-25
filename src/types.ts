@@ -508,7 +508,20 @@ export interface RegisterOptions {
    *
    * Defaults to `true`.
    */
-  allowEdgeStreaming?: boolean;
+  allowStreaming?: boolean;
+
+  /**
+   * If this is `true`, the SDK will always attempt to stream responses back to
+   * Inngest regardless of whether we can detect support for it or not. This
+   * will override `allowStreaming`, but will still not attempt to stream if
+   * the serve handler does not support it.
+   *
+   * Useful for some restricted environments where free access to environment
+   * variables is limited, making it difficult to detect streaming support.
+   *
+   * Defaults to `false`.
+   */
+  forceStreaming?: boolean;
 }
 
 /**

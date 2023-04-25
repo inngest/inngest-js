@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "1.7.1",
+  "version": "1.7.1-streaming.1",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -35,7 +35,8 @@
     "build:landing": "cd landing && yarn run build",
     "build:check": "api-extractor run --verbose",
     "build:copy": "cp package.json LICENSE.md README.md CHANGELOG.md dist",
-    "prelink": "yarn run build:copy"
+    "prelink": "yarn run build:copy",
+    "local:pack": "yarn build && yarn prelink && yarn pack --verbose --frozen-lockfile --filename inngest.tgz --cwd dist"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
