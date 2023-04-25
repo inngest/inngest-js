@@ -1,5 +1,15 @@
 # inngest
 
+## 1.8.0
+
+### Minor Changes
+
+- 65966f5: INN-1087 Add edge streaming support to `"inngest/next"` serve handler
+
+### Patch Changes
+
+- 164fd5c: INN-1266 Fix bad link for fetching Inngest signing key on landing page
+
 ## 1.7.1
 
 ### Patch Changes
