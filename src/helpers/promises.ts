@@ -2,19 +2,18 @@
  * Some environments don't allow access to the global queueMicrotask(). While we
  * had assumed this was only true for those powered by earlier versions of Node
  * (<14) that we don't officially support, Vercel's Edge Functions also obscure
- * the function, even though the platform it's based on (Cloudflare Workers)
- * appropriately exposes it.
+ * the function in dev, even though the platform it's based on (Cloudflare
+ * Workers) appropriately exposes it. Even worse, production Vercel Edge
+ * Functions can see the function, but it immediately blows up the function when
+ * used.
  *
  * Therefore, we can fall back to a reasonable alternative of
- * `Promise.resolve().then(fn)` instead. This will be slightly slower, but at
- * least we can still work in these environments.
- *
- * This package does exactly that, enabling us to use `queueMicrotask()` in all
- * modern JS engines.
- *
- * See {@link https://www.npmjs.com/package/queue-microtask}.
+ * `Promise.resolve().then(fn)` instead. This _may_ be slightly slower in modern
+ * environments, but at least we can still work in these environments.
  */
-import queueMicrotask from "queue-microtask";
+const shimQueueMicrotask = (callback: () => void): void => {
+  void Promise.resolve().then(callback);
+};
 
 /**
  * A helper function to create a `Promise` that will never settle.
@@ -50,7 +49,7 @@ export const resolveAfterPending = (): Promise<void> => {
     let i = 0;
 
     const iterate = () => {
-      queueMicrotask(() => {
+      shimQueueMicrotask(() => {
         if (i++ > 1000) {
           return resolve();
         }

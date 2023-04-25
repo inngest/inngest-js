@@ -6,8 +6,9 @@ import {
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
+import type { SupportedFrameworkName } from "./types";
 
-export const name = "nuxt";
+export const name: SupportedFrameworkName = "nuxt";
 
 /**
  * In Nuxt 3, serve and register any declared functions with Inngest, making

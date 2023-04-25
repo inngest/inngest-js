@@ -4,9 +4,17 @@ import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
-import { allProcessEnv, inngestHeaders, isProd } from "../helpers/env";
+import {
+  allProcessEnv,
+  getFetch,
+  inngestHeaders,
+  isProd,
+  platformSupportsStreaming,
+} from "../helpers/env";
 import { serializeError } from "../helpers/errors";
+import { cacheFn } from "../helpers/functions";
 import { strBoolean } from "../helpers/scalar";
+import { createStream } from "../helpers/stream";
 import { stringifyUnknown } from "../helpers/strings";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
@@ -18,9 +26,10 @@ import {
   RegisterOptions,
   RegisterRequest,
   StepRunResponse,
+  SupportedFrameworkName,
 } from "../types";
 import { version } from "../version";
-import type { Inngest } from "./Inngest";
+import { Inngest } from "./Inngest";
 import type { InngestFunction } from "./InngestFunction";
 import { NonRetriableError } from "./NonRetriableError";
 
@@ -132,7 +141,19 @@ const registerResSchema = z.object({
  *
  * @public
  */
-export class InngestCommHandler<H extends Handler, TransformedRes> {
+export class InngestCommHandler<
+  H extends Handler,
+  TResTransform extends (
+    res: ActionResponse<string>,
+    ...args: Parameters<H>
+  ) => // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  TStreamTransform extends (
+    res: ActionResponse<ReadableStream>,
+    ...args: Parameters<H>
+  ) => // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any
+> {
   /**
    * The name of this serve handler, e.g. `"My App"`. It's recommended that this
    * value represents the overarching app/service that this set of functions is
@@ -148,10 +169,9 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
   /**
    * The response transformer specified during instantiation of the class.
    */
-  public readonly transformRes: (
-    res: ActionResponse,
-    ...args: Parameters<H>
-  ) => TransformedRes;
+  public readonly transformRes: TResTransform;
+
+  public readonly streamTransformRes: TStreamTransform | undefined;
 
   /**
    * The URL of the Inngest function registration endpoint.
@@ -232,6 +252,8 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    */
   protected readonly logLevel: LogLevel;
 
+  protected readonly streaming: RegisterOptions["streaming"];
+
   /**
    * A private collection of just Inngest functions, as they have been passed
    * when instantiating the class.
@@ -286,6 +308,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
       signingKey,
       serveHost,
       servePath,
+      streaming,
     }: RegisterOptions = {},
 
     /**
@@ -338,10 +361,33 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
      * This should never be defined by the user; a {@link ServeHandler} should
      * abstract this.
      */
-    transformRes: (
-      actionRes: ActionResponse,
-      ...args: Parameters<H>
-    ) => TransformedRes
+    transformRes: TResTransform,
+
+    /**
+     * The `streamTransformRes` function, if defined, declares that this handler
+     * supports streaming responses back to Inngest. This is useful for
+     * functions that are expected to take a long time, as edge streaming can
+     * often circumvent restrictive request timeouts and other limitations.
+     *
+     * If your handler does not support streaming, do not define this function.
+     *
+     * It receives the output of the Inngest SDK and can decide how to package
+     * up that information to appropriately return the information in a stream
+     * to Inngest.
+     *
+     * Mostly, this is taking the given parameters and returning a new
+     * `Response`.
+     *
+     * The function is passed an {@link ActionResponse} (an object containing a
+     * `status` code, a `headers` object, and `body`, a `ReadableStream`), as
+     * well as every parameter passed to the given `handler` function. This
+     * ensures you can appropriately handle the response, including use of any
+     * required parameters such as `res` in Express-/Connect-like frameworks.
+     *
+     * This should never be defined by the user; a {@link ServeHandler} should
+     * abstract this.
+     */
+    streamTransformRes?: TStreamTransform
   ) {
     this.frameworkName = frameworkName;
     this.name =
@@ -351,6 +397,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
 
     this.handler = handler;
     this.transformRes = transformRes;
+    this.streamTransformRes = streamTransformRes;
 
     /**
      * Provide a hidden option to allow expired signatures to be accepted during
@@ -405,14 +452,14 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     this.serveHost = serveHost;
     this.servePath = servePath;
     this.logLevel = logLevel;
+    this.streaming = streaming ?? false;
 
-    this.fetch =
+    this.fetch = getFetch(
       fetch ||
-      (typeof appNameOrInngest === "string"
-        ? undefined
-        : appNameOrInngest["fetch"]) ||
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      (require("cross-fetch") as FetchT);
+        (typeof appNameOrInngest === "string"
+          ? undefined
+          : appNameOrInngest["fetch"])
+    );
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
@@ -452,7 +499,9 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
    * };
    * ```
    */
-  public createHandler(): (...args: Parameters<H>) => Promise<TransformedRes> {
+  public createHandler(): (
+    ...args: Parameters<H>
+  ) => Promise<Awaited<ReturnType<TResTransform>>> {
     return async (...args: Parameters<H>) => {
       const timer = new ServerTiming();
 
@@ -461,13 +510,92 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
        * async.
        */
       // eslint-disable-next-line @typescript-eslint/await-thenable
-      const actions = await timer.wrap("handler", () => this.handler(...args));
+      const rawActions = await timer.wrap("handler", () =>
+        this.handler(...args)
+      );
 
-      const actionRes = await timer.wrap("action", () =>
+      /**
+       * For each function within the actions returned, ensure that its value
+       * caches when run. This ensures that the function is only run once, even
+       * if it's called multiple times throughout this handler's invocation.
+       *
+       * Many frameworks have issues with multiple calls to req/res objects;
+       * reading a request's body multiple times is a common example. This makes
+       * sure to handle this without having to pass around references.
+       */
+      const actions = Object.fromEntries(
+        Object.entries(rawActions).map(([key, val]) => [
+          key,
+          typeof val === "function" ? cacheFn(val) : val,
+        ])
+      ) as typeof rawActions;
+
+      const getHeaders = (): Record<string, string> => ({
+        ...inngestHeaders({
+          env: actions.env as Record<string, string | undefined>,
+          framework: this.frameworkName,
+        }),
+        "Server-Timing": timer.getHeader(),
+      });
+
+      const actionRes = timer.wrap("action", () =>
         this.handleAction(actions as ReturnType<Awaited<H>>, timer)
       );
 
-      return timer.wrap("res", () => this.transformRes(actionRes, ...args));
+      /**
+       * Prepares an action response by merging returned data to provide
+       * trailing information such as `Server-Timing` headers.
+       *
+       * It should always prioritize the headers returned by the action, as
+       * they may contain important information such as `Content-Type`.
+       */
+      const prepareActionRes = (res: ActionResponse): ActionResponse => ({
+        ...res,
+        headers: {
+          ...getHeaders(),
+          ...res.headers,
+        },
+      });
+
+      const wantToStream =
+        this.streaming === "force" ||
+        (this.streaming === "allow" &&
+          platformSupportsStreaming(
+            this.frameworkName as SupportedFrameworkName,
+            actions.env as Record<string, string | undefined>
+          ));
+
+      if (wantToStream && this.streamTransformRes) {
+        const runRes = await actions.run();
+        if (runRes) {
+          const { stream, finalize } = await createStream();
+
+          /**
+           * Errors are handled by `handleAction` here to ensure that an
+           * appropriate response is always given.
+           */
+          void actionRes.then((res) => finalize(prepareActionRes(res)));
+
+          return timer.wrap("res", () =>
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+            this.streamTransformRes?.(
+              {
+                status: 201,
+                headers: getHeaders(),
+                body: stream,
+              },
+              ...args
+            )
+          );
+        }
+      }
+
+      return timer.wrap("res", async () => {
+        return actionRes.then((res) => {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+          return this.transformRes(prepareActionRes(res), ...args);
+        });
+      });
     };
   }
 
@@ -524,7 +652,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
                 )
             ),
             headers: {
-              ...getHeaders(),
               "Content-Type": "application/json",
             },
           };
@@ -534,7 +661,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status: stepRes.status,
           body: JSON.stringify(stepRes.body),
           headers: {
-            ...getHeaders(),
             "Content-Type": "application/json",
           },
         };
@@ -552,7 +678,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           return {
             status: 405,
             body: "",
-            headers: getHeaders(),
+            headers: {},
           };
         }
 
@@ -569,7 +695,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
             status: 200,
             body: JSON.stringify(introspection),
             headers: {
-              ...getHeaders(),
               "Content-Type": "application/json",
             },
           };
@@ -579,7 +704,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status: 200,
           body: landing,
           headers: {
-            ...getHeaders(),
             "Content-Type": "text/html; charset=utf-8",
           },
         };
@@ -600,7 +724,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           status,
           body: JSON.stringify({ message }),
           headers: {
-            ...getHeaders(),
             "Content-Type": "application/json",
           },
         };
@@ -613,7 +736,6 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
           ...serializeError(err as Error),
         }),
         headers: {
-          ...getHeaders(),
           "Content-Type": "application/json",
         },
       };
@@ -622,7 +744,7 @@ export class InngestCommHandler<H extends Handler, TransformedRes> {
     return {
       status: 405,
       body: "",
-      headers: getHeaders(),
+      headers: {},
     };
   }
 
@@ -1046,7 +1168,9 @@ type Handler = (...args: any[]) => {
  * The response from the Inngest SDK before it is transformed in to a
  * framework-compatible response by an {@link InngestCommHandler} instance.
  */
-export interface ActionResponse {
+export interface ActionResponse<
+  TBody extends string | ReadableStream = string
+> {
   /**
    * The HTTP status code to return.
    */
@@ -1060,7 +1184,7 @@ export interface ActionResponse {
   /**
    * A stringified body to return.
    */
-  body: string;
+  body: TBody;
 }
 
 /**

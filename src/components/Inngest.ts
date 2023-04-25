@@ -2,6 +2,7 @@ import { envKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
   devServerHost,
+  getFetch,
   inngestHeaders,
   isProd,
   processEnv,
@@ -134,24 +135,7 @@ export class Inngest<
       inngestEnv: env,
     });
 
-    this.fetch = Inngest.parseFetch(fetch);
-  }
-
-  /**
-   * Given a potential fetch function, return the fetch function to use based on
-   * this and the environment.
-   */
-  private static parseFetch(fetchArg: FetchT | undefined): FetchT {
-    if (fetchArg) {
-      return fetchArg;
-    }
-
-    if (typeof fetch !== "undefined") {
-      return fetch;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require("cross-fetch") as FetchT;
+    this.fetch = getFetch(fetch);
   }
 
   /**

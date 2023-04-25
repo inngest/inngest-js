@@ -125,7 +125,16 @@ export const testFramework = (
     reqOpts: Parameters<typeof httpMocks.createRequest>,
     env: Record<string, string | undefined> = {}
   ): Promise<HandlerStandardReturn> => {
-    const serveHandler = handler.serve(...handlerOpts);
+    const [nameOrInngest, functions, givenOpts] = handlerOpts;
+    const serveHandler = handler.serve(nameOrInngest, functions, {
+      ...givenOpts,
+
+      /**
+       * For testing, the fetch implementation has to be stable for us to
+       * appropriately mock out the network requests.
+       */
+      fetch,
+    });
 
     const [req, res] = createReqRes({
       hostname: "localhost",

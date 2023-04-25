@@ -4,8 +4,9 @@ import {
   ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
+import type { SupportedFrameworkName } from "./types";
 
-export const name = "express";
+export const name: SupportedFrameworkName = "express";
 
 /**
  * Serve and register any declared functions with Inngest, making them available

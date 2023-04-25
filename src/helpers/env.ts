@@ -3,6 +3,7 @@
 // along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
 // string in order to read variables.
 
+import { SupportedFrameworkName } from "../types";
 import { version } from "../version";
 import { envKeys, headerKeys } from "./consts";
 import { stringifyUnknown } from "./strings";
@@ -185,23 +186,118 @@ export const inngestHeaders = (opts?: {
   return headers;
 };
 
-const getPlatformName = (
-  env: Record<string, string | undefined>
-): string | undefined => {
-  const platformChecks = {
-    vercel: (env) => env[envKeys.IsVercel] === "1",
-    netlify: (env) => env[envKeys.IsNetlify] === "true",
-    "cloudflare-pages": (env) => env[envKeys.IsCloudflarePages] === "1",
-    render: (env) => env[envKeys.IsRender] === "true",
-    railway: (env) => Boolean(env[envKeys.RailwayEnvironment]),
-  } satisfies Record<
-    string,
-    (env: Record<string, string | undefined>) => boolean
-  >;
+/**
+ * A set of checks that, given an environment, will return `true` if the current
+ * environment is running on the platform with the given name.
+ */
+const platformChecks = {
+  /**
+   * Vercel Edge Functions don't have access to environment variables unless
+   * they are explicitly referenced in the top level code, but they do have a
+   * global `EdgeRuntime` variable set that we can use to detect this.
+   */
+  vercel: (env) =>
+    env[envKeys.IsVercel] === "1" || typeof EdgeRuntime === "string",
+  netlify: (env) => env[envKeys.IsNetlify] === "true",
+  "cloudflare-pages": (env) => env[envKeys.IsCloudflarePages] === "1",
+  render: (env) => env[envKeys.IsRender] === "true",
+  railway: (env) => Boolean(env[envKeys.RailwayEnvironment]),
+} satisfies Record<
+  string,
+  (env: Record<string, string | undefined>) => boolean
+>;
 
+declare const EdgeRuntime: string | undefined;
+
+/**
+ * A set of checks that, given an environment, will return `true` if the current
+ * environment and platform supports streaming responses back to Inngest.
+ *
+ * Streaming capability is both framework and platform-based. Frameworks are
+ * supported in serve handlers, and platforms are checked here.
+ *
+ * As such, this record declares which platforms we explicitly support for
+ * streaming and is used by {@link platformSupportsStreaming}.
+ */
+const streamingChecks: Partial<
+  Record<
+    keyof typeof platformChecks,
+    (
+      framework: SupportedFrameworkName,
+      env: Record<string, string | undefined>
+    ) => boolean
+  >
+> = {
+  /**
+   * "Vercel supports streaming for Serverless Functions, Edge Functions, and
+   * React Server Components in Next.js projects."
+   *
+   * In practice, however, there are many reports of streaming not working as
+   * expected on Serverless Functions, so we resort to only allowing streaming
+   * for Edge Functions here.
+   *
+   * See {@link https://vercel.com/docs/frameworks/nextjs#streaming}
+   */
+  vercel: (_framework, _env) => typeof EdgeRuntime === "string",
+};
+
+const getPlatformName = (env: Record<string, string | undefined>) => {
   return (Object.keys(platformChecks) as (keyof typeof platformChecks)[]).find(
     (key) => {
       return platformChecks[key](env);
     }
   );
+};
+
+/**
+ * Returns `true` if we believe the current environment supports streaming
+ * responses back to Inngest.
+ *
+ * We run a check directly related to the platform we believe we're running on,
+ * usually based on environment variables.
+ */
+export const platformSupportsStreaming = (
+  framework: SupportedFrameworkName,
+  env: Record<string, string | undefined> = allProcessEnv()
+): boolean => {
+  return (
+    streamingChecks[getPlatformName(env) as keyof typeof streamingChecks]?.(
+      framework,
+      env
+    ) ?? false
+  );
+};
+
+/**
+ * Given a potential fetch function, return the fetch function to use based on
+ * this and the environment.
+ */
+export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
+  if (givenFetch) {
+    return givenFetch;
+  }
+
+  /**
+   * Browser or Node 18+
+   */
+  try {
+    if (typeof globalThis !== "undefined" && "fetch" in globalThis) {
+      return fetch.bind(globalThis);
+    }
+  } catch (err) {
+    // no-op
+  }
+
+  /**
+   * Existing polyfilled fetch
+   */
+  if (typeof fetch !== "undefined") {
+    return fetch;
+  }
+
+  /**
+   * Environments where fetch cannot be found and must be polyfilled
+   */
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  return require("cross-fetch") as typeof fetch;
 };
