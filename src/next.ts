@@ -114,16 +114,16 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         },
       };
     },
-    ({ body, headers, status }, _method, _req, res) => {
-      if ("send" in res) {
-        for (const [key, value] of Object.entries(headers)) {
-          res.setHeader(key, value);
-        }
-
-        return void res.status(status).send(body);
+    ({ body, headers, status }, _method, req, res) => {
+      if (isNextEdgeRequest(req)) {
+        return new Response(body, { status, headers });
       }
 
-      return new Response(body, { status, headers });
+      for (const [key, value] of Object.entries(headers)) {
+        res.setHeader(key, value);
+      }
+
+      res.status(status).send(body);
     },
     ({ body, headers, status }) => {
       return new Response(body, { status, headers });
