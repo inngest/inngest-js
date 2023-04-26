@@ -273,6 +273,7 @@ export class InngestFunction<
        */
 
       if (!this.#onFailureFn) {
+        // TODO PrettyError
         throw new Error(
           `Function "${this.name}" received a failure event to handle, but no failure handler was defined.`
         );
@@ -325,6 +326,7 @@ export class InngestFunction<
         state.currentOp = state.allFoundOps[incomingOp.id];
 
         if (!state.currentOp) {
+          // TODO PrettyError
           throw new Error(
             `Bad stack; could not find local op "${incomingOp.id}" at position ${pos}`
           );
@@ -363,6 +365,7 @@ export class InngestFunction<
       const userFnToRun = userFnOp?.fn;
 
       if (!userFnToRun) {
+        // TODO PrettyError
         throw new Error(
           `Bad stack; executor requesting to run unknown step "${runStep}"`
         );
@@ -461,6 +464,7 @@ export class InngestFunction<
          * To be safe, we'll show a warning here to tell users that this might
          * be unintentional, but otherwise carry on as normal.
          */
+        // TODO PrettyError
         console.warn(
           `Warning: Your "${this.name}" function has returned a value, but not all ops have been resolved, i.e. you have used step tooling without \`await\`. This may be intentional, but if you expect your ops to be resolved in order, you should \`await\` them. If you are knowingly leaving ops unresolved using \`.catch()\` or \`void\`, you can ignore this warning.`
         );

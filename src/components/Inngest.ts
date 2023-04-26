@@ -115,6 +115,7 @@ export class Inngest<
     env,
   }: ClientOptions) {
     if (!name) {
+      // TODO PrettyError
       throw new Error("A name must be passed to create an Inngest instance.");
     }
 

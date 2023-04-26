@@ -48,6 +48,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
        */
       const method = reqMethod || req.method;
       if (!method) {
+        // TODO PrettyError
         throw new Error(
           "No method found on request; check that your exports are correct."
         );
