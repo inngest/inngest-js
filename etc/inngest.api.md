@@ -5,6 +5,7 @@
 ```ts
 
 import { Jsonify } from 'type-fest';
+import winston from 'winston';
 
 // @public
 export interface ClientOptions {
@@ -201,6 +202,7 @@ export interface RegisterOptions {
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
     landingPage?: boolean;
+    logger?: winston.Logger;
     logLevel?: LogLevel;
     serveHost?: string;
     servePath?: string;

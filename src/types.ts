@@ -495,6 +495,11 @@ export interface RegisterOptions {
    */
   logLevel?: LogLevel;
 
+  /**
+   * Accepts an instance of Winston logger.
+   *
+   * TODO: fill in more details
+   */
   logger?: winston.Logger;
 
   /**
