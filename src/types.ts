@@ -7,6 +7,7 @@ import type {
   ObjectPaths,
   StrictUnion,
 } from "./helpers/types";
+import winston from "winston"
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -493,6 +494,8 @@ export interface RegisterOptions {
    * Default level: "info"
    */
   logLevel?: LogLevel;
+
+  logger?: winston.Logger;
 
   /**
    * Some serverless providers (especially those with edge compute) may support
