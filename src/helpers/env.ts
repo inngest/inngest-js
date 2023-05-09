@@ -171,7 +171,12 @@ export const inngestHeaders = (opts?: {
     headers[headerKeys.Framework] = opts.framework;
   }
 
-  const env = opts?.env || allProcessEnv();
+  // XXX: I think that `allProcessEnv()` should be used and we should
+  // overwrite anything set in opts.env if specified.
+  const env = Object.assign({}, allProcessEnv());
+  if (opts?.env) {
+    Object.assign(env, opts.env);
+  }
 
   const inngestEnv = opts?.inngestEnv || getEnvironmentName(env);
   if (inngestEnv) {

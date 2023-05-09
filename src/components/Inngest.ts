@@ -84,6 +84,8 @@ export class Inngest<
 
   private readonly fetch: FetchT;
 
+  private readonly _env: string | undefined;
+
   /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
@@ -142,11 +144,16 @@ export class Inngest<
       );
     }
 
+    this._env = env;
     this.headers = inngestHeaders({
       inngestEnv: env,
     });
 
     this.fetch = getFetch(fetch);
+  }
+
+  get env(): string | undefined {
+    return this._env;
   }
 
   /**

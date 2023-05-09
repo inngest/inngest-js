@@ -261,6 +261,8 @@ export class InngestCommHandler<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly rawFns: InngestFunction<any, any, any>[];
 
+  private readonly client: Inngest | undefined;
+
   /**
    * A private collection of functions that are being served. This map is used
    * to find and register functions when interacting with Inngest Cloud.
@@ -394,6 +396,10 @@ export class InngestCommHandler<
       typeof appNameOrInngest === "string"
         ? appNameOrInngest
         : appNameOrInngest.name;
+
+    if (typeof appNameOrInngest !== "string") {
+      this.client = appNameOrInngest;
+    }
 
     this.handler = handler;
     this.transformRes = transformRes;
@@ -536,6 +542,7 @@ export class InngestCommHandler<
         ...inngestHeaders({
           env: actions.env as Record<string, string | undefined>,
           framework: this.frameworkName,
+          inngestEnv: this.client?.env,
         }),
         "Server-Timing": timer.getHeader(),
       });
