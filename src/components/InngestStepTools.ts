@@ -459,8 +459,6 @@ export const createStepTools = <
     }),
   };
 
-  // const logger = Logger;
-
   return [tools, state] as [typeof tools, typeof state];
 };
 
