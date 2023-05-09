@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Logger } from "winston"
+import { Logger } from "winston";
 import type { createStepTools } from "./components/InngestStepTools";
 import { internalEvents } from "./helpers/consts";
 import type {

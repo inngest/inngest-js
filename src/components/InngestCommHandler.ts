@@ -1,7 +1,7 @@
 import canonicalize from "canonicalize";
 import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
-import { Logger } from "winston"
+import { Logger } from "winston";
 import { ServerTiming } from "../helpers/ServerTiming";
 import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
@@ -253,6 +253,9 @@ export class InngestCommHandler<
    */
   protected readonly logLevel: LogLevel;
 
+  /**
+   * Winston compatible logger
+   */
   protected readonly logger?: Logger;
 
   protected readonly streaming: RegisterOptions["streaming"];
@@ -826,7 +829,7 @@ export class InngestCommHandler<
           }) ?? [];
 
       const ret = await fn.fn["runFn"](
-        { event, runId: ctx?.run_id },
+        { event, runId: ctx?.run_id, logger: this.logger },
         opStack,
         /**
          * TODO The executor is sending `"step"` as the step ID when it is not

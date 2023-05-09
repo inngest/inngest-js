@@ -1,3 +1,4 @@
+import { Logger } from "winston";
 import { internalEvents, queryKeys } from "../helpers/consts";
 import { deserializeError, serializeError } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
@@ -245,6 +246,7 @@ export class InngestFunction<
      * if an op has been submitted or not.
      */
     const [tools, state] = createStepTools(this.#client);
+    const { logger } = data as { logger: Logger };
 
     /**
      * Create args to pass in to our function. We blindly pass in the data and
@@ -254,6 +256,7 @@ export class InngestFunction<
       ...(data as { event: EventPayload }),
       tools,
       step: tools,
+      logger: logger,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as Partial<Context<any, any, any>>;
 

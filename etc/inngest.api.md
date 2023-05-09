@@ -135,7 +135,6 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     readonly handler: H;
     protected _isProd: boolean;
     protected log(level: LogLevel, ...args: unknown[]): void;
-    // (undocumented)
     protected readonly logger?: Logger;
     protected readonly logLevel: LogLevel;
     readonly name: string;

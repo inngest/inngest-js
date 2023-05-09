@@ -1,7 +1,6 @@
 import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
 import { Jsonify } from "type-fest";
-import { Logger } from "winston";
 import { timeStr } from "../helpers/strings";
 import type {
   ObjectPaths,
