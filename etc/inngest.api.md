@@ -102,6 +102,8 @@ export class Inngest<Events extends Record<string, EventPayload> = Record<string
         fns?: TFns;
         onFailure?: Handler<Events, TTriggerName, TShimmedFns, FailureEventArgs<Events[TTriggerName]>>;
     }), trigger: TTrigger, handler: Handler<Events, TTriggerName, TShimmedFns>): InngestFunction;
+    // (undocumented)
+    get env(): string | undefined;
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
