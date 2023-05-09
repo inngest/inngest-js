@@ -167,6 +167,8 @@ export type BaseContext<
   tools: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
   step: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
 
+  logger: Logger;
+
   /**
    * Any `fns` passed when creating your Inngest function will be
    * available here and can be used as normal.

@@ -246,17 +246,15 @@ export class InngestFunction<
      * if an op has been submitted or not.
      */
     const [tools, state] = createStepTools(this.#client);
-    const { logger } = data as { logger: Logger };
 
     /**
      * Create args to pass in to our function. We blindly pass in the data and
      * add tools.
      */
     const fnArg = {
-      ...(data as { event: EventPayload }),
+      ...(data as { event: EventPayload, logger: Logger }),
       tools,
       step: tools,
-      logger: logger,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as Partial<Context<any, any, any>>;
 
