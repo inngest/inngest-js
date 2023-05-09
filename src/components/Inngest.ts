@@ -7,21 +7,21 @@ import {
   isProd,
   processEnv,
 } from "../helpers/env";
-import type {
-  PartialK,
-  SendEventPayload,
-  SingleOrArray,
-  ValueOf,
+import {
+  type PartialK,
+  type SendEventPayload,
+  type SingleOrArray,
+  type ValueOf,
 } from "../helpers/types";
-import type {
-  ClientOptions,
-  EventNameFromTrigger,
-  EventPayload,
-  FailureEventArgs,
-  FunctionOptions,
-  Handler,
-  ShimmedFns,
-  TriggerOptions,
+import {
+  type ClientOptions,
+  type EventNameFromTrigger,
+  type EventPayload,
+  type FailureEventArgs,
+  type FunctionOptions,
+  type Handler,
+  type ShimmedFns,
+  type TriggerOptions,
 } from "../types";
 import { InngestFunction } from "./InngestFunction";
 

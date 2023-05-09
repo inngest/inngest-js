@@ -1,7 +1,7 @@
-import type { EventPayload } from "@local";
+import { type EventPayload } from "@local";
 import { eventKeyWarning } from "@local/components/Inngest";
 import { envKeys, headerKeys } from "@local/helpers/consts";
-import type { IsAny } from "@local/helpers/types";
+import { type IsAny } from "@local/helpers/types";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
 

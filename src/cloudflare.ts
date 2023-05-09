@@ -1,7 +1,9 @@
-import type { ServeHandler } from "./components/InngestCommHandler";
-import { InngestCommHandler } from "./components/InngestCommHandler";
+import {
+  InngestCommHandler,
+  type ServeHandler,
+} from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
-import type { SupportedFrameworkName } from "./types";
+import { type SupportedFrameworkName } from "./types";
 
 export const name: SupportedFrameworkName = "cloudflare-pages";
 

@@ -11,7 +11,7 @@ module.exports = {
     tsconfigRootDir: __dirname,
     project: ["./tsconfig.json"],
   },
-  plugins: ["@typescript-eslint", "@inngest"],
+  plugins: ["@typescript-eslint", "@inngest", "import"],
   root: true,
   ignorePatterns: ["dist/", "*.d.ts", "*.js", "deno_compat/"],
   rules: {
@@ -21,7 +21,12 @@ module.exports = {
       "warn",
       { varsIgnorePattern: "^_", argsIgnorePattern: "^_" },
     ],
-    "@typescript-eslint/consistent-type-imports": "error",
+    "@typescript-eslint/consistent-type-imports": [
+      "error",
+      { fixStyle: "inline-type-imports" },
+    ],
+    "import/consistent-type-specifier-style": ["error", "prefer-inline"],
+    "import/no-duplicates": ["error", { "prefer-inline": true }],
   },
   overrides: [
     {

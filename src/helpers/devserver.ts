@@ -1,4 +1,4 @@
-import type { FunctionConfig } from "../types";
+import { type FunctionConfig } from "../types";
 import { defaultDevServerHost } from "./consts";
 
 /**

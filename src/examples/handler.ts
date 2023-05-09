@@ -1,5 +1,9 @@
-import type { ServeHandler } from "inngest";
-import { headerKeys, InngestCommHandler, queryKeys } from "inngest";
+import {
+  headerKeys,
+  InngestCommHandler,
+  queryKeys,
+  type ServeHandler,
+} from "inngest";
 
 /**
  * An example serve handler to demonstrate how to create a custom serve handler

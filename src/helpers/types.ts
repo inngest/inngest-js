@@ -1,4 +1,4 @@
-import type { EventPayload } from "../types";
+import { type EventPayload } from "../types";
 
 /**
  * Returns a union of all of the values in a given object, regardless of key.

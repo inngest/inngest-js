@@ -4,7 +4,7 @@
 
 ```ts
 
-import type { Jsonify } from 'type-fest';
+import { Jsonify } from 'type-fest';
 
 // @public
 export interface ClientOptions {

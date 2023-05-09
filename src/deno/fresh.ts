@@ -1,6 +1,8 @@
-import type { SupportedFrameworkName } from "inngest/types";
-import type { ServeHandler } from "../components/InngestCommHandler";
-import { InngestCommHandler } from "../components/InngestCommHandler";
+import { type SupportedFrameworkName } from "inngest/types";
+import {
+  InngestCommHandler,
+  type ServeHandler,
+} from "../components/InngestCommHandler";
 import { headerKeys, queryKeys } from "../helpers/consts";
 
 export const name: SupportedFrameworkName = "deno/fresh";
