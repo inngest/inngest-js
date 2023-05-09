@@ -629,6 +629,7 @@ export class InngestCommHandler<
       ...inngestHeaders({
         env: env as Record<string, string | undefined>,
         framework: this.frameworkName,
+        inngestEnv: this.client?.env,
       }),
       "Server-Timing": timer.getHeader(),
     });
