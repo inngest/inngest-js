@@ -1,5 +1,11 @@
 # inngest
 
+## 1.8.1
+
+### Patch Changes
+
+- 5573be3: INN-1270 Create an internal handler to enforce more actionable user-facing errors
+
 ## 1.8.0
 
 ### Minor Changes
