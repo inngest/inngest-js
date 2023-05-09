@@ -5,7 +5,7 @@
 ```ts
 
 import { Jsonify } from 'type-fest';
-import winston from 'winston';
+import { Logger } from 'winston';
 
 // @public
 export interface ClientOptions {
@@ -122,7 +122,7 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     constructor(
     frameworkName: string,
     appNameOrInngest: string | Inngest<any>,
-    functions: InngestFunction<any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, streaming, }: RegisterOptions | undefined,
+    functions: InngestFunction<any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, logger, signingKey, serveHost, servePath, streaming, }: RegisterOptions | undefined,
     handler: H,
     transformRes: TResTransform,
     streamTransformRes?: TStreamTransform);
@@ -135,6 +135,8 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     readonly handler: H;
     protected _isProd: boolean;
     protected log(level: LogLevel, ...args: unknown[]): void;
+    // (undocumented)
+    protected readonly logger?: Logger;
     protected readonly logLevel: LogLevel;
     readonly name: string;
     // (undocumented)
@@ -202,7 +204,7 @@ export interface RegisterOptions {
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
     landingPage?: boolean;
-    logger?: winston.Logger;
+    logger?: Logger;
     logLevel?: LogLevel;
     serveHost?: string;
     servePath?: string;

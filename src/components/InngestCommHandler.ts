@@ -1,6 +1,7 @@
 import canonicalize from "canonicalize";
 import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
+import { Logger } from "winston"
 import { ServerTiming } from "../helpers/ServerTiming";
 import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
@@ -252,6 +253,8 @@ export class InngestCommHandler<
    */
   protected readonly logLevel: LogLevel;
 
+  protected readonly logger?: Logger;
+
   protected readonly streaming: RegisterOptions["streaming"];
 
   /**
@@ -305,6 +308,7 @@ export class InngestCommHandler<
       fetch,
       landingPage,
       logLevel = "info",
+      logger,
       signingKey,
       serveHost,
       servePath,
@@ -452,6 +456,7 @@ export class InngestCommHandler<
     this.serveHost = serveHost;
     this.servePath = servePath;
     this.logLevel = logLevel;
+    this.logger = logger;
     this.streaming = streaming ?? false;
 
     this.fetch = getFetch(

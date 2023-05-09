@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Logger } from "winston"
 import type { createStepTools } from "./components/InngestStepTools";
 import { internalEvents } from "./helpers/consts";
 import type {
@@ -7,7 +8,6 @@ import type {
   ObjectPaths,
   StrictUnion,
 } from "./helpers/types";
-import winston from "winston"
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -500,7 +500,7 @@ export interface RegisterOptions {
    *
    * TODO: fill in more details
    */
-  logger?: winston.Logger;
+  logger?: Logger;
 
   /**
    * Some serverless providers (especially those with edge compute) may support
