@@ -68,6 +68,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         const proto = event.headers["x-forwarded-proto"] || "https";
         url = new URL(path, `${proto}://${event.headers.host || ""}`);
       } catch (err) {
+        // TODO PrettyError
         throw new Error("Could not parse URL from `event.headers.host`");
       }
 

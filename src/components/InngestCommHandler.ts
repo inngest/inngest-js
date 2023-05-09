@@ -412,6 +412,7 @@ export class InngestCommHandler<
     this.rawFns = functions.filter(Boolean);
 
     if (this.rawFns.length !== functions.length) {
+      // TODO PrettyError
       console.warn(
         `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`
       );
@@ -431,6 +432,7 @@ export class InngestCommHandler<
 
       configs.forEach(({ id }) => {
         if (acc[id]) {
+          // TODO PrettyError
           throw new Error(
             `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`
           );
@@ -757,9 +759,11 @@ export class InngestCommHandler<
     try {
       const fn = this.fns[functionId];
       if (!fn) {
+        // TODO PrettyError
         throw new Error(`Could not find function with ID "${functionId}"`);
       }
 
+      // TODO PrettyError on parse failure; serve handler may be set up badly
       const { event, steps, ctx } = z
         .object({
           event: z.object({}).passthrough(),
@@ -813,6 +817,7 @@ export class InngestCommHandler<
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             const step = steps?.[opId];
             if (typeof step === "undefined") {
+              // TODO PrettyError
               throw new Error(`Could not find step with ID "${opId}"`);
             }
 
@@ -1025,6 +1030,7 @@ export class InngestCommHandler<
     if (!this.isProd) {
       // In dev, warning users about signing keys ensures that it's considered
       if (!this.signingKey) {
+        // TODO PrettyError
         console.warn(
           "No signing key provided to validate signature. Find your dev keys at https://app.inngest.com/test/secrets"
         );
@@ -1035,6 +1041,7 @@ export class InngestCommHandler<
 
     // If we're here, we're in production; lack of a signing key is an error.
     if (!this.signingKey) {
+      // TODO PrettyError
       throw new Error(
         `No signing key found in client options or ${envKeys.SigningKey} env var. Find your keys at https://app.inngest.com/secrets`
       );
@@ -1042,6 +1049,7 @@ export class InngestCommHandler<
 
     // If we're here, we're in production; lack of a req signature is an error.
     if (!sig) {
+      // TODO PrettyError
       throw new Error(`No ${headerKeys.Signature} provided`);
     }
 
@@ -1100,6 +1108,7 @@ class RequestSignature {
     this.signature = params.get("s") || "";
 
     if (!this.timestamp || !this.signature) {
+      // TODO PrettyError
       throw new Error(`Invalid ${headerKeys.Signature} provided`);
     }
   }
@@ -1124,6 +1133,7 @@ class RequestSignature {
     allowExpiredSignatures: boolean;
   }): void {
     if (this.hasExpired(allowExpiredSignatures)) {
+      // TODO PrettyError
       throw new Error("Signature has expired");
     }
 
@@ -1141,6 +1151,7 @@ class RequestSignature {
       .digest("hex");
 
     if (mac !== this.signature) {
+      // TODO PrettyError
       throw new Error("Invalid signature");
     }
   }

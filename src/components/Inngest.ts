@@ -7,6 +7,7 @@ import {
   isProd,
   processEnv,
 } from "../helpers/env";
+import { prettyError } from "../helpers/errors";
 import {
   type PartialK,
   type SendEventPayload,
@@ -29,12 +30,6 @@ import { InngestFunction } from "./InngestFunction";
  * Capturing the global type of fetch so that we can reliably access it below.
  */
 type FetchT = typeof fetch;
-
-export const eventKeyWarning =
-  "Could not find an event key to send events; sending will throw unless an event key is added. Please pass one to the constructor, set the INNGEST_EVENT_KEY environment variable, or use inngest.setEventKey() at runtime.";
-
-export const eventKeyError =
-  "Could not find an event key to send events. Please pass one to the constructor, set the INNGEST_EVENT_KEY environment variable, or use inngest.setEventKey() at runtime.";
 
 /**
  * A client used to interact with the Inngest API by sending or reacting to
@@ -120,6 +115,7 @@ export class Inngest<
     env,
   }: ClientOptions) {
     if (!name) {
+      // TODO PrettyError
       throw new Error("A name must be passed to create an Inngest instance.");
     }
 
@@ -128,7 +124,22 @@ export class Inngest<
     this.setEventKey(eventKey || processEnv(envKeys.EventKey) || "");
 
     if (!this.eventKey) {
-      console.warn(eventKeyWarning);
+      console.warn(
+        prettyError({
+          type: "warn",
+          whatHappened: "Could not find event key",
+          consequences:
+            "Sending events will throw in production unless an event key is added.",
+          toFixNow: [
+            "Pass a key to the `new Inngest()` constructor using the `eventKey` option",
+            "Set the `INNGEST_EVENT_KEY` environment variable",
+            "Use `inngest.setEventKey()` at runtime",
+          ],
+          why: "We couldn't find an event key to use to send events to Inngest.",
+          otherwise:
+            "Create a new production event key at https://app.inngest.com/env/production/manage/keys.",
+        })
+      );
     }
 
     this.headers = inngestHeaders({
@@ -258,7 +269,22 @@ export class Inngest<
     >
   ): Promise<void> {
     if (!this.eventKey) {
-      throw new Error(eventKeyError);
+      throw new Error(
+        prettyError({
+          whatHappened: "Failed to send event",
+          consequences: "Your event or events were not sent to Inngest.",
+          why: "We couldn't find an event key to use to send events to Inngest.",
+          toFixNow: [
+            `Pass a key to the \`new Inngest()\` constructor using the \`${
+              "eventKey" satisfies keyof ClientOptions
+            }\` option`,
+            "Set the `INNGEST_EVENT_KEY` environment variable",
+            `Use \`inngest.${
+              "setEventKey" satisfies keyof Inngest
+            }()\` at runtime`,
+          ],
+        })
+      );
     }
 
     let payloads: ValueOf<Events>[];
@@ -293,7 +319,15 @@ export class Inngest<
      */
     if (!payloads.length) {
       return console.warn(
-        "Warning: You have called `inngest.send()` with an empty array; the operation will resolve, but no events have been sent. This may be intentional, in which case you can ignore this warning."
+        prettyError({
+          type: "warn",
+          whatHappened: "`inngest.send()` called with no events",
+          reassurance:
+            "This is not an error, but you may not have intended to do this.",
+          consequences:
+            "The returned promise will resolve, but no events have been sent to Inngest.",
+          stack: true,
+        })
       );
     }
 

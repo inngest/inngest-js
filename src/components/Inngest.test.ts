@@ -1,5 +1,4 @@
 import { type EventPayload } from "@local";
-import { eventKeyWarning } from "@local/components/Inngest";
 import { envKeys, headerKeys } from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
 import { assertType } from "type-plus";
@@ -34,7 +33,9 @@ describe("instantiation", () => {
 
     test("should log a warning if event key not specified", () => {
       createClient({ name: "test" });
-      expect(warnSpy).toHaveBeenCalledWith(eventKeyWarning);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Could not find event key")
+      );
     });
 
     test("should not log a warning if event key is specified", () => {
@@ -82,7 +83,7 @@ describe("send", () => {
       const inngest = createClient({ name: "test" });
 
       await expect(() => inngest.send(testEvent)).rejects.toThrowError(
-        "Could not find an event key"
+        "Failed to send event"
       );
     });
 
