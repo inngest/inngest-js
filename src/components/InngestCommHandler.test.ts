@@ -1,9 +1,9 @@
 import { serve } from "@local/next";
 import { assertType } from "type-plus";
 import { z } from "zod";
-import { IsAny } from "../helpers/types";
+import type { IsAny } from "../helpers/types";
 import { createClient } from "../test/helpers";
-import { ServeHandler } from "./InngestCommHandler";
+import type { ServeHandler } from "./InngestCommHandler";
 
 describe("#153", () => {
   test('does not throw "type instantiation is excessively deep and possibly infinite" for looping type', () => {

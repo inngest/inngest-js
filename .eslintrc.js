@@ -21,6 +21,7 @@ module.exports = {
       "warn",
       { varsIgnorePattern: "^_", argsIgnorePattern: "^_" },
     ],
+    "@typescript-eslint/consistent-type-imports": "error",
   },
   overrides: [
     {

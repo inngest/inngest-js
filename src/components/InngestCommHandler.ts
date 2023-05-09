@@ -18,7 +18,7 @@ import { createStream } from "../helpers/stream";
 import { stringifyUnknown } from "../helpers/strings";
 import type { MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
-import {
+import type {
   FunctionConfig,
   IncomingOp,
   IntrospectRequest,
@@ -29,7 +29,7 @@ import {
   SupportedFrameworkName,
 } from "../types";
 import { version } from "../version";
-import { Inngest } from "./Inngest";
+import type { Inngest } from "./Inngest";
 import type { InngestFunction } from "./InngestFunction";
 import { NonRetriableError } from "./NonRetriableError";
 

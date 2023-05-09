@@ -2,10 +2,8 @@ import type {
   APIGatewayProxyEvent,
   Context as LambdaContext,
 } from "aws-lambda";
-import {
-  InngestCommHandler,
-  ServeHandler,
-} from "./components/InngestCommHandler";
+import type { ServeHandler } from "./components/InngestCommHandler";
+import { InngestCommHandler } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
 import type { SupportedFrameworkName } from "./types";

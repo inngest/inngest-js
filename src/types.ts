@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { createStepTools } from "./components/InngestStepTools";
-import { internalEvents } from "./helpers/consts";
+import type { internalEvents } from "./helpers/consts";
 import type {
   IsStringLiteral,
   KeysNotOfType,

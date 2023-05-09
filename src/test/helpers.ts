@@ -2,9 +2,10 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
-import { EventPayload, Inngest } from "@local";
+import type { EventPayload } from "@local";
+import { Inngest } from "@local";
 import type { Inngest as InternalInngest } from "@local/components/Inngest";
-import { ServeHandler } from "@local/components/InngestCommHandler";
+import type { ServeHandler } from "@local/components/InngestCommHandler";
 import { envKeys, headerKeys } from "@local/helpers/consts";
 import { version } from "@local/version";
 import fetch from "cross-fetch";

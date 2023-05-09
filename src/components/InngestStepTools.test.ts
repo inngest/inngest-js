@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { createStepTools, TickOp } from "@local/components/InngestStepTools";
+import type { TickOp } from "@local/components/InngestStepTools";
+import { createStepTools } from "@local/components/InngestStepTools";
 import { StepOpCode } from "@local/types";
 import ms from "ms";
 import { assertType } from "type-plus";

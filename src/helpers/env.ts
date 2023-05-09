@@ -3,7 +3,7 @@
 // along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
 // string in order to read variables.
 
-import { SupportedFrameworkName } from "../types";
+import type { SupportedFrameworkName } from "../types";
 import { version } from "../version";
 import { envKeys, headerKeys } from "./consts";
 import { stringifyUnknown } from "./strings";
