@@ -121,13 +121,20 @@ declare const Deno: {
 export const allProcessEnv = (): Record<string, string | undefined> => {
   try {
     // eslint-disable-next-line @inngest/process-warn
-    return process.env;
+    if (process.env) {
+      // eslint-disable-next-line @inngest/process-warn
+      return process.env;
+    }
   } catch (_err) {
     // noop
   }
 
   try {
-    return Deno.env.toObject();
+    const env = Deno.env.toObject();
+
+    if (env) {
+      return env;
+    }
   } catch (_err) {
     // noop
   }
