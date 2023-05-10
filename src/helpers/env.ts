@@ -3,6 +3,7 @@
 // along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
 // string in order to read variables.
 
+import { type Inngest } from "../components/Inngest";
 import { SupportedFrameworkName } from "../types";
 import { version } from "../version";
 import { envKeys, headerKeys } from "./consts";
@@ -120,13 +121,20 @@ declare const Deno: {
 export const allProcessEnv = (): Record<string, string | undefined> => {
   try {
     // eslint-disable-next-line @inngest/process-warn
-    return process.env;
+    if (process.env) {
+      // eslint-disable-next-line @inngest/process-warn
+      return process.env;
+    }
   } catch (_err) {
     // noop
   }
 
   try {
-    return Deno.env.toObject();
+    const env = Deno.env.toObject();
+
+    if (env) {
+      return env;
+    }
   } catch (_err) {
     // noop
   }
@@ -159,6 +167,18 @@ export const inngestHeaders = (opts?: {
    * to be representative of the target preview environment.
    */
   inngestEnv?: string;
+
+  /**
+   * The Inngest client that's making the request. The client itself will
+   * generate a set of headers; specifying it here will ensure that the client's
+   * headers are included in the returned headers.
+   */
+  client?: Inngest;
+
+  /**
+   * Any additional headers to include in the returned headers.
+   */
+  extras?: Record<string, string>;
 }): Record<string, string> => {
   const sdkVersion = `inngest-js:v${version}`;
   const headers: Record<string, string> = {
@@ -171,7 +191,10 @@ export const inngestHeaders = (opts?: {
     headers[headerKeys.Framework] = opts.framework;
   }
 
-  const env = opts?.env || allProcessEnv();
+  const env = {
+    ...allProcessEnv(),
+    ...opts?.env,
+  };
 
   const inngestEnv = opts?.inngestEnv || getEnvironmentName(env);
   if (inngestEnv) {
@@ -183,7 +206,11 @@ export const inngestHeaders = (opts?: {
     headers[headerKeys.Platform] = platform;
   }
 
-  return headers;
+  return {
+    ...headers,
+    ...opts?.client?.["headers"],
+    ...opts?.extras,
+  };
 };
 
 /**
