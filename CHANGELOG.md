@@ -1,5 +1,12 @@
 # inngest
 
+## 1.8.2
+
+### Patch Changes
+
+- 5462bdd: Ensure Inngest client's env object is used within serve()
+- 0b0c0ad: Add consistent type imports for slightly better tree-shaking
+
 ## 1.8.1
 
 ### Patch Changes
