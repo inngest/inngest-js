@@ -1,9 +1,9 @@
 import {
   InngestCommHandler,
-  ServeHandler,
+  type ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
-import type { SupportedFrameworkName } from "./types";
+import { type SupportedFrameworkName } from "./types";
 
 export const name: SupportedFrameworkName = "edge";
 

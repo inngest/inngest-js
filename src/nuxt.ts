@@ -1,12 +1,19 @@
-import type { H3Event } from "h3";
-import { getHeader, getMethod, getQuery, readBody, send, setHeaders } from "h3";
+import {
+  getHeader,
+  getMethod,
+  getQuery,
+  readBody,
+  send,
+  setHeaders,
+  type H3Event,
+} from "h3";
 import {
   InngestCommHandler,
-  ServeHandler,
+  type ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
-import type { SupportedFrameworkName } from "./types";
+import { type SupportedFrameworkName } from "./types";
 
 export const name: SupportedFrameworkName = "nuxt";
 

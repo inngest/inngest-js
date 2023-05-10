@@ -2,13 +2,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
-import { EventPayload, Inngest } from "@local";
-import type { Inngest as InternalInngest } from "@local/components/Inngest";
-import { ServeHandler } from "@local/components/InngestCommHandler";
+import { Inngest, type EventPayload } from "@local";
+import { type Inngest as InternalInngest } from "@local/components/Inngest";
+import { type ServeHandler } from "@local/components/InngestCommHandler";
 import { envKeys, headerKeys } from "@local/helpers/consts";
 import { version } from "@local/version";
 import fetch from "cross-fetch";
-import type { Request, Response } from "express";
+import { type Request, type Response } from "express";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ulid } from "ulid";

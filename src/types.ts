@@ -1,11 +1,11 @@
 import { z } from "zod";
-import type { createStepTools } from "./components/InngestStepTools";
-import { internalEvents } from "./helpers/consts";
-import type {
-  IsStringLiteral,
-  KeysNotOfType,
-  ObjectPaths,
-  StrictUnion,
+import { type createStepTools } from "./components/InngestStepTools";
+import { type internalEvents } from "./helpers/consts";
+import {
+  type IsStringLiteral,
+  type KeysNotOfType,
+  type ObjectPaths,
+  type StrictUnion,
 } from "./helpers/types";
 
 /**

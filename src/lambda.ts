@@ -1,15 +1,15 @@
-import type {
-  APIGatewayEvent,
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResult,
-  Context,
+import {
+  type APIGatewayEvent,
+  type APIGatewayProxyEventV2,
+  type APIGatewayProxyResult,
+  type Context,
 } from "aws-lambda";
 import {
   InngestCommHandler,
-  ServeHandler,
+  type ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
-import { SupportedFrameworkName } from "./types";
+import { type SupportedFrameworkName } from "./types";
 
 export const name: SupportedFrameworkName = "aws-lambda";
 

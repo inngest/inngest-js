@@ -1,25 +1,25 @@
 import { internalEvents, queryKeys } from "../helpers/consts";
 import { deserializeError, serializeError } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
-import { ServerTiming } from "../helpers/ServerTiming";
+import { type ServerTiming } from "../helpers/ServerTiming";
 import { slugify, timeStr } from "../helpers/strings";
 import {
-  Context,
-  EventNameFromTrigger,
-  EventPayload,
-  FailureEventArgs,
-  FailureEventPayload,
-  FunctionConfig,
-  FunctionOptions,
-  FunctionTrigger,
-  Handler,
-  IncomingOp,
-  OpStack,
-  OutgoingOp,
   StepOpCode,
+  type Context,
+  type EventNameFromTrigger,
+  type EventPayload,
+  type FailureEventArgs,
+  type FailureEventPayload,
+  type FunctionConfig,
+  type FunctionOptions,
+  type FunctionTrigger,
+  type Handler,
+  type IncomingOp,
+  type OpStack,
+  type OutgoingOp,
 } from "../types";
-import { Inngest } from "./Inngest";
-import { createStepTools, TickOp } from "./InngestStepTools";
+import { type Inngest } from "./Inngest";
+import { createStepTools, type TickOp } from "./InngestStepTools";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any

@@ -1,10 +1,10 @@
-import type { Request, Response } from "express";
+import { type Request, type Response } from "express";
 import {
   InngestCommHandler,
-  ServeHandler,
+  type ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
-import type { SupportedFrameworkName } from "./types";
+import { type SupportedFrameworkName } from "./types";
 
 export const name: SupportedFrameworkName = "express";
 

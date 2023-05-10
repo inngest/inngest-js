@@ -1,14 +1,14 @@
-import type {
-  APIGatewayProxyEvent,
-  Context as LambdaContext,
+import {
+  type APIGatewayProxyEvent,
+  type Context as LambdaContext,
 } from "aws-lambda";
 import {
   InngestCommHandler,
-  ServeHandler,
+  type ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
-import type { SupportedFrameworkName } from "./types";
+import { type SupportedFrameworkName } from "./types";
 
 export interface RedwoodResponse {
   statusCode: number;

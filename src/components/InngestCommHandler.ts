@@ -16,21 +16,21 @@ import { cacheFn } from "../helpers/functions";
 import { strBoolean } from "../helpers/scalar";
 import { createStream } from "../helpers/stream";
 import { stringifyUnknown } from "../helpers/strings";
-import type { MaybePromise } from "../helpers/types";
+import { type MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
 import {
-  FunctionConfig,
-  IncomingOp,
-  IntrospectRequest,
-  LogLevel,
-  RegisterOptions,
-  RegisterRequest,
-  StepRunResponse,
-  SupportedFrameworkName,
+  type FunctionConfig,
+  type IncomingOp,
+  type IntrospectRequest,
+  type LogLevel,
+  type RegisterOptions,
+  type RegisterRequest,
+  type StepRunResponse,
+  type SupportedFrameworkName,
 } from "../types";
 import { version } from "../version";
-import { Inngest } from "./Inngest";
-import type { InngestFunction } from "./InngestFunction";
+import { type Inngest } from "./Inngest";
+import { type InngestFunction } from "./InngestFunction";
 import { NonRetriableError } from "./NonRetriableError";
 
 /**

@@ -1,7 +1,7 @@
-import type { SupportedFrameworkName } from "inngest/types";
+import { type SupportedFrameworkName } from "inngest/types";
 import {
   InngestCommHandler,
-  ServeHandler,
+  type ServeHandler,
 } from "../components/InngestCommHandler";
 import { headerKeys, queryKeys } from "../helpers/consts";
 

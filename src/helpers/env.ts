@@ -4,7 +4,7 @@
 // string in order to read variables.
 
 import { type Inngest } from "../components/Inngest";
-import { SupportedFrameworkName } from "../types";
+import { type SupportedFrameworkName } from "../types";
 import { version } from "../version";
 import { envKeys, headerKeys } from "./consts";
 import { stringifyUnknown } from "./strings";

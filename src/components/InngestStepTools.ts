@@ -1,16 +1,21 @@
 import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
-import { Jsonify } from "type-fest";
+import { type Jsonify } from "type-fest";
 import { timeStr } from "../helpers/strings";
-import type {
-  ObjectPaths,
-  PartialK,
-  SendEventPayload,
-  SingleOrArray,
-  ValueOf,
+import {
+  type ObjectPaths,
+  type PartialK,
+  type SendEventPayload,
+  type SingleOrArray,
+  type ValueOf,
 } from "../helpers/types";
-import { EventPayload, HashedOp, Op, StepOpCode } from "../types";
-import { Inngest } from "./Inngest";
+import {
+  StepOpCode,
+  type EventPayload,
+  type HashedOp,
+  type Op,
+} from "../types";
+import { type Inngest } from "./Inngest";
 
 export interface TickOp extends HashedOp {
   fn?: (...args: unknown[]) => unknown;
