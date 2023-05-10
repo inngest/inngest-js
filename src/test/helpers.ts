@@ -526,6 +526,24 @@ export const testFramework = (
         });
       });
 
+      describe("env detection and headers", () => {
+        test("uses env headers from client", async () => {
+          nock("https://api.inngest.com").post("/fn/register").reply(200);
+
+          const ret = await run(
+            [new Inngest({ name: "Test", env: "FOO" }), []],
+            [{ method: "PUT" }]
+          );
+
+          expect(ret).toMatchObject({
+            status: 200,
+            headers: expect.objectContaining({
+              [headerKeys.Environment]: expect.stringMatching("FOO"),
+            }),
+          });
+        });
+      });
+
       test("register with overwritten host and path when specified", async () => {
         let reqToMock;
 
