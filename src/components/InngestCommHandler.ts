@@ -538,14 +538,15 @@ export class InngestCommHandler<
         ])
       ) as typeof rawActions;
 
-      const getHeaders = (): Record<string, string> => ({
-        ...inngestHeaders({
+      const getHeaders = (): Record<string, string> =>
+        inngestHeaders({
           env: actions.env as Record<string, string | undefined>,
           framework: this.frameworkName,
-          inngestEnv: this.client?.env,
-        }),
-        "Server-Timing": timer.getHeader(),
-      });
+          client: this.client,
+          extras: {
+            "Server-Timing": timer.getHeader(),
+          },
+        });
 
       const actionRes = timer.wrap("action", () =>
         this.handleAction(actions as ReturnType<Awaited<H>>, timer)
@@ -625,14 +626,15 @@ export class InngestCommHandler<
   ): Promise<ActionResponse> {
     const env = actions.env ?? allProcessEnv();
 
-    const getHeaders = () => ({
-      ...inngestHeaders({
+    const getHeaders = (): Record<string, string> =>
+      inngestHeaders({
         env: env as Record<string, string | undefined>,
         framework: this.frameworkName,
-        inngestEnv: this.client?.env,
-      }),
-      "Server-Timing": timer.getHeader(),
-    });
+        client: this.client,
+        extras: {
+          "Server-Timing": timer.getHeader(),
+        },
+      });
 
     this._isProd = actions.isProduction ?? isProd(env);
 
