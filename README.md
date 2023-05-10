@@ -134,8 +134,7 @@ inngest.send("app/user.signup", {
 Clone the repository, then:
 
 ```sh
-yarn # install dependencies
-yarn dev # build/lint/test
+yarn dev # install dependencies, build/lint/test
 ```
 
 We use [Volta](https://volta.sh/) to manage Node/Yarn versions.
