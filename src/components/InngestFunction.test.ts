@@ -5,6 +5,7 @@ import {
   type UnhashedOp,
 } from "@local/components/InngestStepTools";
 import { internalEvents } from "@local/helpers/consts";
+import { ErrCode } from "@local/helpers/errors";
 import { ServerTiming } from "@local/helpers/ServerTiming";
 import {
   StepOpCode,
@@ -743,7 +744,7 @@ describe("runFn", () => {
       },
       () => ({
         "first run throws, as we find a step late": {
-          expectedThrowMessage: "Your function was stopped from running",
+          expectedThrowMessage: ErrCode.STEP_USED_AFTER_ASYNC,
         },
       })
     );
@@ -785,7 +786,7 @@ describe("runFn", () => {
         },
         "second run throws, as mixes async logic": {
           stack: [{ id: A, data: "A" }],
-          expectedThrowMessage: "Your function was stopped from running",
+          expectedThrowMessage: ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION,
         },
       })
     );
@@ -827,18 +828,18 @@ describe("runFn", () => {
         },
         "second run throws, as mixes async logic": {
           stack: [{ id: A, data: "A" }],
-          expectedThrowMessage: "Your function was stopped from running",
+          expectedThrowMessage: ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION,
         },
       })
     );
+
+    let firstRun = true;
 
     testFn(
       "throw when a step-fn detects side effects during memoization",
       () => {
         const A = jest.fn(() => "A");
         const B = jest.fn(() => "B");
-
-        let firstRun = true;
 
         const fn = inngest.createFunction(
           { name: "Foo" },
@@ -847,7 +848,7 @@ describe("runFn", () => {
             if (firstRun) {
               firstRun = false;
             } else {
-              await new Promise((resolve) => setTimeout(resolve, 10));
+              await new Promise((resolve) => setTimeout(resolve, 1000));
             }
 
             await run("A", A);
@@ -876,7 +877,7 @@ describe("runFn", () => {
         },
         "second run throws, as we find async logic during memoization": {
           stack: [{ id: A, data: "A" }],
-          expectedThrowMessage: "TODO",
+          expectedThrowMessage: ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION,
         },
       })
     );
