@@ -7,6 +7,7 @@ import {
   type ObjectPaths,
   type StrictUnion,
 } from "./helpers/types";
+import { type ILogger } from "./middleware/logger";
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -165,6 +166,8 @@ export type BaseContext<
    */
   tools: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
   step: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
+
+  logger?: ILogger;
 
   /**
    * Any `fns` passed when creating your Inngest function will be
@@ -493,6 +496,11 @@ export interface RegisterOptions {
    * Default level: "info"
    */
   logLevel?: LogLevel;
+
+  /**
+   * The logger provided by the user
+   */
+  logger?: ILogger;
 
   /**
    * Some serverless providers (especially those with edge compute) may support

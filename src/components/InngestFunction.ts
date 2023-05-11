@@ -8,6 +8,7 @@ import {
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { type ServerTiming } from "../helpers/ServerTiming";
 import { slugify, timeStr } from "../helpers/strings";
+import { type ILogger } from "../middleware/logger";
 import {
   StepOpCode,
   type Context,
@@ -257,7 +258,7 @@ export class InngestFunction<
      * add tools.
      */
     const fnArg = {
-      ...(data as { event: EventPayload }),
+      ...(data as { event: EventPayload; logger: ILogger }),
       tools,
       step: tools,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -1,4 +1,4 @@
-import { LogArg } from "../helpers/types";
+import { type LogArg } from "../helpers/types";
 
 // Based on https://datatracker.ietf.org/doc/html/rfc5424#autoid-11
 // it's pretty reasonable to expect a logger to have the following interfaces
