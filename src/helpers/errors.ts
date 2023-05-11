@@ -89,6 +89,12 @@ export const deserializeError = (subject: Partial<SerializedError>): Error => {
   }
 };
 
+export enum ErrCode {
+  ASYNC_DETECTED_DURING_MEMOIZATION = "ASYNC_DETECTED_DURING_MEMOIZATION",
+  ASYNC_DETECTED_AFTER_MEMOIZATION = "ASYNC_DETECTED_AFTER_MEMOIZATION",
+  STEP_USED_AFTER_ASYNC = "STEP_USED_AFTER_ASYNC",
+}
+
 export interface PrettyError {
   /**
    * The type of message, used to decide on icon and color use.
@@ -145,6 +151,12 @@ export interface PrettyError {
    * the error is in relation to.
    */
   stack?: true;
+
+  /**
+   * If applicable, provide a code that the user can use to reference the error
+   * when contacting support.
+   */
+  code?: ErrCode;
 }
 
 /**
@@ -163,6 +175,7 @@ export const prettyError = ({
   why,
   consequences,
   stack,
+  code,
 }: PrettyError): string => {
   const { icon, colorFn } = (
     {
@@ -204,7 +217,14 @@ export const prettyError = ({
 
   const trailer = [otherwise?.trim()].filter(Boolean).join(" ");
 
-  const message = [splitter, header, body, trailer, splitter]
+  const message = [
+    splitter,
+    header,
+    body,
+    trailer,
+    code ? `Code: ${code}` : "",
+    splitter,
+  ]
     .filter(Boolean)
     .join("\n\n");
 
