@@ -341,9 +341,8 @@ export class InngestFunction<
            * Whichever the case, this is bad and we can't continue in this
            * undefined state.
            */
-          // TODO PrettyError
           throw new Error(
-            `Bad stack; could not find local op "${incomingOp.id}" at position ${pos}`
+            functionStoppedRunningErr(ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION)
           );
         }
 
