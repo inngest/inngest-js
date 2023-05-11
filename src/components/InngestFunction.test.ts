@@ -723,6 +723,32 @@ describe("runFn", () => {
     );
 
     testFn(
+      "throw when a non-step fn becomes a step-fn",
+      () => {
+        const A = jest.fn(() => "A");
+
+        const fn = inngest.createFunction(
+          { name: "Foo" },
+          "foo",
+          async ({ step: { run } }) => {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            await run("A", A);
+          }
+        );
+
+        return { fn, steps: { A } };
+      },
+      {
+        A: "",
+      },
+      () => ({
+        "first run throws, as we find a step late": {
+          expectedThrowMessage: "Your function was stopped from running",
+        },
+      })
+    );
+
+    testFn(
       "handle onFailure calls",
       () => {
         const A = jest.fn(() => "A");
