@@ -1,6 +1,7 @@
 import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
 import { type Jsonify } from "type-fest";
+import { prettyError } from "../helpers/errors";
 import { timeStr } from "../helpers/strings";
 import {
   type ObjectPaths,
@@ -88,6 +89,20 @@ export const createStepTools = <
      * tick has completed.
      */
     reset: () => void;
+
+    /**
+     * If `true`, any use of step tools will, by default, throw an error. We do
+     * this when we detect that a function may be mixing step and non-step code.
+     *
+     * Created step tooling can decide how to manually handle this on a
+     * case-by-case basis.
+     *
+     * In the future, we can provide a way for a user to override this if they
+     * wish to and understand the danger of side-effects.
+     *
+     * Defaults to `false`.
+     */
+    nonStepFnDetected: boolean;
   } = {
     allFoundOps: {},
     tickOps: {},
@@ -98,6 +113,7 @@ export const createStepTools = <
       state.tickOpHashes = {};
       state.allFoundOps = { ...state.allFoundOps, ...state.tickOps };
     },
+    nonStepFnDetected: false,
   };
 
   // Start referencing everything
@@ -119,7 +135,6 @@ export const createStepTools = <
       parent: state.currentOp?.id ?? null,
       op: op.op,
       name: op.name,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       opts: op.opts ?? null,
     };
 
@@ -158,26 +173,59 @@ export const createStepTools = <
       ...args: Parameters<T>
     ) => Omit<Op, "data" | "error">,
 
-    /**
-     * Optionally, we can also provide a function that will be called when
-     * Inngest tells us to run this operation.
-     *
-     * If this function is defined, the first time the tool is used it will
-     * report the desired operation (including options) to the Inngest. Inngest
-     * will then call back to the function to tell it to run the step and then
-     * retrieve data.
-     *
-     * We do this in order to allow functionality such as per-step retries; this
-     * gives the SDK the opportunity to tell Inngest what it wants to do before
-     * it does it.
-     *
-     * This function is passed the arguments passed by the user. It will be run
-     * when we receive an operation matching this one that does not contain a
-     * `data` property.
-     */
-    fn?: (...args: Parameters<T>) => unknown
+    opts?: {
+      /**
+       * Optionally, we can also provide a function that will be called when
+       * Inngest tells us to run this operation.
+       *
+       * If this function is defined, the first time the tool is used it will
+       * report the desired operation (including options) to the Inngest. Inngest
+       * will then call back to the function to tell it to run the step and then
+       * retrieve data.
+       *
+       * We do this in order to allow functionality such as per-step retries; this
+       * gives the SDK the opportunity to tell Inngest what it wants to do before
+       * it does it.
+       *
+       * This function is passed the arguments passed by the user. It will be run
+       * when we receive an operation matching this one that does not contain a
+       * `data` property.
+       */
+      fn?: (...args: Parameters<T>) => unknown;
+
+      /**
+       * If `true` and we have detected that this is a  non-step function, the
+       * provided `fn` will be called and the result returned immediately
+       * instead of being executed later.
+       *
+       * If no `fn` is provided to the tool, this will throw the same error as
+       * if this setting was `false`.
+       */
+      nonStepExecuteInline?: boolean;
+    }
   ): T => {
     return ((...args: Parameters<T>): Promise<unknown> => {
+      if (state.nonStepFnDetected) {
+        if (opts?.nonStepExecuteInline && opts.fn) {
+          return Promise.resolve(opts.fn(...args));
+        }
+
+        throw new Error(
+          prettyError({
+            whatHappened: "Your function was stopped from running",
+            why: "We detected a mix of asynchronous logic, some using step tooling and some not.",
+            consequences:
+              "This can cause unexpected behaviour when a function is paused and resumed and is therefore strongly discouraged; we stopped your function to ensure nothing unexpected happened!",
+            stack: true,
+            toFixNow:
+              "Ensure that your function is either entirely step-based or entirely non-step-based, by either wrapping all asynchronous logic in `step.run()` calls or by removing all `step.*()` calls.",
+
+            otherwise:
+              "For more information on why step functions work in this manner, see https://www.inngest.com/docs/functions/multi-step#gotchas",
+          })
+        );
+      }
+
       state.hasUsedTools = true;
 
       const opId = hashOp(matchOp(...args));
@@ -185,8 +233,7 @@ export const createStepTools = <
       return new Promise<unknown>((resolve, reject) => {
         state.tickOps[opId.id] = {
           ...opId,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          ...(fn ? { fn: () => fn(...args) } : {}),
+          ...(opts?.fn ? { fn: () => opts.fn?.(...args) } : {}),
           resolve,
           reject,
           fulfilled: false,
@@ -272,8 +319,11 @@ export const createStepTools = <
           name: payloads[0]?.name || "sendEvent",
         };
       },
-      (nameOrPayload, maybePayload) => {
-        return client.send(nameOrPayload, maybePayload);
+      {
+        nonStepExecuteInline: true,
+        fn: (nameOrPayload, maybePayload) => {
+          return client.send(nameOrPayload, maybePayload);
+        },
       }
     ),
 
@@ -393,8 +443,7 @@ export const createStepTools = <
           name,
         };
       },
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-      (_, fn) => fn()
+      { fn: (_, fn) => fn() }
     ),
 
     /**
