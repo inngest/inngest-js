@@ -1,7 +1,7 @@
 import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
 import { type Jsonify } from "type-fest";
-import { functionStoppedRunningErr } from "../helpers/errors";
+import { ErrCode, functionStoppedRunningErr } from "../helpers/errors";
 import { timeStr } from "../helpers/strings";
 import {
   type ObjectPaths,
@@ -210,7 +210,9 @@ export const createStepTools = <
           return Promise.resolve(opts.fn(...args));
         }
 
-        throw new Error(functionStoppedRunningErr);
+        throw new Error(
+          functionStoppedRunningErr(ErrCode.STEP_USED_AFTER_ASYNC)
+        );
       }
 
       state.hasUsedTools = true;

@@ -1,6 +1,7 @@
 import { internalEvents, queryKeys } from "../helpers/consts";
 import {
   deserializeError,
+  ErrCode,
   functionStoppedRunningErr,
   serializeError,
 } from "../helpers/errors";
@@ -519,7 +520,9 @@ export class InngestFunction<
         });
 
         if (!hasOpsPending) {
-          throw new Error(functionStoppedRunningErr);
+          throw new Error(
+            functionStoppedRunningErr(ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION)
+          );
         }
       }
     }
