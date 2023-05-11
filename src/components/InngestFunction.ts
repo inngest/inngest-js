@@ -1,5 +1,9 @@
 import { internalEvents, queryKeys } from "../helpers/consts";
-import { deserializeError, serializeError } from "../helpers/errors";
+import {
+  deserializeError,
+  functionStoppedRunningErr,
+  serializeError,
+} from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { type ServerTiming } from "../helpers/ServerTiming";
 import { slugify, timeStr } from "../helpers/strings";
@@ -326,6 +330,16 @@ export class InngestFunction<
         state.currentOp = state.allFoundOps[incomingOp.id];
 
         if (!state.currentOp) {
+          /**
+           * We're trying to resume the function, but we can't find where to go.
+           *
+           * This means that either the function has changed or there are async
+           * actions in-between steps that we haven't noticed in previous
+           * executions.
+           *
+           * Whichever the case, this is bad and we can't continue in this
+           * undefined state.
+           */
           // TODO PrettyError
           throw new Error(
             `Bad stack; could not find local op "${incomingOp.id}" at position ${pos}`
@@ -485,6 +499,28 @@ export class InngestFunction<
         state.nonStepFnDetected = true;
 
         return ["complete", await userFnPromise];
+      } else {
+        /**
+         * If we're here, the user's function has not returned a value, has not
+         * reported any new, ops, but has also previously used step tools and
+         * successfully memoized state.
+         *
+         * This indicates that the user has mixed step and non-step logic, which
+         * is not something we want to support without an opt-in from the user.
+         *
+         * We should throw here to let the user know that this is not supported.
+         *
+         * We need to be careful, though; it's a valid state for a chain of
+         * promises to return no further actions, so we should only throw if
+         * this state is reached and there are no other pending steps.
+         */
+        const hasOpsPending = Object.values(state.allFoundOps).some((op) => {
+          return op.fulfilled === false;
+        });
+
+        if (!hasOpsPending) {
+          throw new Error(functionStoppedRunningErr);
+        }
       }
     }
 
