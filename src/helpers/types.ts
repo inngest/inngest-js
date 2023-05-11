@@ -131,3 +131,15 @@ export type IsStringLiteral<T extends string> = string extends T ? false : true;
  * Returns `true` if the given generic `T` is `any`, or `false` if it is not.
  */
 export type IsAny<T> = 0 extends 1 & T ? true : false;
+
+/**
+ * All kinds of arguments can come through
+ *
+ * Examples seen are
+ * - string
+ * - object / hash
+ * - values used for string interpolation <== basically anything
+ *
+ * See https://linear.app/inngest/issue/INN-1342/flush-logs-on-function-exitreturns for more details
+ */
+export type LogArg = object;
