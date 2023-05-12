@@ -1,5 +1,12 @@
 # inngest
 
+## 1.8.3
+
+### Patch Changes
+
+- c09261b: INN-1348 Throw an actionable error when we detect mixed async logic
+- 98c15b3: INN-1347 Fix deadlock when an async function finds a step
+
 ## 1.8.2
 
 ### Patch Changes
