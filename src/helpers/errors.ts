@@ -3,6 +3,8 @@ import {
   deserializeError as cjsDeserializeError,
   serializeError as cjsSerializeError,
 } from "serialize-error-cjs";
+import { type Inngest } from "../components/Inngest";
+import { type ClientOptions } from "../types";
 
 const SERIALIZED_KEY = "__serialized";
 const SERIALIZED_VALUE = true;
@@ -245,3 +247,11 @@ export const functionStoppedRunningErr = (code: ErrCode) => {
     code,
   });
 };
+
+export const fixEventKeyMissingSteps = [
+  "Set the `INNGEST_EVENT_KEY` environment variable",
+  `Pass a key to the \`new Inngest()\` constructor using the \`${
+    "eventKey" satisfies keyof ClientOptions
+  }\` option`,
+  `Use \`inngest.${"setEventKey" satisfies keyof Inngest}()\` at runtime`,
+];
