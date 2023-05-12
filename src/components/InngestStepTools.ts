@@ -1,7 +1,11 @@
 import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
 import { type Jsonify } from "type-fest";
-import { ErrCode, functionStoppedRunningErr } from "../helpers/errors";
+import {
+  ErrCode,
+  functionStoppedRunningErr,
+  prettyError,
+} from "../helpers/errors";
 import { timeStr } from "../helpers/strings";
 import {
   type ObjectPaths,
@@ -220,6 +224,22 @@ export const createStepTools = <
 
         throw new NonRetriableError(
           functionStoppedRunningErr(ErrCode.STEP_USED_AFTER_ASYNC)
+        );
+      }
+
+      if (state.executingStep) {
+        throw new NonRetriableError(
+          prettyError({
+            whatHappened: "Your function was stopped from running",
+            why: "We detected that you have nested `step.*` tooling.",
+            consequences: "Nesting `step.*` tooling is not supported.",
+            stack: true,
+            toFixNow:
+              "Make sure you're not using `step.*` tooling inside of other `step.*` tooling. If you need to compose steps together, you can create a new async function and call it from within your step function, or use promise chaining.",
+            otherwise:
+              "For more information on step functions with Inngest, see https://www.inngest.com/docs/functions/multi-step",
+            code: ErrCode.NESTING_STEPS,
+          })
         );
       }
 
