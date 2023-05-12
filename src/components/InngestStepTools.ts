@@ -1,7 +1,7 @@
 import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
 import { type Jsonify } from "type-fest";
-import { prettyError } from "../helpers/errors";
+import { ErrCode, functionStoppedRunningErr } from "../helpers/errors";
 import { timeStr } from "../helpers/strings";
 import {
   type ObjectPaths,
@@ -17,6 +17,7 @@ import {
   type Op,
 } from "../types";
 import { type Inngest } from "./Inngest";
+import { NonRetriableError } from "./NonRetriableError";
 
 export interface TickOp extends HashedOp {
   fn?: (...args: unknown[]) => unknown;
@@ -210,19 +211,8 @@ export const createStepTools = <
           return Promise.resolve(opts.fn(...args));
         }
 
-        throw new Error(
-          prettyError({
-            whatHappened: "Your function was stopped from running",
-            why: "We detected a mix of asynchronous logic, some using step tooling and some not.",
-            consequences:
-              "This can cause unexpected behaviour when a function is paused and resumed and is therefore strongly discouraged; we stopped your function to ensure nothing unexpected happened!",
-            stack: true,
-            toFixNow:
-              "Ensure that your function is either entirely step-based or entirely non-step-based, by either wrapping all asynchronous logic in `step.run()` calls or by removing all `step.*()` calls.",
-
-            otherwise:
-              "For more information on why step functions work in this manner, see https://www.inngest.com/docs/functions/multi-step#gotchas",
-          })
+        throw new NonRetriableError(
+          functionStoppedRunningErr(ErrCode.STEP_USED_AFTER_ASYNC)
         );
       }
 

@@ -5,6 +5,7 @@ import {
   type UnhashedOp,
 } from "@local/components/InngestStepTools";
 import { internalEvents } from "@local/helpers/consts";
+import { ErrCode } from "@local/helpers/errors";
 import { ServerTiming } from "@local/helpers/ServerTiming";
 import {
   StepOpCode,
@@ -198,7 +199,7 @@ describe("runFn", () => {
 
             if (t.expectedThrowMessage) {
               test("throws expected error", () => {
-                expect(retErr?.message).toContain(t.expectedThrowMessage);
+                expect(retErr?.message ?? "").toContain(t.expectedThrowMessage);
               });
             } else {
               test("returns expected value", () => {
@@ -743,7 +744,140 @@ describe("runFn", () => {
       },
       () => ({
         "first run throws, as we find a step late": {
-          expectedThrowMessage: "Your function was stopped from running",
+          expectedThrowMessage: ErrCode.STEP_USED_AFTER_ASYNC,
+        },
+      })
+    );
+
+    testFn(
+      "throw when a linear step-fn becomes a non-step fn",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => "B");
+
+        const fn = inngest.createFunction(
+          { name: "Foo" },
+          "foo",
+          async ({ step: { run } }) => {
+            await run("A", A);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            await run("B", B);
+          }
+        );
+
+        return { fn, steps: { A, B } };
+      },
+      {
+        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+        B: "",
+      },
+      ({ A }) => ({
+        "first run executes A, as it's the only found step": {
+          expectedReturn: [
+            "run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "A",
+            }),
+          ],
+          expectedStepsRun: ["A"],
+        },
+        "second run throws, as mixes async logic": {
+          stack: [{ id: A, data: "A" }],
+          expectedThrowMessage: ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION,
+        },
+      })
+    );
+
+    testFn(
+      "throw when a parallel step-fn becomes a non-step fn",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => "B");
+
+        const fn = inngest.createFunction(
+          { name: "Foo" },
+          "foo",
+          async ({ step: { run } }) => {
+            await run("A", A);
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            await run("B", B);
+          }
+        );
+
+        return { fn, steps: { A, B } };
+      },
+      {
+        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+        B: "",
+      },
+      ({ A }) => ({
+        "first run executes A, as it's the only found step": {
+          expectedReturn: [
+            "run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "A",
+            }),
+          ],
+          expectedStepsRun: ["A"],
+        },
+        "second run throws, as mixes async logic": {
+          stack: [{ id: A, data: "A" }],
+          expectedThrowMessage: ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION,
+        },
+      })
+    );
+
+    let firstRun = true;
+
+    testFn(
+      "throw when a step-fn detects side effects during memoization",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => "B");
+
+        const fn = inngest.createFunction(
+          { name: "Foo" },
+          "foo",
+          async ({ step: { run } }) => {
+            if (firstRun) {
+              firstRun = false;
+            } else {
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            }
+
+            await run("A", A);
+            await run("B", B);
+          }
+        );
+
+        return { fn, steps: { A, B } };
+      },
+      {
+        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+        B: "",
+      },
+      ({ A }) => ({
+        "first run executes A, as it's the only found step": {
+          expectedReturn: [
+            "run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "A",
+            }),
+          ],
+          expectedStepsRun: ["A"],
+        },
+        "second run throws, as we find async logic during memoization": {
+          stack: [{ id: A, data: "A" }],
+          expectedThrowMessage: ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION,
         },
       })
     );

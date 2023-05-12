@@ -244,7 +244,17 @@ describe("sleepUntil", () => {
 
 describe("sendEvent", () => {
   describe("runtime", () => {
-    const client = createClient({ name: "test" });
+    const fetchMock = jest.fn(() =>
+      Promise.resolve({ status: 200 })
+    ) as unknown as typeof fetch;
+
+    const client = createClient({
+      name: "test",
+      fetch: fetchMock,
+      eventKey: "123",
+    });
+    const sendSpy = jest.spyOn(client, "send");
+
     let sendEvent: ReturnType<typeof createStepTools>[0]["sendEvent"];
     let state: ReturnType<typeof createStepTools>[1];
     let getOp: () => TickOp | undefined;
@@ -256,16 +266,24 @@ describe("sendEvent", () => {
 
     test("return Step step op code", () => {
       void sendEvent("step", { data: "foo" });
-      expect(getOp()).toMatchObject({
-        op: StepOpCode.StepPlanned,
-      });
+
+      expect(getOp()).toMatchObject({ op: StepOpCode.StepPlanned });
+      expect(sendSpy).not.toHaveBeenCalled();
     });
 
     test("return step name as name", () => {
       void sendEvent("step", { data: "foo" });
-      expect(getOp()).toMatchObject({
-        name: "step",
-      });
+
+      expect(getOp()).toMatchObject({ name: "step" });
+      expect(sendSpy).not.toHaveBeenCalled();
+    });
+
+    test("execute inline if non-step fn", () => {
+      state.nonStepFnDetected = true;
+      void sendEvent("step", { data: "foo" });
+
+      expect(getOp()).toBeUndefined();
+      expect(sendSpy).toHaveBeenCalledWith("step", { data: "foo" });
     });
   });
 
