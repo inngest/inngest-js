@@ -387,10 +387,14 @@ export class InngestFunction<
       }
 
       const runningStepStop = timer.start("running-step");
+      state.executingStep = true;
 
       const result = await new Promise((resolve) => {
         return resolve(userFnToRun());
       })
+        .finally(() => {
+          state.executingStep = false;
+        })
         .then((data) => {
           return {
             data: typeof data === "undefined" ? null : data,

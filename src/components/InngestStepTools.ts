@@ -104,6 +104,12 @@ export const createStepTools = <
      * Defaults to `false`.
      */
     nonStepFnDetected: boolean;
+
+    /**
+     * When true, we are currently executing a user's code for a single step
+     * within a step function.
+     */
+    executingStep: boolean;
   } = {
     allFoundOps: {},
     tickOps: {},
@@ -115,6 +121,7 @@ export const createStepTools = <
       state.allFoundOps = { ...state.allFoundOps, ...state.tickOps };
     },
     nonStepFnDetected: false,
+    executingStep: false,
   };
 
   // Start referencing everything
