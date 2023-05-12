@@ -17,7 +17,7 @@ import { strBoolean } from "../helpers/scalar";
 import { createStream } from "../helpers/stream";
 import { stringifyUnknown } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
-import { type ILogger } from "../middleware/logger";
+import { type Logger } from "../middleware/logger";
 import { landing } from "../landing";
 import {
   type FunctionConfig,
@@ -262,7 +262,7 @@ export class InngestCommHandler<
    * - .error()
    * - .debug()
    */
-  protected readonly logger?: ILogger;
+  protected readonly logger?: Logger;
 
   protected readonly streaming: RegisterOptions["streaming"];
 

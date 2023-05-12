@@ -134,8 +134,8 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     readonly handler: H;
     protected _isProd: boolean;
     protected log(level: LogLevel, ...args: unknown[]): void;
-    // Warning: (ae-forgotten-export) The symbol "ILogger" needs to be exported by the entry point index.d.ts
-    protected readonly logger?: ILogger;
+    // Warning: (ae-forgotten-export) The symbol "Logger" needs to be exported by the entry point index.d.ts
+    protected readonly logger?: Logger;
     protected readonly logLevel: LogLevel;
     readonly name: string;
     // (undocumented)
@@ -203,7 +203,7 @@ export interface RegisterOptions {
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
     landingPage?: boolean;
-    logger?: ILogger;
+    logger?: Logger;
     logLevel?: LogLevel;
     serveHost?: string;
     servePath?: string;

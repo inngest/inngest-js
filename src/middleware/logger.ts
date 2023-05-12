@@ -4,7 +4,7 @@
  * Examples seen are
  * - string
  * - object / hash
- * - values used for string interpolation <== basically anything
+ * - values used for string interpolation, basically anything
  *
  * See https://linear.app/inngest/issue/INN-1342/flush-logs-on-function-exitreturns for more details
  */
@@ -15,7 +15,7 @@ type LogArg = object;
  * it's pretty reasonable to expect a logger to have the following interfaces
  * available.
  */
-export interface ILogger {
+export interface Logger {
   info(...args: LogArg[]): void;
   warn(...args: LogArg[]): void;
   error(...args: LogArg[]): void;
