@@ -1,5 +1,11 @@
 # inngest
 
+## 1.8.4
+
+### Patch Changes
+
+- aaac9e5: When recommending event key fixes, recommend setting env vars first
+
 ## 1.8.3
 
 ### Patch Changes
