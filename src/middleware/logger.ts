@@ -44,7 +44,7 @@ export class DefaultLogger implements Logger {
  * LogBuffer hold the args that will be passed on to the actual
  * logger when attempting to flush.
  */
-class LogBuffer {
+export class LogBuffer {
   public readonly level: string;
   public readonly args: LogArg[];
 
@@ -96,5 +96,12 @@ export class ProxyLogger implements Logger {
 
   flush() {
     throw new Error("TO BE IMPLEMENTED");
+  }
+
+  /**
+   * Helper function for tests to check current buffer size
+   */
+  bufSize(): number {
+    return this._buffer.length;
   }
 }
