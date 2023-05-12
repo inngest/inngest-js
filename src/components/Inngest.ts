@@ -7,7 +7,7 @@ import {
   isProd,
   processEnv,
 } from "../helpers/env";
-import { prettyError } from "../helpers/errors";
+import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
 import {
   type PartialK,
   type SendEventPayload,
@@ -130,11 +130,7 @@ export class Inngest<
           whatHappened: "Could not find event key",
           consequences:
             "Sending events will throw in production unless an event key is added.",
-          toFixNow: [
-            "Pass a key to the `new Inngest()` constructor using the `eventKey` option",
-            "Set the `INNGEST_EVENT_KEY` environment variable",
-            "Use `inngest.setEventKey()` at runtime",
-          ],
+          toFixNow: fixEventKeyMissingSteps,
           why: "We couldn't find an event key to use to send events to Inngest.",
           otherwise:
             "Create a new production event key at https://app.inngest.com/env/production/manage/keys.",
@@ -274,15 +270,7 @@ export class Inngest<
           whatHappened: "Failed to send event",
           consequences: "Your event or events were not sent to Inngest.",
           why: "We couldn't find an event key to use to send events to Inngest.",
-          toFixNow: [
-            `Pass a key to the \`new Inngest()\` constructor using the \`${
-              "eventKey" satisfies keyof ClientOptions
-            }\` option`,
-            "Set the `INNGEST_EVENT_KEY` environment variable",
-            `Use \`inngest.${
-              "setEventKey" satisfies keyof Inngest
-            }()\` at runtime`,
-          ],
+          toFixNow: fixEventKeyMissingSteps,
         })
       );
     }

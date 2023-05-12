@@ -732,7 +732,7 @@ describe("runFn", () => {
           { name: "Foo" },
           "foo",
           async ({ step: { run } }) => {
-            await new Promise((resolve) => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 1000));
             await run("A", A);
           }
         );
@@ -760,7 +760,7 @@ describe("runFn", () => {
           "foo",
           async ({ step: { run } }) => {
             await run("A", A);
-            await new Promise((resolve) => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 1000));
             await run("B", B);
           }
         );
@@ -802,7 +802,7 @@ describe("runFn", () => {
           "foo",
           async ({ step: { run } }) => {
             await run("A", A);
-            await new Promise((resolve) => setTimeout(resolve, 10));
+            await new Promise((resolve) => setTimeout(resolve, 1000));
             await run("B", B);
           }
         );
