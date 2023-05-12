@@ -476,7 +476,14 @@ export class InngestFunction<
          * function.
          *
          * We should wait for the result and return it.
+         *
+         * A caveat here is that the user could use step tooling later on,
+         * resulting in a mix of step and non-step logic. This is not something
+         * we want to support without an opt-in from the user, so we should
+         * throw if this is the case.
          */
+        state.nonStepFnDetected = true;
+
         return ["complete", await userFnPromise];
       }
     }

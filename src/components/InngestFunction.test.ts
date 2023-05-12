@@ -167,7 +167,8 @@ describe("runFn", () => {
           stack?: OpStack;
           onFailure?: boolean;
           runStep?: string;
-          expectedReturn: Awaited<ReturnType<typeof runFnWithStack>>;
+          expectedReturn?: Awaited<ReturnType<typeof runFnWithStack>>;
+          expectedThrowMessage?: string;
           expectedHashOps?: UnhashedOp[];
           expectedStepsRun?: (keyof T["steps"])[];
           event?: EventPayload;
@@ -179,7 +180,8 @@ describe("runFn", () => {
           describe(name, () => {
             let hashDataSpy: ReturnType<typeof getHashDataSpy>;
             let tools: T;
-            let ret: Awaited<ReturnType<typeof runFnWithStack>>;
+            let ret: Awaited<ReturnType<typeof runFnWithStack>> | undefined;
+            let retErr: Error | undefined;
 
             beforeAll(async () => {
               hashDataSpy = getHashDataSpy();
@@ -188,12 +190,21 @@ describe("runFn", () => {
                 runStep: t.runStep,
                 onFailure: t.onFailure || tools.onFailure,
                 event: t.event || tools.event,
+              }).catch((err: Error) => {
+                retErr = err;
+                return undefined;
               });
             });
 
-            test("returns expected value", () => {
-              expect(ret).toEqual(t.expectedReturn);
-            });
+            if (t.expectedThrowMessage) {
+              test("throws expected error", () => {
+                expect(retErr?.message).toContain(t.expectedThrowMessage);
+              });
+            } else {
+              test("returns expected value", () => {
+                expect(ret).toEqual(t.expectedReturn);
+              });
+            }
 
             if (t.expectedHashOps?.length) {
               test("hashes expected ops", () => {
@@ -707,6 +718,32 @@ describe("runFn", () => {
             { id: BFailed, data: "B failed" },
           ],
           expectedReturn: ["complete", ["A", "B failed"]],
+        },
+      })
+    );
+
+    testFn(
+      "throw when a non-step fn becomes a step-fn",
+      () => {
+        const A = jest.fn(() => "A");
+
+        const fn = inngest.createFunction(
+          { name: "Foo" },
+          "foo",
+          async ({ step: { run } }) => {
+            await new Promise((resolve) => setTimeout(resolve, 10));
+            await run("A", A);
+          }
+        );
+
+        return { fn, steps: { A } };
+      },
+      {
+        A: "",
+      },
+      () => ({
+        "first run throws, as we find a step late": {
+          expectedThrowMessage: "Your function was stopped from running",
         },
       })
     );
