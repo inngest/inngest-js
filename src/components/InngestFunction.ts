@@ -25,6 +25,7 @@ import {
 } from "../types";
 import { type Inngest } from "./Inngest";
 import { createStepTools, type TickOp } from "./InngestStepTools";
+import { NonRetriableError } from "./NonRetriableError";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -341,7 +342,7 @@ export class InngestFunction<
            * Whichever the case, this is bad and we can't continue in this
            * undefined state.
            */
-          throw new Error(
+          throw new NonRetriableError(
             functionStoppedRunningErr(ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION)
           );
         }
@@ -519,7 +520,7 @@ export class InngestFunction<
         });
 
         if (!hasOpsPending) {
-          throw new Error(
+          throw new NonRetriableError(
             functionStoppedRunningErr(ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION)
           );
         }

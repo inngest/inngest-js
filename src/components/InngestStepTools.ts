@@ -17,6 +17,7 @@ import {
   type Op,
 } from "../types";
 import { type Inngest } from "./Inngest";
+import { NonRetriableError } from "./NonRetriableError";
 
 export interface TickOp extends HashedOp {
   fn?: (...args: unknown[]) => unknown;
@@ -210,7 +211,7 @@ export const createStepTools = <
           return Promise.resolve(opts.fn(...args));
         }
 
-        throw new Error(
+        throw new NonRetriableError(
           functionStoppedRunningErr(ErrCode.STEP_USED_AFTER_ASYNC)
         );
       }
