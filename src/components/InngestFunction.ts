@@ -8,7 +8,6 @@ import {
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { type ServerTiming } from "../helpers/ServerTiming";
 import { slugify, timeStr } from "../helpers/strings";
-import { type Logger } from "../middleware/logger";
 import {
   StepOpCode,
   type Context,
@@ -258,9 +257,10 @@ export class InngestFunction<
      * add tools.
      */
     const fnArg = {
-      ...(data as { event: EventPayload; logger?: Logger }),
+      ...(data as { event: EventPayload }),
       tools,
       step: tools,
+      logger: this.#client.logger,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as Partial<Context<any, any, any>>;
 

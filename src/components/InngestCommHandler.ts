@@ -17,7 +17,6 @@ import { strBoolean } from "../helpers/scalar";
 import { createStream } from "../helpers/stream";
 import { stringifyUnknown } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
-import { type Logger } from "../middleware/logger";
 import { landing } from "../landing";
 import {
   type FunctionConfig,
@@ -253,17 +252,6 @@ export class InngestCommHandler<
    */
   protected readonly logLevel: LogLevel;
 
-  /**
-   * An optional logger provided by the user to be used within all functions
-   *
-   * Expects the following interfaces to be defined
-   * - .info()
-   * - .warn()
-   * - .error()
-   * - .debug()
-   */
-  protected readonly logger?: Logger;
-
   protected readonly streaming: RegisterOptions["streaming"];
 
   /**
@@ -319,7 +307,6 @@ export class InngestCommHandler<
       fetch,
       landingPage,
       logLevel = "info",
-      logger,
       signingKey,
       serveHost,
       servePath,
@@ -473,7 +460,6 @@ export class InngestCommHandler<
     this.serveHost = serveHost;
     this.servePath = servePath;
     this.logLevel = logLevel;
-    this.logger = logger;
     this.streaming = streaming ?? false;
 
     this.fetch = getFetch(
@@ -850,7 +836,7 @@ export class InngestCommHandler<
           }) ?? [];
 
       const ret = await fn.fn["runFn"](
-        { event, runId: ctx?.run_id, logger: this.logger },
+        { event, runId: ctx?.run_id },
         opStack,
         /**
          * TODO The executor is sending `"step"` as the step ID when it is not

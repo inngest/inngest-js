@@ -12,6 +12,8 @@ export interface ClientOptions {
     eventKey?: string;
     fetch?: typeof fetch;
     inngestBaseUrl?: string;
+    // Warning: (ae-forgotten-export) The symbol "Logger" needs to be exported by the entry point index.d.ts
+    logger?: Logger;
     name: string;
 }
 
@@ -92,7 +94,7 @@ export enum headerKeys {
 
 // @public
 export class Inngest<Events extends Record<string, EventPayload> = Record<string, EventPayload>> {
-    constructor({ name, eventKey, inngestBaseUrl, fetch, env, }: ClientOptions);
+    constructor({ name, eventKey, inngestBaseUrl, fetch, env, logger, }: ClientOptions);
     // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
@@ -103,6 +105,8 @@ export class Inngest<Events extends Record<string, EventPayload> = Record<string
         onFailure?: Handler<Events, TTriggerName, TShimmedFns, FailureEventArgs<Events[TTriggerName]>>;
     }), trigger: TTrigger, handler: Handler<Events, TTriggerName, TShimmedFns>): InngestFunction;
     readonly inngestBaseUrl: URL;
+    // (undocumented)
+    readonly logger: Logger;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "PartialK" needs to be exported by the entry point index.d.ts
@@ -121,7 +125,7 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     constructor(
     frameworkName: string,
     appNameOrInngest: string | Inngest<any>,
-    functions: InngestFunction<any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, logger, signingKey, serveHost, servePath, streaming, }: RegisterOptions | undefined,
+    functions: InngestFunction<any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, streaming, }: RegisterOptions | undefined,
     handler: H,
     transformRes: TResTransform,
     streamTransformRes?: TStreamTransform);
@@ -134,8 +138,6 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     readonly handler: H;
     protected _isProd: boolean;
     protected log(level: LogLevel, ...args: unknown[]): void;
-    // Warning: (ae-forgotten-export) The symbol "Logger" needs to be exported by the entry point index.d.ts
-    protected readonly logger?: Logger;
     protected readonly logLevel: LogLevel;
     readonly name: string;
     // (undocumented)
@@ -203,7 +205,6 @@ export interface RegisterOptions {
     fetch?: typeof fetch;
     inngestRegisterUrl?: string;
     landingPage?: boolean;
-    logger?: Logger;
     logLevel?: LogLevel;
     serveHost?: string;
     servePath?: string;

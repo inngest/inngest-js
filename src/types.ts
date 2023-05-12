@@ -167,7 +167,10 @@ export type BaseContext<
   tools: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
   step: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
 
-  logger?: Logger;
+  /**
+   * The passed in logger from the user.
+   */
+  logger: Logger;
 
   /**
    * Any `fns` passed when creating your Inngest function will be
@@ -394,6 +397,26 @@ export interface ClientOptions {
    * multiple systems together using branch names.
    */
   env?: string;
+
+  /**
+   * The logger provided by the user.
+   * The user can passed in their winston, pino, and other loggers for
+   * handling log delivery to external services.
+   *
+   * The provider logger is expected to implement the following API interfaces
+   * - .info()
+   * - .warn()
+   * - .debug()
+   * - .error()
+   * which most loggers already do.
+   *
+   * Defaults to a dummy logger that just log things to the console if nothing is provided.
+   *
+   * TODO: Wrap the logger with a Proxy to make it operate like a step.
+   * This is currently only a passthrough, hence no difference compared to
+   * just importing the logger and using it.
+   */
+  logger?: Logger;
 }
 
 /**
@@ -496,11 +519,6 @@ export interface RegisterOptions {
    * Default level: "info"
    */
   logLevel?: LogLevel;
-
-  /**
-   * The logger provided by the user
-   */
-  logger?: Logger;
 
   /**
    * Some serverless providers (especially those with edge compute) may support

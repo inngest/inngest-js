@@ -8,7 +8,7 @@
  *
  * See https://linear.app/inngest/issue/INN-1342/flush-logs-on-function-exitreturns for more details
  */
-type LogArg = object;
+type LogArg = unknown;
 
 /**
  * Based on https://datatracker.ietf.org/doc/html/rfc5424#autoid-11
@@ -20,4 +20,22 @@ export interface Logger {
   warn(...args: LogArg[]): void;
   error(...args: LogArg[]): void;
   debug(...args: LogArg[]): void;
+}
+
+export class DefaultLogger implements Logger {
+  info(...args: LogArg[]) {
+    console.info(...args);
+  }
+
+  warn(...args: LogArg[]) {
+    console.warn(...args);
+  }
+
+  error(...args: LogArg[]) {
+    console.error(...args);
+  }
+
+  debug(...args: LogArg[]) {
+    console.debug(...args);
+  }
 }
