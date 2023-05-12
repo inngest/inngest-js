@@ -25,7 +25,7 @@ import {
   type TriggerOptions,
 } from "../types";
 import { InngestFunction } from "./InngestFunction";
-import { type Logger, DefaultLogger } from "../middleware/logger";
+import { type Logger, ProxyLogger, DefaultLogger } from "../middleware/logger";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -147,9 +147,7 @@ export class Inngest<
     });
 
     this.fetch = getFetch(fetch);
-
-    // TODO: Wrap this in a proxy for non default loggers
-    this.logger = logger ? logger : new DefaultLogger();
+    this.logger = logger ? new ProxyLogger(logger) : new DefaultLogger();
   }
 
   /**
