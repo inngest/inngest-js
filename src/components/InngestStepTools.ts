@@ -265,15 +265,15 @@ export const createStepTools = <
      * Returns a promise that will resolve once the event has been sent.
      */
     sendEvent: createTool<{
-      <Payload extends SendEventPayload<Events>>(
-        payload: Payload
-      ): Promise<void>;
+      <Payload extends SendEventPayload<Events>>(payload: Payload): ReturnType<
+        Inngest["send"]
+      >;
       <Event extends keyof Events & string>(
         name: Event,
         payload: SingleOrArray<
           PartialK<Omit<Events[Event], "name" | "v">, "ts">
         >
-      ): Promise<void>;
+      ): ReturnType<Inngest["send"]>;
     }>(
       (nameOrPayload, maybePayload) => {
         let payloads: ValueOf<Events>[];

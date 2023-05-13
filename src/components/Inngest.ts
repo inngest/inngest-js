@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { envKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
@@ -148,7 +149,7 @@ export class Inngest<
   /**
    * Given a response from Inngest, relay the error to the caller.
    */
-  async #getResponseError(response: globalThis.Response): Promise<Error> {
+  #getResponseError(response: globalThis.Response, rawBody: unknown): Error {
     let errorMessage = "Unknown error";
     switch (response.status) {
       case 401:
@@ -164,7 +165,7 @@ export class Inngest<
         errorMessage = "Event key not found";
         break;
       case 406:
-        errorMessage = `${JSON.stringify(await response.json())}`;
+        errorMessage = `${JSON.stringify(rawBody)}`;
         break;
       case 409:
       case 412:
@@ -224,7 +225,7 @@ export class Inngest<
   public async send<Event extends keyof Events>(
     name: Event,
     payload: SingleOrArray<PartialK<Omit<Events[Event], "name" | "v">, "ts">>
-  ): Promise<void>;
+  ): Promise<string[]>;
   /**
    * Send one or many events to Inngest. Takes an entire payload (including
    * name) as each input.
@@ -251,7 +252,7 @@ export class Inngest<
    */
   public async send<Payload extends SendEventPayload<Events>>(
     payload: Payload
-  ): Promise<void>;
+  ): Promise<string[]>;
   public async send<Event extends keyof Events>(
     nameOrPayload:
       | Event
@@ -263,7 +264,7 @@ export class Inngest<
     maybePayload?: SingleOrArray<
       PartialK<Omit<Events[Event], "name" | "v">, "ts">
     >
-  ): Promise<void> {
+  ): Promise<string[]> {
     if (!this.eventKey) {
       throw new Error(
         prettyError({
@@ -306,7 +307,7 @@ export class Inngest<
      * happens, show a warning that this may not be intended, but don't throw.
      */
     if (!payloads.length) {
-      return console.warn(
+      console.warn(
         prettyError({
           type: "warn",
           whatHappened: "`inngest.send()` called with no events",
@@ -317,6 +318,8 @@ export class Inngest<
           stack: true,
         })
       );
+
+      return [];
     }
 
     // When sending events, check if the dev server is available.  If so, use the
@@ -339,11 +342,22 @@ export class Inngest<
       headers: { ...this.headers },
     });
 
-    if (response.status >= 200 && response.status < 300) {
-      return;
-    }
+    let rawBody: unknown;
 
-    throw await this.#getResponseError(response);
+    try {
+      rawBody = await response.json();
+
+      const body = await z
+        .object({
+          ids: z.array(z.string()),
+          status: z.number().min(200).max(299),
+        })
+        .parseAsync(rawBody);
+
+      return body.ids;
+    } catch (err) {
+      throw this.#getResponseError(response, rawBody);
+    }
   }
 
   public createFunction<
