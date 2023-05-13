@@ -244,8 +244,15 @@ describe("sleepUntil", () => {
 
 describe("sendEvent", () => {
   describe("runtime", () => {
-    const fetchMock = jest.fn(() =>
-      Promise.resolve({ status: 200 })
+    const fetchMock = jest.fn((input: unknown) =>
+      Promise.resolve({
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            ids: Array.isArray(input) ? input.map((_, i) => `${i}`) : ["0"],
+            status: 200,
+          }),
+      })
     ) as unknown as typeof fetch;
 
     const client = createClient({
