@@ -35,8 +35,11 @@ export const globalConfigErrors: Record<GlobalConfigErr, JSX.Element> = {
       </div>
       <div>
         You can find your signing key in the{" "}
-        <a href="https://app.inngest.com/secrets" target="_blank">
-          Inngest Dashboard - Secrets section.
+        <a
+          href="https://app.inngest.com/env/production/manage/signing-key"
+          target="_blank"
+        >
+          Inngest Cloud - Manage section.
         </a>
       </div>
     </div>

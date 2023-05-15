@@ -1,6 +1,9 @@
-import type { ServeHandler } from "./components/InngestCommHandler";
-import { InngestCommHandler } from "./components/InngestCommHandler";
+import {
+  InngestCommHandler,
+  type ServeHandler,
+} from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
+import { type SupportedFrameworkName } from "./types";
 
 type HTTP = {
   headers: Record<string, string>;
@@ -14,15 +17,17 @@ type Main = {
   [data: string]: unknown;
 };
 
+export const name: SupportedFrameworkName = "digitalocean";
+
 export const serve = (
-  name: Parameters<ServeHandler>[0],
+  nameOrInngest: Parameters<ServeHandler>[0],
   fns: Parameters<ServeHandler>[1],
   opts: Parameters<ServeHandler>[2] &
     Required<Pick<NonNullable<Parameters<ServeHandler>[2]>, "serveHost">>
 ) => {
   const handler = new InngestCommHandler(
-    "digitalocean",
     name,
+    nameOrInngest,
     fns,
     opts,
     (main: Main) => {

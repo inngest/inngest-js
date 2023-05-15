@@ -11,8 +11,9 @@
   <br/>
   <p>
 
-<a href="http://www.typescriptlang.org/"><img src="https://img.shields.io/badge/%3C%2F%3E-TypeScript-%230074c1.svg" /></a>
+<a href="http://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TS-%3E%3D4.7-blue" /></a>
 <a href="https://www.npmjs.com/package/inngest"><img src="https://img.shields.io/npm/v/inngest" /></a>
+<br/>
 <a href="https://discord.gg/EuesV2ZSnX"><img src="https://img.shields.io/discord/842170679536517141?label=discord" /></a>
 <a href="https://twitter.com/inngest"><img src="https://img.shields.io/twitter/follow/inngest?style=social" /></a>
 
@@ -21,14 +22,14 @@
 
 <hr />
 
-Inngest allows you to:
+On _any_ serverless platform ([Next.js](https://www.inngest.com/docs/sdk/serve#framework-next-js), [Deno Deploy](https://www.inngest.com/docs/sdk/serve#framework-fresh-deno), [RedwoodJS](https://www.inngest.com/docs/sdk/serve#framework-redwood), [AWS Lambda](https://www.inngest.com/docs/sdk/serve#framework-aws-lambda), and [anything else](https://www.inngest.com/docs/sdk/serve#custom-frameworks)) and with no extra infrastructure:
 
-- 👉 Write <b>background jobs</b> in any framework, on any platform <br />
-- 👉 Create <b>scheduled & cron jobs</b> for any serverless platform <br />
-- 👉 Build <b>serverless queues</b> without configuring infra <br />
-- 👉 Write complex <b>step functions</b> anywhere <br />
-- 👉 Build <b>serverless event-driven systems</b> <br />
-- 👉 Reliably respond to webhooks, with retries & payloads stored for history <br />
+- ⚡ Write <b>background jobs</b>
+- 🕐 Create <b>scheduled & cron jobs</b>
+- ♻️ Build <b>serverless queues</b>
+- 🪜 Write complex <b>step functions</b>
+- 🚘 Build <b>serverless event-driven systems</b>
+- 🪝 Reliably respond to webhooks, with retries & payloads stored for history
 
 👋 _Have a question or feature request? [Join our Discord](https://www.inngest.com/discord)!_
 
@@ -133,8 +134,7 @@ inngest.send("app/user.signup", {
 Clone the repository, then:
 
 ```sh
-yarn # install dependencies
-yarn dev # build/lint/test
+yarn dev # install dependencies, build/lint/test
 ```
 
 We use [Volta](https://volta.sh/) to manage Node/Yarn versions.
@@ -153,9 +153,50 @@ yarn build
 yarn prelink
 cd dist/
 yarn link
-```
 
-```sh
 # in another repo
 yarn link inngest
 ```
+
+Alternatively, you can also package the library and ship it with an application. This is a nice way to generate and ship snapshot/test versions of the library to test in production environments without requiring releasing to npm.
+
+```sh
+# in this repo
+yarn local:pack
+cp inngest.tgz ../some-other-repo-root
+
+# in another repo
+yarn add ./inngest.tgz
+```
+
+Some platforms require manually installing the package again at build time to properly link dependencies, so you may have to change your `yarn build` script to be prefixed with this install, e.g.:
+
+```sh
+yarn add ./inngest.tgz && framework dev
+```
+
+### Releasing
+
+To release to production, we use [Changesets](https://github.com/changesets/changesets). This means that releasing and changelog generation is all managed through PRs, where a bot will guide you through the process of announcing changes in PRs and releasing them once merged to `main`.
+
+#### Snapshot versions
+
+If a local `inngest.tgz` isn't ideal, we can release a tagged version to npm. For now, this is relatively manual. For this, please ensure you are in an open PR branch for observability.
+
+Decide on the "tag" you will be publishing to, which will dictate how the user installs the snapshot, e.g. if your tag is `beta`, the user will install using `inngest@beta`.
+
+You can see the currently available tags on the [`inngest` npm page](https://www.npmjs.com/package/inngest?activeTab=versions).
+
+> **NEVER** use the `latest` tag, and **NEVER** run `npm publish` without specifying `--tag`.
+
+If the current active version is `v1.1.1`, this is a minor release, and our tag is `foo`, we'd do:
+
+```sh
+yarn version v1.2.0-foo.1
+yarn build
+yarn prelink
+cd dist/
+npm publish --access public --tag foo
+```
+
+You can iterate the final number for each extra snapshot you need to do on a branch.

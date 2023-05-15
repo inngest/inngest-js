@@ -1,22 +1,28 @@
 import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
-import { Jsonify } from "type-fest";
+import { type Jsonify } from "type-fest";
+import {
+  ErrCode,
+  functionStoppedRunningErr,
+  prettyError,
+} from "../helpers/errors";
 import { timeStr } from "../helpers/strings";
-import type {
-  ObjectPaths,
-  PartialK,
-  SendEventPayload,
-  SingleOrArray,
-  ValueOf,
+import {
+  type ObjectPaths,
+  type PartialK,
+  type SendEventPayload,
+  type SingleOrArray,
+  type ValueOf,
 } from "../helpers/types";
 import {
-  ClientOptions,
-  EventPayload,
-  HashedOp,
-  Op,
   StepOpCode,
+  type ClientOptions,
+  type EventPayload,
+  type HashedOp,
+  type Op,
 } from "../types";
-import { EventsFromOpts, Inngest } from "./Inngest";
+import { type EventsFromOpts, type Inngest } from "./Inngest";
+import { NonRetriableError } from "./NonRetriableError";
 
 export interface TickOp extends HashedOp {
   fn?: (...args: unknown[]) => unknown;
@@ -90,6 +96,26 @@ export const createStepTools = <
      * tick has completed.
      */
     reset: () => void;
+
+    /**
+     * If `true`, any use of step tools will, by default, throw an error. We do
+     * this when we detect that a function may be mixing step and non-step code.
+     *
+     * Created step tooling can decide how to manually handle this on a
+     * case-by-case basis.
+     *
+     * In the future, we can provide a way for a user to override this if they
+     * wish to and understand the danger of side-effects.
+     *
+     * Defaults to `false`.
+     */
+    nonStepFnDetected: boolean;
+
+    /**
+     * When true, we are currently executing a user's code for a single step
+     * within a step function.
+     */
+    executingStep: boolean;
   } = {
     allFoundOps: {},
     tickOps: {},
@@ -100,6 +126,8 @@ export const createStepTools = <
       state.tickOpHashes = {};
       state.allFoundOps = { ...state.allFoundOps, ...state.tickOps };
     },
+    nonStepFnDetected: false,
+    executingStep: false,
   };
 
   // Start referencing everything
@@ -121,7 +149,6 @@ export const createStepTools = <
       parent: state.currentOp?.id ?? null,
       op: op.op,
       name: op.name,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       opts: op.opts ?? null,
     };
 
@@ -160,26 +187,64 @@ export const createStepTools = <
       ...args: Parameters<T>
     ) => Omit<Op, "data" | "error">,
 
-    /**
-     * Optionally, we can also provide a function that will be called when
-     * Inngest tells us to run this operation.
-     *
-     * If this function is defined, the first time the tool is used it will
-     * report the desired operation (including options) to the Inngest. Inngest
-     * will then call back to the function to tell it to run the step and then
-     * retrieve data.
-     *
-     * We do this in order to allow functionality such as per-step retries; this
-     * gives the SDK the opportunity to tell Inngest what it wants to do before
-     * it does it.
-     *
-     * This function is passed the arguments passed by the user. It will be run
-     * when we receive an operation matching this one that does not contain a
-     * `data` property.
-     */
-    fn?: (...args: Parameters<T>) => unknown
+    opts?: {
+      /**
+       * Optionally, we can also provide a function that will be called when
+       * Inngest tells us to run this operation.
+       *
+       * If this function is defined, the first time the tool is used it will
+       * report the desired operation (including options) to the Inngest. Inngest
+       * will then call back to the function to tell it to run the step and then
+       * retrieve data.
+       *
+       * We do this in order to allow functionality such as per-step retries; this
+       * gives the SDK the opportunity to tell Inngest what it wants to do before
+       * it does it.
+       *
+       * This function is passed the arguments passed by the user. It will be run
+       * when we receive an operation matching this one that does not contain a
+       * `data` property.
+       */
+      fn?: (...args: Parameters<T>) => unknown;
+
+      /**
+       * If `true` and we have detected that this is a  non-step function, the
+       * provided `fn` will be called and the result returned immediately
+       * instead of being executed later.
+       *
+       * If no `fn` is provided to the tool, this will throw the same error as
+       * if this setting was `false`.
+       */
+      nonStepExecuteInline?: boolean;
+    }
   ): T => {
     return ((...args: Parameters<T>): Promise<unknown> => {
+      if (state.nonStepFnDetected) {
+        if (opts?.nonStepExecuteInline && opts.fn) {
+          return Promise.resolve(opts.fn(...args));
+        }
+
+        throw new NonRetriableError(
+          functionStoppedRunningErr(ErrCode.STEP_USED_AFTER_ASYNC)
+        );
+      }
+
+      if (state.executingStep) {
+        throw new NonRetriableError(
+          prettyError({
+            whatHappened: "Your function was stopped from running",
+            why: "We detected that you have nested `step.*` tooling.",
+            consequences: "Nesting `step.*` tooling is not supported.",
+            stack: true,
+            toFixNow:
+              "Make sure you're not using `step.*` tooling inside of other `step.*` tooling. If you need to compose steps together, you can create a new async function and call it from within your step function, or use promise chaining.",
+            otherwise:
+              "For more information on step functions with Inngest, see https://www.inngest.com/docs/functions/multi-step",
+            code: ErrCode.NESTING_STEPS,
+          })
+        );
+      }
+
       state.hasUsedTools = true;
 
       const opId = hashOp(matchOp(...args));
@@ -187,8 +252,7 @@ export const createStepTools = <
       return new Promise<unknown>((resolve, reject) => {
         state.tickOps[opId.id] = {
           ...opId,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          ...(fn ? { fn: () => fn(...args) } : {}),
+          ...(opts?.fn ? { fn: () => opts.fn?.(...args) } : {}),
           resolve,
           reject,
           fulfilled: false,
@@ -274,8 +338,11 @@ export const createStepTools = <
           name: payloads[0]?.name || "sendEvent",
         };
       },
-      (nameOrPayload, maybePayload) => {
-        return client.send(nameOrPayload, maybePayload);
+      {
+        nonStepExecuteInline: true,
+        fn: (nameOrPayload, maybePayload) => {
+          return client.send(nameOrPayload, maybePayload);
+        },
       }
     ),
 
@@ -395,8 +462,7 @@ export const createStepTools = <
           name,
         };
       },
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-      (_, fn) => fn()
+      { fn: (_, fn) => fn() }
     ),
 
     /**
@@ -457,8 +523,10 @@ export const createStepTools = <
          * If we're here, it's because the date is invalid. We'll throw a custom
          * error here to standardise this response.
          */
+        // TODO PrettyError
         console.warn("Invalid date or date string passed to sleepUntil;", err);
 
+        // TODO PrettyError
         throw new Error(
           `Invalid date or date string passed to sleepUntil: ${time.toString()}`
         );

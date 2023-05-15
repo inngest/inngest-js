@@ -1,7 +1,7 @@
-import { IsEqual, assertType } from "type-plus";
+import { assertType, type IsEqual } from "type-plus";
 import { z } from "zod";
-import { IsAny } from "../helpers/types";
-import { EventPayload, GetEvents } from "../types";
+import { type IsAny } from "../helpers/types";
+import { type EventPayload, type GetEvents } from "../types";
 import { EventSchemas } from "./EventSchemas";
 import { Inngest } from "./Inngest";
 

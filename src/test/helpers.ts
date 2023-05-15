@@ -3,11 +3,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Inngest } from "@local";
-import { ServeHandler } from "@local/components/InngestCommHandler";
-import { headerKeys } from "@local/helpers/consts";
+import { type ServeHandler } from "@local/components/InngestCommHandler";
+import { envKeys, headerKeys } from "@local/helpers/consts";
 import { version } from "@local/version";
 import fetch from "cross-fetch";
-import type { Request, Response } from "express";
+import { type Request, type Response } from "express";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ulid } from "ulid";
@@ -46,14 +46,15 @@ const inngest = createClient({ name: "test", eventKey: "event-key-123" });
 
 export const testFramework = (
   /**
-   * The name of the framework to test as it will appear in test logs
+   * The name of the framework to test as it will appear in test logs. Also used
+   * to check that the correct headers are being sent.
    */
   frameworkName: string,
 
   /**
    * The serve handler exported by this handler.
    */
-  handler: { serve: ServeHandler },
+  handler: { name: string; serve: ServeHandler },
 
   /**
    * Optional tests and changes to make to this test suite.
@@ -125,7 +126,16 @@ export const testFramework = (
     reqOpts: Parameters<typeof httpMocks.createRequest>,
     env: Record<string, string | undefined> = {}
   ): Promise<HandlerStandardReturn> => {
-    const serveHandler = handler.serve(...handlerOpts);
+    const [nameOrInngest, functions, givenOpts] = handlerOpts;
+    const serveHandler = handler.serve(nameOrInngest, functions, {
+      ...givenOpts,
+
+      /**
+       * For testing, the fetch implementation has to be stable for us to
+       * appropriately mock out the network requests.
+       */
+      fetch,
+    });
 
     const [req, res] = createReqRes({
       hostname: "localhost",
@@ -217,6 +227,21 @@ export const testFramework = (
           body: expect.stringContaining("<!DOCTYPE html>"),
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
+            [headerKeys.Framework]: expect.stringMatching(handler.name),
+          }),
+        });
+      });
+
+      test("return correct platform", async () => {
+        const ret = await run(
+          ["Test", [], { landingPage: true }],
+          [{ method: "GET" }],
+          { [envKeys.IsNetlify]: "true" }
+        );
+
+        expect(ret).toMatchObject({
+          headers: expect.objectContaining({
+            [headerKeys.Platform]: "netlify",
           }),
         });
       });
@@ -233,6 +258,7 @@ export const testFramework = (
           body: expect.stringContaining("<!DOCTYPE html>"),
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
+            [headerKeys.Framework]: expect.stringMatching(handler.name),
           }),
         });
       });
@@ -247,6 +273,7 @@ export const testFramework = (
           status: 405,
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
+            [headerKeys.Framework]: expect.stringMatching(handler.name),
           }),
         });
       });
@@ -262,6 +289,7 @@ export const testFramework = (
           status: 405,
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
+            [headerKeys.Framework]: expect.stringMatching(handler.name),
           }),
         });
       });
@@ -276,6 +304,7 @@ export const testFramework = (
           body: expect.stringContaining("<!DOCTYPE html>"),
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
+            [headerKeys.Framework]: expect.stringMatching(handler.name),
           }),
         });
       });
@@ -289,6 +318,7 @@ export const testFramework = (
           status: 405,
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
+            [headerKeys.Framework]: expect.stringMatching(handler.name),
           }),
         });
       });
@@ -307,6 +337,7 @@ export const testFramework = (
           status: 200,
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
+            [headerKeys.Framework]: expect.stringMatching(handler.name),
           }),
         });
 
@@ -347,6 +378,7 @@ export const testFramework = (
             status: 200,
             headers: expect.objectContaining({
               [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
+              [headerKeys.Framework]: expect.stringMatching(handler.name),
             }),
           });
 
@@ -356,6 +388,22 @@ export const testFramework = (
 
           expect(retBody).toMatchObject({
             message: "Successfully registered",
+          });
+        });
+
+        test("return correct platform", async () => {
+          nock("https://api.inngest.com").post("/fn/register").reply(200, {
+            status: 200,
+          });
+
+          const ret = await run(["Test", []], [{ method: "PUT" }], {
+            [envKeys.IsNetlify]: "true",
+          });
+
+          expect(ret).toMatchObject({
+            headers: expect.objectContaining({
+              [headerKeys.Platform]: "netlify",
+            }),
           });
         });
 
@@ -385,6 +433,7 @@ export const testFramework = (
             status: 200,
             headers: expect.objectContaining({
               [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
+              [headerKeys.Framework]: expect.stringMatching(handler.name),
             }),
           });
 
@@ -474,6 +523,24 @@ export const testFramework = (
                 },
               },
             ],
+          });
+        });
+      });
+
+      describe("env detection and headers", () => {
+        test("uses env headers from client", async () => {
+          nock("https://api.inngest.com").post("/fn/register").reply(200);
+
+          const ret = await run(
+            [new Inngest({ name: "Test", env: "FOO" }), []],
+            [{ method: "PUT" }]
+          );
+
+          expect(ret).toMatchObject({
+            status: 200,
+            headers: expect.objectContaining({
+              [headerKeys.Environment]: expect.stringMatching("FOO"),
+            }),
           });
         });
       });

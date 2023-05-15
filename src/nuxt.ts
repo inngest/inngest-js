@@ -1,11 +1,21 @@
-import type { H3Event } from "h3";
-import { getHeader, getMethod, getQuery, readBody, send, setHeaders } from "h3";
+import {
+  getHeader,
+  getMethod,
+  getQuery,
+  readBody,
+  send,
+  setHeaders,
+  type H3Event,
+} from "h3";
 import {
   InngestCommHandler,
-  ServeHandler,
+  type ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
+import { type SupportedFrameworkName } from "./types";
+
+export const name: SupportedFrameworkName = "nuxt";
 
 /**
  * In Nuxt 3, serve and register any declared functions with Inngest, making
@@ -15,7 +25,7 @@ import { processEnv } from "./helpers/env";
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
   const handler = new InngestCommHandler(
-    "nuxt",
+    name,
     nameOrInngest,
     fns,
     opts,

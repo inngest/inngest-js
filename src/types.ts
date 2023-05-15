@@ -1,13 +1,13 @@
 import { z } from "zod";
-import { EventSchemas } from "./components/EventSchemas";
-import { EventsFromOpts, Inngest } from "./components/Inngest";
-import type { createStepTools } from "./components/InngestStepTools";
-import { internalEvents } from "./helpers/consts";
-import type {
-  IsStringLiteral,
-  KeysNotOfType,
-  ObjectPaths,
-  StrictUnion,
+import { type EventSchemas } from "./components/EventSchemas";
+import { type EventsFromOpts, type Inngest } from "./components/Inngest";
+import { type createStepTools } from "./components/InngestStepTools";
+import { type internalEvents } from "./helpers/consts";
+import {
+  type IsStringLiteral,
+  type KeysNotOfType,
+  type ObjectPaths,
+  type StrictUnion,
 } from "./helpers/types";
 
 /**
@@ -168,6 +168,11 @@ export type BaseContext<
    * The event data present in the payload.
    */
   event: EventsFromOpts<TOpts>[TTrigger];
+
+  /**
+   * The run ID for the current function execution
+   */
+  runId: string;
 
   /**
    * @deprecated Use `step` instead.
@@ -422,6 +427,15 @@ export interface ClientOptions {
    * ```
    */
   schemas?: EventSchemas<Record<string, EventPayload>>;
+
+  /**
+   * The Inngest environment to send events to. Defaults to whichever
+   * environment this client's event key is associated with.
+   *
+   * It's likely you never need to change this unless you're trying to sync
+   * multiple systems together using branch names.
+   */
+  env?: string;
 }
 
 /**
@@ -524,6 +538,27 @@ export interface RegisterOptions {
    * Default level: "info"
    */
   logLevel?: LogLevel;
+
+  /**
+   * Some serverless providers (especially those with edge compute) may support
+   * streaming responses back to Inngest. This can be used to circumvent
+   * restrictive request timeouts and other limitations. It is only available if
+   * the serve handler being used supports streaming.
+   *
+   * If this is `"allow"`, the SDK will attempt to stream responses back to
+   * Inngest if it can confidently detect support for it by verifyng that the
+   * platform and the serve handler supports streaming.
+   *
+   * If this is `"force"`, the SDK will always attempt to stream responses back
+   * to Inngest regardless of whether we can detect support for it or not. This
+   * will override `allowStreaming`, but will still not attempt to stream if
+   * the serve handler does not support it.
+   *
+   * If this is `false`, streaming will never be used.
+   *
+   * Defaults to `false`.
+   */
+  streaming?: "allow" | "force" | false;
 }
 
 /**
@@ -887,3 +922,19 @@ export type EventNameFromTrigger<
   Events extends Record<string, EventPayload>,
   T extends TriggerOptions<keyof Events & string>
 > = T extends string ? T : T extends { event: string } ? T["event"] : string;
+
+/**
+ * A union to represent known names of supported frameworks that we can use
+ * internally to assess functionality based on a mix of framework and platform.
+ */
+export type SupportedFrameworkName =
+  | "cloudflare-pages"
+  | "digitalocean"
+  | "edge"
+  | "express"
+  | "aws-lambda"
+  | "nextjs"
+  | "nuxt"
+  | "redwoodjs"
+  | "remix"
+  | "deno/fresh";

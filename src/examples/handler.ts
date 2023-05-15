@@ -2,7 +2,7 @@ import {
   headerKeys,
   InngestCommHandler,
   queryKeys,
-  ServeHandler,
+  type ServeHandler,
 } from "inngest";
 
 /**

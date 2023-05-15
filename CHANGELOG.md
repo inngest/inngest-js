@@ -1,5 +1,69 @@
 # inngest
 
+## 1.8.4
+
+### Patch Changes
+
+- aaac9e5: When recommending event key fixes, recommend setting env vars first
+
+## 1.8.3
+
+### Patch Changes
+
+- c09261b: INN-1348 Throw an actionable error when we detect mixed async logic
+- 98c15b3: INN-1347 Fix deadlock when an async function finds a step
+
+## 1.8.2
+
+### Patch Changes
+
+- 5462bdd: Ensure Inngest client's env object is used within serve()
+- 0b0c0ad: Add consistent type imports for slightly better tree-shaking
+
+## 1.8.1
+
+### Patch Changes
+
+- 5573be3: INN-1270 Create an internal handler to enforce more actionable user-facing errors
+
+## 1.8.0
+
+### Minor Changes
+
+- 65966f5: INN-1087 Add edge streaming support to `"inngest/next"` serve handler
+
+### Patch Changes
+
+- 164fd5c: INN-1266 Fix bad link for fetching Inngest signing key on landing page
+
+## 1.7.1
+
+### Patch Changes
+
+- 34b6d39: INN-1240 Add `queueMicrotask()` fallback for restrictive environments
+
+## 1.7.0
+
+### Minor Changes
+
+- c999896: INN-1029 Add `env` option to `Inngest` client to explicitly push to a particular Inngest env
+
+### Patch Changes
+
+- 131727a: Adjust README to have a slightly clearer intro
+- c999896: INN-1186 Send `x-inngest-platform` and `x-inngest-framework` headers during registration
+- 0728308: Expose run ID to function executions for user-managed logging and tracing
+- 3ac579f: Warn users when some functions appear undefined when serving
+- eb1ea34: Allow signing keys with multiple prefixes, as required for branch environment support
+
+## 1.6.1
+
+### Patch Changes
+
+- a840e67: INN-1126 Execute a step early if it's the only pending item during a discovery
+
+  This reduces the number of "Function steps" used for simple step functions.
+
 ## 1.6.0
 
 ### Minor Changes

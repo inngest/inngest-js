@@ -1,8 +1,11 @@
 import {
   InngestCommHandler,
-  ServeHandler,
+  type ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
+import { type SupportedFrameworkName } from "./types";
+
+export const name: SupportedFrameworkName = "edge";
 
 /**
  * In an edge runtime, serve and register any declared functions with Inngest,
@@ -22,7 +25,7 @@ import { headerKeys, queryKeys } from "./helpers/consts";
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
   const handler = new InngestCommHandler(
-    "edge",
+    name,
     nameOrInngest,
     fns,
     {

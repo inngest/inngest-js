@@ -1,14 +1,17 @@
-import type {
-  APIGatewayEvent,
-  APIGatewayProxyEventV2,
-  APIGatewayProxyResult,
-  Context,
+import {
+  type APIGatewayEvent,
+  type APIGatewayProxyEventV2,
+  type APIGatewayProxyResult,
+  type Context,
 } from "aws-lambda";
 import {
   InngestCommHandler,
-  ServeHandler,
+  type ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
+import { type SupportedFrameworkName } from "./types";
+
+export const name: SupportedFrameworkName = "aws-lambda";
 
 /**
  * With AWS Lambda, serve and register any declared functions with Inngest,
@@ -37,7 +40,7 @@ import { headerKeys, queryKeys } from "./helpers/consts";
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
   const handler = new InngestCommHandler(
-    "aws-lambda",
+    name,
     nameOrInngest,
     fns,
     { ...opts },
@@ -65,6 +68,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         const proto = event.headers["x-forwarded-proto"] || "https";
         url = new URL(path, `${proto}://${event.headers.host || ""}`);
       } catch (err) {
+        // TODO PrettyError
         throw new Error("Could not parse URL from `event.headers.host`");
       }
 
@@ -110,7 +114,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
       };
     },
 
-    ({ body, status, headers }, _req): Promise<APIGatewayProxyResult> => {
+    ({ body, status, headers }): Promise<APIGatewayProxyResult> => {
       return Promise.resolve({
         body,
         statusCode: status,

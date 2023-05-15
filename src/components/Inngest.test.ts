@@ -1,7 +1,6 @@
-import { EventPayload, EventSchemas } from "@local";
-import { eventKeyWarning } from "@local/components/Inngest";
-import { envKeys } from "@local/helpers/consts";
-import { IsAny } from "@local/helpers/types";
+import { EventSchemas, type EventPayload } from "@local";
+import { envKeys, headerKeys } from "@local/helpers/consts";
+import { type IsAny } from "@local/helpers/types";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
 
@@ -34,7 +33,9 @@ describe("instantiation", () => {
 
     test("should log a warning if event key not specified", () => {
       createClient({ name: "test" });
-      expect(warnSpy).toHaveBeenCalledWith(eventKeyWarning);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Could not find event key")
+      );
     });
 
     test("should not log a warning if event key is specified", () => {
@@ -52,7 +53,7 @@ describe("instantiation", () => {
 
 describe("send", () => {
   describe("runtime", () => {
-    const originalEnvEventKey = process.env[envKeys.EventKey];
+    const originalProcessEnv = process.env;
     const originalFetch = global.fetch;
 
     beforeAll(() => {
@@ -70,25 +71,19 @@ describe("send", () => {
     beforeEach(() => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
       (global.fetch as any).mockClear();
-    });
-
-    afterEach(() => {
-      if (originalEnvEventKey) {
-        process.env[envKeys.EventKey] = originalEnvEventKey;
-      } else {
-        delete process.env[envKeys.EventKey];
-      }
+      process.env = { ...originalProcessEnv };
     });
 
     afterAll(() => {
       global.fetch = originalFetch;
+      process.env = originalProcessEnv;
     });
 
     test("should fail to send if event key not specified at instantiation", async () => {
       const inngest = createClient({ name: "test" });
 
       await expect(() => inngest.send(testEvent)).rejects.toThrowError(
-        "Could not find an event key"
+        "Failed to send event"
       );
     });
 
@@ -150,6 +145,90 @@ describe("send", () => {
 
       await expect(inngest.send([])).resolves.toBeUndefined();
       expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    test("should send env:foo if explicitly set", async () => {
+      const inngest = createClient({
+        name: "test",
+        eventKey: testEventKey,
+        env: "foo",
+      });
+
+      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/e/${testEventKey}`),
+        expect.objectContaining({
+          method: "POST",
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          headers: expect.objectContaining({
+            [headerKeys.Environment]: "foo",
+          }),
+        })
+      );
+    });
+
+    test("should send env:foo if set in INNGEST_ENV", async () => {
+      process.env[envKeys.Environment] = "foo";
+
+      const inngest = createClient({
+        name: "test",
+        eventKey: testEventKey,
+      });
+
+      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/e/${testEventKey}`),
+        expect.objectContaining({
+          method: "POST",
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          headers: expect.objectContaining({
+            [headerKeys.Environment]: "foo",
+          }),
+        })
+      );
+    });
+
+    test("should send explicit env:foo over env var if set in both", async () => {
+      process.env[envKeys.Environment] = "bar";
+
+      const inngest = createClient({
+        name: "test",
+        eventKey: testEventKey,
+        env: "foo",
+      });
+
+      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/e/${testEventKey}`),
+        expect.objectContaining({
+          method: "POST",
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          headers: expect.objectContaining({
+            [headerKeys.Environment]: "foo",
+          }),
+        })
+      );
+    });
+
+    test("should send env:foo if set in platform env key", async () => {
+      process.env[envKeys.VercelBranch] = "foo";
+
+      const inngest = createClient({
+        name: "test",
+        eventKey: testEventKey,
+      });
+
+      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/e/${testEventKey}`),
+        expect.objectContaining({
+          method: "POST",
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          headers: expect.objectContaining({
+            [headerKeys.Environment]: "foo",
+          }),
+        })
+      );
     });
   });
 

@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["dist/**/*", "src/**/*.test.ts"],
+  "include": ["dist/**/*", "src/cloudflare.test.ts"],
   "compilerOptions": {
     "paths": {
       "@local": ["./dist"],

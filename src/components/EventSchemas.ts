@@ -1,7 +1,7 @@
-import { Simplify } from "type-fest";
-import { z } from "zod";
-import { IsStringLiteral } from "../helpers/types";
-import { EventPayload } from "../types";
+import { type Simplify } from "type-fest";
+import { type z } from "zod";
+import { type IsStringLiteral } from "../helpers/types";
+import { type EventPayload } from "../types";
 
 export type StandardEventSchema = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

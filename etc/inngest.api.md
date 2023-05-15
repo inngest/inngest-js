@@ -10,6 +10,7 @@ import { z } from 'zod';
 
 // @public
 export interface ClientOptions {
+    env?: string;
     eventKey?: string;
     fetch?: typeof fetch;
     inngestBaseUrl?: string;
@@ -99,6 +100,12 @@ export type GetEvents<T extends Inngest<any>> = T extends Inngest<infer U> ? Eve
 // @public
 export enum headerKeys {
     // (undocumented)
+    Environment = "x-inngest-env",
+    // (undocumented)
+    Framework = "x-inngest-framework",
+    // (undocumented)
+    Platform = "x-inngest-platform",
+    // (undocumented)
     SdkVersion = "x-inngest-sdk",
     // (undocumented)
     Signature = "x-inngest-signature"
@@ -106,7 +113,7 @@ export enum headerKeys {
 
 // @public
 export class Inngest<TOpts extends ClientOptions = ClientOptions> {
-    constructor({ name, eventKey, inngestBaseUrl, fetch, }: TOpts);
+    constructor({ name, eventKey, inngestBaseUrl, fetch, env, }: TOpts);
     // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
@@ -129,20 +136,22 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 }
 
 // Warning: (ae-forgotten-export) The symbol "Handler_2" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "ActionResponse" needs to be exported by the entry point index.d.ts
 //
 // @public
-export class InngestCommHandler<H extends Handler_2, TransformedRes> {
+export class InngestCommHandler<H extends Handler_2, TResTransform extends (res: ActionResponse<string>, ...args: Parameters<H>) => any, TStreamTransform extends (res: ActionResponse<ReadableStream>, ...args: Parameters<H>) => any> {
     constructor(
     frameworkName: string,
     appNameOrInngest: string | Inngest<any>,
-    functions: InngestFunction<any, any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, }: RegisterOptions | undefined,
+    functions: InngestFunction<any, any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, streaming, }: RegisterOptions | undefined,
     handler: H,
-    transformRes: (actionRes: ActionResponse, ...args: Parameters<H>) => TransformedRes);
+    transformRes: TResTransform,
+    streamTransformRes?: TStreamTransform);
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
     protected configs(url: URL): FunctionConfig[];
-    createHandler(): (...args: Parameters<H>) => Promise<TransformedRes>;
+    createHandler(): (...args: Parameters<H>) => Promise<Awaited<ReturnType<TResTransform>>>;
     protected readonly frameworkName: string;
     readonly handler: H;
     protected _isProd: boolean;
@@ -150,10 +159,12 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     protected readonly logLevel: LogLevel;
     readonly name: string;
     // (undocumented)
-    protected register(url: URL, devServerHost: string | undefined, deployId?: string | undefined | null): Promise<{
+    protected register(url: URL, devServerHost: string | undefined, deployId: string | undefined | null, getHeaders: () => Record<string, string>): Promise<{
         status: number;
         message: string;
     }>;
+    // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
+    //
     // (undocumented)
     protected registerBody(url: URL): RegisterRequest;
     protected reqUrl(url: URL): URL;
@@ -162,12 +173,6 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     //
     // (undocumented)
     protected runStep(functionId: string, stepId: string | null, data: unknown, timer: ServerTiming): Promise<StepRunResponse>;
-    // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
-    protected get sdkHeader(): [
-    prefix: string,
-    version: RegisterRequest["sdk"],
-    suffix: string
-    ];
     protected readonly serveHost: string | undefined;
     protected readonly servePath: string | undefined;
     // (undocumented)
@@ -176,8 +181,11 @@ export class InngestCommHandler<H extends Handler_2, TransformedRes> {
     protected signingKey: string | undefined;
     // (undocumented)
     protected signResponse(): string;
-    // Warning: (ae-forgotten-export) The symbol "ActionResponse" needs to be exported by the entry point index.d.ts
-    readonly transformRes: (res: ActionResponse, ...args: Parameters<H>) => TransformedRes;
+    // (undocumented)
+    protected readonly streaming: RegisterOptions["streaming"];
+    // (undocumented)
+    readonly streamTransformRes: TStreamTransform | undefined;
+    readonly transformRes: TResTransform;
     // (undocumented)
     protected validateSignature(sig: string | undefined, body: Record<string, unknown>): void;
 }
@@ -224,6 +232,7 @@ export interface RegisterOptions {
     serveHost?: string;
     servePath?: string;
     signingKey?: string;
+    streaming?: "allow" | "force" | false;
 }
 
 // @public

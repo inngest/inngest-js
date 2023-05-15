@@ -1,19 +1,22 @@
-import type {
-  APIGatewayProxyEvent,
-  Context as LambdaContext,
+import {
+  type APIGatewayProxyEvent,
+  type Context as LambdaContext,
 } from "aws-lambda";
 import {
   InngestCommHandler,
-  ServeHandler,
+  type ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
+import { type SupportedFrameworkName } from "./types";
 
 export interface RedwoodResponse {
   statusCode: number;
   body?: string | null;
   headers?: Record<string, string>;
 }
+
+export const name: SupportedFrameworkName = "redwoodjs";
 
 /**
  * In Redwood.js, serve and register any declared functions with Inngest, making
@@ -23,7 +26,7 @@ export interface RedwoodResponse {
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
   const handler = new InngestCommHandler(
-    "redwoodjs",
+    name,
     nameOrInngest,
     fns,
     opts,

@@ -1,5 +1,5 @@
 import ms from "ms";
-import { TimeStr } from "../types";
+import { type TimeStr } from "../types";
 
 /**
  * Returns a slugified string used ot generate consistent IDs.

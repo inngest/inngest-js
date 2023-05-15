@@ -1,27 +1,33 @@
 import { z } from "zod";
-import { ServerTiming } from "../helpers/ServerTiming";
+import { type ServerTiming } from "../helpers/ServerTiming";
 import { internalEvents, queryKeys } from "../helpers/consts";
-import { deserializeError, serializeError } from "../helpers/errors";
+import {
+  ErrCode,
+  deserializeError,
+  functionStoppedRunningErr,
+  serializeError,
+} from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { slugify, timeStr } from "../helpers/strings";
 import {
-  ClientOptions,
-  Context,
-  EventNameFromTrigger,
-  EventPayload,
-  FailureEventArgs,
-  FunctionConfig,
-  FunctionOptions,
-  FunctionTrigger,
-  Handler,
-  IncomingOp,
-  OpStack,
-  OutgoingOp,
   StepOpCode,
   failureEventErrorSchema,
+  type ClientOptions,
+  type Context,
+  type EventNameFromTrigger,
+  type EventPayload,
+  type FailureEventArgs,
+  type FunctionConfig,
+  type FunctionOptions,
+  type FunctionTrigger,
+  type Handler,
+  type IncomingOp,
+  type OpStack,
+  type OutgoingOp,
 } from "../types";
-import { EventsFromOpts, Inngest } from "./Inngest";
-import { TickOp, createStepTools } from "./InngestStepTools";
+import { type EventsFromOpts, type Inngest } from "./Inngest";
+import { createStepTools, type TickOp } from "./InngestStepTools";
+import { NonRetriableError } from "./NonRetriableError";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -227,7 +233,7 @@ export class InngestFunction<
      * this is `null`, the function will be run and next operations will be
      * returned instead.
      */
-    runStep: string | null,
+    requestedRunStep: string | null,
 
     timer: ServerTiming,
 
@@ -276,6 +282,7 @@ export class InngestFunction<
        */
 
       if (!this.#onFailureFn) {
+        // TODO PrettyError
         throw new Error(
           `Function "${this.name}" received a failure event to handle, but no failure handler was defined.`
         );
@@ -333,8 +340,18 @@ export class InngestFunction<
         state.currentOp = state.allFoundOps[incomingOp.id];
 
         if (!state.currentOp) {
-          throw new Error(
-            `Bad stack; could not find local op "${incomingOp.id}" at position ${pos}`
+          /**
+           * We're trying to resume the function, but we can't find where to go.
+           *
+           * This means that either the function has changed or there are async
+           * actions in-between steps that we haven't noticed in previous
+           * executions.
+           *
+           * Whichever the case, this is bad and we can't continue in this
+           * undefined state.
+           */
+          throw new NonRetriableError(
+            functionStoppedRunningErr(ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION)
           );
         }
 
@@ -355,21 +372,37 @@ export class InngestFunction<
 
     memoizingStop();
 
+    const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>(
+      tickOpToOutgoing
+    );
+
+    /**
+     * We make an optimization here by immediately invoking an op if it's the
+     * only one we've discovered. The alternative is to plan the step and then
+     * complete it, so we skip at least one entire execution with this.
+     */
+    const runStep = requestedRunStep || getEarlyExecRunStep(discoveredOps);
+
     if (runStep) {
       const userFnOp = state.allFoundOps[runStep];
       const userFnToRun = userFnOp?.fn;
 
       if (!userFnToRun) {
+        // TODO PrettyError
         throw new Error(
           `Bad stack; executor requesting to run unknown step "${runStep}"`
         );
       }
 
       const runningStepStop = timer.start("running-step");
+      state.executingStep = true;
 
       const result = await new Promise((resolve) => {
         return resolve(userFnToRun());
       })
+        .finally(() => {
+          state.executingStep = false;
+        })
         .then((data) => {
           return {
             data: typeof data === "undefined" ? null : data,
@@ -410,10 +443,6 @@ export class InngestFunction<
         { ...tickOpToOutgoing(userFnOp), ...result, op: StepOpCode.RunStep },
       ];
     }
-
-    const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>(
-      tickOpToOutgoing
-    );
 
     /**
      * Now we're here, we've memoised any function state and we know that this
@@ -462,6 +491,7 @@ export class InngestFunction<
          * To be safe, we'll show a warning here to tell users that this might
          * be unintentional, but otherwise carry on as normal.
          */
+        // TODO PrettyError
         console.warn(
           `Warning: Your "${this.name}" function has returned a value, but not all ops have been resolved, i.e. you have used step tooling without \`await\`. This may be intentional, but if you expect your ops to be resolved in order, you should \`await\` them. If you are knowingly leaving ops unresolved using \`.catch()\` or \`void\`, you can ignore this warning.`
         );
@@ -473,8 +503,39 @@ export class InngestFunction<
          * function.
          *
          * We should wait for the result and return it.
+         *
+         * A caveat here is that the user could use step tooling later on,
+         * resulting in a mix of step and non-step logic. This is not something
+         * we want to support without an opt-in from the user, so we should
+         * throw if this is the case.
          */
+        state.nonStepFnDetected = true;
+
         return ["complete", await userFnPromise];
+      } else {
+        /**
+         * If we're here, the user's function has not returned a value, has not
+         * reported any new, ops, but has also previously used step tools and
+         * successfully memoized state.
+         *
+         * This indicates that the user has mixed step and non-step logic, which
+         * is not something we want to support without an opt-in from the user.
+         *
+         * We should throw here to let the user know that this is not supported.
+         *
+         * We need to be careful, though; it's a valid state for a chain of
+         * promises to return no further actions, so we should only throw if
+         * this state is reached and there are no other pending steps.
+         */
+        const hasOpsPending = Object.values(state.allFoundOps).some((op) => {
+          return op.fulfilled === false;
+        });
+
+        if (!hasOpsPending) {
+          throw new NonRetriableError(
+            functionStoppedRunningErr(ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION)
+          );
+        }
       }
     }
 
@@ -497,4 +558,22 @@ const tickOpToOutgoing = (op: TickOp): OutgoingOp => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     opts: op.opts,
   };
+};
+
+/**
+ * Given the list of outgoing ops, decide if we can execute an op early and
+ * return the ID of the step to run if we can.
+ */
+const getEarlyExecRunStep = (ops: OutgoingOp[]): string | undefined => {
+  if (ops.length !== 1) return;
+
+  const op = ops[0];
+
+  if (
+    op &&
+    op.op === StepOpCode.StepPlanned &&
+    typeof op.opts === "undefined"
+  ) {
+    return op.id;
+  }
 };

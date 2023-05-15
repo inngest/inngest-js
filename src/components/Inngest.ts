@@ -1,37 +1,37 @@
 import { envKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
-import { devServerHost, isProd, processEnv } from "../helpers/env";
-import type {
-  PartialK,
-  SendEventPayload,
-  SingleOrArray,
-  ValueOf,
+import {
+  devServerHost,
+  getFetch,
+  inngestHeaders,
+  isProd,
+  processEnv,
+} from "../helpers/env";
+import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
+import {
+  type PartialK,
+  type SendEventPayload,
+  type SingleOrArray,
+  type ValueOf,
 } from "../helpers/types";
-import type {
-  ClientOptions,
-  EventNameFromTrigger,
-  EventPayload,
-  FailureEventArgs,
-  FunctionOptions,
-  FunctionTrigger,
-  Handler,
-  ShimmedFns,
-  TriggerOptions,
+import {
+  type ClientOptions,
+  type EventNameFromTrigger,
+  type EventPayload,
+  type FailureEventArgs,
+  type FunctionOptions,
+  type FunctionTrigger,
+  type Handler,
+  type ShimmedFns,
+  type TriggerOptions,
 } from "../types";
-import { version } from "../version";
-import { EventSchemas } from "./EventSchemas";
+import { type EventSchemas } from "./EventSchemas";
 import { InngestFunction } from "./InngestFunction";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
  */
 type FetchT = typeof fetch;
-
-export const eventKeyWarning =
-  "Could not find an event key to send events; sending will throw unless an event key is added. Please pass one to the constructor, set the INNGEST_EVENT_KEY environment variable, or use inngest.setEventKey() at runtime.";
-
-export const eventKeyError =
-  "Could not find an event key to send events. Please pass one to the constructor, set the INNGEST_EVENT_KEY environment variable, or use inngest.setEventKey() at runtime.";
 
 /**
  * Given a set of client options for Inngest, return the event types that can
@@ -123,8 +123,10 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     eventKey,
     inngestBaseUrl = "https://inn.gs/",
     fetch,
+    env,
   }: TOpts) {
     if (!name) {
+      // TODO PrettyError
       throw new Error("A name must be passed to create an Inngest instance.");
     }
 
@@ -133,32 +135,25 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     this.setEventKey(eventKey || processEnv(envKeys.EventKey) || "");
 
     if (!this.eventKey) {
-      console.warn(eventKeyWarning);
+      console.warn(
+        prettyError({
+          type: "warn",
+          whatHappened: "Could not find event key",
+          consequences:
+            "Sending events will throw in production unless an event key is added.",
+          toFixNow: fixEventKeyMissingSteps,
+          why: "We couldn't find an event key to use to send events to Inngest.",
+          otherwise:
+            "Create a new production event key at https://app.inngest.com/env/production/manage/keys.",
+        })
+      );
     }
 
-    this.headers = {
-      "Content-Type": "application/json",
-      "User-Agent": `InngestJS v${version}`,
-    };
+    this.headers = inngestHeaders({
+      inngestEnv: env,
+    });
 
-    this.fetch = Inngest.parseFetch(fetch);
-  }
-
-  /**
-   * Given a potential fetch function, return the fetch function to use based on
-   * this and the environment.
-   */
-  private static parseFetch(fetchArg: FetchT | undefined): FetchT {
-    if (fetchArg) {
-      return fetchArg;
-    }
-
-    if (typeof fetch !== "undefined") {
-      return fetch;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    return require("cross-fetch") as FetchT;
+    this.fetch = getFetch(fetch);
   }
 
   /**
@@ -286,7 +281,14 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     >
   ): Promise<void> {
     if (!this.eventKey) {
-      throw new Error(eventKeyError);
+      throw new Error(
+        prettyError({
+          whatHappened: "Failed to send event",
+          consequences: "Your event or events were not sent to Inngest.",
+          why: "We couldn't find an event key to use to send events to Inngest.",
+          toFixNow: fixEventKeyMissingSteps,
+        })
+      );
     }
 
     let payloads: ValueOf<EventsFromOpts<TOpts>>[];
@@ -321,7 +323,15 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
      */
     if (!payloads.length) {
       return console.warn(
-        "Warning: You have called `inngest.send()` with an empty array; the operation will resolve, but no events have been sent. This may be intentional, in which case you can ignore this warning."
+        prettyError({
+          type: "warn",
+          whatHappened: "`inngest.send()` called with no events",
+          reassurance:
+            "This is not an error, but you may not have intended to do this.",
+          consequences:
+            "The returned promise will resolve, but no events have been sent to Inngest.",
+          stack: true,
+        })
       );
     }
 

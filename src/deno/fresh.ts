@@ -1,8 +1,11 @@
+import { type SupportedFrameworkName } from "inngest/types";
 import {
   InngestCommHandler,
-  ServeHandler,
+  type ServeHandler,
 } from "../components/InngestCommHandler";
 import { headerKeys, queryKeys } from "../helpers/consts";
+
+export const name: SupportedFrameworkName = "deno/fresh";
 
 /**
  * With Deno's Fresh framework, serve and register any declared functions with
@@ -12,7 +15,7 @@ import { headerKeys, queryKeys } from "../helpers/consts";
  */
 export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
   const handler = new InngestCommHandler(
-    "deno/fresh",
+    name as string,
     nameOrInngest,
     fns,
     opts,
