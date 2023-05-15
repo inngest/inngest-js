@@ -257,7 +257,7 @@ describe("send", () => {
       const inngest = createClient({
         name: "test",
         eventKey: testEventKey,
-        schemas: new EventSchemas().fromTypes<{
+        schemas: new EventSchemas().fromRecord<{
           foo: {
             name: "foo";
             data: { foo: string };
@@ -417,7 +417,7 @@ describe("createFunction", () => {
     describe("multiple custom types", () => {
       const inngest = createClient({
         name: "test",
-        schemas: new EventSchemas().fromTypes<{
+        schemas: new EventSchemas().fromRecord<{
           foo: {
             name: "foo";
             data: { title: string };

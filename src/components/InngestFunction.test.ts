@@ -26,7 +26,7 @@ type TestEvents = {
   baz: { data: { baz: string } };
 };
 
-const schemas = new EventSchemas().fromTypes<TestEvents>();
+const schemas = new EventSchemas().fromRecord<TestEvents>();
 
 const opts = (<T extends ClientOptions>(x: T): T => x)({
   name: "test",
@@ -1021,7 +1021,7 @@ describe("runFn", () => {
       describe("multiple custom types", () => {
         const inngest = createClient({
           name: "test",
-          schemas: new EventSchemas().fromTypes<{
+          schemas: new EventSchemas().fromRecord<{
             foo: {
               name: "foo";
               data: { title: string };
@@ -1102,7 +1102,7 @@ describe("runFn", () => {
     test("specifying an onFailure function registers correctly", () => {
       const inngest = createClient({
         name: "test",
-        schemas: new EventSchemas().fromTypes<{
+        schemas: new EventSchemas().fromRecord<{
           foo: {
             name: "foo";
             data: { title: string };
@@ -1204,7 +1204,7 @@ describe("runFn", () => {
       describe("multiple custom types", () => {
         const inngest = createClient({
           name: "test",
-          schemas: new EventSchemas().fromTypes<{
+          schemas: new EventSchemas().fromRecord<{
             foo: {
               name: "foo";
               data: { title: string; foo: string };
@@ -1277,7 +1277,7 @@ describe("runFn", () => {
     test("specifying a cancellation event registers correctly", () => {
       const inngest = createClient({
         name: "test",
-        schemas: new EventSchemas().fromTypes<{
+        schemas: new EventSchemas().fromRecord<{
           foo: {
             name: "foo";
             data: { title: string };

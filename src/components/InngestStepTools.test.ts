@@ -311,7 +311,7 @@ describe("sendEvent", () => {
     });
 
     describe("multiple custom types", () => {
-      const schemas = new EventSchemas().fromTypes<{
+      const schemas = new EventSchemas().fromRecord<{
         foo: {
           name: "foo";
           data: { foo: string };

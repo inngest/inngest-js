@@ -19,7 +19,7 @@ describe("#153", () => {
 
     const inngest = createClient({
       name: "My App",
-      schemas: new EventSchemas().fromTypes<{
+      schemas: new EventSchemas().fromRecord<{
         foo: {
           name: "foo";
           data: {

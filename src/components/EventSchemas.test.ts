@@ -19,9 +19,9 @@ describe("EventSchemas", () => {
     );
   });
 
-  describe("fromTypes", () => {
+  describe("fromRecord", () => {
     test("sets types based on input", () => {
-      const schemas = new EventSchemas().fromTypes<{
+      const schemas = new EventSchemas().fromRecord<{
         "test.event": { data: { a: string }; user: { b: number } };
       }>();
 
@@ -32,10 +32,10 @@ describe("EventSchemas", () => {
 
     test("can concatenate types with multiple calls", () => {
       const schemas = new EventSchemas()
-        .fromTypes<{
+        .fromRecord<{
           "test.event": { data: { a: string }; user: { b: number } };
         }>()
-        .fromTypes<{
+        .fromRecord<{
           "test.event2": { data: { c: string }; user: { d: number } };
         }>();
 
@@ -50,10 +50,10 @@ describe("EventSchemas", () => {
 
     test("can overwrite types with multiple calls", () => {
       const schemas = new EventSchemas()
-        .fromTypes<{
+        .fromRecord<{
           "test.event": { data: { a: string }; user: { b: number } };
         }>()
-        .fromTypes<{
+        .fromRecord<{
           "test.event": { data: { c: string }; user: { d: number } };
         }>();
 
@@ -65,7 +65,7 @@ describe("EventSchemas", () => {
     test.todo("cannot set extra properties");
 
     test("can set 'any' type for data", () => {
-      const schemas = new EventSchemas().fromTypes<{
+      const schemas = new EventSchemas().fromRecord<{
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         "test.event": { data: any };
       }>();
@@ -74,7 +74,7 @@ describe("EventSchemas", () => {
     });
 
     test("can set 'any' type for user", () => {
-      const schemas = new EventSchemas().fromTypes<{
+      const schemas = new EventSchemas().fromRecord<{
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         "test.event": { data: { foo: string }; user: any };
       }>();
@@ -84,21 +84,21 @@ describe("EventSchemas", () => {
 
     test("cannot set non-object type for data", () => {
       // @ts-expect-error Data must be object type or any
-      new EventSchemas().fromTypes<{
+      new EventSchemas().fromRecord<{
         "test.event": { data: string };
       }>();
     });
 
     test("cannot set non-object type for user", () => {
       // @ts-expect-error User must be object type or any
-      new EventSchemas().fromTypes<{
+      new EventSchemas().fromRecord<{
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         "test.event": { data: any; user: string };
       }>();
     });
 
     test("fills in missing properties with default values", () => {
-      const schemas = new EventSchemas().fromTypes<{
+      const schemas = new EventSchemas().fromRecord<{
         "test.event": { data: { foo: string } };
       }>();
 
@@ -397,7 +397,7 @@ describe("EventSchemas", () => {
 
   describe("event payloads", () => {
     test("fetches event payload based on event", () => {
-      const schemas = new EventSchemas().fromTypes<{
+      const schemas = new EventSchemas().fromRecord<{
         "test.event": { data: { a: string } };
       }>();
 
@@ -419,7 +419,7 @@ describe("EventSchemas", () => {
     });
 
     test("fetches 'any' event payload based on event", () => {
-      const schemas = new EventSchemas().fromTypes<{
+      const schemas = new EventSchemas().fromRecord<{
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         "test.event": { data: any };
       }>();
@@ -444,7 +444,7 @@ describe("EventSchemas", () => {
 
   describe("event matching expressions", () => {
     test("can match between two events with shared properties", () => {
-      const schemas = new EventSchemas().fromTypes<{
+      const schemas = new EventSchemas().fromRecord<{
         "test.event": { data: { foo: string } };
         "test.event2": { data: { foo: string } };
       }>();
@@ -471,7 +471,7 @@ describe("EventSchemas", () => {
     });
 
     test("can match any property on typed event A when B is 'any'", () => {
-      const schemas = new EventSchemas().fromTypes<{
+      const schemas = new EventSchemas().fromRecord<{
         "test.event": { data: { foo: string } };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         "test.event2": { data: any };
@@ -499,7 +499,7 @@ describe("EventSchemas", () => {
     });
 
     test("can match any property on typed event B when A is 'any'", () => {
-      const schemas = new EventSchemas().fromTypes<{
+      const schemas = new EventSchemas().fromRecord<{
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         "test.event": { data: any };
         "test.event2": { data: { foo: string } };
