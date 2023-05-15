@@ -36,8 +36,8 @@ export type ZodEventSchemas = Record<
  * `EventSchemas` class, which ensures that each event contains all pieces
  * of information required.
  *
- * It purposefully uses slightly more complex mapped types to flatten the
- * output.
+ * It purposefully uses slightly more complex (read: verbose) mapped types to
+ * flatten the output.
  *
  * @public
  */
@@ -95,21 +95,60 @@ export type Combine<
  */
 export class EventSchemas<S extends Record<string, EventPayload>> {
   /**
-   * TODO
+   * Use generated Inngest types to type events.
    */
   public fromGenerated<T extends StandardEventSchemas>() {
     return new EventSchemas<Combine<S, T>>();
   }
 
   /**
-   * TODO
+   * Use a `Record<>` type to type events.
+   *
+   * @example
+   *
+   * ```ts
+   * export const inngest = new Inngest({
+   *   name: "My App",
+   *   schemas: new EventSchemas().fromRecord<{
+   *     "app/user.created": {
+   *       data: {
+   *         id: string;
+   *         name: string;
+   *       };
+   *     };
+   *   }>(),
+   * });
+   * ```
    */
-  public fromTypes<T extends StandardEventSchemas>() {
+  public fromRecord<T extends StandardEventSchemas>() {
     return new EventSchemas<Combine<S, T>>();
   }
 
   /**
-   * TODO
+   * Use a union type to type events.
+   *
+   * @example
+   *
+   * ```ts
+   * type AccountCreated = {
+   *   name: "app/account.created";
+   *   data: { org: string };
+   *   user: { id: string };
+   * };
+   *
+   * type AccountDeleted = {
+   *   name: "app/account.deleted";
+   *   data: { org: string };
+   *   user: { id: string };
+   * };
+   *
+   * type Events = AccountCreated | AccountDeleted;
+   *
+   * export const inngest = new Inngest({
+   *   name: "My App",
+   *   schemas: new EventSchemas().fromUnion<Events>(),
+   * });
+   * ```
    */
   public fromUnion<T extends { name: string } & StandardEventSchema>() {
     return new EventSchemas<
@@ -123,7 +162,23 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
   }
 
   /**
-   * TODO
+   * Use Zod to type events.
+   *
+   * @example
+   *
+   * ```ts
+   * export const inngest = new Inngest({
+   *   name: "My App",
+   *   schemas: new EventSchemas().fromZod({
+   *     "app/user.created": {
+   *       data: z.object({
+   *         id: z.string(),
+   *         name: z.string(),
+   *       }),
+   *     },
+   *   }),
+   * });
+   * ```
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   public fromZod<T extends ZodEventSchemas>(schemas: T) {
