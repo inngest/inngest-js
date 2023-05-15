@@ -169,6 +169,7 @@ export type BaseContext<
 
   /**
    * The passed in logger from the user.
+   * Defaults to a console logger if not provided.
    */
   logger: Logger;
 
@@ -411,10 +412,6 @@ export interface ClientOptions {
    * which most loggers already do.
    *
    * Defaults to a dummy logger that just log things to the console if nothing is provided.
-   *
-   * TODO: Wrap the logger with a Proxy to make it operate like a step.
-   * This is currently only a passthrough, hence no difference compared to
-   * just importing the logger and using it.
    */
   logger?: Logger;
 }

@@ -28,6 +28,7 @@ describe("ProxyLogger", () => {
         { level: "error", args: [3, "things", "seems to have", "gone wrong"] },
       ].forEach(({ level, args }) => {
         const method = level as keyof ProxyLogger;
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         logger[method](...args);
       });
 
@@ -43,6 +44,7 @@ describe("ProxyLogger", () => {
         { level: "error", args: [3, "things", "seems to have", "gone wrong"] },
       ].forEach(({ level, args }) => {
         const method = level as keyof ProxyLogger;
+        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         logger[method](...args);
       });
 

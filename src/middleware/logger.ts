@@ -94,8 +94,24 @@ export class ProxyLogger implements Logger {
     this._buffer = [];
   }
 
-  flush() {
-    throw new Error("TO BE IMPLEMENTED");
+  async flush() {
+    if (this.bufSize() === 0) return;
+
+    // eslint-disable-next-line @typescript-eslint/require-await
+    const deliveries = this._buffer.map(async (log) => {
+      const args = log.args;
+      const method = log["level"] as keyof Logger;
+      return this._logger[method](...args);
+    });
+    await Promise.all(deliveries);
+
+    // Allow 1s for the provided logger to handle flushing since the ones that do
+    // flushing usually has some kind of timeout of up to 1s.
+    if (this._logger.constructor.name !== DefaultLogger.name) {
+      await new Promise((resolve) => {
+        setTimeout(() => resolve(null), 1000);
+      });
+    }
   }
 
   /**

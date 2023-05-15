@@ -8,6 +8,7 @@ import {
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { type ServerTiming } from "../helpers/ServerTiming";
 import { slugify, timeStr } from "../helpers/strings";
+import { type Logger, ProxyLogger } from "../middleware/logger";
 import {
   StepOpCode,
   type Context,
@@ -251,6 +252,9 @@ export class InngestFunction<
      * if an op has been submitted or not.
      */
     const [tools, state] = createStepTools(this.#client);
+    // create new proxy logger so it doesn't share the buffer with other
+    // function runs
+    const logger = new ProxyLogger(this.#client.logger);
 
     /**
      * Create args to pass in to our function. We blindly pass in the data and
@@ -260,7 +264,7 @@ export class InngestFunction<
       ...(data as { event: EventPayload }),
       tools,
       step: tools,
-      logger: this.#client["logger"],
+      logger: this.#client["logger"] as Logger,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as Partial<Context<any, any, any>>;
 
@@ -279,6 +283,7 @@ export class InngestFunction<
        * We only use the onFailure handler if
        */
 
+      await logger.flush();
       if (!this.#onFailureFn) {
         // TODO PrettyError
         throw new Error(
@@ -352,6 +357,7 @@ export class InngestFunction<
 
         if (typeof incomingOp.data !== "undefined") {
           state.currentOp.resolve(incomingOp.data);
+          logger.reset();
         } else {
           state.currentOp.reject(incomingOp.error);
         }
@@ -381,6 +387,7 @@ export class InngestFunction<
       const userFnToRun = userFnOp?.fn;
 
       if (!userFnToRun) {
+        await logger.flush();
         // TODO PrettyError
         throw new Error(
           `Bad stack; executor requesting to run unknown step "${runStep}"`
@@ -431,6 +438,7 @@ export class InngestFunction<
           runningStepStop();
         });
 
+      await logger.flush();
       return [
         "run",
         { ...tickOpToOutgoing(userFnOp), ...result, op: StepOpCode.RunStep },
@@ -459,6 +467,7 @@ export class InngestFunction<
         resolveNextTick().then(() => ({ type: "incomplete" } as const)),
       ]);
 
+      await logger.flush();
       if (fnRet.type === "complete") {
         /**
          * The function has returned a value, so we should return this to
@@ -504,7 +513,9 @@ export class InngestFunction<
          */
         state.nonStepFnDetected = true;
 
-        return ["complete", await userFnPromise];
+        const result = await userFnPromise;
+        await logger.flush();
+        return ["complete", result];
       } else {
         /**
          * If we're here, the user's function has not returned a value, has not
@@ -532,6 +543,7 @@ export class InngestFunction<
       }
     }
 
+    await logger.flush();
     return ["discovery", discoveredOps];
   }
 

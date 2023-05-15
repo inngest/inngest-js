@@ -16,3 +16,5 @@ temp/
 
 # Local dev files
 coverage/
+
+tsdoc-metadata.json
