@@ -1,5 +1,11 @@
 # inngest
 
+## 1.8.5
+
+### Patch Changes
+
+- 34f9ee8: INN-1253 Show actionable error when steps are nested
+
 ## 1.8.4
 
 ### Patch Changes
