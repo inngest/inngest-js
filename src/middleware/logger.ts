@@ -45,10 +45,10 @@ export class DefaultLogger implements Logger {
  * logger when attempting to flush.
  */
 export class LogBuffer {
-  public readonly level: string;
-  public readonly args: LogArg[];
+  readonly level: keyof Logger;
+  readonly args: LogArg[];
 
-  constructor(level: string, ...args: LogArg[]) {
+  constructor(level: keyof Logger, ...args: LogArg[]) {
     this.level = level;
     this.args = args;
   }
@@ -67,44 +67,44 @@ export class LogBuffer {
  * And it should be invisible to the user as much as possible.
  */
 export class ProxyLogger implements Logger {
-  private readonly _logger: Logger;
-  private _buffer: LogBuffer[] = [];
+  readonly #logger: Logger;
+  #buffer: LogBuffer[] = [];
 
   constructor(logger: Logger) {
-    this._logger = logger;
+    this.#logger = logger;
   }
 
   info(...args: LogArg[]) {
-    this._buffer.push(new LogBuffer("info", ...args));
+    this.#buffer.push(new LogBuffer("info", ...args));
   }
 
   warn(...args: LogArg[]) {
-    this._buffer.push(new LogBuffer("warn", ...args));
+    this.#buffer.push(new LogBuffer("warn", ...args));
   }
 
   error(...args: LogArg[]) {
-    this._buffer.push(new LogBuffer("error", ...args));
+    this.#buffer.push(new LogBuffer("error", ...args));
   }
 
   debug(...args: LogArg[]) {
-    this._buffer.push(new LogBuffer("debug", ...args));
+    this.#buffer.push(new LogBuffer("debug", ...args));
   }
 
   reset() {
-    this._buffer = [];
+    this.#buffer = [];
   }
 
   async flush() {
     if (this.bufSize() === 0) return;
 
     // eslint-disable-next-line @typescript-eslint/require-await
-    const deliveries = this._buffer.map(async (log) => {
+    const deliveries = this.#buffer.map(async (log) => {
       const args = log.args;
-      const method = log["level"] as keyof Logger;
-      return this._logger[method](...args);
+      const level = log["level"];
+      return this.#logger[level](...args);
     });
     // NOTE: timestamp will likely not be linear as expected.
-    await Promise.all(deliveries);
+    await Promise.allSettled(deliveries);
     this.reset();
 
     // Allow 1s for the provided logger to handle flushing since the ones that do
@@ -116,7 +116,7 @@ export class ProxyLogger implements Logger {
     // server runtimes should just let the logger do their thing since most of them
     // should have already figured what to do in those environments, be it threading or
     // something else.
-    if (this._logger.constructor.name !== DefaultLogger.name) {
+    if (this.#logger.constructor.name !== DefaultLogger.name) {
       await new Promise((resolve) => {
         setTimeout(() => resolve(null), 1000);
       });
@@ -127,6 +127,6 @@ export class ProxyLogger implements Logger {
    * Helper function for tests to check current buffer size
    */
   bufSize(): number {
-    return this._buffer.length;
+    return this.#buffer.length;
   }
 }
