@@ -103,10 +103,19 @@ export class ProxyLogger implements Logger {
       const method = log["level"] as keyof Logger;
       return this._logger[method](...args);
     });
+    // NOTE: timestamp will likely not be linear as expected.
     await Promise.all(deliveries);
+    this.reset();
 
     // Allow 1s for the provided logger to handle flushing since the ones that do
     // flushing usually has some kind of timeout of up to 1s.
+    //
+    // TODO:
+    // This should only happen when using a serverless environment because it's very
+    // costly from the compute perspective.
+    // server runtimes should just let the logger do their thing since most of them
+    // should have already figured what to do in those environments, be it threading or
+    // something else.
     if (this._logger.constructor.name !== DefaultLogger.name) {
       await new Promise((resolve) => {
         setTimeout(() => resolve(null), 1000);

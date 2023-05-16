@@ -348,6 +348,7 @@ export class InngestFunction<
            * Whichever the case, this is bad and we can't continue in this
            * undefined state.
            */
+          await logger.flush();
           throw new NonRetriableError(
             functionStoppedRunningErr(ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION)
           );
