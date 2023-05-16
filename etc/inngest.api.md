@@ -12,6 +12,8 @@ export interface ClientOptions {
     eventKey?: string;
     fetch?: typeof fetch;
     inngestBaseUrl?: string;
+    // Warning: (ae-forgotten-export) The symbol "Logger" needs to be exported by the entry point index.d.ts
+    logger?: Logger;
     name: string;
 }
 
@@ -92,7 +94,7 @@ export enum headerKeys {
 
 // @public
 export class Inngest<Events extends Record<string, EventPayload> = Record<string, EventPayload>> {
-    constructor({ name, eventKey, inngestBaseUrl, fetch, env, }: ClientOptions);
+    constructor({ name, eventKey, inngestBaseUrl, fetch, env, logger, }: ClientOptions);
     // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts

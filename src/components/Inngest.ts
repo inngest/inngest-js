@@ -25,6 +25,7 @@ import {
   type TriggerOptions,
 } from "../types";
 import { InngestFunction } from "./InngestFunction";
+import { type Logger, DefaultLogger } from "../middleware/logger";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -84,6 +85,8 @@ export class Inngest<
 
   private readonly fetch: FetchT;
 
+  private readonly logger: Logger;
+
   /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
@@ -113,6 +116,7 @@ export class Inngest<
     inngestBaseUrl = "https://inn.gs/",
     fetch,
     env,
+    logger,
   }: ClientOptions) {
     if (!name) {
       // TODO PrettyError
@@ -143,6 +147,9 @@ export class Inngest<
     });
 
     this.fetch = getFetch(fetch);
+
+    // TODO: Wrap this in a proxy for non default loggers
+    this.logger = logger ? logger : new DefaultLogger();
   }
 
   /**

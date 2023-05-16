@@ -260,6 +260,7 @@ export class InngestFunction<
       ...(data as { event: EventPayload }),
       tools,
       step: tools,
+      logger: this.#client["logger"],
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as Partial<Context<any, any, any>>;
 
