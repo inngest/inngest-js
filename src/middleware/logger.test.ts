@@ -21,15 +21,11 @@ describe("ProxyLogger", () => {
     { level: "error", args: [3, "things", "seems to have", "gone wrong"] },
   ];
 
-  const info = jest.spyOn(console, "info").mockImplementation(() => { });
-  const warn = jest.spyOn(console, "warn").mockImplementation(() => { });
-  const error = jest.spyOn(console, "error").mockImplementation(() => { });
-
   let _internal: Logger;
   let logger: ProxyLogger;
 
   beforeEach(() => {
-    _internal = new DefaultLogger()
+    _internal = new DefaultLogger();
     logger = new ProxyLogger(_internal);
   });
 
@@ -39,7 +35,7 @@ describe("ProxyLogger", () => {
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
       logger[method](...args);
     });
-  }
+  };
 
   describe("std API interfaces", () => {
     test("should have the expected number of buffered logs", () => {
@@ -65,9 +61,11 @@ describe("ProxyLogger", () => {
     beforeEach(() => {
       reset = jest
         .spyOn(ProxyLogger.prototype, "reset")
-        .mockImplementation(() => { });
+        .mockImplementation(() => {
+          /* noop */
+        });
 
-      timeout = jest.spyOn(global, 'setTimeout');
+      timeout = jest.spyOn(global, "setTimeout");
     });
 
     afterEach(() => {
@@ -94,14 +92,16 @@ describe("ProxyLogger", () => {
     });
 
     test("should attempt to wait for flushing with non DefaultLogger", async () => {
+      /* eslint-disable @typescript-eslint/no-empty-function, prettier/prettier */
       _internal = new (
         class DummyLogger implements Logger {
-          info(...args: unknown[]) { }
-          warn(...args: unknown[]) { }
-          error(...args: unknown[]) { }
-          debug(...args: unknown[]) { }
+          info(..._args: unknown[]) { }
+          warn(..._args: unknown[]) { }
+          error(..._args: unknown[]) { }
+          debug(..._args: unknown[]) { }
         }
       );
+      /* eslint-enable */
       logger = new ProxyLogger(_internal);
 
       populateBuf();
@@ -109,5 +109,5 @@ describe("ProxyLogger", () => {
       expect(reset).toBeCalledTimes(1);
       expect(timeout).toBeCalledTimes(1);
     });
-  })
+  });
 });

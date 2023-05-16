@@ -71,13 +71,15 @@ describe("runFn", () => {
         describe("success", () => {
           let fn: InngestFunction<TestEvents>;
           let ret: Awaited<ReturnType<(typeof fn)["runFn"]>>;
-          let flush: jest.SpiedFunction<() => {}>;
+          let flush: jest.SpiedFunction<() => void>;
 
           beforeAll(async () => {
             jest.restoreAllMocks();
             flush = jest
               .spyOn(ProxyLogger.prototype, "flush")
-              .mockImplementation(async () => { /* noop */ });
+              .mockImplementation(async () => {
+                /* noop */
+              });
 
             fn = new InngestFunction(
               createClient<TestEvents>({ name: "test" }),
@@ -194,13 +196,15 @@ describe("runFn", () => {
             let tools: T;
             let ret: Awaited<ReturnType<typeof runFnWithStack>> | undefined;
             let retErr: Error | undefined;
-            let flush: jest.SpiedFunction<() => {}>;
+            let flush: jest.SpiedFunction<() => void>;
 
             beforeAll(async () => {
               jest.restoreAllMocks();
               flush = jest
                 .spyOn(ProxyLogger.prototype, "flush")
-                .mockImplementation(async () => { /* noop */ });
+                .mockImplementation(async () => {
+                  /* noop */
+                });
               hashDataSpy = getHashDataSpy();
               tools = createTools();
               ret = await runFnWithStack(tools.fn, t.stack || [], {
