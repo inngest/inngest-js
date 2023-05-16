@@ -85,7 +85,7 @@ export class Inngest<
 
   private readonly fetch: FetchT;
 
-  public readonly logger: Logger;
+  private readonly logger: Logger;
 
   /**
    * A client used to interact with the Inngest API by sending or reacting to
