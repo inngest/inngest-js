@@ -254,7 +254,7 @@ export class InngestFunction<
     const [tools, state] = createStepTools(this.#client);
     // create new proxy logger so it doesn't share the buffer with other
     // function runs
-    const logger = new ProxyLogger(this.#client.logger);
+    const logger = new ProxyLogger(this.#client["logger"]);
 
     /**
      * Create args to pass in to our function. We blindly pass in the data and
@@ -264,7 +264,7 @@ export class InngestFunction<
       ...(data as { event: EventPayload }),
       tools,
       step: tools,
-      logger: this.#client["logger"] as Logger,
+      logger: logger as Logger,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as Partial<Context<any, any, any>>;
 
