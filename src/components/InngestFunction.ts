@@ -282,8 +282,6 @@ export class InngestFunction<
        *
        * We only use the onFailure handler if
        */
-
-      await logger.flush();
       if (!this.#onFailureFn) {
         // TODO PrettyError
         throw new Error(
