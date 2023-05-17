@@ -1,5 +1,11 @@
 # inngest
 
+## 1.9.0
+
+### Minor Changes
+
+- 48d94a2: Allow user provided logger to be used within functions (experimental)
+
 ## 1.8.5
 
 ### Patch Changes
