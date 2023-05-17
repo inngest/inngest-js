@@ -320,18 +320,28 @@ export class InngestFunction<
 
       // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
       const userFnPromise = new Promise(async (resolve, reject) => {
+        if (opStack.length == 0 && !requestedRunStep) {
+          logger.enable();
+        }
+
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           resolve(await userFnToRun(fnArg as Context<any, any, any>));
         } catch (err) {
           reject(err);
+          logger.error(err);
         }
+        logger.disable();
       });
 
       let pos = -1;
 
       do {
         if (pos >= 0) {
+          if (!requestedRunStep && pos == opStack.length - 1) {
+            logger.enable();
+          }
+
           state.tickOps = {};
           const incomingOp = opStack[pos] as IncomingOp;
           state.currentOp = state.allFoundOps[incomingOp.id];
@@ -348,7 +358,9 @@ export class InngestFunction<
              * undefined state.
              */
             throw new NonRetriableError(
-              functionStoppedRunningErr(ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION)
+              functionStoppedRunningErr(
+                ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION
+              )
             );
           }
 
@@ -356,7 +368,6 @@ export class InngestFunction<
 
           if (typeof incomingOp.data !== "undefined") {
             state.currentOp.resolve(incomingOp.data);
-            logger.reset();
           } else {
             state.currentOp.reject(incomingOp.error);
           }
@@ -364,6 +375,7 @@ export class InngestFunction<
 
         await timer.wrap("memoizing-ticks", resolveAfterPending);
 
+        logger.disable();
         state.reset();
         pos++;
       } while (pos < opStack.length);
@@ -394,12 +406,14 @@ export class InngestFunction<
 
         const runningStepStop = timer.start("running-step");
         state.executingStep = true;
+        logger.enable();
 
         const result = await new Promise((resolve) => {
           return resolve(userFnToRun());
         })
           .finally(() => {
             state.executingStep = false;
+            runningStepStop();
           })
           .then((data) => {
             return {
@@ -431,9 +445,6 @@ export class InngestFunction<
                 error: err,
               };
             }
-          })
-          .finally(() => {
-            runningStepStop();
           });
 
         return [
@@ -471,9 +482,11 @@ export class InngestFunction<
            * complete, so we should only do this if we're sure that all
            * registered ops have been resolved.
            */
-          const allOpsFulfilled = Object.values(state.allFoundOps).every((op) => {
-            return op.fulfilled;
-          });
+          const allOpsFulfilled = Object.values(state.allFoundOps).every(
+            (op) => {
+              return op.fulfilled;
+            }
+          );
 
           if (allOpsFulfilled) {
             return ["complete", fnRet.data];
@@ -532,7 +545,9 @@ export class InngestFunction<
 
           if (!hasOpsPending) {
             throw new NonRetriableError(
-              functionStoppedRunningErr(ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION)
+              functionStoppedRunningErr(
+                ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION
+              )
             );
           }
         }
