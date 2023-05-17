@@ -328,8 +328,8 @@ export class InngestFunction<
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           resolve(await userFnToRun(fnArg as Context<any, any, any>));
         } catch (err) {
-          reject(err);
           logger.error(err);
+          reject(err);
         }
         logger.disable();
       });
