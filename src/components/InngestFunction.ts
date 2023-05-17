@@ -426,17 +426,16 @@ export class InngestFunction<
              * to Inngest as the response for this step. The function didn't
              * fail, only this step, so Inngest can decide what we do next.
              *
-             * Make sure to log this so the user sees what has happened in the
-             * console.
+             * Make sure to log this so the user sees what has happened.
              */
-            console.error(err);
+            logger.error(err);
 
             try {
               return {
                 error: serializeError(err),
               };
             } catch (serializationErr) {
-              console.warn(
+              logger.warn(
                 "Could not serialize error to return to Inngest; stringifying instead",
                 serializationErr
               );
@@ -503,7 +502,7 @@ export class InngestFunction<
            * be unintentional, but otherwise carry on as normal.
            */
           // TODO PrettyError
-          console.warn(
+          logger.warn(
             `Warning: Your "${this.name}" function has returned a value, but not all ops have been resolved, i.e. you have used step tooling without \`await\`. This may be intentional, but if you expect your ops to be resolved in order, you should \`await\` them. If you are knowingly leaving ops unresolved using \`.catch()\` or \`void\`, you can ignore this warning.`
           );
         } else if (!state.hasUsedTools) {
