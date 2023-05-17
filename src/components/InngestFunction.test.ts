@@ -15,6 +15,7 @@ import {
 } from "@local/types";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
+import { ProxyLogger } from "@local/middleware/logger";
 
 type TestEvents = {
   foo: { name: "foo"; data: { foo: string } };
@@ -70,8 +71,16 @@ describe("runFn", () => {
         describe("success", () => {
           let fn: InngestFunction<TestEvents>;
           let ret: Awaited<ReturnType<(typeof fn)["runFn"]>>;
+          let flush: jest.SpiedFunction<() => void>;
 
           beforeAll(async () => {
+            jest.restoreAllMocks();
+            flush = jest
+              .spyOn(ProxyLogger.prototype, "flush")
+              .mockImplementation(async () => {
+                /* noop */
+              });
+
             fn = new InngestFunction(
               createClient<TestEvents>({ name: "test" }),
               { name: "Foo" },
@@ -94,6 +103,10 @@ describe("runFn", () => {
 
           test("returns data on success", () => {
             expect(ret[1]).toBe(stepRet);
+          });
+
+          test("should attempt to flush logs", () => {
+            expect(flush).toHaveBeenCalledTimes(1);
           });
         });
 
@@ -183,8 +196,15 @@ describe("runFn", () => {
             let tools: T;
             let ret: Awaited<ReturnType<typeof runFnWithStack>> | undefined;
             let retErr: Error | undefined;
+            let flush: jest.SpiedFunction<() => void>;
 
             beforeAll(async () => {
+              jest.restoreAllMocks();
+              flush = jest
+                .spyOn(ProxyLogger.prototype, "flush")
+                .mockImplementation(async () => {
+                  /* noop */
+                });
               hashDataSpy = getHashDataSpy();
               tools = createTools();
               ret = await runFnWithStack(tools.fn, t.stack || [], {
@@ -225,6 +245,11 @@ describe("runFn", () => {
                   expect(step).not.toHaveBeenCalled();
                 }
               });
+            });
+
+            test("should attempt to flush logs", () => {
+              // could be flushed multiple times so no specifying counts
+              expect(flush).toHaveBeenCalled();
             });
           });
         });
