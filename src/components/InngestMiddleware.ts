@@ -3,7 +3,7 @@ import {
   type MaybePromise,
   type ObjectAssign,
 } from "../helpers/types";
-import { type BaseContext, type ClientOptions } from "../types";
+import { type BaseContext, type ClientOptions, type OpStack } from "../types";
 import { type EventsFromOpts } from "./Inngest";
 
 /**
@@ -24,6 +24,8 @@ export const createMiddleware = <TMiddleware extends InngestMiddleware>(
  *   Also, this means that middleware can't be destructive and delete, which
  *   feels good.
  *
+ *   TODO: Readonly
+ *
  *  @public
  */
 export interface InngestMiddleware<
@@ -32,6 +34,10 @@ export interface InngestMiddleware<
 > {
   name: string;
   register: () => MaybePromise<{
+    /**
+     * TODO Add readonly { ctx, steps } before adding tools (just event and
+     * stack data)
+     */
     run?: () => MaybePromise<{
       input?: MiddlewareRunInput<TOpts, TEvents>;
       beforeMemoization?: () => MaybePromise<void>;
@@ -171,9 +177,18 @@ type MiddlewareRunInput<
     keyof TEvents & string,
     Record<string, (...args: unknown[]) => unknown>
   >
->(
-  ctx: Readonly<TContext>
-) => { ctx?: any } | void;
+>(ctx: {
+  ctx: Readonly<TContext>;
+
+  /**
+   * TODO Remove ID
+   */
+  steps: Readonly<OpStack>;
+  /**
+   * TODO Enforce `steps` type: OpStack?
+   * TODO Enforce `ctx` type: object?
+   */
+}) => { ctx?: any; steps?: any } | void;
 
 /**
  * @internal
