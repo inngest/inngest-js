@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import { type EventsFromOpts, type Inngest } from "./components/Inngest";
+import { type InngestMiddleware } from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
 import {
@@ -436,6 +437,8 @@ export interface ClientOptions {
    * multiple systems together using branch names.
    */
   env?: string;
+
+  middleware?: InngestMiddleware<this, EventsFromOpts<this>>[];
 }
 
 /**

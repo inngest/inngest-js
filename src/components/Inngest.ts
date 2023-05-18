@@ -124,6 +124,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     inngestBaseUrl = "https://inn.gs/",
     fetch,
     env,
+    middleware,
   }: TOpts) {
     if (!name) {
       // TODO PrettyError
