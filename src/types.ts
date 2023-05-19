@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import { type EventsFromOpts, type Inngest } from "./components/Inngest";
+import {
+  type InngestMiddleware,
+  type MiddlewareOptions,
+} from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
 import {
@@ -28,6 +32,11 @@ export const failureEventErrorSchema = z.object({
   cause: z.string().optional(),
   status: z.number().optional(),
 });
+
+export type MiddlewareStack = [
+  InngestMiddleware<MiddlewareOptions>,
+  ...InngestMiddleware<MiddlewareOptions>[]
+];
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -459,6 +468,7 @@ export interface ClientOptions {
    * Defaults to a dummy logger that just log things to the console if nothing is provided.
    */
   logger?: Logger;
+  middleware?: MiddlewareStack;
 }
 
 /**
@@ -701,6 +711,7 @@ export interface FunctionOptions<
     | 20;
 
   onFailure?: (...args: unknown[]) => unknown;
+  middleware?: MiddlewareStack;
 }
 
 /**
