@@ -289,9 +289,10 @@ type MiddlewareSendEventInput = (ctx: MiddlewareSendEventArgs) => {
 /**
  * @internal
  */
-type MiddlewareRunOutput = (
-  ctx: Readonly<Pick<OutgoingOp, "error" | "data">>
-) => Partial<Pick<OutgoingOp, "data">> | void;
+type MiddlewareRunOutput = (ctx: {
+  result: Readonly<Pick<OutgoingOp, "error" | "data">>;
+  step?: Readonly<Omit<OutgoingOp, "id">>;
+}) => { result?: Partial<Pick<OutgoingOp, "data">> } | void;
 
 /**
  * @internal
