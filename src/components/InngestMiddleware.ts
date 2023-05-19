@@ -12,6 +12,7 @@ import {
   type IncomingOp,
   type OutgoingOp,
 } from "../types";
+import { type Inngest } from "./Inngest";
 import { type InngestFunction } from "./InngestFunction";
 
 /**
@@ -99,7 +100,18 @@ export interface MiddlewareOptions {
   register: MiddlewareRegisterFn;
 }
 
-export type MiddlewareRegisterFn = () => MaybePromise<{
+export type MiddlewareRegisterFn = (ctx: {
+  /**
+   * The client this middleware is being registered on.
+   */
+  client: Inngest;
+
+  /**
+   * If defined, this middleware has been applied directly to an Inngest
+   * function rather than on the client.
+   */
+  fn?: InngestFunction;
+}) => MaybePromise<{
   /**
    * This hook is called for every function execution and allows you to hook
    * into various stages of a run's lifecycle. Use this to store any state you

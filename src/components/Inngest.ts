@@ -195,7 +195,10 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   ): Promise<Await<MiddlewareRegisterFn>[]> {
     const stack = middleware.reduce<Promise<Await<MiddlewareRegisterFn>[]>>(
       async (acc, m) => {
-        return [...(await acc), await m.register()];
+        return [
+          ...(await acc),
+          await m.register({ client: this as unknown as Inngest }),
+        ];
       },
       Promise.resolve([])
     );
