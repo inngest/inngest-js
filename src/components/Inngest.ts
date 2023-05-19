@@ -28,6 +28,11 @@ import {
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
 import { InngestFunction } from "./InngestFunction";
+import {
+  type InngestMiddleware,
+  type MiddlewareOptions,
+  type MiddlewareStackRunInputMutation,
+} from "./InngestMiddleware";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -98,6 +103,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
   private readonly logger: Logger;
 
+  private readonly middleware: InngestMiddleware<MiddlewareOptions>[];
+
   /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
@@ -128,6 +135,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     fetch,
     env,
     logger = new DefaultLogger(),
+    middleware,
   }: TOpts) {
     if (!name) {
       // TODO PrettyError
@@ -152,6 +160,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
         })
       );
     }
+
+    this.middleware = middleware || [];
 
     this.headers = inngestHeaders({
       inngestEnv: env,
@@ -435,7 +445,14 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
           >;
         }),
     trigger: TTrigger,
-    handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns>
+    handler: Handler<
+      TOpts,
+      EventsFromOpts<TOpts>,
+      TTriggerName,
+      TShimmedFns,
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      MiddlewareStackRunInputMutation<{}, NonNullable<TOpts["middleware"]>>
+    >
   ): InngestFunction<
     TOpts,
     EventsFromOpts<TOpts>,
