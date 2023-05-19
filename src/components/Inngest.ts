@@ -327,6 +327,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       PartialK<Omit<EventsFromOpts<TOpts>[Event], "name" | "v">, "ts">
     >
   ): Promise<void> {
+    await this.ready();
+
     if (!this.eventKey) {
       throw new Error(
         prettyError({
