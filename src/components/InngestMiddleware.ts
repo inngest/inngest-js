@@ -63,9 +63,6 @@ export class InngestMiddleware<const TOpts extends MiddlewareOptions> {
    */
   public readonly register: TOpts["register"];
 
-  /**
-   * TODO Create runtime waterfall functions for every hook, ready to be called.
-   */
   constructor({ name, register }: TOpts) {
     this.name = name;
     this.register = register;

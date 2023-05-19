@@ -9,6 +9,7 @@ import {
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
 import {
+  type Await,
   type PartialK,
   type SendEventPayload,
   type SingleOrArray,
@@ -31,6 +32,7 @@ import { InngestFunction } from "./InngestFunction";
 import {
   type InngestMiddleware,
   type MiddlewareOptions,
+  type MiddlewareRegisterFn,
   type MiddlewareStackRunInputMutation,
 } from "./InngestMiddleware";
 
@@ -103,7 +105,13 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
   private readonly logger: Logger;
 
-  private readonly middleware: InngestMiddleware<MiddlewareOptions>[];
+  // private readonly middleware: InngestMiddleware<MiddlewareOptions>[];
+
+  /**
+   * A promise that resolves when the middleware stack has been initialized and
+   * the client is ready to be used.
+   */
+  private readonly middleware: Promise<Await<MiddlewareRegisterFn>[]>;
 
   /**
    * A client used to interact with the Inngest API by sending or reacting to
@@ -161,14 +169,38 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       );
     }
 
-    this.middleware = middleware || [];
-
     this.headers = inngestHeaders({
       inngestEnv: env,
     });
 
     this.fetch = getFetch(fetch);
     this.logger = logger;
+
+    this.middleware = this.#initializeMiddleware(middleware);
+  }
+
+  /**
+   * Returns a promise that resolves when the client is ready to be used.
+   */
+  private async ready(): Promise<void> {
+    await this.middleware;
+  }
+
+  /**
+   * Initialize all passed middleware, running the `register` function on each
+   * in sequence and returning the requested hook registrations.
+   */
+  async #initializeMiddleware(
+    middleware: InngestMiddleware<MiddlewareOptions>[] = []
+  ): Promise<Await<MiddlewareRegisterFn>[]> {
+    const stack = middleware.reduce<Promise<Await<MiddlewareRegisterFn>[]>>(
+      async (acc, m) => {
+        return [...(await acc), await m.register()];
+      },
+      Promise.resolve([])
+    );
+
+    return stack;
   }
 
   /**
