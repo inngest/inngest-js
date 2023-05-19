@@ -12,6 +12,7 @@ import {
   type IncomingOp,
   type OutgoingOp,
 } from "../types";
+import { type InngestFunction } from "./InngestFunction";
 
 /**
  * A middleware that can be registered with Inngest to hook into various
@@ -223,6 +224,11 @@ type MiddlewareRunArgs = Readonly<{
    * The step data that will be passed to the function.
    */
   steps: Readonly<Omit<IncomingOp, "id">>;
+
+  /**
+   * The function that is being executed.
+   */
+  fn: InngestFunction;
 }>;
 
 /**

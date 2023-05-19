@@ -53,8 +53,8 @@ export class InngestFunction<
   static stepId = "step";
   static failureSuffix = "-failure";
 
-  readonly #opts: Opts;
-  readonly #trigger: Trigger;
+  public readonly opts: Opts;
+  public readonly trigger: Trigger;
   readonly #fn: Handler<TOpts, Events, keyof Events & string>;
   readonly #onFailureFn?: Handler<TOpts, Events, keyof Events & string>;
   readonly #client: Inngest<TOpts>;
@@ -77,24 +77,24 @@ export class InngestFunction<
     fn: Handler<TOpts, Events, keyof Events & string>
   ) {
     this.#client = client;
-    this.#opts = opts;
-    this.#trigger = trigger;
+    this.opts = opts;
+    this.trigger = trigger;
     this.#fn = fn;
-    this.#onFailureFn = this.#opts.onFailure;
+    this.#onFailureFn = this.opts.onFailure;
   }
 
   /**
    * The generated or given ID for this function.
    */
   public id(prefix?: string) {
-    return this.#opts.id || this.#generateId(prefix);
+    return this.opts.id || this.#generateId(prefix);
   }
 
   /**
    * The name of this function as it will appear in the Inngest Cloud UI.
    */
   public get name() {
-    return this.#opts.name;
+    return this.opts.name;
   }
 
   /**
@@ -114,7 +114,7 @@ export class InngestFunction<
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
 
-    const { retries: attempts, cancelOn, fns: _, ...opts } = this.#opts;
+    const { retries: attempts, cancelOn, fns: _, ...opts } = this.opts;
 
     /**
      * Convert retries into the format required when defining function
@@ -126,7 +126,7 @@ export class InngestFunction<
       ...opts,
       id: fnId,
       name: this.name,
-      triggers: [this.#trigger as FunctionTrigger],
+      triggers: [this.trigger as FunctionTrigger],
       steps: {
         [InngestFunction.stepId]: {
           id: InngestFunction.stepId,
@@ -312,8 +312,8 @@ export class InngestFunction<
        * We simply place a thin `tools.run()` wrapper around the function and
        * nothing else.
        */
-      if (this.#opts.fns) {
-        fnArg.fns = Object.entries(this.#opts.fns).reduce((acc, [key, fn]) => {
+      if (this.opts.fns) {
+        fnArg.fns = Object.entries(this.opts.fns).reduce((acc, [key, fn]) => {
           if (typeof fn !== "function") {
             return acc;
           }
@@ -569,7 +569,7 @@ export class InngestFunction<
    * Generate an ID based on the function's name.
    */
   #generateId(prefix?: string) {
-    return slugify([prefix || "", this.#opts.name].join("-"));
+    return slugify([prefix || "", this.opts.name].join("-"));
   }
 }
 
