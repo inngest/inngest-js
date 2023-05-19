@@ -133,3 +133,12 @@ export type IsStringLiteral<T extends string> = string extends T ? false : true;
  * Returns `true` if the given generic `T` is `any`, or `false` if it is not.
  */
 export type IsAny<T> = 0 extends 1 & T ? true : false;
+
+/**
+ * Given a function T, return the awaited return type of that function,
+ * ignoring the fact that T may be undefined.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Await<T extends ((...args: any[]) => any) | undefined> = Awaited<
+  ReturnType<NonNullable<T>>
+>;
