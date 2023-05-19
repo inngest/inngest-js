@@ -16,6 +16,10 @@ export interface ClientOptions {
     inngestBaseUrl?: string;
     // Warning: (ae-forgotten-export) The symbol "Logger" needs to be exported by the entry point index.d.ts
     logger?: Logger;
+    // Warning: (ae-forgotten-export) The symbol "MiddlewareStack" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    middleware?: MiddlewareStack;
     name: string;
     schemas?: EventSchemas<Record<string, EventPayload>>;
 }
@@ -85,6 +89,8 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     fns?: Record<string, unknown>;
     id?: string;
     idempotency?: string;
+    // (undocumented)
+    middleware?: MiddlewareStack;
     name: string;
     // (undocumented)
     onFailure?: (...args: unknown[]) => unknown;
@@ -115,9 +121,10 @@ export enum headerKeys {
 
 // @public
 export class Inngest<TOpts extends ClientOptions = ClientOptions> {
-    constructor({ name, eventKey, inngestBaseUrl, fetch, env, logger, }: TOpts);
+    constructor({ name, eventKey, inngestBaseUrl, fetch, env, logger, middleware, }: TOpts);
     // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "MiddlewareStackRunInputMutation" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "FunctionTrigger" needs to be exported by the entry point index.d.ts
     //
@@ -125,7 +132,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     createFunction<TFns extends Record<string, unknown>, TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof EventsFromOpts<TOpts> & string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>>(nameOrOpts: string | (Omit<FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>, "fns" | "onFailure"> & {
         fns?: TFns;
         onFailure?: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>>;
-    }), trigger: TTrigger, handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
+    }), trigger: TTrigger, handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, MiddlewareStackRunInputMutation<{}, NonNullable<TOpts["middleware"]>>>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
@@ -193,6 +200,9 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
 }
 
 // @public
+export class InngestMiddleware<
+
+// @public
 export enum internalEvents {
     FunctionFailed = "inngest/function.failed"
 }
@@ -204,6 +214,13 @@ export type IsStringLiteral<T extends string> = string extends T ? false : true;
 
 // @public
 export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
+
+// @public
+export interface MiddlewareOptions {
+    name: string;
+    // Warning: (ae-forgotten-export) The symbol "MiddlewareRegisterFn" needs to be exported by the entry point index.d.ts
+    register: MiddlewareRegisterFn;
+}
 
 // @public
 export class NonRetriableError extends Error {
@@ -280,7 +297,7 @@ export type ZodEventSchemas = Record<string, {
 
 // Warnings were encountered during analysis:
 //
-// src/types.ts:42:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:51:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
