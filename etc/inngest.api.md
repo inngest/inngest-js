@@ -14,6 +14,8 @@ export interface ClientOptions {
     eventKey?: string;
     fetch?: typeof fetch;
     inngestBaseUrl?: string;
+    // Warning: (ae-forgotten-export) The symbol "Logger" needs to be exported by the entry point index.d.ts
+    logger?: Logger;
     name: string;
     schemas?: EventSchemas<Record<string, EventPayload>>;
 }
@@ -113,7 +115,7 @@ export enum headerKeys {
 
 // @public
 export class Inngest<TOpts extends ClientOptions = ClientOptions> {
-    constructor({ name, eventKey, inngestBaseUrl, fetch, env, }: TOpts);
+    constructor({ name, eventKey, inngestBaseUrl, fetch, env, logger, }: TOpts);
     // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
@@ -278,7 +280,7 @@ export type ZodEventSchemas = Record<string, {
 
 // Warnings were encountered during analysis:
 //
-// src/types.ts:41:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:42:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

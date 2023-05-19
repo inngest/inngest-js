@@ -14,6 +14,7 @@ import {
   type SingleOrArray,
   type ValueOf,
 } from "../helpers/types";
+import { DefaultLogger, type Logger } from "../middleware/logger";
 import {
   type ClientOptions,
   type EventNameFromTrigger,
@@ -95,6 +96,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
   private readonly fetch: FetchT;
 
+  private readonly logger: Logger;
+
   /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
@@ -124,6 +127,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     inngestBaseUrl = "https://inn.gs/",
     fetch,
     env,
+    logger = new DefaultLogger(),
   }: TOpts) {
     if (!name) {
       // TODO PrettyError
@@ -154,6 +158,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     });
 
     this.fetch = getFetch(fetch);
+    this.logger = logger;
   }
 
   /**

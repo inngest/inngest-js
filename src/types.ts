@@ -9,6 +9,7 @@ import {
   type ObjectPaths,
   type StrictUnion,
 } from "./helpers/types";
+import { type Logger } from "./middleware/logger";
 
 /**
  * TODO
@@ -183,6 +184,12 @@ export type BaseContext<
   step: ReturnType<
     typeof createStepTools<TOpts, EventsFromOpts<TOpts>, TTrigger>
   >[0];
+
+  /**
+   * The passed in logger from the user.
+   * Defaults to a console logger if not provided.
+   */
+  logger: Logger;
 
   /**
    * Any `fns` passed when creating your Inngest function will be
@@ -436,6 +443,22 @@ export interface ClientOptions {
    * multiple systems together using branch names.
    */
   env?: string;
+
+  /**
+   * The logger provided by the user.
+   * The user can passed in their winston, pino, and other loggers for
+   * handling log delivery to external services.
+   *
+   * The provider logger is expected to implement the following API interfaces
+   * - .info()
+   * - .warn()
+   * - .debug()
+   * - .error()
+   * which most loggers already do.
+   *
+   * Defaults to a dummy logger that just log things to the console if nothing is provided.
+   */
+  logger?: Logger;
 }
 
 /**

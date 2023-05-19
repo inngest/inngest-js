@@ -1,5 +1,17 @@
 # inngest
 
+## 1.9.0
+
+### Minor Changes
+
+- 48d94a2: Allow user provided logger to be used within functions (experimental)
+
+## 1.8.5
+
+### Patch Changes
+
+- 34f9ee8: INN-1253 Show actionable error when steps are nested
+
 ## 1.8.4
 
 ### Patch Changes

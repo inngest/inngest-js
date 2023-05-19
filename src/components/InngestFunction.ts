@@ -9,6 +9,7 @@ import {
 } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { slugify, timeStr } from "../helpers/strings";
+import { ProxyLogger, type Logger } from "../middleware/logger";
 import {
   StepOpCode,
   failureEventErrorSchema,
@@ -254,292 +255,314 @@ export class InngestFunction<
      * if an op has been submitted or not.
      */
     const [tools, state] = createStepTools(this.#client);
+    // create new proxy logger so it doesn't share the buffer with other
+    // function runs
+    const logger = new ProxyLogger(this.#client["logger"]);
 
-    /**
-     * Create args to pass in to our function. We blindly pass in the data and
-     * add tools.
-     */
-    let fnArg = {
-      ...(data as { event: EventPayload }),
-      tools,
-      step: tools,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as Context<TOpts, Events, any, any>;
-
-    let userFnToRun = this.#fn;
-
-    /**
-     * If the incoming event is an Inngest function failure event, we also want
-     * to pass some extra data to the function to act as shortcuts to the event
-     * payload.
-     */
-    if (isFailureHandler) {
+    try {
       /**
-       * The user could have created a function that intentionally listens for
-       * these events. In this case, we may want to use the original handler.
-       *
-       * We only use the onFailure handler if
+       * Create args to pass in to our function. We blindly pass in the data and
+       * add tools.
        */
+      let fnArg = {
+        ...(data as { event: EventPayload }),
+        tools,
+        step: tools,
+        logger: logger as Logger,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as Context<TOpts, Events, any, any>;
 
-      if (!this.#onFailureFn) {
-        // TODO PrettyError
-        throw new Error(
-          `Function "${this.name}" received a failure event to handle, but no failure handler was defined.`
-        );
-      }
+      let userFnToRun = this.#fn;
 
-      userFnToRun = this.#onFailureFn;
-
-      const eventData = z
-        .object({ error: failureEventErrorSchema })
-        .parse(fnArg.event?.data);
-
-      (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
-        ...fnArg,
-        error: deserializeError(eventData.error),
-      };
-    }
-
-    /**
-     * If the user has passed functions they wish to use in their step, add them
-     * here.
-     *
-     * We simply place a thin `tools.run()` wrapper around the function and
-     * nothing else.
-     */
-    if (this.#opts.fns) {
-      fnArg.fns = Object.entries(this.#opts.fns).reduce((acc, [key, fn]) => {
-        if (typeof fn !== "function") {
-          return acc;
+      /**
+       * If the incoming event is an Inngest function failure event, we also want
+       * to pass some extra data to the function to act as shortcuts to the event
+       * payload.
+       */
+      if (isFailureHandler) {
+        /**
+         * The user could have created a function that intentionally listens for
+         * these events. In this case, we may want to use the original handler.
+         *
+         * We only use the onFailure handler if
+         */
+        if (!this.#onFailureFn) {
+          // TODO PrettyError
+          throw new Error(
+            `Function "${this.name}" received a failure event to handle, but no failure handler was defined.`
+          );
         }
 
-        return {
-          ...acc,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
-          [key]: (...args: unknown[]) => tools.run(key, () => fn(...args)),
+        userFnToRun = this.#onFailureFn;
+
+        const eventData = z
+          .object({ error: failureEventErrorSchema })
+          .parse(fnArg.event?.data);
+
+        (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
+          ...fnArg,
+          error: deserializeError(eventData.error),
         };
-      }, {});
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
-    const userFnPromise = new Promise(async (resolve, reject) => {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument
-        resolve(await userFnToRun(fnArg));
-      } catch (err) {
-        reject(err);
-      }
-    });
-
-    let pos = -1;
-
-    do {
-      if (pos >= 0) {
-        state.tickOps = {};
-        const incomingOp = opStack[pos] as IncomingOp;
-        state.currentOp = state.allFoundOps[incomingOp.id];
-
-        if (!state.currentOp) {
-          /**
-           * We're trying to resume the function, but we can't find where to go.
-           *
-           * This means that either the function has changed or there are async
-           * actions in-between steps that we haven't noticed in previous
-           * executions.
-           *
-           * Whichever the case, this is bad and we can't continue in this
-           * undefined state.
-           */
-          throw new NonRetriableError(
-            functionStoppedRunningErr(ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION)
-          );
-        }
-
-        state.currentOp.fulfilled = true;
-
-        if (typeof incomingOp.data !== "undefined") {
-          state.currentOp.resolve(incomingOp.data);
-        } else {
-          state.currentOp.reject(incomingOp.error);
-        }
       }
 
-      await timer.wrap("memoizing-ticks", resolveAfterPending);
-
-      state.reset();
-      pos++;
-    } while (pos < opStack.length);
-
-    memoizingStop();
-
-    const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>(
-      tickOpToOutgoing
-    );
-
-    /**
-     * We make an optimization here by immediately invoking an op if it's the
-     * only one we've discovered. The alternative is to plan the step and then
-     * complete it, so we skip at least one entire execution with this.
-     */
-    const runStep = requestedRunStep || getEarlyExecRunStep(discoveredOps);
-
-    if (runStep) {
-      const userFnOp = state.allFoundOps[runStep];
-      const userFnToRun = userFnOp?.fn;
-
-      if (!userFnToRun) {
-        // TODO PrettyError
-        throw new Error(
-          `Bad stack; executor requesting to run unknown step "${runStep}"`
-        );
-      }
-
-      const runningStepStop = timer.start("running-step");
-      state.executingStep = true;
-
-      const result = await new Promise((resolve) => {
-        return resolve(userFnToRun());
-      })
-        .finally(() => {
-          state.executingStep = false;
-        })
-        .then((data) => {
-          return {
-            data: typeof data === "undefined" ? null : data,
-          };
-        })
-        .catch((err: Error) => {
-          /**
-           * If the user-defined code throws an error, we should return this
-           * to Inngest as the response for this step. The function didn't
-           * fail, only this step, so Inngest can decide what we do next.
-           *
-           * Make sure to log this so the user sees what has happened in the
-           * console.
-           */
-          console.error(err);
-
-          try {
-            return {
-              error: serializeError(err),
-            };
-          } catch (serializationErr) {
-            console.warn(
-              "Could not serialize error to return to Inngest; stringifying instead",
-              serializationErr
-            );
-
-            return {
-              error: err,
-            };
+      /**
+       * If the user has passed functions they wish to use in their step, add them
+       * here.
+       *
+       * We simply place a thin `tools.run()` wrapper around the function and
+       * nothing else.
+       */
+      if (this.#opts.fns) {
+        fnArg.fns = Object.entries(this.#opts.fns).reduce((acc, [key, fn]) => {
+          if (typeof fn !== "function") {
+            return acc;
           }
-        })
-        .finally(() => {
-          runningStepStop();
-        });
 
-      return [
-        "run",
-        { ...tickOpToOutgoing(userFnOp), ...result, op: StepOpCode.RunStep },
-      ];
-    }
+          return {
+            ...acc,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
+            [key]: (...args: unknown[]) => tools.run(key, () => fn(...args)),
+          };
+        }, {});
+      }
 
-    /**
-     * Now we're here, we've memoised any function state and we know that this
-     * request was a discovery call to find out next steps.
-     *
-     * We've already given the user's function a lot of chance to register any
-     * more ops, so we can assume that this list of discovered ops is final.
-     *
-     * With that in mind, if this list is empty AND we haven't previously used
-     * any step tools, we can assume that the user's function is not one that'll
-     * be using step tooling, so we'll just wait for it to complete and return
-     * the result.
-     *
-     * An empty list while also using step tooling is a valid state when the end
-     * of a chain of promises is reached, so we MUST also check if step tooling
-     * has previously been used.
-     */
-    if (!discoveredOps.length) {
-      const fnRet = await Promise.race([
-        userFnPromise.then((data) => ({ type: "complete", data } as const)),
-        resolveNextTick().then(() => ({ type: "incomplete" } as const)),
-      ]);
-
-      if (fnRet.type === "complete") {
-        /**
-         * The function has returned a value, so we should return this to
-         * Inngest. Doing this will cause the function to be marked as
-         * complete, so we should only do this if we're sure that all
-         * registered ops have been resolved.
-         */
-        const allOpsFulfilled = Object.values(state.allFoundOps).every((op) => {
-          return op.fulfilled;
-        });
-
-        if (allOpsFulfilled) {
-          return ["complete", fnRet.data];
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
+      const userFnPromise = new Promise(async (resolve, reject) => {
+        if (opStack.length == 0 && !requestedRunStep) {
+          logger.enable();
         }
 
-        /**
-         * If we're here, it means that the user's function has returned a
-         * value but not all ops have been resolved. This might be intentional
-         * if they are purposefully pushing work to the background, but also
-         * might be unintentional and a bug in the user's code where they
-         * expected an order to be maintained.
-         *
-         * To be safe, we'll show a warning here to tell users that this might
-         * be unintentional, but otherwise carry on as normal.
-         */
-        // TODO PrettyError
-        console.warn(
-          `Warning: Your "${this.name}" function has returned a value, but not all ops have been resolved, i.e. you have used step tooling without \`await\`. This may be intentional, but if you expect your ops to be resolved in order, you should \`await\` them. If you are knowingly leaving ops unresolved using \`.catch()\` or \`void\`, you can ignore this warning.`
-        );
-      } else if (!state.hasUsedTools) {
-        /**
-         * If we're here, it means that the user's function has not returned
-         * a value, but also has not used step tooling. This is a valid
-         * state, indicating that the function is a single-action async
-         * function.
-         *
-         * We should wait for the result and return it.
-         *
-         * A caveat here is that the user could use step tooling later on,
-         * resulting in a mix of step and non-step logic. This is not something
-         * we want to support without an opt-in from the user, so we should
-         * throw if this is the case.
-         */
-        state.nonStepFnDetected = true;
+        try {
+          resolve(await userFnToRun(fnArg));
+        } catch (err) {
+          logger.error(err);
+          reject(err);
+        }
+        logger.disable();
+      });
 
-        return ["complete", await userFnPromise];
-      } else {
-        /**
-         * If we're here, the user's function has not returned a value, has not
-         * reported any new, ops, but has also previously used step tools and
-         * successfully memoized state.
-         *
-         * This indicates that the user has mixed step and non-step logic, which
-         * is not something we want to support without an opt-in from the user.
-         *
-         * We should throw here to let the user know that this is not supported.
-         *
-         * We need to be careful, though; it's a valid state for a chain of
-         * promises to return no further actions, so we should only throw if
-         * this state is reached and there are no other pending steps.
-         */
-        const hasOpsPending = Object.values(state.allFoundOps).some((op) => {
-          return op.fulfilled === false;
-        });
+      let pos = -1;
 
-        if (!hasOpsPending) {
-          throw new NonRetriableError(
-            functionStoppedRunningErr(ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION)
+      do {
+        if (pos >= 0) {
+          if (!requestedRunStep && pos == opStack.length - 1) {
+            logger.enable();
+          }
+
+          state.tickOps = {};
+          const incomingOp = opStack[pos] as IncomingOp;
+          state.currentOp = state.allFoundOps[incomingOp.id];
+
+          if (!state.currentOp) {
+            /**
+             * We're trying to resume the function, but we can't find where to go.
+             *
+             * This means that either the function has changed or there are async
+             * actions in-between steps that we haven't noticed in previous
+             * executions.
+             *
+             * Whichever the case, this is bad and we can't continue in this
+             * undefined state.
+             */
+            throw new NonRetriableError(
+              functionStoppedRunningErr(
+                ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION
+              )
+            );
+          }
+
+          state.currentOp.fulfilled = true;
+
+          if (typeof incomingOp.data !== "undefined") {
+            state.currentOp.resolve(incomingOp.data);
+          } else {
+            state.currentOp.reject(incomingOp.error);
+          }
+        }
+
+        await timer.wrap("memoizing-ticks", resolveAfterPending);
+
+        logger.disable();
+        state.reset();
+        pos++;
+      } while (pos < opStack.length);
+
+      memoizingStop();
+
+      const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>(
+        tickOpToOutgoing
+      );
+
+      /**
+       * We make an optimization here by immediately invoking an op if it's the
+       * only one we've discovered. The alternative is to plan the step and then
+       * complete it, so we skip at least one entire execution with this.
+       */
+      const runStep = requestedRunStep || getEarlyExecRunStep(discoveredOps);
+
+      if (runStep) {
+        const userFnOp = state.allFoundOps[runStep];
+        const userFnToRun = userFnOp?.fn;
+
+        if (!userFnToRun) {
+          // TODO PrettyError
+          throw new Error(
+            `Bad stack; executor requesting to run unknown step "${runStep}"`
           );
         }
-      }
-    }
 
-    return ["discovery", discoveredOps];
+        const runningStepStop = timer.start("running-step");
+        state.executingStep = true;
+        logger.enable();
+
+        const result = await new Promise((resolve) => {
+          return resolve(userFnToRun());
+        })
+          .finally(() => {
+            state.executingStep = false;
+            runningStepStop();
+          })
+          .then((data) => {
+            return {
+              data: typeof data === "undefined" ? null : data,
+            };
+          })
+          .catch((err: Error) => {
+            /**
+             * If the user-defined code throws an error, we should return this
+             * to Inngest as the response for this step. The function didn't
+             * fail, only this step, so Inngest can decide what we do next.
+             *
+             * Make sure to log this so the user sees what has happened.
+             */
+            logger.error(err);
+
+            try {
+              return {
+                error: serializeError(err),
+              };
+            } catch (serializationErr) {
+              logger.warn(
+                "Could not serialize error to return to Inngest; stringifying instead",
+                serializationErr
+              );
+
+              return {
+                error: err,
+              };
+            }
+          });
+
+        return [
+          "run",
+          { ...tickOpToOutgoing(userFnOp), ...result, op: StepOpCode.RunStep },
+        ];
+      }
+
+      /**
+       * Now we're here, we've memoised any function state and we know that this
+       * request was a discovery call to find out next steps.
+       *
+       * We've already given the user's function a lot of chance to register any
+       * more ops, so we can assume that this list of discovered ops is final.
+       *
+       * With that in mind, if this list is empty AND we haven't previously used
+       * any step tools, we can assume that the user's function is not one that'll
+       * be using step tooling, so we'll just wait for it to complete and return
+       * the result.
+       *
+       * An empty list while also using step tooling is a valid state when the end
+       * of a chain of promises is reached, so we MUST also check if step tooling
+       * has previously been used.
+       */
+      if (!discoveredOps.length) {
+        const fnRet = await Promise.race([
+          userFnPromise.then((data) => ({ type: "complete", data } as const)),
+          resolveNextTick().then(() => ({ type: "incomplete" } as const)),
+        ]);
+
+        if (fnRet.type === "complete") {
+          /**
+           * The function has returned a value, so we should return this to
+           * Inngest. Doing this will cause the function to be marked as
+           * complete, so we should only do this if we're sure that all
+           * registered ops have been resolved.
+           */
+          const allOpsFulfilled = Object.values(state.allFoundOps).every(
+            (op) => {
+              return op.fulfilled;
+            }
+          );
+
+          if (allOpsFulfilled) {
+            return ["complete", fnRet.data];
+          }
+
+          /**
+           * If we're here, it means that the user's function has returned a
+           * value but not all ops have been resolved. This might be intentional
+           * if they are purposefully pushing work to the background, but also
+           * might be unintentional and a bug in the user's code where they
+           * expected an order to be maintained.
+           *
+           * To be safe, we'll show a warning here to tell users that this might
+           * be unintentional, but otherwise carry on as normal.
+           */
+          // TODO PrettyError
+          logger.warn(
+            `Warning: Your "${this.name}" function has returned a value, but not all ops have been resolved, i.e. you have used step tooling without \`await\`. This may be intentional, but if you expect your ops to be resolved in order, you should \`await\` them. If you are knowingly leaving ops unresolved using \`.catch()\` or \`void\`, you can ignore this warning.`
+          );
+        } else if (!state.hasUsedTools) {
+          /**
+           * If we're here, it means that the user's function has not returned
+           * a value, but also has not used step tooling. This is a valid
+           * state, indicating that the function is a single-action async
+           * function.
+           *
+           * We should wait for the result and return it.
+           *
+           * A caveat here is that the user could use step tooling later on,
+           * resulting in a mix of step and non-step logic. This is not something
+           * we want to support without an opt-in from the user, so we should
+           * throw if this is the case.
+           */
+          state.nonStepFnDetected = true;
+
+          const result = await userFnPromise;
+          return ["complete", result];
+        } else {
+          /**
+           * If we're here, the user's function has not returned a value, has not
+           * reported any new, ops, but has also previously used step tools and
+           * successfully memoized state.
+           *
+           * This indicates that the user has mixed step and non-step logic, which
+           * is not something we want to support without an opt-in from the user.
+           *
+           * We should throw here to let the user know that this is not supported.
+           *
+           * We need to be careful, though; it's a valid state for a chain of
+           * promises to return no further actions, so we should only throw if
+           * this state is reached and there are no other pending steps.
+           */
+          const hasOpsPending = Object.values(state.allFoundOps).some((op) => {
+            return op.fulfilled === false;
+          });
+
+          if (!hasOpsPending) {
+            throw new NonRetriableError(
+              functionStoppedRunningErr(
+                ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION
+              )
+            );
+          }
+        }
+      }
+
+      return ["discovery", discoveredOps];
+    } finally {
+      await logger.flush();
+    }
   }
 
   /**
