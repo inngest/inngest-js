@@ -447,6 +447,10 @@ export const createStepTools = <
          */
         fn: T
       ) => Promise<
+        /**
+         * TODO Middleware can affect this. If run input middleware has returned
+         * new step data, do not Jsonify.
+         */
         Jsonify<
           T extends () => Promise<infer U>
             ? Awaited<U extends void ? null : U>
