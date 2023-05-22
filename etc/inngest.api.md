@@ -200,7 +200,11 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
 }
 
 // @public
-export class InngestMiddleware<
+export class InngestMiddleware<TOpts extends MiddlewareOptions> {
+    constructor({ name, register }: TOpts);
+    readonly name: TOpts["name"];
+    readonly register: TOpts["register"];
+}
 
 // @public
 export enum internalEvents {
