@@ -100,18 +100,7 @@ export interface MiddlewareOptions {
   register: MiddlewareRegisterFn;
 }
 
-export type MiddlewareRegisterFn = (ctx: {
-  /**
-   * The client this middleware is being registered on.
-   */
-  client: Inngest;
-
-  /**
-   * If defined, this middleware has been applied directly to an Inngest
-   * function rather than on the client.
-   */
-  fn?: InngestFunction;
-}) => MaybePromise<{
+export type MiddlewareRegisterReturn = {
   /**
    * This hook is called for every function execution and allows you to hook
    * into various stages of a run's lifecycle. Use this to store any state you
@@ -202,7 +191,22 @@ export type MiddlewareRegisterFn = (ctx: {
      */
     output?: () => MaybePromise<void | unknown>;
   }>;
-}>;
+};
+
+export type MiddlewareRegisterFn = (ctx: {
+  /**
+   * The client this middleware is being registered on.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  client: Inngest<any>;
+
+  /**
+   * If defined, this middleware has been applied directly to an Inngest
+   * function rather than on the client.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fn?: InngestFunction<any, any, any, any>;
+}) => MaybePromise<MiddlewareRegisterReturn>;
 
 /**
  * A blank, no-op hook that passes nothing and expects nothing in return.

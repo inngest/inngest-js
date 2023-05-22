@@ -27,6 +27,7 @@ import {
   type OutgoingOp,
 } from "../types";
 import { type EventsFromOpts, type Inngest } from "./Inngest";
+import { type MiddlewareRegisterReturn } from "./InngestMiddleware";
 import { createStepTools, type TickOp } from "./InngestStepTools";
 import { NonRetriableError } from "./NonRetriableError";
 
@@ -58,6 +59,8 @@ export class InngestFunction<
   readonly #fn: Handler<TOpts, Events, keyof Events & string>;
   readonly #onFailureFn?: Handler<TOpts, Events, keyof Events & string>;
   readonly #client: Inngest<TOpts>;
+  private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
+  #ready: Promise<void>;
 
   /**
    * A stateless Inngest function, wrapping up function configuration and any
@@ -81,6 +84,22 @@ export class InngestFunction<
     this.trigger = trigger;
     this.#fn = fn;
     this.#onFailureFn = this.opts.onFailure;
+
+    this.middleware = this.#client["initializeMiddleware"](
+      this.opts.middleware,
+      { registerInput: { fn: this }, prefixStack: this.#client["middleware"] }
+    );
+
+    this.#ready = new Promise((resolve, reject) => {
+      this.middleware.then(() => resolve()).catch(reject);
+    });
+  }
+
+  /**
+   * Returns a promise that resolves when the function is ready to be triggered.
+   */
+  private ready(): Promise<void> {
+    return this.#ready;
   }
 
   /**
@@ -247,6 +266,7 @@ export class InngestFunction<
     | [type: "discovery", ops: OutgoingOp[]]
     | [type: "run", op: OutgoingOp]
   > {
+    await this.ready();
     const memoizingStop = timer.start("memoizing");
 
     /**

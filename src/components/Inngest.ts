@@ -9,7 +9,6 @@ import {
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
 import {
-  type Await,
   type PartialK,
   type SendEventPayload,
   type SingleOrArray,
@@ -33,6 +32,7 @@ import {
   type InngestMiddleware,
   type MiddlewareOptions,
   type MiddlewareRegisterFn,
+  type MiddlewareRegisterReturn,
   type MiddlewareStackRunInputMutation,
 } from "./InngestMiddleware";
 
@@ -111,7 +111,9 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    * A promise that resolves when the middleware stack has been initialized and
    * the client is ready to be used.
    */
-  private readonly middleware: Promise<Await<MiddlewareRegisterFn>[]>;
+  private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
+
+  #ready: Promise<void>;
 
   /**
    * A client used to interact with the Inngest API by sending or reacting to
@@ -176,34 +178,48 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     this.fetch = getFetch(fetch);
     this.logger = logger;
 
-    this.middleware = this.#initializeMiddleware(middleware);
+    this.middleware = this.initializeMiddleware(middleware);
+
+    this.#ready = new Promise((resolve, reject) => {
+      this.middleware.then(() => resolve()).catch(reject);
+    });
   }
 
   /**
    * Returns a promise that resolves when the client is ready to be used.
    */
-  private async ready(): Promise<void> {
-    await this.middleware;
+  private ready(): Promise<void> {
+    return this.#ready;
   }
 
   /**
    * Initialize all passed middleware, running the `register` function on each
    * in sequence and returning the requested hook registrations.
    */
-  async #initializeMiddleware(
-    middleware: InngestMiddleware<MiddlewareOptions>[] = []
-  ): Promise<Await<MiddlewareRegisterFn>[]> {
-    const stack = middleware.reduce<Promise<Await<MiddlewareRegisterFn>[]>>(
+  private async initializeMiddleware(
+    middleware: InngestMiddleware<MiddlewareOptions>[] = [],
+    opts?: {
+      registerInput?: Omit<Parameters<MiddlewareRegisterFn>[0], "client">;
+      prefixStack?: Promise<MiddlewareRegisterReturn[]>;
+    }
+  ): Promise<MiddlewareRegisterReturn[]> {
+    /**
+     * Wait for the prefix stack to run first; do not trigger ours before this
+     * is complete.
+     */
+    const prefix = await (opts?.prefixStack ?? []);
+
+    const stack = middleware.reduce<Promise<MiddlewareRegisterReturn[]>>(
       async (acc, m) => {
         return [
           ...(await acc),
-          await m.register({ client: this as unknown as Inngest }),
+          await m.register({ client: this, ...opts?.registerInput }),
         ];
       },
       Promise.resolve([])
     );
 
-    return stack;
+    return [...prefix, ...(await stack)];
   }
 
   /**
