@@ -40,7 +40,7 @@ import { type InngestFunction } from "./InngestFunction";
  *
  * @public
  */
-export class InngestMiddleware<const TOpts extends MiddlewareOptions> {
+export class InngestMiddleware<TOpts extends MiddlewareOptions> {
   /**
    * The name of this middleware. Used primarily for debugging and logging
    * purposes.
