@@ -14,11 +14,7 @@ import {
   type SingleOrArray,
   type ValueOf,
 } from "../helpers/types";
-import {
-  DefaultLogger,
-  loggerMiddleware,
-  type Logger,
-} from "../middleware/logger";
+import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
   type ClientOptions,
   type EventNameFromTrigger,
@@ -27,13 +23,14 @@ import {
   type FunctionOptions,
   type FunctionTrigger,
   type Handler,
+  type MiddlewareStack,
   type ShimmedFns,
   type TriggerOptions,
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
 import { InngestFunction } from "./InngestFunction";
 import {
-  type InngestMiddleware,
+  InngestMiddleware,
   type MiddlewareOptions,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
@@ -184,7 +181,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     this.middleware = this.initializeMiddleware([
       ...(middleware || []),
-      loggerMiddleware,
+      ...builtInMiddleware,
     ]);
 
     this.#ready = new Promise((resolve, reject) => {
@@ -520,7 +517,11 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       TTriggerName,
       TShimmedFns,
       // eslint-disable-next-line @typescript-eslint/ban-types
-      MiddlewareStackRunInputMutation<{}, NonNullable<TOpts["middleware"]>>
+      MiddlewareStackRunInputMutation<{}, NonNullable<TMiddleware>> &
+        // eslint-disable-next-line @typescript-eslint/ban-types
+        MiddlewareStackRunInputMutation<{}, typeof builtInMiddleware> &
+        // eslint-disable-next-line @typescript-eslint/ban-types
+        MiddlewareStackRunInputMutation<{}, TMiddleware>
     >
   ): InngestFunction<
     TOpts,
