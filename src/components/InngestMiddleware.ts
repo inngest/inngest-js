@@ -236,7 +236,7 @@ type MiddlewareRunArgs = Readonly<{
   /**
    * The step data that will be passed to the function.
    */
-  steps: Readonly<Omit<IncomingOp, "id">>;
+  steps: Readonly<Omit<IncomingOp, "id">>[];
 
   /**
    * The function that is being executed.
