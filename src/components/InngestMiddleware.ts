@@ -422,7 +422,9 @@ type GetMiddlewareRunInputMutation<
     ? Await<Await<Await<TOpts["register"]>["run"]>["input"]> extends {
         ctx: infer TCtx;
       }
-      ? TCtx
+      ? {
+          [K in keyof TCtx]: TCtx[K];
+        }
       : // eslint-disable-next-line @typescript-eslint/ban-types
         {}
     : // eslint-disable-next-line @typescript-eslint/ban-types
