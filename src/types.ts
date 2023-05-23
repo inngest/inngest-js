@@ -189,12 +189,6 @@ export type BaseContext<
   >;
 
   /**
-   * The passed in logger from the user.
-   * Defaults to a console logger if not provided.
-   */
-  logger: Logger;
-
-  /**
    * Any `fns` passed when creating your Inngest function will be
    * available here and can be used as normal.
    *
