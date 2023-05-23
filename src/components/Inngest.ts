@@ -441,6 +441,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
   public createFunction<
     TFns extends Record<string, unknown>,
+    TMiddleware extends MiddlewareStack,
     TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>,
     TShimmedFns extends Record<
       string,
@@ -454,7 +455,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       | string
       | (Omit<
           FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>,
-          "fns" | "onFailure"
+          "fns" | "onFailure" | "middleware"
         > & {
           /**
            * Pass in an object of functions that will be wrapped in Inngest
@@ -505,6 +506,11 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
             TShimmedFns,
             FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
           >;
+
+          /**
+           * TODO
+           */
+          middleware?: TMiddleware;
         }),
     trigger: TTrigger,
     handler: Handler<
