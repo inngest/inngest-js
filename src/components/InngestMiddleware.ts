@@ -327,10 +327,11 @@ type MiddlewareRunArgs = Readonly<{
    * The context object that will be passed to the function. This contains
    * event data, some contextual data such as the run's ID, and step tooling.
    */
-  ctx: Readonly<
-    BaseContext<
-      ClientOptions,
-      string,
+  ctx: Record<string, unknown> &
+    Readonly<
+      BaseContext<
+        ClientOptions,
+        string,
       Record<string, (...args: unknown[]) => unknown>
     >
   >;
