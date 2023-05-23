@@ -699,6 +699,10 @@ export interface FunctionOptions<
     | 20;
 
   onFailure?: (...args: unknown[]) => unknown;
+
+  /**
+   * TODO
+   */
   middleware?: MiddlewareStack;
 }
 
