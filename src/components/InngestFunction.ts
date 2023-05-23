@@ -12,6 +12,7 @@ import { slugify, timeStr } from "../helpers/strings";
 import {
   StepOpCode,
   failureEventErrorSchema,
+  type BaseContext,
   type ClientOptions,
   type Context,
   type EventNameFromTrigger,
@@ -257,11 +258,39 @@ export class InngestFunction<
     | [type: "discovery", ops: OutgoingOp[]]
     | [type: "run", op: OutgoingOp]
   > {
+    const ctx = data as Pick<
+      Readonly<
+        BaseContext<
+          ClientOptions,
+          string,
+          Record<string, (...args: unknown[]) => unknown>
+        >
+      >,
+      "event" | "runId"
+    >;
+
     const hookStack = await getHookStack(
       this.middleware,
       "run",
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-      { ctx: data as any, fn: this, steps: opStack }
+      { ctx, fn: this, steps: opStack },
+      {
+        input: (prev, output) => {
+          return {
+            ctx: { ...prev.ctx, ...output?.ctx },
+            fn: this,
+            steps: prev.steps.map((step, i) => ({
+              ...step,
+              ...output?.steps?.[i],
+            })),
+          };
+        },
+        output: (prev, output) => {
+          return {
+            result: { ...prev.result, ...output?.result },
+            step: prev.step,
+          };
+        },
+      }
     );
 
     const state = createExecutionState();
