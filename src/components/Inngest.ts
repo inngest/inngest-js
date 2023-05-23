@@ -537,3 +537,47 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     );
   }
 }
+
+/**
+ * Default middleware that is included in every client, placed after the user's
+ * middleware on the client but before function-level middleware.
+ *
+ * It is defined here to ensure that comments are included in the generated TS
+ * definitions. Without this, we infer the stack of built-in middleware without
+ * comments, losing a lot of value.
+ *
+ * If this is moved, please ensure that using this package in another project
+ * can correctly access comments on mutated input and output.
+ */
+const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
+  new InngestMiddleware({
+    name: "Inngest: Logger",
+    register({ client }) {
+      return {
+        run() {
+          const logger = new ProxyLogger(client["logger"]);
+
+          return {
+            input() {
+              return {
+                ctx: {
+                  /**
+                   * The passed in logger from the user.
+                   * Defaults to a console logger if not provided.
+                   */
+                  logger: logger as Logger,
+                },
+              };
+            },
+            beforeExecution() {
+              logger.enable();
+            },
+            async beforeResponse() {
+              await logger.flush();
+            },
+          };
+        },
+      };
+    },
+  }),
+]);

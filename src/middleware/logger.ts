@@ -1,5 +1,3 @@
-import { InngestMiddleware } from "../components/InngestMiddleware";
-
 /**
  * All kinds of arguments can come through
  *
@@ -103,26 +101,3 @@ export class ProxyLogger implements Logger {
     }
   }
 }
-
-export const loggerMiddleware = new InngestMiddleware({
-  name: "Inngest: Logger",
-  register({ client }) {
-    return {
-      run() {
-        const logger = new ProxyLogger(client["logger"]);
-
-        return {
-          input() {
-            return { ctx: { logger: logger as Logger } };
-          },
-          beforeExecution() {
-            logger.enable();
-          },
-          async beforeResponse() {
-            await logger.flush();
-          },
-        };
-      },
-    };
-  },
-});
