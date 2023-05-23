@@ -183,7 +183,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     this.logger = logger;
 
     this.middleware = this.initializeMiddleware([
-      ...(middleware as InngestMiddleware<MiddlewareOptions>[]),
+      ...(middleware || []),
       loggerMiddleware,
     ]);
 
