@@ -220,10 +220,11 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     const stack = middleware.reduce<Promise<MiddlewareRegisterReturn[]>>(
       async (acc, m) => {
-        return [
-          ...(await acc),
-          await m.register({ client: this, ...opts?.registerInput }),
-        ];
+        // Be explicit about waiting for the previous middleware to finish
+        const prev = await acc;
+        const next = await m.register({ client: this, ...opts?.registerInput });
+
+        return [...prev, next];
       },
       Promise.resolve([])
     );
