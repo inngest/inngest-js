@@ -867,7 +867,13 @@ export class InngestCommHandler<
        * comment and check and functionality should resume as normal.
        */
       if (ret[0] === "run" && ret[1].error) {
-        throw ret[1].error;
+        /**
+         * We throw the `data` here instead of the `error` because we expect
+         * `data` to be a prepared version of the error which may have been
+         * altered by middleware, whereas `error` is the initial triggering
+         * error.
+         */
+        throw ret[1].data;
       }
 
       return {
