@@ -438,7 +438,7 @@ type GetMiddlewareRunInputMutation<
  */
 export type MiddlewareStackRunInputMutation<
   TContext,
-  TMiddleware extends InngestMiddleware<MiddlewareOptions>[]
+  TMiddleware extends MiddlewareStack
 > = ObjectAssign<
   {
     [K in keyof TMiddleware]: GetMiddlewareRunInputMutation<TMiddleware[K]>;
