@@ -374,7 +374,7 @@ type InitialRunInfo = Readonly<
  *
  * @internal
  */
-type MiddlewareRunInput = (ctx: MiddlewareRunArgs) => {
+type MiddlewareRunInput = (ctx: MiddlewareRunArgs) => MaybePromise<{
   ctx?: Record<string, unknown>;
   steps?: Pick<IncomingOp, "data">[];
   // We need these in the future to allow users to specify their own complex
@@ -383,7 +383,7 @@ type MiddlewareRunInput = (ctx: MiddlewareRunArgs) => {
   //
   // transformEvent?: (event: EventPayload) => unknown;
   // transformStep?: (data: unknown) => unknown;
-} | void;
+} | void>;
 
 /**
  * Arguments sent to some `sendEvent` lifecycle hooks of a middleware.
