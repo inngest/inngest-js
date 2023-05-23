@@ -14,7 +14,11 @@ import {
   type SingleOrArray,
   type ValueOf,
 } from "../helpers/types";
-import { DefaultLogger, type Logger } from "../middleware/logger";
+import {
+  DefaultLogger,
+  loggerMiddleware,
+  type Logger,
+} from "../middleware/logger";
 import {
   type ClientOptions,
   type EventNameFromTrigger,
@@ -178,7 +182,10 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     this.fetch = getFetch(fetch);
     this.logger = logger;
 
-    this.middleware = this.initializeMiddleware(middleware);
+    this.middleware = this.initializeMiddleware([
+      ...(middleware as InngestMiddleware<MiddlewareOptions>[]),
+      loggerMiddleware,
+    ]);
 
     this.#ready = new Promise((resolve, reject) => {
       this.middleware.then(() => resolve()).catch(reject);
@@ -187,6 +194,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
   /**
    * Returns a promise that resolves when the client is ready to be used.
+   *
+   * TODO Can probably remove this; creating a hook stack uses middleware anyway
    */
   private ready(): Promise<void> {
     return this.#ready;

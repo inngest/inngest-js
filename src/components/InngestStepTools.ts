@@ -22,6 +22,7 @@ import {
   type Op,
 } from "../types";
 import { type EventsFromOpts, type Inngest } from "./Inngest";
+import { type ExecutionState } from "./InngestFunction";
 import { NonRetriableError } from "./NonRetriableError";
 
 export interface TickOp extends HashedOp {
@@ -44,92 +45,9 @@ export const createStepTools = <
   Events extends EventsFromOpts<TOpts>,
   TriggeringEvent extends keyof Events & string
 >(
-  client: Inngest<TOpts>
+  client: Inngest<TOpts>,
+  state: ExecutionState
 ) => {
-  const state: {
-    /**
-     * The tree of all found ops in the entire invocation.
-     */
-    allFoundOps: Record<string, TickOp>;
-
-    /**
-     * All synchronous operations found in this particular tick. The array is
-     * reset every tick.
-     */
-    tickOps: Record<string, TickOp>;
-
-    /**
-     * A hash of operations found within this tick, with keys being the hashed
-     * ops themselves (without a position) and the values being the number of
-     * times that op has been found.
-     *
-     * This is used to provide some mutation resilience to the op stack,
-     * allowing us to survive same-tick mutations of code by ensuring per-tick
-     * hashes are based on uniqueness rather than order.
-     */
-    tickOpHashes: Record<string, number>;
-
-    /**
-     * Tracks the current operation being processed. This can be used to
-     * understand the contextual parent of any recorded operations.
-     */
-    currentOp: TickOp | undefined;
-
-    /**
-     * If we've found a user function to run, we'll store it here so a component
-     * higher up can invoke and await it.
-     */
-    userFnToRun?: (...args: unknown[]) => unknown;
-
-    /**
-     * A boolean to represent whether the user's function is using any step
-     * tools.
-     *
-     * If the function survives an entire tick of the event loop and hasn't
-     * touched any tools, we assume that it is a single-step async function and
-     * should be awaited as usual.
-     */
-    hasUsedTools: boolean;
-
-    /**
-     * A function that should be used to reset the state of the tools after a
-     * tick has completed.
-     */
-    reset: () => void;
-
-    /**
-     * If `true`, any use of step tools will, by default, throw an error. We do
-     * this when we detect that a function may be mixing step and non-step code.
-     *
-     * Created step tooling can decide how to manually handle this on a
-     * case-by-case basis.
-     *
-     * In the future, we can provide a way for a user to override this if they
-     * wish to and understand the danger of side-effects.
-     *
-     * Defaults to `false`.
-     */
-    nonStepFnDetected: boolean;
-
-    /**
-     * When true, we are currently executing a user's code for a single step
-     * within a step function.
-     */
-    executingStep: boolean;
-  } = {
-    allFoundOps: {},
-    tickOps: {},
-    tickOpHashes: {},
-    currentOp: undefined,
-    hasUsedTools: false,
-    reset: () => {
-      state.tickOpHashes = {};
-      state.allFoundOps = { ...state.allFoundOps, ...state.tickOps };
-    },
-    nonStepFnDetected: false,
-    executingStep: false,
-  };
-
   // Start referencing everything
   state.tickOps = state.allFoundOps;
 
@@ -538,7 +456,7 @@ export const createStepTools = <
     }),
   };
 
-  return [tools, state] as [typeof tools, typeof state];
+  return tools;
 };
 
 /**

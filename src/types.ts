@@ -184,15 +184,9 @@ export type BaseContext<
    */
   runId: string;
 
-  /**
-   * @deprecated Use `step` instead.
-   */
-  tools: ReturnType<
-    typeof createStepTools<TOpts, EventsFromOpts<TOpts>, TTrigger>
-  >[0];
   step: ReturnType<
     typeof createStepTools<TOpts, EventsFromOpts<TOpts>, TTrigger>
-  >[0];
+  >;
 
   /**
    * The passed in logger from the user.

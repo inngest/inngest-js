@@ -1,4 +1,5 @@
 import { type Simplify } from "type-fest";
+import { cacheFn, waterfall } from "../helpers/functions";
 import {
   type Await,
   type MaybePromise,
@@ -69,6 +70,103 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
     this.register = register;
   }
 }
+
+type PromisifiedFunctionRecord<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  TRecord extends Record<string, (arg: any) => any>
+> = Partial<{
+  [K in keyof TRecord]: (
+    ...args: Parameters<TRecord[K]>
+  ) => Promise<Await<TRecord[K]>>;
+}>;
+
+export type RunHookStack = PromisifiedFunctionRecord<
+  Await<MiddlewareRegisterReturn["run"]>
+>;
+
+/**
+ * Given some middleware and an entrypoint, runs the initializer for the given
+ * `key` and returns functions that will pass arguments through a stack of each
+ * given hook in a middleware's lifecycle.
+ *
+ * Lets the middleware initialize before starting.
+ */
+export const getHookStack = async <
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  TMiddleware extends Record<string, (arg: any) => any>,
+  TKey extends keyof TMiddleware,
+  TRet extends PromisifiedFunctionRecord<
+    Await<TMiddleware[TKey]>
+  > = PromisifiedFunctionRecord<Await<TMiddleware[TKey]>>
+>(
+  /**
+   * The stack of middleware that will be used to run hooks.
+   */
+  middleware: Promise<TMiddleware[]>,
+
+  /**
+   * The hook type to initialize.
+   */
+  key: TKey,
+
+  /**
+   * Arguments for the initial hook.
+   */
+  arg: Parameters<TMiddleware[TKey]>[0]
+): Promise<TRet> => {
+  // Wait for middleware to initialize
+  const mwStack = await middleware;
+
+  // Step through each middleware and get the hook for the given key
+  const keyFns = mwStack.reduce((acc, mw) => {
+    const fn = mw[key];
+
+    if (fn) {
+      return [...acc, fn];
+    }
+
+    return acc;
+  }, [] as NonNullable<TMiddleware[TKey]>[]);
+
+  // Run each hook found in sequence and collect the results
+  const hooksRegistered = await keyFns.reduce<
+    Promise<Await<TMiddleware[TKey]>[]>
+  >(async (acc, fn) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return [...(await acc), await fn(arg)];
+  }, Promise.resolve([]));
+
+  // Prepare the return object - mutating this instead of using reduce as it
+  // results in cleaner code.
+  const ret = {} as TRet;
+
+  // Step through each hook result and create a waterfall joining each key
+  for (const hook of hooksRegistered) {
+    const hookKeys = Object.keys(hook) as (keyof TRet)[];
+
+    for (const key of hookKeys) {
+      let fns = [hook[key]];
+
+      const existingWaterfall = ret[key];
+      if (existingWaterfall) {
+        fns = [existingWaterfall, hook[key]];
+      }
+
+      ret[key] = waterfall(fns) as TRet[keyof TRet];
+    }
+  }
+
+  // Cache each function in the stack to ensure each can only be called once
+  for (const k of Object.keys(ret)) {
+    const key = k as keyof typeof ret;
+
+    ret[key] = cacheFn(
+      ret[key] as (...args: unknown[]) => unknown
+    ) as unknown as TRet[keyof TRet];
+  }
+
+  return ret;
+};
 
 /**
  * Options passed to new {@link InngestMiddleware} instance.
@@ -196,6 +294,8 @@ export type MiddlewareRegisterReturn = {
 export type MiddlewareRegisterFn = (ctx: {
   /**
    * The client this middleware is being registered on.
+   *
+   * TODO This should not use `any`, but the generic type expected.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   client: Inngest<any>;
@@ -203,6 +303,8 @@ export type MiddlewareRegisterFn = (ctx: {
   /**
    * If defined, this middleware has been applied directly to an Inngest
    * function rather than on the client.
+   *
+   * TODO This should not use `any`, but the generic type expected.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   fn?: InngestFunction<any, any, any, any>;
@@ -240,8 +342,11 @@ type MiddlewareRunArgs = Readonly<{
 
   /**
    * The function that is being executed.
+   *
+   * TODO This should not use `any`, but the generic type expected.
    */
-  fn: InngestFunction;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fn: InngestFunction<any, any, any, any>;
 }>;
 
 /**
