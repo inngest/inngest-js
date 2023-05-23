@@ -4,6 +4,7 @@ import {
   type Await,
   type MaybePromise,
   type ObjectAssign,
+  type PartialK,
   type SendEventPayload,
 } from "../helpers/types";
 import {
@@ -11,6 +12,7 @@ import {
   type ClientOptions,
   type EventPayload,
   type IncomingOp,
+  type MiddlewareStack,
   type OutgoingOp,
 } from "../types";
 import { type Inngest } from "./Inngest";
@@ -71,14 +73,37 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
   }
 }
 
+type FnsWithSameInputAsOutput<
+  TRecord extends Record<string, (arg: any) => any>
+> = {
+  [K in keyof TRecord as Await<TRecord[K]> extends Parameters<TRecord[K]>[0]
+    ? K
+    : Await<TRecord[K]> extends void | undefined
+    ? Parameters<TRecord[K]>[0] extends void | undefined
+      ? K
+      : never
+    : never]: TRecord[K];
+};
+
 type PromisifiedFunctionRecord<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TRecord extends Record<string, (arg: any) => any>
-> = Partial<{
-  [K in keyof TRecord]: (
-    ...args: Parameters<TRecord[K]>
-  ) => Promise<Await<TRecord[K]>>;
-}>;
+> = Pick<
+  Partial<{
+    [K in keyof TRecord]: (
+      ...args: Parameters<TRecord[K]>
+    ) => Promise<Await<TRecord[K]>>;
+  }>,
+  keyof FnsWithSameInputAsOutput<TRecord>
+> &
+  Omit<
+    Partial<{
+      [K in keyof TRecord]: (
+        ...args: Parameters<TRecord[K]>
+      ) => Promise<Parameters<TRecord[K]>[0]>;
+    }>,
+    keyof FnsWithSameInputAsOutput<TRecord>
+  >;
 
 export type RunHookStack = PromisifiedFunctionRecord<
   Await<MiddlewareRegisterReturn["run"]>
@@ -95,9 +120,8 @@ export const getHookStack = async <
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TMiddleware extends Record<string, (arg: any) => any>,
   TKey extends keyof TMiddleware,
-  TRet extends PromisifiedFunctionRecord<
-    Await<TMiddleware[TKey]>
-  > = PromisifiedFunctionRecord<Await<TMiddleware[TKey]>>
+  TResult extends Await<TMiddleware[TKey]>,
+  TRet extends PromisifiedFunctionRecord<TResult> = PromisifiedFunctionRecord<TResult>
 >(
   /**
    * The stack of middleware that will be used to run hooks.
@@ -112,7 +136,25 @@ export const getHookStack = async <
   /**
    * Arguments for the initial hook.
    */
-  arg: Parameters<TMiddleware[TKey]>[0]
+  arg: Parameters<TMiddleware[TKey]>[0],
+
+  transforms: PartialK<
+    {
+      [K in keyof TResult]-?: (
+        prev: Parameters<TResult[K]>[0],
+        output: Await<TResult[K]>
+      ) => Parameters<TResult[K]>[0];
+    },
+    keyof {
+      [K in keyof TResult as Await<TResult[K]> extends Parameters<TResult[K]>[0]
+        ? K
+        : Await<TResult[K]> extends void | undefined
+        ? Parameters<TResult[K]>[0] extends void | undefined
+          ? K
+          : never
+        : never]: void;
+    }
+  >
 ): Promise<TRet> => {
   // Wait for middleware to initialize
   const mwStack = await middleware;
@@ -152,7 +194,11 @@ export const getHookStack = async <
         fns = [existingWaterfall, hook[key]];
       }
 
-      ret[key] = waterfall(fns) as TRet[keyof TRet];
+      const transform = transforms[key as keyof typeof transforms] as (
+        arg: Await<(typeof fns)[number]>
+      ) => Parameters<(typeof fns)[number]>;
+
+      ret[key] = waterfall(fns, transform) as TRet[keyof TRet];
     }
   }
 
@@ -332,9 +378,9 @@ type MiddlewareRunArgs = Readonly<{
       BaseContext<
         ClientOptions,
         string,
-      Record<string, (...args: unknown[]) => unknown>
-    >
-  >;
+        Record<string, (...args: unknown[]) => unknown>
+      >
+    >;
 
   /**
    * The step data that will be passed to the function.
