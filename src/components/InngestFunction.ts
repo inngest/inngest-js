@@ -369,7 +369,7 @@ export class InngestFunction<
         }, {});
       }
 
-      const inputChanges = await hookStack.input?.({
+      const inputMutations = await hookStack.input?.({
         ctx: { ...fnArg } as unknown as Parameters<
           NonNullable<(typeof hookStack)["input"]>
         >[0]["ctx"],
@@ -377,15 +377,17 @@ export class InngestFunction<
         fn: this,
       });
 
-      if (inputChanges?.ctx) {
-        fnArg = { ...fnArg, ...inputChanges.ctx };
+      if (inputMutations?.ctx) {
+        fnArg = inputMutations?.ctx as unknown as Context<
+          TOpts,
+          Events,
+          any,
+          any
+        >;
       }
 
-      if (inputChanges?.steps) {
-        opStack = opStack.map((op, i) => ({
-          ...op,
-          ...inputChanges.steps?.[i],
-        }));
+      if (inputMutations?.steps) {
+        opStack = inputMutations?.steps as OpStack;
       }
 
       await hookStack.beforeMemoization?.();
