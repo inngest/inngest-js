@@ -4,7 +4,7 @@ import {
   devServerHost,
   getFetch,
   inngestHeaders,
-  isProd,
+  skipDevServer,
   processEnv,
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
@@ -328,7 +328,7 @@ export class Inngest<
     // dev server.
     let url = this.inngestApiUrl.href;
 
-    if (!isProd()) {
+    if (!skipDevServer()) {
       const host = devServerHost();
       // If the dev server host env var has been set we always want to use
       // the dev server - even if it's down.  Otherwise, optimistically use
