@@ -5,7 +5,6 @@ import {
   type MaybePromise,
   type ObjectAssign,
   type PartialK,
-  type SendEventPayload,
 } from "../helpers/types";
 import {
   type BaseContext,
@@ -74,6 +73,7 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
 }
 
 type FnsWithSameInputAsOutput<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TRecord extends Record<string, (arg: any) => any>
 > = {
   [K in keyof TRecord as Await<TRecord[K]> extends Parameters<TRecord[K]>[0]
@@ -332,6 +332,9 @@ export type MiddlewareRegisterReturn = {
      * The `output` hook is called after the event has been sent to Inngest.
      * This is where you can perform any final actions after the event has
      * been sent to Inngest and can modify the output the SDK sees.
+     *
+     * TODO This needs to be a result object that we spread into, not just some
+     * unknown value.
      */
     output?: () => MaybePromise<void | unknown>;
   }>;
@@ -438,7 +441,7 @@ type MiddlewareRunInput = (ctx: MiddlewareRunArgs) => MaybePromise<{
  * @internal
  */
 type MiddlewareSendEventArgs = Readonly<{
-  payloads: ReadonlyArray<SendEventPayload<Record<string, EventPayload>>>;
+  payloads: ReadonlyArray<Record<string, EventPayload>>;
 }>;
 
 /**
@@ -448,7 +451,7 @@ type MiddlewareSendEventArgs = Readonly<{
  * @internal
  */
 type MiddlewareSendEventInput = (ctx: MiddlewareSendEventArgs) => {
-  payloads?: SendEventPayload<Record<string, EventPayload>>[];
+  payloads?: Record<string, EventPayload>[];
 } | void;
 
 /**

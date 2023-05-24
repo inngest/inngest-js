@@ -8,12 +8,7 @@ import {
   processEnv,
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
-import {
-  type PartialK,
-  type SendEventPayload,
-  type SingleOrArray,
-  type ValueOf,
-} from "../helpers/types";
+import { type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
   type ClientOptions,
@@ -31,6 +26,7 @@ import { type EventSchemas } from "./EventSchemas";
 import { InngestFunction } from "./InngestFunction";
 import {
   InngestMiddleware,
+  getHookStack,
   type MiddlewareOptions,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
@@ -282,36 +278,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   }
 
   /**
-   * Send one or many events to Inngest. Takes a known event from this Inngest
-   * instance based on the given `name`.
-   *
-   * ```ts
-   * await inngest.send("app/user.created", { data: { id: 123 } });
-   * ```
-   *
-   * Returns a promise that will resolve if the event(s) were sent successfully,
-   * else throws with an error explaining what went wrong.
-   *
-   * If you wish to send an event with custom types (i.e. one that hasn't been
-   * generated), make sure to add it when creating your Inngest instance, like
-   * so:
-   *
-   * ```ts
-   * const inngest = new Inngest<Events & {
-   *   "my/event": {
-   *     name: "my/event";
-   *     data: { bar: string; };
-   *   }
-   * }>("My App", "API_KEY");
-   * ```
-   */
-  public async send<Event extends keyof EventsFromOpts<TOpts>>(
-    name: Event,
-    payload: SingleOrArray<
-      PartialK<Omit<EventsFromOpts<TOpts>[Event], "name" | "v">, "ts">
-    >
-  ): Promise<void>;
-  /**
    * Send one or many events to Inngest. Takes an entire payload (including
    * name) as each input.
    *
@@ -337,23 +303,15 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    */
   public async send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
     payload: Payload
-  ): Promise<void>;
-  public async send<Event extends keyof EventsFromOpts<TOpts>>(
-    nameOrPayload:
-      | Event
-      | SingleOrArray<
-          ValueOf<{
-            [K in keyof EventsFromOpts<TOpts>]: PartialK<
-              Omit<EventsFromOpts<TOpts>[K], "v">,
-              "ts"
-            >;
-          }>
-        >,
-    maybePayload?: SingleOrArray<
-      PartialK<Omit<EventsFromOpts<TOpts>[Event], "name" | "v">, "ts">
-    >
   ): Promise<void> {
-    await this.ready();
+    const hooks = await getHookStack(this.middleware, "sendEvent", undefined, {
+      input: (prev, output) => {
+        return { ...prev, ...output };
+      },
+      output: (prev, _output) => {
+        return prev;
+      },
+    });
 
     if (!this.eventKey) {
       throw new Error(
@@ -366,30 +324,15 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       );
     }
 
-    let payloads: ValueOf<EventsFromOpts<TOpts>>[];
+    let payloads: Record<string, EventPayload>[] = Array.isArray(payload)
+      ? (payload as Record<string, EventPayload>[])
+      : payload
+      ? [payload]
+      : [];
 
-    if (typeof nameOrPayload === "string") {
-      /**
-       * Add our payloads and ensure they all have a name.
-       */
-      payloads = (Array.isArray(maybePayload)
-        ? maybePayload
-        : maybePayload
-        ? [maybePayload]
-        : []
-      ).map((payload) => ({
-        ...payload,
-        name: nameOrPayload,
-      })) as unknown as typeof payloads;
-    } else {
-      /**
-       * Grab our payloads straight from the args.
-       */
-      payloads = (Array.isArray(nameOrPayload)
-        ? nameOrPayload
-        : nameOrPayload
-        ? [nameOrPayload]
-        : []) as unknown as typeof payloads;
+    const inputChanges = await hooks.input?.({ payloads: [...payloads] });
+    if (inputChanges?.payloads) {
+      payloads = [...inputChanges.payloads];
     }
 
     /**
@@ -431,7 +374,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     });
 
     if (response.status >= 200 && response.status < 300) {
-      return;
+      return void (await hooks.output?.());
     }
 
     throw await this.#getResponseError(response);

@@ -7,13 +7,7 @@ import {
   prettyError,
 } from "../helpers/errors";
 import { timeStr } from "../helpers/strings";
-import {
-  type ObjectPaths,
-  type PartialK,
-  type SendEventPayload,
-  type SingleOrArray,
-  type ValueOf,
-} from "../helpers/types";
+import { type ObjectPaths, type SendEventPayload } from "../helpers/types";
 import {
   StepOpCode,
   type ClientOptions,
@@ -212,54 +206,20 @@ export const createStepTools = <
      * Returns a promise that will resolve once the event has been sent.
      */
     sendEvent: createTool<{
-      <Payload extends SendEventPayload<Events>>(
+      <Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
         payload: Payload
       ): Promise<void>;
-      <Event extends keyof Events & string>(
-        name: Event,
-        payload: SingleOrArray<
-          PartialK<Omit<Events[Event], "name" | "v">, "ts">
-        >
-      ): Promise<void>;
     }>(
-      (nameOrPayload, maybePayload) => {
-        let payloads: ValueOf<Events>[];
-
-        if (typeof nameOrPayload === "string") {
-          /**
-           * Add our payloads and ensure they all have a name.
-           */
-          payloads = (Array.isArray(maybePayload)
-            ? maybePayload
-            : maybePayload
-            ? [maybePayload]
-            : []
-          ).map((payload) => ({
-            ...payload,
-            name: nameOrPayload,
-          })) as unknown as typeof payloads;
-        } else {
-          /**
-           * Grab our payloads straight from the args.
-           */
-          payloads = (
-            Array.isArray(nameOrPayload)
-              ? nameOrPayload
-              : nameOrPayload
-              ? [nameOrPayload]
-              : []
-          ) as typeof payloads;
-        }
-
+      () => {
         return {
           op: StepOpCode.StepPlanned,
-          name: payloads[0]?.name || "sendEvent",
+          name: "sendEvent",
         };
       },
       {
         nonStepExecuteInline: true,
-        fn: (nameOrPayload, maybePayload) => {
-          return client.send(nameOrPayload, maybePayload);
+        fn: (payload) => {
+          return client.send(payload);
         },
       }
     ),
