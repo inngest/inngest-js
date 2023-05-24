@@ -97,21 +97,6 @@ export const skipDevServer = (
 };
 
 
-/**
- * Returns `true` if we believe the current environment is a platform, eg>
- * Vercel, Render, Railway, Netlify, etc.
- */
-export const isPlatformDeploy = (
-  /**
-   * The optional environment variables to use instead of `process.env`.
-   */
-  env: Record<string, unknown> = allProcessEnv()
-): boolean => {
-  return platformDeployChecks.some(([key, checkKey, expected]) => {
-    return checkFns[checkKey](stringifyUnknown(env[key]), expected);
-  });
-};
-
 
 /**
  * Returns `true` if we believe the current environment is production based on
