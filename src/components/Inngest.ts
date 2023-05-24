@@ -172,8 +172,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     this.logger = logger;
 
     this.middleware = this.initializeMiddleware([
-      ...(middleware || []),
       ...builtInMiddleware,
+      ...(middleware || []),
     ]);
   }
 
@@ -443,9 +443,9 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       TTriggerName,
       TShimmedFns,
       // eslint-disable-next-line @typescript-eslint/ban-types
-      MiddlewareStackRunInputMutation<{}, NonNullable<TMiddleware>> &
+      MiddlewareStackRunInputMutation<{}, typeof builtInMiddleware> &
         // eslint-disable-next-line @typescript-eslint/ban-types
-        MiddlewareStackRunInputMutation<{}, typeof builtInMiddleware> &
+        MiddlewareStackRunInputMutation<{}, NonNullable<TOpts["middleware"]>> &
         // eslint-disable-next-line @typescript-eslint/ban-types
         MiddlewareStackRunInputMutation<{}, TMiddleware>
     >
