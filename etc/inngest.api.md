@@ -136,9 +136,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     }), trigger: TTrigger, handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, MiddlewareStackRunInputMutation<{}, NonNullable<TMiddleware>> & MiddlewareStackRunInputMutation<{}, typeof builtInMiddleware> & MiddlewareStackRunInputMutation<{}, TMiddleware>>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
     readonly inngestBaseUrl: URL;
     readonly name: string;
-    // Warning: (ae-forgotten-export) The symbol "SingleOrArray" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "PartialK" needs to be exported by the entry point index.d.ts
-    send<Event extends keyof EventsFromOpts<TOpts>>(name: Event, payload: SingleOrArray<PartialK<Omit<EventsFromOpts<TOpts>[Event], "name" | "v">, "ts">>): Promise<void>;
     // Warning: (ae-forgotten-export) The symbol "SendEventPayload" needs to be exported by the entry point index.d.ts
     send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(payload: Payload): Promise<void>;
     setEventKey(
