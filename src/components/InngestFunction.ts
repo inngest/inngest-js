@@ -495,15 +495,6 @@ export class InngestFunction<
             runningStepStop();
           })
           .catch(async (err: Error) => {
-            /**
-             * If the user-defined code throws an error, we should return this
-             * to Inngest as the response for this step. The function didn't
-             * fail, only this step, so Inngest can decide what we do next.
-             *
-             * Make sure to log this so the user sees what has happened.
-             */
-            console.error(err);
-
             await hookStack.afterExecution?.();
 
             const result: Pick<OutgoingOp, "error" | "data"> = {

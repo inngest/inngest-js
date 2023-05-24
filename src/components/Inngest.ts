@@ -508,6 +508,11 @@ const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
             beforeExecution() {
               logger.enable();
             },
+            output({ result: { error } }) {
+              if (error) {
+                logger.error(error);
+              }
+            },
             async beforeResponse() {
               await logger.flush();
             },
