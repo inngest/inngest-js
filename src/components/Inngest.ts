@@ -110,8 +110,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    */
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
-  #ready: Promise<void>;
-
   /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
@@ -179,19 +177,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       ...(middleware || []),
       ...builtInMiddleware,
     ]);
-
-    this.#ready = new Promise((resolve, reject) => {
-      this.middleware.then(() => resolve()).catch(reject);
-    });
-  }
-
-  /**
-   * Returns a promise that resolves when the client is ready to be used.
-   *
-   * TODO Can probably remove this; creating a hook stack uses middleware anyway
-   */
-  private ready(): Promise<void> {
-    return this.#ready;
   }
 
   /**
