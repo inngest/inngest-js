@@ -1,12 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { type BaseContext } from "inngest/types";
+import { Inngest } from "@local/components/Inngest";
+import { InngestMiddleware } from "@local/components/InngestMiddleware";
 import { assertType, type IsEqual } from "type-plus";
-import {
-  InngestMiddleware,
-  type MiddlewareStackRunInputMutation,
-} from "./InngestMiddleware";
 
-describe("types: stacking and inference", () => {
+describe("stacking and inference", () => {
   describe("run", () => {
     describe("input", () => {
       describe("can add a value to input context", () => {
@@ -27,13 +24,12 @@ describe("types: stacking and inference", () => {
           },
         });
 
-        type Result = MiddlewareStackRunInputMutation<
-          BaseContext<any, any, any>,
-          [typeof mw]
-        >;
+        const inngest = new Inngest({ name: "test", middleware: [mw] });
 
         test("input context has value", () => {
-          assertType<IsEqual<Result["foo"], string>>(true);
+          inngest.createFunction({ name: "" }, { event: "" }, (ctx) => {
+            assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
+          });
         });
       });
 
@@ -55,19 +51,18 @@ describe("types: stacking and inference", () => {
           },
         });
 
-        type Result = MiddlewareStackRunInputMutation<
-          BaseContext<any, any, any>,
-          [typeof mw]
-        >;
+        const inngest = new Inngest({ name: "test", middleware: [mw] });
 
         test("input context has value", () => {
-          assertType<IsEqual<Result["foo"], "bar">>(true);
+          inngest.createFunction({ name: "" }, { event: "" }, (ctx) => {
+            assertType<IsEqual<(typeof ctx)["foo"], "bar">>(true);
+          });
         });
       });
 
       describe("can mutate an existing input context value", () => {
-        const mw1 = new InngestMiddleware({
-          name: "mw1",
+        const mw = new InngestMiddleware({
+          name: "mw",
           register() {
             return {
               run() {
@@ -83,13 +78,12 @@ describe("types: stacking and inference", () => {
           },
         });
 
-        type Result = MiddlewareStackRunInputMutation<
-          BaseContext<any, any, any>,
-          [typeof mw1]
-        >;
+        const inngest = new Inngest({ name: "test", middleware: [mw] });
 
-        test("input context has new value", () => {
-          assertType<IsEqual<Result["event"], boolean>>(true);
+        test("input context has value", () => {
+          inngest.createFunction({ name: "" }, { event: "" }, (ctx) => {
+            assertType<IsEqual<(typeof ctx)["event"], boolean>>(true);
+          });
         });
       });
 
@@ -128,17 +122,18 @@ describe("types: stacking and inference", () => {
           },
         });
 
-        type Result = MiddlewareStackRunInputMutation<
-          BaseContext<any, any, any>,
-          [typeof mw1, typeof mw2]
-        >;
+        const inngest = new Inngest({ name: "test", middleware: [mw1, mw2] });
 
         test("input context has foo value", () => {
-          assertType<IsEqual<Result["foo"], string>>(true);
+          inngest.createFunction({ name: "" }, { event: "" }, (ctx) => {
+            assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
+          });
         });
 
         test("input context has bar value", () => {
-          assertType<IsEqual<Result["bar"], boolean>>(true);
+          inngest.createFunction({ name: "" }, { event: "" }, (ctx) => {
+            assertType<IsEqual<(typeof ctx)["bar"], boolean>>(true);
+          });
         });
       });
 
@@ -177,13 +172,12 @@ describe("types: stacking and inference", () => {
           },
         });
 
-        type Result = MiddlewareStackRunInputMutation<
-          BaseContext<any, any, any>,
-          [typeof mw1, typeof mw2]
-        >;
+        const inngest = new Inngest({ name: "test", middleware: [mw1, mw2] });
 
         test("input context has new value", () => {
-          assertType<IsEqual<Result["foo"], boolean>>(true);
+          inngest.createFunction({ name: "" }, { event: "" }, (ctx) => {
+            assertType<IsEqual<(typeof ctx)["foo"], boolean>>(true);
+          });
         });
       });
     });
