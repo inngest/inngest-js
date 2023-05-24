@@ -102,8 +102,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
   private readonly logger: Logger;
 
-  // private readonly middleware: InngestMiddleware<MiddlewareOptions>[];
-
   /**
    * A promise that resolves when the middleware stack has been initialized and
    * the client is ready to be used.
