@@ -580,6 +580,12 @@ export interface RegisterOptions {
    * Defaults to `false`.
    */
   streaming?: "allow" | "force" | false;
+
+  /**
+   * The name of this app as it will be seen in the Inngest dashboard. Will use
+   * the name of the client passed if not provided.
+   */
+  name?: string;
 }
 
 /**

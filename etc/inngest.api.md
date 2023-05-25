@@ -149,7 +149,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 export class InngestCommHandler<H extends Handler_2, TResTransform extends (res: ActionResponse<string>, ...args: Parameters<H>) => any, TStreamTransform extends (res: ActionResponse<ReadableStream>, ...args: Parameters<H>) => any> {
     constructor(
     frameworkName: string,
-    appNameOrInngest: string | Inngest<any>,
+    client: Inngest<any>,
     functions: InngestFunction<any, any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, streaming, }: RegisterOptions | undefined,
     handler: H,
     transformRes: TResTransform,
@@ -250,6 +250,7 @@ export interface RegisterOptions {
     inngestRegisterUrl?: string;
     landingPage?: boolean;
     logLevel?: LogLevel;
+    name?: string;
     serveHost?: string;
     servePath?: string;
     signingKey?: string;
@@ -258,7 +259,7 @@ export interface RegisterOptions {
 
 // @public
 export type ServeHandler = (
-nameOrInngest: string | Inngest<any>,
+client: Inngest<any>,
 functions: InngestFunction<any, any, any, any>[],
 opts?: RegisterOptions
 /**

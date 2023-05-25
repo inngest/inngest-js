@@ -65,7 +65,7 @@ export type ServeHandler = (
    * the `Inngest` instance used to declare all functions.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  nameOrInngest: string | Inngest<any>,
+  client: Inngest<any>,
 
   /**
    * An array of the functions to serve and register with Inngest.
@@ -261,7 +261,8 @@ export class InngestCommHandler<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly rawFns: InngestFunction<any, any, any, any>[];
 
-  private readonly client: Inngest | undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private readonly client: Inngest<any>;
 
   /**
    * A private collection of functions that are being served. This map is used
@@ -295,7 +296,7 @@ export class InngestCommHandler<
      * definition of Inngest.
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    appNameOrInngest: string | Inngest<any>,
+    client: Inngest<any>,
 
     /**
      * An array of the functions to serve and register with Inngest.
@@ -311,6 +312,7 @@ export class InngestCommHandler<
       serveHost,
       servePath,
       streaming,
+      name,
     }: RegisterOptions = {},
 
     /**
@@ -392,14 +394,8 @@ export class InngestCommHandler<
     streamTransformRes?: TStreamTransform
   ) {
     this.frameworkName = frameworkName;
-    this.name =
-      typeof appNameOrInngest === "string"
-        ? appNameOrInngest
-        : appNameOrInngest.name;
-
-    if (typeof appNameOrInngest !== "string") {
-      this.client = appNameOrInngest;
-    }
+    this.client = client;
+    this.name = name || this.client.name;
 
     this.handler = handler;
     this.transformRes = transformRes;
@@ -462,12 +458,7 @@ export class InngestCommHandler<
     this.logLevel = logLevel;
     this.streaming = streaming ?? false;
 
-    this.fetch = getFetch(
-      fetch ||
-        (typeof appNameOrInngest === "string"
-          ? undefined
-          : appNameOrInngest["fetch"])
-    );
+    this.fetch = getFetch(fetch || this.client["fetch"]);
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
