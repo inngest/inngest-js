@@ -3,6 +3,13 @@ import { type z } from "zod";
 import { type IsStringLiteral } from "../helpers/types";
 import { type EventPayload } from "../types";
 
+/**
+ * Declares the shape of an event schema we expect from the user. This may be
+ * different to what a user is sending us depending on the supported library,
+ * but this standard format is what we require as the end result.
+ *
+ * @internal
+ */
 export type StandardEventSchema = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: Record<string, any>;
@@ -37,7 +44,7 @@ export type ZodEventSchemas = Record<
  * of information required.
  *
  * It purposefully uses slightly more complex (read: verbose) mapped types to
- * flatten the output.
+ * flatten the output and preserve comments.
  *
  * @public
  */
