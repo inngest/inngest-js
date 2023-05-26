@@ -176,7 +176,10 @@ describe("runFn", () => {
         fn: InngestFunction<any, any, any, any>;
         steps: Record<
           string,
-          jest.Mock<() => string> | jest.Mock<() => Promise<string>>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          | jest.Mock<(...args: any[]) => string>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          | jest.Mock<(...args: any[]) => Promise<string>>
         >;
         event?: EventPayload;
         onFailure?: boolean;
