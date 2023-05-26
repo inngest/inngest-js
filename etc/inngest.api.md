@@ -150,7 +150,7 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     constructor(
     frameworkName: string,
     client: Inngest<any>,
-    functions: InngestFunction<any, any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, streaming, }: RegisterOptions | undefined,
+    functions: InngestFunction<any, any, any, any>[], { inngestRegisterUrl, fetch, landingPage, logLevel, signingKey, serveHost, servePath, streaming, name, }: RegisterOptions | undefined,
     handler: H,
     transformRes: TResTransform,
     streamTransformRes?: TStreamTransform);
