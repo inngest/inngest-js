@@ -10,6 +10,7 @@ import {
 } from "@local/components/InngestStepTools";
 import { ServerTiming } from "@local/helpers/ServerTiming";
 import { ErrCode } from "@local/helpers/errors";
+import { ProxyLogger } from "@local/middleware/logger";
 import {
   StepOpCode,
   type ClientOptions,
@@ -19,7 +20,6 @@ import {
 import { assertType } from "type-plus";
 import { internalEvents } from "../helpers/consts";
 import { createClient } from "../test/helpers";
-import { ProxyLogger } from "@local/middleware/logger";
 
 type TestEvents = {
   foo: { data: { foo: string } };
@@ -276,7 +276,7 @@ describe("runFn", () => {
         const fn = inngest.createFunction(
           "name",
           "foo",
-          async ({ tools: { run } }) => {
+          async ({ step: { run } }) => {
             await run("A", A);
             await run("B", B);
           }
@@ -344,7 +344,7 @@ describe("runFn", () => {
         const fn = inngest.createFunction(
           "name",
           "foo",
-          async ({ tools: { waitForEvent, run } }) => {
+          async ({ step: { waitForEvent, run } }) => {
             const foo = await waitForEvent("foo", "2h");
 
             if (foo?.data.foo === "foo") {
@@ -427,7 +427,7 @@ describe("runFn", () => {
         const fn = inngest.createFunction(
           "name",
           "foo",
-          async ({ tools: { run } }) => {
+          async ({ step: { run } }) => {
             await Promise.all([run("A", A), run("B", B)]);
             await run("C", C);
           }
@@ -551,7 +551,7 @@ describe("runFn", () => {
         const fn = inngest.createFunction(
           "name",
           "foo",
-          async ({ tools: { run } }) => {
+          async ({ step: { run } }) => {
             const winner = await Promise.race([run("A", A), run("B", B)]);
 
             if (winner === "A") {
@@ -664,7 +664,7 @@ describe("runFn", () => {
         const fn = inngest.createFunction(
           "name",
           "foo",
-          async ({ tools: { run } }) => {
+          async ({ step: { run } }) => {
             return Promise.all([
               run("A", A),
               run("B", B).catch(() => run("B failed", BFailed)),

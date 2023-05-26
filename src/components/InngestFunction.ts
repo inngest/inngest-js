@@ -381,7 +381,9 @@ export class InngestFunction<
         fnArg = inputMutations?.ctx as unknown as Context<
           TOpts,
           Events,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           any
         >;
       }
@@ -757,7 +759,7 @@ export interface ExecutionState {
   executingStep: boolean;
 }
 
-const createExecutionState = (): ExecutionState => {
+export const createExecutionState = (): ExecutionState => {
   const state: ExecutionState = {
     allFoundOps: {},
     tickOps: {},

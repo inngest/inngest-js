@@ -9,15 +9,17 @@ import { StepOpCode, type ClientOptions } from "@local/types";
 import ms from "ms";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
+import { createExecutionState, type ExecutionState } from "./InngestFunction";
 
 describe("waitForEvent", () => {
   const client = createClient({ name: "test" });
-  let waitForEvent: ReturnType<typeof createStepTools>[0]["waitForEvent"];
-  let state: ReturnType<typeof createStepTools>[1];
+  let waitForEvent: ReturnType<typeof createStepTools>["waitForEvent"];
+  let state: ExecutionState;
   let getOp: () => TickOp | undefined;
 
   beforeEach(() => {
-    [{ waitForEvent }, state] = createStepTools(client);
+    state = createExecutionState();
+    ({ waitForEvent } = createStepTools(client, state));
     getOp = () => Object.values(state.tickOps)[0];
   });
 
@@ -94,12 +96,13 @@ describe("waitForEvent", () => {
 
 describe("run", () => {
   const client = createClient({ name: "test" });
-  let run: ReturnType<typeof createStepTools>[0]["run"];
-  let state: ReturnType<typeof createStepTools>[1];
+  let run: ReturnType<typeof createStepTools>["run"];
+  let state: ExecutionState;
   let getOp: () => TickOp | undefined;
 
   beforeEach(() => {
-    [{ run }, state] = createStepTools(client);
+    state = createExecutionState();
+    ({ run } = createStepTools(client, state));
     getOp = () => Object.values(state.tickOps)[0];
   });
 
@@ -163,12 +166,13 @@ describe("run", () => {
 
 describe("sleep", () => {
   const client = createClient({ name: "test" });
-  let sleep: ReturnType<typeof createStepTools>[0]["sleep"];
-  let state: ReturnType<typeof createStepTools>[1];
+  let sleep: ReturnType<typeof createStepTools>["sleep"];
+  let state: ExecutionState;
   let getOp: () => TickOp | undefined;
 
   beforeEach(() => {
-    [{ sleep }, state] = createStepTools(client);
+    state = createExecutionState();
+    ({ sleep } = createStepTools(client, state));
     getOp = () => Object.values(state.tickOps)[0];
   });
 
@@ -189,12 +193,13 @@ describe("sleep", () => {
 
 describe("sleepUntil", () => {
   const client = createClient({ name: "test" });
-  let sleepUntil: ReturnType<typeof createStepTools>[0]["sleepUntil"];
-  let state: ReturnType<typeof createStepTools>[1];
+  let sleepUntil: ReturnType<typeof createStepTools>["sleepUntil"];
+  let state: ExecutionState;
   let getOp: () => TickOp | undefined;
 
   beforeEach(() => {
-    [{ sleepUntil }, state] = createStepTools(client);
+    state = createExecutionState();
+    ({ sleepUntil } = createStepTools(client, state));
     getOp = () => Object.values(state.tickOps)[0];
   });
 
@@ -256,24 +261,25 @@ describe("sendEvent", () => {
     });
     const sendSpy = jest.spyOn(client, "send");
 
-    let sendEvent: ReturnType<typeof createStepTools>[0]["sendEvent"];
-    let state: ReturnType<typeof createStepTools>[1];
+    let sendEvent: ReturnType<typeof createStepTools>["sendEvent"];
+    let state: ExecutionState;
     let getOp: () => TickOp | undefined;
 
     beforeEach(() => {
-      [{ sendEvent }, state] = createStepTools(client);
+      state = createExecutionState();
+      ({ sendEvent } = createStepTools(client, state));
       getOp = () => Object.values(state.tickOps)[0];
     });
 
     test("return Step step op code", () => {
-      void sendEvent("step", { data: "foo" });
+      void sendEvent({ name: "step", data: "foo" });
 
       expect(getOp()).toMatchObject({ op: StepOpCode.StepPlanned });
       expect(sendSpy).not.toHaveBeenCalled();
     });
 
     test("return step name as name", () => {
-      void sendEvent("step", { data: "foo" });
+      void sendEvent({ name: "step", data: "foo" });
 
       expect(getOp()).toMatchObject({ name: "step" });
       expect(sendSpy).not.toHaveBeenCalled();
@@ -281,7 +287,7 @@ describe("sendEvent", () => {
 
     test("execute inline if non-step fn", () => {
       state.nonStepFnDetected = true;
-      void sendEvent("step", { data: "foo" });
+      void sendEvent({ name: "step", data: "foo" });
 
       expect(getOp()).toBeUndefined();
       expect(sendSpy).toHaveBeenCalledWith("step", { data: "foo" });
@@ -290,12 +296,12 @@ describe("sendEvent", () => {
 
   describe("types", () => {
     describe("no custom types", () => {
-      const sendEvent: ReturnType<typeof createStepTools>[0]["sendEvent"] =
+      const sendEvent: ReturnType<typeof createStepTools>["sendEvent"] =
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (() => undefined) as any;
 
       test("allows sending a single event with a string", () => {
-        void sendEvent("anything", { data: "foo" });
+        void sendEvent({ name: "anything", data: "foo" });
       });
 
       test("allows sending a single event with an object", () => {
@@ -330,11 +336,11 @@ describe("sendEvent", () => {
       const sendEvent: ReturnType<
         typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      >[0]["sendEvent"] = (() => undefined) as any;
+      >["sendEvent"] = (() => undefined) as any;
 
       test("disallows sending a single unknown event with a string", () => {
         // @ts-expect-error Unknown event
-        void sendEvent("unknown", { data: { foo: "" } });
+        void sendEvent({ name: "unknown", data: { foo: "" } });
       });
 
       test("disallows sending a single unknown event with an object", () => {
@@ -361,7 +367,7 @@ describe("sendEvent", () => {
 
       test("disallows sending a single known event with a string and invalid data", () => {
         // @ts-expect-error Invalid data
-        void sendEvent("foo", { data: { foo: 1 } });
+        void sendEvent({ name: "foo", data: { foo: 1 } });
       });
 
       test("disallows sending a single known event with an object and invalid data", () => {
@@ -379,7 +385,7 @@ describe("sendEvent", () => {
       });
 
       test("allows sending a single known event with a string", () => {
-        void sendEvent("foo", { data: { foo: "" } });
+        void sendEvent({ name: "foo", data: { foo: "" } });
       });
 
       test("allows sending a single known event with an object", () => {
