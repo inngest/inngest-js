@@ -10,7 +10,11 @@ import {
 } from "@local/components/InngestStepTools";
 import { ServerTiming } from "@local/helpers/ServerTiming";
 import { ErrCode } from "@local/helpers/errors";
-import { ProxyLogger } from "@local/middleware/logger";
+import {
+  DefaultLogger,
+  ProxyLogger,
+  type Logger,
+} from "@local/middleware/logger";
 import {
   StepOpCode,
   type ClientOptions,
@@ -1026,6 +1030,118 @@ describe("runFn", () => {
             },
           ],
           expectedReturn: ["complete", undefined],
+        },
+      })
+    );
+
+    testFn(
+      "can use built-in logger middleware",
+      () => {
+        const A = jest.fn((logger: Logger) => {
+          logger.info("A");
+          return "A";
+        });
+
+        const B = jest.fn((logger: Logger) => {
+          logger.info("B");
+          return "B";
+        });
+
+        const fn = inngest.createFunction(
+          "name",
+          "foo",
+          async ({ step: { run }, logger }) => {
+            assertType<Logger>(logger);
+            logger.info("info1");
+            await run("A", () => A(logger));
+            logger.info("2");
+            await run("B", () => B(logger));
+            logger.info("3");
+          }
+        );
+
+        return { fn, steps: { A, B } };
+      },
+      {
+        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+        B: "b494def3936f5c59986e81bc29443609bfc2384a",
+      },
+      ({ A, B }) => ({
+        "first run runs A step": {
+          expectedReturn: [
+            "run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "A",
+            }),
+          ],
+          expectedStepsRun: ["A"],
+          customTests() {
+            let loggerInfoSpy: jest.SpiedFunction<() => void>;
+
+            beforeAll(() => {
+              loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
+            });
+
+            test("log called", () => {
+              expect(loggerInfoSpy.mock.calls).toEqual([["info1"], ["A"]]);
+            });
+          },
+        },
+        "request with A in stack runs B step": {
+          stack: [
+            {
+              id: A,
+              data: "A",
+            },
+          ],
+          expectedReturn: [
+            "run",
+            expect.objectContaining({
+              id: B,
+              name: "B",
+              op: StepOpCode.RunStep,
+              data: "B",
+            }),
+          ],
+          expectedStepsRun: ["B"],
+          customTests() {
+            let loggerInfoSpy: jest.SpiedFunction<() => void>;
+
+            beforeAll(() => {
+              loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
+            });
+
+            test("log called", () => {
+              expect(loggerInfoSpy.mock.calls).toEqual([["2"], ["B"]]);
+            });
+          },
+        },
+        "final request returns empty response": {
+          stack: [
+            {
+              id: A,
+              data: "A",
+            },
+            {
+              id: B,
+              data: "B",
+            },
+          ],
+          expectedReturn: ["complete", undefined],
+          customTests() {
+            let loggerInfoSpy: jest.SpiedFunction<() => void>;
+
+            beforeAll(() => {
+              loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
+            });
+
+            test("log called", () => {
+              expect(loggerInfoSpy.mock.calls).toEqual([["3"]]);
+            });
+          },
         },
       })
     );
