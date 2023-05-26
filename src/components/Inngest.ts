@@ -4,8 +4,8 @@ import {
   devServerHost,
   getFetch,
   inngestHeaders,
-  skipDevServer,
   processEnv,
+  skipDevServer,
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
 import { type SendEventPayload } from "../helpers/types";
@@ -53,23 +53,20 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
  * A client used to interact with the Inngest API by sending or reacting to
  * events.
  *
- * To provide event typing, make sure to pass in your generated event types as
- * the first generic.
+ * To provide event typing, see {@link EventSchemas}.
  *
  * ```ts
- * const inngest = new Inngest<Events>({ name: "My App" });
+ * const inngest = new Inngest({ name: "My App" });
  *
- * // or to provide custom events too
- * const inngest = new Inngest<
- *   Events & {
+ * // or to provide event typing too
+ * const inngest = new Inngest({
+ *   name: "My App",
+ *   schemas: new EventSchemas().fromRecord<{
  *     "app/user.created": {
- *       name: "app/user.created";
- *       data: {
- *         foo: boolean;
- *       };
+ *       data: { userId: string };
  *     };
- *   }
- * >({ name: "My App" });
+ *   }>(),
+ * });
  * ```
  *
  * @public
@@ -112,23 +109,20 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
    *
-   * To provide event typing, make sure to pass in your generated event types as
-   * the first generic.
+   * To provide event typing, see {@link EventSchemas}.
    *
    * ```ts
-   * const inngest = new Inngest<Events>({ name: "My App" });
+   * const inngest = new Inngest({ name: "My App" });
    *
-   * // or to provide custom events too
-   * const inngest = new Inngest<
-   *   Events & {
+   * // or to provide event typing too
+   * const inngest = new Inngest({
+   *   name: "My App",
+   *   schemas: new EventSchemas().fromRecord<{
    *     "app/user.created": {
-   *       name: "app/user.created";
-   *       data: {
-   *         foo: boolean;
-   *       };
+   *       data: { userId: string };
    *     };
-   *   }
-   * >({ name: "My App" });
+   *   }>(),
+   * });
    * ```
    */
   constructor({
@@ -276,12 +270,15 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    * so:
    *
    * ```ts
-   * const inngest = new Inngest<Events & {
-   *   "my/event": {
-   *     name: "my/event";
-   *     data: { bar: string; };
-   *   }
-   * }>("My App", "API_KEY");
+   * const inngest = new Inngest({
+   *   name: "My App",
+   *   schemas: new EventSchemas().fromRecord<{
+   *     "my/event": {
+   *       name: "my/event";
+   *       data: { bar: string };
+   *     };
+   *   }>(),
+   * });
    * ```
    */
   public async send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
