@@ -131,14 +131,6 @@ describe("send", () => {
       );
     });
 
-    test("should succeed if an event name is given with an empty list of payloads", async () => {
-      const inngest = createClient({ name: "test" });
-      inngest.setEventKey(testEventKey);
-
-      await expect(inngest.send("test", [])).resolves.toBeUndefined();
-      expect(global.fetch).not.toHaveBeenCalled();
-    });
-
     test("should succeed if an empty list of payloads is given", async () => {
       const inngest = createClient({ name: "test" });
       inngest.setEventKey(testEventKey);
@@ -236,10 +228,6 @@ describe("send", () => {
     describe("no custom types", () => {
       const inngest = createClient({ name: "test", eventKey: testEventKey });
 
-      test("allows sending a single event with a string", () => {
-        const _fn = () => inngest.send("anything", { data: "foo" });
-      });
-
       test("allows sending a single event with an object", () => {
         const _fn = () => inngest.send({ name: "anything", data: "foo" });
       });
@@ -316,10 +304,6 @@ describe("send", () => {
             // @ts-expect-error Invalid data
             { name: "bar", data: { foo: "" } },
           ]);
-      });
-
-      test("allows sending a single known event with a string", () => {
-        const _fn = () => inngest.send("foo", { data: { foo: "" } });
       });
 
       test("allows sending a single known event with an object", () => {
