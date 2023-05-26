@@ -1,5 +1,11 @@
 # inngest
 
+## 1.9.1
+
+### Patch Changes
+
+- 49ddbb5: Add platform deploy checks
+
 ## 1.9.0
 
 ### Minor Changes

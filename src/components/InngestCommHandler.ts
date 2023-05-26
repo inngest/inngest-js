@@ -8,8 +8,9 @@ import {
   allProcessEnv,
   getFetch,
   inngestHeaders,
-  isProd,
+  skipDevServer,
   platformSupportsStreaming,
+  isProd,
 } from "../helpers/env";
 import { serializeError } from "../helpers/errors";
 import { cacheFn } from "../helpers/functions";
@@ -199,6 +200,13 @@ export class InngestCommHandler<
    * Should be set every time a request is received.
    */
   protected _isProd = false;
+
+  /**
+   * Whether we should attempt to use the dev server.
+   *
+   * Should be set every time a request is received.
+   */
+  protected _skipDevServer = false;
 
   /**
    * The localized `fetch` implementation used by this handler.
@@ -628,6 +636,8 @@ export class InngestCommHandler<
       });
 
     this._isProd = actions.isProduction ?? isProd(env);
+    // If we're in production always skip.
+    this._skipDevServer = this._isProd ?? skipDevServer(env);
 
     try {
       const runRes = await actions.run();
@@ -954,7 +964,7 @@ export class InngestCommHandler<
     // is a noop and returns false in production.
     let registerURL = this.inngestRegisterUrl;
 
-    if (!this.isProd) {
+    if (!this._skipDevServer) {
       const hasDevServer = await devServerAvailable(devServerHost, this.fetch);
       if (hasDevServer) {
         registerURL = devServerUrl(devServerHost, "/fn/register");

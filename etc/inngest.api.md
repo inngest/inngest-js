@@ -188,6 +188,7 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     protected signingKey: string | undefined;
     // (undocumented)
     protected signResponse(): string;
+    protected _skipDevServer: boolean;
     // (undocumented)
     protected readonly streaming: RegisterOptions["streaming"];
     // (undocumented)

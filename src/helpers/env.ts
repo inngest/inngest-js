@@ -35,7 +35,7 @@ export const devServerHost = (): string | undefined => {
   return values.find((a) => !!a);
 };
 
-const prodCheckFns = (<
+const checkFns = (<
   T extends Record<
     string,
     (actual: string | undefined, expected: string | undefined) => boolean
@@ -51,7 +51,7 @@ const prodCheckFns = (<
 
 const prodChecks: [
   key: string,
-  customCheck: keyof typeof prodCheckFns,
+  customCheck: keyof typeof checkFns,
   value?: string
 ][] = [
   ["CF_PAGES", "equals", "1"],
@@ -61,6 +61,42 @@ const prodChecks: [
   ["VERCEL_ENV", "starts with", "prod"],
   ["DENO_DEPLOYMENT_ID", "is truthy"],
 ];
+
+// platformDeployChecks are a series of predicates that attempt to check whether
+// we're deployed outside of localhost testing.  This extends prodChecks with
+// platform specific checks, ensuring that if you deploy to eg. vercel without
+// NODE_ENV=production we still use prod mode.
+const platformDeployChecks: [
+  key: string,
+  customCheck: keyof typeof checkFns,
+  value?: string
+][] = [
+  // Extend prod checks, then check if we're deployed to a platform.
+  [envKeys.IsVercel, "is truthy"],
+  [envKeys.IsNetlify, "is truthy"],
+  [envKeys.IsRender, "is truthy"],
+  [envKeys.RailwayBranch, "is truthy"],
+  [envKeys.IsCloudflarePages, "is truthy"],
+];
+
+const skipDevServerChecks = prodChecks.concat(platformDeployChecks);
+
+/**
+ * Returns `true` if we're running in production or on a platform, based off of
+ * either passed environment variables or `process.env`.
+ */
+export const skipDevServer = (
+  /**
+   * The optional environment variables to use instead of `process.env`.
+   */
+  env: Record<string, unknown> = allProcessEnv()
+): boolean => {
+  return skipDevServerChecks.some(([key, checkKey, expected]) => {
+    return checkFns[checkKey](stringifyUnknown(env[key]), expected);
+  });
+};
+
+
 
 /**
  * Returns `true` if we believe the current environment is production based on
@@ -73,7 +109,7 @@ export const isProd = (
   env: Record<string, unknown> = allProcessEnv()
 ): boolean => {
   return prodChecks.some(([key, checkKey, expected]) => {
-    return prodCheckFns[checkKey](stringifyUnknown(env[key]), expected);
+    return checkFns[checkKey](stringifyUnknown(env[key]), expected);
   });
 };
 
