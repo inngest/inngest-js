@@ -200,6 +200,7 @@ describe("runFn", () => {
           expectedHashOps?: UnhashedOp[];
           expectedStepsRun?: (keyof T["steps"])[];
           event?: EventPayload;
+          customTests?: () => void;
         }
       >
     ) => {
@@ -212,7 +213,7 @@ describe("runFn", () => {
             let retErr: Error | undefined;
             let flush: jest.SpiedFunction<() => void>;
 
-            beforeAll(async () => {
+            beforeAll(() => {
               jest.restoreAllMocks();
               flush = jest
                 .spyOn(ProxyLogger.prototype, "flush")
@@ -221,6 +222,11 @@ describe("runFn", () => {
                 });
               hashDataSpy = getHashDataSpy();
               tools = createTools();
+            });
+
+            t.customTests?.();
+
+            beforeAll(async () => {
               ret = await runFnWithStack(tools.fn, t.stack || [], {
                 runStep: t.runStep,
                 onFailure: t.onFailure || tools.onFailure,
@@ -265,6 +271,8 @@ describe("runFn", () => {
               // could be flushed multiple times so no specifying counts
               expect(flush).toHaveBeenCalled();
             });
+
+            t.customTests?.();
           });
         });
       });
