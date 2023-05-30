@@ -490,8 +490,22 @@ const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
     name: "Inngest: Logger",
     init({ client }) {
       return {
-        onFunctionRun() {
-          const logger = new ProxyLogger(client["logger"]);
+        onFunctionRun(arg) {
+          const { ctx } = arg;
+          const metadata = {
+            runID: ctx.runId,
+            eventName: ctx.event.name,
+            functionName: arg.fn.name,
+          };
+
+          // create a child logger if the provided logger has child logger implementation
+          /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment */
+          const providedLogger: Logger =
+            "child" in client["logger"]
+              ? client["logger"].child(metadata)
+              : client["logger"];
+          /* eslint-enable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment */
+          const logger = new ProxyLogger(providedLogger);
 
           return {
             input() {
