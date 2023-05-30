@@ -93,12 +93,12 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     name: string;
     // (undocumented)
     onFailure?: (...args: unknown[]) => unknown;
-    retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
-    throttle?: {
+    rateLimit?: {
         key?: string;
-        count: number;
+        limit: number;
         period: TimeStr;
     };
+    retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
 }
 
 // @public

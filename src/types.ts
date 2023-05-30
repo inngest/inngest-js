@@ -653,7 +653,7 @@ export interface FunctionOptions<
   idempotency?: string;
 
   /**
-   * Rate limit workflows, only running them a given number of times (count) per
+   * Rate limit workflows, only running them a given number of times (limit) per
    * period. This can optionally include a `key`, which is used to further
    * constrain throttling similar to idempotency.
    */
@@ -666,10 +666,10 @@ export interface FunctionOptions<
     /**
      * The number of times to allow the function to run per the given `period`.
      */
-    count: number;
+    limit: number;
 
     /**
-     * The period of time to allow the function to run `count` times.
+     * The period of time to allow the function to run `limit` times.
      */
     period: TimeStr;
   };
