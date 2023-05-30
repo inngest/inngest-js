@@ -192,7 +192,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       async (acc, m) => {
         // Be explicit about waiting for the previous middleware to finish
         const prev = await acc;
-        const next = await m.register({ client: this, ...opts?.registerInput });
+        const next = await m.init({ client: this, ...opts?.registerInput });
 
         return [...prev, next];
       },
@@ -284,14 +284,19 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   public async send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
     payload: Payload
   ): Promise<void> {
-    const hooks = await getHookStack(this.middleware, "sendEvent", undefined, {
-      input: (prev, output) => {
-        return { ...prev, ...output };
-      },
-      output: (prev, _output) => {
-        return prev;
-      },
-    });
+    const hooks = await getHookStack(
+      this.middleware,
+      "onSendEvent",
+      undefined,
+      {
+        input: (prev, output) => {
+          return { ...prev, ...output };
+        },
+        output: (prev, _output) => {
+          return prev;
+        },
+      }
+    );
 
     if (!this.eventKey) {
       throw new Error(
@@ -483,9 +488,9 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
   new InngestMiddleware({
     name: "Inngest: Logger",
-    register({ client }) {
+    init({ client }) {
       return {
-        run() {
+        onFunctionRun() {
           const logger = new ProxyLogger(client["logger"]);
 
           return {

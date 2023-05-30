@@ -271,7 +271,7 @@ export class InngestFunction<
 
     const hookStack = await getHookStack(
       this.middleware,
-      "run",
+      "onFunctionRun",
       { ctx, fn: this, steps: opStack },
       {
         input: (prev, output) => {

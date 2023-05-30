@@ -4,14 +4,14 @@ import { InngestMiddleware } from "@local/components/InngestMiddleware";
 import { assertType, type IsEqual } from "type-plus";
 
 describe("stacking and inference", () => {
-  describe("run", () => {
+  describe("onFunctionRun", () => {
     describe("input", () => {
       describe("can add a value to input context", () => {
         const mw = new InngestMiddleware({
           name: "mw",
-          register() {
+          init() {
             return {
-              run() {
+              onFunctionRun() {
                 return {
                   input() {
                     return {
@@ -36,9 +36,9 @@ describe("stacking and inference", () => {
       describe("can add a literal value to input context", () => {
         const mw = new InngestMiddleware({
           name: "mw",
-          register() {
+          init() {
             return {
-              run() {
+              onFunctionRun() {
                 return {
                   input() {
                     return {
@@ -63,9 +63,9 @@ describe("stacking and inference", () => {
       describe("can mutate an existing input context value", () => {
         const mw = new InngestMiddleware({
           name: "mw",
-          register() {
+          init() {
             return {
-              run() {
+              onFunctionRun() {
                 return {
                   input() {
                     return {
@@ -90,9 +90,9 @@ describe("stacking and inference", () => {
       describe("can add multiple input context values via stacking", () => {
         const mw1 = new InngestMiddleware({
           name: "mw1",
-          register() {
+          init() {
             return {
-              run() {
+              onFunctionRun() {
                 return {
                   input() {
                     return {
@@ -107,9 +107,9 @@ describe("stacking and inference", () => {
 
         const mw2 = new InngestMiddleware({
           name: "mw2",
-          register() {
+          init() {
             return {
-              run() {
+              onFunctionRun() {
                 return {
                   input() {
                     return {
@@ -140,9 +140,9 @@ describe("stacking and inference", () => {
       describe("can overwrite a new value in input context", () => {
         const mw1 = new InngestMiddleware({
           name: "mw1",
-          register() {
+          init() {
             return {
-              run() {
+              onFunctionRun() {
                 return {
                   input() {
                     return {
@@ -157,9 +157,9 @@ describe("stacking and inference", () => {
 
         const mw2 = new InngestMiddleware({
           name: "mw2",
-          register() {
+          init() {
             return {
-              run() {
+              onFunctionRun() {
                 return {
                   input() {
                     return {

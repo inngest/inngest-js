@@ -202,9 +202,9 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
 
 // @public
 export class InngestMiddleware<TOpts extends MiddlewareOptions> {
-    constructor({ name, register }: TOpts);
+    constructor({ name, init }: TOpts);
+    readonly init: TOpts["init"];
     readonly name: TOpts["name"];
-    readonly register: TOpts["register"];
 }
 
 // @public
@@ -222,9 +222,9 @@ export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
 
 // @public
 export interface MiddlewareOptions {
-    name: string;
     // Warning: (ae-forgotten-export) The symbol "MiddlewareRegisterFn" needs to be exported by the entry point index.d.ts
-    register: MiddlewareRegisterFn;
+    init: MiddlewareRegisterFn;
+    name: string;
 }
 
 // @public

@@ -64,11 +64,11 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
    *
    * Must return an object detailing the hooks you want to register.
    */
-  public readonly register: TOpts["register"];
+  public readonly init: TOpts["init"];
 
-  constructor({ name, register }: TOpts) {
+  constructor({ name, init }: TOpts) {
     this.name = name;
-    this.register = register;
+    this.init = init;
   }
 }
 
@@ -106,7 +106,7 @@ type PromisifiedFunctionRecord<
   >;
 
 export type RunHookStack = PromisifiedFunctionRecord<
-  Await<MiddlewareRegisterReturn["run"]>
+  Await<MiddlewareRegisterReturn["onFunctionRun"]>
 >;
 
 /**
@@ -241,7 +241,7 @@ export interface MiddlewareOptions {
    *
    * Must return an object detailing the hooks you want to register.
    */
-  register: MiddlewareRegisterFn;
+  init: MiddlewareRegisterFn;
 }
 
 export type MiddlewareRegisterReturn = {
@@ -255,7 +255,7 @@ export type MiddlewareRegisterReturn = {
    *
    * Must return an object detailing the hooks you want to register.
    */
-  run?: (ctx: InitialRunInfo) => MaybePromise<{
+  onFunctionRun?: (ctx: InitialRunInfo) => MaybePromise<{
     /**
      * The `input` hook is called once the input for the function has been
      * properly set up. This is where you can modify the input before the
@@ -320,7 +320,7 @@ export type MiddlewareRegisterReturn = {
   /**
    * The `sendEvent` hook is called every time an event is sent to Inngest.
    */
-  sendEvent?: () => MaybePromise<{
+  onSendEvent?: () => MaybePromise<{
     /**
      * The `input` hook is called before the event is sent to Inngest. This
      * is where you can modify the event before it's sent to Inngest by
@@ -468,8 +468,8 @@ type MiddlewareRunOutput = (ctx: {
 type GetMiddlewareRunInputMutation<
   TMiddleware extends InngestMiddleware<MiddlewareOptions>
 > = TMiddleware extends InngestMiddleware<infer TOpts>
-  ? TOpts["register"] extends MiddlewareRegisterFn
-    ? Await<Await<Await<TOpts["register"]>["run"]>["input"]> extends {
+  ? TOpts["init"] extends MiddlewareRegisterFn
+    ? Await<Await<Await<TOpts["init"]>["onFunctionRun"]>["input"]> extends {
         ctx: infer TCtx;
       }
       ? {
