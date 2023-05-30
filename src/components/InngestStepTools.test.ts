@@ -278,10 +278,10 @@ describe("sendEvent", () => {
       expect(sendSpy).not.toHaveBeenCalled();
     });
 
-    test("return step name as name", () => {
+    test('return "sendEvent" as name', () => {
       void sendEvent({ name: "step", data: "foo" });
 
-      expect(getOp()).toMatchObject({ name: "step" });
+      expect(getOp()).toMatchObject({ name: "sendEvent" });
       expect(sendSpy).not.toHaveBeenCalled();
     });
 
@@ -290,7 +290,7 @@ describe("sendEvent", () => {
       void sendEvent({ name: "step", data: "foo" });
 
       expect(getOp()).toBeUndefined();
-      expect(sendSpy).toHaveBeenCalledWith("step", { data: "foo" });
+      expect(sendSpy).toHaveBeenCalledWith({ name: "step", data: "foo" });
     });
   });
 
