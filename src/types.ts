@@ -653,11 +653,11 @@ export interface FunctionOptions<
   idempotency?: string;
 
   /**
-   * Throttle workflows, only running them a given number of times (count) per
-   * period. This can optionally include a throttle key, which is used to
-   * further constrain throttling similar to idempotency.
+   * Rate limit workflows, only running them a given number of times (count) per
+   * period. This can optionally include a `key`, which is used to further
+   * constrain throttling similar to idempotency.
    */
-  throttle?: {
+  rateLimit?: {
     /**
      * An optional key to use for throttle, similar to idempotency.
      */
