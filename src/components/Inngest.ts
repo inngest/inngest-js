@@ -498,13 +498,14 @@ const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
             functionName: arg.fn.name,
           };
 
+          /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/ban-ts-comment */
           // create a child logger if the provided logger has child logger implementation
-          /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment */
           const providedLogger: Logger =
             "child" in client["logger"]
+              // @ts-ignore-TS2571
               ? client["logger"].child(metadata)
               : client["logger"];
-          /* eslint-enable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment */
+          /* eslint-enable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/ban-ts-comment */
           const logger = new ProxyLogger(providedLogger);
 
           return {
