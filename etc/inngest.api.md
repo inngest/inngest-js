@@ -84,7 +84,9 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     //
     // (undocumented)
     cancelOn?: Cancellation<Events, Event>[];
-    concurrency?: number;
+    concurrency?: number | {
+        limit: number;
+    };
     // (undocumented)
     fns?: Record<string, unknown>;
     id?: string;

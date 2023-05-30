@@ -641,14 +641,16 @@ export interface FunctionOptions<
    * Concurrency specifies a limit on the total number of concurrent steps that
    * can occur across all runs of the function.  A value of 0 (or undefined) means
    * use the maximum available concurrency.
+   *
+   * Specifying just a number means specifying only the concurrency limit.
    */
-  concurrency?: number;
+  concurrency?: number | { limit: number };
 
   fns?: Record<string, unknown>;
 
   /**
    * Allow the specification of an idempotency key using event data. If
-   * specified, this overrides the throttle object.
+   * specified, this overrides the `rateLimit` object.
    */
   idempotency?: string;
 
@@ -659,7 +661,7 @@ export interface FunctionOptions<
    */
   rateLimit?: {
     /**
-     * An optional key to use for throttle, similar to idempotency.
+     * An optional key to use for rate limiting, similar to idempotency.
      */
     key?: string;
 
