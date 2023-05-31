@@ -7,7 +7,7 @@ import promiseRace from "./promise-race";
 import sendEvent from "./send-event";
 import sequentialReduce from "./sequential-reduce";
 
-export default [
+export const functions = [
   helloWorld,
   promiseAll,
   promiseRace,
@@ -17,3 +17,5 @@ export default [
   polling,
   sendEvent,
 ];
+
+export { inngest } from "./client";
