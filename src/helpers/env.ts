@@ -6,7 +6,7 @@
 import { type Inngest } from "../components/Inngest";
 import { type SupportedFrameworkName } from "../types";
 import { version } from "../version";
-import { envKeys, headerKeys } from "./consts";
+import { envKeys, headerKeys, prodEnvKeys } from "./consts";
 import { stringifyUnknown } from "./strings";
 
 /**
@@ -47,6 +47,8 @@ const checkFns = (<
   "starts with": (actual, expected) =>
     expected ? actual?.startsWith(expected) ?? false : false,
   "is truthy": (actual) => Boolean(actual),
+  "is truthy but not": (actual, expected) =>
+    Boolean(actual) && actual !== expected,
 });
 
 const prodChecks: [
@@ -72,7 +74,7 @@ const platformDeployChecks: [
   value?: string
 ][] = [
   // Extend prod checks, then check if we're deployed to a platform.
-  [envKeys.IsVercel, "is truthy"],
+  [prodEnvKeys.VercelEnvKey, "is truthy but not", "development"],
   [envKeys.IsNetlify, "is truthy"],
   [envKeys.IsRender, "is truthy"],
   [envKeys.RailwayBranch, "is truthy"],
@@ -95,8 +97,6 @@ export const skipDevServer = (
     return checkFns[checkKey](stringifyUnknown(env[key]), expected);
   });
 };
-
-
 
 /**
  * Returns `true` if we believe the current environment is production based on
