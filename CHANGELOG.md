@@ -1,5 +1,11 @@
 # inngest
 
+## 1.9.2
+
+### Patch Changes
+
+- 71b1a17: Fix Vercel platform check to support local dev while using `vercel env pull`
+
 ## 1.9.1
 
 ### Patch Changes
