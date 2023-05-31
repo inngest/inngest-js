@@ -499,21 +499,18 @@ const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
           };
 
           let providedLogger: Logger = client["logger"];
-          /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/ban-ts-comment */
           // create a child logger if the provided logger has child logger implementation
           try {
-            if ("child" in client["logger"]) {
+            if ("child" in providedLogger) {
               type ChildLoggerFn = (
                 metadata: Record<string, unknown>
               ) => Logger;
-              // @ts-ignore-2339: ignore child method is not defined error since it's already checked above
               providedLogger = (providedLogger.child as ChildLoggerFn)(metadata)
             }
           } catch (err) {
             console.error('failed to create "childLogger" with error: ', err);
             // no-op
           }
-          /* eslint-enable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/ban-ts-comment */
           const logger = new ProxyLogger(providedLogger);
 
           return {
