@@ -490,8 +490,28 @@ const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
     name: "Inngest: Logger",
     init({ client }) {
       return {
-        onFunctionRun() {
-          const logger = new ProxyLogger(client["logger"]);
+        onFunctionRun(arg) {
+          const { ctx } = arg;
+          const metadata = {
+            runID: ctx.runId,
+            eventName: ctx.event.name,
+            functionName: arg.fn.name,
+          };
+
+          let providedLogger: Logger = client["logger"];
+          // create a child logger if the provided logger has child logger implementation
+          try {
+            if ("child" in providedLogger) {
+              type ChildLoggerFn = (
+                metadata: Record<string, unknown>
+              ) => Logger;
+              providedLogger = (providedLogger.child as ChildLoggerFn)(metadata)
+            }
+          } catch (err) {
+            console.error('failed to create "childLogger" with error: ', err);
+            // no-op
+          }
+          const logger = new ProxyLogger(providedLogger);
 
           return {
             input() {
@@ -501,7 +521,7 @@ const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
                    * The passed in logger from the user.
                    * Defaults to a console logger if not provided.
                    */
-                  logger: logger as Logger,
+                  logger,
                 },
               };
             },
