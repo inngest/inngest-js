@@ -1,3 +1,5 @@
+import { stringify } from "./strings";
+
 /**
  * Creates a {@link ReadableStream} that sends a `value` every `interval`
  * milliseconds as a heartbeat, intended to keep a stream open.
@@ -51,7 +53,7 @@ export const createStream = (opts?: {
 
           const finalize = (data: unknown) => {
             clearInterval(heartbeat);
-            controller.enqueue(encoder.encode(JSON.stringify(data)));
+            controller.enqueue(encoder.encode(stringify(data)));
             controller.close();
           };
 

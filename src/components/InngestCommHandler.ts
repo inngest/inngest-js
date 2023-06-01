@@ -8,15 +8,15 @@ import {
   allProcessEnv,
   getFetch,
   inngestHeaders,
-  skipDevServer,
-  platformSupportsStreaming,
   isProd,
+  platformSupportsStreaming,
+  skipDevServer,
 } from "../helpers/env";
 import { serializeError } from "../helpers/errors";
 import { cacheFn } from "../helpers/functions";
 import { strBoolean } from "../helpers/scalar";
 import { createStream } from "../helpers/stream";
-import { stringifyUnknown } from "../helpers/strings";
+import { stringify, stringifyUnknown } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
 import {
@@ -656,7 +656,7 @@ export class InngestCommHandler<
         if (stepRes.status === 500 || stepRes.status === 400) {
           return {
             status: stepRes.status,
-            body: JSON.stringify(
+            body: stringify(
               stepRes.error ||
                 serializeError(
                   new Error(
@@ -672,7 +672,7 @@ export class InngestCommHandler<
 
         return {
           status: stepRes.status,
-          body: JSON.stringify(stepRes.body),
+          body: stringify(stepRes.body),
           headers: {
             "Content-Type": "application/json",
           },
@@ -706,7 +706,7 @@ export class InngestCommHandler<
 
           return {
             status: 200,
-            body: JSON.stringify(introspection),
+            body: stringify(introspection),
             headers: {
               "Content-Type": "application/json",
             },
@@ -735,7 +735,7 @@ export class InngestCommHandler<
 
         return {
           status,
-          body: JSON.stringify({ message }),
+          body: stringify({ message }),
           headers: {
             "Content-Type": "application/json",
           },
@@ -744,7 +744,7 @@ export class InngestCommHandler<
     } catch (err) {
       return {
         status: 500,
-        body: JSON.stringify({
+        body: stringify({
           type: "internal",
           ...serializeError(err as Error),
         }),
@@ -890,7 +890,7 @@ export class InngestCommHandler<
        * See {@link https://www.npmjs.com/package/serialize-error}
        */
 
-      const error = JSON.stringify(serializeError(unserializedErr));
+      const error = stringify(serializeError(unserializedErr));
 
       /**
        * If we've caught a non-retriable error, we'll return a 400 to Inngest
@@ -978,7 +978,7 @@ export class InngestCommHandler<
     try {
       res = await this.fetch(registerURL.href, {
         method: "POST",
-        body: JSON.stringify(body),
+        body: stringify(body),
         headers: {
           ...getHeaders(),
           Authorization: `Bearer ${this.hashedSigningKey}`,

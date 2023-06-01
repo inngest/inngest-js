@@ -1,5 +1,11 @@
 # inngest
 
+## 1.9.3
+
+### Patch Changes
+
+- 64c397e: Handle circular JSON errors while stringifying across the SDK
+
 ## 1.9.2
 
 ### Patch Changes

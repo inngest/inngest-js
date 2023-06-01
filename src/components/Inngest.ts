@@ -8,6 +8,7 @@ import {
   skipDevServer,
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
+import { stringify } from "../helpers/strings";
 import { type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
@@ -356,7 +357,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     const response = await this.fetch(url, {
       method: "POST",
-      body: JSON.stringify(payloads),
+      body: stringify(payloads),
       headers: { ...this.headers },
     });
 
