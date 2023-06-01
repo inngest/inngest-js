@@ -4,16 +4,18 @@ import {
   devServerHost,
   getFetch,
   inngestHeaders,
-  skipDevServer,
   processEnv,
+  skipDevServer,
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
+import { stringify } from "../helpers/strings";
 import {
   type PartialK,
   type SendEventPayload,
   type SingleOrArray,
   type ValueOf,
 } from "../helpers/types";
+import { DefaultLogger, type Logger } from "../middleware/logger";
 import {
   type ClientOptions,
   type EventNameFromTrigger,
@@ -25,7 +27,6 @@ import {
   type TriggerOptions,
 } from "../types";
 import { InngestFunction } from "./InngestFunction";
-import { type Logger, DefaultLogger } from "../middleware/logger";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -340,7 +341,7 @@ export class Inngest<
 
     const response = await this.fetch(url, {
       method: "POST",
-      body: JSON.stringify(payloads),
+      body: stringify(payloads),
       headers: { ...this.headers },
     });
 

@@ -1,5 +1,6 @@
 import ms from "ms";
 import { type TimeStr } from "../types";
+export { default as stringify } from "json-stringify-safe";
 
 /**
  * Returns a slugified string used ot generate consistent IDs.
