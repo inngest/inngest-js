@@ -5,7 +5,7 @@ import { assertType, type IsEqual } from "type-plus";
 
 describe("stacking and inference", () => {
   describe("onFunctionRun", () => {
-    describe("input", () => {
+    describe("transformInput", () => {
       describe("can add a value to input context", () => {
         const mw = new InngestMiddleware({
           name: "mw",
@@ -13,7 +13,7 @@ describe("stacking and inference", () => {
             return {
               onFunctionRun() {
                 return {
-                  input() {
+                  transformInput() {
                     return {
                       ctx: { foo: "bar" },
                     };
@@ -40,7 +40,7 @@ describe("stacking and inference", () => {
             return {
               onFunctionRun() {
                 return {
-                  input() {
+                  transformInput() {
                     return {
                       ctx: { foo: "bar" },
                     } as const;
@@ -67,7 +67,7 @@ describe("stacking and inference", () => {
             return {
               onFunctionRun() {
                 return {
-                  input() {
+                  transformInput() {
                     return {
                       ctx: { event: true },
                     };
@@ -94,7 +94,7 @@ describe("stacking and inference", () => {
             return {
               onFunctionRun() {
                 return {
-                  input() {
+                  transformInput() {
                     return {
                       ctx: { foo: "foo" },
                     };
@@ -111,7 +111,7 @@ describe("stacking and inference", () => {
             return {
               onFunctionRun() {
                 return {
-                  input() {
+                  transformInput() {
                     return {
                       ctx: { bar: true },
                     };
@@ -144,7 +144,7 @@ describe("stacking and inference", () => {
             return {
               onFunctionRun() {
                 return {
-                  input() {
+                  transformInput() {
                     return {
                       ctx: { foo: "bar" },
                     };
@@ -161,7 +161,7 @@ describe("stacking and inference", () => {
             return {
               onFunctionRun() {
                 return {
-                  input() {
+                  transformInput() {
                     return {
                       ctx: { foo: true },
                     };
