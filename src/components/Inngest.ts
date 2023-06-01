@@ -289,10 +289,10 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       "onSendEvent",
       undefined,
       {
-        input: (prev, output) => {
+        transformInput: (prev, output) => {
           return { ...prev, ...output };
         },
-        output: (prev, _output) => {
+        transformOutput: (prev, _output) => {
           return prev;
         },
       }
@@ -315,7 +315,9 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       ? [payload]
       : [];
 
-    const inputChanges = await hooks.input?.({ payloads: [...payloads] });
+    const inputChanges = await hooks.transformInput?.({
+      payloads: [...payloads],
+    });
     if (inputChanges?.payloads) {
       payloads = [...inputChanges.payloads];
     }
@@ -359,7 +361,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     });
 
     if (response.status >= 200 && response.status < 300) {
-      return void (await hooks.output?.());
+      return void (await hooks.transformOutput?.());
     }
 
     throw await this.#getResponseError(response);
@@ -505,7 +507,9 @@ const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
               type ChildLoggerFn = (
                 metadata: Record<string, unknown>
               ) => Logger;
-              providedLogger = (providedLogger.child as ChildLoggerFn)(metadata)
+              providedLogger = (providedLogger.child as ChildLoggerFn)(
+                metadata
+              );
             }
           } catch (err) {
             console.error('failed to create "childLogger" with error: ', err);
@@ -514,21 +518,21 @@ const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
           const logger = new ProxyLogger(providedLogger);
 
           return {
-            input() {
+            transformInput() {
               return {
                 ctx: {
                   /**
                    * The passed in logger from the user.
                    * Defaults to a console logger if not provided.
                    */
-                  logger,
+                  logger: logger as Logger,
                 },
               };
             },
             beforeExecution() {
               logger.enable();
             },
-            output({ result: { error } }) {
+            transformOutput({ result: { error } }) {
               if (error) {
                 logger.error(error);
               }

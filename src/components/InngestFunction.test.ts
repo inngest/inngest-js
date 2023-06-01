@@ -21,6 +21,7 @@ import {
   type FailureEventPayload,
   type OpStack,
 } from "@local/types";
+import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
 import { internalEvents } from "../helpers/consts";
 import { createClient } from "../test/helpers";
@@ -1051,7 +1052,7 @@ describe("runFn", () => {
           "name",
           "foo",
           async ({ step: { run }, logger }) => {
-            assertType<Logger>(logger);
+            assertType<IsEqual<Logger, typeof logger>>(true);
             logger.info("info1");
             await run("A", () => A(logger));
             logger.info("2");

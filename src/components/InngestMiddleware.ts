@@ -244,6 +244,9 @@ export interface MiddlewareOptions {
   init: MiddlewareRegisterFn;
 }
 
+/**
+ * @public
+ */
 export type MiddlewareRegisterReturn = {
   /**
    * This hook is called for every function execution and allows you to hook
@@ -268,7 +271,7 @@ export type MiddlewareRegisterReturn = {
      * @param ctx - The context for the incoming request.
      * @param steps - The step data in state. Does not include internal IDs.
      */
-    input?: MiddlewareRunInput;
+    transformInput?: MiddlewareRunInput;
 
     /**
      * The `beforeMemoization` hook is called before the function starts to
@@ -307,7 +310,7 @@ export type MiddlewareRegisterReturn = {
      * @param data - The prepared-but-unserialized data that was returned by
      * the function, if any, so that you can modify the output.
      */
-    output?: MiddlewareRunOutput;
+    transformOutput?: MiddlewareRunOutput;
 
     /**
      * The `beforeResponse` hook is called after the output has been set and
@@ -326,7 +329,7 @@ export type MiddlewareRegisterReturn = {
      * is where you can modify the event before it's sent to Inngest by
      * returning an object containing changes.
      */
-    input?: MiddlewareSendEventInput;
+    transformInput?: MiddlewareSendEventInput;
 
     /**
      * The `output` hook is called after the event has been sent to Inngest.
@@ -336,10 +339,13 @@ export type MiddlewareRegisterReturn = {
      * TODO This needs to be a result object that we spread into, not just some
      * unknown value.
      */
-    output?: () => MaybePromise<void | unknown>;
+    transformOutput?: () => MaybePromise<void | unknown>;
   }>;
 };
 
+/**
+ * @public
+ */
 export type MiddlewareRegisterFn = (ctx: {
   /**
    * The client this middleware is being registered on.
@@ -469,7 +475,9 @@ type GetMiddlewareRunInputMutation<
   TMiddleware extends InngestMiddleware<MiddlewareOptions>
 > = TMiddleware extends InngestMiddleware<infer TOpts>
   ? TOpts["init"] extends MiddlewareRegisterFn
-    ? Await<Await<Await<TOpts["init"]>["onFunctionRun"]>["input"]> extends {
+    ? Await<
+        Await<Await<TOpts["init"]>["onFunctionRun"]>["transformInput"]
+      > extends {
         ctx: infer TCtx;
       }
       ? {

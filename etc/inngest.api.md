@@ -222,10 +222,34 @@ export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
 
 // @public
 export interface MiddlewareOptions {
-    // Warning: (ae-forgotten-export) The symbol "MiddlewareRegisterFn" needs to be exported by the entry point index.d.ts
     init: MiddlewareRegisterFn;
     name: string;
 }
+
+// Warning: (ae-forgotten-export) The symbol "MaybePromise" needs to be exported by the entry point index.d.ts
+//
+// @public (undocumented)
+export type MiddlewareRegisterFn = (ctx: {
+    client: Inngest<any>;
+    fn?: InngestFunction<any, any, any, any>;
+}) => MaybePromise<MiddlewareRegisterReturn>;
+
+// @public (undocumented)
+export type MiddlewareRegisterReturn = {
+    onFunctionRun?: (ctx: InitialRunInfo) => MaybePromise<{
+        transformInput?: MiddlewareRunInput;
+        beforeMemoization?: BlankHook;
+        afterMemoization?: BlankHook;
+        beforeExecution?: BlankHook;
+        afterExecution?: BlankHook;
+        transformOutput?: MiddlewareRunOutput;
+        beforeResponse?: BlankHook;
+    }>;
+    onSendEvent?: () => MaybePromise<{
+        transformInput?: MiddlewareSendEventInput;
+        transformOutput?: () => MaybePromise<void | unknown>;
+    }>;
+};
 
 // @public
 export class NonRetriableError extends Error {
@@ -303,6 +327,11 @@ export type ZodEventSchemas = Record<string, {
 
 // Warnings were encountered during analysis:
 //
+// src/components/InngestMiddleware.ts:261:3 - (ae-forgotten-export) The symbol "InitialRunInfo" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:274:5 - (ae-forgotten-export) The symbol "MiddlewareRunInput" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:280:5 - (ae-forgotten-export) The symbol "BlankHook" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:313:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:332:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/types.ts:51:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)

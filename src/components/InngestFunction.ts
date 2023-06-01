@@ -274,7 +274,7 @@ export class InngestFunction<
       "onFunctionRun",
       { ctx, fn: this, steps: opStack },
       {
-        input: (prev, output) => {
+        transformInput: (prev, output) => {
           return {
             ctx: { ...prev.ctx, ...output?.ctx },
             fn: this,
@@ -284,7 +284,7 @@ export class InngestFunction<
             })),
           };
         },
-        output: (prev, output) => {
+        transformOutput: (prev, output) => {
           return {
             result: { ...prev.result, ...output?.result },
             step: prev.step,
@@ -369,9 +369,9 @@ export class InngestFunction<
         }, {});
       }
 
-      const inputMutations = await hookStack.input?.({
+      const inputMutations = await hookStack.transformInput?.({
         ctx: { ...fnArg } as unknown as Parameters<
-          NonNullable<(typeof hookStack)["input"]>
+          NonNullable<(typeof hookStack)["transformInput"]>
         >[0]["ctx"],
         steps: opStack,
         fn: this,
@@ -514,7 +514,7 @@ export class InngestFunction<
               result.data = err;
             }
 
-            return await applyHookToOutput(hookStack.output, {
+            return await applyHookToOutput(hookStack.transformOutput, {
               result,
               step: outgoingUserFnOp,
             });
@@ -522,7 +522,7 @@ export class InngestFunction<
           .then(async (data) => {
             await hookStack.afterExecution?.();
 
-            return await applyHookToOutput(hookStack.output, {
+            return await applyHookToOutput(hookStack.transformOutput, {
               result: { data: typeof data === "undefined" ? null : data },
               step: outgoingUserFnOp,
             });
@@ -569,7 +569,7 @@ export class InngestFunction<
           );
 
           if (allOpsFulfilled) {
-            const result = await applyHookToOutput(hookStack.output, {
+            const result = await applyHookToOutput(hookStack.transformOutput, {
               result: { data: fnRet.data },
             });
 
@@ -609,9 +609,12 @@ export class InngestFunction<
           const data = await userFnPromise;
           await hookStack.afterExecution?.();
 
-          const { data: result } = await applyHookToOutput(hookStack.output, {
-            result: { data },
-          });
+          const { data: result } = await applyHookToOutput(
+            hookStack.transformOutput,
+            {
+              result: { data },
+            }
+          );
 
           return ["complete", result];
         } else {
@@ -778,8 +781,8 @@ export const createExecutionState = (): ExecutionState => {
 };
 
 const applyHookToOutput = async (
-  outputHook: RunHookStack["output"],
-  arg: Parameters<NonNullable<RunHookStack["output"]>>[0]
+  outputHook: RunHookStack["transformOutput"],
+  arg: Parameters<NonNullable<RunHookStack["transformOutput"]>>[0]
 ): Promise<Pick<OutgoingOp, "data" | "error">> => {
   const hookOutput = await outputHook?.(arg);
   return { ...arg.result, ...hookOutput?.result };
