@@ -8,7 +8,7 @@ import {
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
 import { type ServerTiming } from "../helpers/ServerTiming";
 import { slugify, timeStr } from "../helpers/strings";
-import { type Logger, ProxyLogger } from "../middleware/logger";
+import { ProxyLogger, type Logger } from "../middleware/logger";
 import {
   StepOpCode,
   type Context,
@@ -420,7 +420,7 @@ export class InngestFunction<
               data: typeof data === "undefined" ? null : data,
             };
           })
-          .catch((err: Error) => {
+          .catch((unserializedErr: Error) => {
             /**
              * If the user-defined code throws an error, we should return this
              * to Inngest as the response for this step. The function didn't
@@ -428,11 +428,19 @@ export class InngestFunction<
              *
              * Make sure to log this so the user sees what has happened.
              */
-            logger.error(err);
+            logger.error(unserializedErr);
+
+            /**
+             * If the error is a {@link NonRetriableError}, pass back the actual
+             * instance so that Inngest can decide what to do with it.
+             */
+            const isNonRetriable = unserializedErr instanceof NonRetriableError;
 
             try {
               return {
-                error: serializeError(err),
+                error: isNonRetriable
+                  ? unserializedErr
+                  : serializeError(unserializedErr),
               };
             } catch (serializationErr) {
               logger.warn(
@@ -441,7 +449,7 @@ export class InngestFunction<
               );
 
               return {
-                error: err,
+                error: unserializedErr,
               };
             }
           });
