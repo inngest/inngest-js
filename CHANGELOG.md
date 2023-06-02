@@ -1,5 +1,11 @@
 # inngest
 
+## 1.9.4
+
+### Patch Changes
+
+- 7d025d6: Fix `NonRetriableError` not working when thrown from within a step
+
 ## 1.9.3
 
 ### Patch Changes
