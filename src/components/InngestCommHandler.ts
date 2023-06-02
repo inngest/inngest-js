@@ -12,7 +12,7 @@ import {
   platformSupportsStreaming,
   skipDevServer,
 } from "../helpers/env";
-import { serializeError } from "../helpers/errors";
+import { OutgoingOpError, serializeError } from "../helpers/errors";
 import { cacheFn } from "../helpers/functions";
 import { strBoolean } from "../helpers/scalar";
 import { createStream } from "../helpers/stream";
@@ -874,7 +874,7 @@ export class InngestCommHandler<
          * altered by middleware, whereas `error` is the initial triggering
          * error.
          */
-        throw ret[1].data;
+        throw new OutgoingOpError(ret[1]);
       }
 
       return {
@@ -889,8 +889,21 @@ export class InngestCommHandler<
        *
        * See {@link https://www.npmjs.com/package/serialize-error}
        */
+      const isOutgoingOpError = unserializedErr instanceof OutgoingOpError;
 
-      const error = stringify(serializeError(unserializedErr));
+      let error: string;
+      if (isOutgoingOpError) {
+        error =
+          typeof unserializedErr.op.data === "string"
+            ? unserializedErr.op.data
+            : stringify(unserializedErr.op.data);
+      } else {
+        error = stringify(serializeError(unserializedErr));
+      }
+
+      const isNonRetriableError = isOutgoingOpError
+        ? unserializedErr.op.error instanceof NonRetriableError
+        : unserializedErr instanceof NonRetriableError;
 
       /**
        * If we've caught a non-retriable error, we'll return a 400 to Inngest
@@ -900,7 +913,7 @@ export class InngestCommHandler<
        * inside individual steps, so this safely catches all areas.
        */
       return {
-        status: unserializedErr instanceof NonRetriableError ? 400 : 500,
+        status: isNonRetriableError ? 400 : 500,
         error,
       };
     }

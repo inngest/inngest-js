@@ -4,7 +4,7 @@ import {
   serializeError as cjsSerializeError,
 } from "serialize-error-cjs";
 import { type Inngest } from "../components/Inngest";
-import { type ClientOptions } from "../types";
+import { type ClientOptions, type OutgoingOp } from "../types";
 
 const SERIALIZED_KEY = "__serialized";
 const SERIALIZED_VALUE = true;
@@ -256,3 +256,21 @@ export const fixEventKeyMissingSteps = [
   }\` option`,
   `Use \`inngest.${"setEventKey" satisfies keyof Inngest}()\` at runtime`,
 ];
+
+/**
+ * An error that, when thrown, indicates internally that an outgoing operation
+ * contains an error.
+ *
+ * We use this because serialized `data` sent back to Inngest may differ from
+ * the error instance itself due to middleware.
+ *
+ * @internal
+ */
+export class OutgoingOpError extends Error {
+  public readonly op: OutgoingOp;
+
+  constructor(op: OutgoingOp) {
+    super("OutgoingOpError");
+    this.op = op;
+  }
+}
