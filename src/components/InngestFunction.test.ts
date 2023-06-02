@@ -7,6 +7,7 @@ import {
 import { internalEvents } from "@local/helpers/consts";
 import { ErrCode } from "@local/helpers/errors";
 import { ServerTiming } from "@local/helpers/ServerTiming";
+import { ProxyLogger } from "@local/middleware/logger";
 import {
   StepOpCode,
   type EventPayload,
@@ -15,7 +16,7 @@ import {
 } from "@local/types";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
-import { ProxyLogger } from "@local/middleware/logger";
+import { NonRetriableError } from "./NonRetriableError";
 
 type TestEvents = {
   foo: { name: "foo"; data: { foo: string } };
@@ -903,6 +904,43 @@ describe("runFn", () => {
         "second run throws, as we find async logic during memoization": {
           stack: [{ id: A, data: "A" }],
           expectedThrowMessage: ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION,
+        },
+      })
+    );
+
+    testFn(
+      "throws a NonRetriableError when one is thrown inside a step",
+      () => {
+        const A = jest.fn(() => {
+          throw new NonRetriableError("A");
+        });
+
+        const fn = inngest.createFunction(
+          { name: "Foo" },
+          "foo",
+          async ({ step: { run } }) => {
+            await run("A", A);
+          }
+        );
+
+        return { fn, steps: { A } };
+      },
+      {
+        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+      },
+      ({ A }) => ({
+        "first run executes A, which throws a NonRetriable error": {
+          expectedReturn: [
+            "run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.RunStep,
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+              error: expect.any(NonRetriableError),
+            }),
+          ],
+          expectedStepsRun: ["A"],
         },
       })
     );
