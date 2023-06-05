@@ -247,7 +247,7 @@ export type MiddlewareRegisterReturn = {
     }>;
     onSendEvent?: () => MaybePromise<{
         transformInput?: MiddlewareSendEventInput;
-        transformOutput?: () => MaybePromise<void | unknown>;
+        transformOutput?: MiddlewareSendEventOutput;
     }>;
 };
 
@@ -332,6 +332,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:280:5 - (ae-forgotten-export) The symbol "BlankHook" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:313:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:332:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:342:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/types.ts:51:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
