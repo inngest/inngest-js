@@ -1,4 +1,4 @@
-import { EventSchemas, type EventPayload } from "@local";
+import { EventSchemas, InngestMiddleware, type EventPayload } from "@local";
 import { envKeys, headerKeys } from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
 import { assertType } from "type-plus";
@@ -219,6 +219,52 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
+        })
+      );
+    });
+
+    test("should allow middleware to mutate input", async () => {
+      const inngest = createClient({
+        name: "test",
+        eventKey: testEventKey,
+        middleware: [
+          new InngestMiddleware({
+            name: "Test",
+            init() {
+              return {
+                onSendEvent() {
+                  return {
+                    transformInput(ctx) {
+                      return {
+                        payloads: ctx.payloads.map((payload) => ({
+                          ...payload,
+                          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                          data: {
+                            ...payload.data,
+                            bar: true,
+                          },
+                        })),
+                      };
+                    },
+                  };
+                },
+              };
+            },
+          }),
+        ],
+      });
+
+      await expect(
+        inngest.send({ ...testEvent, data: { foo: true } })
+      ).resolves.toBeUndefined();
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/e/${testEventKey}`),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify([
+            { ...testEvent, data: { foo: true, bar: true } },
+          ]),
         })
       );
     });
