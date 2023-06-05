@@ -339,7 +339,7 @@ export type MiddlewareRegisterReturn = {
      * TODO This needs to be a result object that we spread into, not just some
      * unknown value.
      */
-    transformOutput?: () => MaybePromise<void | unknown>;
+    transformOutput?: MiddlewareSendEventOutput;
   }>;
 };
 
@@ -459,6 +459,14 @@ type MiddlewareSendEventArgs = Readonly<{
 type MiddlewareSendEventInput = (ctx: MiddlewareSendEventArgs) => MaybePromise<{
   payloads?: EventPayload[];
 } | void>;
+
+/**
+ * The shape of an `output` hook within a `sendEvent`, optionally returning a
+ * change to the result value.
+ */
+type MiddlewareSendEventOutput = (
+  ctx: MiddlewareSendEventArgs
+) => MaybePromise<void>;
 
 /**
  * @internal

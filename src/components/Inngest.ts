@@ -362,7 +362,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     });
 
     if (response.status >= 200 && response.status < 300) {
-      return void (await hooks.transformOutput?.());
+      return void (await hooks.transformOutput?.({ payloads: [...payloads] }));
     }
 
     throw await this.#getResponseError(response);
