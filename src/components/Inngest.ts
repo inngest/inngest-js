@@ -310,10 +310,10 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       );
     }
 
-    let payloads: Record<string, EventPayload>[] = Array.isArray(payload)
-      ? (payload as Record<string, EventPayload>[])
+    let payloads: EventPayload[] = Array.isArray(payload)
+      ? (payload as EventPayload[])
       : payload
-      ? [payload]
+      ? ([payload] as [EventPayload])
       : [];
 
     const inputChanges = await hooks.transformInput?.({

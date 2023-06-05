@@ -447,7 +447,7 @@ type MiddlewareRunInput = (ctx: MiddlewareRunArgs) => MaybePromise<{
  * @internal
  */
 type MiddlewareSendEventArgs = Readonly<{
-  payloads: ReadonlyArray<Record<string, EventPayload>>;
+  payloads: ReadonlyArray<EventPayload>;
 }>;
 
 /**
@@ -456,9 +456,9 @@ type MiddlewareSendEventArgs = Readonly<{
  *
  * @internal
  */
-type MiddlewareSendEventInput = (ctx: MiddlewareSendEventArgs) => {
-  payloads?: Record<string, EventPayload>[];
-} | void;
+type MiddlewareSendEventInput = (ctx: MiddlewareSendEventArgs) => MaybePromise<{
+  payloads?: EventPayload[];
+} | void>;
 
 /**
  * @internal
