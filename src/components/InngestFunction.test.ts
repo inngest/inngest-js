@@ -1,33 +1,47 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { jest } from "@jest/globals";
+import { EventSchemas, type EventPayload } from "@local";
 import { InngestFunction } from "@local/components/InngestFunction";
 import {
   _internals,
   type UnhashedOp,
 } from "@local/components/InngestStepTools";
-import { internalEvents } from "@local/helpers/consts";
-import { ErrCode } from "@local/helpers/errors";
 import { ServerTiming } from "@local/helpers/ServerTiming";
-import { ProxyLogger } from "@local/middleware/logger";
+import { ErrCode } from "@local/helpers/errors";
+import {
+  DefaultLogger,
+  ProxyLogger,
+  type Logger,
+} from "@local/middleware/logger";
 import {
   StepOpCode,
-  type EventPayload,
+  type ClientOptions,
   type FailureEventPayload,
   type OpStack,
 } from "@local/types";
+import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
+import { internalEvents } from "../helpers/consts";
 import { createClient } from "../test/helpers";
 import { NonRetriableError } from "./NonRetriableError";
 
 type TestEvents = {
-  foo: { name: "foo"; data: { foo: string } };
-  bar: { name: "bar"; data: { bar: string } };
-  baz: { name: "baz"; data: { baz: string } };
+  foo: { data: { foo: string } };
+  bar: { data: { bar: string } };
+  baz: { data: { baz: string } };
 };
 
-const inngest = createClient<TestEvents>({
+const schemas = new EventSchemas().fromRecord<TestEvents>();
+
+const opts = (<T extends ClientOptions>(x: T): T => x)({
   name: "test",
   eventKey: "event-key-123",
+  schemas,
 });
+
+const inngest = createClient(opts);
 
 const timer = new ServerTiming();
 
@@ -70,7 +84,7 @@ describe("runFn", () => {
     ].forEach(({ type, flowFn, badFlowFn }) => {
       describe(`${type} function`, () => {
         describe("success", () => {
-          let fn: InngestFunction<TestEvents>;
+          let fn: InngestFunction<typeof opts>;
           let ret: Awaited<ReturnType<(typeof fn)["runFn"]>>;
           let flush: jest.SpiedFunction<() => void>;
 
@@ -83,7 +97,7 @@ describe("runFn", () => {
               });
 
             fn = new InngestFunction(
-              createClient<TestEvents>({ name: "test" }),
+              createClient(opts),
               { name: "Foo" },
               { event: "foo" },
               flowFn
@@ -113,11 +127,11 @@ describe("runFn", () => {
 
         describe("throws", () => {
           const stepErr = new Error("step error");
-          let fn: InngestFunction<TestEvents>;
+          let fn: InngestFunction<typeof opts>;
 
           beforeAll(() => {
             fn = new InngestFunction(
-              createClient<TestEvents>({ name: "test" }),
+              createClient(opts),
               { name: "Foo" },
               { event: "foo" },
               badFlowFn
@@ -142,7 +156,8 @@ describe("runFn", () => {
 
   describe("step functions", () => {
     const runFnWithStack = (
-      fn: InngestFunction,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fn: InngestFunction<any, any, any, any>,
       stack: OpStack,
       opts?: {
         runStep?: string;
@@ -163,10 +178,14 @@ describe("runFn", () => {
 
     const testFn = <
       T extends {
-        fn: InngestFunction;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        fn: InngestFunction<any, any, any, any>;
         steps: Record<
           string,
-          jest.Mock<() => string> | jest.Mock<() => Promise<string>>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          | jest.Mock<(...args: any[]) => string>
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          | jest.Mock<(...args: any[]) => Promise<string>>
         >;
         event?: EventPayload;
         onFailure?: boolean;
@@ -187,6 +206,7 @@ describe("runFn", () => {
           expectedHashOps?: UnhashedOp[];
           expectedStepsRun?: (keyof T["steps"])[];
           event?: EventPayload;
+          customTests?: () => void;
         }
       >
     ) => {
@@ -199,7 +219,7 @@ describe("runFn", () => {
             let retErr: Error | undefined;
             let flush: jest.SpiedFunction<() => void>;
 
-            beforeAll(async () => {
+            beforeAll(() => {
               jest.restoreAllMocks();
               flush = jest
                 .spyOn(ProxyLogger.prototype, "flush")
@@ -208,6 +228,11 @@ describe("runFn", () => {
                 });
               hashDataSpy = getHashDataSpy();
               tools = createTools();
+            });
+
+            t.customTests?.();
+
+            beforeAll(async () => {
               ret = await runFnWithStack(tools.fn, t.stack || [], {
                 runStep: t.runStep,
                 onFailure: t.onFailure || tools.onFailure,
@@ -252,6 +277,8 @@ describe("runFn", () => {
               // could be flushed multiple times so no specifying counts
               expect(flush).toHaveBeenCalled();
             });
+
+            t.customTests?.();
           });
         });
       });
@@ -266,7 +293,7 @@ describe("runFn", () => {
         const fn = inngest.createFunction(
           "name",
           "foo",
-          async ({ tools: { run } }) => {
+          async ({ step: { run } }) => {
             await run("A", A);
             await run("B", B);
           }
@@ -334,7 +361,7 @@ describe("runFn", () => {
         const fn = inngest.createFunction(
           "name",
           "foo",
-          async ({ tools: { waitForEvent, run } }) => {
+          async ({ step: { waitForEvent, run } }) => {
             const foo = await waitForEvent("foo", "2h");
 
             if (foo?.data.foo === "foo") {
@@ -417,7 +444,7 @@ describe("runFn", () => {
         const fn = inngest.createFunction(
           "name",
           "foo",
-          async ({ tools: { run } }) => {
+          async ({ step: { run } }) => {
             await Promise.all([run("A", A), run("B", B)]);
             await run("C", C);
           }
@@ -541,7 +568,7 @@ describe("runFn", () => {
         const fn = inngest.createFunction(
           "name",
           "foo",
-          async ({ tools: { run } }) => {
+          async ({ step: { run } }) => {
             const winner = await Promise.race([run("A", A), run("B", B)]);
 
             if (winner === "A") {
@@ -654,7 +681,7 @@ describe("runFn", () => {
         const fn = inngest.createFunction(
           "name",
           "foo",
-          async ({ tools: { run } }) => {
+          async ({ step: { run } }) => {
             return Promise.all([
               run("A", A),
               run("B", B).catch(() => run("B failed", BFailed)),
@@ -1045,6 +1072,118 @@ describe("runFn", () => {
         },
       })
     );
+
+    testFn(
+      "can use built-in logger middleware",
+      () => {
+        const A = jest.fn((logger: Logger) => {
+          logger.info("A");
+          return "A";
+        });
+
+        const B = jest.fn((logger: Logger) => {
+          logger.info("B");
+          return "B";
+        });
+
+        const fn = inngest.createFunction(
+          "name",
+          "foo",
+          async ({ step: { run }, logger }) => {
+            assertType<IsEqual<Logger, typeof logger>>(true);
+            logger.info("info1");
+            await run("A", () => A(logger));
+            logger.info("2");
+            await run("B", () => B(logger));
+            logger.info("3");
+          }
+        );
+
+        return { fn, steps: { A, B } };
+      },
+      {
+        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+        B: "b494def3936f5c59986e81bc29443609bfc2384a",
+      },
+      ({ A, B }) => ({
+        "first run runs A step": {
+          expectedReturn: [
+            "run",
+            expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "A",
+            }),
+          ],
+          expectedStepsRun: ["A"],
+          customTests() {
+            let loggerInfoSpy: jest.SpiedFunction<() => void>;
+
+            beforeAll(() => {
+              loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
+            });
+
+            test("log called", () => {
+              expect(loggerInfoSpy.mock.calls).toEqual([["info1"], ["A"]]);
+            });
+          },
+        },
+        "request with A in stack runs B step": {
+          stack: [
+            {
+              id: A,
+              data: "A",
+            },
+          ],
+          expectedReturn: [
+            "run",
+            expect.objectContaining({
+              id: B,
+              name: "B",
+              op: StepOpCode.RunStep,
+              data: "B",
+            }),
+          ],
+          expectedStepsRun: ["B"],
+          customTests() {
+            let loggerInfoSpy: jest.SpiedFunction<() => void>;
+
+            beforeAll(() => {
+              loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
+            });
+
+            test("log called", () => {
+              expect(loggerInfoSpy.mock.calls).toEqual([["2"], ["B"]]);
+            });
+          },
+        },
+        "final request returns empty response": {
+          stack: [
+            {
+              id: A,
+              data: "A",
+            },
+            {
+              id: B,
+              data: "B",
+            },
+          ],
+          expectedReturn: ["complete", undefined],
+          customTests() {
+            let loggerInfoSpy: jest.SpiedFunction<() => void>;
+
+            beforeAll(() => {
+              loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
+            });
+
+            test("log called", () => {
+              expect(loggerInfoSpy.mock.calls).toEqual([["3"]]);
+            });
+          },
+        },
+      })
+    );
   });
 
   describe("onFailure functions", () => {
@@ -1071,16 +1210,19 @@ describe("runFn", () => {
       });
 
       describe("multiple custom types", () => {
-        const inngest = createClient<{
-          foo: {
-            name: "foo";
-            data: { title: string };
-          };
-          bar: {
-            name: "bar";
-            data: { message: string };
-          };
-        }>({ name: "test" });
+        const inngest = createClient({
+          name: "test",
+          schemas: new EventSchemas().fromRecord<{
+            foo: {
+              name: "foo";
+              data: { title: string };
+            };
+            bar: {
+              name: "bar";
+              data: { message: string };
+            };
+          }>(),
+        });
 
         test("onFailure function has known internal event", () => {
           inngest.createFunction(
@@ -1149,16 +1291,19 @@ describe("runFn", () => {
     });
 
     test("specifying an onFailure function registers correctly", () => {
-      const inngest = createClient<{
-        foo: {
-          name: "foo";
-          data: { title: string };
-        };
-        bar: {
-          name: "bar";
-          data: { message: string };
-        };
-      }>({ name: "test" });
+      const inngest = createClient({
+        name: "test",
+        schemas: new EventSchemas().fromRecord<{
+          foo: {
+            name: "foo";
+            data: { title: string };
+          };
+          bar: {
+            name: "bar";
+            data: { message: string };
+          };
+        }>(),
+      });
 
       const fn = inngest.createFunction(
         {
@@ -1248,24 +1393,27 @@ describe("runFn", () => {
       });
 
       describe("multiple custom types", () => {
-        const inngest = createClient<{
-          foo: {
-            name: "foo";
-            data: { title: string; foo: string };
-          };
-          bar: {
-            name: "bar";
-            data: { message: string; bar: string };
-          };
-          baz: {
-            name: "baz";
-            data: { title: string; baz: string };
-          };
-          qux: {
-            name: "qux";
-            data: { title: string; qux: string };
-          };
-        }>({ name: "test" });
+        const inngest = createClient({
+          name: "test",
+          schemas: new EventSchemas().fromRecord<{
+            foo: {
+              name: "foo";
+              data: { title: string; foo: string };
+            };
+            bar: {
+              name: "bar";
+              data: { message: string; bar: string };
+            };
+            baz: {
+              name: "baz";
+              data: { title: string; baz: string };
+            };
+            qux: {
+              name: "qux";
+              data: { title: string; qux: string };
+            };
+          }>(),
+        });
 
         test("disallows unknown event name", () => {
           inngest.createFunction(
@@ -1318,20 +1466,23 @@ describe("runFn", () => {
     });
 
     test("specifying a cancellation event registers correctly", () => {
-      const inngest = createClient<{
-        foo: {
-          name: "foo";
-          data: { title: string };
-        };
-        bar: {
-          name: "bar";
-          data: { message: string };
-        };
-        baz: {
-          name: "baz";
-          data: { title: string };
-        };
-      }>({ name: "test" });
+      const inngest = createClient({
+        name: "test",
+        schemas: new EventSchemas().fromRecord<{
+          foo: {
+            name: "foo";
+            data: { title: string };
+          };
+          bar: {
+            name: "bar";
+            data: { message: string };
+          };
+          baz: {
+            name: "baz";
+            data: { title: string };
+          };
+        }>(),
+      });
 
       const fn = inngest.createFunction(
         { name: "test", cancelOn: [{ event: "baz", match: "data.title" }] },

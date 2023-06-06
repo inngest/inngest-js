@@ -2,8 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
-import { Inngest, type EventPayload } from "@local";
-import { type Inngest as InternalInngest } from "@local/components/Inngest";
+import { Inngest } from "@local";
 import { type ServeHandler } from "@local/components/InngestCommHandler";
 import { envKeys, headerKeys } from "@local/helpers/consts";
 import { version } from "@local/version";
@@ -35,10 +34,12 @@ const createReqRes = (...args: Parameters<typeof httpMocks.createRequest>) => {
  * the `tsconfig.json` to point to the local version of the library, which we do
  * to ensure we can test types against multiple TypeScript versions.
  */
-export const createClient = <T extends Record<string, EventPayload>>(
-  ...args: ConstructorParameters<typeof InternalInngest>
-): InternalInngest<T> => {
-  return new Inngest(...args) as unknown as InternalInngest<T>;
+export const createClient = <T extends ConstructorParameters<typeof Inngest>>(
+  ...args: T
+): Inngest<T["0"]> => {
+  return new Inngest(
+    ...(args as ConstructorParameters<typeof Inngest>)
+  ) as unknown as Inngest<T["0"]>;
 };
 
 const inngest = createClient({ name: "test", eventKey: "event-key-123" });
@@ -217,7 +218,7 @@ export const testFramework = (
     describe("GET (landing page)", () => {
       test("show landing page if forced on", async () => {
         const ret = await run(
-          ["Test", [], { landingPage: true }],
+          [inngest, [], { landingPage: true }],
           [{ method: "GET" }]
         );
 
@@ -233,7 +234,7 @@ export const testFramework = (
 
       test("return correct platform", async () => {
         const ret = await run(
-          ["Test", [], { landingPage: true }],
+          [inngest, [], { landingPage: true }],
           [{ method: "GET" }],
           { [envKeys.IsNetlify]: "true" }
         );
@@ -247,7 +248,7 @@ export const testFramework = (
 
       test("show landing page if forced on with conflicting env", async () => {
         const ret = await run(
-          ["Test", [], { landingPage: true }],
+          [inngest, [], { landingPage: true }],
           [{ method: "GET" }],
           { INNGEST_LANDING_PAGE: "false" }
         );
@@ -264,7 +265,7 @@ export const testFramework = (
 
       test("don't show landing page if forced off", async () => {
         const ret = await run(
-          ["Test", [], { landingPage: false }],
+          [inngest, [], { landingPage: false }],
           [{ method: "GET" }]
         );
 
@@ -279,7 +280,7 @@ export const testFramework = (
 
       test("don't show landing page if forced off with conflicting env", async () => {
         const ret = await run(
-          ["Test", [], { landingPage: false }],
+          [inngest, [], { landingPage: false }],
           [{ method: "GET" }],
           { INNGEST_LANDING_PAGE: "true" }
         );
@@ -294,7 +295,7 @@ export const testFramework = (
       });
 
       test("show landing page if env var is set to truthy value", async () => {
-        const ret = await run(["Test", []], [{ method: "GET" }], {
+        const ret = await run([inngest, []], [{ method: "GET" }], {
           INNGEST_LANDING_PAGE: "true",
         });
 
@@ -309,7 +310,7 @@ export const testFramework = (
       });
 
       test("don't show landing page if env var is set to falsey value", async () => {
-        const ret = await run(["Test", []], [{ method: "GET" }], {
+        const ret = await run([inngest, []], [{ method: "GET" }], {
           INNGEST_LANDING_PAGE: "false",
         });
 
@@ -323,10 +324,8 @@ export const testFramework = (
       });
 
       test("if introspection is specified, return introspection data", async () => {
-        const appName = "Test";
-
         const ret = await run(
-          [appName, [], { landingPage: true }],
+          [inngest, [], { landingPage: true }],
           [{ method: "GET", url: "/api/inngest?introspect=true" }]
         );
 
@@ -344,7 +343,7 @@ export const testFramework = (
           url: "https://localhost:3000/api/inngest",
           deployType: "ping",
           framework: expect.any(String),
-          appName,
+          appName: "test",
           functions: [],
           sdk: `js:v${version}`,
           v: "0.1",
@@ -369,7 +368,7 @@ export const testFramework = (
               status: 200,
             });
 
-          const ret = await run(["Test", []], [{ method: "PUT" }]);
+          const ret = await run([inngest, []], [{ method: "PUT" }]);
 
           const retBody = JSON.parse(ret.body);
 
@@ -395,7 +394,7 @@ export const testFramework = (
             status: 200,
           });
 
-          const ret = await run(["Test", []], [{ method: "PUT" }], {
+          const ret = await run([inngest, []], [{ method: "PUT" }], {
             [envKeys.IsNetlify]: "true",
           });
 
@@ -422,7 +421,7 @@ export const testFramework = (
             });
 
           const ret = await run(
-            ["Test", []],
+            [inngest, []],
             [{ method: "PUT", url: customUrl }]
           );
 
@@ -467,7 +466,7 @@ export const testFramework = (
           const serveHost = "https://example.com";
           const stepId = "step";
 
-          await run(["Test", [fn1], { serveHost }], [{ method: "PUT" }]);
+          await run([inngest, [fn1], { serveHost }], [{ method: "PUT" }]);
 
           expect(reqToMock).toMatchObject({
             url: `${serveHost}/api/inngest`,
@@ -507,7 +506,7 @@ export const testFramework = (
           const servePath = "/foo/bar/inngest/endpoint";
           const stepId = "step";
 
-          await run(["Test", [fn1], { servePath }], [{ method: "PUT" }]);
+          await run([inngest, [fn1], { servePath }], [{ method: "PUT" }]);
 
           expect(reqToMock).toMatchObject({
             url: `https://localhost:3000${servePath}`,
@@ -568,7 +567,7 @@ export const testFramework = (
         const stepId = "step";
 
         await run(
-          ["Test", [fn1], { serveHost, servePath }],
+          [inngest, [fn1], { serveHost, servePath }],
           [{ method: "PUT" }]
         );
 
@@ -608,7 +607,7 @@ export const testFramework = (
         };
         test("should throw an error in prod with no signature", async () => {
           const ret = await run(
-            ["Test", [fn], { signingKey: "test" }],
+            [inngest, [fn], { signingKey: "test" }],
             [{ method: "POST", headers: {} }],
             env
           );
@@ -622,7 +621,7 @@ export const testFramework = (
         });
         test("should throw an error with an invalid signature", async () => {
           const ret = await run(
-            ["Test", [fn], { signingKey: "test" }],
+            [inngest, [fn], { signingKey: "test" }],
             [{ method: "POST", headers: { [headerKeys.Signature]: "t=&s=" } }],
             env
           );
@@ -638,7 +637,7 @@ export const testFramework = (
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
           const ret = await run(
-            ["Test", [fn], { signingKey: "test" }],
+            [inngest, [fn], { signingKey: "test" }],
             [
               {
                 method: "POST",
@@ -682,7 +681,7 @@ export const testFramework = (
           };
           const ret = await run(
             [
-              "Test",
+              inngest,
               [fn],
               {
                 signingKey:

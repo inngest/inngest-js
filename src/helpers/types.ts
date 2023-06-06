@@ -1,3 +1,4 @@
+import { type Simplify } from "type-fest";
 import { type EventPayload } from "../types";
 
 /**
@@ -124,6 +125,8 @@ export type StrictUnion<T> = StrictUnionHelper<T, T>;
  * // true
  * type ObjIsKnown = IsStringLiteral<keyof { foo: boolean; }>; // true
  * ```
+ *
+ * @internal
  */
 export type IsStringLiteral<T extends string> = string extends T ? false : true;
 
@@ -131,3 +134,24 @@ export type IsStringLiteral<T extends string> = string extends T ? false : true;
  * Returns `true` if the given generic `T` is `any`, or `false` if it is not.
  */
 export type IsAny<T> = 0 extends 1 & T ? true : false;
+
+/**
+ * Given a function T, return the awaited return type of that function,
+ * ignoring the fact that T may be undefined.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Await<T extends ((...args: any[]) => any) | undefined> = Awaited<
+  ReturnType<NonNullable<T>>
+>;
+
+/**
+ * Given an object TAcc and an array of objects TArr, return a new object that
+ * is the result of merging all of the objects in TArr into TAcc.
+ */
+// eslint-disable-next-line @typescript-eslint/ban-types
+export type ObjectAssign<TArr, TAcc = {}> = TArr extends [
+  infer TFirst,
+  ...infer TRest
+]
+  ? Simplify<ObjectAssign<TRest, Omit<TAcc, keyof TFirst> & TFirst>>
+  : TAcc;

@@ -1,4 +1,10 @@
 import { z } from "zod";
+import { type EventSchemas } from "./components/EventSchemas";
+import { type EventsFromOpts, type Inngest } from "./components/Inngest";
+import {
+  type InngestMiddleware,
+  type MiddlewareOptions,
+} from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
 import {
@@ -10,6 +16,29 @@ import {
 import { type Logger } from "./middleware/logger";
 
 /**
+ * TODO
+ *
+ * @public
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type GetEvents<T extends Inngest<any>> = T extends Inngest<infer U>
+  ? EventsFromOpts<U>
+  : never;
+
+export const failureEventErrorSchema = z.object({
+  name: z.string(),
+  message: z.string(),
+  stack: z.string().optional(),
+  cause: z.string().optional(),
+  status: z.number().optional(),
+});
+
+export type MiddlewareStack = [
+  InngestMiddleware<MiddlewareOptions>,
+  ...InngestMiddleware<MiddlewareOptions>[]
+];
+
+/**
  * The payload for an internal Inngest event that is sent when a function fails.
  *
  * @public
@@ -19,13 +48,7 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
   data: {
     function_id: string;
     run_id: string;
-    error: {
-      name: string;
-      message: string;
-      stack: string;
-      cause?: string;
-      status?: number;
-    };
+    error: z.output<typeof failureEventErrorSchema>;
     event: P;
   };
 };
@@ -147,31 +170,23 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
   | ""}${`${number}m` | ""}${`${number}s` | ""}`;
 
 export type BaseContext<
-  TEvents extends Record<string, EventPayload>,
-  TTrigger extends keyof TEvents & string,
+  TOpts extends ClientOptions,
+  TTrigger extends keyof EventsFromOpts<TOpts> & string,
   TShimmedFns extends Record<string, (...args: unknown[]) => unknown>
 > = {
   /**
    * The event data present in the payload.
    */
-  event: TEvents[TTrigger];
+  event: EventsFromOpts<TOpts>[TTrigger];
 
   /**
    * The run ID for the current function execution
    */
   runId: string;
 
-  /**
-   * @deprecated Use `step` instead.
-   */
-  tools: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
-  step: ReturnType<typeof createStepTools<TEvents, TTrigger>>[0];
-
-  /**
-   * The passed in logger from the user.
-   * Defaults to a console logger if not provided.
-   */
-  logger: Logger;
+  step: ReturnType<
+    typeof createStepTools<TOpts, EventsFromOpts<TOpts>, TTrigger>
+  >;
 
   /**
    * Any `fns` passed when creating your Inngest function will be
@@ -236,11 +251,12 @@ export type ShimmedFns<Fns extends Record<string, any>> = {
  * keys.
  */
 export type Context<
+  TOpts extends ClientOptions,
   TEvents extends Record<string, EventPayload>,
   TTrigger extends keyof TEvents & string,
   TShimmedFns extends Record<string, (...args: unknown[]) => unknown>,
   TOverrides extends Record<string, unknown> = Record<never, never>
-> = Omit<BaseContext<TEvents, TTrigger, TShimmedFns>, keyof TOverrides> &
+> = Omit<BaseContext<TOpts, TTrigger, TShimmedFns>, keyof TOverrides> &
   TOverrides;
 
 /**
@@ -250,7 +266,8 @@ export type Context<
  * @public
  */
 export type Handler<
-  TEvents extends Record<string, EventPayload>,
+  TOpts extends ClientOptions,
+  TEvents extends EventsFromOpts<TOpts>,
   TTrigger extends keyof TEvents & string,
   TShimmedFns extends Record<string, (...args: unknown[]) => unknown> = Record<
     never,
@@ -262,7 +279,7 @@ export type Handler<
    * The context argument provides access to all data and tooling available to
    * the function.
    */
-  ctx: Context<TEvents, TTrigger, TShimmedFns, TOverrides>
+  ctx: Context<TOpts, TEvents, TTrigger, TShimmedFns, TOverrides>
 ) => unknown;
 
 /**
@@ -391,6 +408,31 @@ export interface ClientOptions {
   fetch?: typeof fetch;
 
   /**
+   * Provide an `EventSchemas` class to type events, providing type safety when
+   * sending events and running functions via Inngest.
+   *
+   * You can provide generated Inngest types, custom types, types using Zod, or
+   * a combination of the above. See {@link EventSchemas} for more information.
+   *
+   * @example
+   *
+   * ```ts
+   * export const inngest = new Inngest({
+   *   name: "My App",
+   *   schemas: new EventSchemas().fromZod({
+   *     "app/user.created": {
+   *       data: z.object({
+   *         id: z.string(),
+   *         name: z.string(),
+   *       }),
+   *     },
+   *   }),
+   * });
+   * ```
+   */
+  schemas?: EventSchemas<Record<string, EventPayload>>;
+
+  /**
    * The Inngest environment to send events to. Defaults to whichever
    * environment this client's event key is associated with.
    *
@@ -414,6 +456,7 @@ export interface ClientOptions {
    * Defaults to a dummy logger that just log things to the console if nothing is provided.
    */
   logger?: Logger;
+  middleware?: MiddlewareStack;
 }
 
 /**
@@ -537,6 +580,12 @@ export interface RegisterOptions {
    * Defaults to `false`.
    */
   streaming?: "allow" | "force" | false;
+
+  /**
+   * The name of this app as it will be seen in the Inngest dashboard. Will use
+   * the name of the client passed if not provided.
+   */
+  name?: string;
 }
 
 /**
@@ -592,35 +641,37 @@ export interface FunctionOptions<
    * Concurrency specifies a limit on the total number of concurrent steps that
    * can occur across all runs of the function.  A value of 0 (or undefined) means
    * use the maximum available concurrency.
+   *
+   * Specifying just a number means specifying only the concurrency limit.
    */
-  concurrency?: number;
+  concurrency?: number | { limit: number };
 
   fns?: Record<string, unknown>;
 
   /**
    * Allow the specification of an idempotency key using event data. If
-   * specified, this overrides the throttle object.
+   * specified, this overrides the `rateLimit` object.
    */
   idempotency?: string;
 
   /**
-   * Throttle workflows, only running them a given number of times (count) per
-   * period. This can optionally include a throttle key, which is used to
-   * further constrain throttling similar to idempotency.
+   * Rate limit workflows, only running them a given number of times (limit) per
+   * period. This can optionally include a `key`, which is used to further
+   * constrain throttling similar to idempotency.
    */
-  throttle?: {
+  rateLimit?: {
     /**
-     * An optional key to use for throttle, similar to idempotency.
+     * An optional key to use for rate limiting, similar to idempotency.
      */
     key?: string;
 
     /**
      * The number of times to allow the function to run per the given `period`.
      */
-    count: number;
+    limit: number;
 
     /**
-     * The period of time to allow the function to run `count` times.
+     * The period of time to allow the function to run `limit` times.
      */
     period: TimeStr;
   };
@@ -656,6 +707,11 @@ export interface FunctionOptions<
     | 20;
 
   onFailure?: (...args: unknown[]) => unknown;
+
+  /**
+   * TODO
+   */
+  middleware?: MiddlewareStack;
 }
 
 /**

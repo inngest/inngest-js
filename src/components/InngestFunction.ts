@@ -1,21 +1,23 @@
+import { z } from "zod";
+import { type ServerTiming } from "../helpers/ServerTiming";
 import { internalEvents, queryKeys } from "../helpers/consts";
 import {
-  deserializeError,
   ErrCode,
+  deserializeError,
   functionStoppedRunningErr,
   serializeError,
 } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
-import { type ServerTiming } from "../helpers/ServerTiming";
 import { slugify, timeStr } from "../helpers/strings";
-import { ProxyLogger, type Logger } from "../middleware/logger";
 import {
   StepOpCode,
+  failureEventErrorSchema,
+  type BaseContext,
+  type ClientOptions,
   type Context,
   type EventNameFromTrigger,
   type EventPayload,
   type FailureEventArgs,
-  type FailureEventPayload,
   type FunctionConfig,
   type FunctionOptions,
   type FunctionTrigger,
@@ -24,7 +26,12 @@ import {
   type OpStack,
   type OutgoingOp,
 } from "../types";
-import { type Inngest } from "./Inngest";
+import { type EventsFromOpts, type Inngest } from "./Inngest";
+import {
+  getHookStack,
+  type MiddlewareRegisterReturn,
+  type RunHookStack,
+} from "./InngestMiddleware";
 import { createStepTools, type TickOp } from "./InngestStepTools";
 import { NonRetriableError } from "./NonRetriableError";
 
@@ -38,7 +45,8 @@ import { NonRetriableError } from "./NonRetriableError";
  * @public
  */
 export class InngestFunction<
-  Events extends Record<string, EventPayload> = Record<string, EventPayload>,
+  TOpts extends ClientOptions = ClientOptions,
+  Events extends EventsFromOpts<TOpts> = EventsFromOpts<TOpts>,
   Trigger extends FunctionTrigger<keyof Events & string> = FunctionTrigger<
     keyof Events & string
   >,
@@ -50,11 +58,12 @@ export class InngestFunction<
   static stepId = "step";
   static failureSuffix = "-failure";
 
-  readonly #opts: Opts;
-  readonly #trigger: Trigger;
-  readonly #fn: Handler<Events, keyof Events & string>;
-  readonly #onFailureFn?: Handler<Events, keyof Events & string>;
-  readonly #client: Inngest<Events>;
+  public readonly opts: Opts;
+  public readonly trigger: Trigger;
+  readonly #fn: Handler<TOpts, Events, keyof Events & string>;
+  readonly #onFailureFn?: Handler<TOpts, Events, keyof Events & string>;
+  readonly #client: Inngest<TOpts>;
+  private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
   /**
    * A stateless Inngest function, wrapping up function configuration and any
@@ -64,34 +73,39 @@ export class InngestFunction<
    * trigger remotely.
    */
   constructor(
-    client: Inngest<Events>,
+    client: Inngest<TOpts>,
 
     /**
      * Options
      */
     opts: Opts,
     trigger: Trigger,
-    fn: Handler<Events, keyof Events & string>
+    fn: Handler<TOpts, Events, keyof Events & string>
   ) {
     this.#client = client;
-    this.#opts = opts;
-    this.#trigger = trigger;
+    this.opts = opts;
+    this.trigger = trigger;
     this.#fn = fn;
-    this.#onFailureFn = this.#opts.onFailure;
+    this.#onFailureFn = this.opts.onFailure;
+
+    this.middleware = this.#client["initializeMiddleware"](
+      this.opts.middleware,
+      { registerInput: { fn: this }, prefixStack: this.#client["middleware"] }
+    );
   }
 
   /**
    * The generated or given ID for this function.
    */
   public id(prefix?: string) {
-    return this.#opts.id || this.#generateId(prefix);
+    return this.opts.id || this.#generateId(prefix);
   }
 
   /**
    * The name of this function as it will appear in the Inngest Cloud UI.
    */
   public get name() {
-    return this.#opts.name;
+    return this.opts.name;
   }
 
   /**
@@ -111,7 +125,7 @@ export class InngestFunction<
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
 
-    const { retries: attempts, cancelOn, fns: _, ...opts } = this.#opts;
+    const { retries: attempts, cancelOn, fns: _, ...opts } = this.opts;
 
     /**
      * Convert retries into the format required when defining function
@@ -123,7 +137,7 @@ export class InngestFunction<
       ...opts,
       id: fnId,
       name: this.name,
-      triggers: [this.#trigger as FunctionTrigger],
+      triggers: [this.trigger as FunctionTrigger],
       steps: {
         [InngestFunction.stepId]: {
           id: InngestFunction.stepId,
@@ -244,6 +258,43 @@ export class InngestFunction<
     | [type: "discovery", ops: OutgoingOp[]]
     | [type: "run", op: OutgoingOp]
   > {
+    const ctx = data as Pick<
+      Readonly<
+        BaseContext<
+          ClientOptions,
+          string,
+          Record<string, (...args: unknown[]) => unknown>
+        >
+      >,
+      "event" | "runId"
+    >;
+
+    const hookStack = await getHookStack(
+      this.middleware,
+      "onFunctionRun",
+      { ctx, fn: this, steps: opStack },
+      {
+        transformInput: (prev, output) => {
+          return {
+            ctx: { ...prev.ctx, ...output?.ctx },
+            fn: this,
+            steps: prev.steps.map((step, i) => ({
+              ...step,
+              ...output?.steps?.[i],
+            })),
+          };
+        },
+        transformOutput: (prev, output) => {
+          return {
+            result: { ...prev.result, ...output?.result },
+            step: prev.step,
+          };
+        },
+      }
+    );
+
+    const state = createExecutionState();
+
     const memoizingStop = timer.start("memoizing");
 
     /**
@@ -251,23 +302,18 @@ export class InngestFunction<
      * user's function has run, we can check the mutated state of these to see
      * if an op has been submitted or not.
      */
-    const [tools, state] = createStepTools(this.#client);
-    // create new proxy logger so it doesn't share the buffer with other
-    // function runs
-    const logger = new ProxyLogger(this.#client["logger"]);
+    const step = createStepTools(this.#client, state);
 
     try {
       /**
        * Create args to pass in to our function. We blindly pass in the data and
        * add tools.
        */
-      const fnArg = {
+      let fnArg = {
         ...(data as { event: EventPayload }),
-        tools,
-        step: tools,
-        logger: logger as Logger,
+        step,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as Partial<Context<any, any, any>>;
+      } as Context<TOpts, Events, any, any>;
 
       let userFnToRun = this.#fn;
 
@@ -292,9 +338,14 @@ export class InngestFunction<
 
         userFnToRun = this.#onFailureFn;
 
-        (fnArg as FailureEventArgs).error = deserializeError(
-          (fnArg.event as FailureEventPayload).data.error
-        );
+        const eventData = z
+          .object({ error: failureEventErrorSchema })
+          .parse(fnArg.event?.data);
+
+        (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
+          ...fnArg,
+          error: deserializeError(eventData.error),
+        };
       }
 
       /**
@@ -304,8 +355,8 @@ export class InngestFunction<
        * We simply place a thin `tools.run()` wrapper around the function and
        * nothing else.
        */
-      if (this.#opts.fns) {
-        fnArg.fns = Object.entries(this.#opts.fns).reduce((acc, [key, fn]) => {
+      if (this.opts.fns) {
+        fnArg.fns = Object.entries(this.opts.fns).reduce((acc, [key, fn]) => {
           if (typeof fn !== "function") {
             return acc;
           }
@@ -313,25 +364,49 @@ export class InngestFunction<
           return {
             ...acc,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
-            [key]: (...args: unknown[]) => tools.run(key, () => fn(...args)),
+            [key]: (...args: unknown[]) => step.run(key, () => fn(...args)),
           };
         }, {});
       }
 
+      const inputMutations = await hookStack.transformInput?.({
+        ctx: { ...fnArg } as unknown as Parameters<
+          NonNullable<(typeof hookStack)["transformInput"]>
+        >[0]["ctx"],
+        steps: opStack,
+        fn: this,
+      });
+
+      if (inputMutations?.ctx) {
+        fnArg = inputMutations?.ctx as unknown as Context<
+          TOpts,
+          Events,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          any
+        >;
+      }
+
+      if (inputMutations?.steps) {
+        opStack = inputMutations?.steps as OpStack;
+      }
+
+      await hookStack.beforeMemoization?.();
+
+      if (opStack.length === 0 && !requestedRunStep) {
+        await hookStack.afterMemoization?.();
+        await hookStack.beforeExecution?.();
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
       const userFnPromise = new Promise(async (resolve, reject) => {
-        if (opStack.length == 0 && !requestedRunStep) {
-          logger.enable();
-        }
-
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          resolve(await userFnToRun(fnArg as Context<any, any, any>));
+          resolve(await userFnToRun(fnArg));
         } catch (err) {
-          logger.error(err);
+          // logger.error(err);
           reject(err);
         }
-        logger.disable();
       });
 
       let pos = -1;
@@ -339,7 +414,8 @@ export class InngestFunction<
       do {
         if (pos >= 0) {
           if (!requestedRunStep && pos == opStack.length - 1) {
-            logger.enable();
+            await hookStack.afterMemoization?.();
+            await hookStack.beforeExecution?.();
           }
 
           state.tickOps = {};
@@ -375,12 +451,12 @@ export class InngestFunction<
 
         await timer.wrap("memoizing-ticks", resolveAfterPending);
 
-        logger.disable();
         state.reset();
         pos++;
       } while (pos < opStack.length);
 
       memoizingStop();
+      await hookStack.afterMemoization?.();
 
       const discoveredOps = Object.values(state.tickOps).map<OutgoingOp>(
         tickOpToOutgoing
@@ -404,9 +480,14 @@ export class InngestFunction<
           );
         }
 
+        const outgoingUserFnOp = {
+          ...tickOpToOutgoing(userFnOp),
+          op: StepOpCode.RunStep,
+        };
+
+        await hookStack.beforeExecution?.();
         const runningStepStop = timer.start("running-step");
         state.executingStep = true;
-        logger.enable();
 
         const result = await new Promise((resolve) => {
           return resolve(userFnToRun());
@@ -415,49 +496,39 @@ export class InngestFunction<
             state.executingStep = false;
             runningStepStop();
           })
-          .then((data) => {
-            return {
-              data: typeof data === "undefined" ? null : data,
-            };
-          })
-          .catch((unserializedErr: Error) => {
-            /**
-             * If the user-defined code throws an error, we should return this
-             * to Inngest as the response for this step. The function didn't
-             * fail, only this step, so Inngest can decide what we do next.
-             *
-             * Make sure to log this so the user sees what has happened.
-             */
-            logger.error(unserializedErr);
+          .catch(async (err: Error) => {
+            await hookStack.afterExecution?.();
 
-            /**
-             * If the error is a {@link NonRetriableError}, pass back the actual
-             * instance so that Inngest can decide what to do with it.
-             */
-            const isNonRetriable = unserializedErr instanceof NonRetriableError;
+            const result: Pick<OutgoingOp, "error" | "data"> = {
+              error: err,
+            };
 
             try {
-              return {
-                error: isNonRetriable
-                  ? unserializedErr
-                  : serializeError(unserializedErr),
-              };
+              result.data = serializeError(err);
             } catch (serializationErr) {
-              logger.warn(
+              console.warn(
                 "Could not serialize error to return to Inngest; stringifying instead",
                 serializationErr
               );
 
-              return {
-                error: unserializedErr,
-              };
+              result.data = err;
             }
+
+            return await applyHookToOutput(hookStack.transformOutput, {
+              result,
+              step: outgoingUserFnOp,
+            });
+          })
+          .then(async (data) => {
+            await hookStack.afterExecution?.();
+
+            return await applyHookToOutput(hookStack.transformOutput, {
+              result: { data: typeof data === "undefined" ? null : data },
+              step: outgoingUserFnOp,
+            });
           });
 
-        return [
-          "run",
-          { ...tickOpToOutgoing(userFnOp), ...result, op: StepOpCode.RunStep },
-        ];
+        return ["run", { ...outgoingUserFnOp, ...result }];
       }
 
       /**
@@ -483,6 +554,8 @@ export class InngestFunction<
         ]);
 
         if (fnRet.type === "complete") {
+          await hookStack.afterExecution?.();
+
           /**
            * The function has returned a value, so we should return this to
            * Inngest. Doing this will cause the function to be marked as
@@ -496,7 +569,11 @@ export class InngestFunction<
           );
 
           if (allOpsFulfilled) {
-            return ["complete", fnRet.data];
+            const result = await applyHookToOutput(hookStack.transformOutput, {
+              result: { data: fnRet.data },
+            });
+
+            return ["complete", result.data];
           }
 
           /**
@@ -510,7 +587,7 @@ export class InngestFunction<
            * be unintentional, but otherwise carry on as normal.
            */
           // TODO PrettyError
-          logger.warn(
+          console.warn(
             `Warning: Your "${this.name}" function has returned a value, but not all ops have been resolved, i.e. you have used step tooling without \`await\`. This may be intentional, but if you expect your ops to be resolved in order, you should \`await\` them. If you are knowingly leaving ops unresolved using \`.catch()\` or \`void\`, you can ignore this warning.`
           );
         } else if (!state.hasUsedTools) {
@@ -529,12 +606,21 @@ export class InngestFunction<
            */
           state.nonStepFnDetected = true;
 
-          const result = await userFnPromise;
+          const data = await userFnPromise;
+          await hookStack.afterExecution?.();
+
+          const { data: result } = await applyHookToOutput(
+            hookStack.transformOutput,
+            {
+              result: { data },
+            }
+          );
+
           return ["complete", result];
         } else {
           /**
            * If we're here, the user's function has not returned a value, has not
-           * reported any new, ops, but has also previously used step tools and
+           * reported any new ops, but has also previously used step tools and
            * successfully memoized state.
            *
            * This indicates that the user has mixed step and non-step logic, which
@@ -560,9 +646,11 @@ export class InngestFunction<
         }
       }
 
+      await hookStack.afterExecution?.();
+
       return ["discovery", discoveredOps];
     } finally {
-      await logger.flush();
+      await hookStack.beforeResponse?.();
     }
   }
 
@@ -570,7 +658,7 @@ export class InngestFunction<
    * Generate an ID based on the function's name.
    */
   #generateId(prefix?: string) {
-    return slugify([prefix || "", this.#opts.name].join("-"));
+    return slugify([prefix || "", this.opts.name].join("-"));
   }
 }
 
@@ -600,4 +688,102 @@ const getEarlyExecRunStep = (ops: OutgoingOp[]): string | undefined => {
   ) {
     return op.id;
   }
+};
+
+export interface ExecutionState {
+  /**
+   * The tree of all found ops in the entire invocation.
+   */
+  allFoundOps: Record<string, TickOp>;
+
+  /**
+   * All synchronous operations found in this particular tick. The array is
+   * reset every tick.
+   */
+  tickOps: Record<string, TickOp>;
+
+  /**
+   * A hash of operations found within this tick, with keys being the hashed
+   * ops themselves (without a position) and the values being the number of
+   * times that op has been found.
+   *
+   * This is used to provide some mutation resilience to the op stack,
+   * allowing us to survive same-tick mutations of code by ensuring per-tick
+   * hashes are based on uniqueness rather than order.
+   */
+  tickOpHashes: Record<string, number>;
+
+  /**
+   * Tracks the current operation being processed. This can be used to
+   * understand the contextual parent of any recorded operations.
+   */
+  currentOp: TickOp | undefined;
+
+  /**
+   * If we've found a user function to run, we'll store it here so a component
+   * higher up can invoke and await it.
+   */
+  userFnToRun?: (...args: unknown[]) => unknown;
+
+  /**
+   * A boolean to represent whether the user's function is using any step
+   * tools.
+   *
+   * If the function survives an entire tick of the event loop and hasn't
+   * touched any tools, we assume that it is a single-step async function and
+   * should be awaited as usual.
+   */
+  hasUsedTools: boolean;
+
+  /**
+   * A function that should be used to reset the state of the tools after a
+   * tick has completed.
+   */
+  reset: () => void;
+
+  /**
+   * If `true`, any use of step tools will, by default, throw an error. We do
+   * this when we detect that a function may be mixing step and non-step code.
+   *
+   * Created step tooling can decide how to manually handle this on a
+   * case-by-case basis.
+   *
+   * In the future, we can provide a way for a user to override this if they
+   * wish to and understand the danger of side-effects.
+   *
+   * Defaults to `false`.
+   */
+  nonStepFnDetected: boolean;
+
+  /**
+   * When true, we are currently executing a user's code for a single step
+   * within a step function.
+   */
+  executingStep: boolean;
+}
+
+export const createExecutionState = (): ExecutionState => {
+  const state: ExecutionState = {
+    allFoundOps: {},
+    tickOps: {},
+    tickOpHashes: {},
+    currentOp: undefined,
+    hasUsedTools: false,
+    reset: () => {
+      state.tickOpHashes = {};
+      state.allFoundOps = { ...state.allFoundOps, ...state.tickOps };
+    },
+    nonStepFnDetected: false,
+    executingStep: false,
+  };
+
+  return state;
+};
+
+const applyHookToOutput = async (
+  outputHook: RunHookStack["transformOutput"],
+  arg: Parameters<NonNullable<RunHookStack["transformOutput"]>>[0]
+): Promise<Pick<OutgoingOp, "data" | "error">> => {
+  const hookOutput = await outputHook?.(arg);
+  return { ...arg.result, ...hookOutput?.result };
 };

@@ -1,5 +1,5 @@
+import { InngestCommHandler } from "@local/components/InngestCommHandler";
 import * as ExpressHandler from "@local/express";
-import { InngestCommHandler } from "./components/InngestCommHandler";
 import { createClient, testFramework } from "./test/helpers";
 
 testFramework("Express", ExpressHandler);
@@ -16,7 +16,7 @@ describe("InngestCommHandler", () => {
       );
       const ch = new InngestCommHandler(
         "test-framework",
-        "test-1",
+        client,
         [fn],
         {},
         // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-return
@@ -27,7 +27,7 @@ describe("InngestCommHandler", () => {
       const url = new URL("http://localhost:8000/api/inngest");
 
       const body = ch["registerBody"](url);
-      expect(body.appName).toBe("test-1");
+      expect(body.appName).toBe("test");
       expect(body.url).toBe("http://localhost:8000/api/inngest");
     });
   });

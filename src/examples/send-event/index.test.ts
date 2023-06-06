@@ -55,12 +55,12 @@ describe("run", () => {
     expect(runId).toEqual(expect.any(String));
   });
 
-  test("ran Step 'app/my.event.happened'", async () => {
+  test("ran Step 'sendEvent'", async () => {
     await expect(
       runHasTimeline(runId, {
         __typename: "StepEvent",
         stepType: "COMPLETED",
-        name: "app/my.event.happened",
+        name: "sendEvent",
       })
     ).resolves.toBeDefined();
   });
@@ -69,32 +69,6 @@ describe("run", () => {
     const event = await receivedEventWithName("app/my.event.happened");
     expect(event).toBeDefined();
     expect(JSON.parse(event?.payload ?? {})).toMatchObject({ foo: "bar" });
-  });
-
-  test("ran Step 'app/my.event.happened'", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "app/my.event.happened.single",
-      })
-    ).resolves.toBeDefined();
-  });
-
-  test("sent event 'app/my.event.happened.single'", async () => {
-    const event = await receivedEventWithName("app/my.event.happened.single");
-    expect(event).toBeDefined();
-    expect(JSON.parse(event?.payload ?? {})).toMatchObject({ foo: "bar" });
-  });
-
-  test("ran Step 'app/my.event.happened.multiple.1'", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "app/my.event.happened.multiple.1",
-      })
-    ).resolves.toBeDefined();
   });
 
   test("sent event 'app/my.event.happened.multiple.1'", async () => {

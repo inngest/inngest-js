@@ -9,24 +9,30 @@ import {
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
 import { stringify } from "../helpers/strings";
-import {
-  type PartialK,
-  type SendEventPayload,
-  type SingleOrArray,
-  type ValueOf,
-} from "../helpers/types";
-import { DefaultLogger, type Logger } from "../middleware/logger";
+import { type SendEventPayload } from "../helpers/types";
+import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
   type ClientOptions,
   type EventNameFromTrigger,
   type EventPayload,
   type FailureEventArgs,
   type FunctionOptions,
+  type FunctionTrigger,
   type Handler,
+  type MiddlewareStack,
   type ShimmedFns,
   type TriggerOptions,
 } from "../types";
+import { type EventSchemas } from "./EventSchemas";
 import { InngestFunction } from "./InngestFunction";
+import {
+  InngestMiddleware,
+  getHookStack,
+  type MiddlewareOptions,
+  type MiddlewareRegisterFn,
+  type MiddlewareRegisterReturn,
+  type MiddlewareStackRunInputMutation,
+} from "./InngestMiddleware";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -34,33 +40,39 @@ import { InngestFunction } from "./InngestFunction";
 type FetchT = typeof fetch;
 
 /**
+ * Given a set of client options for Inngest, return the event types that can
+ * be sent or received.
+ *
+ * @public
+ */
+export type EventsFromOpts<TOpts extends ClientOptions> =
+  TOpts["schemas"] extends EventSchemas<infer U>
+    ? U
+    : Record<string, EventPayload>;
+
+/**
  * A client used to interact with the Inngest API by sending or reacting to
  * events.
  *
- * To provide event typing, make sure to pass in your generated event types as
- * the first generic.
+ * To provide event typing, see {@link EventSchemas}.
  *
  * ```ts
- * const inngest = new Inngest<Events>({ name: "My App" });
+ * const inngest = new Inngest({ name: "My App" });
  *
- * // or to provide custom events too
- * const inngest = new Inngest<
- *   Events & {
+ * // or to provide event typing too
+ * const inngest = new Inngest({
+ *   name: "My App",
+ *   schemas: new EventSchemas().fromRecord<{
  *     "app/user.created": {
- *       name: "app/user.created";
- *       data: {
- *         foo: boolean;
- *       };
+ *       data: { userId: string };
  *     };
- *   }
- * >({ name: "My App" });
+ *   }>(),
+ * });
  * ```
  *
  * @public
  */
-export class Inngest<
-  Events extends Record<string, EventPayload> = Record<string, EventPayload>
-> {
+export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   /**
    * The name of this instance, most commonly the name of the application it
    * resides in.
@@ -89,26 +101,29 @@ export class Inngest<
   private readonly logger: Logger;
 
   /**
+   * A promise that resolves when the middleware stack has been initialized and
+   * the client is ready to be used.
+   */
+  private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
+
+  /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
    *
-   * To provide event typing, make sure to pass in your generated event types as
-   * the first generic.
+   * To provide event typing, see {@link EventSchemas}.
    *
    * ```ts
-   * const inngest = new Inngest<Events>({ name: "My App" });
+   * const inngest = new Inngest({ name: "My App" });
    *
-   * // or to provide custom events too
-   * const inngest = new Inngest<
-   *   Events & {
+   * // or to provide event typing too
+   * const inngest = new Inngest({
+   *   name: "My App",
+   *   schemas: new EventSchemas().fromRecord<{
    *     "app/user.created": {
-   *       name: "app/user.created";
-   *       data: {
-   *         foo: boolean;
-   *       };
+   *       data: { userId: string };
    *     };
-   *   }
-   * >({ name: "My App" });
+   *   }>(),
+   * });
    * ```
    */
   constructor({
@@ -118,7 +133,8 @@ export class Inngest<
     fetch,
     env,
     logger = new DefaultLogger(),
-  }: ClientOptions) {
+    middleware,
+  }: TOpts) {
     if (!name) {
       // TODO PrettyError
       throw new Error("A name must be passed to create an Inngest instance.");
@@ -149,6 +165,42 @@ export class Inngest<
 
     this.fetch = getFetch(fetch);
     this.logger = logger;
+
+    this.middleware = this.initializeMiddleware([
+      ...builtInMiddleware,
+      ...(middleware || []),
+    ]);
+  }
+
+  /**
+   * Initialize all passed middleware, running the `register` function on each
+   * in sequence and returning the requested hook registrations.
+   */
+  private async initializeMiddleware(
+    middleware: InngestMiddleware<MiddlewareOptions>[] = [],
+    opts?: {
+      registerInput?: Omit<Parameters<MiddlewareRegisterFn>[0], "client">;
+      prefixStack?: Promise<MiddlewareRegisterReturn[]>;
+    }
+  ): Promise<MiddlewareRegisterReturn[]> {
+    /**
+     * Wait for the prefix stack to run first; do not trigger ours before this
+     * is complete.
+     */
+    const prefix = await (opts?.prefixStack ?? []);
+
+    const stack = middleware.reduce<Promise<MiddlewareRegisterReturn[]>>(
+      async (acc, m) => {
+        // Be explicit about waiting for the previous middleware to finish
+        const prev = await acc;
+        const next = await m.init({ client: this, ...opts?.registerInput });
+
+        return [...prev, next];
+      },
+      Promise.resolve([])
+    );
+
+    return [...prefix, ...(await stack)];
   }
 
   /**
@@ -204,34 +256,6 @@ export class Inngest<
   }
 
   /**
-   * Send one or many events to Inngest. Takes a known event from this Inngest
-   * instance based on the given `name`.
-   *
-   * ```ts
-   * await inngest.send("app/user.created", { data: { id: 123 } });
-   * ```
-   *
-   * Returns a promise that will resolve if the event(s) were sent successfully,
-   * else throws with an error explaining what went wrong.
-   *
-   * If you wish to send an event with custom types (i.e. one that hasn't been
-   * generated), make sure to add it when creating your Inngest instance, like
-   * so:
-   *
-   * ```ts
-   * const inngest = new Inngest<Events & {
-   *   "my/event": {
-   *     name: "my/event";
-   *     data: { bar: string; };
-   *   }
-   * }>("My App", "API_KEY");
-   * ```
-   */
-  public async send<Event extends keyof Events>(
-    name: Event,
-    payload: SingleOrArray<PartialK<Omit<Events[Event], "name" | "v">, "ts">>
-  ): Promise<void>;
-  /**
    * Send one or many events to Inngest. Takes an entire payload (including
    * name) as each input.
    *
@@ -247,29 +271,34 @@ export class Inngest<
    * so:
    *
    * ```ts
-   * const inngest = new Inngest<Events & {
-   *   "my/event": {
-   *     name: "my/event";
-   *     data: { bar: string; };
-   *   }
-   * }>("My App", "API_KEY");
+   * const inngest = new Inngest({
+   *   name: "My App",
+   *   schemas: new EventSchemas().fromRecord<{
+   *     "my/event": {
+   *       name: "my/event";
+   *       data: { bar: string };
+   *     };
+   *   }>(),
+   * });
    * ```
    */
-  public async send<Payload extends SendEventPayload<Events>>(
+  public async send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
     payload: Payload
-  ): Promise<void>;
-  public async send<Event extends keyof Events>(
-    nameOrPayload:
-      | Event
-      | SingleOrArray<
-          ValueOf<{
-            [K in keyof Events]: PartialK<Omit<Events[K], "v">, "ts">;
-          }>
-        >,
-    maybePayload?: SingleOrArray<
-      PartialK<Omit<Events[Event], "name" | "v">, "ts">
-    >
   ): Promise<void> {
+    const hooks = await getHookStack(
+      this.middleware,
+      "onSendEvent",
+      undefined,
+      {
+        transformInput: (prev, output) => {
+          return { ...prev, ...output };
+        },
+        transformOutput: (prev, _output) => {
+          return prev;
+        },
+      }
+    );
+
     if (!this.eventKey) {
       throw new Error(
         prettyError({
@@ -281,30 +310,17 @@ export class Inngest<
       );
     }
 
-    let payloads: ValueOf<Events>[];
+    let payloads: EventPayload[] = Array.isArray(payload)
+      ? (payload as EventPayload[])
+      : payload
+      ? ([payload] as [EventPayload])
+      : [];
 
-    if (typeof nameOrPayload === "string") {
-      /**
-       * Add our payloads and ensure they all have a name.
-       */
-      payloads = (Array.isArray(maybePayload)
-        ? maybePayload
-        : maybePayload
-        ? [maybePayload]
-        : []
-      ).map((payload) => ({
-        ...payload,
-        name: nameOrPayload,
-      })) as unknown as typeof payloads;
-    } else {
-      /**
-       * Grab our payloads straight from the args.
-       */
-      payloads = (Array.isArray(nameOrPayload)
-        ? nameOrPayload
-        : nameOrPayload
-        ? [nameOrPayload]
-        : []) as unknown as typeof payloads;
+    const inputChanges = await hooks.transformInput?.({
+      payloads: [...payloads],
+    });
+    if (inputChanges?.payloads) {
+      payloads = [...inputChanges.payloads];
     }
 
     /**
@@ -346,7 +362,7 @@ export class Inngest<
     });
 
     if (response.status >= 200 && response.status < 300) {
-      return;
+      return void (await hooks.transformOutput?.({ payloads: [...payloads] }));
     }
 
     throw await this.#getResponseError(response);
@@ -354,20 +370,22 @@ export class Inngest<
 
   public createFunction<
     TFns extends Record<string, unknown>,
-    TTrigger extends TriggerOptions<keyof Events & string>,
+    TMiddleware extends MiddlewareStack,
+    TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>,
     TShimmedFns extends Record<
       string,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (...args: any[]) => any
     > = ShimmedFns<TFns>,
-    TTriggerName extends keyof Events & string = EventNameFromTrigger<
-      Events,
-      TTrigger
-    >
+    TTriggerName extends keyof EventsFromOpts<TOpts> &
+      string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
   >(
     nameOrOpts:
       | string
-      | (Omit<FunctionOptions<Events, TTriggerName>, "fns" | "onFailure"> & {
+      | (Omit<
+          FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>,
+          "fns" | "onFailure" | "middleware"
+        > & {
           /**
            * Pass in an object of functions that will be wrapped in Inngest
            * tooling and passes to your handler. This wrapping ensures that each
@@ -411,24 +429,121 @@ export class Inngest<
            * regular handler.
            */
           onFailure?: Handler<
-            Events,
+            TOpts,
+            EventsFromOpts<TOpts>,
             TTriggerName,
             TShimmedFns,
-            FailureEventArgs<Events[TTriggerName]>
+            FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
           >;
+
+          /**
+           * TODO
+           */
+          middleware?: TMiddleware;
         }),
     trigger: TTrigger,
-    handler: Handler<Events, TTriggerName, TShimmedFns>
-  ): InngestFunction {
-    const opts = (
+    handler: Handler<
+      TOpts,
+      EventsFromOpts<TOpts>,
+      TTriggerName,
+      TShimmedFns,
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      MiddlewareStackRunInputMutation<{}, typeof builtInMiddleware> &
+        // eslint-disable-next-line @typescript-eslint/ban-types
+        MiddlewareStackRunInputMutation<{}, NonNullable<TOpts["middleware"]>> &
+        // eslint-disable-next-line @typescript-eslint/ban-types
+        MiddlewareStackRunInputMutation<{}, TMiddleware>
+    >
+  ): InngestFunction<
+    TOpts,
+    EventsFromOpts<TOpts>,
+    FunctionTrigger<keyof EventsFromOpts<TOpts> & string>,
+    FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>
+  > {
+    const sanitizedOpts = (
       typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts
-    ) as FunctionOptions<Events, keyof Events & string>;
+    ) as FunctionOptions<
+      EventsFromOpts<TOpts>,
+      keyof EventsFromOpts<TOpts> & string
+    >;
 
     return new InngestFunction(
       this,
-      opts,
+      sanitizedOpts,
       typeof trigger === "string" ? { event: trigger } : trigger,
-      handler as Handler<Events, keyof Events & string>
-    ) as unknown as InngestFunction;
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+      handler as any
+    );
   }
 }
+
+/**
+ * Default middleware that is included in every client, placed after the user's
+ * middleware on the client but before function-level middleware.
+ *
+ * It is defined here to ensure that comments are included in the generated TS
+ * definitions. Without this, we infer the stack of built-in middleware without
+ * comments, losing a lot of value.
+ *
+ * If this is moved, please ensure that using this package in another project
+ * can correctly access comments on mutated input and output.
+ */
+const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
+  new InngestMiddleware({
+    name: "Inngest: Logger",
+    init({ client }) {
+      return {
+        onFunctionRun(arg) {
+          const { ctx } = arg;
+          const metadata = {
+            runID: ctx.runId,
+            eventName: ctx.event.name,
+            functionName: arg.fn.name,
+          };
+
+          let providedLogger: Logger = client["logger"];
+          // create a child logger if the provided logger has child logger implementation
+          try {
+            if ("child" in providedLogger) {
+              type ChildLoggerFn = (
+                metadata: Record<string, unknown>
+              ) => Logger;
+              providedLogger = (providedLogger.child as ChildLoggerFn)(
+                metadata
+              );
+            }
+          } catch (err) {
+            console.error('failed to create "childLogger" with error: ', err);
+            // no-op
+          }
+          const logger = new ProxyLogger(providedLogger);
+
+          return {
+            transformInput() {
+              return {
+                ctx: {
+                  /**
+                   * The passed in logger from the user.
+                   * Defaults to a console logger if not provided.
+                   */
+                  logger: logger as Logger,
+                },
+              };
+            },
+            beforeExecution() {
+              logger.enable();
+            },
+            transformOutput({ result: { error } }) {
+              if (error) {
+                logger.error(error);
+              }
+            },
+            async beforeResponse() {
+              await logger.flush();
+            },
+          };
+        },
+      };
+    },
+  }),
+]);

@@ -12,7 +12,7 @@ import {
   platformSupportsStreaming,
   skipDevServer,
 } from "../helpers/env";
-import { serializeError } from "../helpers/errors";
+import { OutgoingOpError, serializeError } from "../helpers/errors";
 import { cacheFn } from "../helpers/functions";
 import { strBoolean } from "../helpers/scalar";
 import { createStream } from "../helpers/stream";
@@ -66,13 +66,13 @@ export type ServeHandler = (
    * the `Inngest` instance used to declare all functions.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  nameOrInngest: string | Inngest<any>,
+  client: Inngest<any>,
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  functions: InngestFunction<any, any, any>[],
+  functions: InngestFunction<any, any, any, any>[],
 
   /**
    * A set of options to further configure the registration of Inngest
@@ -267,9 +267,10 @@ export class InngestCommHandler<
    * when instantiating the class.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private readonly rawFns: InngestFunction<any, any, any>[];
+  private readonly rawFns: InngestFunction<any, any, any, any>[];
 
-  private readonly client: Inngest | undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private readonly client: Inngest<any>;
 
   /**
    * A private collection of functions that are being served. This map is used
@@ -303,13 +304,13 @@ export class InngestCommHandler<
      * definition of Inngest.
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    appNameOrInngest: string | Inngest<any>,
+    client: Inngest<any>,
 
     /**
      * An array of the functions to serve and register with Inngest.
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    functions: InngestFunction<any, any, any>[],
+    functions: InngestFunction<any, any, any, any>[],
     {
       inngestRegisterUrl,
       fetch,
@@ -319,6 +320,7 @@ export class InngestCommHandler<
       serveHost,
       servePath,
       streaming,
+      name,
     }: RegisterOptions = {},
 
     /**
@@ -400,14 +402,8 @@ export class InngestCommHandler<
     streamTransformRes?: TStreamTransform
   ) {
     this.frameworkName = frameworkName;
-    this.name =
-      typeof appNameOrInngest === "string"
-        ? appNameOrInngest
-        : appNameOrInngest.name;
-
-    if (typeof appNameOrInngest !== "string") {
-      this.client = appNameOrInngest;
-    }
+    this.client = client;
+    this.name = name || this.client.name;
 
     this.handler = handler;
     this.transformRes = transformRes;
@@ -470,12 +466,7 @@ export class InngestCommHandler<
     this.logLevel = logLevel;
     this.streaming = streaming ?? false;
 
-    this.fetch = getFetch(
-      fetch ||
-        (typeof appNameOrInngest === "string"
-          ? undefined
-          : appNameOrInngest["fetch"])
-    );
+    this.fetch = getFetch(fetch || this.client["fetch"]);
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
@@ -877,7 +868,13 @@ export class InngestCommHandler<
        * comment and check and functionality should resume as normal.
        */
       if (ret[0] === "run" && ret[1].error) {
-        throw ret[1].error;
+        /**
+         * We throw the `data` here instead of the `error` because we expect
+         * `data` to be a prepared version of the error which may have been
+         * altered by middleware, whereas `error` is the initial triggering
+         * error.
+         */
+        throw new OutgoingOpError(ret[1]);
       }
 
       return {
@@ -892,8 +889,21 @@ export class InngestCommHandler<
        *
        * See {@link https://www.npmjs.com/package/serialize-error}
        */
+      const isOutgoingOpError = unserializedErr instanceof OutgoingOpError;
 
-      const error = stringify(serializeError(unserializedErr));
+      let error: string;
+      if (isOutgoingOpError) {
+        error =
+          typeof unserializedErr.op.data === "string"
+            ? unserializedErr.op.data
+            : stringify(unserializedErr.op.data);
+      } else {
+        error = stringify(serializeError(unserializedErr));
+      }
+
+      const isNonRetriableError = isOutgoingOpError
+        ? unserializedErr.op.error instanceof NonRetriableError
+        : unserializedErr instanceof NonRetriableError;
 
       /**
        * If we've caught a non-retriable error, we'll return a 400 to Inngest
@@ -903,7 +913,7 @@ export class InngestCommHandler<
        * inside individual steps, so this safely catches all areas.
        */
       return {
-        status: unserializedErr instanceof NonRetriableError ? 400 : 500,
+        status: isNonRetriableError ? 400 : 500,
         error,
       };
     }

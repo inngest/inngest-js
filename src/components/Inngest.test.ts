@@ -1,4 +1,4 @@
-import { type EventPayload } from "@local";
+import { EventSchemas, InngestMiddleware, type EventPayload } from "@local";
 import { envKeys, headerKeys } from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
 import { assertType } from "type-plus";
@@ -131,14 +131,6 @@ describe("send", () => {
       );
     });
 
-    test("should succeed if an event name is given with an empty list of payloads", async () => {
-      const inngest = createClient({ name: "test" });
-      inngest.setEventKey(testEventKey);
-
-      await expect(inngest.send("test", [])).resolves.toBeUndefined();
-      expect(global.fetch).not.toHaveBeenCalled();
-    });
-
     test("should succeed if an empty list of payloads is given", async () => {
       const inngest = createClient({ name: "test" });
       inngest.setEventKey(testEventKey);
@@ -230,15 +222,57 @@ describe("send", () => {
         })
       );
     });
+
+    test("should allow middleware to mutate input", async () => {
+      const inngest = createClient({
+        name: "test",
+        eventKey: testEventKey,
+        middleware: [
+          new InngestMiddleware({
+            name: "Test",
+            init() {
+              return {
+                onSendEvent() {
+                  return {
+                    transformInput(ctx) {
+                      return {
+                        payloads: ctx.payloads.map((payload) => ({
+                          ...payload,
+                          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                          data: {
+                            ...payload.data,
+                            bar: true,
+                          },
+                        })),
+                      };
+                    },
+                  };
+                },
+              };
+            },
+          }),
+        ],
+      });
+
+      await expect(
+        inngest.send({ ...testEvent, data: { foo: true } })
+      ).resolves.toBeUndefined();
+
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/e/${testEventKey}`),
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify([
+            { ...testEvent, data: { foo: true, bar: true } },
+          ]),
+        })
+      );
+    });
   });
 
   describe("types", () => {
     describe("no custom types", () => {
       const inngest = createClient({ name: "test", eventKey: testEventKey });
-
-      test("allows sending a single event with a string", () => {
-        const _fn = () => inngest.send("anything", { data: "foo" });
-      });
 
       test("allows sending a single event with an object", () => {
         const _fn = () => inngest.send({ name: "anything", data: "foo" });
@@ -254,16 +288,20 @@ describe("send", () => {
     });
 
     describe("multiple custom types", () => {
-      const inngest = createClient<{
-        foo: {
-          name: "foo";
-          data: { foo: string };
-        };
-        bar: {
-          name: "bar";
-          data: { bar: string };
-        };
-      }>({ name: "test", eventKey: testEventKey });
+      const inngest = createClient({
+        name: "test",
+        eventKey: testEventKey,
+        schemas: new EventSchemas().fromRecord<{
+          foo: {
+            name: "foo";
+            data: { foo: string };
+          };
+          bar: {
+            name: "bar";
+            data: { bar: string };
+          };
+        }>(),
+      });
 
       test("disallows sending a single unknown event with a string", () => {
         // @ts-expect-error Unknown event
@@ -312,10 +350,6 @@ describe("send", () => {
             // @ts-expect-error Invalid data
             { name: "bar", data: { foo: "" } },
           ]);
-      });
-
-      test("allows sending a single known event with a string", () => {
-        const _fn = () => inngest.send("foo", { data: { foo: "" } });
       });
 
       test("allows sending a single known event with an object", () => {
@@ -411,16 +445,19 @@ describe("createFunction", () => {
     });
 
     describe("multiple custom types", () => {
-      const inngest = createClient<{
-        foo: {
-          name: "foo";
-          data: { title: string };
-        };
-        bar: {
-          name: "bar";
-          data: { message: string };
-        };
-      }>({ name: "test" });
+      const inngest = createClient({
+        name: "test",
+        schemas: new EventSchemas().fromRecord<{
+          foo: {
+            name: "foo";
+            data: { title: string };
+          };
+          bar: {
+            name: "bar";
+            data: { message: string };
+          };
+        }>(),
+      });
 
       test("disallows unknown event as object", () => {
         // @ts-expect-error Unknown event

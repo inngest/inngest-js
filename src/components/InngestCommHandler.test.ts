@@ -1,3 +1,4 @@
+import { EventSchemas } from "@local";
 import { serve } from "@local/next";
 import { assertType } from "type-plus";
 import { z } from "zod";
@@ -16,14 +17,17 @@ describe("#153", () => {
     type Literal = z.infer<typeof literalSchema>;
     type Json = Literal | { [key: string]: Json } | Json[];
 
-    const inngest = createClient<{
-      foo: {
-        name: "foo";
-        data: {
-          json: Json;
+    const inngest = createClient({
+      name: "My App",
+      schemas: new EventSchemas().fromRecord<{
+        foo: {
+          name: "foo";
+          data: {
+            json: Json;
+          };
         };
-      };
-    }>({ name: "My App" });
+      }>(),
+    });
 
     /**
      * This would throw:
