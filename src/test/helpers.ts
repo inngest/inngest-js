@@ -658,7 +658,7 @@ export const testFramework = (
                   )}&s=expired`,
                 },
                 url: "/api/inngest?fnId=test",
-                body: { event: {} },
+                body: { event: {}, events: [{}] },
               },
             ],
             env
@@ -674,20 +674,23 @@ export const testFramework = (
         // This prevents us from having to rewrite the signature creation function in JS, which may
         // differ from the cloud/CLI version.
         test("should validate a signature with a key successfully", async () => {
+          const event = {
+            data: {},
+            id: "",
+            name: "inngest/scheduled.timer",
+            ts: 1674082830001,
+            user: {},
+            v: "1",
+          };
+
           const body = {
             ctx: {
               fn_id: "local-testing-local-cron",
               run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
               step_id: "step",
             },
-            event: {
-              data: {},
-              id: "",
-              name: "inngest/scheduled.timer",
-              ts: 1674082830001,
-              user: {},
-              v: "1",
-            },
+            event,
+            events: [event],
             steps: {},
           };
           const ret = await run(
@@ -706,7 +709,7 @@ export const testFramework = (
                 method: "POST",
                 headers: {
                   [headerKeys.Signature]:
-                    "t=1674082860&s=88b6453463050d1846743cbba0925bae7c1cf807f9c74bbd41b3d5cfc9c70d11",
+                    "t=1674082860&s=54976596807c38ffac70cb777fa8e3447d9b383ec633124b8741c5157019e080",
                 },
                 url: "/api/inngest?fnId=test&stepId=step",
                 body,

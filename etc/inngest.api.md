@@ -80,6 +80,10 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
 
 // @public
 export interface FunctionOptions<Events extends Record<string, EventPayload>, Event extends keyof Events & string> {
+    batchEvents?: {
+        maxSize: number;
+        timeout: string;
+    };
     // Warning: (ae-forgotten-export) The symbol "Cancellation" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)

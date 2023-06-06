@@ -179,6 +179,8 @@ export type BaseContext<
    */
   event: EventsFromOpts<TOpts>[TTrigger];
 
+  events: EventsFromOpts<TOpts>[TTrigger][];
+
   /**
    * The run ID for the current function execution
    */
@@ -646,6 +648,26 @@ export interface FunctionOptions<
    */
   concurrency?: number | { limit: number };
 
+  /**
+   * batchEvents specifies the batch configuration on when this function
+   * should be invoked when one of the requirements are fulfilled.
+   *
+   * @example { maxSize: 100, timeout: "1s" }
+   */
+  batchEvents?: {
+    /**
+     * The maximum number of events to be consumed in one batch
+     */
+    maxSize: number;
+
+    /**
+     * How long to wait before invoking the function with a list of events.
+     * If timeout is reached, the function will be invoked with a batch
+     * even if it's not filled up to `maxSize`.
+     */
+    timeout: string;
+  };
+
   fns?: Record<string, unknown>;
 
   /**
@@ -919,6 +941,10 @@ export interface FunctionConfig {
     }
   >;
   idempotency?: string;
+  batchEvents?: {
+    maxSize: number;
+    timeout: string;
+  };
   throttle?: {
     key?: string;
     count: number;
