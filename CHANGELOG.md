@@ -1,5 +1,34 @@
 # inngest
 
+## 2.0.0
+
+### Major Changes
+
+- 4f29f5c: Removed `tools` parameter (breaking). This was marked as `@deprecated` in v1, but is being fully removed in v2. Use `step` instead.
+  See the [v2 migration guide](https://www.inngest.com/docs/sdk/migration#clearer-event-sending).
+- 4f29f5c: Renamed `throttle` to `rateLimit`.
+  See the [v2 migration guide](https://www.inngest.com/docs/sdk/migration#clearer-event-sending).
+- 4f29f5c: Added the ability to provide middleware when defining Inngest clients and functions, hooking into a client's lifecycle to add custom functionality like error monitoring, data transformations, and more.
+  See [Advanced: Middleware - Inngest Documentation](https://www.inngest.com/docs/reference/middleware/overview).
+- 4f29f5c: Removed ability to `serve()` without a client (breaking).
+  See the [v2 migration guide](https://www.inngest.com/docs/sdk/migration#clearer-event-sending).
+- 4f29f5c: Better event schema definitions (breaking), providing an extensible metho of creating and maintaining event payloads with a variety of native tools and third-party libraries.
+  See [Defining Event Payload Types - Inngest Documentation](https://www.inngest.com/docs/reference/client/create#defining-event-payload-types).
+- 4f29f5c: Removed some overloads of `inngest.send()` to provide a better TS experience when sending events (breaking).
+  See the [v2 migration guide](https://www.inngest.com/docs/sdk/migration#clearer-event-sending).
+
+### Minor Changes
+
+- 4f29f5c: Added a `logger` to Inngest functions in addition to allowing users to provide a custom logger to reliably push logs to external services and handle flushing on serverless environments.
+  See [Logging in Inngest - Inngest Documentation](https://www.inngest.com/docs/guides/logging).
+- 4f29f5c: Add `GetEvents<>` export which can be used to pull final event types from an Inngest client.
+  See [Defining Event Payload Types](https://www.inngest.com/docs/reference/client/create#defining-event-payload-types).
+- 4f29f5c: Add ability to provide `concurrency: { limit: number }` in function config, ready for more config options.
+
+### Patch Changes
+
+- b62cd6d: Update landing page vite dependency to v3.2.7
+
 ## 1.9.4
 
 ### Patch Changes
