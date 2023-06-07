@@ -531,7 +531,10 @@ const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
               const dataOutput = result.error
                 ? [
                     "it failed with error:",
-                    "message" in (result.error as Record<string, unknown>)
+                    Object.prototype.hasOwnProperty.call(
+                      result.error ?? {},
+                      "message"
+                    )
                       ? (result.error as Record<string, unknown>).message
                       : result.error,
                   ]
