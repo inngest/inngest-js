@@ -1,3 +1,4 @@
+import debug from "debug";
 import { envKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
@@ -8,7 +9,7 @@ import {
   skipDevServer,
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
-import { stringify } from "../helpers/strings";
+import { slugify, stringify } from "../helpers/strings";
 import { type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
@@ -489,6 +490,94 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
  * can correctly access comments on mutated input and output.
  */
 const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
+  new InngestMiddleware({
+    name: "Inngest: Debug",
+    init({ client }) {
+      const clientDebug = debug(`inngest:${slugify(client.name)}`);
+
+      clientDebug("client initialized");
+
+      return {
+        onFunctionRun({ ctx, fn }) {
+          const runDebug = clientDebug.extend(`run:${ctx.runId}`);
+
+          runDebug("function run started", {
+            trigger: ctx.event?.name,
+            fn: { id: fn.id(client.name), name: fn.name },
+          });
+
+          return {
+            transformInput() {
+              runDebug(
+                "starting middleware function run input transformations"
+              );
+            },
+            beforeMemoization() {
+              runDebug(
+                "finished middleware function run input transformations"
+              );
+              runDebug("starting memoization");
+            },
+            afterMemoization() {
+              runDebug("finished memoization");
+            },
+            beforeExecution() {
+              runDebug("starting execution of new code during function run");
+            },
+            afterExecution() {
+              runDebug("finished execution of new code during function run");
+            },
+            transformOutput({ result, step }) {
+              const dataOutput = result.error
+                ? [
+                    "it failed with error:",
+                    "message" in (result.error as Record<string, unknown>)
+                      ? (result.error as Record<string, unknown>).message
+                      : result.error,
+                  ]
+                : ["it succeeded with output:", result.data];
+
+              if (step) {
+                runDebug(`ran step ${step.name} (${step.op});`, ...dataOutput);
+              } else {
+                runDebug("ran main function body;", ...dataOutput);
+              }
+
+              runDebug(
+                "starting middleware function run output transformations"
+              );
+            },
+            beforeResponse() {
+              runDebug(
+                "finished middleware function run output transformations"
+              );
+              runDebug("starting response from function run");
+            },
+          };
+        },
+        onSendEvent() {
+          const sendDebug = clientDebug.extend("send");
+
+          return {
+            transformInput({ payloads }) {
+              sendDebug(
+                "starting middleware send input transformations;",
+                `${payloads.length} detected payload(s) before`
+              );
+            },
+            transformOutput({ payloads }) {
+              sendDebug(
+                "finished middleware send input transformations;",
+                `${payloads.length} detected payload(s) after`
+              );
+
+              sendDebug("starting send output transformations");
+            },
+          };
+        },
+      };
+    },
+  }),
   new InngestMiddleware({
     name: "Inngest: Logger",
     init({ client }) {
