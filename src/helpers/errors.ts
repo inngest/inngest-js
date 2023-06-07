@@ -266,11 +266,11 @@ export const fixEventKeyMissingSteps = [
  *
  * @internal
  */
-export class OutgoingOpError extends Error {
-  public readonly op: OutgoingOp;
+export class OutgoingResultError extends Error {
+  public readonly result: Pick<OutgoingOp, "data" | "error">;
 
-  constructor(op: OutgoingOp) {
+  constructor(result: Pick<OutgoingOp, "data" | "error">) {
     super("OutgoingOpError");
-    this.op = op;
+    this.result = result;
   }
 }

@@ -3,6 +3,7 @@ import { type ServerTiming } from "../helpers/ServerTiming";
 import { internalEvents, queryKeys } from "../helpers/consts";
 import {
   ErrCode,
+  OutgoingResultError,
   deserializeError,
   functionStoppedRunningErr,
   serializeError,
@@ -293,6 +294,35 @@ export class InngestFunction<
       }
     );
 
+    const createFinalError = async (
+      err: unknown,
+      step?: OutgoingOp
+    ): Promise<OutgoingResultError> => {
+      await hookStack.afterExecution?.();
+
+      const result: Pick<OutgoingOp, "error" | "data"> = {
+        error: err,
+      };
+
+      try {
+        result.data = serializeError(err);
+      } catch (serializationErr) {
+        console.warn(
+          "Could not serialize error to return to Inngest; stringifying instead",
+          serializationErr
+        );
+
+        result.data = err;
+      }
+
+      const hookOutput = await applyHookToOutput(hookStack.transformOutput, {
+        result,
+        step,
+      });
+
+      return new OutgoingResultError(hookOutput);
+    };
+
     const state = createExecutionState();
 
     const memoizingStop = timer.start("memoizing");
@@ -497,27 +527,7 @@ export class InngestFunction<
             runningStepStop();
           })
           .catch(async (err: Error) => {
-            await hookStack.afterExecution?.();
-
-            const result: Pick<OutgoingOp, "error" | "data"> = {
-              error: err,
-            };
-
-            try {
-              result.data = serializeError(err);
-            } catch (serializationErr) {
-              console.warn(
-                "Could not serialize error to return to Inngest; stringifying instead",
-                serializationErr
-              );
-
-              result.data = err;
-            }
-
-            return await applyHookToOutput(hookStack.transformOutput, {
-              result,
-              step: outgoingUserFnOp,
-            });
+            return await createFinalError(err, outgoingUserFnOp);
           })
           .then(async (data) => {
             await hookStack.afterExecution?.();
@@ -649,6 +659,8 @@ export class InngestFunction<
       await hookStack.afterExecution?.();
 
       return ["discovery", discoveredOps];
+    } catch (err) {
+      throw await createFinalError(err);
     } finally {
       await hookStack.beforeResponse?.();
     }
