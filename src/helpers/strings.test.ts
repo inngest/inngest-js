@@ -1,4 +1,4 @@
-import { slugify } from "./strings";
+import { slugify, timeStr } from "./strings";
 
 describe("slugify", () => {
   it("Generates a slug using hyphens", () => {
@@ -26,5 +26,19 @@ describe("slugify", () => {
     for (const spec of specs) {
       expect(slugify(spec.input)).toEqual(spec.expected);
     }
+  });
+});
+
+describe("timeStr", () => {
+  test("Converts milliseconds to a time string", () => {
+    expect(timeStr(1000)).toEqual("1s");
+  });
+
+  test("converts ms string to a time string", () => {
+    expect(timeStr("1 day")).toEqual("1d");
+  });
+
+  test("converts a date to an ISO string", () => {
+    expect(timeStr(new Date(0))).toEqual("1970-01-01T00:00:00.000Z");
   });
 });
