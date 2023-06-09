@@ -12,7 +12,7 @@ import {
   platformSupportsStreaming,
   skipDevServer,
 } from "../helpers/env";
-import { OutgoingOpError, serializeError } from "../helpers/errors";
+import { OutgoingResultError, serializeError } from "../helpers/errors";
 import { cacheFn } from "../helpers/functions";
 import { strBoolean } from "../helpers/scalar";
 import { createStream } from "../helpers/stream";
@@ -874,7 +874,10 @@ export class InngestCommHandler<
          * altered by middleware, whereas `error` is the initial triggering
          * error.
          */
-        throw new OutgoingOpError(ret[1]);
+        throw new OutgoingResultError({
+          data: ret[1].data,
+          error: ret[1].error,
+        });
       }
 
       return {
@@ -889,20 +892,20 @@ export class InngestCommHandler<
        *
        * See {@link https://www.npmjs.com/package/serialize-error}
        */
-      const isOutgoingOpError = unserializedErr instanceof OutgoingOpError;
+      const isOutgoingOpError = unserializedErr instanceof OutgoingResultError;
 
       let error: string;
       if (isOutgoingOpError) {
         error =
-          typeof unserializedErr.op.data === "string"
-            ? unserializedErr.op.data
-            : stringify(unserializedErr.op.data);
+          typeof unserializedErr.result.data === "string"
+            ? unserializedErr.result.data
+            : stringify(unserializedErr.result.data);
       } else {
         error = stringify(serializeError(unserializedErr));
       }
 
       const isNonRetriableError = isOutgoingOpError
-        ? unserializedErr.op.error instanceof NonRetriableError
+        ? unserializedErr.result.error instanceof NonRetriableError
         : unserializedErr instanceof NonRetriableError;
 
       /**
