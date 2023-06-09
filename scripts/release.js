@@ -1,6 +1,13 @@
 const path = require("path");
 const { exec: rawExec, getExecOutput } = require("@actions/exec");
 
+const branch = process.env.BRANCH;
+if (branch !== "main" && !branch.endsWith(".x")) {
+  throw new Error(
+    `Stopping release from branch ${branch}; only "main" and "*.x" branches are allowed to release`,
+  );
+}
+
 const { version } = require("../package.json");
 const tag = `v${version}`;
 
@@ -25,12 +32,12 @@ const exec = async (...args) => {
     ["ls-remote", "--exit-code", "origin", "--tags", `refs/tags/${tag}`],
     {
       ignoreReturnCode: true,
-    }
+    },
   );
 
   if (exitCode === 0) {
     console.log(
-      `Action is not being published because version ${tag} is already published`
+      `Action is not being published because version ${tag} is already published`,
     );
     return;
   }
@@ -48,10 +55,10 @@ const exec = async (...args) => {
     ["publish", "--tag", distTag, "--access", "public", "--provenance"],
     {
       cwd: distDir,
-    }
+    },
   );
 
   // Tag and push the release commit
   await exec("changeset", ["tag"]);
-  await exec("git", ["push", "--follow-tags", "origin", "main"]);
+  await exec("git", ["push", "--follow-tags", "origin", branch]);
 })();
