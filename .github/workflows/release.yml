@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - '*.x'
+      - 'v*.x'
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -29,7 +29,7 @@ jobs:
         id: changesets
         with:
           publish: yarn release
-          title: ${{ github.ref_name == 'main' && 'Release @latest' || format('Release @{0}', github.ref_name) }}
+          title: ${{ github.ref_name == 'main' && 'Release @latest' || format('Release {0}', github.ref_name) }}
         env:
           GITHUB_TOKEN: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
