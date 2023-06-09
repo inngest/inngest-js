@@ -1,5 +1,11 @@
 # inngest
 
+## 1.9.5
+
+### Patch Changes
+
+- 1ab8c5d: Fix a very rare bug in which `step.sleep()` hashing could produce different IDs across different executions
+
 ## 1.9.4
 
 ### Patch Changes
