@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - '*.x'
 
 concurrency: ${{ github.workflow }}-${{ github.ref }}
 
@@ -21,10 +22,14 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-and-build
+      - run: node scripts/generateReleaseConfig.js
+        env:
+          BRANCH: ${{ github.ref_name }}
       - uses: changesets/action@v1
         id: changesets
         with:
           publish: yarn release
+          title: ${{ github.ref_name == 'main' && 'Release @latest' || format('Release @{0}', github.ref_name) }}
         env:
           GITHUB_TOKEN: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
