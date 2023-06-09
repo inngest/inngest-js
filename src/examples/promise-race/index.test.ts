@@ -1,44 +1,16 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import fetch from "cross-fetch";
 import {
+  checkIntrospection,
   eventRunWithName,
-  introspectionSchema,
   runHasTimeline,
-  sendEvent,
+  sendEvent
 } from "../../test/helpers";
 
-describe("introspection", () => {
-  const specs = [
-    { label: "SDK UI", url: "http://127.0.0.1:3000/api/inngest?introspect" },
-    { label: "Dev server UI", url: "http://localhost:8288/dev" },
-  ];
-
-  specs.forEach(({ label, url }) => {
-    test(`should show registered functions in ${label}`, async () => {
-      const res = await fetch(url);
-      const data = introspectionSchema.parse(await res.json());
-
-      expect(data.functions).toContainEqual({
-        name: "Promise.race",
-        id: expect.stringMatching(/^.*-promise-race$/),
-        triggers: [{ event: "demo/promise.race" }],
-        steps: {
-          step: {
-            id: "step",
-            name: "step",
-            runtime: {
-              type: "http",
-              url: expect.stringMatching(
-                /^http.+\?fnId=.+-promise-race&stepId=step$/
-              ),
-            },
-          },
-        },
-      });
-    });
-  });
+checkIntrospection({
+  name: "Promise.race",
+  triggers: [{ event: "demo/promise.race" }],
 });
 
 describe("run", () => {
