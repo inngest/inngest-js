@@ -70,7 +70,7 @@ describe("waitForEvent", () => {
     void waitForEvent("event", { timeout: upcoming });
     expect(getOp()).toMatchObject({
       opts: {
-        timeout: expect.stringContaining("6d"),
+        timeout: expect.stringMatching(upcoming.toISOString()),
       },
     });
   });
