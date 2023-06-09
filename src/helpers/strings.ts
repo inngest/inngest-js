@@ -42,11 +42,11 @@ const periods = [
  * Can optionally provide a `now` date to use as the base for the calculation,
  * otherwise a new date will be created on invocation.
  */
-export const timeStr = <TInput extends string | number | Date>(
+export const timeStr = (
   /**
    * The future date to use to convert to a time string.
    */
-  input: TInput
+  input: string | number | Date
 ): string => {
   if (input instanceof Date) {
     return input.toISOString();
