@@ -46,6 +46,19 @@ const exec = async (...args) => {
     throw new Error(`git ls-remote exited with ${exitCode}:\n${stderr}`);
   }
 
+  // Get current latest version
+  const { latestCode, latestStdout, latestStderr } = await getExecOutput("npm", ["dist-tag", "ls"]);
+
+  if (latestCode !== 0) {
+    throw new Error(`npm dist-tag ls exited with ${latestCode}:\n${latestStderr}`);
+  }
+
+  const latestVersion = latestStdout.split("\n").find((line) => line.startsWith("latest: "))?.split(" ")[1];
+
+  if (!latestVersion) {
+    throw new Error(`Could not find "latest" dist-tag in:\n${latestStdout}`);
+  }
+
   // Release to npm
   await exec("npm", ["config", "set", "git-tag-version", "false"], {
     cwd: distDir,
@@ -57,6 +70,11 @@ const exec = async (...args) => {
       cwd: distDir,
     },
   );
+
+  // If this was a backport release, republish the "latest" tag at the actual latest version
+  if (branch !== "main" && tag === "latest") {
+    await exec("npm", ["dist-tag", "add", `inngest@${latestVersion}`, "latest"]);
+  }
 
   // Tag and push the release commit
   await exec("changeset", ["tag"]);
