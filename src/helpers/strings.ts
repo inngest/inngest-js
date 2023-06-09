@@ -42,34 +42,17 @@ const periods = [
  * Can optionally provide a `now` date to use as the base for the calculation,
  * otherwise a new date will be created on invocation.
  */
-export const timeStr = (
+export const timeStr = <TInput extends string | number | Date>(
   /**
    * The future date to use to convert to a time string.
    */
-  input: string | number | Date,
-
-  /**
-   * Optionally provide a date to use as the base for the calculation.
-   */
-  now = new Date()
-): TimeStr => {
-  let date = input;
-
-  if (typeof date === "string" || typeof date === "number") {
-    const numTimeout = typeof date === "string" ? ms(date) : date;
-    date = new Date(now.getTime() + numTimeout);
+  input: TInput
+): string => {
+  if (input instanceof Date) {
+    return input.toISOString();
   }
 
-  now.setMilliseconds(0);
-  date.setMilliseconds(0);
-
-  const isValidDate = !isNaN(date.getTime());
-
-  if (!isValidDate) {
-    throw new Error("Invalid date given to convert to time string");
-  }
-
-  const timeNum = date.getTime() - now.getTime();
+  const milliseconds: number = typeof input === "string" ? ms(input) : input;
 
   const [, timeStr] = periods.reduce<[number, string]>(
     ([num, str], [suffix, period]) => {
@@ -81,7 +64,7 @@ export const timeStr = (
 
       return [num, str];
     },
-    [timeNum, ""]
+    [milliseconds, ""]
   );
 
   return timeStr as TimeStr;
