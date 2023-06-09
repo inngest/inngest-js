@@ -1,4 +1,4 @@
-import { slugify } from "./strings";
+import { slugify, timeStr } from "./strings";
 
 describe("slugify", () => {
   it("Generates a slug using hyphens", () => {
@@ -26,5 +26,38 @@ describe("slugify", () => {
     for (const spec of specs) {
       expect(slugify(spec.input)).toEqual(spec.expected);
     }
+  });
+});
+
+describe("timeStr", () => {
+  test("consistently converts a string to a time string", (done) => {
+    const expected = "1h";
+
+    for (let i = 0; i < 1_000_000; i++) {
+      const actual = timeStr("1 hour");
+      if (actual !== expected) {
+        return void done.fail(
+          `Expected ${expected}, got ${actual} on iteration ${i}`
+        );
+      }
+    }
+
+    done();
+  });
+
+  test("consistently converts a number to a time string", (done) => {
+    const expected = "1h";
+    const oneHourMs = 1000 * 60 * 60;
+
+    for (let i = 0; i < 1_000_000; i++) {
+      const actual = timeStr(oneHourMs);
+      if (actual !== expected) {
+        return void done.fail(
+          `Expected ${expected}, got ${actual} on iteration ${i}`
+        );
+      }
+    }
+
+    done();
   });
 });

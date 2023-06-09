@@ -57,7 +57,7 @@ export const timeStr = (
 
   if (typeof date === "string" || typeof date === "number") {
     const numTimeout = typeof date === "string" ? ms(date) : date;
-    date = new Date(Date.now() + numTimeout);
+    date = new Date(now.getTime() + numTimeout);
   }
 
   now.setMilliseconds(0);
