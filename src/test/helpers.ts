@@ -6,6 +6,8 @@ import { Inngest, type EventPayload } from "@local";
 import { type Inngest as InternalInngest } from "@local/components/Inngest";
 import { type ServeHandler } from "@local/components/InngestCommHandler";
 import { envKeys, headerKeys } from "@local/helpers/consts";
+import { slugify } from "@local/helpers/strings";
+import { type FunctionTrigger } from "@local/types";
 import { version } from "@local/version";
 import fetch from "cross-fetch";
 import { type Request, type Response } from "express";
@@ -715,35 +717,6 @@ export const testFramework = (
 };
 
 /**
- * A Zod schema for an introspection result from the SDK UI or the dev server.
- */
-export const introspectionSchema = z.object({
-  functions: z.array(
-    z.object({
-      name: z.string(),
-      id: z.string(),
-      triggers: z.array(
-        z.object({ event: z.string() }).or(
-          z.object({
-            cron: z.string(),
-          })
-        )
-      ),
-      steps: z.object({
-        step: z.object({
-          id: z.literal("step"),
-          name: z.literal("step"),
-          runtime: z.object({
-            type: z.literal("http"),
-            url: z.string().url(),
-          }),
-        }),
-      }),
-    })
-  ),
-});
-
-/**
  * A test helper used to send events to a local, unsecured dev server.
  *
  * Generates an ID and returns that ID for future use.
@@ -971,4 +944,119 @@ export const runHasTimeline = async (
   }
 
   return;
+};
+
+interface CheckIntrospection {
+  name: string;
+  triggers: FunctionTrigger[];
+}
+
+export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
+  describe("introspection", () => {
+    it("should be registered in SDK UI", async () => {
+      const res = await fetch("http://127.0.0.1:3000/api/inngest?introspect");
+
+      const data = z
+        .object({
+          functions: z.array(
+            z.object({
+              name: z.string(),
+              id: z.string(),
+              triggers: z.array(
+                z.object({ event: z.string() }).or(
+                  z.object({
+                    cron: z.string(),
+                  })
+                )
+              ),
+              steps: z.object({
+                step: z.object({
+                  id: z.literal("step"),
+                  name: z.literal("step"),
+                  runtime: z.object({
+                    type: z.literal("http"),
+                    url: z.string().url(),
+                  }),
+                }),
+              }),
+            })
+          ),
+        })
+        .parse(await res.json());
+
+      expect(data.functions).toContainEqual({
+        name,
+        id: expect.stringMatching(new RegExp(`^.*-${slugify(name)}$`)),
+        triggers,
+        steps: {
+          step: {
+            id: "step",
+            name: "step",
+            runtime: {
+              type: "http",
+              url: expect.stringMatching(
+                new RegExp(`^http.+\\?fnId=.+-${slugify(name)}&stepId=step$`)
+              ),
+            },
+          },
+        },
+      });
+    });
+
+    it("should be registered in Dev Server UI", async () => {
+      const res = await fetch("http://localhost:8288/dev");
+
+      const data = z
+        .object({
+          handlers: z.array(
+            z.object({
+              sdk: z.object({
+                functions: z.array(
+                  z.object({
+                    name: z.string(),
+                    id: z.string(),
+                    triggers: z.array(
+                      z.object({ event: z.string() }).or(
+                        z.object({
+                          cron: z.string(),
+                        })
+                      )
+                    ),
+                    steps: z.object({
+                      step: z.object({
+                        id: z.literal("step"),
+                        name: z.literal("step"),
+                        runtime: z.object({
+                          type: z.literal("http"),
+                          url: z.string().url(),
+                        }),
+                      }),
+                    }),
+                  })
+                ),
+              }),
+            })
+          ),
+        })
+        .parse(await res.json());
+
+      expect(data.handlers[0]?.sdk.functions).toContainEqual({
+        name,
+        id: expect.stringMatching(new RegExp(`^.*-${slugify(name)}$`)),
+        triggers,
+        steps: {
+          step: {
+            id: "step",
+            name: "step",
+            runtime: {
+              type: "http",
+              url: expect.stringMatching(
+                new RegExp(`^http.+\\?fnId=.+-${slugify(name)}&stepId=step$`)
+              ),
+            },
+          },
+        },
+      });
+    });
+  });
 };

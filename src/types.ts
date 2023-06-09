@@ -871,7 +871,7 @@ export interface FunctionConfig {
   cancel?: {
     event: string;
     if?: string;
-    timeout?: TimeStr;
+    timeout?: string;
   }[];
 }
 
