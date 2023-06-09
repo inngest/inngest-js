@@ -34,3 +34,4 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_ENV: test # disable npm access checks; they don't work in CI
+          BRANCH: ${{ github.ref_name }}
