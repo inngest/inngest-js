@@ -10,7 +10,7 @@ if (branch !== "main" && !branch.endsWith(".x")) {
 
 console.log("branch:", branch);
 
-const { version } = require("../package.json");
+const { version, publishConfig: { registry } } = require("../package.json");
 console.log("version:", version);
 const tag = `v${version}`;
 console.log("tag:", tag);
@@ -93,11 +93,15 @@ const exec = async (...args) => {
       latestVersion,
     );
 
+    // `npm dist-tag` doesn't obey `publishConfig.registry`, so we must
+    // explicitly pass the registry URL here
     await exec("npm", [
       "dist-tag",
       "add",
       `inngest@${latestVersion}`,
       "latest",
+      "--registry",
+      registry,
     ]);
   }
 
