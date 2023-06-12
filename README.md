@@ -179,6 +179,13 @@ yarn add ./inngest.tgz && framework dev
 
 To release to production, we use [Changesets](https://github.com/changesets/changesets). This means that releasing and changelog generation is all managed through PRs, where a bot will guide you through the process of announcing changes in PRs and releasing them once merged to `main`.
 
+#### Legacy versions
+
+Merging and releasing to previous major versions of the SDK is also supported.
+
+- Add a `backport v*.x` label (e.g. `backport v1.x`) to a PR to have a backport PR generated when the initial PR is merged.
+- Merging into a `v*.x` branch creates a release PR (named **Release v1.x**, for example) the same as the `main` branch. Simply merge to release.
+
 #### Snapshot versions
 
 If a local `inngest.tgz` isn't ideal, we can release a tagged version to npm. For now, this is relatively manual. For this, please ensure you are in an open PR branch for observability.
