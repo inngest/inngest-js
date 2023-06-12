@@ -25,3 +25,13 @@ jobs:
       - uses: tibdex/backport@v2
         with:
           github_token: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
+          body_template: |-
+            ## Summary
+
+            This is an automated backport of <%= mergeCommitSha %> from #<%= number %> to **<%= base %>**. It was created because a maintainer labeled #<%= number %> with the <kbd>[backport <%= base %>](https://github.com/inngest/inngest-js/labels/backport%20<%= base %>)</kbd> label.
+
+            When this PR is merged, it will create a PR to release **<%= base %>** if a changeset is found.
+
+            ## Related
+
+            - #<%= number %>
