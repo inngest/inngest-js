@@ -47,7 +47,8 @@ const exec = async (...args) => {
   }
 
   // Get current latest version
-  const { latestCode, latestStdout, latestStderr } = await getExecOutput("npm", ["dist-tag", "ls"]);
+  const { exitCode: latestCode, stdout: latestStdout, stderr: latestStderr } =
+    await getExecOutput("npm", ["dist-tag", "ls"]);
 
   if (latestCode !== 0) {
     throw new Error(`npm dist-tag ls exited with ${latestCode}:\n${latestStderr}`);
@@ -72,7 +73,7 @@ const exec = async (...args) => {
   );
 
   // If this was a backport release, republish the "latest" tag at the actual latest version
-  if (branch !== "main" && tag === "latest") {
+  if (branch !== "main" && distTag === "latest") {
     await exec("npm", ["dist-tag", "add", `inngest@${latestVersion}`, "latest"]);
   }
 
