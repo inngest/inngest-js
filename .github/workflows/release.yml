@@ -6,7 +6,7 @@ on:
       - main
       - 'v*.x'
 
-concurrency: ${{ github.workflow }}-${{ github.ref }}
+concurrency: ${{ github.workflow }}
 
 env:
   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
