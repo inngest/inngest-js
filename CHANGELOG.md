@@ -1,5 +1,13 @@
 # inngest
 
+## 2.0.1
+
+### Patch Changes
+
+- 3ef0b36: Add better visibility into serve handlers issues
+- 4226b85: Fix middleware `transformOutput` hook not running if an asynchronous, non-step function's body threw
+- cc3929d: Fix a very rare bug in which `step.sleep()` hashing could produce different IDs across different executions
+
 ## 2.0.0
 
 ### Major Changes
