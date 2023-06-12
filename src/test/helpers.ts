@@ -271,11 +271,14 @@ export const testFramework = (
         );
 
         expect(ret).toMatchObject({
-          status: 405,
+          status: 403,
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
             [headerKeys.Framework]: expect.stringMatching(handler.name),
           }),
+          body: expect.stringContaining(
+            "Landing page requested but is disabled"
+          ),
         });
       });
 
@@ -287,11 +290,14 @@ export const testFramework = (
         );
 
         expect(ret).toMatchObject({
-          status: 405,
+          status: 403,
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
             [headerKeys.Framework]: expect.stringMatching(handler.name),
           }),
+          body: expect.stringContaining(
+            "Landing page requested but is disabled"
+          ),
         });
       });
 
@@ -316,11 +322,14 @@ export const testFramework = (
         });
 
         expect(ret).toMatchObject({
-          status: 405,
+          status: 403,
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
             [headerKeys.Framework]: expect.stringMatching(handler.name),
           }),
+          body: expect.stringContaining(
+            "Landing page requested but is disabled"
+          ),
         });
       });
 
