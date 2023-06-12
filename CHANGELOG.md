@@ -1,5 +1,11 @@
 # inngest
 
+## 1.9.6
+
+### Patch Changes
+
+- df03ffc: Add better visibility into serve handlers issues
+
 ## 1.9.5
 
 ### Patch Changes
