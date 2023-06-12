@@ -698,8 +698,13 @@ export class InngestCommHandler<
 
         if (this._isProd || !showLandingPage) {
           return {
-            status: 405,
-            body: "",
+            status: 403,
+            body: JSON.stringify({
+              message: "Landing page requested but is disabled",
+              isProd: this._isProd,
+              skipDevServer: this._skipDevServer,
+              showLandingPage,
+            }),
             headers: {},
           };
         }
@@ -765,7 +770,11 @@ export class InngestCommHandler<
 
     return {
       status: 405,
-      body: "",
+      body: JSON.stringify({
+        message: "No action found; request was likely not POST, PUT, or GET",
+        isProd: this._isProd,
+        skipDevServer: this._skipDevServer,
+      }),
       headers: {},
     };
   }
