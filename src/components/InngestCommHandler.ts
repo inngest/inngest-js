@@ -654,6 +654,14 @@ export class InngestCommHandler<
         );
 
         if (stepRes.status === 500 || stepRes.status === 400) {
+          const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+          };
+
+          if (stepRes.status === 400) {
+            headers[headerKeys.NoRetry] = "true";
+          }
+
           return {
             status: stepRes.status,
             body: stringify(
@@ -664,9 +672,7 @@ export class InngestCommHandler<
                   )
                 )
             ),
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers,
           };
         }
 
