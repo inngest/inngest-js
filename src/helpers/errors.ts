@@ -1,27 +1,45 @@
 import chalk from "chalk";
+import stringify from "json-stringify-safe";
 import {
   deserializeError as cjsDeserializeError,
   serializeError as cjsSerializeError,
+  errorConstructors,
+  type SerializedError as CjsSerializedError,
 } from "serialize-error-cjs";
+import { z } from "zod";
 import { type Inngest } from "../components/Inngest";
+import { NonRetriableError } from "../components/NonRetriableError";
 import { type ClientOptions, type OutgoingOp } from "../types";
 
 const SERIALIZED_KEY = "__serialized";
 const SERIALIZED_VALUE = true;
 
-export interface SerializedError {
+/**
+ * Add first-class support for certain errors that we control, in addition to
+ * built-in errors such as `TypeError`.
+ *
+ * Adding these allows these non-standard errors to be correctly serialized,
+ * sent to Inngest, then deserialized back into the correct error type for users
+ * to react to correctly.
+ *
+ * Note that these errors only support `message?: string | undefined` as the
+ * input; more custom errors are not supported with this current strategy.
+ */
+errorConstructors.set(
+  "NonRetriableError",
+  NonRetriableError as ErrorConstructor
+);
+
+export interface SerializedError extends Readonly<CjsSerializedError> {
   readonly [SERIALIZED_KEY]: typeof SERIALIZED_VALUE;
-  readonly name: string;
-  readonly message: string;
-  readonly stack: string;
 }
 
 /**
- * Serialise an error to a plain object.
+ * Serialise an error to a serialized JSON string.
  *
  * Errors do not serialise nicely to JSON, so we use this function to convert
- * them to a plain object. Doing this is also non-trivial for some errors, so
- * we use the `serialize-error` package to do it for us.
+ * them to a serialized JSON string. Doing this is also non-trivial for some
+ * errors, so we use the `serialize-error` package to do it for us.
  *
  * See {@link https://www.npmjs.com/package/serialize-error}
  *
@@ -32,29 +50,100 @@ export interface SerializedError {
  * Will not reserialise existing serialised errors.
  */
 export const serializeError = (subject: unknown): SerializedError => {
-  if (isSerializedError(subject)) {
-    return subject as SerializedError;
-  }
+  try {
+    // Try to understand if this is already done.
+    // Will handle stringified errors.
+    const existingSerializedError = isSerializedError(subject);
 
-  return {
-    ...cjsSerializeError(subject as Error),
-    [SERIALIZED_KEY]: SERIALIZED_VALUE,
-  } as const;
+    if (existingSerializedError) {
+      return existingSerializedError;
+    }
+
+    if (typeof subject === "object" && subject !== null) {
+      // Is an object, so let's try and serialize it.
+      const serializedErr = cjsSerializeError(subject as Error);
+
+      // Serialization can succeed but assign no name or message, so we'll
+      // map over the result here to ensure we have everything.
+      // We'll just stringify the entire subject for the message, as this at
+      // least provides some context for the user.
+      return {
+        name: serializedErr.name || "Error",
+        message:
+          serializedErr.message ||
+          stringify(subject) ||
+          "Unknown error; error serialization could not find a message.",
+        stack: serializedErr.stack || "",
+        [SERIALIZED_KEY]: SERIALIZED_VALUE,
+      } as const;
+    }
+
+    // If it's not an object, it's hard to parse this as an Error. In this case,
+    // we'll throw an error to start attempting backup strategies.
+    throw new Error("Error is not an object; strange throw value.");
+  } catch (err) {
+    try {
+      // If serialization fails, fall back to a regular Error and use the
+      // original object as the message for an Error. We don't know what this
+      // object looks like, so we can't do anything else with it.
+      return {
+        ...serializeError(
+          new Error(typeof subject === "string" ? subject : stringify(subject))
+        ),
+        [SERIALIZED_KEY]: SERIALIZED_VALUE,
+      };
+    } catch (err) {
+      // If this failed, then stringifying the object also failed, so we'll just
+      // return a completely generic error.
+      // Failing to stringify the object is very unlikely.
+      return {
+        name: "Could not serialize source error",
+        message: "Serializing the source error failed.",
+        stack: "",
+        [SERIALIZED_KEY]: SERIALIZED_VALUE,
+      };
+    }
+  }
 };
 
 /**
- * Check if an object is a serialised error created by {@link serializeError}.
+ * Check if an object or a string is a serialised error created by
+ * {@link serializeError}.
  */
-export const isSerializedError = (value: unknown): boolean => {
+export const isSerializedError = (
+  value: unknown
+): SerializedError | undefined => {
   try {
-    return (
-      Object.prototype.hasOwnProperty.call(value, SERIALIZED_KEY) &&
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      (value as { [SERIALIZED_KEY]: unknown })[SERIALIZED_KEY] ===
-        SERIALIZED_VALUE
-    );
+    if (typeof value === "string") {
+      const parsed = z
+        .object({
+          [SERIALIZED_KEY]: z.literal(SERIALIZED_VALUE),
+          name: z.enum([...errorConstructors.keys()] as [string, ...string[]]),
+          message: z.string(),
+          stack: z.string(),
+        })
+        .passthrough()
+        .safeParse(JSON.parse(value));
+
+      if (parsed.success) {
+        return parsed.data as SerializedError;
+      }
+    }
+
+    if (typeof value === "object" && value !== null) {
+      const objIsSerializedErr =
+        Object.prototype.hasOwnProperty.call(value, SERIALIZED_KEY) &&
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        (value as { [SERIALIZED_KEY]: unknown })[SERIALIZED_KEY] ===
+          SERIALIZED_VALUE;
+
+      if (objIsSerializedErr) {
+        return value as SerializedError;
+      }
+    }
   } catch {
-    return false;
+    // no-op; we'll return undefined if parsing failed, as it isn't a serialized
+    // error
   }
 };
 
