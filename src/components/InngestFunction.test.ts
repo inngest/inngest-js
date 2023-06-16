@@ -715,7 +715,12 @@ describe("runFn", () => {
               id: B,
               name: "B",
               op: StepOpCode.RunStep,
-              error: "B",
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+              error: expect.objectContaining({
+                __serialized: true,
+                message: "B",
+                name: "Error",
+              }),
             }),
           ],
           expectedStepsRun: ["B"],
