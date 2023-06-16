@@ -1,5 +1,11 @@
 # inngest
 
+## 1.9.7
+
+### Patch Changes
+
+- cec3265: Harden error serialization to ensure uncaught exceptions don't slip through during function runs
+
 ## 1.9.6
 
 ### Patch Changes
