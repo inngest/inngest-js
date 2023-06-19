@@ -1,5 +1,11 @@
 # inngest
 
+## 2.1.0
+
+### Minor Changes
+
+- b74477f: Add optional `id` property to all step tooling, allowing users to override state recovery
+
 ## 2.0.2
 
 ### Patch Changes
