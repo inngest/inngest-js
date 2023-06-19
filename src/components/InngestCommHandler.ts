@@ -909,15 +909,11 @@ export class InngestCommHandler<
        */
       const isOutgoingOpError = unserializedErr instanceof OutgoingResultError;
 
-      let error: string;
-      if (isOutgoingOpError) {
-        error =
-          typeof unserializedErr.result.data === "string"
-            ? unserializedErr.result.data
-            : stringify(unserializedErr.result.data);
-      } else {
-        error = stringify(serializeError(unserializedErr));
-      }
+      const error = stringify(
+        serializeError(
+          isOutgoingOpError ? unserializedErr.result.data : unserializedErr
+        )
+      );
 
       const isNonRetriableError = isOutgoingOpError
         ? unserializedErr.result.error instanceof NonRetriableError

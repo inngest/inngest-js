@@ -1,5 +1,11 @@
 # inngest
 
+## 2.0.2
+
+### Patch Changes
+
+- 023d761: Harden error serialization to ensure uncaught exceptions don't slip through during function runs
+
 ## 2.0.1
 
 ### Patch Changes
