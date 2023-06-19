@@ -972,3 +972,19 @@ export type SupportedFrameworkName =
   | "redwoodjs"
   | "remix"
   | "deno/fresh";
+
+/**
+ * A set of options that can be passed to any step to configure it.
+ */
+export interface StepOpts {
+  /**
+   * Passing an `id` for a step will overwrite the generated hash that is used
+   * by Inngest to pause and resume a function.
+   *
+   * This is useful if you want to ensure that a step is always the same ID even
+   * if the code changes.
+   *
+   * We recommend not using this unless you have a specific reason to do so.
+   */
+  id?: string;
+}
