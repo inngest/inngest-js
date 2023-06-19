@@ -89,6 +89,13 @@ describe("waitForEvent", () => {
       },
     });
   });
+
+  test("uses custom `id` if given", () => {
+    void waitForEvent("event", { id: "custom", timeout: "2h" });
+    expect(getOp()).toMatchObject({
+      id: "custom",
+    });
+  });
 });
 
 describe("run", () => {
@@ -158,6 +165,13 @@ describe("run", () => {
       }>
     >(output);
   });
+
+  test("uses custom `id` if given", () => {
+    void run("step", () => undefined, { id: "custom" });
+    expect(getOp()).toMatchObject({
+      id: "custom",
+    });
+  });
 });
 
 describe("sleep", () => {
@@ -182,6 +196,13 @@ describe("sleep", () => {
     void sleep("1m");
     expect(getOp()).toMatchObject({
       name: "1m",
+    });
+  });
+
+  test("uses custom `id` if given", () => {
+    void sleep("1m", { id: "custom" });
+    expect(getOp()).toMatchObject({
+      id: "custom",
     });
   });
 });
@@ -240,6 +261,13 @@ describe("sleepUntil", () => {
       "Invalid date or date string passed"
     );
   });
+
+  test("uses custom `id` if given", () => {
+    void sleepUntil(new Date(), { id: "custom" });
+    expect(getOp()).toMatchObject({
+      id: "custom",
+    });
+  });
 });
 
 describe("sendEvent", () => {
@@ -284,6 +312,14 @@ describe("sendEvent", () => {
 
       expect(getOp()).toBeUndefined();
       expect(sendSpy).toHaveBeenCalledWith("step", { data: "foo" });
+    });
+
+    test("uses custom `id` if given", () => {
+      void sendEvent({ name: "step", data: "foo" }, { id: "custom" });
+
+      expect(getOp()).toMatchObject({
+        id: "custom",
+      });
     });
   });
 
