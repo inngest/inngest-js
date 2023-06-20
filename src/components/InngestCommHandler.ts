@@ -33,6 +33,7 @@ import { version } from "../version";
 import { type Inngest } from "./Inngest";
 import { type InngestFunction } from "./InngestFunction";
 import { NonRetriableError } from "./NonRetriableError";
+import { InngestAPI } from "../api/api";
 
 /**
  * A handler for serving Inngest functions. This type should be used
@@ -785,7 +786,8 @@ export class InngestCommHandler<
       }
 
       // TODO PrettyError on parse failure; serve handler may be set up badly
-      const { event, events, steps, ctx } = z
+      // const { event, events, steps, ctx, use_api } = z
+      const fnData = z
         .object({
           event: z.object({}).passthrough(),
           events: z.array(z.object({}).passthrough()),
@@ -826,8 +828,24 @@ export class InngestCommHandler<
             })
             .optional()
             .nullable(),
+          use_api: z.boolean(),
         })
         .parse(data);
+
+      const ctx = fnData.ctx;
+      let events = fnData.events;
+      let steps = fnData.steps;
+      if (fnData.use_api) {
+        const [evtdata, stepdata] = await Promise.all([
+          this.client.inngestapi.getRunBatch(ctx?.run_id as string),
+          this.client.inngestapi.getRunSteps(ctx?.run_id as string),
+        ]);
+
+        // eslint-disable-next-line
+        // @ts-ignore TS2322
+        events = evtdata;
+        steps = stepdata;
+      }
 
       /**
        * TODO When the executor does support per-step errors, this map will need
