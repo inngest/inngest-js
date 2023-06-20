@@ -790,7 +790,7 @@ export class InngestCommHandler<
       const fnData = z
         .object({
           event: z.object({}).passthrough(),
-          events: z.array(z.object({}).passthrough()),
+          events: z.array(z.object({}).passthrough()).optional().nullable(),
           // events: z.array(z.object({}).passthrough()),
           /**
            * When handling per-step errors, steps will need to be an object with
@@ -833,7 +833,7 @@ export class InngestCommHandler<
         .parse(data);
 
       const ctx = fnData.ctx;
-      let events = fnData.events;
+      let events = fnData.events || [];
       let steps = fnData.steps;
       if (fnData.use_api) {
         const [evtdata, stepdata] = await Promise.all([
@@ -846,6 +846,7 @@ export class InngestCommHandler<
         events = evtdata;
         steps = stepdata;
       }
+      const event = fnData.event;
 
       /**
        * TODO When the executor does support per-step errors, this map will need
@@ -867,7 +868,7 @@ export class InngestCommHandler<
           }) ?? [];
 
       const ret = await fn.fn["runFn"](
-        { event: events[0], events, runId: ctx?.run_id },
+        { event, events, runId: ctx?.run_id },
         opStack,
         /**
          * TODO The executor is sending `"step"` as the step ID when it is not

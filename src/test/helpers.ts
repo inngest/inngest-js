@@ -692,6 +692,7 @@ export const testFramework = (
             event,
             events: [event],
             steps: {},
+            use_api: false,
           };
           const ret = await run(
             [
@@ -709,7 +710,7 @@ export const testFramework = (
                 method: "POST",
                 headers: {
                   [headerKeys.Signature]:
-                    "t=1674082860&s=54976596807c38ffac70cb777fa8e3447d9b383ec633124b8741c5157019e080",
+                    "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
                 },
                 url: "/api/inngest?fnId=test&stepId=step",
                 body,
