@@ -9,11 +9,6 @@ mkShell {
     pkgs.yarn
     pkgs.nodejs-18_x
 
-    # LSPs
-    pkgs.nodePackages.typescript-language-server
-    pkgs.nodePackages.vscode-json-languageserver
-    pkgs.nodePackages.yaml-language-server
-
     # Tools
   ];
 }

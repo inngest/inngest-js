@@ -1,6 +1,6 @@
 import canonicalize from "canonicalize";
 import { hmac, sha256 } from "hash.js";
-import { object, z } from "zod";
+import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
@@ -33,7 +33,6 @@ import { version } from "../version";
 import { type Inngest } from "./Inngest";
 import { type InngestFunction } from "./InngestFunction";
 import { NonRetriableError } from "./NonRetriableError";
-import { InngestAPI } from "../api/api";
 
 /**
  * A handler for serving Inngest functions. This type should be used
@@ -790,7 +789,7 @@ export class InngestCommHandler<
       const fnData = z
         .object({
           event: z.object({}).passthrough(),
-          events: z.array(z.object({}).passthrough()).optional().nullable(),
+          events: z.array(z.object({}).passthrough()).default([]),
           // events: z.array(z.object({}).passthrough()),
           /**
            * When handling per-step errors, steps will need to be an object with
@@ -828,12 +827,12 @@ export class InngestCommHandler<
             })
             .optional()
             .nullable(),
-          use_api: z.boolean(),
+          use_api: z.boolean().default(false),
         })
         .parse(data);
 
       const ctx = fnData.ctx;
-      let events = fnData.events || [];
+      let events = fnData.events;
       let steps = fnData.steps;
       if (fnData.use_api) {
         const [evtdata, stepdata] = await Promise.all([
