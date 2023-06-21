@@ -1,20 +1,18 @@
 import { fetch } from "cross-fetch";
+import { type Result, Ok, Err } from "../types";
+import {
+  ErrorSchema,
+  type ErrorResponse,
+  StepsSchema,
+  type StepsResponse,
+  BatchSchema,
+  type BatchResponse,
+} from "./schema";
 
 interface InngestAPIConstructorOpts {
   baseUrl?: string;
   eventKey: string;
 }
-
-type ErrorResponse = {
-  error: string;
-  status: number;
-};
-
-type StepsResponse = {
-  step: unknown;
-};
-
-type BatchResponse = [unknown];
 
 export class InngestAPI {
   public readonly baseUrl: string;
@@ -28,41 +26,39 @@ export class InngestAPI {
     this.eventKey = eventKey;
   }
 
-  async getRunSteps(runId: string): Promise<StepsResponse | ErrorResponse> {
+  async getRunSteps(
+    runId: string
+  ): Promise<Result<StepsResponse, ErrorResponse>> {
     const url = `${this.baseUrl}/v0/runs/${runId}/actions`;
 
     return fetch(url, {
       headers: { Authorization: `Bearer ${this.eventKey}` },
-    })
-      .then(async (resp) => {
-        if (!resp.ok) {
-          const msg = await resp.text();
-          throw new Error(msg);
-        }
+    }).then(async (resp) => {
+      const data: unknown = await resp.json();
 
-        return resp.json() as Promise<StepsResponse>;
-      })
-      .catch((error: Error) => {
-        return JSON.parse(error.message) as ErrorResponse;
-      });
+      if (resp.ok) {
+        return Ok(StepsSchema.parse(data));
+      } else {
+        return Err(ErrorSchema.parse(data));
+      }
+    });
   }
 
-  async getRunBatch(runId: string): Promise<BatchResponse | ErrorResponse> {
+  async getRunBatch(
+    runId: string
+  ): Promise<Result<BatchResponse, ErrorResponse>> {
     const url = `${this.baseUrl}/v0/runs/${runId}/batch`;
 
     return fetch(url, {
       headers: { Authorization: `Bearer ${this.eventKey}` },
-    })
-      .then(async (resp) => {
-        if (!resp.ok) {
-          const msg = await resp.text();
-          throw new Error(msg);
-        }
+    }).then(async (resp) => {
+      const data: unknown = await resp.json();
 
-        return resp.json() as Promise<BatchResponse>;
-      })
-      .catch((error: Error) => {
-        return JSON.parse(error.message) as ErrorResponse;
-      });
+      if (resp.ok) {
+        return Ok(BatchSchema.parse(data));
+      } else {
+        return Err(ErrorSchema.parse(data));
+      }
+    });
   }
 }
