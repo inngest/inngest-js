@@ -1032,3 +1032,50 @@ export const Ok = <T>(data: T): Result<T, never> => {
 export const Err = <E>(error?: E): Result<never, E> => {
   return { ok: false, error };
 };
+
+/**
+ * Format of data send from the executor to the SDK
+ */
+export const fnDataSchema = z.object({
+  event: z.object({}).passthrough(),
+  events: z.array(z.object({}).passthrough()).default([]),
+  // events: z.array(z.object({}).passthrough()),
+  /**
+   * When handling per-step errors, steps will need to be an object with
+   * either a `data` or an `error` key.
+   *
+   * For now, we support the current method of steps just being a map of
+   * step ID to step data.
+   *
+   * TODO When the executor does support per-step errors, we can uncomment
+   * the expected schema below.
+   */
+  steps: z
+    .record(
+      z.any().refine((v) => typeof v !== "undefined", {
+        message: "Values in steps must be defined",
+      })
+    )
+    .optional()
+    .nullable(),
+  // steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
+  ctx: z
+    .object({
+      run_id: z.string(),
+      stack: z
+        .object({
+          stack: z
+            .array(z.string())
+            .nullable()
+            .transform((v) => (Array.isArray(v) ? v : [])),
+          current: z.number(),
+        })
+        .passthrough()
+        .optional()
+        .nullable(),
+    })
+    .optional()
+    .nullable(),
+  use_api: z.boolean().default(false),
+});
+export type FnData = z.infer<typeof fnDataSchema>;

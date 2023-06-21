@@ -1,4 +1,7 @@
 import { type Await } from "./types";
+import { prettyError } from "./errors";
+import { fnDataSchema, type FnData, type Result, Ok, Err } from "../types";
+import { type InngestAPI } from "../api/api";
 
 /**
  * Wraps a function with a cache. When the returned function is run, it will
@@ -57,4 +60,45 @@ export const waterfall = <TFns extends ((arg?: any) => any)[]>(
 
     return chain;
   };
+};
+
+type ParseErr = string;
+export const parseFnData = async (
+  data: unknown,
+  api: InngestAPI
+): Promise<Result<FnData, ParseErr>> => {
+  const result = fnDataSchema.parse(data);
+
+  if (result.use_api) {
+    const [evtResp, stepResp] = await Promise.all([
+      api.getRunBatch(result.ctx?.run_id as string),
+      api.getRunSteps(result.ctx?.run_id as string),
+    ]);
+
+    if (evtResp.ok) {
+      result.events = evtResp.value;
+    } else {
+      return Err(
+        prettyError({
+          whatHappened: "failed to retrieve list of events",
+          consequences: "function execution can't continue",
+          stack: true,
+        })
+      );
+    }
+
+    if (stepResp.ok) {
+      result.steps = stepResp.value;
+    } else {
+      return Err(
+        prettyError({
+          whatHappened: "failed to retrieve steps for function run",
+          consequences: "function execution can't continue",
+          stack: true,
+        })
+      );
+    }
+  }
+
+  return Ok(result);
 };

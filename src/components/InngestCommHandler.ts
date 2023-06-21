@@ -13,7 +13,7 @@ import {
   skipDevServer,
 } from "../helpers/env";
 import { OutgoingResultError, serializeError } from "../helpers/errors";
-import { cacheFn } from "../helpers/functions";
+import { cacheFn, parseFnData } from "../helpers/functions";
 import { strBoolean } from "../helpers/scalar";
 import { createStream } from "../helpers/stream";
 import { stringify, stringifyUnknown } from "../helpers/strings";
@@ -785,67 +785,11 @@ export class InngestCommHandler<
       }
 
       // TODO PrettyError on parse failure; serve handler may be set up badly
-      // const { event, events, steps, ctx, use_api } = z
-      const fnData = z
-        .object({
-          event: z.object({}).passthrough(),
-          events: z.array(z.object({}).passthrough()).default([]),
-          // events: z.array(z.object({}).passthrough()),
-          /**
-           * When handling per-step errors, steps will need to be an object with
-           * either a `data` or an `error` key.
-           *
-           * For now, we support the current method of steps just being a map of
-           * step ID to step data.
-           *
-           * TODO When the executor does support per-step errors, we can uncomment
-           * the expected schema below.
-           */
-          steps: z
-            .record(
-              z.any().refine((v) => typeof v !== "undefined", {
-                message: "Values in steps must be defined",
-              })
-            )
-            .optional()
-            .nullable(),
-          // steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
-          ctx: z
-            .object({
-              run_id: z.string(),
-              stack: z
-                .object({
-                  stack: z
-                    .array(z.string())
-                    .nullable()
-                    .transform((v) => (Array.isArray(v) ? v : [])),
-                  current: z.number(),
-                })
-                .passthrough()
-                .optional()
-                .nullable(),
-            })
-            .optional()
-            .nullable(),
-          use_api: z.boolean().default(false),
-        })
-        .parse(data);
-
-      const ctx = fnData.ctx;
-      let events = fnData.events;
-      let steps = fnData.steps;
-      if (fnData.use_api) {
-        const [evtdata, stepdata] = await Promise.all([
-          this.client.inngestapi.getRunBatch(ctx?.run_id as string),
-          this.client.inngestapi.getRunSteps(ctx?.run_id as string),
-        ]);
-
-        // eslint-disable-next-line
-        // @ts-ignore TS2322
-        events = evtdata;
-        steps = stepdata;
+      const fndata = await parseFnData(data, this.client.inngestapi);
+      if (!fndata.ok) {
+        throw new Error(fndata.error);
       }
-      const event = fnData.event;
+      const { event, events, steps, ctx } = fndata.value;
 
       /**
        * TODO When the executor does support per-step errors, this map will need
