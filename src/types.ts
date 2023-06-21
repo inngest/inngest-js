@@ -1014,3 +1014,21 @@ export interface StepOpts {
    */
   id?: string;
 }
+
+/**
+ * Simplified version of Rust style `Result`
+ *
+ * Make it easier to wrap functions with some kind of result.
+ * e.g. API calls
+ */
+export type Result<T, E = undefined> =
+  | { ok: true; value: T }
+  | { ok: false; error: E | undefined };
+
+export const Ok = <T>(data: T): Result<T, never> => {
+  return { ok: true, value: data };
+};
+
+export const Err = <E>(error?: E): Result<never, E> => {
+  return { ok: false, error };
+};
