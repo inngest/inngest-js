@@ -16,7 +16,7 @@ const generateEvent = (): EventPayload => {
 };
 
 describe("#parseFnData", () => {
-  const API = new InngestAPI({ eventKey: "something" });
+  const API = new InngestAPI({ signingKey: "something" });
 
   [
     {
