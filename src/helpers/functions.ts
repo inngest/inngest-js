@@ -67,38 +67,48 @@ export const parseFnData = async (
   data: unknown,
   api: InngestAPI
 ): Promise<Result<FnData, ParseErr>> => {
-  const result = fnDataSchema.parse(data);
+  try {
+    const result = fnDataSchema.parse(data);
 
-  if (result.use_api) {
-    const [evtResp, stepResp] = await Promise.all([
-      api.getRunBatch(result.ctx?.run_id as string),
-      api.getRunSteps(result.ctx?.run_id as string),
-    ]);
+    if (result.use_api) {
+      const [evtResp, stepResp] = await Promise.all([
+        api.getRunBatch(result.ctx?.run_id as string),
+        api.getRunSteps(result.ctx?.run_id as string),
+      ]);
 
-    if (evtResp.ok) {
-      result.events = evtResp.value;
-    } else {
-      return Err(
-        prettyError({
-          whatHappened: "failed to retrieve list of events",
-          consequences: "function execution can't continue",
-          stack: true,
-        })
-      );
+      if (evtResp.ok) {
+        result.events = evtResp.value;
+      } else {
+        return Err(
+          prettyError({
+            whatHappened: "failed to retrieve list of events",
+            consequences: "function execution can't continue",
+            stack: true,
+          })
+        );
+      }
+
+      if (stepResp.ok) {
+        result.steps = stepResp.value;
+      } else {
+        return Err(
+          prettyError({
+            whatHappened: "failed to retrieve steps for function run",
+            consequences: "function execution can't continue",
+            stack: true,
+          })
+        );
+      }
     }
 
-    if (stepResp.ok) {
-      result.steps = stepResp.value;
-    } else {
-      return Err(
-        prettyError({
-          whatHappened: "failed to retrieve steps for function run",
-          consequences: "function execution can't continue",
-          stack: true,
-        })
-      );
-    }
+    return Ok(result);
+  } catch (err) {
+    return Err(
+      prettyError({
+        whatHappened: "failed to parse data from executor",
+        consequences: "function execution can't continue",
+        stack: true,
+      })
+    );
   }
-
-  return Ok(result);
 };
