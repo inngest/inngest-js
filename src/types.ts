@@ -651,8 +651,6 @@ export interface FunctionOptions<
   /**
    * batchEvents specifies the batch configuration on when this function
    * should be invoked when one of the requirements are fulfilled.
-   *
-   * @example { maxSize: 100, timeout: "1s" }
    */
   batchEvents?: {
     /**
