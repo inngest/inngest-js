@@ -776,7 +776,7 @@ export class InngestCommHandler<
         throw new Error(`Could not find function with ID "${functionId}"`);
       }
 
-      const fndata = await parseFnData(data, this.client.inngestapi);
+      const fndata = await parseFnData(data, this.client.inngestAPI);
       if (!fndata.ok) {
         throw new Error(fndata.error);
       }

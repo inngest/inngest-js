@@ -143,7 +143,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     // Warning: (ae-forgotten-export) The symbol "InngestAPI" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    readonly inngestapi: InngestAPI;
+    readonly inngestAPI: InngestAPI;
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SendEventPayload" needs to be exported by the entry point index.d.ts
