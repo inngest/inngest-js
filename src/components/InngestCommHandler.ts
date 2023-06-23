@@ -16,7 +16,7 @@ import { OutgoingResultError, serializeError } from "../helpers/errors";
 import { cacheFn, parseFnData } from "../helpers/functions";
 import { strBoolean } from "../helpers/scalar";
 import { createStream } from "../helpers/stream";
-import { stringify, stringifyUnknown } from "../helpers/strings";
+import { stringify, stringifyUnknown, hashSigningKey } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
 import {
@@ -473,15 +473,7 @@ export class InngestCommHandler<
   // hashedSigningKey creates a sha256 checksum of the signing key with the
   // same signing key prefix.
   private get hashedSigningKey(): string {
-    if (!this.signingKey) {
-      return "";
-    }
-
-    const prefix = this.signingKey.match(/^signkey-[\w]+-/)?.shift() || "";
-    const key = this.signingKey.replace(/^signkey-[\w]+-/, "");
-
-    // Decode the key from its hex representation into a bytestream
-    return `${prefix}${sha256().update(key, "hex").digest("hex")}`;
+    return hashSigningKey(this.signingKey);
   }
 
   /**
@@ -784,7 +776,6 @@ export class InngestCommHandler<
         throw new Error(`Could not find function with ID "${functionId}"`);
       }
 
-      // TODO PrettyError on parse failure; serve handler may be set up badly
       const fndata = await parseFnData(data, this.client.inngestapi);
       if (!fndata.ok) {
         throw new Error(fndata.error);

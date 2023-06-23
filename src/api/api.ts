@@ -1,5 +1,6 @@
 import { fetch } from "cross-fetch";
 import { type Result, Ok, Err } from "../types";
+import { hashSigningKey } from "../helpers/strings";
 import {
   ErrorSchema,
   type ErrorResponse,
@@ -26,13 +27,17 @@ export class InngestAPI {
     this.signingKey = signingKey;
   }
 
+  private get hashedKey(): string {
+    return hashSigningKey(this.signingKey);
+  }
+
   async getRunSteps(
     runId: string
   ): Promise<Result<StepsResponse, ErrorResponse>> {
     const url = `${this.baseUrl}/v0/runs/${runId}/actions`;
 
     return fetch(url, {
-      headers: { Authorization: `Bearer ${this.signingKey}` },
+      headers: { Authorization: `Bearer ${this.hashedKey}` },
     }).then(async (resp) => {
       const data: unknown = await resp.json();
 
@@ -50,7 +55,7 @@ export class InngestAPI {
     const url = `${this.baseUrl}/v0/runs/${runId}/batch`;
 
     return fetch(url, {
-      headers: { Authorization: `Bearer ${this.signingKey}` },
+      headers: { Authorization: `Bearer ${this.hashedKey}` },
     }).then(async (resp) => {
       const data: unknown = await resp.json();
 

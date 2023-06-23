@@ -7,9 +7,7 @@ export const ErrorSchema = z.object({
 });
 export type ErrorResponse = z.infer<typeof ErrorSchema>;
 
-export const StepsSchema = z.object({
-  step: z.object({}).passthrough(),
-});
+export const StepsSchema = z.object({}).passthrough().default({});
 export type StepsResponse = z.infer<typeof StepsSchema>;
 
 export const BatchSchema = z.array(

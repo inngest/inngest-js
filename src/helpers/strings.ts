@@ -1,4 +1,5 @@
 import ms from "ms";
+import { sha256 } from "hash.js";
 import { type TimeStr } from "../types";
 export { default as stringify } from "json-stringify-safe";
 
@@ -82,4 +83,16 @@ export const stringifyUnknown = (input: unknown): string | undefined => {
   ) {
     return input.toString();
   }
+};
+
+export const hashSigningKey = (signingKey: string | undefined): string => {
+  if (!signingKey) {
+    return "";
+  }
+
+  const prefix = signingKey.match(/^signkey-[\w]+-/)?.shift() || "";
+  const key = signingKey.replace(/^signkey-[\w]+-/, "");
+
+  // Decode the key from its hex representation into a bytestream
+  return `${prefix}${sha256().update(key, "hex").digest("hex")}`;
 };
