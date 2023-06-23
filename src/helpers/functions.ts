@@ -71,9 +71,20 @@ export const parseFnData = async (
     const result = fnDataSchema.parse(data);
 
     if (result.use_api) {
+      if (!result.ctx?.run_id) {
+        return Err(
+          prettyError({
+            whatHappened: "failed to attempt retrieving data from API",
+            consequences: "function execution can't continue",
+            why: "run_id is missing from context",
+            stack: true,
+          })
+        );
+      }
+
       const [evtResp, stepResp] = await Promise.all([
-        api.getRunBatch(result.ctx?.run_id as string),
-        api.getRunSteps(result.ctx?.run_id as string),
+        api.getRunBatch(result.ctx.run_id),
+        api.getRunSteps(result.ctx.run_id),
       ]);
 
       if (evtResp.ok) {
@@ -83,6 +94,7 @@ export const parseFnData = async (
           prettyError({
             whatHappened: "failed to retrieve list of events",
             consequences: "function execution can't continue",
+            why: evtResp.error?.error,
             stack: true,
           })
         );
@@ -95,6 +107,7 @@ export const parseFnData = async (
           prettyError({
             whatHappened: "failed to retrieve steps for function run",
             consequences: "function execution can't continue",
+            why: stepResp.error?.error,
             stack: true,
           })
         );
@@ -103,6 +116,10 @@ export const parseFnData = async (
 
     return Ok(result);
   } catch (err) {
+    // print it out for now.
+    // move to something like protobuf so we don't have to deal with this
+    console.error(err);
+
     return Err(
       prettyError({
         whatHappened: "failed to parse data from executor",

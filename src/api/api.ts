@@ -34,36 +34,44 @@ export class InngestAPI {
   async getRunSteps(
     runId: string
   ): Promise<Result<StepsResponse, ErrorResponse>> {
-    const url = `${this.baseUrl}/v0/runs/${runId}/actions`;
+    const url = new URL(`/v0/runs/${runId}/actions`, this.baseUrl);
 
     return fetch(url, {
       headers: { Authorization: `Bearer ${this.hashedKey}` },
-    }).then(async (resp) => {
-      const data: unknown = await resp.json();
+    })
+      .then(async (resp) => {
+        const data: unknown = await resp.json();
 
-      if (resp.ok) {
-        return Ok(StepsSchema.parse(data));
-      } else {
-        return Err(ErrorSchema.parse(data));
-      }
-    });
+        if (resp.ok) {
+          return Ok(StepsSchema.parse(data));
+        } else {
+          return Err(ErrorSchema.parse(data));
+        }
+      })
+      .catch((err) => {
+        return Err({ error: err as string, status: 500 });
+      });
   }
 
   async getRunBatch(
     runId: string
   ): Promise<Result<BatchResponse, ErrorResponse>> {
-    const url = `${this.baseUrl}/v0/runs/${runId}/batch`;
+    const url = new URL(`/v0/runs/${runId}/batch`, this.baseUrl);
 
     return fetch(url, {
       headers: { Authorization: `Bearer ${this.hashedKey}` },
-    }).then(async (resp) => {
-      const data: unknown = await resp.json();
+    })
+      .then(async (resp) => {
+        const data: unknown = await resp.json();
 
-      if (resp.ok) {
-        return Ok(BatchSchema.parse(data));
-      } else {
-        return Err(ErrorSchema.parse(data));
-      }
-    });
+        if (resp.ok) {
+          return Ok(BatchSchema.parse(data));
+        } else {
+          return Err(ErrorSchema.parse(data));
+        }
+      })
+      .catch((err) => {
+        return Err({ error: err as string, status: 500 });
+      });
   }
 }

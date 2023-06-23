@@ -179,7 +179,10 @@ export type BaseContext<
    */
   event: EventsFromOpts<TOpts>[TTrigger];
 
-  events: EventsFromOpts<TOpts>[TTrigger][];
+  events: [
+    EventsFromOpts<TOpts>[TTrigger],
+    ...EventsFromOpts<TOpts>[TTrigger][]
+  ];
 
   /**
    * The run ID for the current function execution
@@ -654,7 +657,8 @@ export interface FunctionOptions<
    */
   batchEvents?: {
     /**
-     * The maximum number of events to be consumed in one batch
+     * The maximum number of events to be consumed in one batch,
+     * Currently allowed max value is 100.
      */
     maxSize: number;
 
@@ -662,6 +666,8 @@ export interface FunctionOptions<
      * How long to wait before invoking the function with a list of events.
      * If timeout is reached, the function will be invoked with a batch
      * even if it's not filled up to `maxSize`.
+     *
+     * Expects 1s to 60s.
      */
     timeout: string;
   };
@@ -1037,7 +1043,6 @@ export const Err = <E>(error?: E): Result<never, E> => {
 export const fnDataSchema = z.object({
   event: z.object({}).passthrough(),
   events: z.array(z.object({}).passthrough()).default([]),
-  // events: z.array(z.object({}).passthrough()),
   /**
    * When handling per-step errors, steps will need to be an object with
    * either a `data` or an `error` key.
