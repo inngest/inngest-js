@@ -31,6 +31,13 @@ export class InngestApi {
     return hashSigningKey(this.signingKey);
   }
 
+  // set the signing key in case it was not instantiated previously
+  setSigningKey(key: string | undefined) {
+    if (typeof key === "string" && this.signingKey === "") {
+      this.signingKey = key;
+    }
+  }
+
   async getRunSteps(
     runId: string
   ): Promise<Result<StepsResponse, ErrorResponse>> {

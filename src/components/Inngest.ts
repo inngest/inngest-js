@@ -90,7 +90,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    */
   public readonly inngestBaseUrl: URL;
 
-  public readonly inngestAPI: InngestApi;
+  private readonly inngestApi: InngestApi;
 
   /**
    * The absolute URL of the Inngest Cloud API.
@@ -167,7 +167,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     });
 
     const signingKey = processEnv(envKeys.SigningKey) || "";
-    this.inngestAPI = new InngestApi({
+    this.inngestApi = new InngestApi({
       baseUrl:
         processEnv(envKeys.InngestApiBaseUrl) || "https://api.inngest.com",
       signingKey: signingKey,
