@@ -10,19 +10,19 @@ import {
   type BatchResponse,
 } from "./schema";
 
-interface InngestAPIConstructorOpts {
+interface InngestApiConstructorOpts {
   baseUrl?: string;
   signingKey: string;
 }
 
-export class InngestAPI {
+export class InngestApi {
   public readonly baseUrl: string;
   private signingKey: string;
 
   constructor({
     baseUrl = "https://api.inngest.com",
     signingKey,
-  }: InngestAPIConstructorOpts) {
+  }: InngestApiConstructorOpts) {
     this.baseUrl = baseUrl;
     this.signingKey = signingKey;
   }

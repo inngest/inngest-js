@@ -1,6 +1,6 @@
 import { type EventPayload } from "@local/types";
 import { parseFnData } from "@local/helpers/functions";
-import { InngestAPI } from "@local/api/api";
+import { InngestApi } from "@local/api/api";
 
 const randomstr = (): string => {
   return (Math.random() + 1).toString(36).substring(2);
@@ -16,7 +16,7 @@ const generateEvent = (): EventPayload => {
 };
 
 describe("#parseFnData", () => {
-  const API = new InngestAPI({ signingKey: "something" });
+  const API = new InngestApi({ signingKey: "something" });
 
   [
     {

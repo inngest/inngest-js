@@ -1,7 +1,7 @@
 import { type Await } from "./types";
 import { prettyError } from "./errors";
 import { fnDataSchema, type FnData, type Result, Ok, Err } from "../types";
-import { type InngestAPI } from "../api/api";
+import { type InngestApi } from "../api/api";
 
 /**
  * Wraps a function with a cache. When the returned function is run, it will
@@ -65,7 +65,7 @@ export const waterfall = <TFns extends ((arg?: any) => any)[]>(
 type ParseErr = string;
 export const parseFnData = async (
   data: unknown,
-  api: InngestAPI
+  api: InngestApi
 ): Promise<Result<FnData, ParseErr>> => {
   try {
     const result = fnDataSchema.parse(data);

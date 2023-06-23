@@ -21,7 +21,7 @@ export enum envKeys {
   DevServerUrl = "INNGEST_DEVSERVER_URL",
   Environment = "INNGEST_ENV",
   BranchName = "BRANCH_NAME",
-  InngestAPIBaseUrl = "INNGEST_API_BASE_URL",
+  InngestApiBaseUrl = "INNGEST_API_BASE_URL",
 
   /**
    * The git branch of the commit the deployment was triggered by. Example:

@@ -140,10 +140,10 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
         onFailure?: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>>;
         middleware?: TMiddleware;
     }), trigger: TTrigger, handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, MiddlewareStackRunInputMutation<{}, typeof builtInMiddleware> & MiddlewareStackRunInputMutation<{}, NonNullable<TOpts["middleware"]>> & MiddlewareStackRunInputMutation<{}, TMiddleware>>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
-    // Warning: (ae-forgotten-export) The symbol "InngestAPI" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "InngestApi" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    readonly inngestAPI: InngestAPI;
+    readonly inngestAPI: InngestApi;
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SendEventPayload" needs to be exported by the entry point index.d.ts
