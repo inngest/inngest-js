@@ -169,6 +169,8 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
   | `${number}h`
   | ""}${`${number}m` | ""}${`${number}s` | ""}`;
 
+export type TimeStrBatch = `${`${number}s`}`;
+
 export type BaseContext<
   TOpts extends ClientOptions,
   TTrigger extends keyof EventsFromOpts<TOpts> & string,
@@ -669,7 +671,7 @@ export interface FunctionOptions<
      *
      * Expects 1s to 60s.
      */
-    timeout: string;
+    timeout: TimeStrBatch;
   };
 
   fns?: Record<string, unknown>;
