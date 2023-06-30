@@ -1,4 +1,4 @@
-import { type Request, type Response } from "express";
+import type Koa from "koa";
 import {
   InngestCommHandler,
   type ServeHandler,
@@ -6,7 +6,7 @@ import {
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { type SupportedFrameworkName } from "./types";
 
-export const name: SupportedFrameworkName = "express";
+export const name: SupportedFrameworkName = "koa";
 
 /**
  * Serve and register any declared functions with Inngest, making them available
@@ -20,35 +20,41 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
     nameOrInngest,
     fns,
     opts,
-    (req: Request, _res: Response) => {
-      const hostname = req.get("host") || req.headers["host"];
-      const protocol = hostname?.includes("://") ? "" : `${req.protocol}://`;
-      const url = new URL(req.originalUrl, `${protocol}${hostname || ""}`);
+    (
+      ctx: Koa.ParameterizedContext<
+        Koa.DefaultState,
+        Koa.DefaultContext,
+        unknown
+      >
+    ) => {
+      const hostname = ctx.host;
+      const protocol = hostname?.includes("://") ? "" : `${ctx.protocol}://`;
+      const url = new URL(ctx.originalUrl, `${protocol}${hostname || ""}`);
 
       return {
         url,
         run: () => {
-          if (req.method === "POST") {
+          if (ctx.method === "POST") {
             return {
-              fnId: req.query[queryKeys.FnId] as string,
-              stepId: req.query[queryKeys.StepId] as string,
-              data: req.body as Record<string, unknown>,
-              signature: req.headers[headerKeys.Signature] as string,
+              fnId: ctx.query[queryKeys.FnId] as string,
+              stepId: ctx.query[queryKeys.StepId] as string,
+              data: ctx.request.body as Record<string, unknown>,
+              signature: ctx.headers[headerKeys.Signature] as string,
             };
           }
         },
         register: () => {
-          if (req.method === "PUT") {
+          if (ctx.method === "PUT") {
             return {
-              deployId: req.query[queryKeys.DeployId]?.toString(),
+              deployId: ctx.query[queryKeys.DeployId]?.toString(),
             };
           }
         },
         view: () => {
-          if (req.method === "GET") {
+          if (ctx.method === "GET") {
             return {
               isIntrospection: Object.hasOwnProperty.call(
-                req.query,
+                ctx.query,
                 queryKeys.Introspect
               ),
             };
@@ -56,12 +62,12 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         },
       };
     },
-    (actionRes, _req, res) => {
+    (actionRes, ctx) => {
       for (const [name, value] of Object.entries(actionRes.headers)) {
-        res.setHeader(name, value);
+        ctx.set(name, value);
       }
-
-      return res.status(actionRes.status).send(actionRes.body);
+      ctx.status = actionRes.status;
+      ctx.body = actionRes.body;
     }
   );
 
