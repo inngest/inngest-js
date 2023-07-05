@@ -1,6 +1,6 @@
 import { type Await } from "./types";
 import { prettyError } from "./errors";
-import { fnDataSchema, type FnData, type Result, Ok, Err } from "../types";
+import { fnDataSchema, type FnData, type Result, ok, err } from "../types";
 import { type InngestApi } from "../api/api";
 
 /**
@@ -72,7 +72,7 @@ export const parseFnData = async (
 
     if (result.use_api) {
       if (!result.ctx?.run_id) {
-        return Err(
+        return err(
           prettyError({
             whatHappened: "failed to attempt retrieving data from API",
             consequences: "function execution can't continue",
@@ -90,7 +90,7 @@ export const parseFnData = async (
       if (evtResp.ok) {
         result.events = evtResp.value;
       } else {
-        return Err(
+        return err(
           prettyError({
             whatHappened: "failed to retrieve list of events",
             consequences: "function execution can't continue",
@@ -103,7 +103,7 @@ export const parseFnData = async (
       if (stepResp.ok) {
         result.steps = stepResp.value;
       } else {
-        return Err(
+        return err(
           prettyError({
             whatHappened: "failed to retrieve steps for function run",
             consequences: "function execution can't continue",
@@ -114,13 +114,13 @@ export const parseFnData = async (
       }
     }
 
-    return Ok(result);
-  } catch (err) {
+    return ok(result);
+  } catch (error) {
     // print it out for now.
     // move to something like protobuf so we don't have to deal with this
-    console.error(err);
+    console.error(error);
 
-    return Err(
+    return err(
       prettyError({
         whatHappened: "failed to parse data from executor",
         consequences: "function execution can't continue",

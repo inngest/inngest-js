@@ -1,5 +1,5 @@
 import { fetch } from "cross-fetch";
-import { type Result, Ok, Err } from "../types";
+import { type Result, ok, err } from "../types";
 import { hashSigningKey } from "../helpers/strings";
 import {
   ErrorSchema,
@@ -50,13 +50,13 @@ export class InngestApi {
         const data: unknown = await resp.json();
 
         if (resp.ok) {
-          return Ok(StepsSchema.parse(data));
+          return ok(StepsSchema.parse(data));
         } else {
-          return Err(ErrorSchema.parse(data));
+          return err(ErrorSchema.parse(data));
         }
       })
-      .catch((err) => {
-        return Err({ error: err as string, status: 500 });
+      .catch((error) => {
+        return err({ error: error as string, status: 500 });
       });
   }
 
@@ -72,13 +72,13 @@ export class InngestApi {
         const data: unknown = await resp.json();
 
         if (resp.ok) {
-          return Ok(BatchSchema.parse(data));
+          return ok(BatchSchema.parse(data));
         } else {
-          return Err(ErrorSchema.parse(data));
+          return err(ErrorSchema.parse(data));
         }
       })
-      .catch((err) => {
-        return Err({ error: err as string, status: 500 });
+      .catch((error) => {
+        return err({ error: error as string, status: 500 });
       });
   }
 }
