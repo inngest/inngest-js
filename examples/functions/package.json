@@ -1,5 +1,5 @@
 {
-  "name": "inngest-js",
+  "name": "functions",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -9,5 +9,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@8.6.0"
+  "dependencies": {
+    "inngest": "workspace:^"
+  }
 }
