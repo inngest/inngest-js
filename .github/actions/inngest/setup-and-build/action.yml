@@ -7,10 +7,6 @@ inputs:
     default: '.'
 runs:
   using: composite
-  defaults:
-    run:
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}/packages/inngest
   steps:
     - uses: volta-cli/action@v4
 
@@ -20,11 +16,14 @@ runs:
 
     - name: Get pnpm store directory
       id: pnpm-cache
+      shell: bash
       run: |
         echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
 
     - uses: actions/cache@v3
       name: Setup pnpm cache
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}/packages/inngest
       with:
         path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
         key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -33,6 +32,10 @@ runs:
 
     - name: Install dependencies
       run: pnpm install
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}/packages/inngest
 
     - name: Build
       run: pnpm run build
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}/packages/inngest
