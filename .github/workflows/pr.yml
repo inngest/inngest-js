@@ -6,7 +6,7 @@ on:
   workflow_call:
   push:
     branches:
-      - 'renovate/**'
+      - "renovate/**"
 
 concurrency:
   group: pr-${{ github.ref }}
@@ -39,13 +39,13 @@ jobs:
       fail-fast: false
       matrix:
         tsVersion:
-         - 'latest'
-         - 'next'
-         - '~5.1.0'
-         - '~5.0.0'
-         - '~4.9.0'
-         - '~4.8.0'
-         - "~4.7.0"
+          - "latest"
+          - "next"
+          - "~5.1.0"
+          - "~5.0.0"
+          - "~4.9.0"
+          - "~4.8.0"
+          - "~4.7.0"
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
@@ -169,10 +169,11 @@ jobs:
 
       - name: Install pre-built JS SDK
         run: ls -la
+        working-directory: examples/${{ matrix.repo }}
 
       - name: Link local SDK to example
         run: |
-          ln -s ../../../sdk/inngest.tgz $PWD/inngest.tgz
+          # ln -s ../../../sdk/inngest.tgz $PWD/inngest.tgz
 
           if test -f deno.json; then
             deno run --allow-read --allow-write ../../../sdk/deno_compat/link.ts
