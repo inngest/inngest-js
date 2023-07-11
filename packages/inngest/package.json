@@ -7,9 +7,6 @@
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
-  "bin": {
-    "inngest-init": "./init.js"
-  },
   "scripts": {
     "prebuild": "pnpm run pb:version",
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
