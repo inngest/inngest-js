@@ -135,7 +135,7 @@ jobs:
 
       # Install dependencies in the example repo
       - name: Install example dependencies
-        if: ${{ steps.deno-check.outputs.isDeno != 'true' }}
+        # if: ${{ steps.deno-check.outputs.isDeno != 'true' }}
         run: nci
         working-directory: examples/apps/${{ matrix.example }}
 
