@@ -116,11 +116,6 @@ jobs:
           path: examples/${{ matrix.repo }}
           ref: main
 
-      # Get the SDK ready
-      - name: Pack SDK
-        run: yarn local:pack
-        working-directory: sdk
-
       # If we find a deno.json file in the example repo, we need to pull Deno on
       # to the toolchain.
       - name: Check if Deno is used
@@ -167,26 +162,13 @@ jobs:
           name: inngestpkg
           path: examples/${{ matrix.repo }}
 
-      - name: Install pre-built JS SDK
-        run: ls -la
-        working-directory: examples/${{ matrix.repo }}
-
-      - name: Link local SDK to example
+      - name: Install pre-built SDK to example
         run: |
-          # ln -s ../../../sdk/inngest.tgz $PWD/inngest.tgz
-
           if test -f deno.json; then
             deno run --allow-read --allow-write ../../../sdk/deno_compat/link.ts
           else
             yarnv=$(volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn -v)
-
             volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn add ./inngest.tgz
-            # if [[ $yarnv == 3* ]]; then
-            #   touch ../../../sdk/dist/yarn.lock
-            #   yarn link ../../../sdk/dist
-            # else
-            #   volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
-            # fi
           fi
         working-directory: examples/${{ matrix.repo }}
 
