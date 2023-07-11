@@ -34,7 +34,8 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
-      - run: volta run --node ${{ matrix.nodeVersion }} pnpm run test
+      # Uses npm as pnpm doesn't support Node < 16
+      - run: volta run --node ${{ matrix.nodeVersion }} npm run test
 
   types:
     name: Types
