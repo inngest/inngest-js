@@ -12,5 +12,6 @@ temp/
 
 # Local dev files
 coverage/
+inngest.tgz
 
 tsdoc-metadata.json
