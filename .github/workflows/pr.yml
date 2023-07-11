@@ -20,6 +20,9 @@ jobs:
   test:
     name: Runtime
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
     strategy:
       fail-fast: false
       matrix:
@@ -36,6 +39,9 @@ jobs:
   types:
     name: Types
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
     strategy:
       fail-fast: false
       matrix:
@@ -56,6 +62,9 @@ jobs:
   api_diff:
     name: Local API diff
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
@@ -64,6 +73,9 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
@@ -84,6 +96,9 @@ jobs:
   examples:
     name: Test examples
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
     needs: examples-matrix
     strategy:
       fail-fast: false
@@ -222,7 +237,6 @@ jobs:
       # Run the examples test suite against the dev server
       - name: Run integration test suite
         run: pnpm run test:examples
-        working-directory: packages/inngest
 
       - if: ${{ always() }}
         run: cat dev.log
