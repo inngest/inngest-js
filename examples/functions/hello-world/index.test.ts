@@ -4,7 +4,7 @@ import {
   eventRunWithName,
   runHasTimeline,
   sendEvent,
-} from "../../test/helpers";
+} from "@local/test/helpers";
 
 checkIntrospection({
   name: "Hello World",

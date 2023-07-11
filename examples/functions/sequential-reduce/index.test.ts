@@ -3,8 +3,8 @@ import {
   checkIntrospection,
   eventRunWithName,
   runHasTimeline,
-  sendEvent
-} from "../../test/helpers";
+  sendEvent,
+} from "@local/test/helpers";
 
 checkIntrospection({
   name: "Sequential Reduce",

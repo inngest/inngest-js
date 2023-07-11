@@ -1,4 +1,4 @@
-lockfileVersion: '6.1'
+lockfileVersion: '6.0'
 
 settings:
   autoInstallPeers: true
@@ -7,6 +7,12 @@ settings:
 importers:
 
   .: {}
+
+  examples/functions:
+    devDependencies:
+      '@types/jest':
+        specifier: ^27.4.1
+        version: 27.4.1
 
   packages/eslint-plugin:
     dependencies:

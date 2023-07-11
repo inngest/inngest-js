@@ -9,7 +9,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "inngest": "workspace:^"
+  "devDependencies": {
+    "@types/jest": "^27.4.1"
   }
 }
