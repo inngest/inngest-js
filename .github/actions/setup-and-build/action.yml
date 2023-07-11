@@ -22,8 +22,6 @@ runs:
 
     - uses: actions/cache@v3
       name: Setup pnpm cache
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}/packages/inngest
       with:
         path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
         key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}

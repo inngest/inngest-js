@@ -30,7 +30,7 @@ jobs:
           - lts
     steps:
       - uses: actions/checkout@v3
-      - uses: ./.github/actions/inngest/setup-and-build
+      - uses: ./.github/actions/setup-and-build
       - run: volta run --node ${{ matrix.nodeVersion }} pnpm run test
 
   types:
@@ -109,7 +109,7 @@ jobs:
         # with:
         #   deno-version: vx.x.x
 
-      - uses: ./sdk/.github/actions/setup-and-build
+      - uses: ./.github/actions/setup-and-build
 
       - name: Install ni
         run: npm i -g @antfu/ni
