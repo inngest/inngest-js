@@ -1,5 +1,9 @@
 import { jest } from "@jest/globals";
-import { type Logger, ProxyLogger, DefaultLogger } from "./logger";
+import {
+  DefaultLogger,
+  ProxyLogger,
+  type Logger,
+} from "@local/middleware/logger";
 
 describe("ProxyLogger", () => {
   const buffer = [
@@ -43,14 +47,12 @@ describe("ProxyLogger", () => {
 
     test("should attempt to wait for flushing with non DefaultLogger", async () => {
       /* eslint-disable @typescript-eslint/no-empty-function, prettier/prettier */
-      _internal = new (
-        class DummyLogger implements Logger {
-          info(..._args: unknown[]) { }
-          warn(..._args: unknown[]) { }
-          error(..._args: unknown[]) { }
-          debug(..._args: unknown[]) { }
-        }
-      );
+      _internal = new (class DummyLogger implements Logger {
+        info(..._args: unknown[]) {}
+        warn(..._args: unknown[]) {}
+        error(..._args: unknown[]) {}
+        debug(..._args: unknown[]) {}
+      })();
       /* eslint-enable */
       logger = new ProxyLogger(_internal);
 

@@ -1,4 +1,4 @@
-import { slugify, timeStr } from "./strings";
+import { slugify, timeStr } from "@local/helpers/strings";
 
 describe("slugify", () => {
   it("Generates a slug using hyphens", () => {

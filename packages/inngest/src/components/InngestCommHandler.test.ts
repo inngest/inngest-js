@@ -1,10 +1,10 @@
 import { EventSchemas } from "@local";
+import { type ServeHandler } from "@local/components/InngestCommHandler";
+import { type IsAny } from "@local/helpers/types";
 import { serve } from "@local/next";
 import { assertType } from "type-plus";
 import { z } from "zod";
-import { type IsAny } from "../helpers/types";
 import { createClient } from "../test/helpers";
-import { type ServeHandler } from "./InngestCommHandler";
 
 describe("#153", () => {
   test('does not throw "type instantiation is excessively deep and possibly infinite" for looping type', () => {

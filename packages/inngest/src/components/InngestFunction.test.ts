@@ -8,7 +8,9 @@ import {
   _internals,
   type UnhashedOp,
 } from "@local/components/InngestStepTools";
+import { NonRetriableError } from "@local/components/NonRetriableError";
 import { ServerTiming } from "@local/helpers/ServerTiming";
+import { internalEvents } from "@local/helpers/consts";
 import { ErrCode, OutgoingResultError } from "@local/helpers/errors";
 import {
   DefaultLogger,
@@ -23,9 +25,7 @@ import {
 } from "@local/types";
 import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
-import { internalEvents } from "../helpers/consts";
 import { createClient } from "../test/helpers";
-import { NonRetriableError } from "./NonRetriableError";
 
 type TestEvents = {
   foo: { data: { foo: string } };

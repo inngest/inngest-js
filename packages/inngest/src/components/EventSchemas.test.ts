@@ -1,9 +1,9 @@
+import { EventSchemas } from "@local/components/EventSchemas";
+import { Inngest } from "@local/components/Inngest";
+import { type IsAny } from "@local/helpers/types";
+import { type EventPayload, type GetEvents } from "@local/types";
 import { assertType, type IsEqual } from "type-plus";
 import { z } from "zod";
-import { type IsAny } from "../helpers/types";
-import { type EventPayload, type GetEvents } from "../types";
-import { EventSchemas } from "./EventSchemas";
-import { Inngest } from "./Inngest";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Schemas<T extends EventSchemas<any>> = GetEvents<

@@ -2,6 +2,10 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { EventSchemas, type EventsFromOpts } from "@local";
 import {
+  createExecutionState,
+  type ExecutionState,
+} from "@local/components/InngestFunction";
+import {
   createStepTools,
   type TickOp,
 } from "@local/components/InngestStepTools";
@@ -9,7 +13,6 @@ import { StepOpCode, type ClientOptions } from "@local/types";
 import ms from "ms";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
-import { createExecutionState, type ExecutionState } from "./InngestFunction";
 
 describe("waitForEvent", () => {
   const client = createClient({ name: "test" });
