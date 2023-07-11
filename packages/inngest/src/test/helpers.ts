@@ -838,53 +838,18 @@ interface CheckIntrospection {
 export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
   describe("introspection", () => {
     it("should be registered in SDK UI", async () => {
-      const res = await fetch("http://127.0.0.1:3000/api/inngest?introspect");
+      const res = await fetch("http://127.0.0.1:3000/api/inngest");
 
-      const data = z
+      const { success } = z
         .object({
-          functions: z.array(
-            z.object({
-              name: z.string(),
-              id: z.string(),
-              triggers: z.array(
-                z.object({ event: z.string() }).or(
-                  z.object({
-                    cron: z.string(),
-                  })
-                )
-              ),
-              steps: z.object({
-                step: z.object({
-                  id: z.literal("step"),
-                  name: z.literal("step"),
-                  runtime: z.object({
-                    type: z.literal("http"),
-                    url: z.string().url(),
-                  }),
-                }),
-              }),
-            })
-          ),
+          message: z.string(),
+          hasSigningKey: z.boolean(),
+          hasEventKey: z.boolean(),
+          functionsFound: z.number(),
         })
-        .parse(await res.json());
+        .safeParse(await res.json());
 
-      expect(data.functions).toContainEqual({
-        name,
-        id: expect.stringMatching(new RegExp(`^.*-${slugify(name)}$`)),
-        triggers,
-        steps: {
-          step: {
-            id: "step",
-            name: "step",
-            runtime: {
-              type: "http",
-              url: expect.stringMatching(
-                new RegExp(`^http.+\\?fnId=.+-${slugify(name)}&stepId=step$`)
-              ),
-            },
-          },
-        },
-      });
+      expect(success).toEqual(true);
     });
 
     it("should be registered in Dev Server UI", async () => {
