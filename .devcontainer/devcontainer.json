@@ -6,7 +6,6 @@
   "customizations": {
     "vscode": {
       "settings": {
-        "deno.enablePaths": ["./deno_compat"],
         "typescript.tsdk": "node_modules/typescript/lib",
         "eslint.validate": [
           "javascript",
