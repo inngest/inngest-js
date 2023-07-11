@@ -161,7 +161,7 @@ jobs:
           else
             yarnv=$(volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn -v)
 
-            yarn add ./inngest.tgz
+            volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn add ./inngest.tgz
             # if [[ $yarnv == 3* ]]; then
             #   touch ../../../sdk/dist/yarn.lock
             #   yarn link ../../../sdk/dist
