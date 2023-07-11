@@ -128,7 +128,7 @@ jobs:
       - uses: ./.github/actions/setup-and-build
 
       - name: Install ni
-        run: npm i -g @antfu/ni
+        run: volta install @antfu/ni
 
       - name: Pack SDK
         run: pnpm run local:pack
