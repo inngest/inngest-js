@@ -102,12 +102,15 @@ jobs:
           ref: main
 
       # Get the SDK ready and link it locally
-      - name: Prepare SDK for linking
-        run: yarn prelink
+      # - name: Prepare SDK for linking
+      #   run: yarn prelink
+      #   working-directory: sdk
+      # - name: Create link to SDK
+      #   run: yarn link
+      #   working-directory: sdk/dist
+      - name: Pack SDK
+        run: yarn local:pack
         working-directory: sdk
-      - name: Create link to SDK
-        run: yarn link
-        working-directory: sdk/dist
 
       # If we find a deno.json file in the example repo, we need to pull Deno on
       # to the toolchain.
@@ -151,20 +154,22 @@ jobs:
       # shim script to bend paths and adjust the target repo's import path.
       - name: Link local SDK to example
         run: |
+          ln -s ../../../sdk/inngest.tgz $PWD/inngest.tgz
+
           if test -f deno.json; then
             deno run --allow-read --allow-write ../../../sdk/deno_compat/link.ts
           else
             yarnv=$(volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn -v)
 
-            if [[ $yarnv == 3* ]]; then
-              touch ../../../sdk/dist/yarn.lock
-              yarn link ../../../sdk/dist
-            else
-              volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
-            fi
+            yarn add ./inngest.tgz
+            # if [[ $yarnv == 3* ]]; then
+            #   touch ../../../sdk/dist/yarn.lock
+            #   yarn link ../../../sdk/dist
+            # else
+            #   volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
+            # fi
           fi
         working-directory: examples/${{ matrix.repo }}
-
 
       # Copy any SDK function examples to the example repo so that we're always
       # testing many functions against many handlers.
