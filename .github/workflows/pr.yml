@@ -91,7 +91,7 @@ jobs:
 
       - id: matrix
         run: |
-          echo "matrix=$(find examples/projects -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+          echo "matrix=$(find examples/apps -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
 
   examples:
     name: Test examples
@@ -114,7 +114,7 @@ jobs:
       - name: Check if Deno is used
         id: deno-check
         run: echo "isDeno=$(test -f deno.json && echo true || echo false)" >> $GITHUB_OUTPUT
-        working-directory: examples/projects/${{ matrix.example }}
+        working-directory: examples/apps/${{ matrix.example }}
 
       # Add Deno integration support later
       - name: If Deno is used, exit early
@@ -136,10 +136,10 @@ jobs:
       - name: Install example dependencies
         if: ${{ steps.deno-check.outputs.isDeno != 'true' }}
         run: nci
-        working-directory: examples/projects/${{ matrix.example }}
+        working-directory: examples/apps/${{ matrix.example }}
 
       - name: Add local SDK to example
-        working-directory: examples/projects/${{ matrix.example }}
+        working-directory: examples/apps/${{ matrix.example }}
         run: ni ../../../packages/inngest/inngest.tgz
 
       # # Link the SDK, making sure to use the same Yarn version that we used to
@@ -181,13 +181,13 @@ jobs:
       - name: Find inngest functions path in example
         id: inngest-functions-path
         run: echo "dir=$(dirname $(echo \"$(git ls-files | grep inngest/index.ts)))\"" >> $GITHUB_OUTPUT
-        working-directory: examples/projects/${{ matrix.example }}
+        working-directory: examples/apps/${{ matrix.example }}
       - name: Remove any existing inngest functions
         run: rm -rf ${{ steps.inngest-functions-path.outputs.dir }}
-        working-directory: examples/projects/${{ matrix.example }}
+        working-directory: examples/apps/${{ matrix.example }}
       - name: Copy functions to test to example
         run: cp -Tr ../../../examples/functions/ ${{ steps.inngest-functions-path.outputs.dir }}
-        working-directory: examples/projects/${{ matrix.example }}
+        working-directory: examples/apps/${{ matrix.example }}
       # # IF we're using Deno, also replace any "inngest..." imports with
       # # "npm:inngest..." and any direct file imports in `inngest/index.ts` with
       # # `.ts` suffixes.
@@ -202,11 +202,11 @@ jobs:
       - name: Build the example
         # if: ${{ steps.deno-check.outputs.isDeno != 'true' }}
         run: nr build
-        working-directory: examples/projects/${{ matrix.example }}
+        working-directory: examples/apps/${{ matrix.example }}
 
       - name: Run the Inngest dev server
         run: npx inngest-cli@latest dev > cli.log 2>&1 &
-        working-directory: examples/projects/${{ matrix.example }}
+        working-directory: examples/apps/${{ matrix.example }}
         env:
           DO_NOT_TRACK: 1
       - name: Wait for the Inngest dev server to start
@@ -218,7 +218,7 @@ jobs:
       # Run the example
       - name: Run the example's dev server
         run: (nr dev > dev.log 2>&1 &)
-        working-directory: examples/projects/${{ matrix.example }}
+        working-directory: examples/apps/${{ matrix.example }}
         # Provide the example any env vars it might need
         env:
           PORT: 3000
@@ -240,8 +240,8 @@ jobs:
 
       - if: ${{ always() }}
         run: cat dev.log
-        working-directory: examples/projects/${{ matrix.example }}
+        working-directory: examples/apps/${{ matrix.example }}
 
       - if: ${{ always() }}
         run: cat cli.log
-        working-directory: examples/projects/${{ matrix.example }}
+        working-directory: examples/apps/${{ matrix.example }}
