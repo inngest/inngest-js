@@ -6,7 +6,7 @@ import {
   eventRunWithName,
   receivedEventWithName,
   runHasTimeline,
-  sendEvent
+  sendEvent,
 } from "../../test/helpers";
 
 checkIntrospection({
