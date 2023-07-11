@@ -69,8 +69,23 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - run: yarn lint
 
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - name: Package as tarball
+        run: yarn local:pack
+      - name: Archive package tarball
+        uses: actions/upload-artifact@v3
+        with:
+          name: inngestpkg
+          path: inngest.tgz
+
   examples:
     name: Test examples
+    needs: package
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -101,13 +116,7 @@ jobs:
           path: examples/${{ matrix.repo }}
           ref: main
 
-      # Get the SDK ready and link it locally
-      # - name: Prepare SDK for linking
-      #   run: yarn prelink
-      #   working-directory: sdk
-      # - name: Create link to SDK
-      #   run: yarn link
-      #   working-directory: sdk/dist
+      # Get the SDK ready
       - name: Pack SDK
         run: yarn local:pack
         working-directory: sdk
@@ -152,6 +161,15 @@ jobs:
       # Locally linking the lib to a Deno repo is harder, as Deno doesn't
       # support local linking between ESM and CJS. Instead, we run a manual
       # shim script to bend paths and adjust the target repo's import path.
+      - name: Download pre-built SDK
+        uses: actions/download-artifact@v3
+        with:
+          name: inngestpkg
+          path: examples/${{ matrix.repo }}
+
+      - name: Install pre-built JS SDK
+        run: ls -la
+
       - name: Link local SDK to example
         run: |
           ln -s ../../../sdk/inngest.tgz $PWD/inngest.tgz
