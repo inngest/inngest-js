@@ -2,62 +2,13 @@
   "name": "inngest",
   "version": "2.1.0",
   "description": "Official SDK for Inngest.com",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "files": [
-    "dist"
-  ],
-  "exports": {
-    ".": {
-      "default": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./cloudflare": {
-      "default": "./dist/cloudflare.js",
-      "types": "./dist/cloudflare.d.ts"
-    },
-    "./digitalocean": {
-      "default": "./dist/digitalocean.js",
-      "types": "./dist/digitalocean.d.ts"
-    },
-    "./edge": {
-      "default": "./dist/edge.js",
-      "types": "./dist/edge.d.ts"
-    },
-    "./express": {
-      "default": "./dist/express.js",
-      "types": "./dist/express.d.ts"
-    },
-    "./lambda": {
-      "default": "./dist/lambda.js",
-      "types": "./dist/lambda.d.ts"
-    },
-    "./next": {
-      "default": "./dist/next.js",
-      "types": "./dist/next.d.ts"
-    },
-    "./nuxt": {
-      "default": "./dist/nuxt.js",
-      "types": "./dist/nuxt.d.ts"
-    },
-    "./redwood": {
-      "default": "./dist/redwood.js",
-      "types": "./dist/redwood.d.ts"
-    },
-    "./remix": {
-      "default": "./dist/remix.js",
-      "types": "./dist/remix.d.ts"
-    },
-    "./deno/fresh": {
-      "default": "./dist/deno/fresh.js",
-      "types": "./dist/deno/fresh.d.ts"
-    }
-  },
+  "main": "./index.js",
+  "types": "./index.d.ts",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
   "bin": {
-    "inngest-init": "./dist/init.js"
+    "inngest-init": "./init.js"
   },
   "scripts": {
     "prebuild": "pnpm run pb:version",
@@ -69,7 +20,7 @@
     "clean": "rm -rf ./dist",
     "lint": "eslint .",
     "postversion": "pnpm run build && pnpm run build:copy",
-    "release": "pnpm run test && pnpm run build && node scripts/release.js",
+    "release": "pnpm run test && pnpm run build && pnpm run build:copy && node scripts/release.js",
     "api-extractor": "api-extractor",
     "dev": "pnpm install && concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"pnpm run dev:build\" \"pnpm run dev:lint\"",
     "dev:build": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run build && pnpm run build:check --local'",
@@ -77,7 +28,7 @@
     "build:api": "api-extractor run --local --verbose",
     "build:check": "api-extractor run --verbose",
     "build:copy": "cp package.json LICENSE.md README.md CHANGELOG.md dist",
-    "local:pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest.tgz"
+    "local:pack": "pnpm run build && pnpm run build:copy && yarn pack --verbose --frozen-lockfile --filename inngest.tgz --cwd dist"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {

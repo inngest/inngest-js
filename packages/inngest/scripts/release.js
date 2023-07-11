@@ -23,6 +23,7 @@ const distTag = tagEnd.split(".")[0] || "latest";
 console.log("distTag:", distTag);
 
 const rootDir = path.join(__dirname, "..");
+const distDir = path.join(rootDir, "dist");
 process.chdir(rootDir);
 
 const exec = async (...args) => {
@@ -79,18 +80,19 @@ const exec = async (...args) => {
 
   // Release to npm
   // COMMENT FOR SAFETY
-  // await exec("npm", ["config", "set", "git-tag-version", "false"]);
+  // await exec("npm", ["config", "set", "git-tag-version", "false"], {
+  //   cwd: distDir,
+  // });
 
   console.log("publishing", tag, "to dist tag:", distTag);
   // COMMENT FOR SAFETY
-  // await exec("npm", [
-  //   "publish",
-  //   "--tag",
-  //   distTag,
-  //   "--access",
-  //   "public",
-  //   "--provenance",
-  // ]);
+  // await exec(
+  //   "npm",
+  //   ["publish", "--tag", distTag, "--access", "public", "--provenance"],
+  //   {
+  //     cwd: distDir,
+  //   }
+  // );
 
   // If this was a backport release, republish the "latest" tag at the actual latest version
   if (branch !== "main" && distTag === "latest") {
