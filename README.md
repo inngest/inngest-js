@@ -131,44 +131,38 @@ inngest.send("app/user.signup", {
 
 ## Contributing
 
+Prerequisites:
+
+1. Install [pnpm](https://pnpm.io/installation)
+2. Install [Volta](https://volta.sh/)
+
 Clone the repository, then:
 
 ```sh
-yarn dev # install dependencies, build/lint/test
+cd packages/inngest
+pnpm run dev # install dependencies, build/lint/test
 ```
-
-We use [Volta](https://volta.sh/) to manage Node/Yarn versions.
 
 > When making a pull request, make sure to commit the changed `etc/inngest.api.md` file; this is a generated types/docs file that will highlight changes to the exposed API.
 
-### Locally linking (`npm|yarn link`)
+### Testing changes locally
 
-To test changes with other local repos, you can link the project like so (replace `npm` for `yarn` if desired):
-
-```sh
-# in this repo
-yarn build
-yarn link
-
-# in another repo
-yarn link inngest
-```
-
-Alternatively, you can also package the library and ship it with an application. This is a nice way to generate and ship snapshot/test versions of the library to test in production environments without requiring releasing to npm.
+To test changes with other local repos, you can package the library and install the resulting file directly, including shipping it with an application. This is a nice way to generate and ship snapshot/test versions of the library to test locally and in production environments without requiring releasing to npm.
 
 ```sh
 # in this repo
-yarn local:pack
-cp inngest.tgz ../some-other-repo-root
+cd packages/inngest
+pnpm run local:pack
+cp ./inngest.tgz ../some-other-repo-root
 
 # in another repo
-yarn add ./inngest.tgz
+npm install ./inngest.tgz
 ```
 
 Some platforms require manually installing the package again at build time to properly link dependencies, so you may have to change your `yarn build` script to be prefixed with this install, e.g.:
 
 ```sh
-yarn add ./inngest.tgz && framework dev
+npm install ./inngest.tgz && framework dev
 ```
 
 ### Releasing
@@ -195,9 +189,10 @@ You can see the currently available tags on the [`inngest` npm page](https://www
 If the current active version is `v1.1.1`, this is a minor release, and our tag is `foo`, we'd do:
 
 ```sh
-yarn version v1.2.0-foo.1
-yarn build
-npm publish --access public --tag foo
+cd packages/inngest
+pnpm version v1.2.0-foo.1
+pnpm run build
+pnpm publish --access public --tag foo
 ```
 
 You can iterate the final number for each extra snapshot you need to do on a branch.
