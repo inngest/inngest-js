@@ -171,6 +171,7 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     protected register(url: URL, devServerHost: string | undefined, deployId: string | undefined | null, getHeaders: () => Record<string, string>): Promise<{
         status: number;
         message: string;
+        modified: boolean;
     }>;
     // Warning: (ae-forgotten-export) The symbol "RegisterRequest" needs to be exported by the entry point index.d.ts
     //

@@ -102,6 +102,7 @@ type FetchT = typeof fetch;
 const registerResSchema = z.object({
   status: z.number().default(200),
   skipped: z.boolean().optional().default(false),
+  modified: z.boolean().optional().default(false),
   error: z.string().default("Successfully registered"),
 });
 
@@ -692,7 +693,7 @@ export class InngestCommHandler<
       if (registerRes) {
         this.upsertKeysFromEnv(env);
 
-        const { status, message } = await this.register(
+        const { status, message, modified } = await this.register(
           this.reqUrl(actions.url),
           stringifyUnknown(env[envKeys.DevServerUrl]),
           registerRes.deployId,
@@ -701,7 +702,7 @@ export class InngestCommHandler<
 
         return {
           status,
-          body: stringify({ message }),
+          body: stringify({ message, modified }),
           headers: {
             "Content-Type": "application/json",
           },
@@ -937,7 +938,7 @@ export class InngestCommHandler<
     devServerHost: string | undefined,
     deployId: string | undefined | null,
     getHeaders: () => Record<string, string>
-  ): Promise<{ status: number; message: string }> {
+  ): Promise<{ status: number; message: string; modified: boolean }> {
     const body = this.registerBody(url);
 
     let res: globalThis.Response;
@@ -975,6 +976,7 @@ export class InngestCommHandler<
         message: `Failed to register${
           err instanceof Error ? `; ${err.message}` : ""
         }`,
+        modified: false,
       };
     }
 
@@ -987,7 +989,7 @@ export class InngestCommHandler<
     } catch (err) {
       this.log("warn", "Couldn't unpack register response:", err);
     }
-    const { status, error, skipped } = registerResSchema.parse(data);
+    const { status, error, skipped, modified } = registerResSchema.parse(data);
 
     // The dev server polls this endpoint to register functions every few
     // seconds, but we only want to log that we've registered functions if
@@ -1004,7 +1006,7 @@ export class InngestCommHandler<
       );
     }
 
-    return { status, message: error };
+    return { status, message: error, modified };
   }
 
   private get isProd() {
