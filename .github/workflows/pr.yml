@@ -82,6 +82,23 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - run: pnpm run lint
 
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - name: Package as tarball
+        run: pnpm run local:pack
+      - name: Archive package tarball
+        uses: actions/upload-artifact@v3
+        with:
+          name: inngestpkg
+          path: packages/inngest/inngest.tgz
+
   examples-matrix:
     name: Create examples test matrix
     runs-on: ubuntu-latest
@@ -100,7 +117,7 @@ jobs:
     defaults:
       run:
         working-directory: packages/inngest
-    needs: examples-matrix
+    needs: [examples-matrix, package]
     strategy:
       fail-fast: false
       matrix:
@@ -109,6 +126,11 @@ jobs:
       # Checkout the repo
       - name: Checkout SDK
         uses: actions/checkout@v3
+
+      - uses: volta-cli/action@v4
+
+      - run: volta install node
+      - run: volta install @antfu/ni
 
       # If we find a deno.json file in the example repo, we need to pull Deno on
       # to the toolchain.
@@ -125,10 +147,11 @@ jobs:
         # with:
         #   deno-version: vx.x.x
 
-      - uses: ./.github/actions/setup-and-build
-
-      - name: Pack SDK
-        run: pnpm run local:pack
+      - name: Download pre-built SDK
+        uses: actions/download-artifact@v3
+        with:
+          name: inngestpkg
+          path: examples/apps/${{ matrix.example }}
 
       # Install dependencies in the example repo
       - name: Install example dependencies
@@ -138,7 +161,7 @@ jobs:
 
       - name: Add local SDK to example
         working-directory: examples/apps/${{ matrix.example }}
-        run: ni ../../../packages/inngest/inngest.tgz
+        run: ni ./inngest.tgz
 
       # # Link the SDK, making sure to use the same Yarn version that we used to
       # # create the link.
