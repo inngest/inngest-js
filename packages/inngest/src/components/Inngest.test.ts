@@ -7,6 +7,7 @@ import { createClient } from "../test/helpers";
 const testEvent: EventPayload = {
   name: "test",
   data: {},
+  ts: 1688139903724,
 };
 
 const testEventKey = "foo-bar-baz-test";
@@ -219,6 +220,36 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
+        })
+      );
+    });
+
+    test("should insert `ts` timestamp ", async () => {
+      const inngest = createClient({ name: "test" });
+      inngest.setEventKey(testEventKey);
+
+      const testEventWithoutTs = {
+        name: "test.without.ts",
+        data: {},
+      };
+
+      const mockedFetch = jest.mocked(global.fetch);
+
+      await expect(inngest.send(testEventWithoutTs)).resolves.toBeUndefined();
+
+      expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
+      expect(mockedFetch.mock.calls[1]).toHaveLength(2);
+      expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const body: Array<Record<string, any>> = JSON.parse(
+        mockedFetch.mock.calls[1]?.[1]?.body as string
+      );
+      expect(body).toHaveLength(1);
+      expect(body[0]).toEqual(
+        expect.objectContaining({
+          ...testEventWithoutTs,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          ts: expect.any(Number),
         })
       );
     });
