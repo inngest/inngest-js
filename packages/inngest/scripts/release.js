@@ -79,20 +79,18 @@ const exec = async (...args) => {
   console.log("latestVersion:", latestVersion);
 
   // Release to npm
-  // COMMENT FOR SAFETY
-  // await exec("npm", ["config", "set", "git-tag-version", "false"], {
-  //   cwd: distDir,
-  // });
+  await exec("npm", ["config", "set", "git-tag-version", "false"], {
+    cwd: distDir,
+  });
 
   console.log("publishing", tag, "to dist tag:", distTag);
-  // COMMENT FOR SAFETY
-  // await exec(
-  //   "npm",
-  //   ["publish", "--tag", distTag, "--access", "public", "--provenance"],
-  //   {
-  //     cwd: distDir,
-  //   }
-  // );
+  await exec(
+    "npm",
+    ["publish", "--tag", distTag, "--access", "public", "--provenance"],
+    {
+      cwd: distDir,
+    }
+  );
 
   // If this was a backport release, republish the "latest" tag at the actual latest version
   if (branch !== "main" && distTag === "latest") {
@@ -103,23 +101,20 @@ const exec = async (...args) => {
 
     // `npm dist-tag` doesn't obey `publishConfig.registry`, so we must
     // explicitly pass the registry URL here
-    // COMMENT FOR SAFETY
-    // await exec("npm", [
-    //   "dist-tag",
-    //   "add",
-    //   `inngest@${latestVersion}`,
-    //   "latest",
-    //   "--registry",
-    //   registry,
-    // ]);
+    await exec("npm", [
+      "dist-tag",
+      "add",
+      `inngest@${latestVersion}`,
+      "latest",
+      "--registry",
+      registry,
+    ]);
   }
 
   // Tag and push the release commit
   console.log('running "changeset tag" to tag the release commit');
-  // COMMENT FOR SAFETY
-  // await exec("changeset", ["tag"]);
+  await exec("changeset", ["tag"]);
 
   console.log(`pushing git tags to origin/${branch}`);
-  // COMMENT FOR SAFETY
-  // await exec("git", ["push", "--follow-tags", "origin", branch]);
+  await exec("git", ["push", "--follow-tags", "origin", branch]);
 })();

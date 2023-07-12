@@ -58,7 +58,6 @@
   "devDependencies": {
     "@actions/core": "^1.10.0",
     "@actions/exec": "^1.1.1",
-    "@changesets/cli": "^2.26.0",
     "@inngest/eslint-plugin": "workspace:^",
     "@jest/globals": "^29.5.0",
     "@microsoft/api-extractor": "^7.33.7",
