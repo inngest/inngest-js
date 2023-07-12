@@ -129,21 +129,6 @@ jobs:
 
       - uses: ./.github/actions/setup-and-build
 
-      # If we find a deno.json file in the example repo, we need to pull Deno on
-      # to the toolchain.
-      - name: Check if Deno is used
-        id: deno-check
-        run: echo "isDeno=$(test -f deno.json && echo true || echo false)" >> $GITHUB_OUTPUT
-        working-directory: examples/apps/${{ matrix.example }}
-
-      # Add Deno integration support later
-      - name: If Deno is used, exit early
-        if: ${{ steps.deno-check.outputs.isDeno == 'true' }}
-        run: exit 1
-        # uses: denoland/setup-deno@v1
-        # with:
-        #   deno-version: vx.x.x
-
       - name: Download pre-built SDK
         uses: actions/download-artifact@v3
         with:
@@ -152,47 +137,12 @@ jobs:
 
       # Install dependencies in the example repo
       - name: Install example dependencies
-        # if: ${{ steps.deno-check.outputs.isDeno != 'true' }}
         run: nci
         working-directory: examples/apps/${{ matrix.example }}
 
       - name: Add local SDK to example
         working-directory: examples/apps/${{ matrix.example }}
         run: ni ./inngest.tgz
-
-      # # Link the SDK, making sure to use the same Yarn version that we used to
-      # # create the link.
-      # #
-      # # Because repos are always owner/repo with a slash, the directory will be
-      # # the same, therefore we must venture an extra level deep when searching
-      # # for package.json.
-      # #
-      # # Yarn v3 (berry) will override Volta's version control and always use
-      # # whatever version is specified and cached in the repo's `.yarnrc.yml`
-      # # file.
-      # # Because of this, we must instead link the SDK using a relative path, and
-      # # have the library's `dist/` directory appear as a separate package by
-      # # specifying an empty `yarn.lock` file within.
-      # #
-      # # Locally linking the lib to a Deno repo is harder, as Deno doesn't
-      # # support local linking between ESM and CJS. Instead, we run a manual
-      # # shim script to bend paths and adjust the target repo's import path.
-      # - name: Link local SDK to example
-      #   run: |
-      #     if test -f deno.json; then
-      #       deno run --allow-read --allow-write ../../../sdk/deno_compat/link.ts
-      #     else
-      #       yarnv=$(volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn -v)
-
-      #       if [[ $yarnv == 3* ]]; then
-      #         touch ../../../sdk/dist/yarn.lock
-      #         yarn link ../../../sdk/dist
-      #       else
-      #         volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn link inngest
-      #       fi
-      #     fi
-      #   working-directory: examples/${{ matrix.repo }}
-
 
       # Copy any SDK function examples to the example repo so that we're always
       # testing many functions against many handlers.
@@ -206,19 +156,9 @@ jobs:
       - name: Copy functions to test to example
         run: cp -Tr ../../../examples/functions/ ${{ steps.inngest-functions-path.outputs.dir }}
         working-directory: examples/apps/${{ matrix.example }}
-      # # IF we're using Deno, also replace any "inngest..." imports with
-      # # "npm:inngest..." and any direct file imports in `inngest/index.ts` with
-      # # `.ts` suffixes.
-      # - name: If Deno, transform imports
-      #   if: ${{ steps.deno-check.outputs.isDeno == 'true' }}
-      #   run: |
-      #     find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i 's/from "inngest/from "npm:inngest/g' {} \;
-      #     find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i -E 's/from "\.(.+)"/from "\.\1\/index\.ts"/g' {} \;
-      #   working-directory: examples/${{ matrix.repo }}
 
       # Try to build the example
       - name: Build the example
-        # if: ${{ steps.deno-check.outputs.isDeno != 'true' }}
         run: nr build
         working-directory: examples/apps/${{ matrix.example }}
 
