@@ -12,5 +12,9 @@
   },
   "dependencies": {
     "inngest": "^2.1.0"
+  },
+  "volta": {
+    "node": "18.16.1",
+    "yarn": "1.22.19"
   }
 }

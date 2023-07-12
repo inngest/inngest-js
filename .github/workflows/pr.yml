@@ -134,9 +134,6 @@ jobs:
           name: inngestpkg
           path: examples/apps/${{ matrix.example }}
 
-      # Ensure we have npm, Yarn, and pnpm available
-      - run: volta install yarn
-
       # Install dependencies in the example repo
       - name: Install example dependencies
         run: nci
