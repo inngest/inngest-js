@@ -3,7 +3,7 @@ import {
   checkIntrospection,
   eventRunWithName,
   runHasTimeline,
-  sendEvent
+  sendEvent,
 } from "../../test/helpers";
 
 checkIntrospection({
