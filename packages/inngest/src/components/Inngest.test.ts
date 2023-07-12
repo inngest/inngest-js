@@ -240,7 +240,7 @@ describe("send", () => {
       expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
       expect(mockedFetch.mock.calls[1]).toHaveLength(2);
       expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
       const body: Array<Record<string, any>> = JSON.parse(
         mockedFetch.mock.calls[1]?.[1]?.body as string
       );

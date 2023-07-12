@@ -169,6 +169,8 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
   | `${number}h`
   | ""}${`${number}m` | ""}${`${number}s` | ""}`;
 
+export type TimeStrBatch = `${`${number}s`}`;
+
 export type BaseContext<
   TOpts extends ClientOptions,
   TTrigger extends keyof EventsFromOpts<TOpts> & string,
@@ -178,6 +180,11 @@ export type BaseContext<
    * The event data present in the payload.
    */
   event: EventsFromOpts<TOpts>[TTrigger];
+
+  events: [
+    EventsFromOpts<TOpts>[TTrigger],
+    ...EventsFromOpts<TOpts>[TTrigger][]
+  ];
 
   /**
    * The run ID for the current function execution
@@ -649,6 +656,27 @@ export interface FunctionOptions<
    */
   concurrency?: number | { limit: number };
 
+  /**
+   * batchEvents specifies the batch configuration on when this function
+   * should be invoked when one of the requirements are fulfilled.
+   */
+  batchEvents?: {
+    /**
+     * The maximum number of events to be consumed in one batch,
+     * Currently allowed max value is 100.
+     */
+    maxSize: number;
+
+    /**
+     * How long to wait before invoking the function with a list of events.
+     * If timeout is reached, the function will be invoked with a batch
+     * even if it's not filled up to `maxSize`.
+     *
+     * Expects 1s to 60s.
+     */
+    timeout: TimeStrBatch;
+  };
+
   fns?: Record<string, unknown>;
 
   /**
@@ -929,6 +957,10 @@ export interface FunctionConfig {
     }
   >;
   idempotency?: string;
+  batchEvents?: {
+    maxSize: number;
+    timeout: string;
+  };
   throttle?: {
     key?: string;
     count: number;
@@ -998,3 +1030,67 @@ export interface StepOpts {
    */
   id?: string;
 }
+
+/**
+ * Simplified version of Rust style `Result`
+ *
+ * Make it easier to wrap functions with some kind of result.
+ * e.g. API calls
+ */
+export type Result<T, E = undefined> =
+  | { ok: true; value: T }
+  | { ok: false; error: E | undefined };
+
+export const ok = <T>(data: T): Result<T, never> => {
+  return { ok: true, value: data };
+};
+
+export const err = <E>(error?: E): Result<never, E> => {
+  return { ok: false, error };
+};
+
+/**
+ * Format of data send from the executor to the SDK
+ */
+export const fnDataSchema = z.object({
+  event: z.object({}).passthrough(),
+  events: z.array(z.object({}).passthrough()).default([]),
+  /**
+   * When handling per-step errors, steps will need to be an object with
+   * either a `data` or an `error` key.
+   *
+   * For now, we support the current method of steps just being a map of
+   * step ID to step data.
+   *
+   * TODO When the executor does support per-step errors, we can uncomment
+   * the expected schema below.
+   */
+  steps: z
+    .record(
+      z.any().refine((v) => typeof v !== "undefined", {
+        message: "Values in steps must be defined",
+      })
+    )
+    .optional()
+    .nullable(),
+  // steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
+  ctx: z
+    .object({
+      run_id: z.string(),
+      stack: z
+        .object({
+          stack: z
+            .array(z.string())
+            .nullable()
+            .transform((v) => (Array.isArray(v) ? v : [])),
+          current: z.number(),
+        })
+        .passthrough()
+        .optional()
+        .nullable(),
+    })
+    .optional()
+    .nullable(),
+  use_api: z.boolean().default(false),
+});
+export type FnData = z.infer<typeof fnDataSchema>;

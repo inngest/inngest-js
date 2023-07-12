@@ -80,6 +80,10 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
 
 // @public
 export interface FunctionOptions<Events extends Record<string, EventPayload>, Event extends keyof Events & string> {
+    batchEvents?: {
+        maxSize: number;
+        timeout: TimeStrBatch;
+    };
     // Warning: (ae-forgotten-export) The symbol "Cancellation" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
@@ -333,6 +337,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:332:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:342:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/types.ts:51:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:677:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

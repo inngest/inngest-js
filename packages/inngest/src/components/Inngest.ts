@@ -1,3 +1,4 @@
+import { InngestApi } from "../api/api";
 import { envKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
@@ -89,6 +90,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    */
   public readonly inngestBaseUrl: URL;
 
+  private readonly inngestApi: InngestApi;
+
   /**
    * The absolute URL of the Inngest Cloud API.
    */
@@ -161,6 +164,13 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     this.headers = inngestHeaders({
       inngestEnv: env,
+    });
+
+    const signingKey = processEnv(envKeys.SigningKey) || "";
+    this.inngestApi = new InngestApi({
+      baseUrl:
+        processEnv(envKeys.InngestApiBaseUrl) || "https://api.inngest.com",
+      signingKey: signingKey,
     });
 
     this.fetch = getFetch(fetch);
