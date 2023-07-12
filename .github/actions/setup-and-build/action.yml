@@ -5,6 +5,10 @@ inputs:
     description: 'The directory to run the action in.'
     required: false
     default: '.'
+  build:
+    description: 'Whether the build step should be run.'
+    required: false
+    default: true
 runs:
   using: composite
   steps:
@@ -40,6 +44,7 @@ runs:
       working-directory: ${{ inputs.working-directory }}/packages/inngest
 
     - name: Build
+      if: ${{ inputs.build == 'true' }}
       run: pnpm run build
       shell: bash
       working-directory: ${{ inputs.working-directory }}/packages/inngest

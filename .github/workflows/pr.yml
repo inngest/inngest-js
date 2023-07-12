@@ -127,10 +127,9 @@ jobs:
       - name: Checkout SDK
         uses: actions/checkout@v3
 
-      - uses: volta-cli/action@v4
-
-      - run: volta install node
-      - run: volta install @antfu/ni
+      - uses: ./.github/actions/setup-and-build
+        with:
+          build: false
 
       # If we find a deno.json file in the example repo, we need to pull Deno on
       # to the toolchain.
