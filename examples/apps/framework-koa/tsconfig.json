@@ -1,0 +1,17 @@
+{
+  "ts-node": {
+    "files": true
+  },
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Node16",
+    "strict": true,
+    "noImplicitAny": true,
+    "allowJs": true,
+    "checkJs": false,
+    "esModuleInterop": true,
+    "outDir": "dist"
+  },
+  "include": ["src/**/*"]
+}

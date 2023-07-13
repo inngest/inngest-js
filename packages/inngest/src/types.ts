@@ -1013,7 +1013,8 @@ export type SupportedFrameworkName =
   | "nuxt"
   | "redwoodjs"
   | "remix"
-  | "deno/fresh";
+  | "deno/fresh"
+  | "koa";
 
 /**
  * A set of options that can be passed to any step to configure it.

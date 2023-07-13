@@ -1,0 +1,26 @@
+{
+  "version": "1.0.0",
+  "main": "index.js",
+  "dependencies": {
+    "inngest": "latest",
+    "koa": "^2.14.2",
+    "koa-bodyparser": "^4.4.1"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "volta": {
+    "node": "18.16.1",
+    "npm": "9.8.0"
+  },
+  "devDependencies": {
+    "@types/koa": "^2.13.6",
+    "@types/koa-bodyparser": "^4.3.10",
+    "tsx": "^3.12.7",
+    "typescript": "^5.1.6"
+  }
+}
