@@ -1,3 +1,5 @@
+import { EventSchemas } from "inngest";
+
 type DemoEventSent = {
   name: "demo/event.sent";
   data: {
@@ -5,6 +7,4 @@ type DemoEventSent = {
   };
 };
 
-export type Events = {
-  "demo/event.sent": DemoEventSent;
-};
+export const schemas = new EventSchemas().fromUnion<DemoEventSent>();
