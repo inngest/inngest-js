@@ -59,7 +59,7 @@
   "devDependencies": {
     "@actions/core": "^1.10.0",
     "@actions/exec": "^1.1.1",
-    "@inngest/eslint-plugin": "workspace:^",
+    "@inngest/eslint-plugin-internal": "workspace:^",
     "@jest/globals": "^29.5.0",
     "@microsoft/api-extractor": "^7.33.7",
     "@types/aws-lambda": "^8.10.108",
