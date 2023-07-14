@@ -156,9 +156,9 @@ declare const Deno: {
  */
 export const allProcessEnv = (): Record<string, string | undefined> => {
   try {
-    // eslint-disable-next-line @inngest/process-warn
+    // eslint-disable-next-line @inngest/internal/process-warn
     if (process.env) {
-      // eslint-disable-next-line @inngest/process-warn
+      // eslint-disable-next-line @inngest/internal/process-warn
       return process.env;
     }
   } catch (_err) {
