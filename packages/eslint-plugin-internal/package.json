@@ -2,9 +2,14 @@
   "name": "@inngest/eslint-plugin-internal",
   "version": "1.0.0",
   "private": true,
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
     "preinstall": "npx only-allow pnpm"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/eslint-plugin-internal"
   },
   "peerDependencies": {
     "eslint": "^8.23.1"

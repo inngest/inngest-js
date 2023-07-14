@@ -31,7 +31,8 @@
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/inngest/inngest-js.git"
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/inngest"
   },
   "author": "Dan Farrelly <dan@inngest.com>",
   "license": "GPL-3.0",
