@@ -17,7 +17,7 @@ testFramework("AWS Lambda", LambdaHandler, {
     ];
   },
 
-  transformRes: async (_res, retP: Promise<APIGatewayProxyResult>) => {
+  transformRes: async (_res, args, retP: Promise<APIGatewayProxyResult>) => {
     const ret = await retP;
 
     return {

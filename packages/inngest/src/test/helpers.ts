@@ -98,6 +98,8 @@ export const testFramework = (
        */
       res: Response,
 
+      input: unknown[],
+
       /**
        * The returned value from the handler.
        */
@@ -165,7 +167,7 @@ export const testFramework = (
     const ret = await (serveHandler as (...args: any[]) => any)(...args);
 
     return (
-      opts?.transformRes?.(res, ret) ?? {
+      opts?.transformRes?.(res, args, ret) ?? {
         status: res.statusCode,
         body: res._getData(),
         headers: res.getHeaders() as Record<string, string>,
@@ -861,54 +863,42 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
 
       const data = z
         .object({
-          handlers: z.array(
+          functions: z.array(
             z.object({
-              sdk: z.object({
-                functions: z.array(
+              name: z.string(),
+              id: z.string(),
+              triggers: z.array(
+                z.object({ event: z.string() }).or(
                   z.object({
-                    name: z.string(),
-                    id: z.string(),
-                    triggers: z.array(
-                      z.object({ event: z.string() }).or(
-                        z.object({
-                          cron: z.string(),
-                        })
-                      )
-                    ),
-                    steps: z.object({
-                      step: z.object({
-                        id: z.literal("step"),
-                        name: z.literal("step"),
-                        runtime: z.object({
-                          type: z.literal("http"),
-                          url: z.string().url(),
-                        }),
-                      }),
-                    }),
+                    cron: z.string(),
                   })
-                ),
-              }),
+                )
+              ),
+              steps: z.array(
+                z.object({
+                  id: z.string(),
+                  name: z.string(),
+                  uri: z.string().url(),
+                })
+              ),
             })
           ),
         })
         .parse(await res.json());
 
-      expect(data.handlers[0]?.sdk.functions).toContainEqual({
+      expect(data.functions).toContainEqual({
         name,
         id: expect.stringMatching(new RegExp(`^.*-${slugify(name)}$`)),
         triggers,
-        steps: {
-          step: {
+        steps: expect.arrayContaining([
+          {
             id: "step",
             name: "step",
-            runtime: {
-              type: "http",
-              url: expect.stringMatching(
-                new RegExp(`^http.+\\?fnId=.+-${slugify(name)}&stepId=step$`)
-              ),
-            },
+            uri: expect.stringMatching(
+              new RegExp(`^http.+\\?fnId=.+-${slugify(name)}&stepId=step$`)
+            ),
           },
-        },
+        ]),
       });
     });
   });

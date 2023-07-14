@@ -68,7 +68,7 @@ testFramework("Deno Fresh", DenoFreshHandler, {
     return [req, env];
   },
 
-  transformRes: async (res, ret: Response) => {
+  transformRes: async (res, args, ret: Response) => {
     const headers: Record<string, string> = {};
 
     ret.headers.forEach((v, k) => {

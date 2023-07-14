@@ -78,6 +78,9 @@ importers:
       '@microsoft/api-extractor':
         specifier: ^7.33.7
         version: 7.34.4(@types/node@18.16.16)
+      '@shopify/jest-koa-mocks':
+        specifier: ^5.1.1
+        version: 5.1.1
       '@types/aws-lambda':
         specifier: ^8.10.108
         version: 8.10.108
@@ -1274,6 +1277,16 @@ packages:
       argparse: 1.0.10
       colors: 1.2.5
       string-argv: 0.3.1
+    dev: true
+
+  /@shopify/jest-koa-mocks@5.1.1:
+    resolution: {integrity: sha512-H1dRznXIK03ph1l/VDBQ5ef+A9kkEn3ikNfk70zwm9auW15MfHfY9gekE99VecxUSekws7sbFte0i8ltWCS4/g==}
+    engines: {node: ^14.17.0 || >=16.0.0}
+    dependencies:
+      koa: 2.14.2
+      node-mocks-http: 1.11.0
+    transitivePeerDependencies:
+      - supports-color
     dev: true
 
   /@sinclair/typebox@0.25.24:
