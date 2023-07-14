@@ -1,5 +1,11 @@
 # inngest
 
+## 2.2.1
+
+### Patch Changes
+
+- 1120e29: Genercize mixed async error; the same symptom can be caused by a few different errors
+
 ## 2.2.0
 
 ### Minor Changes
