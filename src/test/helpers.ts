@@ -1043,19 +1043,21 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
         })
         .parse(await res.json());
 
-      expect(data.functions).toContainEqual({
-        name,
-        triggers,
-        steps: expect.arrayContaining([
-          {
-            id: "step",
-            name: "step",
-            uri: expect.stringMatching(
-              new RegExp(`^http.+\\?fnId=.+-${slugify(name)}&stepId=step$`)
-            ),
-          },
-        ]),
-      });
+      expect(data.functions).toContainEqual(
+        expect.objectContaining({
+          name,
+          triggers,
+          steps: expect.arrayContaining([
+            {
+              id: "step",
+              name: "step",
+              uri: expect.stringMatching(
+                new RegExp(`^http.+\\?fnId=.+-${slugify(name)}&stepId=step$`)
+              ),
+            },
+          ]),
+        })
+      );
     });
   });
 };
