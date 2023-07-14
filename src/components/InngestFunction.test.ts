@@ -940,7 +940,7 @@ describe("runFn", () => {
         },
         "second run throws, as we find async logic during memoization": {
           stack: [{ id: A, data: "A" }],
-          expectedThrowMessage: ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION,
+          expectedThrowMessage: ErrCode.NON_DETERMINISTIC_FUNCTION,
         },
       })
     );
