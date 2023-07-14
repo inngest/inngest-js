@@ -2,7 +2,7 @@
   "name": "@inngest/eslint-plugin",
   "version": "0.0.0",
   "description": "An ESLint plugin which provides lint rules for the Inngest SDK.",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
     "test": "jest",
     "build": "tsc"
