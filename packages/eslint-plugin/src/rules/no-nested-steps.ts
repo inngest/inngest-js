@@ -27,7 +27,7 @@ export const rule = {
   meta: {
     type: "problem",
     messages: {
-      "no-nested-steps": "No nested steps",
+      "no-nested-steps": "Steps cannot be nested inside other steps.",
     },
     schema: [],
   },
