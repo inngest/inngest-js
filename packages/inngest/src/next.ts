@@ -61,7 +61,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
       let scheme: "http" | "https" = "https";
 
       try {
-        // eslint-disable-next-line @inngest/process-warn
+        // eslint-disable-next-line @inngest/internal/process-warn
         if (process.env.NODE_ENV === "development") {
           scheme = "http";
         }
@@ -105,7 +105,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
       let isProduction: boolean | undefined;
 
       try {
-        // eslint-disable-next-line @inngest/process-warn
+        // eslint-disable-next-line @inngest/internal/process-warn
         isProduction = process.env.NODE_ENV === "production";
       } catch (err) {
         // no-op
