@@ -483,10 +483,23 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       keyof EventsFromOpts<TOpts> & string
     >;
 
+    let sanitizedTrigger: FunctionTrigger<keyof EventsFromOpts<TOpts> & string>;
+
+    if (typeof trigger === "string") {
+      sanitizedTrigger = { event: trigger };
+    } else if (trigger.event) {
+      sanitizedTrigger = {
+        event: trigger.event,
+        expression: trigger.if,
+      };
+    } else {
+      sanitizedTrigger = trigger;
+    }
+
     return new InngestFunction(
       this,
       sanitizedOpts,
-      typeof trigger === "string" ? { event: trigger } : trigger,
+      sanitizedTrigger,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
       handler as any
     );
