@@ -6,6 +6,7 @@ import {
   OutgoingResultError,
   deserializeError,
   functionStoppedRunningErr,
+  prettyError,
   serializeError,
 } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
@@ -267,7 +268,7 @@ export class InngestFunction<
           Record<string, (...args: unknown[]) => unknown>
         >
       >,
-      "event" | "runId"
+      "event" | "events" | "runId"
     >;
 
     const hookStack = await getHookStack(
@@ -464,9 +465,18 @@ export class InngestFunction<
              * undefined state.
              */
             throw new NonRetriableError(
-              functionStoppedRunningErr(
-                ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION
-              )
+              prettyError({
+                whatHappened: " Your function was stopped from running",
+                why: "We couldn't resume your function's state because it may have changed since the run started or there are async actions in-between steps that we haven't noticed in previous executions.",
+                consequences:
+                  "Continuing to run the function may result in unexpected behaviour, so we've stopped your function to ensure nothing unexpected happened!",
+                toFixNow:
+                  "Ensure that your function is either entirely step-based or entirely non-step-based, by either wrapping all asynchronous logic in `step.run()` calls or by removing all `step.*()` calls.",
+                otherwise:
+                  "For more information on why step functions work in this manner, see https://www.inngest.com/docs/functions/multi-step#gotchas",
+                stack: true,
+                code: ErrCode.NON_DETERMINISTIC_FUNCTION,
+              })
             );
           }
 

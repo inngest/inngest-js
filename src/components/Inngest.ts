@@ -1,3 +1,4 @@
+import { InngestApi } from "../api/api";
 import { envKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
@@ -89,6 +90,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    */
   public readonly inngestBaseUrl: URL;
 
+  private readonly inngestApi: InngestApi;
+
   /**
    * The absolute URL of the Inngest Cloud API.
    */
@@ -161,6 +164,13 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     this.headers = inngestHeaders({
       inngestEnv: env,
+    });
+
+    const signingKey = processEnv(envKeys.SigningKey) || "";
+    this.inngestApi = new InngestApi({
+      baseUrl:
+        processEnv(envKeys.InngestApiBaseUrl) || "https://api.inngest.com",
+      signingKey: signingKey,
     });
 
     this.fetch = getFetch(fetch);
@@ -322,6 +332,12 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     if (inputChanges?.payloads) {
       payloads = [...inputChanges.payloads];
     }
+
+    // Ensure that we always add a "ts" field to events.  This is auto-filled by the
+    // event server so is safe, and adding here fixes Next.js server action cache issues.
+    payloads = payloads.map((p) =>
+      p.ts ? p : { ...p, ts: new Date().getTime() }
+    );
 
     /**
      * It can be valid for a user to send an empty list of events; if this
