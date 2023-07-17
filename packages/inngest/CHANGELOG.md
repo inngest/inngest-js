@@ -1,5 +1,11 @@
 # inngest
 
+## 2.3.0
+
+### Minor Changes
+
+- 7792a62: Add support for streaming to `inngest/remix`
+
 ## 2.2.1
 
 ### Patch Changes
