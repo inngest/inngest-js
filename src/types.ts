@@ -603,6 +603,7 @@ export type TriggerOptions<T extends string> =
   | StrictUnion<
       | {
           event: T;
+          if?: string;
         }
       | {
           cron: string;
