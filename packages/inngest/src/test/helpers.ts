@@ -105,7 +105,7 @@ export const testFramework = (
        */
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ret: any
-    ) => Promise<HandlerStandardReturn>;
+    ) => Promise<HandlerStandardReturn> | HandlerStandardReturn;
 
     /**
      * Specify a custom suite of tests to run against the given serve handler to
