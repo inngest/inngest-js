@@ -888,7 +888,6 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
 
       expect(data.functions).toContainEqual({
         name,
-        id: expect.stringMatching(new RegExp(`^.*-${slugify(name)}$`)),
         triggers,
         steps: expect.arrayContaining([
           {

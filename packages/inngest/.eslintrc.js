@@ -11,12 +11,12 @@ module.exports = {
     tsconfigRootDir: __dirname,
     project: ["./tsconfig.json"],
   },
-  plugins: ["@typescript-eslint", "@inngest", "import"],
+  plugins: ["@typescript-eslint", "@inngest/internal", "import"],
   root: true,
   ignorePatterns: ["dist/", "*.d.ts", "*.js"],
   rules: {
     "prettier/prettier": "warn",
-    "@inngest/process-warn": "off",
+    "@inngest/internal/process-warn": "off",
     "@typescript-eslint/no-unused-vars": [
       "warn",
       { varsIgnorePattern: "^_", argsIgnorePattern: "^_" },
@@ -39,7 +39,7 @@ module.exports = {
         "src/init.ts",
       ],
       rules: {
-        "@inngest/process-warn": "warn",
+        "@inngest/internal/process-warn": "warn",
       },
     },
   ],

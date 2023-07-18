@@ -1,5 +1,5 @@
 {
-  "name": "@inngest/eslint-plugin",
+  "name": "@inngest/eslint-plugin-internal",
   "version": "1.0.0",
   "private": true,
   "main": "index.js",

@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -59,7 +59,7 @@
   "devDependencies": {
     "@actions/core": "^1.10.0",
     "@actions/exec": "^1.1.1",
-    "@inngest/eslint-plugin": "workspace:^",
+    "@inngest/eslint-plugin-internal": "workspace:^",
     "@jest/globals": "^29.5.0",
     "@microsoft/api-extractor": "^7.33.7",
     "@shopify/jest-koa-mocks": "^5.1.1",
