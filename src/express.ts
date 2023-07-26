@@ -30,10 +30,10 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         run: () => {
           if (req.method === "POST") {
             return {
-              fnId: req.query[queryKeys.FnId] as string,
-              stepId: req.query[queryKeys.StepId] as string,
-              data: req.body as Record<string, unknown>,
-              signature: req.headers[headerKeys.Signature] as string,
+              fnId: getFromQuery(req, queryKeys.FnId),
+              stepId: getFromQuery(req, queryKeys.StepId),
+              data: getBody(req),
+              signature: getFromHeaders(req, headerKeys.Signature),
             };
           }
         },
@@ -67,3 +67,45 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
 
   return handler.createHandler();
 };
+
+function getBody(req: Request): Record<string, unknown> {
+  const body: unknown = req.body;
+
+  if (body === undefined) {
+    throw new Error("missing request body");
+  }
+
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new Error("body is not an object");
+  }
+
+  return body as Record<string, unknown>;
+}
+
+function getFromHeaders(req: Request, key: string): string {
+  const value = req.headers[key];
+
+  if (value === undefined) {
+    throw new Error(`missing ${key} in request headers`);
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(`${key} in request headers is not a string`);
+  }
+
+  return value;
+}
+
+function getFromQuery(req: Request, key: string): string {
+  const value = req.query[key];
+
+  if (value === undefined) {
+    throw new Error(`missing ${key} in request query`);
+  }
+
+  if (typeof value !== "string") {
+    throw new Error(`${key} in request query is not a string`);
+  }
+
+  return value;
+}

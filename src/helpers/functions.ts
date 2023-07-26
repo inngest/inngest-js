@@ -2,6 +2,7 @@ import { type Await } from "./types";
 import { prettyError } from "./errors";
 import { fnDataSchema, type FnData, type Result, ok, err } from "../types";
 import { type InngestApi } from "../api/api";
+import { ZodError } from "zod";
 
 /**
  * Wraps a function with a cache. When the returned function is run, it will
@@ -120,11 +121,17 @@ export const parseFnData = async (
     // move to something like protobuf so we don't have to deal with this
     console.error(error);
 
+    let why: string | undefined;
+    if (error instanceof ZodError) {
+      why = error.toString();
+    }
+
     return err(
       prettyError({
         whatHappened: "failed to parse data from executor",
         consequences: "function execution can't continue",
         stack: true,
+        why,
       })
     );
   }
