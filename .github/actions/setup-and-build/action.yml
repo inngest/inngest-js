@@ -13,6 +13,10 @@ runs:
   using: composite
   steps:
     - uses: teaxyz/setup@v0
+      with:
+        +: |
+          nodejs.org~18
+          github.com/antfu/ni
 
     - uses: pnpm/action-setup@v2
       with:
@@ -20,8 +24,8 @@ runs:
 
     - uses: actions/setup-node@v3
       with:
-        node-version-file: 'package.json'
-        cache: 'pnpm'
+        node-version: lts/*
+        cache: pnpm
 
     - name: Install dependencies
       run: pnpm install

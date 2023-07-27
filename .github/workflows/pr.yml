@@ -29,7 +29,7 @@ jobs:
           - 14
           - 16
           - 18
-          - lts
+          - 20
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
@@ -138,12 +138,12 @@ jobs:
       # Don't use "npm ci", "--immutable" etc., as example repos won't be
       # shipped with lock files.
       - name: Install example dependencies
-        run: tea +github.com/antfu/ni ni
+        run: ni
         working-directory: examples/apps/${{ matrix.example }}
 
       - name: Add local SDK to example
         working-directory: examples/apps/${{ matrix.example }}
-        run: tea +github.com/antfu/ni ni ./inngest.tgz
+        run: ni ./inngest.tgz
 
       # Copy any SDK function examples to the example repo so that we're always
       # testing many functions against many handlers.
@@ -165,7 +165,7 @@ jobs:
 
       # Try to build the example
       - name: Build the example
-        run: tea +github.com/antfu/ni nr build
+        run: nr build
         working-directory: examples/apps/${{ matrix.example }}
 
       - name: Run the Inngest dev server
@@ -181,7 +181,7 @@ jobs:
 
       # Run the example
       - name: Run the example's dev server
-        run: (tea +github.com/antfu/ni nr dev > dev.log 2>&1 &)
+        run: (nr dev > dev.log 2>&1 &)
         working-directory: examples/apps/${{ matrix.example }}
         # Provide the example any env vars it might need
         env:
