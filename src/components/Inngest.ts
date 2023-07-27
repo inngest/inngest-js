@@ -244,7 +244,11 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       case 500:
         errorMessage = "Internal server error";
         break;
+      default:
+        errorMessage = await response.text();
+        break;
     }
+
     return new Error(`Inngest API Error: ${response.status} ${errorMessage}`);
   }
 
