@@ -117,6 +117,8 @@ export enum headerKeys {
     // (undocumented)
     Framework = "x-inngest-framework",
     // (undocumented)
+    NoRetry = "x-inngest-no-retry",
+    // (undocumented)
     Platform = "x-inngest-platform",
     // (undocumented)
     SdkVersion = "x-inngest-sdk",

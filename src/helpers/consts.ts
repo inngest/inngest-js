@@ -109,6 +109,7 @@ export enum headerKeys {
   Environment = "x-inngest-env",
   Platform = "x-inngest-platform",
   Framework = "x-inngest-framework",
+  NoRetry = "x-inngest-no-retry",
 }
 
 export const defaultDevServerHost = "http://127.0.0.1:8288/";
