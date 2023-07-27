@@ -1,5 +1,15 @@
 # inngest
 
+## 2.4.0
+
+### Minor Changes
+
+- 6cb6719: Allow filtering of events within triggers
+
+### Patch Changes
+
+- 55c889c: Expose raw error message if status is unknown
+
 ## 2.3.0
 
 ### Minor Changes
