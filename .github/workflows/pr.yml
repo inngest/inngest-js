@@ -34,7 +34,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
       # Uses npm as pnpm doesn't support Node < 16
-      - run: volta run --node ${{ matrix.nodeVersion }} npm run test
+      - run: tea +nodejs.org~${{ matrix.nodeVersion }} npm run test
 
   types:
     name: Types
@@ -138,12 +138,12 @@ jobs:
       # Don't use "npm ci", "--immutable" etc., as example repos won't be
       # shipped with lock files.
       - name: Install example dependencies
-        run: ni
+        run: tea +github.com/antfu/ni ni
         working-directory: examples/apps/${{ matrix.example }}
 
       - name: Add local SDK to example
         working-directory: examples/apps/${{ matrix.example }}
-        run: ni ./inngest.tgz
+        run: tea +github.com/antfu/ni ni ./inngest.tgz
 
       # Copy any SDK function examples to the example repo so that we're always
       # testing many functions against many handlers.
@@ -165,7 +165,7 @@ jobs:
 
       # Try to build the example
       - name: Build the example
-        run: nr build
+        run: tea +github.com/antfu/ni nr build
         working-directory: examples/apps/${{ matrix.example }}
 
       - name: Run the Inngest dev server
@@ -181,7 +181,7 @@ jobs:
 
       # Run the example
       - name: Run the example's dev server
-        run: (nr dev > dev.log 2>&1 &)
+        run: (tea +github.com/antfu/ni nr dev > dev.log 2>&1 &)
         working-directory: examples/apps/${{ matrix.example }}
         # Provide the example any env vars it might need
         env:
