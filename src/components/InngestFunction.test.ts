@@ -9,7 +9,7 @@ import {
   type UnhashedOp,
 } from "@local/components/InngestStepTools";
 import { ServerTiming } from "@local/helpers/ServerTiming";
-import { ErrCode } from "@local/helpers/errors";
+import { ErrCode, OutgoingResultError } from "@local/helpers/errors";
 import {
   DefaultLogger,
   ProxyLogger,
@@ -138,7 +138,7 @@ describe("runFn", () => {
             );
           });
 
-          test("bubble thrown error", async () => {
+          test("wrap thrown error", async () => {
             await expect(
               fn["runFn"](
                 { event: { name: "foo", data: { foo: "foo" } } },
@@ -147,7 +147,13 @@ describe("runFn", () => {
                 timer,
                 false
               )
-            ).rejects.toThrow(stepErr);
+            ).rejects.toThrow(
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+              expect.objectContaining({
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                result: expect.objectContaining({ error: stepErr }),
+              })
+            );
           });
         });
       });
@@ -245,7 +251,11 @@ describe("runFn", () => {
 
             if (t.expectedThrowMessage) {
               test("throws expected error", () => {
-                expect(retErr?.message ?? "").toContain(t.expectedThrowMessage);
+                expect(
+                  retErr instanceof OutgoingResultError
+                    ? (retErr.result.error as Error)?.message
+                    : retErr?.message ?? ""
+                ).toContain(t.expectedThrowMessage);
               });
             } else {
               test("returns expected value", () => {
@@ -930,7 +940,7 @@ describe("runFn", () => {
         },
         "second run throws, as we find async logic during memoization": {
           stack: [{ id: A, data: "A" }],
-          expectedThrowMessage: ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION,
+          expectedThrowMessage: ErrCode.NON_DETERMINISTIC_FUNCTION,
         },
       })
     );

@@ -1,42 +1,14 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import fetch from "cross-fetch";
 import {
+  checkIntrospection,
   eventRunWithName,
-  introspectionSchema,
   runHasTimeline,
   sendEvent,
 } from "../../test/helpers";
 
-describe("introspection", () => {
-  const specs = [
-    { label: "SDK UI", url: "http://127.0.0.1:3000/api/inngest?introspect" },
-    { label: "Dev server UI", url: "http://localhost:8288/dev" },
-  ];
-
-  specs.forEach(({ label, url }) => {
-    test(`should show registered functions in ${label}`, async () => {
-      const res = await fetch(url);
-      const data = introspectionSchema.parse(await res.json());
-
-      expect(data.functions).toContainEqual({
-        name: "Parallel Reduce",
-        id: expect.stringMatching(/^.*-parallel-reduce$/),
-        triggers: [{ event: "demo/parallel.reduce" }],
-        steps: {
-          step: {
-            id: "step",
-            name: "step",
-            runtime: {
-              type: "http",
-              url: expect.stringMatching(
-                /^http.+\?fnId=.+-parallel-reduce&stepId=step$/
-              ),
-            },
-          },
-        },
-      });
-    });
-  });
+checkIntrospection({
+  name: "Parallel Reduce",
+  triggers: [{ event: "demo/parallel.reduce" }],
 });
 
 describe("run", () => {

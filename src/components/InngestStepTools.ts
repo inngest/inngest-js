@@ -7,13 +7,17 @@ import {
   prettyError,
 } from "../helpers/errors";
 import { timeStr } from "../helpers/strings";
-import { type ObjectPaths, type SendEventPayload } from "../helpers/types";
+import {
+  type ObjectPaths,
+  type PartialK,
+  type SendEventPayload,
+} from "../helpers/types";
 import {
   StepOpCode,
   type ClientOptions,
   type EventPayload,
   type HashedOp,
-  type Op,
+  type StepOpts,
 } from "../types";
 import { type EventsFromOpts, type Inngest } from "./Inngest";
 import { type ExecutionState } from "./InngestFunction";
@@ -47,16 +51,27 @@ export const createStepTools = <
 
   /**
    * Create a unique hash of an operation using only a subset of the operation's
-   * properties; will never use `data` and will guarantee the order of the object
-   * so we don't rely on individual tools for that.
+   * properties; will never use `data` and will guarantee the order of the
+   * object so we don't rely on individual tools for that.
+   *
+   * If the operation already contains an ID, the current ID will be used
+   * instead, so that users can provide their own IDs.
    */
   const hashOp = (
     /**
-     * The op to generate a hash from. We only use a subset of the op's properties
-     * when creating the hash.
+     * The op to generate a hash from. We only use a subset of the op's
+     * properties when creating the hash.
      */
-    op: Op
+    op: PartialK<HashedOp, "id">
   ): HashedOp => {
+    /**
+     * If the op already has an ID, we don't need to generate one. This allows
+     * users to specify their own IDs.
+     */
+    if (op.id) {
+      return op as HashedOp;
+    }
+
     const obj = {
       parent: state.currentOp?.id ?? null,
       op: op.op,
@@ -97,7 +112,7 @@ export const createStepTools = <
        * Arguments passed by the user.
        */
       ...args: Parameters<T>
-    ) => Omit<Op, "data" | "error">,
+    ) => PartialK<Omit<HashedOp, "data" | "error">, "id">,
 
     opts?: {
       /**
@@ -207,11 +222,13 @@ export const createStepTools = <
      */
     sendEvent: createTool<{
       <Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
-        payload: Payload
+        payload: Payload,
+        opts?: StepOpts
       ): Promise<void>;
     }>(
-      () => {
+      (_payload, opts) => {
         return {
+          id: opts?.id,
           op: StepOpCode.StepPlanned,
           name: "sendEvent",
         };
@@ -278,7 +295,11 @@ export const createStepTools = <
           timeout: timeStr(typeof opts === "string" ? opts : opts.timeout),
         };
 
+        let id: string | undefined;
+
         if (typeof opts !== "string") {
+          id = opts?.id;
+
           if (opts?.match) {
             matchOpts.if = `event.${opts.match} == async.${opts.match}`;
           } else if (opts?.if) {
@@ -287,6 +308,7 @@ export const createStepTools = <
         }
 
         return {
+          id,
           op: StepOpCode.WaitForEvent,
           name: event as string,
           opts: matchOpts,
@@ -323,7 +345,8 @@ export const createStepTools = <
          * call to `run`, meaning you can return and reason about return data
          * for next steps.
          */
-        fn: T
+        fn: T,
+        opts?: StepOpts
       ) => Promise<
         /**
          * TODO Middleware can affect this. If run input middleware has returned
@@ -338,8 +361,9 @@ export const createStepTools = <
         >
       >
     >(
-      (name) => {
+      (name, _fn, opts) => {
         return {
+          id: opts?.id,
           op: StepOpCode.StepPlanned,
           name,
         };
@@ -362,14 +386,16 @@ export const createStepTools = <
         /**
          * The amount of time to wait before continuing.
          */
-        time: number | string
+        time: number | string,
+        opts?: StepOpts
       ) => Promise<void>
-    >((time) => {
+    >((time, opts) => {
       /**
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
       return {
+        id: opts?.id,
         op: StepOpCode.Sleep,
         name: timeStr(time),
       };
@@ -386,9 +412,10 @@ export const createStepTools = <
         /**
          * The date to wait until before continuing.
          */
-        time: Date | string
+        time: Date | string,
+        opts?: StepOpts
       ) => Promise<void>
-    >((time) => {
+    >((time, opts) => {
       const date = typeof time === "string" ? new Date(time) : time;
 
       /**
@@ -397,6 +424,7 @@ export const createStepTools = <
        */
       try {
         return {
+          id: opts?.id,
           op: StepOpCode.Sleep,
           name: date.toISOString(),
         };
@@ -426,7 +454,7 @@ export const createStepTools = <
 interface WaitForEventOpts<
   TriggeringEvent extends EventPayload,
   IncomingEvent extends EventPayload
-> {
+> extends StepOpts {
   /**
    * The step function will wait for the event for a maximum of this time, at
    * which point the event will be returned as `null` instead of any event data.

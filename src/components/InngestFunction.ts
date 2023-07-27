@@ -3,8 +3,10 @@ import { type ServerTiming } from "../helpers/ServerTiming";
 import { internalEvents, queryKeys } from "../helpers/consts";
 import {
   ErrCode,
+  OutgoingResultError,
   deserializeError,
   functionStoppedRunningErr,
+  prettyError,
   serializeError,
 } from "../helpers/errors";
 import { resolveAfterPending, resolveNextTick } from "../helpers/promises";
@@ -266,7 +268,7 @@ export class InngestFunction<
           Record<string, (...args: unknown[]) => unknown>
         >
       >,
-      "event" | "runId"
+      "event" | "events" | "runId"
     >;
 
     const hookStack = await getHookStack(
@@ -292,6 +294,35 @@ export class InngestFunction<
         },
       }
     );
+
+    const createFinalError = async (
+      err: unknown,
+      step?: OutgoingOp
+    ): Promise<OutgoingResultError> => {
+      await hookStack.afterExecution?.();
+
+      const result: Pick<OutgoingOp, "error" | "data"> = {
+        error: err,
+      };
+
+      try {
+        result.data = serializeError(err);
+      } catch (serializationErr) {
+        console.warn(
+          "Could not serialize error to return to Inngest; stringifying instead",
+          serializationErr
+        );
+
+        result.data = err;
+      }
+
+      const hookOutput = await applyHookToOutput(hookStack.transformOutput, {
+        result,
+        step,
+      });
+
+      return new OutgoingResultError(hookOutput);
+    };
 
     const state = createExecutionState();
 
@@ -434,9 +465,18 @@ export class InngestFunction<
              * undefined state.
              */
             throw new NonRetriableError(
-              functionStoppedRunningErr(
-                ErrCode.ASYNC_DETECTED_DURING_MEMOIZATION
-              )
+              prettyError({
+                whatHappened: " Your function was stopped from running",
+                why: "We couldn't resume your function's state because it may have changed since the run started or there are async actions in-between steps that we haven't noticed in previous executions.",
+                consequences:
+                  "Continuing to run the function may result in unexpected behaviour, so we've stopped your function to ensure nothing unexpected happened!",
+                toFixNow:
+                  "Ensure that your function is either entirely step-based or entirely non-step-based, by either wrapping all asynchronous logic in `step.run()` calls or by removing all `step.*()` calls.",
+                otherwise:
+                  "For more information on why step functions work in this manner, see https://www.inngest.com/docs/functions/multi-step#gotchas",
+                stack: true,
+                code: ErrCode.NON_DETERMINISTIC_FUNCTION,
+              })
             );
           }
 
@@ -497,27 +537,7 @@ export class InngestFunction<
             runningStepStop();
           })
           .catch(async (err: Error) => {
-            await hookStack.afterExecution?.();
-
-            const result: Pick<OutgoingOp, "error" | "data"> = {
-              error: err,
-            };
-
-            try {
-              result.data = serializeError(err);
-            } catch (serializationErr) {
-              console.warn(
-                "Could not serialize error to return to Inngest; stringifying instead",
-                serializationErr
-              );
-
-              result.data = err;
-            }
-
-            return await applyHookToOutput(hookStack.transformOutput, {
-              result,
-              step: outgoingUserFnOp,
-            });
+            return await createFinalError(err, outgoingUserFnOp);
           })
           .then(async (data) => {
             await hookStack.afterExecution?.();
@@ -649,6 +669,8 @@ export class InngestFunction<
       await hookStack.afterExecution?.();
 
       return ["discovery", discoveredOps];
+    } catch (err) {
+      throw await createFinalError(err);
     } finally {
       await hookStack.beforeResponse?.();
     }

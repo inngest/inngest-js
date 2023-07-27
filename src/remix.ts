@@ -1,11 +1,38 @@
 import {
   InngestCommHandler,
+  type ActionResponse,
   type ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { type SupportedFrameworkName } from "./types";
 
 export const name: SupportedFrameworkName = "remix";
+
+const createNewResponse = ({
+  body,
+  status,
+  headers,
+}: ActionResponse<string | ReadableStream>): Response => {
+  /**
+   * If `Response` isn't included in this environment, it's probably a Node
+   * env that isn't already polyfilling. In this case, we can polyfill it
+   * here to be safe.
+   */
+  let Res: typeof Response;
+
+  if (typeof Response === "undefined") {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
+    Res = require("cross-fetch").Response;
+  } else {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    Res = Response;
+  }
+
+  return new Res(body, {
+    status,
+    headers,
+  });
+};
 
 /**
  * In Remix, serve and register any declared functions with Inngest, making them
@@ -66,27 +93,8 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
         },
       };
     },
-    ({ body, status, headers }): Response => {
-      /**
-       * If `Response` isn't included in this environment, it's probably a Node
-       * env that isn't already polyfilling. In this case, we can polyfill it
-       * here to be safe.
-       */
-      let Res: typeof Response;
-
-      if (typeof Response === "undefined") {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
-        Res = require("cross-fetch").Response;
-      } else {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        Res = Response;
-      }
-
-      return new Res(body, {
-        status,
-        headers,
-      });
-    }
+    createNewResponse,
+    createNewResponse
   );
 
   return handler.createHandler();

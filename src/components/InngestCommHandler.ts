@@ -12,11 +12,15 @@ import {
   platformSupportsStreaming,
   skipDevServer,
 } from "../helpers/env";
-import { OutgoingOpError, serializeError } from "../helpers/errors";
-import { cacheFn } from "../helpers/functions";
+import { OutgoingResultError, serializeError } from "../helpers/errors";
+import { cacheFn, parseFnData } from "../helpers/functions";
 import { strBoolean } from "../helpers/scalar";
 import { createStream } from "../helpers/stream";
-import { stringify, stringifyUnknown } from "../helpers/strings";
+import {
+  hashSigningKey,
+  stringify,
+  stringifyUnknown,
+} from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
 import { landing } from "../landing";
 import {
@@ -104,6 +108,7 @@ type FetchT = typeof fetch;
 const registerResSchema = z.object({
   status: z.number().default(200),
   skipped: z.boolean().optional().default(false),
+  modified: z.boolean().optional().default(false),
   error: z.string().default("Successfully registered"),
 });
 
@@ -472,15 +477,7 @@ export class InngestCommHandler<
   // hashedSigningKey creates a sha256 checksum of the signing key with the
   // same signing key prefix.
   private get hashedSigningKey(): string {
-    if (!this.signingKey) {
-      return "";
-    }
-
-    const prefix = this.signingKey.match(/^signkey-[\w]+-/)?.shift() || "";
-    const key = this.signingKey.replace(/^signkey-[\w]+-/, "");
-
-    // Decode the key from its hex representation into a bytestream
-    return `${prefix}${sha256().update(key, "hex").digest("hex")}`;
+    return hashSigningKey(this.signingKey);
   }
 
   /**
@@ -645,6 +642,7 @@ export class InngestCommHandler<
       if (runRes) {
         this.upsertSigningKeyFromEnv(env);
         this.validateSignature(runRes.signature, runRes.data);
+        this.client["inngestApi"].setSigningKey(this.signingKey);
 
         const stepRes = await this.runStep(
           runRes.fnId,
@@ -654,6 +652,14 @@ export class InngestCommHandler<
         );
 
         if (stepRes.status === 500 || stepRes.status === 400) {
+          const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+          };
+
+          if (stepRes.status === 400) {
+            headers[headerKeys.NoRetry] = "true";
+          }
+
           return {
             status: stepRes.status,
             body: stringify(
@@ -664,9 +670,7 @@ export class InngestCommHandler<
                   )
                 )
             ),
-            headers: {
-              "Content-Type": "application/json",
-            },
+            headers,
           };
         }
 
@@ -689,8 +693,13 @@ export class InngestCommHandler<
 
         if (this._isProd || !showLandingPage) {
           return {
-            status: 405,
-            body: "",
+            status: 403,
+            body: JSON.stringify({
+              message: "Landing page requested but is disabled",
+              isProd: this._isProd,
+              skipDevServer: this._skipDevServer,
+              showLandingPage,
+            }),
             headers: {},
           };
         }
@@ -726,7 +735,7 @@ export class InngestCommHandler<
       if (registerRes) {
         this.upsertSigningKeyFromEnv(env);
 
-        const { status, message } = await this.register(
+        const { status, message, modified } = await this.register(
           this.reqUrl(actions.url),
           stringifyUnknown(env[envKeys.DevServerUrl]),
           registerRes.deployId,
@@ -735,7 +744,7 @@ export class InngestCommHandler<
 
         return {
           status,
-          body: stringify({ message }),
+          body: stringify({ message, modified }),
           headers: {
             "Content-Type": "application/json",
           },
@@ -756,7 +765,11 @@ export class InngestCommHandler<
 
     return {
       status: 405,
-      body: "",
+      body: JSON.stringify({
+        message: "No action found; request was likely not POST, PUT, or GET",
+        isProd: this._isProd,
+        skipDevServer: this._skipDevServer,
+      }),
       headers: {},
     };
   }
@@ -774,48 +787,11 @@ export class InngestCommHandler<
         throw new Error(`Could not find function with ID "${functionId}"`);
       }
 
-      // TODO PrettyError on parse failure; serve handler may be set up badly
-      const { event, steps, ctx } = z
-        .object({
-          event: z.object({}).passthrough(),
-          /**
-           * When handling per-step errors, steps will need to be an object with
-           * either a `data` or an `error` key.
-           *
-           * For now, we support the current method of steps just being a map of
-           * step ID to step data.
-           *
-           * TODO When the executor does support per-step errors, we can uncomment
-           * the expected schema below.
-           */
-          steps: z
-            .record(
-              z.any().refine((v) => typeof v !== "undefined", {
-                message: "Values in steps must be defined",
-              })
-            )
-            .optional()
-            .nullable(),
-          // steps: z.record(incomingOpSchema.passthrough()).optional().nullable(),
-          ctx: z
-            .object({
-              run_id: z.string(),
-              stack: z
-                .object({
-                  stack: z
-                    .array(z.string())
-                    .nullable()
-                    .transform((v) => (Array.isArray(v) ? v : [])),
-                  current: z.number(),
-                })
-                .passthrough()
-                .optional()
-                .nullable(),
-            })
-            .optional()
-            .nullable(),
-        })
-        .parse(data);
+      const fndata = await parseFnData(data, this.client["inngestApi"]);
+      if (!fndata.ok) {
+        throw new Error(fndata.error);
+      }
+      const { event, events, steps, ctx } = fndata.value;
 
       /**
        * TODO When the executor does support per-step errors, this map will need
@@ -837,7 +813,7 @@ export class InngestCommHandler<
           }) ?? [];
 
       const ret = await fn.fn["runFn"](
-        { event, runId: ctx?.run_id },
+        { event, events, runId: ctx?.run_id },
         opStack,
         /**
          * TODO The executor is sending `"step"` as the step ID when it is not
@@ -874,7 +850,10 @@ export class InngestCommHandler<
          * altered by middleware, whereas `error` is the initial triggering
          * error.
          */
-        throw new OutgoingOpError(ret[1]);
+        throw new OutgoingResultError({
+          data: ret[1].data,
+          error: ret[1].error,
+        });
       }
 
       return {
@@ -889,20 +868,16 @@ export class InngestCommHandler<
        *
        * See {@link https://www.npmjs.com/package/serialize-error}
        */
-      const isOutgoingOpError = unserializedErr instanceof OutgoingOpError;
+      const isOutgoingOpError = unserializedErr instanceof OutgoingResultError;
 
-      let error: string;
-      if (isOutgoingOpError) {
-        error =
-          typeof unserializedErr.op.data === "string"
-            ? unserializedErr.op.data
-            : stringify(unserializedErr.op.data);
-      } else {
-        error = stringify(serializeError(unserializedErr));
-      }
+      const error = stringify(
+        serializeError(
+          isOutgoingOpError ? unserializedErr.result.data : unserializedErr
+        )
+      );
 
       const isNonRetriableError = isOutgoingOpError
-        ? unserializedErr.op.error instanceof NonRetriableError
+        ? unserializedErr.result.error instanceof NonRetriableError
         : unserializedErr instanceof NonRetriableError;
 
       /**
@@ -968,7 +943,7 @@ export class InngestCommHandler<
     devServerHost: string | undefined,
     deployId: string | undefined | null,
     getHeaders: () => Record<string, string>
-  ): Promise<{ status: number; message: string }> {
+  ): Promise<{ status: number; message: string; modified: boolean }> {
     const body = this.registerBody(url);
 
     let res: globalThis.Response;
@@ -1006,6 +981,7 @@ export class InngestCommHandler<
         message: `Failed to register${
           err instanceof Error ? `; ${err.message}` : ""
         }`,
+        modified: false,
       };
     }
 
@@ -1018,7 +994,7 @@ export class InngestCommHandler<
     } catch (err) {
       this.log("warn", "Couldn't unpack register response:", err);
     }
-    const { status, error, skipped } = registerResSchema.parse(data);
+    const { status, error, skipped, modified } = registerResSchema.parse(data);
 
     // The dev server polls this endpoint to register functions every few
     // seconds, but we only want to log that we've registered functions if
@@ -1035,7 +1011,7 @@ export class InngestCommHandler<
       );
     }
 
-    return { status, message: error };
+    return { status, message: error, modified };
   }
 
   private get isProd() {

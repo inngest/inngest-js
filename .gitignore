@@ -18,3 +18,7 @@ temp/
 coverage/
 
 tsdoc-metadata.json
+
+/.direnv/
+/inngest.tgz
+/landing/vite.config.ts.*

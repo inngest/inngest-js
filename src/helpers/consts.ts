@@ -21,6 +21,7 @@ export enum envKeys {
   DevServerUrl = "INNGEST_DEVSERVER_URL",
   Environment = "INNGEST_ENV",
   BranchName = "BRANCH_NAME",
+  InngestApiBaseUrl = "INNGEST_API_BASE_URL",
 
   /**
    * The git branch of the commit the deployment was triggered by. Example:
@@ -108,6 +109,7 @@ export enum headerKeys {
   Environment = "x-inngest-env",
   Platform = "x-inngest-platform",
   Framework = "x-inngest-framework",
+  NoRetry = "x-inngest-no-retry",
 }
 
 export const defaultDevServerHost = "http://127.0.0.1:8288/";

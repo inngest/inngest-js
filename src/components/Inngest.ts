@@ -1,4 +1,5 @@
 import debug from "debug";
+import { InngestApi } from "../api/api";
 import { envKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
@@ -90,6 +91,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    */
   public readonly inngestBaseUrl: URL;
 
+  private readonly inngestApi: InngestApi;
+
   /**
    * The absolute URL of the Inngest Cloud API.
    */
@@ -164,6 +167,13 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       inngestEnv: env,
     });
 
+    const signingKey = processEnv(envKeys.SigningKey) || "";
+    this.inngestApi = new InngestApi({
+      baseUrl:
+        processEnv(envKeys.InngestApiBaseUrl) || "https://api.inngest.com",
+      signingKey: signingKey,
+    });
+
     this.fetch = getFetch(fetch);
     this.logger = logger;
 
@@ -235,7 +245,11 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       case 500:
         errorMessage = "Internal server error";
         break;
+      default:
+        errorMessage = await response.text();
+        break;
     }
+
     return new Error(`Inngest API Error: ${response.status} ${errorMessage}`);
   }
 
@@ -323,6 +337,12 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     if (inputChanges?.payloads) {
       payloads = [...inputChanges.payloads];
     }
+
+    // Ensure that we always add a "ts" field to events.  This is auto-filled by the
+    // event server so is safe, and adding here fixes Next.js server action cache issues.
+    payloads = payloads.map((p) =>
+      p.ts ? p : { ...p, ts: new Date().getTime() }
+    );
 
     /**
      * It can be valid for a user to send an empty list of events; if this
@@ -468,10 +488,23 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       keyof EventsFromOpts<TOpts> & string
     >;
 
+    let sanitizedTrigger: FunctionTrigger<keyof EventsFromOpts<TOpts> & string>;
+
+    if (typeof trigger === "string") {
+      sanitizedTrigger = { event: trigger };
+    } else if (trigger.event) {
+      sanitizedTrigger = {
+        event: trigger.event,
+        expression: trigger.if,
+      };
+    } else {
+      sanitizedTrigger = trigger;
+    }
+
     return new InngestFunction(
       this,
       sanitizedOpts,
-      typeof trigger === "string" ? { event: trigger } : trigger,
+      sanitizedTrigger,
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
       handler as any
     );

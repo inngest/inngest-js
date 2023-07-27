@@ -1,5 +1,89 @@
 # inngest
 
+## 2.4.0
+
+### Minor Changes
+
+- 6cb6719: Allow filtering of events within triggers
+
+### Patch Changes
+
+- 55c889c: Expose raw error message if status is unknown
+
+## 2.3.0
+
+### Minor Changes
+
+- 7792a62: Add support for streaming to `inngest/remix`
+
+## 2.2.1
+
+### Patch Changes
+
+- 1120e29: Genercize mixed async error; the same symptom can be caused by a few different errors
+
+## 2.2.0
+
+### Minor Changes
+
+- d0a8976: Add support for batching events.
+
+  Introduces a new configuration to function configurations.
+
+  ```ts
+  batchEvents?: { maxSize: 100, timeout: "5s" }
+  ```
+
+  This will take Inngest start execution when one of the following conditions are met.
+
+  1. The batch is full
+  2. Time is up
+
+  When the SDK gets invoked, the list of events will be available via a newly exported field `events`.
+
+  ```ts
+  createFunction(
+    { name: "my func", batchEvents: { maxSize: 100, timeout: "5s" } },
+    { event: "my/event" },
+    async ({ event, events, step }) => {
+      // events is accessible with the list of events
+      // event will still be a single event object, which will be the
+      // 1st event of the list.
+
+      const result = step.run("do something with events", () => {
+        return events.map(() => doSomething());
+      });
+
+      return { success: true, result };
+    }
+  );
+  ```
+
+### Patch Changes
+
+- 591f73d: Set `ts` field on sent events if undefined
+- 1cbf65e: Alter registration response to include `modified` for deployment deduplication
+
+## 2.1.0
+
+### Minor Changes
+
+- b74477f: Add optional `id` property to all step tooling, allowing users to override state recovery
+
+## 2.0.2
+
+### Patch Changes
+
+- 023d761: Harden error serialization to ensure uncaught exceptions don't slip through during function runs
+
+## 2.0.1
+
+### Patch Changes
+
+- 3ef0b36: Add better visibility into serve handlers issues
+- 4226b85: Fix middleware `transformOutput` hook not running if an asynchronous, non-step function's body threw
+- cc3929d: Fix a very rare bug in which `step.sleep()` hashing could produce different IDs across different executions
+
 ## 2.0.0
 
 ### Major Changes
