@@ -135,8 +135,10 @@ jobs:
           path: examples/apps/${{ matrix.example }}
 
       # Install dependencies in the example repo
+      # Don't use "npm ci", "--immutable" etc., as example repos won't be
+      # shipped with lock files.
       - name: Install example dependencies
-        run: nci
+        run: ni
         working-directory: examples/apps/${{ matrix.example }}
 
       - name: Add local SDK to example
@@ -154,6 +156,11 @@ jobs:
         working-directory: examples/apps/${{ matrix.example }}
       - name: Copy functions to test to example
         run: cp -Tr ../../../examples/functions/ ${{ steps.inngest-functions-path.outputs.dir }}
+        working-directory: examples/apps/${{ matrix.example }}
+      # Rules for every project can be different; ignore the example functions
+      # we've just added.
+      - name: Ignore ESLint in example functions
+        run: echo '**/inngest/**' >> .eslintignore
         working-directory: examples/apps/${{ matrix.example }}
 
       # Try to build the example
