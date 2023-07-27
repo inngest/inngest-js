@@ -12,12 +12,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: teaxyz/setup@v0
-      with:
-        +: |
-          nodejs.org~18
-          github.com/antfu/ni
-
     - uses: pnpm/action-setup@v2
       with:
         run_install: false
@@ -26,6 +20,9 @@ runs:
       with:
         node-version: lts/*
         cache: pnpm
+
+    - run: npm i -g @antfu/ni
+      shell: bash
 
     - name: Install dependencies
       run: pnpm install
