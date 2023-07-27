@@ -5,6 +5,7 @@ import {
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
 import { type SupportedFrameworkName } from "./types";
+import { prettyError } from "./helpers/errors";
 
 export const name: SupportedFrameworkName = "express";
 
@@ -71,12 +72,23 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
 function getBody(req: Request): Record<string, unknown> {
   const body: unknown = req.body;
 
-  if (body === undefined) {
-    throw new Error("missing request body");
+  if (body === undefined || body === null) {
+    throw new Error(
+      prettyError({
+        toFixNow:
+          "Use middleware that can parse request bodies, like body-parser (https://expressjs.com/en/resources/middleware/body-parser.html)",
+        whatHappened: "Missing request body",
+      })
+    );
   }
 
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    throw new Error("body is not an object");
+  if (typeof body !== "object" || Array.isArray(body)) {
+    throw new Error(
+      prettyError({
+        toFixNow: "Ensure that request bodies are being properly parsed",
+        whatHappened: "Body is not an object",
+      })
+    );
   }
 
   return body as Record<string, unknown>;
