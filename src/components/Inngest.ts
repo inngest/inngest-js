@@ -13,6 +13,7 @@ import { stringify } from "../helpers/strings";
 import { type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
+  type ExclusiveKeys,
   type ClientOptions,
   type EventNameFromTrigger,
   type EventPayload,
@@ -402,65 +403,69 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   >(
     nameOrOpts:
       | string
-      | (Omit<
-          FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>,
-          "fns" | "onFailure" | "middleware"
-        > & {
-          /**
-           * Pass in an object of functions that will be wrapped in Inngest
-           * tooling and passes to your handler. This wrapping ensures that each
-           * function is automatically separated and retried.
-           *
-           * @example
-           *
-           * Both examples behave the same; it's preference as to which you
-           * prefer.
-           *
-           * ```ts
-           * import { userDb } from "./db";
-           *
-           * // Specify `fns` and be able to use them in your Inngest function
-           * inngest.createFunction(
-           *   { name: "Create user from PR", fns: { ...userDb } },
-           *   { event: "github/pull_request" },
-           *   async ({ fns: { createUser } }) => {
-           *     await createUser("Alice");
-           *   }
-           * );
-           *
-           * // Or always use `run()` to run inline steps and use them directly
-           * inngest.createFunction(
-           *   { name: "Create user from PR" },
-           *   { event: "github/pull_request" },
-           *   async ({ step: { run } }) => {
-           *     await run("createUser", () => userDb.createUser("Alice"));
-           *   }
-           * );
-           * ```
-           */
-          fns?: TFns;
+      | ExclusiveKeys<
+          Omit<
+            FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>,
+            "fns" | "onFailure" | "middleware"
+          > & {
+            /**
+             * Pass in an object of functions that will be wrapped in Inngest
+             * tooling and passes to your handler. This wrapping ensures that each
+             * function is automatically separated and retried.
+             *
+             * @example
+             *
+             * Both examples behave the same; it's preference as to which you
+             * prefer.
+             *
+             * ```ts
+             * import { userDb } from "./db";
+             *
+             * // Specify `fns` and be able to use them in your Inngest function
+             * inngest.createFunction(
+             *   { name: "Create user from PR", fns: { ...userDb } },
+             *   { event: "github/pull_request" },
+             *   async ({ fns: { createUser } }) => {
+             *     await createUser("Alice");
+             *   }
+             * );
+             *
+             * // Or always use `run()` to run inline steps and use them directly
+             * inngest.createFunction(
+             *   { name: "Create user from PR" },
+             *   { event: "github/pull_request" },
+             *   async ({ step: { run } }) => {
+             *     await run("createUser", () => userDb.createUser("Alice"));
+             *   }
+             * );
+             * ```
+             */
+            fns?: TFns;
 
-          /**
-           * Provide a function to be called if your function fails, meaning
-           * that it ran out of retries and was unable to complete successfully.
-           *
-           * This is useful for sending warning notifications or cleaning up
-           * after a failure and supports all the same functionality as a
-           * regular handler.
-           */
-          onFailure?: Handler<
-            TOpts,
-            EventsFromOpts<TOpts>,
-            TTriggerName,
-            TShimmedFns,
-            FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
-          >;
+            /**
+             * Provide a function to be called if your function fails, meaning
+             * that it ran out of retries and was unable to complete successfully.
+             *
+             * This is useful for sending warning notifications or cleaning up
+             * after a failure and supports all the same functionality as a
+             * regular handler.
+             */
+            onFailure?: Handler<
+              TOpts,
+              EventsFromOpts<TOpts>,
+              TTriggerName,
+              TShimmedFns,
+              FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
+            >;
 
-          /**
-           * TODO
-           */
-          middleware?: TMiddleware;
-        }),
+            /**
+             * TODO
+             */
+            middleware?: TMiddleware;
+          },
+          "batchEvents",
+          "cancelOn" | "rateLimit"
+        >,
     trigger: TTrigger,
     handler: Handler<
       TOpts,
