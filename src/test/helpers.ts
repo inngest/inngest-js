@@ -4,7 +4,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Inngest } from "@local";
 import { type ServeHandler } from "@local/components/InngestCommHandler";
-import { envKeys, headerKeys } from "@local/helpers/consts";
+import { envKeys, headerKeys, queryKeys } from "@local/helpers/consts";
 import { slugify } from "@local/helpers/strings";
 import { type FunctionTrigger } from "@local/types";
 import { version } from "@local/version";
@@ -139,16 +139,36 @@ export const testFramework = (
       fetch,
     });
 
-    const [req, res] = createReqRes({
+    const host = "localhost:3000";
+
+    const mockReqOpts: httpMocks.RequestOptions = {
       hostname: "localhost",
       url: "/api/inngest",
       protocol: "https",
       ...reqOpts[0],
       headers: {
         ...reqOpts[0]?.headers,
-        host: "localhost:3000",
+        host,
       },
-    });
+    };
+
+    if (mockReqOpts.method === "POST") {
+      const mockUrl = new URL(
+        `${mockReqOpts.protocol as string}://${host}${
+          mockReqOpts.url as string
+        }`
+      );
+
+      if (!mockUrl.searchParams.has(queryKeys.FnId)) {
+        mockUrl.searchParams.set(queryKeys.FnId, ulid());
+      }
+
+      if (!mockUrl.searchParams.has(queryKeys.StepId)) {
+        mockUrl.searchParams.set(queryKeys.StepId, "step");
+      }
+    }
+
+    const [req, res] = createReqRes(mockReqOpts);
 
     let envToPass = { ...env };
 
@@ -721,6 +741,39 @@ export const testFramework = (
           expect(ret).toMatchObject({
             status: 200,
             body: '"fn"',
+          });
+        });
+      });
+
+      describe("malformed payloads", () => {
+        const client = createClient({ name: "test" });
+
+        const fn = client.createFunction(
+          { name: "Test", id: "test" },
+          { event: "demo/event.sent" },
+          () => "fn"
+        );
+        const env = {
+          DENO_DEPLOYMENT_ID: undefined,
+          NODE_ENV: "development",
+          ENVIRONMENT: "development",
+        };
+
+        test("should throw an error with an invalid JSON body", async () => {
+          const ret = await run(
+            [inngest, [fn], { signingKey: "test" }],
+            [
+              {
+                method: "POST",
+                url: "/api/inngest?fnId=test",
+                body: undefined,
+              },
+            ],
+            env
+          );
+          expect(ret).toMatchObject({
+            status: 500,
+            body: expect.stringContaining("Failed to parse data from executor"),
           });
         });
       });
