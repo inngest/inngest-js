@@ -433,6 +433,36 @@ describe("createFunction", () => {
         );
       });
 
+      test("disallows specifying cancellation with batching", () => {
+        inngest.createFunction(
+          {
+            name: "test",
+            batchEvents: { maxSize: 5, timeout: "5s" },
+            // @ts-expect-error Cannot specify cancellation with batching
+            cancelOn: [{ event: "test2" }],
+          },
+          { event: "test" },
+          () => {
+            // no-op
+          }
+        );
+      });
+
+      test("disallows specifying rate limit with batching", () => {
+        inngest.createFunction(
+          {
+            name: "test",
+            batchEvents: { maxSize: 5, timeout: "5s" },
+            // @ts-expect-error Cannot specify rate limit with batching
+            rateLimit: { limit: 5, period: "5s" },
+          },
+          { event: "test" },
+          () => {
+            // no-op
+          }
+        );
+      });
+
       test("allows trigger to be a string", () => {
         inngest.createFunction("test", "test", ({ event }) => {
           assertType<string>(event.name);
