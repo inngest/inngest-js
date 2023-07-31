@@ -10,10 +10,9 @@ import {
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
 import { stringify } from "../helpers/strings";
-import { type SendEventPayload } from "../helpers/types";
+import { type ExclusiveKeys, type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
-  type ExclusiveKeys,
   type ClientOptions,
   type EventNameFromTrigger,
   type EventPayload,
