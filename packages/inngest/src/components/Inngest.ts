@@ -51,6 +51,9 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
     ? U
     : Record<string, EventPayload>;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyInngest = Inngest<any>;
+
 /**
  * A client used to interact with the Inngest API by sending or reacting to
  * events.

@@ -1,11 +1,12 @@
 import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
-import { type Jsonify } from "type-fest";
 import {
-  ErrCode,
-  functionStoppedRunningErr,
-  prettyError,
-} from "../helpers/errors";
+  createFrozenPromise,
+  resolveAfterPending,
+} from "inngest/helpers/promises";
+import { type Jsonify } from "type-fest";
+import { Concat } from "typescript-tuple";
+import { ErrCode, prettyError } from "../helpers/errors";
 import { timeStr } from "../helpers/strings";
 import {
   type ObjectPaths,
@@ -14,20 +15,18 @@ import {
 } from "../helpers/types";
 import {
   StepOpCode,
+  StepOptionsOrId,
   type ClientOptions,
   type EventPayload,
   type HashedOp,
-  type StepOpts,
 } from "../types";
 import { type EventsFromOpts, type Inngest } from "./Inngest";
-import { type ExecutionState } from "./InngestFunction";
+import { type ExecutionState } from "./InngestExecution";
 import { NonRetriableError } from "./NonRetriableError";
 
-export interface TickOp extends HashedOp {
+export interface FoundStep extends HashedOp {
   fn?: (...args: unknown[]) => unknown;
   fulfilled: boolean;
-  resolve: (value: unknown | PromiseLike<unknown>) => void;
-  reject: (reason?: unknown) => void;
 }
 
 /**
@@ -47,7 +46,7 @@ export const createStepTools = <
   state: ExecutionState
 ) => {
   // Start referencing everything
-  state.tickOps = state.allFoundOps;
+  // state.tickOps = state.allFoundOps;
 
   /**
    * Create a unique hash of an operation using only a subset of the operation's
@@ -72,22 +71,26 @@ export const createStepTools = <
       return op as HashedOp;
     }
 
-    const obj = {
-      parent: state.currentOp?.id ?? null,
-      op: op.op,
-      name: op.name,
-      opts: op.opts ?? null,
-    };
+    throw new Error("DEV: ID was not fixed");
+  };
 
-    const collisionHash = _internals.hashData(obj);
+  let foundStepsToReport: FoundStep[] = [];
+  let foundStepsReportPromise: Promise<void> | undefined;
 
-    const pos = (state.tickOpHashes[collisionHash] =
-      (state.tickOpHashes[collisionHash] ?? -1) + 1);
+  const pushStepToReport = (step: FoundStep) => {
+    foundStepsToReport.push(step);
 
-    return {
-      ...op,
-      id: _internals.hashData({ pos, ...obj }),
-    };
+    if (!foundStepsReportPromise) {
+      foundStepsReportPromise = resolveAfterPending().then(() => {
+        const steps = [...foundStepsToReport] as [FoundStep, ...FoundStep[]];
+
+        // Reset
+        foundStepsToReport = [];
+        foundStepsReportPromise = undefined;
+
+        state.setCheckpoint({ type: "steps-found", steps });
+      });
+    }
   };
 
   /**
@@ -112,7 +115,7 @@ export const createStepTools = <
        * Arguments passed by the user.
        */
       ...args: Parameters<T>
-    ) => PartialK<Omit<HashedOp, "data" | "error">, "id">,
+    ) => Omit<HashedOp, "data" | "error">,
 
     opts?: {
       /**
@@ -146,16 +149,6 @@ export const createStepTools = <
     }
   ): T => {
     return ((...args: Parameters<T>): Promise<unknown> => {
-      if (state.nonStepFnDetected) {
-        if (opts?.nonStepExecuteInline && opts.fn) {
-          return Promise.resolve(opts.fn(...args));
-        }
-
-        throw new NonRetriableError(
-          functionStoppedRunningErr(ErrCode.STEP_USED_AFTER_ASYNC)
-        );
-      }
-
       if (state.executingStep) {
         throw new NonRetriableError(
           prettyError({
@@ -172,20 +165,41 @@ export const createStepTools = <
         );
       }
 
-      state.hasUsedTools = true;
-
       const opId = hashOp(matchOp(...args));
 
-      return new Promise<unknown>((resolve, reject) => {
-        state.tickOps[opId.id] = {
-          ...opId,
-          ...(opts?.fn ? { fn: () => opts.fn?.(...args) } : {}),
-          resolve,
-          reject,
-          fulfilled: false,
-        };
+      // TODO Need indexing?
+      if (state.steps[opId.id]) {
+        throw new Error("TODO: Step already exists?");
+      }
+
+      const step = (state.steps[opId.id] = {
+        ...opId,
+        fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
+        fulfilled: Boolean(state.stepState[opId.id]),
       });
+
+      pushStepToReport(step);
+
+      const stepState = state.stepState[opId.id];
+
+      if (stepState) {
+        if (typeof stepState?.data !== "undefined") {
+          return Promise.resolve(stepState?.data);
+        } else {
+          return Promise.reject(stepState?.error);
+        }
+      }
+
+      return createFrozenPromise();
     }) as T;
+  };
+
+  const getStepIdFromOptions = (options: StepOptionsOrId): string => {
+    if (typeof options === "string") {
+      return options;
+    }
+
+    return options.id;
   };
 
   /**
@@ -222,20 +236,20 @@ export const createStepTools = <
      */
     sendEvent: createTool<{
       <Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
-        payload: Payload,
-        opts?: StepOpts
+        idOrOptions: StepOptionsOrId,
+        payload: Payload
       ): Promise<void>;
     }>(
-      (_payload, opts) => {
+      (idOrOptions, payload) => {
         return {
-          id: opts?.id,
+          id: getStepIdFromOptions(idOrOptions),
           op: StepOpCode.StepPlanned,
           name: "sendEvent",
         };
       },
       {
         nonStepExecuteInline: true,
-        fn: (payload) => {
+        fn: (idOrOptions, payload) => {
           return client.send(payload);
         },
       }
@@ -252,6 +266,7 @@ export const createStepTools = <
      */
     waitForEvent: createTool<
       <IncomingEvent extends keyof Events | EventPayload>(
+        idOrOptions: StepOptionsOrId,
         event: IncomingEvent extends keyof Events
           ? IncomingEvent
           : IncomingEvent extends EventPayload
@@ -280,6 +295,8 @@ export const createStepTools = <
       >
     >(
       (
+        idOrOptions,
+
         /**
          * The event name to wait for.
          */
@@ -295,11 +312,7 @@ export const createStepTools = <
           timeout: timeStr(typeof opts === "string" ? opts : opts.timeout),
         };
 
-        let id: string | undefined;
-
         if (typeof opts !== "string") {
-          id = opts?.id;
-
           if (opts?.match) {
             matchOpts.if = `event.${opts.match} == async.${opts.match}`;
           } else if (opts?.if) {
@@ -308,7 +321,7 @@ export const createStepTools = <
         }
 
         return {
-          id,
+          id: getStepIdFromOptions(idOrOptions),
           op: StepOpCode.WaitForEvent,
           name: event as string,
           opts: matchOpts,
@@ -330,12 +343,7 @@ export const createStepTools = <
      */
     run: createTool<
       <T extends () => unknown>(
-        /**
-         * The name of this step as it will appear in the Inngest Cloud UI. This
-         * is also used as a unique identifier for the step and should not match
-         * any other steps within this step function.
-         */
-        name: string,
+        idOrOptions: StepOptionsOrId,
 
         /**
          * The function to run when this step is executed. Can be synchronous or
@@ -345,8 +353,7 @@ export const createStepTools = <
          * call to `run`, meaning you can return and reason about return data
          * for next steps.
          */
-        fn: T,
-        opts?: StepOpts
+        fn: T
       ) => Promise<
         /**
          * TODO Middleware can affect this. If run input middleware has returned
@@ -361,14 +368,14 @@ export const createStepTools = <
         >
       >
     >(
-      (name, _fn, opts) => {
+      (idOrOptions, fn) => {
         return {
-          id: opts?.id,
+          id: getStepIdFromOptions(idOrOptions),
           op: StepOpCode.StepPlanned,
-          name,
+          name: "TODO run code",
         };
       },
-      { fn: (_, fn) => fn() }
+      { fn: (idOrOptions, fn) => fn() }
     ),
 
     /**
@@ -383,19 +390,20 @@ export const createStepTools = <
      */
     sleep: createTool<
       (
+        idOrOptions: StepOptionsOrId,
+
         /**
          * The amount of time to wait before continuing.
          */
-        time: number | string,
-        opts?: StepOpts
+        time: number | string
       ) => Promise<void>
-    >((time, opts) => {
+    >((idOrOptions, time) => {
       /**
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
       return {
-        id: opts?.id,
+        id: getStepIdFromOptions(idOrOptions),
         op: StepOpCode.Sleep,
         name: timeStr(time),
       };
@@ -409,13 +417,14 @@ export const createStepTools = <
      */
     sleepUntil: createTool<
       (
+        idOrOptions: StepOptionsOrId,
+
         /**
          * The date to wait until before continuing.
          */
-        time: Date | string,
-        opts?: StepOpts
+        time: Date | string
       ) => Promise<void>
-    >((time, opts) => {
+    >((idOrOptions, time) => {
       const date = typeof time === "string" ? new Date(time) : time;
 
       /**
@@ -424,7 +433,7 @@ export const createStepTools = <
        */
       try {
         return {
-          id: opts?.id,
+          id: getStepIdFromOptions(idOrOptions),
           op: StepOpCode.Sleep,
           name: date.toISOString(),
         };
@@ -454,7 +463,7 @@ export const createStepTools = <
 interface WaitForEventOpts<
   TriggeringEvent extends EventPayload,
   IncomingEvent extends EventPayload
-> extends StepOpts {
+> {
   /**
    * The step function will wait for the event for a maximum of this time, at
    * which point the event will be returned as `null` instead of any event data.

@@ -79,6 +79,15 @@ export enum StepOpCode {
   RunStep = "Step",
   StepPlanned = "StepPlanned",
   Sleep = "Sleep",
+
+  /**
+   * Used to signify that the executor has requested that a step run, but we
+   * could not find that step.
+   *
+   * This is likely indicative that a step was renamed or removed from the
+   * function.
+   */
+  StepNotFound = "StepNotFound",
 }
 
 /**
@@ -94,7 +103,7 @@ export type Op = {
   /**
    * The unhashed step name for this operation.
    */
-  name: string;
+  name?: string;
 
   /**
    * Any additional data required for this operation to send to Inngest. This
@@ -265,6 +274,9 @@ export type Context<
   TOverrides extends Record<string, unknown> = Record<never, never>
 > = Omit<BaseContext<TOpts, TTrigger, TShimmedFns>, keyof TOverrides> &
   TOverrides;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyContext = Context<any, any, any, any>;
 
 /**
  * The shape of a Inngest function, taking in event, step, ctx, and step
@@ -1019,18 +1031,15 @@ export type SupportedFrameworkName =
 /**
  * A set of options that can be passed to any step to configure it.
  */
-export interface StepOpts {
+export interface StepOptions {
   /**
-   * Passing an `id` for a step will overwrite the generated hash that is used
-   * by Inngest to pause and resume a function.
-   *
-   * This is useful if you want to ensure that a step is always the same ID even
-   * if the code changes.
-   *
-   * We recommend not using this unless you have a specific reason to do so.
+   * The ID to use to memoize the result of this step, ensuring it is run only
+   * once.
    */
-  id?: string;
+  id: string;
 }
+
+export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
 /**
  * Simplified version of Rust style `Result`

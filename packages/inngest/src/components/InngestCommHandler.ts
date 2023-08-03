@@ -23,7 +23,6 @@ import {
 import { type MaybePromise } from "../helpers/types";
 import {
   type FunctionConfig,
-  type IncomingOp,
   type IntrospectRequest,
   type LogLevel,
   type RegisterOptions,
@@ -33,6 +32,11 @@ import {
 } from "../types";
 import { version } from "../version";
 import { type Inngest } from "./Inngest";
+import {
+  ExecutionResultHandler,
+  ExecutionResultHandlers,
+  InngestExecutionOptions,
+} from "./InngestExecution";
 import { type InngestFunction } from "./InngestFunction";
 import { NonRetriableError } from "./NonRetriableError";
 
@@ -754,73 +758,63 @@ export class InngestCommHandler<
       }
       const { event, events, steps, ctx } = fndata.value;
 
-      /**
-       * TODO When the executor does support per-step errors, this map will need
-       * to adjust to ensure we're not double-stacking the op inside `data`.
-       */
-      const opStack =
-        ctx?.stack?.stack
-          .slice(0, ctx.stack.current)
-          .map<IncomingOp>((opId) => {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            const step = steps?.[opId];
-            if (typeof step === "undefined") {
-              // TODO PrettyError
-              throw new Error(`Could not find step with ID "${opId}"`);
-            }
-
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            return { id: opId, data: step };
-          }) ?? [];
-
-      const ret = await fn.fn["runFn"](
-        { event, events, runId: ctx?.run_id },
-        opStack,
-        /**
-         * TODO The executor is sending `"step"` as the step ID when it is not
-         * wanting to run a specific step. This is not needed and we should
-         * remove this on the executor side.
-         */
-        stepId === "step" ? null : stepId || null,
-        timer,
-        fn.onFailure
-      );
-
-      if (ret[0] === "complete") {
+      const stepState = Object.entries(steps ?? {}).reduce<
+        InngestExecutionOptions["stepState"]
+      >((acc, [id, data]) => {
         return {
-          status: 200,
-          body: ret[1],
+          ...acc,
+          [id]: { id, data },
         };
-      }
+      }, {});
 
-      /**
-       * If the function has run user code and is intending to return an error,
-       * interrupt this flow and instead throw a 500 to Inngest.
-       *
-       * The executor doesn't yet support per-step errors, so returning an
-       * `error` key here would cause the executor to misunderstand what is
-       * happening.
-       *
-       * TODO When the executor does support per-step errors, we can remove this
-       * comment and check and functionality should resume as normal.
-       */
-      if (ret[0] === "run" && ret[1].error) {
-        /**
-         * We throw the `data` here instead of the `error` because we expect
-         * `data` to be a prepared version of the error which may have been
-         * altered by middleware, whereas `error` is the initial triggering
-         * error.
-         */
-        throw new OutgoingResultError({
-          data: ret[1].data,
-          error: ret[1].error,
-        });
-      }
+      const execution = fn.fn["createExecution"]({
+        data: { event, events, runId: ctx?.run_id },
+        stepState,
+        requestedRunStep: stepId === "step" ? undefined : stepId || undefined,
+        timer,
+      });
 
-      return {
-        status: 206,
-        body: Array.isArray(ret[1]) ? ret[1] : [ret[1]],
+      const executionHandlers: ExecutionResultHandlers = {
+        "function-rejected": ({ error }) => {
+          throw error;
+        },
+        "function-resolved": ({ data }) => {
+          return {
+            status: 200,
+            body: data,
+          };
+        },
+        "step-not-found": ({ step }) => {
+          return {
+            status: 206,
+            body: [step],
+          };
+        },
+        "step-ran": ({ step }) => {
+          if (step.error) {
+            throw new OutgoingResultError({
+              data: step.data,
+              error: step.error,
+            });
+          }
+
+          return {
+            status: 206,
+            body: [step],
+          };
+        },
+        "steps-found": ({ steps }) => {
+          return {
+            status: 206,
+            body: steps,
+          };
+        },
       };
+
+      const result = await execution.start();
+      const handler = executionHandlers[result.type] as ExecutionResultHandler;
+
+      return handler(result);
     } catch (unserializedErr) {
       /**
        * Always serialize the error before sending it back to Inngest. Errors,
