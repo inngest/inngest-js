@@ -98,7 +98,11 @@ export class InngestExecution {
    */
   public start(): Promise<ExecutionResult> {
     this.#debug("starting execution");
-    return (this.#execution ??= this.#start());
+
+    return (this.#execution ??= this.#start().then((result) => {
+      this.#debug("result:", result);
+      return result;
+    }));
   }
 
   /**
