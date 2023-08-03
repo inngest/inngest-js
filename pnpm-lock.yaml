@@ -38,6 +38,9 @@ importers:
       cross-fetch:
         specifier: ^3.1.5
         version: 3.1.5
+      debug:
+        specifier: ^4.3.4
+        version: 4.3.4
       h3:
         specifier: ^1.0.2
         version: 1.0.2
@@ -50,9 +53,6 @@ importers:
       ms:
         specifier: ^2.1.3
         version: 2.1.3
-      queue-microtask:
-        specifier: ^1.2.3
-        version: 1.2.3
       serialize-error-cjs:
         specifier: ^0.1.3
         version: 0.1.3
@@ -81,6 +81,9 @@ importers:
       '@types/aws-lambda':
         specifier: ^8.10.108
         version: 8.10.108
+      '@types/debug':
+        specifier: ^4.1.8
+        version: 4.1.8
       '@types/express':
         specifier: ^4.17.13
         version: 4.17.13
@@ -1340,6 +1343,12 @@ packages:
     resolution: {integrity: sha512-cdeYyv4KWoEgpBISTxWvqYsVy444DOqehiF3fM3ne10AmJ62RSyNkUnxMJXHQWRQQX2eR94m5y1IZyDwBjV9FQ==}
     dependencies:
       '@types/node': 18.16.16
+    dev: true
+
+  /@types/debug@4.1.8:
+    resolution: {integrity: sha512-/vPO1EPOs306Cvhwv7KfVfYvOJqA/S/AXjaHQiJboCZzcNDb+TIJFN9/2C9DZ//ijSKWioNyUxD792QmDJ+HKQ==}
+    dependencies:
+      '@types/ms': 0.7.31
     dev: true
 
   /@types/express-serve-static-core@4.17.30:
