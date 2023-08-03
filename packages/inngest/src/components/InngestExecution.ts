@@ -30,6 +30,7 @@ interface Checkpoints {
   "function-rejected": { error: unknown };
   "function-resolved": { data: unknown };
   "step-not-found": { step: OutgoingOp };
+  "middleware-error": { error: unknown };
 }
 
 /**
@@ -142,6 +143,16 @@ export class InngestExecution {
        */
       "": (checkpoint) => {
         this.#debug("checkpoint:", checkpoint);
+      },
+
+      /**
+       * Middleware has thrown an error.
+       */
+      "middleware-error": ({ error }) => {
+        /**
+         * TODO Middleware-specific error log pls
+         */
+        return { type: "function-rejected", error };
       },
 
       /**
@@ -454,6 +465,11 @@ export class InngestExecution {
             result: { ...prev.result, ...output?.result },
             step: prev.step,
           };
+        },
+      },
+      {
+        errorHandler: (error) => {
+          this.state.setCheckpoint({ type: "middleware-error", error });
         },
       }
     );

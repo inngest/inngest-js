@@ -109,6 +109,23 @@ export type RunHookStack = PromisifiedFunctionRecord<
   Await<MiddlewareRegisterReturn["onFunctionRun"]>
 >;
 
+type GetHookStackOptions = {
+  /**
+   * A function that will be called when an error is thrown in a hook. This
+   * function will be called with the error that was thrown. The hook that
+   * caused the error will still throw the error after the error handler has
+   * been awaited.
+   *
+   * Useful for declaring error-handling functionality across an entire hook
+   * stack instead of individually handling errors in each hook.
+   *
+   * The error handler will not run if the error is caused when initializing the
+   * hook stack; only hooks that are run after initialization will trigger the
+   * error handler.
+   */
+  errorHandler?: (err: unknown) => unknown;
+};
+
 /**
  * Given some middleware and an entrypoint, runs the initializer for the given
  * `key` and returns functions that will pass arguments through a stack of each
@@ -154,7 +171,12 @@ export const getHookStack = async <
           : never
         : never]: void;
     }
-  >
+  >,
+
+  /**
+   * Optional arguments for the hook stack.
+   */
+  options?: GetHookStackOptions
 ): Promise<TRet> => {
   // Wait for middleware to initialize
   const mwStack = await middleware;
@@ -206,9 +228,14 @@ export const getHookStack = async <
   for (const k of Object.keys(ret)) {
     const key = k as keyof typeof ret;
 
-    ret[key] = cacheFn(
-      ret[key] as (...args: unknown[]) => unknown
-    ) as unknown as TRet[keyof TRet];
+    ret[key] = cacheFn(async (...args: unknown[]) => {
+      try {
+        return await (ret[key] as (...args: unknown[]) => unknown)(...args);
+      } catch (err) {
+        await options?.errorHandler?.(err);
+        throw err;
+      }
+    }) as unknown as TRet[keyof TRet];
   }
 
   return ret;
