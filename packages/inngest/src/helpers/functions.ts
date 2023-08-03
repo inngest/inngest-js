@@ -1,7 +1,7 @@
-import { type Await } from "./types";
-import { prettyError } from "./errors";
-import { fnDataSchema, type FnData, type Result, ok, err } from "../types";
 import { type InngestApi } from "../api/api";
+import { err, fnDataSchema, ok, type FnData, type Result } from "../types";
+import { prettyError } from "./errors";
+import { type Await } from "./types";
 
 /**
  * Wraps a function with a cache. When the returned function is run, it will
@@ -32,8 +32,6 @@ export const cacheFn = <T extends (...args: unknown[]) => unknown>(
  *
  * Because this needs to support both sync and async functions, it only allows
  * functions that accept a single argument.
- *
- * TODO Add a second function that decides how to merge results from prev and current results.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const waterfall = <TFns extends ((arg?: any) => any)[]>(
