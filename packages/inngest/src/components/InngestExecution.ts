@@ -50,7 +50,7 @@ export interface InngestExecutionOptions {
   client: AnyInngest;
   fn: AnyInngestFunction;
   data: unknown;
-  stepState: Record<string, IncomingOp>;
+  stepState: Record<string, MemoizedOp>;
   requestedRunStep?: string;
   timer?: ServerTiming;
 }
@@ -63,7 +63,6 @@ export class InngestExecution {
   timeoutDuration = 1000 * 10;
   #execution: Promise<ExecutionResult> | undefined;
   #debug: Debugger = Debug("inngest");
-  #hooks: RunHookStack | undefined;
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -111,7 +110,7 @@ export class InngestExecution {
   async #start(): Promise<ExecutionResult> {
     try {
       const allCheckpointHandler = this.#getCheckpointHandler("");
-      this.#hooks = await this.#initializeMiddleware();
+      this.state.hooks = await this.#initializeMiddleware();
       await this.#startExecution();
 
       for await (const checkpoint of this.state.loop) {
@@ -148,15 +147,15 @@ export class InngestExecution {
       /**
        * The user's function has completed and returned a value.
        */
-      "function-resolved": (checkpoint) => {
-        return checkpoint;
+      "function-resolved": ({ data }) => {
+        return { type: "function-resolved", data };
       },
 
       /**
        * The user's function has thrown an error.
        */
-      "function-rejected": (checkpoint) => {
-        return checkpoint;
+      "function-rejected": ({ error }) => {
+        return { type: "function-rejected", error };
       },
 
       /**
@@ -172,7 +171,7 @@ export class InngestExecution {
           };
         }
 
-        const foundSteps = this.#gatherFoundSteps(steps);
+        const foundSteps = await this.#gatherFoundSteps(steps);
         if (foundSteps) {
           return {
             type: "steps-found",
@@ -185,8 +184,8 @@ export class InngestExecution {
        * While trying to find a step that Inngest has told us to run, we've
        * timed out or have otherwise decided that it doesn't exist.
        */
-      "step-not-found": (checkpoint) => {
-        return checkpoint;
+      "step-not-found": ({ step }) => {
+        return { type: "step-not-found", step };
       },
     };
   }
@@ -214,7 +213,9 @@ export class InngestExecution {
     return void this.timeout?.reset();
   }
 
-  #gatherFoundSteps(steps: FoundStep[]): [OutgoingOp, ...OutgoingOp[]] | void {
+  async #gatherFoundSteps(
+    steps: FoundStep[]
+  ): Promise<[OutgoingOp, ...OutgoingOp[]] | void> {
     if (this.options.requestedRunStep) {
       return;
     }
@@ -247,6 +248,11 @@ export class InngestExecution {
       );
     }
 
+    /**
+     * We're finishing up; let's trigger the last of the hooks.
+     */
+    await this.state.hooks?.afterMemoization?.();
+
     return newSteps.map<OutgoingOp>((step) => ({
       op: step.op,
       id: step.id,
@@ -255,7 +261,9 @@ export class InngestExecution {
     })) as [OutgoingOp, ...OutgoingOp[]];
   }
 
-  #executeStep({ id, name, opts, fn }: FoundStep): Promise<OutgoingOp> {
+  async #executeStep({ id, name, opts, fn }: FoundStep): Promise<OutgoingOp> {
+    await this.state.hooks?.afterMemoization?.();
+
     this.#debug(`executing step "${id}"`);
     const outgoingOp: OutgoingOp = { id, op: StepOpCode.RunStep, name, opts };
 
@@ -290,17 +298,28 @@ export class InngestExecution {
      */
     void this.timeout?.start();
 
-    await this.#hooks?.beforeMemoization?.();
+    await this.state.hooks?.beforeMemoization?.();
+
+    /**
+     * If we had no state to begin with, immediately end the memoization phase.
+     */
+    if (this.state.allStateUsed()) {
+      await this.state.hooks?.afterMemoization?.();
+    }
 
     /**
      * Trigger the user's function.
      */
     Promise.resolve(this.options.fn["fn"](this.fnArg))
-      .then((data) => {
+      .then(async (data) => {
+        await this.state.hooks?.afterMemoization?.();
+
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.state.setCheckpoint({ type: "function-resolved", data });
       })
-      .catch((error) => {
+      .catch(async (error) => {
+        await this.state.hooks?.afterMemoization?.();
+
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.state.setCheckpoint({ type: "function-rejected", error });
       });
@@ -310,7 +329,7 @@ export class InngestExecution {
    * Using middleware, transform input before running.
    */
   async #transformInput() {
-    const inputMutations = await this.#hooks?.transformInput?.({
+    const inputMutations = await this.state.hooks?.transformInput?.({
       ctx: { ...this.fnArg },
       steps: Object.values(this.state.stepState),
       fn: this.options.fn,
@@ -360,6 +379,11 @@ export class InngestExecution {
         ({ promise: checkpointPromise, resolve: checkpointResolve } =
           checkpointResolve(checkpoint));
       },
+      allStateUsed: () => {
+        return Object.values(state.stepState).every((step) => {
+          return step.fulfilled;
+        });
+      },
     };
 
     return state;
@@ -381,7 +405,9 @@ export class InngestExecution {
 
     this.timeout = createTimeoutPromise(this.timeoutDuration);
 
-    void this.timeout.then(() => {
+    void this.timeout.then(async () => {
+      await this.state.hooks?.afterMemoization?.();
+
       state.setCheckpoint({
         type: "step-not-found",
         step: {
@@ -462,6 +488,10 @@ export type ExecutionResultHandlers = {
   ) => MaybePromise<StepRunResponse>;
 };
 
+interface MemoizedOp extends IncomingOp {
+  fulfilled: boolean;
+}
+
 export interface ExecutionState {
   /**
    * A flag indicating that we're executing a step. Used to ensure steps are not
@@ -473,7 +503,7 @@ export interface ExecutionState {
    * A map of step IDs to their data, used to fill previously-completed steps
    * with state from the executor.
    */
-  stepState: Record<string, IncomingOp>;
+  stepState: Record<string, MemoizedOp>;
 
   /**
    * A map of step IDs to their functions to run. The executor can request a
@@ -491,4 +521,15 @@ export interface ExecutionState {
    * A function that resolves the `Promise` returned by `waitForNextDecision`.
    */
   setCheckpoint: (data: Checkpoint) => void;
+
+  /**
+   * Initialized middleware hooks for this execution.
+   */
+  hooks?: RunHookStack;
+
+  /**
+   * Returns whether or not all state passed from the executor has been used to
+   * fulfill found steps.
+   */
+  allStateUsed: () => boolean;
 }

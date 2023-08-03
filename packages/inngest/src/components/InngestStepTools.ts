@@ -5,7 +5,6 @@ import {
   resolveAfterPending,
 } from "inngest/helpers/promises";
 import { type Jsonify } from "type-fest";
-import { Concat } from "typescript-tuple";
 import { ErrCode, prettyError } from "../helpers/errors";
 import { timeStr } from "../helpers/strings";
 import {
@@ -15,10 +14,10 @@ import {
 } from "../helpers/types";
 import {
   StepOpCode,
-  StepOptionsOrId,
   type ClientOptions,
   type EventPayload,
   type HashedOp,
+  type StepOptionsOrId,
 } from "../types";
 import { type EventsFromOpts, type Inngest } from "./Inngest";
 import { type ExecutionState } from "./InngestExecution";
@@ -88,7 +87,7 @@ export const createStepTools = <
         foundStepsToReport = [];
         foundStepsReportPromise = undefined;
 
-        state.setCheckpoint({ type: "steps-found", steps });
+        void state.setCheckpoint({ type: "steps-found", steps });
       });
     }
   };
@@ -148,8 +147,12 @@ export const createStepTools = <
       nonStepExecuteInline?: boolean;
     }
   ): T => {
-    return ((...args: Parameters<T>): Promise<unknown> => {
+    return (async (...args: Parameters<T>): Promise<unknown> => {
       if (state.executingStep) {
+        /**
+         * TODO This could also happen as we could now be resolving steps from
+         * state in the background or while executing. Hm.
+         */
         throw new NonRetriableError(
           prettyError({
             whatHappened: "Your function was stopped from running",
@@ -183,6 +186,15 @@ export const createStepTools = <
       const stepState = state.stepState[opId.id];
 
       if (stepState) {
+        stepState.fulfilled = true;
+        /**
+         * If this is the last piece of state we had, we've now finished
+         * memoizing.
+         */
+        if (state.allStateUsed()) {
+          await state.hooks?.afterMemoization?.();
+        }
+
         if (typeof stepState?.data !== "undefined") {
           return Promise.resolve(stepState?.data);
         } else {
@@ -368,7 +380,7 @@ export const createStepTools = <
         >
       >
     >(
-      (idOrOptions, fn) => {
+      (idOrOptions) => {
         return {
           id: getStepIdFromOptions(idOrOptions),
           op: StepOpCode.StepPlanned,
