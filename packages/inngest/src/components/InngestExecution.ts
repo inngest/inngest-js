@@ -290,6 +290,8 @@ export class InngestExecution {
      */
     void this.timeout?.start();
 
+    await this.#hooks?.beforeMemoization?.();
+
     /**
      * Trigger the user's function.
      */
