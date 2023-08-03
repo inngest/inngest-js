@@ -19,7 +19,7 @@ import {
 } from "../types";
 import { type AnyInngest } from "./Inngest";
 import { type AnyInngestFunction } from "./InngestFunction";
-import { getHookStack } from "./InngestMiddleware";
+import { getHookStack, type RunHookStack } from "./InngestMiddleware";
 import { createStepTools, type FoundStep } from "./InngestStepTools";
 
 /**
@@ -63,6 +63,7 @@ export class InngestExecution {
   timeoutDuration = 1000 * 10;
   #execution: Promise<ExecutionResult> | undefined;
   #debug: Debugger = Debug("inngest");
+  #hooks: RunHookStack | undefined;
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -104,11 +105,11 @@ export class InngestExecution {
    * Starts execution of the user's function and the core loop.
    */
   async #start(): Promise<ExecutionResult> {
-    const allCheckpointHandler = this.#getCheckpointHandler("");
-    // const hooks = await this.#initializeMiddleware();
-    this.#startExecution();
-
     try {
+      const allCheckpointHandler = this.#getCheckpointHandler("");
+      this.#hooks = await this.#initializeMiddleware();
+      await this.#startExecution();
+
       for await (const checkpoint of this.state.loop) {
         await allCheckpointHandler(checkpoint);
 
@@ -116,7 +117,6 @@ export class InngestExecution {
         const result = await handler(checkpoint);
 
         if (result) {
-          this.#debug("result:", result);
           return result;
         }
       }
@@ -271,7 +271,16 @@ export class InngestExecution {
       });
   }
 
-  #startExecution(): void {
+  /**
+   * Starts execution of the user's function, including triggering checkpoints
+   * and middleware hooks where appropriate.
+   */
+  async #startExecution(): Promise<void> {
+    /**
+     * Mutate input as neccessary based on middleware.
+     */
+    await this.#transformInput();
+
     /**
      * Start the timer to time out the run if needed.
      */
@@ -289,6 +298,31 @@ export class InngestExecution {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.state.setCheckpoint({ type: "function-rejected", error });
       });
+  }
+
+  /**
+   * Using middleware, transform input before running.
+   */
+  async #transformInput() {
+    const inputMutations = await this.#hooks?.transformInput?.({
+      ctx: { ...this.fnArg },
+      steps: Object.values(this.state.stepState),
+      fn: this.options.fn,
+    });
+
+    if (inputMutations?.ctx) {
+      this.fnArg = inputMutations.ctx;
+    }
+
+    if (inputMutations?.steps) {
+      this.state.stepState = inputMutations.steps.reduce(
+        (steps, step) => ({
+          ...steps,
+          [step.id]: step,
+        }),
+        {}
+      );
+    }
   }
 
   #createExecutionState(
@@ -352,7 +386,7 @@ export class InngestExecution {
     });
   }
 
-  async #initializeMiddleware() {
+  async #initializeMiddleware(): Promise<RunHookStack> {
     const ctx = this.options.data as Pick<
       Readonly<
         BaseContext<
