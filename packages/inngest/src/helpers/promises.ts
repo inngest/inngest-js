@@ -68,3 +68,85 @@ export const resolveAfterPending = (): Promise<void> => {
 export const resolveNextTick = (): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve));
 };
+
+type DeferredPromiseReturn<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => DeferredPromiseReturn<T>;
+};
+
+/**
+ * Creates and returns Promise that can be resolved with the returned resolve
+ * function.
+ *
+ * Resolving the function will return a new set of Promise and resolve function.
+ * These can be ignored if the original Promise is all that's needed.
+ */
+export const createDeferredPromise = <T>(): DeferredPromiseReturn<T> => {
+  let resolve: (value: T) => DeferredPromiseReturn<T>;
+
+  const promise = new Promise<T>((_resolve) => {
+    resolve = (value: T) => {
+      _resolve(value);
+      return createDeferredPromise<T>();
+    };
+  });
+
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  return { promise, resolve: resolve! };
+};
+
+interface TimeoutPromise extends Promise<void> {
+  /**
+   * Starts the timeout. If the timer is already started, this does nothing.
+   *
+   * @returns The promise that will resolve when the timeout expires.
+   */
+  start: () => TimeoutPromise;
+
+  /**
+   * Clears the timeout.
+   */
+  clear: () => void;
+
+  /**
+   * Clears the timeout and starts it again.
+   *
+   * @returns The promise that will resolve when the timeout expires.
+   */
+  reset: () => TimeoutPromise;
+}
+
+/**
+ * Creates a Promise that will resolve after the given duration, along with
+ * methods to start, clear, and reset the timeout.
+ */
+export const createTimeoutPromise = (duration: number): TimeoutPromise => {
+  const { promise, resolve } = createDeferredPromise<void>();
+
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let ret: TimeoutPromise;
+
+  const start = () => {
+    if (timeout) return ret;
+
+    timeout = setTimeout(() => {
+      resolve();
+    }, duration);
+
+    return ret;
+  };
+
+  const clear = () => {
+    clearTimeout(timeout);
+    timeout = undefined;
+  };
+
+  const reset = () => {
+    clear();
+    return start();
+  };
+
+  ret = Object.assign(promise, { start, clear, reset });
+
+  return ret;
+};
