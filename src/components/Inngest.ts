@@ -165,15 +165,16 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     this.headers = inngestHeaders({
       inngestEnv: env,
     });
+    this.fetch = getFetch(fetch);
 
     const signingKey = processEnv(envKeys.SigningKey) || "";
     this.inngestApi = new InngestApi({
       baseUrl:
         processEnv(envKeys.InngestApiBaseUrl) || "https://api.inngest.com",
       signingKey: signingKey,
+      fetch: this.fetch,
     });
 
-    this.fetch = getFetch(fetch);
     this.logger = logger;
 
     this.middleware = this.initializeMiddleware([
