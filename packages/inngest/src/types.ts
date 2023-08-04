@@ -304,6 +304,9 @@ export type Handler<
   ctx: Context<TOpts, TEvents, TTrigger, TShimmedFns, TOverrides>
 ) => unknown;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyHandler = Handler<any, any, any, any, any>;
+
 /**
  * The shape of a single event's payload. It should be extended to enforce
  * adherence to given events and not used as a method of creating them (i.e. as

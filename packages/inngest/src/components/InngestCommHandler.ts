@@ -760,6 +760,7 @@ export class InngestCommHandler<
       >((acc, [id, data]) => {
         return {
           ...acc,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           [id]: { id, data },
         };
       }, {});
@@ -769,6 +770,7 @@ export class InngestCommHandler<
         stepState,
         requestedRunStep: stepId === "step" ? undefined : stepId || undefined,
         timer,
+        isFailureHandler: fn.onFailure,
       });
 
       const executionHandlers: ExecutionResultHandlers = {

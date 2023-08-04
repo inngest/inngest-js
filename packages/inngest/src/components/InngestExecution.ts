@@ -1,7 +1,8 @@
 import Debug, { type Debugger } from "debug";
-import { type ServerTiming } from "inngest/helpers/ServerTiming";
-import { prettyError } from "inngest/helpers/errors";
 import { type Simplify } from "type-fest";
+import { z } from "zod";
+import { type ServerTiming } from "../helpers/ServerTiming";
+import { deserializeError, prettyError } from "../helpers/errors";
 import {
   createDeferredPromise,
   createTimeoutPromise,
@@ -9,10 +10,13 @@ import {
 import { type MaybePromise } from "../helpers/types";
 import {
   StepOpCode,
+  failureEventErrorSchema,
   type AnyContext,
+  type AnyHandler,
   type BaseContext,
   type ClientOptions,
   type EventPayload,
+  type FailureEventArgs,
   type IncomingOp,
   type OutgoingOp,
   type StepRunResponse,
@@ -54,6 +58,7 @@ export interface InngestExecutionOptions {
   stepState: Record<string, MemoizedOp>;
   requestedRunStep?: string;
   timer?: ServerTiming;
+  isFailureHandler?: boolean;
 }
 
 export class InngestExecution {
@@ -64,6 +69,7 @@ export class InngestExecution {
   timeoutDuration = 1000 * 10;
   #execution: Promise<ExecutionResult> | undefined;
   #debug: Debugger = Debug("inngest");
+  #userFnToRun: AnyHandler;
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -76,6 +82,8 @@ export class InngestExecution {
 
   constructor(options: InngestExecutionOptions) {
     this.options = options;
+
+    this.#userFnToRun = this.#getUserFnToRun();
     this.state = this.#createExecutionState(this.options.stepState);
     this.fnArg = this.#createFnArg(this.state);
     this.checkpointHandlers = this.#createCheckpointHandlers();
@@ -324,7 +332,7 @@ export class InngestExecution {
     /**
      * Trigger the user's function.
      */
-    Promise.resolve(this.options.fn["fn"](this.fnArg))
+    Promise.resolve(this.#userFnToRun(this.fnArg))
       // eslint-disable-next-line @typescript-eslint/no-misused-promises
       .finally(async () => {
         await this.state.hooks?.afterMemoization?.();
@@ -407,10 +415,35 @@ export class InngestExecution {
   #createFnArg(state: ExecutionState): AnyContext {
     const step = createStepTools(this.options.client, state);
 
-    return {
+    let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
     } as AnyContext;
+
+    if (this.options.isFailureHandler) {
+      const eventData = z
+        .object({ error: failureEventErrorSchema })
+        .parse(fnArg.event?.data);
+
+      (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
+        ...fnArg,
+        error: deserializeError(eventData.error),
+      };
+    }
+
+    return fnArg;
+  }
+
+  #getUserFnToRun(): AnyHandler {
+    if (!this.options.isFailureHandler) {
+      return this.options.fn["fn"];
+    }
+
+    if (!this.options.fn["onFailureFn"]) {
+      throw new Error("TODO");
+    }
+
+    return this.options.fn["onFailureFn"];
   }
 
   #initializeTimer(state: ExecutionState): void {
@@ -510,7 +543,7 @@ export type ExecutionResultHandlers = {
 };
 
 interface MemoizedOp extends IncomingOp {
-  fulfilled: boolean;
+  fulfilled?: boolean;
 }
 
 export interface ExecutionState {
