@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
-import { type EventsFromOpts, type Inngest } from "./components/Inngest";
+import {
+  type AnyInngest,
+  type EventsFromOpts,
+  type Inngest,
+} from "./components/Inngest";
 import {
   type InngestMiddleware,
   type MiddlewareOptions,
@@ -20,8 +24,7 @@ import { type Logger } from "./middleware/logger";
  *
  * @public
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type GetEvents<T extends Inngest<any>> = T extends Inngest<infer U>
+export type GetEvents<T extends AnyInngest> = T extends Inngest<infer U>
   ? EventsFromOpts<U>
   : never;
 
@@ -753,7 +756,10 @@ export interface FunctionOptions<
   onFailure?: (...args: unknown[]) => unknown;
 
   /**
-   * TODO
+   * Define a set of middleware that can be registered to hook into various
+   * lifecycles of the SDK and affect input and output of Inngest functionality.
+   *
+   * See {@link https://innge.st/middleware}
    */
   middleware?: MiddlewareStack;
 }

@@ -7,11 +7,7 @@ import {
 import { type Jsonify } from "type-fest";
 import { ErrCode, prettyError } from "../helpers/errors";
 import { timeStr } from "../helpers/strings";
-import {
-  type ObjectPaths,
-  type PartialK,
-  type SendEventPayload,
-} from "../helpers/types";
+import { type ObjectPaths, type SendEventPayload } from "../helpers/types";
 import {
   StepOpCode,
   type ClientOptions,
@@ -44,35 +40,6 @@ export const createStepTools = <
   client: Inngest<TOpts>,
   state: ExecutionState
 ) => {
-  // Start referencing everything
-  // state.tickOps = state.allFoundOps;
-
-  /**
-   * Create a unique hash of an operation using only a subset of the operation's
-   * properties; will never use `data` and will guarantee the order of the
-   * object so we don't rely on individual tools for that.
-   *
-   * If the operation already contains an ID, the current ID will be used
-   * instead, so that users can provide their own IDs.
-   */
-  const hashOp = (
-    /**
-     * The op to generate a hash from. We only use a subset of the op's
-     * properties when creating the hash.
-     */
-    op: PartialK<HashedOp, "id">
-  ): HashedOp => {
-    /**
-     * If the op already has an ID, we don't need to generate one. This allows
-     * users to specify their own IDs.
-     */
-    if (op.id) {
-      return op as HashedOp;
-    }
-
-    throw new Error("DEV: ID was not fixed");
-  };
-
   let foundStepsToReport: FoundStep[] = [];
   let foundStepsReportPromise: Promise<void> | undefined;
 
@@ -168,7 +135,7 @@ export const createStepTools = <
         );
       }
 
-      const opId = hashOp(matchOp(...args));
+      const opId = matchOp(...args);
 
       // TODO Need indexing?
       if (state.steps[opId.id]) {
@@ -253,7 +220,7 @@ export const createStepTools = <
         payload: Payload
       ): Promise<void>;
     }>(
-      (idOrOptions, payload) => {
+      (idOrOptions) => {
         return {
           id: getStepIdFromOptions(idOrOptions),
           op: StepOpCode.StepPlanned,
@@ -382,10 +349,15 @@ export const createStepTools = <
       >
     >(
       (idOrOptions) => {
+        const id = getStepIdFromOptions(idOrOptions);
+
         return {
-          id: getStepIdFromOptions(idOrOptions),
+          id,
           op: StepOpCode.StepPlanned,
-          name: "TODO run code",
+
+          // TODO Bad idea to default the name to the ID? Might be confusing
+          // what the user can safely change.
+          name: id,
         };
       },
       { fn: (idOrOptions, fn) => fn() }

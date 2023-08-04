@@ -460,7 +460,26 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
           >;
 
           /**
-           * TODO
+           * Define a set of middleware that can be registered to hook into
+           * various lifecycles of the SDK and affect input and output of
+           * Inngest functionality.
+           *
+           * See {@link https://innge.st/middleware}
+           *
+           * @example
+           *
+           * ```ts
+           * export const inngest = new Inngest({
+           *   middleware: [
+           *     new InngestMiddleware({
+           *       name: "My Middleware",
+           *       init: () => {
+           *         // ...
+           *       }
+           *     })
+           *   ]
+           * });
+           * ```
            */
           middleware?: TMiddleware;
         }),

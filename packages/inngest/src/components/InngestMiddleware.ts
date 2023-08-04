@@ -14,14 +14,12 @@ import {
   type MiddlewareStack,
   type OutgoingOp,
 } from "../types";
-import { type Inngest } from "./Inngest";
-import { type InngestFunction } from "./InngestFunction";
+import { type AnyInngest } from "./Inngest";
+import { type AnyInngestFunction } from "./InngestFunction";
 
 /**
  * A middleware that can be registered with Inngest to hook into various
  * lifecycles of the SDK and affect input and output of Inngest functionality.
- *
- * TODO Add docs and shortlink.
  *
  * See {@link https://innge.st/middleware}
  *
@@ -32,7 +30,7 @@ import { type InngestFunction } from "./InngestFunction";
  *   middleware: [
  *     new InngestMiddleware({
  *       name: "My Middleware",
- *       register: () => {
+ *       init: () => {
  *         // ...
  *       }
  *     })
@@ -376,20 +374,14 @@ export type MiddlewareRegisterReturn = {
 export type MiddlewareRegisterFn = (ctx: {
   /**
    * The client this middleware is being registered on.
-   *
-   * TODO This should not use `any`, but the generic type expected.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: Inngest<any>;
+  client: AnyInngest;
 
   /**
    * If defined, this middleware has been applied directly to an Inngest
    * function rather than on the client.
-   *
-   * TODO This should not use `any`, but the generic type expected.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fn?: InngestFunction<any, any, any, any>;
+  fn?: AnyInngestFunction;
 }) => MaybePromise<MiddlewareRegisterReturn>;
 
 /**
@@ -425,11 +417,8 @@ type MiddlewareRunArgs = Readonly<{
 
   /**
    * The function that is being executed.
-   *
-   * TODO This should not use `any`, but the generic type expected.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fn: InngestFunction<any, any, any, any>;
+  fn: AnyInngestFunction;
 }>;
 
 /**

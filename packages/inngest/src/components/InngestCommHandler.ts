@@ -31,13 +31,16 @@ import {
   type SupportedFrameworkName,
 } from "../types";
 import { version } from "../version";
-import { type Inngest } from "./Inngest";
+import { type AnyInngest } from "./Inngest";
 import {
-  ExecutionResultHandler,
-  ExecutionResultHandlers,
-  InngestExecutionOptions,
+  type ExecutionResultHandler,
+  type ExecutionResultHandlers,
+  type InngestExecutionOptions,
 } from "./InngestExecution";
-import { type InngestFunction } from "./InngestFunction";
+import {
+  type AnyInngestFunction,
+  type InngestFunction,
+} from "./InngestFunction";
 import { NonRetriableError } from "./NonRetriableError";
 
 /**
@@ -71,14 +74,12 @@ export type ServeHandler = (
    * The name of this app, used to scope and group Inngest functions, or
    * the `Inngest` instance used to declare all functions.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: Inngest<any>,
+  client: AnyInngest,
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  functions: InngestFunction<any, any, any, any>[],
+  functions: AnyInngestFunction[],
 
   /**
    * A set of options to further configure the registration of Inngest
@@ -265,11 +266,9 @@ export class InngestCommHandler<
    * A private collection of just Inngest functions, as they have been passed
    * when instantiating the class.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private readonly rawFns: InngestFunction<any, any, any, any>[];
+  private readonly rawFns: AnyInngestFunction[];
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private readonly client: Inngest<any>;
+  private readonly client: AnyInngest;
 
   /**
    * A private collection of functions that are being served. This map is used
@@ -302,14 +301,12 @@ export class InngestCommHandler<
      * receiving events from the same service, as you can reuse a single
      * definition of Inngest.
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    client: Inngest<any>,
+    client: AnyInngest,
 
     /**
      * An array of the functions to serve and register with Inngest.
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    functions: InngestFunction<any, any, any, any>[],
+    functions: AnyInngestFunction[],
     {
       inngestRegisterUrl,
       fetch,
