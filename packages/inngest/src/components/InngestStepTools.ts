@@ -193,6 +193,7 @@ export const createStepTools = <
          */
         if (state.allStateUsed()) {
           await state.hooks?.afterMemoization?.();
+          await state.hooks?.beforeExecution?.();
         }
 
         if (typeof stepState?.data !== "undefined") {

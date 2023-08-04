@@ -263,6 +263,7 @@ export class InngestExecution {
      * We're finishing up; let's trigger the last of the hooks.
      */
     await this.state.hooks?.afterMemoization?.();
+    await this.state.hooks?.beforeExecution?.();
 
     return newSteps.map<OutgoingOp>((step) => ({
       op: step.op,
@@ -274,6 +275,7 @@ export class InngestExecution {
 
   async #executeStep({ id, name, opts, fn }: FoundStep): Promise<OutgoingOp> {
     await this.state.hooks?.afterMemoization?.();
+    await this.state.hooks?.beforeExecution?.();
 
     this.#debug(`executing step "${id}"`);
     const outgoingOp: OutgoingOp = { id, op: StepOpCode.RunStep, name, opts };
@@ -316,21 +318,23 @@ export class InngestExecution {
      */
     if (this.state.allStateUsed()) {
       await this.state.hooks?.afterMemoization?.();
+      await this.state.hooks?.beforeExecution?.();
     }
 
     /**
      * Trigger the user's function.
      */
     Promise.resolve(this.options.fn["fn"](this.fnArg))
-      .then(async (data) => {
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises
+      .finally(async () => {
         await this.state.hooks?.afterMemoization?.();
-
+        await this.state.hooks?.beforeExecution?.();
+      })
+      .then((data) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.state.setCheckpoint({ type: "function-resolved", data });
       })
-      .catch(async (error) => {
-        await this.state.hooks?.afterMemoization?.();
-
+      .catch((error) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.state.setCheckpoint({ type: "function-rejected", error });
       });
@@ -418,6 +422,7 @@ export class InngestExecution {
 
     void this.timeout.then(async () => {
       await this.state.hooks?.afterMemoization?.();
+      await this.state.hooks?.beforeExecution?.();
 
       state.setCheckpoint({
         type: "step-not-found",
