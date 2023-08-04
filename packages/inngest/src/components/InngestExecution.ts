@@ -190,11 +190,11 @@ export class InngestExecution {
           };
         }
 
-        const foundSteps = await this.#gatherFoundSteps(steps);
-        if (foundSteps) {
+        const newSteps = await this.#filterNewSteps(steps);
+        if (newSteps) {
           return {
             type: "steps-found",
-            steps: foundSteps,
+            steps: newSteps,
           };
         }
       },
@@ -232,7 +232,7 @@ export class InngestExecution {
     return void this.timeout?.reset();
   }
 
-  async #gatherFoundSteps(
+  async #filterNewSteps(
     steps: FoundStep[]
   ): Promise<[OutgoingOp, ...OutgoingOp[]] | void> {
     if (this.options.requestedRunStep) {
