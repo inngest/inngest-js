@@ -155,3 +155,34 @@ export type ObjectAssign<TArr, TAcc = {}> = TArr extends [
 ]
   ? Simplify<ObjectAssign<TRest, Omit<TAcc, keyof TFirst> & TFirst>>
   : TAcc;
+
+/**
+ * Make a type's keys mutually exclusive.
+ *
+ * @example
+ * Make 1 key mutually exclusive with 1 other key.
+ *
+ * ```ts
+ * type MyType = ExclusiveKeys<{a: number, b: number}, "a", "b">
+ *
+ * const valid1: MyType = { a: 1 }
+ * const valid2: MyType = { b: 1 }
+ * const invalid1: MyType = { a: 1, b: 1 }
+ * ```
+ *
+ * @example
+ * Make 1 key mutually exclusive with 2 other keys.
+ *
+ * ```ts
+ * type MyType = ExclusiveKeys<{a: number, b: number, c: number}, "a", "b" | "c">
+ *
+ * const valid1: MyType = { a: 1 };
+ * const valid2: MyType = { b: 1, c: 1 };
+ * const invalid1: MyType = { a: 1, b: 1 };
+ * const invalid2: MyType = { a: 1, c: 1 };
+ * const invalid3: MyType = { a: 1, b: 1, c: 1 };
+ * ```
+ */
+export type ExclusiveKeys<T, Keys1 extends keyof T, Keys2 extends keyof T> =
+  | (Omit<T, Keys1> & { [K in Keys1]?: never })
+  | (Omit<T, Keys2> & { [K in Keys2]?: never });

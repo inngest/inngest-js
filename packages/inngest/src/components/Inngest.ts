@@ -10,7 +10,7 @@ import {
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
 import { stringify } from "../helpers/strings";
-import { type SendEventPayload } from "../helpers/types";
+import { type ExclusiveKeys, type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
   type ClientOptions,
@@ -29,10 +29,10 @@ import { InngestFunction } from "./InngestFunction";
 import {
   InngestMiddleware,
   getHookStack,
+  type ExtendWithMiddleware,
   type MiddlewareOptions,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
-  type MiddlewareStackRunInputMutation,
 } from "./InngestMiddleware";
 
 /**
@@ -165,15 +165,16 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     this.headers = inngestHeaders({
       inngestEnv: env,
     });
+    this.fetch = getFetch(fetch);
 
     const signingKey = processEnv(envKeys.SigningKey) || "";
     this.inngestApi = new InngestApi({
       baseUrl:
         processEnv(envKeys.InngestApiBaseUrl) || "https://api.inngest.com",
       signingKey: signingKey,
+      fetch: this.fetch,
     });
 
-    this.fetch = getFetch(fetch);
     this.logger = logger;
 
     this.middleware = this.initializeMiddleware([
@@ -402,77 +403,89 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   >(
     nameOrOpts:
       | string
-      | (Omit<
-          FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>,
-          "fns" | "onFailure" | "middleware"
-        > & {
-          /**
-           * Pass in an object of functions that will be wrapped in Inngest
-           * tooling and passes to your handler. This wrapping ensures that each
-           * function is automatically separated and retried.
-           *
-           * @example
-           *
-           * Both examples behave the same; it's preference as to which you
-           * prefer.
-           *
-           * ```ts
-           * import { userDb } from "./db";
-           *
-           * // Specify `fns` and be able to use them in your Inngest function
-           * inngest.createFunction(
-           *   { name: "Create user from PR", fns: { ...userDb } },
-           *   { event: "github/pull_request" },
-           *   async ({ fns: { createUser } }) => {
-           *     await createUser("Alice");
-           *   }
-           * );
-           *
-           * // Or always use `run()` to run inline steps and use them directly
-           * inngest.createFunction(
-           *   { name: "Create user from PR" },
-           *   { event: "github/pull_request" },
-           *   async ({ step: { run } }) => {
-           *     await run("createUser", () => userDb.createUser("Alice"));
-           *   }
-           * );
-           * ```
-           */
-          fns?: TFns;
+      | ExclusiveKeys<
+          Omit<
+            FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>,
+            "fns" | "onFailure" | "middleware"
+          > & {
+            /**
+             * Pass in an object of functions that will be wrapped in Inngest
+             * tooling and passes to your handler. This wrapping ensures that each
+             * function is automatically separated and retried.
+             *
+             * @example
+             *
+             * Both examples behave the same; it's preference as to which you
+             * prefer.
+             *
+             * ```ts
+             * import { userDb } from "./db";
+             *
+             * // Specify `fns` and be able to use them in your Inngest function
+             * inngest.createFunction(
+             *   { name: "Create user from PR", fns: { ...userDb } },
+             *   { event: "github/pull_request" },
+             *   async ({ fns: { createUser } }) => {
+             *     await createUser("Alice");
+             *   }
+             * );
+             *
+             * // Or always use `run()` to run inline steps and use them directly
+             * inngest.createFunction(
+             *   { name: "Create user from PR" },
+             *   { event: "github/pull_request" },
+             *   async ({ step: { run } }) => {
+             *     await run("createUser", () => userDb.createUser("Alice"));
+             *   }
+             * );
+             * ```
+             */
+            fns?: TFns;
 
-          /**
-           * Provide a function to be called if your function fails, meaning
-           * that it ran out of retries and was unable to complete successfully.
-           *
-           * This is useful for sending warning notifications or cleaning up
-           * after a failure and supports all the same functionality as a
-           * regular handler.
-           */
-          onFailure?: Handler<
-            TOpts,
-            EventsFromOpts<TOpts>,
-            TTriggerName,
-            TShimmedFns,
-            FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
-          >;
+            /**
+             * Provide a function to be called if your function fails, meaning
+             * that it ran out of retries and was unable to complete successfully.
+             *
+             * This is useful for sending warning notifications or cleaning up
+             * after a failure and supports all the same functionality as a
+             * regular handler.
+             */
+            onFailure?: Handler<
+              TOpts,
+              EventsFromOpts<TOpts>,
+              TTriggerName,
+              TShimmedFns,
+              ExtendWithMiddleware<
+                [
+                  typeof builtInMiddleware,
+                  NonNullable<TOpts["middleware"]>,
+                  TMiddleware
+                ],
+                FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
+              >
+            >;
 
-          /**
-           * TODO
-           */
-          middleware?: TMiddleware;
-        }),
+            /**
+             * TODO
+             */
+            middleware?: TMiddleware;
+          },
+          "batchEvents",
+          "cancelOn" | "rateLimit"
+        >,
     trigger: TTrigger,
     handler: Handler<
       TOpts,
       EventsFromOpts<TOpts>,
       TTriggerName,
       TShimmedFns,
-      // eslint-disable-next-line @typescript-eslint/ban-types
-      MiddlewareStackRunInputMutation<{}, typeof builtInMiddleware> &
-        // eslint-disable-next-line @typescript-eslint/ban-types
-        MiddlewareStackRunInputMutation<{}, NonNullable<TOpts["middleware"]>> &
-        // eslint-disable-next-line @typescript-eslint/ban-types
-        MiddlewareStackRunInputMutation<{}, TMiddleware>
+      ExtendWithMiddleware<
+        [
+          typeof builtInMiddleware,
+          NonNullable<TOpts["middleware"]>,
+          TMiddleware
+        ]
+      >
     >
   ): InngestFunction<
     TOpts,
