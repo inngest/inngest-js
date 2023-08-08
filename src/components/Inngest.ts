@@ -29,10 +29,10 @@ import { InngestFunction } from "./InngestFunction";
 import {
   InngestMiddleware,
   getHookStack,
+  type ExtendWithMiddleware,
   type MiddlewareOptions,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
-  type MiddlewareStackRunInputMutation,
 } from "./InngestMiddleware";
 
 /**
@@ -455,7 +455,14 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
               EventsFromOpts<TOpts>,
               TTriggerName,
               TShimmedFns,
-              FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
+              ExtendWithMiddleware<
+                [
+                  typeof builtInMiddleware,
+                  NonNullable<TOpts["middleware"]>,
+                  TMiddleware
+                ],
+                FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
+              >
             >;
 
             /**
@@ -472,12 +479,13 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       EventsFromOpts<TOpts>,
       TTriggerName,
       TShimmedFns,
-      // eslint-disable-next-line @typescript-eslint/ban-types
-      MiddlewareStackRunInputMutation<{}, typeof builtInMiddleware> &
-        // eslint-disable-next-line @typescript-eslint/ban-types
-        MiddlewareStackRunInputMutation<{}, NonNullable<TOpts["middleware"]>> &
-        // eslint-disable-next-line @typescript-eslint/ban-types
-        MiddlewareStackRunInputMutation<{}, TMiddleware>
+      ExtendWithMiddleware<
+        [
+          typeof builtInMiddleware,
+          NonNullable<TOpts["middleware"]>,
+          TMiddleware
+        ]
+      >
     >
   ): InngestFunction<
     TOpts,

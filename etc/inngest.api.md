@@ -132,7 +132,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "ExclusiveKeys" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "MiddlewareStackRunInputMutation" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "ExtendWithMiddleware" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "builtInMiddleware" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "FunctionTrigger" needs to be exported by the entry point index.d.ts
@@ -140,9 +140,17 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     // (undocumented)
     createFunction<TFns extends Record<string, unknown>, TMiddleware extends MiddlewareStack, TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof EventsFromOpts<TOpts> & string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>>(nameOrOpts: string | ExclusiveKeys<Omit<FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>, "fns" | "onFailure" | "middleware"> & {
         fns?: TFns;
-        onFailure?: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>>;
+        onFailure?: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, ExtendWithMiddleware<[
+        typeof builtInMiddleware,
+        NonNullable<TOpts["middleware"]>,
+        TMiddleware
+        ], FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>>>;
         middleware?: TMiddleware;
-    }, "batchEvents", "cancelOn" | "rateLimit">, trigger: TTrigger, handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, MiddlewareStackRunInputMutation<{}, typeof builtInMiddleware> & MiddlewareStackRunInputMutation<{}, NonNullable<TOpts["middleware"]>> & MiddlewareStackRunInputMutation<{}, TMiddleware>>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
+    }, "batchEvents", "cancelOn" | "rateLimit">, trigger: TTrigger, handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, ExtendWithMiddleware<[
+    typeof builtInMiddleware,
+    NonNullable<TOpts["middleware"]>,
+    TMiddleware
+    ]>>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
     readonly inngestBaseUrl: URL;
     readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SendEventPayload" needs to be exported by the entry point index.d.ts

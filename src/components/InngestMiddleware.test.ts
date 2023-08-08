@@ -27,9 +27,18 @@ describe("stacking and inference", () => {
         const inngest = new Inngest({ name: "test", middleware: [mw] });
 
         test("input context has value", () => {
-          inngest.createFunction({ name: "" }, { event: "" }, (ctx) => {
-            assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
-          });
+          inngest.createFunction(
+            {
+              name: "",
+              onFailure: (ctx) => {
+                assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
+              },
+            },
+            { event: "" },
+            (ctx) => {
+              assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
+            }
+          );
         });
       });
 
@@ -54,9 +63,18 @@ describe("stacking and inference", () => {
         const inngest = new Inngest({ name: "test", middleware: [mw] });
 
         test("input context has value", () => {
-          inngest.createFunction({ name: "" }, { event: "" }, (ctx) => {
-            assertType<IsEqual<(typeof ctx)["foo"], "bar">>(true);
-          });
+          inngest.createFunction(
+            {
+              name: "",
+              onFailure: (ctx) => {
+                assertType<IsEqual<(typeof ctx)["foo"], "bar">>(true);
+              },
+            },
+            { event: "" },
+            (ctx) => {
+              assertType<IsEqual<(typeof ctx)["foo"], "bar">>(true);
+            }
+          );
         });
       });
 
@@ -81,9 +99,18 @@ describe("stacking and inference", () => {
         const inngest = new Inngest({ name: "test", middleware: [mw] });
 
         test("input context has value", () => {
-          inngest.createFunction({ name: "" }, { event: "" }, (ctx) => {
-            assertType<IsEqual<(typeof ctx)["event"], boolean>>(true);
-          });
+          inngest.createFunction(
+            {
+              name: "",
+              onFailure: (ctx) => {
+                assertType<IsEqual<(typeof ctx)["event"], boolean>>(true);
+              },
+            },
+            { event: "" },
+            (ctx) => {
+              assertType<IsEqual<(typeof ctx)["event"], boolean>>(true);
+            }
+          );
         });
       });
 
@@ -125,15 +152,33 @@ describe("stacking and inference", () => {
         const inngest = new Inngest({ name: "test", middleware: [mw1, mw2] });
 
         test("input context has foo value", () => {
-          inngest.createFunction({ name: "" }, { event: "" }, (ctx) => {
-            assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
-          });
+          inngest.createFunction(
+            {
+              name: "",
+              onFailure: (ctx) => {
+                assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
+              },
+            },
+            { event: "" },
+            (ctx) => {
+              assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
+            }
+          );
         });
 
         test("input context has bar value", () => {
-          inngest.createFunction({ name: "" }, { event: "" }, (ctx) => {
-            assertType<IsEqual<(typeof ctx)["bar"], boolean>>(true);
-          });
+          inngest.createFunction(
+            {
+              name: "",
+              onFailure: (ctx) => {
+                assertType<IsEqual<(typeof ctx)["bar"], boolean>>(true);
+              },
+            },
+            { event: "" },
+            (ctx) => {
+              assertType<IsEqual<(typeof ctx)["bar"], boolean>>(true);
+            }
+          );
         });
       });
 
@@ -175,9 +220,18 @@ describe("stacking and inference", () => {
         const inngest = new Inngest({ name: "test", middleware: [mw1, mw2] });
 
         test("input context has new value", () => {
-          inngest.createFunction({ name: "" }, { event: "" }, (ctx) => {
-            assertType<IsEqual<(typeof ctx)["foo"], boolean>>(true);
-          });
+          inngest.createFunction(
+            {
+              name: "",
+              onFailure: (ctx) => {
+                assertType<IsEqual<(typeof ctx)["foo"], boolean>>(true);
+              },
+            },
+            { event: "" },
+            (ctx) => {
+              assertType<IsEqual<(typeof ctx)["foo"], boolean>>(true);
+            }
+          );
         });
       });
     });
