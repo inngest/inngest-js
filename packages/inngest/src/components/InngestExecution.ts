@@ -156,25 +156,52 @@ export class InngestExecution {
       /**
        * Middleware has thrown an error.
        */
-      "middleware-error": ({ error }) => {
+      "middleware-error": async (checkpoint) => {
         /**
          * TODO Middleware-specific error log pls
          */
-        return { type: "function-rejected", error };
+        const { data, error } = await this.#transformOutput({
+          result: { error: checkpoint.error },
+          step: this.state.executingStep,
+        });
+
+        if (typeof error !== "undefined") {
+          return { type: "function-rejected", error };
+        }
+
+        return { type: "function-resolved", data };
       },
 
       /**
        * The user's function has completed and returned a value.
        */
-      "function-resolved": ({ data }) => {
+      "function-resolved": async (checkpoint) => {
+        const { data, error } = await this.#transformOutput({
+          result: { data: checkpoint.data },
+          step: this.state.executingStep,
+        });
+
+        if (typeof error !== "undefined") {
+          return { type: "function-rejected", error };
+        }
+
         return { type: "function-resolved", data };
       },
 
       /**
        * The user's function has thrown an error.
        */
-      "function-rejected": ({ error }) => {
-        return { type: "function-rejected", error };
+      "function-rejected": async (checkpoint) => {
+        const { data, error } = await this.#transformOutput({
+          result: { error: checkpoint.error },
+          step: this.state.executingStep,
+        });
+
+        if (typeof error !== "undefined") {
+          return { type: "function-rejected", error };
+        }
+
+        return { type: "function-resolved", data };
       },
 
       /**
@@ -184,9 +211,22 @@ export class InngestExecution {
       "steps-found": async ({ steps }) => {
         const stepResult = await this.#tryExecuteStep(steps);
         if (stepResult) {
+          const middlewareStepResult = await this.#transformOutput({
+            result: stepResult,
+            step: this.state.executingStep,
+          });
+
+          if (typeof middlewareStepResult.error !== "undefined") {
+            // TODO Is this correct?
+            return {
+              type: "function-rejected",
+              error: middlewareStepResult.error,
+            };
+          }
+
           return {
             type: "step-ran",
-            step: stepResult,
+            step: { ...stepResult, ...middlewareStepResult },
           };
         }
 
@@ -286,6 +326,7 @@ export class InngestExecution {
     await this.state.hooks?.afterMemoization?.();
     await this.state.hooks?.beforeExecution?.();
 
+    this.state.executingStep = { op: StepOpCode.RunStep, name, opts };
     this.#debug(`executing step "${id}"`);
     const outgoingOp: OutgoingOp = { id, op: StepOpCode.RunStep, name, opts };
 
@@ -381,6 +422,18 @@ export class InngestExecution {
     }
   }
 
+  /**
+   * Using middleware, transform output before returning.
+   */
+  async #transformOutput(
+    arg: Parameters<NonNullable<RunHookStack["transformOutput"]>>[0]
+  ): Promise<Pick<OutgoingOp, "data" | "error">> {
+    return {
+      ...arg.result,
+      ...(await this.state.hooks?.transformOutput?.(arg))?.result,
+    };
+  }
+
   #createExecutionState(
     stepState: InngestExecutionOptions["stepState"]
   ): ExecutionState {
@@ -402,7 +455,6 @@ export class InngestExecution {
     });
 
     const state: ExecutionState = {
-      executingStep: false,
       stepState,
       steps: {},
       loop,
@@ -557,10 +609,11 @@ interface MemoizedOp extends IncomingOp {
 
 export interface ExecutionState {
   /**
-   * A flag indicating that we're executing a step. Used to ensure steps are not
-   * accidentally nested until we support this across all platforms.
+   * A value that indicates that we're executing this step. Can be used to
+   * ensure steps are not accidentally nested until we support this across all
+   * platforms.
    */
-  executingStep: boolean;
+  executingStep?: Readonly<Omit<OutgoingOp, "id">>;
 
   /**
    * A map of step IDs to their data, used to fill previously-completed steps
