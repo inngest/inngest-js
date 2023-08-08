@@ -1,3 +1,4 @@
+import { ZodError } from "zod";
 import { type InngestApi } from "../api/api";
 import { err, fnDataSchema, ok, type FnData, type Result } from "../types";
 import { prettyError } from "./errors";
@@ -118,11 +119,19 @@ export const parseFnData = async (
     // move to something like protobuf so we don't have to deal with this
     console.error(error);
 
+    let why: string | undefined;
+    if (error instanceof ZodError) {
+      why = error.toString();
+    }
+
     return err(
       prettyError({
-        whatHappened: "failed to parse data from executor",
-        consequences: "function execution can't continue",
+        whatHappened: "Failed to parse data from executor.",
+        consequences: "Function execution can't continue.",
+        toFixNow:
+          "Make sure that your API is set up to parse incoming request bodies as JSON, like body-parser for Express (https://expressjs.com/en/resources/middleware/body-parser.html).",
         stack: true,
+        why,
       })
     );
   }

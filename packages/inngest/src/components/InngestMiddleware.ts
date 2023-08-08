@@ -517,6 +517,24 @@ type GetMiddlewareRunInputMutation<
 /**
  * @internal
  */
+export type ExtendWithMiddleware<
+  TMiddlewareStacks extends MiddlewareStack[],
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  TContext = {}
+> = ObjectAssign<
+  {
+    [K in keyof TMiddlewareStacks]: MiddlewareStackRunInputMutation<
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      {},
+      TMiddlewareStacks[K]
+    >;
+  },
+  TContext
+>;
+
+/**
+ * @internal
+ */
 export type MiddlewareStackRunInputMutation<
   TContext,
   TMiddleware extends MiddlewareStack

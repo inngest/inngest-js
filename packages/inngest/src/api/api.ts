@@ -1,4 +1,5 @@
-import { fetch } from "cross-fetch";
+import { type fetch } from "cross-fetch";
+import { getFetch } from "../helpers/env";
 import { hashSigningKey } from "../helpers/strings";
 import { err, ok, type Result } from "../types";
 import {
@@ -10,21 +11,27 @@ import {
   type StepsResponse,
 } from "./schema";
 
+type FetchT = typeof fetch;
+
 interface InngestApiConstructorOpts {
   baseUrl?: string;
   signingKey: string;
+  fetch?: FetchT;
 }
 
 export class InngestApi {
   public readonly baseUrl: string;
   private signingKey: string;
+  private readonly fetch: FetchT;
 
   constructor({
     baseUrl = "https://api.inngest.com",
     signingKey,
+    fetch,
   }: InngestApiConstructorOpts) {
     this.baseUrl = baseUrl;
     this.signingKey = signingKey;
+    this.fetch = getFetch(fetch);
   }
 
   private get hashedKey(): string {
@@ -43,7 +50,7 @@ export class InngestApi {
   ): Promise<Result<StepsResponse, ErrorResponse>> {
     const url = new URL(`/v0/runs/${runId}/actions`, this.baseUrl);
 
-    return fetch(url, {
+    return this.fetch(url, {
       headers: { Authorization: `Bearer ${this.hashedKey}` },
     })
       .then(async (resp) => {
@@ -65,7 +72,7 @@ export class InngestApi {
   ): Promise<Result<BatchResponse, ErrorResponse>> {
     const url = new URL(`/v0/runs/${runId}/batch`, this.baseUrl);
 
-    return fetch(url, {
+    return this.fetch(url, {
       headers: { Authorization: `Bearer ${this.hashedKey}` },
     })
       .then(async (resp) => {
