@@ -1,5 +1,11 @@
 # inngest
 
+## 1.10.1
+
+### Patch Changes
+
+- de8529e: Add `x-inngest-no-retry: true` header when non-retriable for internal executor changes
+
 ## 1.10.0
 
 ### Minor Changes
