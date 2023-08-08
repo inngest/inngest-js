@@ -272,6 +272,7 @@ export class InngestExecution {
      */
     await this.state.hooks?.afterMemoization?.();
     await this.state.hooks?.beforeExecution?.();
+    await this.state.hooks?.afterExecution?.();
 
     return newSteps.map<OutgoingOp>((step) => ({
       op: step.op,
@@ -288,20 +289,26 @@ export class InngestExecution {
     this.#debug(`executing step "${id}"`);
     const outgoingOp: OutgoingOp = { id, op: StepOpCode.RunStep, name, opts };
 
-    return Promise.resolve(fn?.())
-      .then<OutgoingOp>((data) => {
-        return {
-          ...outgoingOp,
-          data,
-        };
-      })
-      .catch<OutgoingOp>((error) => {
-        return {
-          ...outgoingOp,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          error,
-        };
-      });
+    return (
+      Promise.resolve(fn?.())
+        // eslint-disable-next-line @typescript-eslint/no-misused-promises
+        .finally(async () => {
+          await this.state.hooks?.afterExecution?.();
+        })
+        .then<OutgoingOp>((data) => {
+          return {
+            ...outgoingOp,
+            data,
+          };
+        })
+        .catch<OutgoingOp>((error) => {
+          return {
+            ...outgoingOp,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            error,
+          };
+        })
+    );
   }
 
   /**
@@ -337,6 +344,7 @@ export class InngestExecution {
       .finally(async () => {
         await this.state.hooks?.afterMemoization?.();
         await this.state.hooks?.beforeExecution?.();
+        await this.state.hooks?.afterExecution?.();
       })
       .then((data) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -456,6 +464,7 @@ export class InngestExecution {
     void this.timeout.then(async () => {
       await this.state.hooks?.afterMemoization?.();
       await this.state.hooks?.beforeExecution?.();
+      await this.state.hooks?.afterExecution?.();
 
       state.setCheckpoint({
         type: "step-not-found",
@@ -578,6 +587,10 @@ export interface ExecutionState {
 
   /**
    * Initialized middleware hooks for this execution.
+   *
+   * Middleware hooks are cached to ensure they can only be run once, which
+   * means that these hooks can be called in many different places to ensure we
+   * handle all possible execution paths.
    */
   hooks?: RunHookStack;
 
