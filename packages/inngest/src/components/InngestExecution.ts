@@ -134,6 +134,7 @@ export class InngestExecution {
       }
     } finally {
       void this.state.loop.return();
+      await this.state.hooks?.beforeResponse?.();
     }
 
     throw new Error("TODO generator finished or blew up");
