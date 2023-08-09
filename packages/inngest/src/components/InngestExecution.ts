@@ -17,6 +17,7 @@ import {
   type ClientOptions,
   type EventPayload,
   type FailureEventArgs,
+  type FunctionOptions,
   type IncomingOp,
   type OutgoingOp,
   type StepRunResponse,
@@ -481,6 +482,9 @@ export class InngestExecution {
       step,
     } as AnyContext;
 
+    /**
+     * Handle use of the `onFailure` option by deserializing the error.
+     */
     if (this.options.isFailureHandler) {
       const eventData = z
         .object({ error: failureEventErrorSchema })
@@ -490,6 +494,28 @@ export class InngestExecution {
         ...fnArg,
         error: deserializeError(eventData.error),
       };
+    }
+
+    /**
+     * Handle use of the `fns` option by wrapping given functions in step
+     * tooling.
+     */
+    const fnOpts = this.options.fn.opts as FunctionOptions<
+      Record<string, EventPayload>,
+      string
+    >;
+    if (fnOpts.fns) {
+      fnArg.fns = Object.entries(fnOpts.fns).reduce((acc, [key, fn]) => {
+        if (typeof fn !== "function") {
+          return acc;
+        }
+
+        return {
+          ...acc,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+          [key]: (...args: unknown[]) => step.run(key, () => fn(...args)),
+        };
+      }, {});
     }
 
     return fnArg;
