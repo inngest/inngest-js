@@ -840,30 +840,6 @@ export type Cancellation<
 }[keyof Events & string];
 
 /**
- * Expected responses to be used within an `InngestCommHandler` in order to
- * appropriately respond to Inngest.
- *
- * @internal
- */
-export type StepRunResponse =
-  | {
-      status: 500;
-      error?: unknown;
-    }
-  | {
-      status: 200;
-      body?: unknown;
-    }
-  | {
-      status: 206;
-      body: OutgoingOp[];
-    }
-  | {
-      status: 400;
-      error: string;
-    };
-
-/**
  * The response to send to Inngest when pushing function config either directly
  * or when pinged by Inngest Cloud.
  *

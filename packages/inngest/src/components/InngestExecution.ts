@@ -2,7 +2,11 @@ import Debug, { type Debugger } from "debug";
 import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { type ServerTiming } from "../helpers/ServerTiming";
-import { deserializeError, prettyError } from "../helpers/errors";
+import {
+  deserializeError,
+  prettyError,
+  serializeError,
+} from "../helpers/errors";
 import {
   createDeferredPromise,
   createTimeoutPromise,
@@ -20,12 +24,13 @@ import {
   type FunctionOptions,
   type IncomingOp,
   type OutgoingOp,
-  type StepRunResponse,
 } from "../types";
 import { type AnyInngest } from "./Inngest";
+import { type ActionResponse } from "./InngestCommHandler";
 import { type AnyInngestFunction } from "./InngestFunction";
 import { getHookStack, type RunHookStack } from "./InngestMiddleware";
 import { createStepTools, type FoundStep } from "./InngestStepTools";
+import { NonRetriableError } from "./NonRetriableError";
 
 /**
  * Types of checkpoints that can be reached during execution.
@@ -44,7 +49,7 @@ interface Checkpoints {
 interface ExecutionResults {
   "function-resolved": { data: unknown };
   "step-ran": { step: OutgoingOp };
-  "function-rejected": { error: unknown };
+  "function-rejected": { error: unknown; retriable: boolean };
   "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
   "step-not-found": { step: OutgoingOp };
 }
@@ -146,6 +151,31 @@ export class InngestExecution {
    * reach that checkpoint in the core loop.
    */
   #createCheckpointHandlers(): CheckpointHandlers {
+    const transformAndReturn = async (
+      arg: Pick<OutgoingOp, "data" | "error">
+    ): Promise<ExecutionResult> => {
+      const output = { ...arg };
+
+      if (typeof output.error !== "undefined") {
+        output.data = serializeError(output.error);
+      }
+
+      const { data, error } = await this.#transformOutput(output);
+
+      if (typeof error !== "undefined") {
+        /**
+         * Ensure we give middleware the chance to decide on retriable behaviour
+         * by looking at the error returned from output transformation.
+         */
+        const retriable = !(error instanceof NonRetriableError);
+        const serializedError = serializeError(error);
+
+        return { type: "function-rejected", error: serializedError, retriable };
+      }
+
+      return { type: "function-resolved", data };
+    };
+
     return {
       /**
        * Run for all checkpoints. Best used for logging or common actions.
@@ -162,48 +192,21 @@ export class InngestExecution {
         /**
          * TODO Middleware-specific error log pls
          */
-        const { data, error } = await this.#transformOutput({
-          result: { error: checkpoint.error },
-          step: this.state.executingStep,
-        });
-
-        if (typeof error !== "undefined") {
-          return { type: "function-rejected", error };
-        }
-
-        return { type: "function-resolved", data };
+        return transformAndReturn({ error: checkpoint.error });
       },
 
       /**
        * The user's function has completed and returned a value.
        */
       "function-resolved": async (checkpoint) => {
-        const { data, error } = await this.#transformOutput({
-          result: { data: checkpoint.data },
-          step: this.state.executingStep,
-        });
-
-        if (typeof error !== "undefined") {
-          return { type: "function-rejected", error };
-        }
-
-        return { type: "function-resolved", data };
+        return transformAndReturn({ data: checkpoint.data });
       },
 
       /**
        * The user's function has thrown an error.
        */
       "function-rejected": async (checkpoint) => {
-        const { data, error } = await this.#transformOutput({
-          result: { error: checkpoint.error },
-          step: this.state.executingStep,
-        });
-
-        if (typeof error !== "undefined") {
-          return { type: "function-rejected", error };
-        }
-
-        return { type: "function-resolved", data };
+        return transformAndReturn({ error: checkpoint.error });
       },
 
       /**
@@ -213,22 +216,15 @@ export class InngestExecution {
       "steps-found": async ({ steps }) => {
         const stepResult = await this.#tryExecuteStep(steps);
         if (stepResult) {
-          const middlewareStepResult = await this.#transformOutput({
-            result: stepResult,
-            step: this.state.executingStep,
-          });
+          const transformResult = await transformAndReturn(stepResult);
 
-          if (typeof middlewareStepResult.error !== "undefined") {
-            // TODO Is this correct?
-            return {
-              type: "function-rejected",
-              error: middlewareStepResult.error,
-            };
+          if (transformResult.type === "function-rejected") {
+            return transformResult;
           }
 
           return {
             type: "step-ran",
-            step: { ...stepResult, ...middlewareStepResult },
+            step: { ...stepResult, ...transformResult },
           };
         }
 
@@ -428,11 +424,18 @@ export class InngestExecution {
    * Using middleware, transform output before returning.
    */
   async #transformOutput(
-    arg: Parameters<NonNullable<RunHookStack["transformOutput"]>>[0]
+    dataOrError: Parameters<
+      NonNullable<RunHookStack["transformOutput"]>
+    >[0]["result"]
   ): Promise<Pick<OutgoingOp, "data" | "error">> {
+    const transformedOutput = await this.state.hooks?.transformOutput?.({
+      result: { ...dataOrError },
+      step: this.state.executingStep,
+    });
+
     return {
-      ...arg.result,
-      ...(await this.state.hooks?.transformOutput?.(arg))?.result,
+      ...dataOrError,
+      ...transformedOutput?.result,
     };
   }
 
@@ -616,18 +619,16 @@ type CheckpointHandlers = {
   "": (checkpoint: Checkpoint) => MaybePromise<void>;
 };
 
-type ExecutionResult = {
+export type ExecutionResult = {
   [K in keyof ExecutionResults]: Simplify<{ type: K } & ExecutionResults[K]>;
 }[keyof ExecutionResults];
 
-export type ExecutionResultHandler = (
+export type ExecutionResultHandler<T = ActionResponse> = (
   result: ExecutionResult
-) => MaybePromise<StepRunResponse>;
+) => MaybePromise<T>;
 
-export type ExecutionResultHandlers = {
-  [E in ExecutionResult as E["type"]]: (
-    result: E
-  ) => MaybePromise<StepRunResponse>;
+export type ExecutionResultHandlers<T = ActionResponse> = {
+  [E in ExecutionResult as E["type"]]: (result: E) => MaybePromise<T>;
 };
 
 interface MemoizedOp extends IncomingOp {

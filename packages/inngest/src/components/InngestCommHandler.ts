@@ -12,7 +12,7 @@ import {
   platformSupportsStreaming,
   skipDevServer,
 } from "../helpers/env";
-import { OutgoingResultError, serializeError } from "../helpers/errors";
+import { serializeError } from "../helpers/errors";
 import { cacheFn, parseFnData } from "../helpers/functions";
 import { createStream } from "../helpers/stream";
 import {
@@ -27,12 +27,12 @@ import {
   type LogLevel,
   type RegisterOptions,
   type RegisterRequest,
-  type StepRunResponse,
   type SupportedFrameworkName,
 } from "../types";
 import { version } from "../version";
 import { type AnyInngest } from "./Inngest";
 import {
+  type ExecutionResult,
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
@@ -41,7 +41,6 @@ import {
   type AnyInngestFunction,
   type InngestFunction,
 } from "./InngestFunction";
-import { NonRetriableError } from "./NonRetriableError";
 
 /**
  * A handler for serving Inngest functions. This type should be used
@@ -633,43 +632,65 @@ export class InngestCommHandler<
         this.validateSignature(runRes.signature, runRes.data);
         this.client["inngestApi"].setSigningKey(this.signingKey);
 
-        const stepRes = await this.runStep(
+        const resultHandlers: ExecutionResultHandlers<ActionResponse> = {
+          "function-rejected": (result) => {
+            return {
+              status: result.retriable ? 500 : 400,
+              headers: {
+                "Content-Type": "application/json",
+                [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+              },
+              body: stringify(result.error),
+            };
+          },
+          "function-resolved": (result) => {
+            return {
+              status: 200,
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: stringify(result.data),
+            };
+          },
+          "step-not-found": (_result) => {
+            /**
+             * TODO Status decision. I think we should use a unique op code for
+             * this situation and keep the 206 status.
+             */
+            return {
+              status: 999,
+              headers: { "Content-Type": "application/json" },
+              body: "",
+            };
+          },
+          "step-ran": (result) => {
+            return {
+              status: 206,
+              headers: { "Content-Type": "application/json" },
+              body: stringify([result.step]),
+            };
+          },
+          "steps-found": (result) => {
+            return {
+              status: 206,
+              headers: { "Content-Type": "application/json" },
+              body: stringify(result.steps),
+            };
+          },
+        };
+
+        const result = await this.runStep(
           runRes.fnId,
           runRes.stepId,
           runRes.data,
           timer
         );
 
-        if (stepRes.status === 500 || stepRes.status === 400) {
-          const headers: Record<string, string> = {
-            "Content-Type": "application/json",
-          };
+        const handler = resultHandlers[
+          result.type
+        ] as ExecutionResultHandler<ActionResponse>;
 
-          if (stepRes.status === 400) {
-            headers[headerKeys.NoRetry] = "true";
-          }
-
-          return {
-            status: stepRes.status,
-            body: stringify(
-              stepRes.error ||
-                serializeError(
-                  new Error(
-                    "Unknown error; function failed but no error was returned"
-                  )
-                )
-            ),
-            headers,
-          };
-        }
-
-        return {
-          status: stepRes.status,
-          body: stringify(stepRes.body),
-          headers: {
-            "Content-Type": "application/json",
-          },
-        };
+        return handler(result);
       }
 
       const viewRes = await actions.view();
@@ -741,111 +762,38 @@ export class InngestCommHandler<
     stepId: string | null,
     data: unknown,
     timer: ServerTiming
-  ): Promise<StepRunResponse> {
-    try {
-      const fn = this.fns[functionId];
-      if (!fn) {
-        // TODO PrettyError
-        throw new Error(`Could not find function with ID "${functionId}"`);
-      }
-
-      const fndata = await parseFnData(data, this.client["inngestApi"]);
-      if (!fndata.ok) {
-        throw new Error(fndata.error);
-      }
-      const { event, events, steps, ctx } = fndata.value;
-
-      const stepState = Object.entries(steps ?? {}).reduce<
-        InngestExecutionOptions["stepState"]
-      >((acc, [id, data]) => {
-        return {
-          ...acc,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          [id]: { id, data },
-        };
-      }, {});
-
-      const execution = fn.fn["createExecution"]({
-        data: { event, events, runId: ctx?.run_id },
-        stepState,
-        requestedRunStep: stepId === "step" ? undefined : stepId || undefined,
-        timer,
-        isFailureHandler: fn.onFailure,
-      });
-
-      const executionHandlers: ExecutionResultHandlers = {
-        "function-rejected": ({ error }) => {
-          throw error;
-        },
-        "function-resolved": ({ data }) => {
-          return {
-            status: 200,
-            body: data,
-          };
-        },
-        "step-not-found": ({ step }) => {
-          return {
-            status: 206,
-            body: [step],
-          };
-        },
-        "step-ran": ({ step }) => {
-          if (step.error) {
-            throw new OutgoingResultError({
-              data: step.data,
-              error: step.error,
-            });
-          }
-
-          return {
-            status: 206,
-            body: [step],
-          };
-        },
-        "steps-found": ({ steps }) => {
-          return {
-            status: 206,
-            body: steps,
-          };
-        },
-      };
-
-      const result = await execution.start();
-      const handler = executionHandlers[result.type] as ExecutionResultHandler;
-
-      return handler(result);
-    } catch (unserializedErr) {
-      /**
-       * Always serialize the error before sending it back to Inngest. Errors,
-       * by default, do not niceley serialize to JSON, so we use the a package
-       * to do this.
-       *
-       * See {@link https://www.npmjs.com/package/serialize-error}
-       */
-      const isOutgoingOpError = unserializedErr instanceof OutgoingResultError;
-
-      const error = stringify(
-        serializeError(
-          isOutgoingOpError ? unserializedErr.result.data : unserializedErr
-        )
-      );
-
-      const isNonRetriableError = isOutgoingOpError
-        ? unserializedErr.result.error instanceof NonRetriableError
-        : unserializedErr instanceof NonRetriableError;
-
-      /**
-       * If we've caught a non-retriable error, we'll return a 400 to Inngest
-       * to indicate that the error is not transient and should not be retried.
-       *
-       * The errors caught here are caught from the main function as well as
-       * inside individual steps, so this safely catches all areas.
-       */
-      return {
-        status: isNonRetriableError ? 400 : 500,
-        error,
-      };
+  ): Promise<ExecutionResult> {
+    const fn = this.fns[functionId];
+    if (!fn) {
+      // TODO PrettyError
+      throw new Error(`Could not find function with ID "${functionId}"`);
     }
+
+    const fndata = await parseFnData(data, this.client["inngestApi"]);
+    if (!fndata.ok) {
+      throw new Error(fndata.error);
+    }
+    const { event, events, steps, ctx } = fndata.value;
+
+    const stepState = Object.entries(steps ?? {}).reduce<
+      InngestExecutionOptions["stepState"]
+    >((acc, [id, data]) => {
+      return {
+        ...acc,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        [id]: { id, data },
+      };
+    }, {});
+
+    const execution = fn.fn["createExecution"]({
+      data: { event, events, runId: ctx?.run_id },
+      stepState,
+      requestedRunStep: stepId === "step" ? undefined : stepId || undefined,
+      timer,
+      isFailureHandler: fn.onFailure,
+    });
+
+    return execution.start();
   }
 
   protected configs(url: URL): FunctionConfig[] {

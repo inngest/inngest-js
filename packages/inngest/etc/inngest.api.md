@@ -197,10 +197,10 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     protected registerBody(url: URL): RegisterRequest;
     protected reqUrl(url: URL): URL;
     // Warning: (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "StepRunResponse" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    protected runStep(functionId: string, stepId: string | null, data: unknown, timer: ServerTiming): Promise<StepRunResponse>;
+    protected runStep(functionId: string, stepId: string | null, data: unknown, timer: ServerTiming): Promise<ExecutionResult>;
     protected readonly serveHost: string | undefined;
     protected readonly servePath: string | undefined;
     protected signingKey: string | undefined;
