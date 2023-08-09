@@ -40,7 +40,6 @@ interface Checkpoints {
   "function-rejected": { error: unknown };
   "function-resolved": { data: unknown };
   "step-not-found": { step: OutgoingOp };
-  "middleware-error": { error: unknown };
 }
 
 /**
@@ -138,6 +137,8 @@ export class InngestExecution {
           return result;
         }
       }
+    } catch (error) {
+      return await this.#transformOutput({ error });
     } finally {
       void this.state.loop.return();
       await this.state.hooks?.beforeResponse?.();
@@ -151,31 +152,6 @@ export class InngestExecution {
    * reach that checkpoint in the core loop.
    */
   #createCheckpointHandlers(): CheckpointHandlers {
-    const transformAndReturn = async (
-      arg: Pick<OutgoingOp, "data" | "error">
-    ): Promise<ExecutionResult> => {
-      const output = { ...arg };
-
-      if (typeof output.error !== "undefined") {
-        output.data = serializeError(output.error);
-      }
-
-      const { data, error } = await this.#transformOutput(output);
-
-      if (typeof error !== "undefined") {
-        /**
-         * Ensure we give middleware the chance to decide on retriable behaviour
-         * by looking at the error returned from output transformation.
-         */
-        const retriable = !(error instanceof NonRetriableError);
-        const serializedError = serializeError(error);
-
-        return { type: "function-rejected", error: serializedError, retriable };
-      }
-
-      return { type: "function-resolved", data };
-    };
-
     return {
       /**
        * Run for all checkpoints. Best used for logging or common actions.
@@ -186,27 +162,17 @@ export class InngestExecution {
       },
 
       /**
-       * Middleware has thrown an error.
-       */
-      "middleware-error": async (checkpoint) => {
-        /**
-         * TODO Middleware-specific error log pls
-         */
-        return transformAndReturn({ error: checkpoint.error });
-      },
-
-      /**
        * The user's function has completed and returned a value.
        */
       "function-resolved": async (checkpoint) => {
-        return transformAndReturn({ data: checkpoint.data });
+        return await this.#transformOutput({ data: checkpoint.data });
       },
 
       /**
        * The user's function has thrown an error.
        */
       "function-rejected": async (checkpoint) => {
-        return transformAndReturn({ error: checkpoint.error });
+        return await this.#transformOutput({ error: checkpoint.error });
       },
 
       /**
@@ -216,7 +182,7 @@ export class InngestExecution {
       "steps-found": async ({ steps }) => {
         const stepResult = await this.#tryExecuteStep(steps);
         if (stepResult) {
-          const transformResult = await transformAndReturn(stepResult);
+          const transformResult = await this.#transformOutput(stepResult);
 
           if (transformResult.type === "function-rejected") {
             return transformResult;
@@ -297,7 +263,7 @@ export class InngestExecution {
     if (!foundAllCompletedSteps) {
       console.warn(
         prettyError({
-          whatHappened: "bad mate",
+          whatHappened: "TODO bad mate",
           reassurance: "not cool",
           why: "state looks wrong",
           consequences: "may be over-sensitive; needs tests",
@@ -427,16 +393,32 @@ export class InngestExecution {
     dataOrError: Parameters<
       NonNullable<RunHookStack["transformOutput"]>
     >[0]["result"]
-  ): Promise<Pick<OutgoingOp, "data" | "error">> {
+  ): Promise<ExecutionResult> {
+    const output = { ...dataOrError };
+
+    if (typeof output.error !== "undefined") {
+      output.data = serializeError(output.error);
+    }
+
     const transformedOutput = await this.state.hooks?.transformOutput?.({
-      result: { ...dataOrError },
+      result: { ...output },
       step: this.state.executingStep,
     });
 
-    return {
-      ...dataOrError,
-      ...transformedOutput?.result,
-    };
+    const { data, error } = { ...output, ...transformedOutput?.result };
+
+    if (typeof error !== "undefined") {
+      /**
+       * Ensure we give middleware the chance to decide on retriable behaviour
+       * by looking at the error returned from output transformation.
+       */
+      const retriable = !(error instanceof NonRetriableError);
+      const serializedError = serializeError(error);
+
+      return { type: "function-rejected", error: serializedError, retriable };
+    }
+
+    return { type: "function-resolved", data };
   }
 
   #createExecutionState(
@@ -594,11 +576,6 @@ export class InngestExecution {
             result: { ...prev.result, ...output?.result },
             step: prev.step,
           };
-        },
-      },
-      {
-        errorHandler: (error) => {
-          this.state.setCheckpoint({ type: "middleware-error", error });
         },
       }
     );

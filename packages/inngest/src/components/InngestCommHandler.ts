@@ -690,7 +690,7 @@ export class InngestCommHandler<
           result.type
         ] as ExecutionResultHandler<ActionResponse>;
 
-        return handler(result);
+        return await handler(result);
       }
 
       const viewRes = await actions.view();

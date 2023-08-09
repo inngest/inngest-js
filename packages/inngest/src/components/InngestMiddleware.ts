@@ -169,12 +169,7 @@ export const getHookStack = async <
           : never
         : never]: void;
     }
-  >,
-
-  /**
-   * Optional arguments for the hook stack.
-   */
-  options?: GetHookStackOptions
+  >
 ): Promise<TRet> => {
   // Wait for middleware to initialize
   const mwStack = await middleware;
@@ -226,14 +221,9 @@ export const getHookStack = async <
   for (const k of Object.keys(ret)) {
     const key = k as keyof typeof ret;
 
-    ret[key] = cacheFn(async (...args: unknown[]) => {
-      try {
-        return await (ret[key] as (...args: unknown[]) => unknown)(...args);
-      } catch (err) {
-        await options?.errorHandler?.(err);
-        throw err;
-      }
-    }) as unknown as TRet[keyof TRet];
+    ret[key] = cacheFn(
+      ret[key] as (...args: unknown[]) => unknown
+    ) as unknown as TRet[keyof TRet];
   }
 
   return ret;
