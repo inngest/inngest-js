@@ -107,8 +107,10 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
 }
 
+// Warning: (ae-forgotten-export) The symbol "AnyInngest" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type GetEvents<T extends Inngest<any>> = T extends Inngest<infer U> ? EventsFromOpts<U> : never;
+export type GetEvents<T extends AnyInngest> = T extends Inngest<infer U> ? EventsFromOpts<U> : never;
 
 // @public
 export enum headerKeys {
@@ -164,10 +166,11 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 //
 // @public
 export class InngestCommHandler<H extends Handler_2, TResTransform extends (res: ActionResponse<string>, ...args: Parameters<H>) => any, TStreamTransform extends (res: ActionResponse<ReadableStream>, ...args: Parameters<H>) => any> {
+    // Warning: (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
     constructor(
     frameworkName: string,
-    client: Inngest<any>,
-    functions: InngestFunction<any, any, any, any>[], { inngestRegisterUrl, fetch, logLevel, signingKey, serveHost, servePath, streaming, name, }: RegisterOptions | undefined,
+    client: AnyInngest,
+    functions: AnyInngestFunction[], { inngestRegisterUrl, fetch, logLevel, signingKey, serveHost, servePath, streaming, name, }: RegisterOptions | undefined,
     handler: H,
     transformRes: TResTransform,
     streamTransformRes?: TStreamTransform);
@@ -243,8 +246,8 @@ export interface MiddlewareOptions {
 //
 // @public (undocumented)
 export type MiddlewareRegisterFn = (ctx: {
-    client: Inngest<any>;
-    fn?: InngestFunction<any, any, any, any>;
+    client: AnyInngest;
+    fn?: AnyInngestFunction;
 }) => MaybePromise<MiddlewareRegisterReturn>;
 
 // @public (undocumented)
@@ -300,8 +303,8 @@ export interface RegisterOptions {
 
 // @public
 export type ServeHandler = (
-client: Inngest<any>,
-functions: InngestFunction<any, any, any, any>[],
+client: AnyInngest,
+functions: AnyInngestFunction[],
 opts?: RegisterOptions
 /**
 * This `any` return is appropriate.
@@ -341,14 +344,14 @@ export type ZodEventSchemas = Record<string, {
 
 // Warnings were encountered during analysis:
 //
-// src/components/InngestMiddleware.ts:261:3 - (ae-forgotten-export) The symbol "InitialRunInfo" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:274:5 - (ae-forgotten-export) The symbol "MiddlewareRunInput" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:280:5 - (ae-forgotten-export) The symbol "BlankHook" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:313:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:332:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:342:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
-// src/types.ts:51:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:678:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:286:3 - (ae-forgotten-export) The symbol "InitialRunInfo" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:299:5 - (ae-forgotten-export) The symbol "MiddlewareRunInput" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:305:5 - (ae-forgotten-export) The symbol "BlankHook" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:338:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:357:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:367:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
+// src/types.ts:54:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:696:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
