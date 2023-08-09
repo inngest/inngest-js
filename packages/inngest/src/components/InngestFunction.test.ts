@@ -21,11 +21,15 @@ import {
   StepOpCode,
   type ClientOptions,
   type FailureEventPayload,
-  type OpStack,
 } from "@local/types";
 import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
+import {
+  ExecutionResult,
+  ExecutionResults,
+  InngestExecutionOptions,
+} from "./InngestExecution";
 
 type TestEvents = {
   foo: { data: { foo: string } };
@@ -85,7 +89,7 @@ describe("runFn", () => {
       describe(`${type} function`, () => {
         describe("success", () => {
           let fn: InngestFunction<typeof opts>;
-          let ret: Awaited<ReturnType<(typeof fn)["runFn"]>>;
+          let ret: ExecutionResult;
           let flush: jest.SpiedFunction<() => void>;
 
           beforeAll(async () => {
@@ -103,21 +107,22 @@ describe("runFn", () => {
               flowFn
             );
 
-            ret = await fn["runFn"](
-              { event: { name: "foo", data: { foo: "foo" } } },
-              [],
-              null,
-              timer,
-              false
-            );
+            const execution = fn["createExecution"]({
+              data: { event: { name: "foo", data: { foo: "foo" } } },
+              stepState: {},
+            });
+
+            ret = await execution.start();
           });
 
           test("returns is not op on success", () => {
-            expect(ret[0]).toBe("complete");
+            expect(ret.type).toBe("function-resolved");
           });
 
           test("returns data on success", () => {
-            expect(ret[1]).toBe(stepRet);
+            expect((ret as ExecutionResults["function-resolved"]).data).toBe(
+              stepRet
+            );
           });
 
           test("should attempt to flush logs", () => {
@@ -139,21 +144,17 @@ describe("runFn", () => {
           });
 
           test("wrap thrown error", async () => {
-            await expect(
-              fn["runFn"](
-                { event: { name: "foo", data: { foo: "foo" } } },
-                [],
-                null,
-                timer,
-                false
-              )
-            ).rejects.toThrow(
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-              expect.objectContaining({
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                result: expect.objectContaining({ error: stepErr }),
-              })
-            );
+            const execution = fn["createExecution"]({
+              data: { event: { name: "foo", data: { foo: "foo" } } },
+              stepState: {},
+            });
+
+            const ret = await execution.start();
+
+            expect(ret.type).toBe("function-rejected");
+            expect(ret).toMatchObject({
+              error: stepErr,
+            });
           });
         });
       });
@@ -164,20 +165,22 @@ describe("runFn", () => {
     const runFnWithStack = (
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       fn: InngestFunction<any, any, any, any>,
-      stack: OpStack,
+      stepState: InngestExecutionOptions["stepState"],
       opts?: {
         runStep?: string;
         onFailure?: boolean;
         event?: EventPayload;
       }
     ) => {
-      return fn["runFn"](
-        { event: opts?.event || { name: "foo", data: {} } },
-        stack,
-        opts?.runStep || null,
+      const execution = fn["createExecution"]({
+        data: { event: opts?.event || { name: "foo", data: {} } },
+        stepState,
+        isFailureHandler: Boolean(opts?.onFailure),
+        requestedRunStep: opts?.runStep,
         timer,
-        Boolean(opts?.onFailure)
-      );
+      });
+
+      return execution.start();
     };
 
     const getHashDataSpy = () => jest.spyOn(_internals, "hashData");
@@ -204,7 +207,7 @@ describe("runFn", () => {
       tests: (hashes: U) => Record<
         string,
         {
-          stack?: OpStack;
+          stack?: InngestExecutionOptions["stepState"];
           onFailure?: boolean;
           runStep?: string;
           expectedReturn?: Awaited<ReturnType<typeof runFnWithStack>>;
@@ -239,7 +242,7 @@ describe("runFn", () => {
             t.customTests?.();
 
             beforeAll(async () => {
-              ret = await runFnWithStack(tools.fn, t.stack || [], {
+              ret = await runFnWithStack(tools.fn, t.stack || {}, {
                 runStep: t.runStep,
                 onFailure: t.onFailure || tools.onFailure,
                 event: t.event || tools.event,
@@ -317,47 +320,50 @@ describe("runFn", () => {
       },
       ({ A, B }) => ({
         "first run runs A step": {
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: A,
               name: "A",
               op: StepOpCode.RunStep,
               data: "A",
             }),
-          ],
+          },
           expectedStepsRun: ["A"],
         },
         "request with A in stack runs B step": {
-          stack: [
-            {
+          stack: {
+            [A]: {
               id: A,
               data: "A",
             },
-          ],
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          },
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: B,
               name: "B",
               op: StepOpCode.RunStep,
               data: "B",
             }),
-          ],
+          },
           expectedStepsRun: ["B"],
         },
         "final request returns empty response": {
-          stack: [
-            {
+          stack: {
+            [A]: {
               id: A,
               data: "A",
             },
-            {
+            [B]: {
               id: B,
               data: "B",
             },
-          ],
-          expectedReturn: ["complete", undefined],
+          },
+          expectedReturn: {
+            type: "function-resolved",
+            data: undefined,
+          },
         },
       })
     );
@@ -372,7 +378,7 @@ describe("runFn", () => {
           "name",
           "foo",
           async ({ step: { waitForEvent, run } }) => {
-            const foo = await waitForEvent("foo", "2h");
+            const foo = await waitForEvent("wait-id", "foo", "2h");
 
             if (foo?.data.foo === "foo") {
               await run("A", A);
@@ -391,55 +397,58 @@ describe("runFn", () => {
       },
       ({ foo, A, B }) => ({
         "first run reports waitForEvent": {
-          expectedReturn: [
-            "discovery",
-            [
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
               expect.objectContaining({
                 op: StepOpCode.WaitForEvent,
                 name: "foo",
                 id: foo,
               }),
             ],
-          ],
+          },
         },
         "request with event foo.data.foo:foo runs A step": {
-          stack: [{ id: foo, data: { data: { foo: "foo" } } }],
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          stack: { [foo]: { id: foo, data: { data: { foo: "foo" } } } },
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: A,
               name: "A",
               op: StepOpCode.RunStep,
               data: "A",
             }),
-          ],
+          },
           expectedStepsRun: ["A"],
         },
         "request with event foo.data.foo:bar runs B step": {
-          stack: [{ id: foo, data: { data: { foo: "bar" } } }],
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          stack: { [foo]: { id: foo, data: { data: { foo: "bar" } } } },
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: B,
               name: "B",
               op: StepOpCode.RunStep,
               data: "B",
             }),
-          ],
+          },
           expectedStepsRun: ["B"],
         },
         "final request returns empty response": {
-          stack: [
-            {
+          stack: {
+            [foo]: {
               id: foo,
               data: { data: { foo: "bar" } },
             },
-            {
+            [B]: {
               id: B,
               data: "B",
             },
-          ],
-          expectedReturn: ["complete", undefined],
+          },
+          expectedReturn: {
+            type: "function-resolved",
+            data: undefined,
+          },
         },
       })
     );
@@ -469,9 +478,9 @@ describe("runFn", () => {
       },
       ({ A, B, C }) => ({
         "first run reports A and B steps": {
-          expectedReturn: [
-            "discovery",
-            [
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
               expect.objectContaining({
                 id: A,
                 name: "A",
@@ -483,198 +492,121 @@ describe("runFn", () => {
                 op: StepOpCode.StepPlanned,
               }),
             ],
-          ],
+          },
         },
 
         "requesting to run B runs B": {
           runStep: B,
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: B,
               name: "B",
               op: StepOpCode.RunStep,
               data: "B",
             }),
-          ],
+          },
           expectedStepsRun: ["B"],
         },
 
-        "request following B returns empty response": {
-          stack: [
-            {
+        "request with only B state returns discovery of A": {
+          stack: {
+            [B]: {
               id: B,
               data: "B",
             },
-          ],
-          expectedReturn: ["discovery", []],
+          },
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          },
         },
 
         "requesting to run A runs A": {
           runStep: A,
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: A,
               name: "A",
               op: StepOpCode.RunStep,
               data: "A",
             }),
-          ],
+          },
           expectedStepsRun: ["A"],
         },
 
-        "request with B,A order runs C step": {
-          stack: [
-            {
+        "request with B,A state discovers C step": {
+          stack: {
+            [B]: {
               id: B,
               data: "B",
             },
-            {
+            [A]: {
               id: A,
               data: "A",
             },
-          ],
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          },
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
+              expect.objectContaining({
+                id: C,
+                name: "C",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          },
+        },
+
+        "requesting to run C runs C": {
+          stack: {
+            [B]: {
+              id: B,
+              data: "B",
+            },
+            [A]: {
+              id: A,
+              data: "A",
+            },
+          },
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: C,
               name: "C",
               op: StepOpCode.RunStep,
               data: "C",
             }),
-          ],
+          },
           expectedStepsRun: ["C"],
         },
 
         "final request returns empty response": {
-          stack: [
-            {
+          stack: {
+            [B]: {
               id: B,
               data: "B",
             },
-            {
+            [A]: {
               id: A,
               data: "A",
             },
-            {
+            [C]: {
               id: C,
               data: "C",
             },
-          ],
-          expectedReturn: ["complete", undefined],
-        },
-      })
-    );
-
-    testFn(
-      "Promise.race",
-      () => {
-        const A = jest.fn(() => Promise.resolve("A"));
-        const B = jest.fn(() => Promise.resolve("B"));
-        const AWins = jest.fn(() => Promise.resolve("A wins"));
-        const BWins = jest.fn(() => Promise.resolve("B wins"));
-
-        const fn = inngest.createFunction(
-          "name",
-          "foo",
-          async ({ step: { run } }) => {
-            const winner = await Promise.race([run("A", A), run("B", B)]);
-
-            if (winner === "A") {
-              await run("A wins", AWins);
-            } else if (winner === "B") {
-              await run("B wins", BWins);
-            }
-          }
-        );
-
-        return { fn, steps: { A, B, AWins, BWins } };
-      },
-      {
-        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
-        B: "1b724c1e706194ce9fa9aa57c0fb1c5075c7f7f4",
-        AWins: "",
-        BWins: "bfdc2902cd708525bec677c1ad15fffff4bdccca",
-      },
-      ({ A, B, BWins }) => ({
-        "first run reports A and B steps": {
-          expectedReturn: [
-            "discovery",
-            [
-              expect.objectContaining({
-                id: A,
-                name: "A",
-                op: StepOpCode.StepPlanned,
-              }),
-              expect.objectContaining({
-                id: B,
-                name: "B",
-                op: StepOpCode.StepPlanned,
-              }),
-            ],
-          ],
-        },
-
-        "requesting to run B runs B": {
-          runStep: B,
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
-              id: B,
-              name: "B",
-              op: StepOpCode.RunStep,
-              data: "B",
-            }),
-          ],
-          expectedStepsRun: ["B"],
-        },
-
-        "request following B runs 'B wins' step": {
-          stack: [
-            {
-              id: B,
-              data: "B",
-            },
-          ],
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
-              id: BWins,
-              name: "B wins",
-              op: StepOpCode.RunStep,
-              data: "B wins",
-            }),
-          ],
-          expectedStepsRun: ["BWins"],
-        },
-
-        "requesting to run A runs A": {
-          runStep: A,
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
-              id: A,
-              name: "A",
-              op: StepOpCode.RunStep,
-              data: "A",
-            }),
-          ],
-          expectedStepsRun: ["A"],
-        },
-
-        "request following A returns empty response": {
-          stack: [
-            {
-              id: B,
-              data: "B",
-            },
-            {
-              id: A,
-              data: "A",
-            },
-          ],
-          expectedReturn: ["discovery", []],
+          },
+          expectedReturn: {
+            type: "function-resolved",
+            data: undefined,
+          },
         },
       })
     );
@@ -708,9 +640,9 @@ describe("runFn", () => {
       },
       ({ A, B, BFailed }) => ({
         "first run reports A and B steps": {
-          expectedReturn: [
-            "discovery",
-            [
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
               expect.objectContaining({
                 id: A,
                 name: "A",
@@ -722,66 +654,78 @@ describe("runFn", () => {
                 op: StepOpCode.StepPlanned,
               }),
             ],
-          ],
+          },
         },
 
         "requesting to run A runs A": {
           runStep: A,
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: A,
               name: "A",
               op: StepOpCode.RunStep,
               data: "A",
             }),
-          ],
+          },
           expectedStepsRun: ["A"],
         },
 
-        "request following A returns empty response": {
-          stack: [{ id: A, data: "A" }],
-          expectedReturn: ["discovery", []],
+        "request with only A state returns B found": {
+          stack: { [A]: { id: A, data: "A" } },
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
+              expect.objectContaining({
+                id: B,
+                name: "B",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          },
         },
 
         "requesting to run B runs B, which fails": {
           runStep: B,
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: B,
               name: "B",
               op: StepOpCode.RunStep,
               error: "B",
             }),
-          ],
+          },
           expectedStepsRun: ["B"],
         },
 
         "request following B runs 'B failed' step": {
-          stack: [
-            { id: A, data: "A" },
-            { id: B, error: "B" },
-          ],
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          stack: {
+            [A]: { id: A, data: "A" },
+            [B]: { id: B, error: "B" },
+          },
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: BFailed,
               name: "B failed",
               op: StepOpCode.RunStep,
               data: "B failed",
             }),
-          ],
+          },
           expectedStepsRun: ["BFailed"],
         },
 
         "final request returns empty response": {
-          stack: [
-            { id: A, data: "A" },
-            { id: B, error: "B" },
-            { id: BFailed, data: "B failed" },
-          ],
-          expectedReturn: ["complete", ["A", "B failed"]],
+          stack: {
+            [A]: { id: A, data: "A" },
+            [B]: { id: B, error: "B" },
+            [BFailed]: { id: BFailed, data: "B failed" },
+          },
+          expectedReturn: {
+            type: "function-resolved",
+            data: ["A", "B failed"],
+          },
         },
       })
     );
@@ -812,138 +756,7 @@ describe("runFn", () => {
       })
     );
 
-    testFn(
-      "throw when a linear step-fn becomes a non-step fn",
-      () => {
-        const A = jest.fn(() => "A");
-        const B = jest.fn(() => "B");
-
-        const fn = inngest.createFunction(
-          { name: "Foo" },
-          "foo",
-          async ({ step: { run } }) => {
-            await run("A", A);
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            await run("B", B);
-          }
-        );
-
-        return { fn, steps: { A, B } };
-      },
-      {
-        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
-        B: "",
-      },
-      ({ A }) => ({
-        "first run executes A, as it's the only found step": {
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
-              id: A,
-              name: "A",
-              op: StepOpCode.RunStep,
-              data: "A",
-            }),
-          ],
-          expectedStepsRun: ["A"],
-        },
-        "second run throws, as mixes async logic": {
-          stack: [{ id: A, data: "A" }],
-          expectedThrowMessage: ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION,
-        },
-      })
-    );
-
-    testFn(
-      "throw when a parallel step-fn becomes a non-step fn",
-      () => {
-        const A = jest.fn(() => "A");
-        const B = jest.fn(() => "B");
-
-        const fn = inngest.createFunction(
-          { name: "Foo" },
-          "foo",
-          async ({ step: { run } }) => {
-            await run("A", A);
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            await run("B", B);
-          }
-        );
-
-        return { fn, steps: { A, B } };
-      },
-      {
-        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
-        B: "",
-      },
-      ({ A }) => ({
-        "first run executes A, as it's the only found step": {
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
-              id: A,
-              name: "A",
-              op: StepOpCode.RunStep,
-              data: "A",
-            }),
-          ],
-          expectedStepsRun: ["A"],
-        },
-        "second run throws, as mixes async logic": {
-          stack: [{ id: A, data: "A" }],
-          expectedThrowMessage: ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION,
-        },
-      })
-    );
-
     let firstRun = true;
-
-    testFn(
-      "throw when a step-fn detects side effects during memoization",
-      () => {
-        const A = jest.fn(() => "A");
-        const B = jest.fn(() => "B");
-
-        const fn = inngest.createFunction(
-          { name: "Foo" },
-          "foo",
-          async ({ step: { run } }) => {
-            if (firstRun) {
-              firstRun = false;
-            } else {
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-            }
-
-            await run("A", A);
-            await run("B", B);
-          }
-        );
-
-        return { fn, steps: { A, B } };
-      },
-      {
-        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
-        B: "",
-      },
-      ({ A }) => ({
-        "first run executes A, as it's the only found step": {
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
-              id: A,
-              name: "A",
-              op: StepOpCode.RunStep,
-              data: "A",
-            }),
-          ],
-          expectedStepsRun: ["A"],
-        },
-        "second run throws, as we find async logic during memoization": {
-          stack: [{ id: A, data: "A" }],
-          expectedThrowMessage: ErrCode.NON_DETERMINISTIC_FUNCTION,
-        },
-      })
-    );
 
     testFn(
       "throws a NonRetriableError when one is thrown inside a step",
@@ -967,16 +780,11 @@ describe("runFn", () => {
       },
       ({ A }) => ({
         "first run executes A, which throws a NonRetriable error": {
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
-              id: A,
-              name: "A",
-              op: StepOpCode.RunStep,
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-              error: expect.any(NonRetriableError),
-            }),
-          ],
+          expectedReturn: {
+            type: "function-rejected",
+            retriable: false,
+            error: expect.any(NonRetriableError),
+          },
           expectedStepsRun: ["A"],
         },
       })
@@ -1025,60 +833,63 @@ describe("runFn", () => {
       },
       ({ A, B }) => ({
         "first run runs A step": {
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: A,
               name: "A",
               op: StepOpCode.RunStep,
               data: "A",
             }),
-          ],
+          },
           expectedStepsRun: ["A"],
         },
         "requesting to run A runs A": {
           runStep: A,
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: A,
               name: "A",
               op: StepOpCode.RunStep,
               data: "A",
             }),
-          ],
+          },
           expectedStepsRun: ["A"],
         },
         "request with A in stack runs B step": {
-          stack: [
-            {
+          stack: {
+            [A]: {
               id: A,
               data: "A",
             },
-          ],
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          },
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: B,
               name: "B",
               op: StepOpCode.RunStep,
               data: "B",
             }),
-          ],
+          },
           expectedStepsRun: ["B"],
         },
         "final request returns empty response": {
-          stack: [
-            {
+          stack: {
+            [A]: {
               id: A,
               data: "A",
             },
-            {
+            [B]: {
               id: B,
               data: "B",
             },
-          ],
-          expectedReturn: ["complete", undefined],
+          },
+          expectedReturn: {
+            type: "function-resolved",
+            data: undefined,
+          },
         },
       })
     );
@@ -1117,15 +928,15 @@ describe("runFn", () => {
       },
       ({ A, B }) => ({
         "first run runs A step": {
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: A,
               name: "A",
               op: StepOpCode.RunStep,
               data: "A",
             }),
-          ],
+          },
           expectedStepsRun: ["A"],
           customTests() {
             let loggerInfoSpy: jest.SpiedFunction<() => void>;
@@ -1140,21 +951,21 @@ describe("runFn", () => {
           },
         },
         "request with A in stack runs B step": {
-          stack: [
-            {
+          stack: {
+            [A]: {
               id: A,
               data: "A",
             },
-          ],
-          expectedReturn: [
-            "run",
-            expect.objectContaining({
+          },
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
               id: B,
               name: "B",
               op: StepOpCode.RunStep,
               data: "B",
             }),
-          ],
+          },
           expectedStepsRun: ["B"],
           customTests() {
             let loggerInfoSpy: jest.SpiedFunction<() => void>;
@@ -1169,17 +980,20 @@ describe("runFn", () => {
           },
         },
         "final request returns empty response": {
-          stack: [
-            {
+          stack: {
+            [A]: {
               id: A,
               data: "A",
             },
-            {
+            [B]: {
               id: B,
               data: "B",
             },
-          ],
-          expectedReturn: ["complete", undefined],
+          },
+          expectedReturn: {
+            type: "function-resolved",
+            data: undefined,
+          },
           customTests() {
             let loggerInfoSpy: jest.SpiedFunction<() => void>;
 

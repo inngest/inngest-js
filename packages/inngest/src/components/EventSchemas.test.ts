@@ -462,7 +462,7 @@ describe("EventSchemas", () => {
         },
         { event: "test.event" },
         ({ step }) => {
-          void step.waitForEvent("test.event2", {
+          void step.waitForEvent("id", "test.event2", {
             match: "data.foo",
             timeout: "1h",
           });
@@ -490,7 +490,7 @@ describe("EventSchemas", () => {
         },
         { event: "test.event" },
         ({ step }) => {
-          void step.waitForEvent("test.event2", {
+          void step.waitForEvent("id", "test.event2", {
             match: "data.foo",
             timeout: "1h",
           });
@@ -518,7 +518,7 @@ describe("EventSchemas", () => {
         },
         { event: "test.event" },
         ({ step }) => {
-          void step.waitForEvent("test.event2", {
+          void step.waitForEvent("id", "test.event2", {
             match: "data.foo",
             timeout: "1h",
           });

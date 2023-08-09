@@ -35,7 +35,7 @@ import { NonRetriableError } from "./NonRetriableError";
 /**
  * Types of checkpoints that can be reached during execution.
  */
-interface Checkpoints {
+export interface Checkpoints {
   "steps-found": { steps: [FoundStep, ...FoundStep[]] };
   "function-rejected": { error: unknown };
   "function-resolved": { data: unknown };
@@ -45,7 +45,7 @@ interface Checkpoints {
 /**
  * The possible results of an execution.
  */
-interface ExecutionResults {
+export interface ExecutionResults {
   "function-resolved": { data: unknown };
   "step-ran": { step: OutgoingOp };
   "function-rejected": { error: unknown; retriable: boolean };
