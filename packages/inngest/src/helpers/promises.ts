@@ -124,6 +124,7 @@ export const createTimeoutPromise = (duration: number): TimeoutPromise => {
   const { promise, resolve } = createDeferredPromise<void>();
 
   let timeout: ReturnType<typeof setTimeout> | undefined;
+  // eslint-disable-next-line prefer-const
   let ret: TimeoutPromise;
 
   const start = () => {
