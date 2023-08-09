@@ -1,11 +1,8 @@
 import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
-import {
-  createFrozenPromise,
-  resolveAfterPending,
-} from "inngest/helpers/promises";
 import { type Jsonify } from "type-fest";
 import { ErrCode, prettyError } from "../helpers/errors";
+import { createFrozenPromise, resolveAfterPending } from "../helpers/promises";
 import { timeStr } from "../helpers/strings";
 import { type ObjectPaths, type SendEventPayload } from "../helpers/types";
 import {
