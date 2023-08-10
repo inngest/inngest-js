@@ -75,7 +75,7 @@ describe("#generateID", () => {
 
 describe("runFn", () => {
   describe("single-step function", () => {
-    const stepRet = "step done";
+    const stepRet = { someProperty: "step done" };
     const stepErr = new Error("step error");
 
     [
@@ -797,14 +797,75 @@ describe("runFn", () => {
           expectedReturn: {
             type: "function-rejected",
             retriable: false,
-            error: expect.objectContaining({
-              name: "Error",
-              message: "A",
-              __serialized: true,
-              stack: expect.stringContaining("Error: A"),
-            }),
+            error: matchError(new NonRetriableError("A")),
           },
           expectedStepsRun: ["A"],
+        },
+      })
+    );
+
+    testFn(
+      "throws a NonRetriableError when thrown inside the main function body",
+      () => {
+        const fn = inngest.createFunction({ name: "Foo" }, "foo", async () => {
+          throw new NonRetriableError("Error");
+        });
+
+        return { fn, steps: {} };
+      },
+      {},
+      () => ({
+        "throws a NonRetriableError": {
+          expectedReturn: {
+            type: "function-rejected",
+            retriable: false,
+            error: matchError(new NonRetriableError("Error")),
+          },
+          expectedStepsRun: [],
+        },
+      })
+    );
+
+    testFn(
+      "throws a retriable error when a string is thrown inside the main function body",
+      () => {
+        const fn = inngest.createFunction({ name: "Foo" }, "foo", async () => {
+          throw "foo";
+        });
+
+        return { fn, steps: {} };
+      },
+      {},
+      () => ({
+        "throws a retriable error": {
+          expectedReturn: {
+            type: "function-rejected",
+            retriable: true,
+            error: matchError("foo"),
+          },
+          expectedStepsRun: [],
+        },
+      })
+    );
+
+    testFn(
+      "throws a retriable error when an empty object is thrown inside the main function body",
+      () => {
+        const fn = inngest.createFunction({ name: "Foo" }, "foo", async () => {
+          throw {};
+        });
+
+        return { fn, steps: {} };
+      },
+      {},
+      () => ({
+        "throws a retriable error": {
+          expectedReturn: {
+            type: "function-rejected",
+            retriable: true,
+            error: matchError({}),
+          },
+          expectedStepsRun: [],
         },
       })
     );
