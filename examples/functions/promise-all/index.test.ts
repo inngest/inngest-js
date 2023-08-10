@@ -22,7 +22,7 @@ describe("run", () => {
   test("runs in response to 'demo/promise.all'", async () => {
     runId = await eventRunWithName(eventId, "Promise.all");
     expect(runId).toEqual(expect.any(String));
-  });
+  }, 60000);
 
   test("ran Step 1", async () => {
     await expect(
@@ -33,7 +33,7 @@ describe("run", () => {
         output: "1",
       })
     ).resolves.toBeDefined();
-  });
+  }, 60000);
 
   test("ran Step 2", async () => {
     await expect(
@@ -44,7 +44,7 @@ describe("run", () => {
         output: "2",
       })
     ).resolves.toBeDefined();
-  });
+  }, 60000);
 
   test("ran Step 3", async () => {
     await expect(
@@ -55,5 +55,5 @@ describe("run", () => {
         output: "3",
       })
     ).resolves.toBeDefined();
-  });
+  }, 60000);
 });

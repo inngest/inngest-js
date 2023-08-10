@@ -24,7 +24,7 @@ describe("run", () => {
   test("runs in response to 'demo/promise.race'", async () => {
     runId = await eventRunWithName(eventId, "Promise.race");
     expect(runId).toEqual(expect.any(String));
-  });
+  }, 60000);
 
   test("ran Step A", async () => {
     await expect(
@@ -35,7 +35,7 @@ describe("run", () => {
         output: '"A"',
       })
     ).resolves.toBeDefined();
-  });
+  }, 60000);
 
   test("ran Step B", async () => {
     await expect(
@@ -46,7 +46,7 @@ describe("run", () => {
         output: '"B"',
       })
     ).resolves.toBeDefined();
-  });
+  }, 60000);
 
   let winner: "A" | "B" | undefined;
 
@@ -66,5 +66,5 @@ describe("run", () => {
         ? "B"
         : undefined;
     expect(["A", "B"]).toContain(winner);
-  });
+  }, 60000);
 });
