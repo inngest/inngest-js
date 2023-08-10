@@ -6,7 +6,7 @@ on:
   workflow_call:
   push:
     branches:
-      - "renovate/**"
+      - 'renovate/**'
 
 concurrency:
   group: pr-${{ github.ref }}
@@ -19,6 +19,9 @@ jobs:
   test:
     name: Runtime
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
     strategy:
       fail-fast: false
       matrix:
@@ -26,188 +29,152 @@ jobs:
           - 14
           - 16
           - 18
-          - lts
+          - 20
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
-      - run: volta run --node ${{ matrix.nodeVersion }} yarn test
+      - uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.nodeVersion }}
+      # Uses npm as pnpm doesn't support Node < 16
+      - run: node --version && npm --version && npm run test
 
   types:
     name: Types
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
     strategy:
       fail-fast: false
       matrix:
         tsVersion:
-          - "latest"
-          - "next"
-          - "~5.1.0"
-          - "~5.0.0"
-          - "~4.9.0"
-          - "~4.8.0"
-          - "~4.7.0"
+         - 'latest'
+         - 'next'
+         - 'beta'
+         - '~5.1.0'
+         - '~5.0.0'
+         - '~4.9.0'
+         - '~4.8.0'
+         - "~4.7.0"
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
-      - run: yarn prelink
-      - run: yarn add -D typescript@${{ matrix.tsVersion }}
-      - run: yarn test:types
+      - run: pnpm add -D typescript@${{ matrix.tsVersion }}
+      - run: pnpm run test:types
 
   api_diff:
     name: Local API diff
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
-      - run: yarn run api-extractor run
+      - run: pnpm run api-extractor run
 
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
-      - run: yarn lint
+      - run: pnpm run lint
 
   package:
     name: Package
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
       - name: Package as tarball
-        run: yarn local:pack
+        run: pnpm run local:pack
       - name: Archive package tarball
         uses: actions/upload-artifact@v3
         with:
           name: inngestpkg
-          path: inngest.tgz
+          path: packages/inngest/inngest.tgz
+
+  examples-matrix:
+    name: Create examples test matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - id: matrix
+        run: |
+          echo "matrix=$(find examples/apps -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
 
   examples:
     name: Test examples
-    needs: package
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    needs: [examples-matrix, package]
     strategy:
       fail-fast: false
       matrix:
-        repo:
-          # - inngest/sdk-example-cloudflare-workers - BROKEN
-          - inngest/sdk-example-nextjs-vercel
-          # - inngest/sdk-example-redwoodjs-vercel - BROKEN
-          - inngest/sdk-example-nextjs-cloudflare
-          - inngest/sdk-example-nextjs-netlify
-          - inngest/sdk-example-remix-vercel
-          - inngest/sdk-example-nuxt-vercel
+        example: ${{ fromJson(needs.examples-matrix.outputs.matrix) }}
     steps:
       # Checkout the repo
       - name: Checkout SDK
         uses: actions/checkout@v3
-        with:
-          path: sdk
-      - uses: ./sdk/.github/actions/setup-and-build
-        with:
-          working-directory: sdk
 
-      # Checkout the example repo
-      - name: Checkout example
-        uses: actions/checkout@v3
-        with:
-          repository: ${{ matrix.repo }}
-          path: examples/${{ matrix.repo }}
-          ref: main
+      - uses: ./.github/actions/setup-and-build
 
-      # If we find a deno.json file in the example repo, we need to pull Deno on
-      # to the toolchain.
-      - name: Check if Deno is used
-        id: deno-check
-        run: echo "isDeno=$(test -f deno.json && echo true || echo false)" >> $GITHUB_OUTPUT
-        working-directory: examples/${{ matrix.repo }}
-      - name: If Deno is used, install it
-        uses: denoland/setup-deno@v1
-        if: ${{ steps.deno-check.outputs.isDeno == 'true' }}
-        with:
-          deno-version: vx.x.x
-
-      # Install dependencies in the example repo
-      - name: Install example dependencies
-        if: ${{ steps.deno-check.outputs.isDeno != 'true' }}
-        run: |
-          if test -f yarn.lock; then
-            yarn install --frozen-lockfile
-          elif test -f package-lock.json; then
-            npm ci
-          fi
-        working-directory: examples/${{ matrix.repo }}
-
-      # Link the SDK, making sure to use the same Yarn version that we used to
-      # create the link.
-      #
-      # Because repos are always owner/repo with a slash, the directory will be
-      # the same, therefore we must venture an extra level deep when searching
-      # for package.json.
-      #
-      # Yarn v3 (berry) will override Volta's version control and always use
-      # whatever version is specified and cached in the repo's `.yarnrc.yml`
-      # file.
-      # Because of this, we must instead link the SDK using a relative path, and
-      # have the library's `dist/` directory appear as a separate package by
-      # specifying an empty `yarn.lock` file within.
-      #
-      # Locally linking the lib to a Deno repo is harder, as Deno doesn't
-      # support local linking between ESM and CJS. Instead, we run a manual
-      # shim script to bend paths and adjust the target repo's import path.
       - name: Download pre-built SDK
         uses: actions/download-artifact@v3
         with:
           name: inngestpkg
-          path: examples/${{ matrix.repo }}
+          path: examples/apps/${{ matrix.example }}
 
-      - name: Install pre-built SDK to example
-        run: |
-          if test -f deno.json; then
-            deno run --allow-read --allow-write ../../../sdk/deno_compat/link.ts
-          else
-            yarnv=$(volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn -v)
-            volta run --yarn $(cat ../../../sdk/package.json | jq -r .volta.yarn) yarn add ./inngest.tgz
-          fi
-        working-directory: examples/${{ matrix.repo }}
+      # Install dependencies in the example repo
+      # Don't use "npm ci", "--immutable" etc., as example repos won't be
+      # shipped with lock files.
+      - name: Install example dependencies
+        run: ni
+        working-directory: examples/apps/${{ matrix.example }}
+
+      - name: Add local SDK to example
+        working-directory: examples/apps/${{ matrix.example }}
+        run: ni ./inngest.tgz
 
       # Copy any SDK function examples to the example repo so that we're always
       # testing many functions against many handlers.
       - name: Find inngest functions path in example
         id: inngest-functions-path
         run: echo "dir=$(dirname $(echo \"$(git ls-files | grep inngest/index.ts)))\"" >> $GITHUB_OUTPUT
-        working-directory: examples/${{ matrix.repo }}
+        working-directory: examples/apps/${{ matrix.example }}
       - name: Remove any existing inngest functions
         run: rm -rf ${{ steps.inngest-functions-path.outputs.dir }}
-        working-directory: examples/${{ matrix.repo }}
+        working-directory: examples/apps/${{ matrix.example }}
       - name: Copy functions to test to example
-        run: cp -Tr ../../../sdk/src/examples/ ${{ steps.inngest-functions-path.outputs.dir }}
-        working-directory: examples/${{ matrix.repo }}
-      # IF we're using Deno, also replace any "inngest..." imports with
-      # "npm:inngest..." and any direct file imports in `inngest/index.ts` with
-      # `.ts` suffixes.
-      - name: If Deno, transform imports
-        if: ${{ steps.deno-check.outputs.isDeno == 'true' }}
-        run: |
-          find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i 's/from "inngest/from "npm:inngest/g' {} \;
-          find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i -E 's/from "\.(.+)"/from "\.\1\/index\.ts"/g' {} \;
-        working-directory: examples/${{ matrix.repo }}
+        run: cp -Tr ../../../examples/functions/ ${{ steps.inngest-functions-path.outputs.dir }}
+        working-directory: examples/apps/${{ matrix.example }}
+      # Rules for every project can be different; ignore the example functions
+      # we've just added.
+      - name: Ignore ESLint in example functions
+        run: echo '**/inngest/**' >> .eslintignore
+        working-directory: examples/apps/${{ matrix.example }}
 
       # Try to build the example
-      - name: If not Deno, build the example
-        if: ${{ steps.deno-check.outputs.isDeno != 'true' }}
-        run: |
-          if test -f yarn.lock; then
-            yarn build
-          elif test -f package-lock.json; then
-            npm run build
-          fi
-        working-directory: examples/${{ matrix.repo }}
+      - name: Build the example
+        run: nr build
+        working-directory: examples/apps/${{ matrix.example }}
 
       - name: Run the Inngest dev server
         run: npx inngest-cli@latest dev > cli.log 2>&1 &
-        working-directory: examples/${{ matrix.repo }}
+        working-directory: examples/apps/${{ matrix.example }}
         env:
           DO_NOT_TRACK: 1
       - name: Wait for the Inngest dev server to start
@@ -218,15 +185,8 @@ jobs:
 
       # Run the example
       - name: Run the example's dev server
-        run: |
-          if test -f yarn.lock; then
-            (yarn dev > dev.log 2>&1 &)
-          elif test -f package-lock.json; then
-            (npm run dev > dev.log 2>&1 &)
-          else
-            (deno task start > dev.log 2>&1 &)
-          fi
-        working-directory: examples/${{ matrix.repo }}
+        run: (nr dev > dev.log 2>&1 &)
+        working-directory: examples/apps/${{ matrix.example }}
         # Provide the example any env vars it might need
         env:
           PORT: 3000
@@ -244,13 +204,12 @@ jobs:
 
       # Run the examples test suite against the dev server
       - name: Run integration test suite
-        run: yarn test:examples
-        working-directory: sdk
+        run: pnpm run test:examples
 
       - if: ${{ always() }}
         run: cat dev.log
-        working-directory: examples/${{ matrix.repo }}
+        working-directory: examples/apps/${{ matrix.example }}
 
       - if: ${{ always() }}
         run: cat cli.log
-        working-directory: examples/${{ matrix.repo }}
+        working-directory: examples/apps/${{ matrix.example }}

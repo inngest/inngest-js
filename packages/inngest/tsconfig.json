@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "es2017",
+    "lib": ["ES2021", "DOM"],
+    "module": "commonjs",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "types": ["node", "jest"],
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noImplicitOverride": true,
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": true,
+    "strictNullChecks": true,
+    "paths": {
+      "inngest": ["./src"],
+      "inngest/*": ["./src/*"],
+      "@local": ["./src"],
+      "@local/*": ["./src/*"]
+    }
+  },
+  "include": ["./src/**/*"]
+}

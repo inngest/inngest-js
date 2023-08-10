@@ -1,6 +1,0 @@
-{
-  "imports": {
-    "npm:inngest": "./inngest.ts",
-    "npm:inngest/deno/fresh": "./deno.fresh.ts"
-  }
-}

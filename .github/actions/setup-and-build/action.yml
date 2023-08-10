@@ -1,37 +1,36 @@
-name: "Setup and build"
-description: "Sets up Node, installs dependencies, and builds the project."
+name: "Setup and build inngest"
+description: "Sets up Node, installs dependencies, and builds the inngest package."
 inputs:
   working-directory:  # id of input
     description: 'The directory to run the action in.'
     required: false
     default: '.'
+  build:
+    description: 'Whether the build step should be run.'
+    required: false
+    default: true
 runs:
   using: composite
   steps:
-    - uses: volta-cli/action@v4
-
-    - name: Get yarn cache directory path
-      id: yarn-cache-dir-path
-      shell: bash
-      run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
-      working-directory: ${{ inputs.working-directory }}
-
-    - uses: actions/cache@v3
-      id: yarn-cache # use this to check for `cache-hit` (`steps.yarn-cache.outputs.cache-hit != 'true'`)
+    - uses: pnpm/action-setup@v2
       with:
-        path: ${{ steps.yarn-cache-dir-path.outputs.dir }}
-        key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-yarn-
+        run_install: false
 
-    - shell: bash
-      run: yarn install --frozen-lockfile
-      working-directory: ${{ inputs.working-directory }}
+    - uses: actions/setup-node@v3
+      with:
+        node-version: lts/*
+        cache: pnpm
 
-    - shell: bash
-      run: yarn install --frozen-lockfile
-      working-directory: ${{ inputs.working-directory }}/landing
+    - run: npm i -g @antfu/ni
+      shell: bash
 
-    - shell: bash
-      run: yarn build
-      working-directory: ${{ inputs.working-directory }}
+    - name: Install dependencies
+      run: pnpm install
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}/packages/inngest
+
+    - name: Build
+      if: ${{ inputs.build == 'true' }}
+      run: pnpm run build
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}/packages/inngest

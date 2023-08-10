@@ -28,7 +28,7 @@ jobs:
       - uses: changesets/action@v1
         id: changesets
         with:
-          publish: yarn release
+          publish: pnpm run --if-present --recursive release
           title: ${{ github.ref_name == 'main' && 'Release @latest' || format('Release {0}', github.ref_name) }}
         env:
           GITHUB_TOKEN: ${{ secrets.CHANGESET_GITHUB_TOKEN }}

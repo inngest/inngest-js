@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["./**/*.test.ts"],
+  "compilerOptions": {
+    "paths": {
+      "@local": ["./dist"],
+      "@local/*": ["./dist/*"]
+    }
+  }
+}

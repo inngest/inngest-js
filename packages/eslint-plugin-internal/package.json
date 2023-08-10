@@ -1,0 +1,12 @@
+{
+  "name": "@inngest/eslint-plugin-internal",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "preinstall": "npx only-allow pnpm"
+  },
+  "peerDependencies": {
+    "eslint": "^8.23.1"
+  }
+}
