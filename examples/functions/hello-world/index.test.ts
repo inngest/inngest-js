@@ -22,7 +22,7 @@ describe("run", () => {
   test("runs in response to 'demo/hello.world'", async () => {
     runId = await eventRunWithName(eventId, "Hello World");
     expect(runId).toEqual(expect.any(String));
-  });
+  }, 60000);
 
   test("returns 'Hello, Inngest!'", async () => {
     await expect(
@@ -32,5 +32,5 @@ describe("run", () => {
         output: JSON.stringify({ body: "Hello, Inngest!", status: 200 }),
       })
     ).resolves.toBeDefined();
-  });
+  }, 60000);
 });

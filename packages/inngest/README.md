@@ -14,7 +14,7 @@
 <a href="http://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TS-%3E%3D4.7-blue" /></a>
 <a href="https://www.npmjs.com/package/inngest"><img src="https://img.shields.io/npm/v/inngest" /></a>
 <br/>
-<a href="https://discord.gg/EuesV2ZSnX"><img src="https://img.shields.io/discord/842170679536517141?label=discord" /></a>
+<a href="https://www.inngest.com/discord"><img src="https://img.shields.io/discord/842170679536517141?label=discord" /></a>
 <a href="https://twitter.com/inngest"><img src="https://img.shields.io/twitter/follow/inngest?style=social" /></a>
 
   </p>
@@ -131,49 +131,43 @@ inngest.send("app/user.signup", {
 
 ## Contributing
 
-Clone the repository, then:
+Prerequisites:
+
+1. Clone this repository
+2. Intall [`pnpm`](https://pnpm.io/installation)
+3. Install [Volta](https://volta.sh/) to manage consistent Node versions (optional)
+
+### Development
+
+Run the following command in the `packages/inngest/` directory:
 
 ```sh
-yarn dev # install dependencies, build/lint/test
+pnpm dev
 ```
 
-We use [Volta](https://volta.sh/) to manage Node/Yarn versions.
+This will install dependencies, build, and lint the package. It will watch for changes and re-run appropriate commands.
 
-> When making a pull request, make sure to commit the changed `etc/inngest.api.md` file; this is a generated types/docs file that will highlight changes to the exposed API.
+### Testing the package
 
-### Locally linking (`npm|yarn link`)
-
-To test changes with other local repos, you can link the project like so (replace `npm` for `yarn` if desired):
+To test changes with other local repositories, we recommend packaging the library entirely and directly installing the resulting `.tgz` file. This is often more reliable than linking, which can cause issues when using multiple package managers.
 
 ```sh
-# in this repo
-yarn build
-yarn link
+# in packages/inngest/
+pnpm local:pack # creates inngest.tgz
 
 # in another repo
-yarn link inngest
+yarn add ~/path/to/packages/inngest/inngest.tgz
 ```
 
-Alternatively, you can also package the library and ship it with an application. This is a nice way to generate and ship snapshot/test versions of the library to test in production environments without requiring releasing to npm.
-
-```sh
-# in this repo
-yarn local:pack
-cp inngest.tgz ../some-other-repo-root
-
-# in another repo
-yarn add ./inngest.tgz
-```
-
-Some platforms require manually installing the package again at build time to properly link dependencies, so you may have to change your `yarn build` script to be prefixed with this install, e.g.:
-
-```sh
-yarn add ./inngest.tgz && framework dev
-```
+You can also use this method to ship a snapshot of the library with an application. This is a nice way to generate and ship snapshot versions without requiring a release to npm.
 
 ### Releasing
 
-To release to production, we use [Changesets](https://github.com/changesets/changesets). This means that releasing and changelog generation is all managed through PRs, where a bot will guide you through the process of announcing changes in PRs and releasing them once merged to `main`.
+To release to production, we use [Changesets](https://github.com/changesets/changesets). This means that releasing and changelog generation is all managed through PRs, where a bot will guide you through the process of adding release notes to PRs.
+
+As PRs are merged into `main`, a new PR (usually called **Release @latest**) is created that rolls up all release notes since the last release, allowing you bundle changes together. Once you're happy with the release, merge this new PR and the bot will release the package to npm for you.
+
+Merging PRs to `main` (therefore both introducing a potential change and releasing to npm) requires that tests pass and a contributor has approved the PR.
 
 #### Legacy versions
 
@@ -195,7 +189,7 @@ You can see the currently available tags on the [`inngest` npm page](https://www
 If the current active version is `v1.1.1`, this is a minor release, and our tag is `foo`, we'd do:
 
 ```sh
-yarn version v1.2.0-foo.1
+yarn version 1.2.0-foo.1
 yarn build
 npm publish --access public --tag foo
 ```

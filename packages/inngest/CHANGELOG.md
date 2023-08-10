@@ -1,5 +1,15 @@
 # inngest
 
+## 2.4.1
+
+### Patch Changes
+
+- f2ffc8b: Fix `cross-fetch` import issue in testing environemtnst. API package also uses custom `fetch` passed via arguments.
+- acfa07c: Throw error when using `inngest/express` and not using a body parser
+- b535e1e: Ensure users are not allowed to configure batching with cancellation or rate limiting, as these features do not yet function together
+- c271eb1: Add `x-inngest-no-retry: true` header when non-retriable for internal executor changes
+- 2a93f0b: Fix `onFailure` functions missing types applied by middleware
+
 ## 2.4.0
 
 ### Minor Changes

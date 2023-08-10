@@ -22,7 +22,7 @@ describe("run", () => {
   test("runs in response to 'demo/parallel.work'", async () => {
     runId = await eventRunWithName(eventId, "Parallel Work");
     expect(runId).toEqual(expect.any(String));
-  });
+  }, 60000);
 
   ["First", "Second", "Third"].forEach((scoreStep) => {
     const name = `${scoreStep} score`;
@@ -37,7 +37,7 @@ describe("run", () => {
       expect(step).toBeDefined();
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(step.output).toEqual(expect.any(String));
-    });
+    }, 60000);
   });
 
   const fruits = ["Apple", "Banana", "Orange"];
@@ -54,7 +54,7 @@ describe("run", () => {
           output: `"${fruit}"`,
         })
       ).resolves.toBeDefined();
-    });
+    }, 60000);
   });
 
   test("Returned correct data", async () => {
@@ -68,5 +68,5 @@ describe("run", () => {
         }),
       })
     ).resolves.toBeDefined();
-  });
+  }, 60000);
 });

@@ -29,12 +29,15 @@ jobs:
           - 14
           - 16
           - 18
-          - lts
+          - 20
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
+      - uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.nodeVersion }}
       # Uses npm as pnpm doesn't support Node < 16
-      - run: volta run --node ${{ matrix.nodeVersion }} npm run test
+      - run: node --version && npm --version && npm run test
 
   types:
     name: Types
@@ -48,6 +51,7 @@ jobs:
         tsVersion:
          - 'latest'
          - 'next'
+         - 'beta'
          - '~5.1.0'
          - '~5.0.0'
          - '~4.9.0'

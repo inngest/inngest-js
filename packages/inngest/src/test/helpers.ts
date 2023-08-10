@@ -4,7 +4,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Inngest } from "@local";
 import { type ServeHandler } from "@local/components/InngestCommHandler";
-import { envKeys, headerKeys } from "@local/helpers/consts";
+import { envKeys, headerKeys, queryKeys } from "@local/helpers/consts";
 import { slugify } from "@local/helpers/strings";
 import { type FunctionTrigger } from "@local/types";
 import fetch from "cross-fetch";
@@ -140,16 +140,36 @@ export const testFramework = (
       fetch,
     });
 
-    const [req, res] = createReqRes({
+    const host = "localhost:3000";
+
+    const mockReqOpts: httpMocks.RequestOptions = {
       hostname: "localhost",
       url: "/api/inngest",
       protocol: "https",
       ...reqOpts[0],
       headers: {
         ...reqOpts[0]?.headers,
-        host: "localhost:3000",
+        host,
       },
-    });
+    };
+
+    if (mockReqOpts.method === "POST") {
+      const mockUrl = new URL(
+        `${mockReqOpts.protocol as string}://${host}${
+          mockReqOpts.url as string
+        }`
+      );
+
+      if (!mockUrl.searchParams.has(queryKeys.FnId)) {
+        mockUrl.searchParams.set(queryKeys.FnId, ulid());
+      }
+
+      if (!mockUrl.searchParams.has(queryKeys.StepId)) {
+        mockUrl.searchParams.set(queryKeys.StepId, "step");
+      }
+    }
+
+    const [req, res] = createReqRes(mockReqOpts);
 
     let envToPass = { ...env };
 
@@ -602,6 +622,39 @@ export const testFramework = (
           });
         });
       });
+
+      describe("malformed payloads", () => {
+        const client = createClient({ name: "test" });
+
+        const fn = client.createFunction(
+          { name: "Test", id: "test" },
+          { event: "demo/event.sent" },
+          () => "fn"
+        );
+        const env = {
+          DENO_DEPLOYMENT_ID: undefined,
+          NODE_ENV: "development",
+          ENVIRONMENT: "development",
+        };
+
+        test("should throw an error with an invalid JSON body", async () => {
+          const ret = await run(
+            [inngest, [fn], { signingKey: "test" }],
+            [
+              {
+                method: "POST",
+                url: "/api/inngest?fnId=test",
+                body: undefined,
+              },
+            ],
+            env
+          );
+          expect(ret).toMatchObject({
+            status: 500,
+            body: expect.stringContaining("Failed to parse data from executor"),
+          });
+        });
+      });
     });
   });
 };
@@ -664,7 +717,7 @@ export const receivedEventWithName = async (
   name: string;
   payload: string;
 }> => {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 140; i++) {
     const start = new Date();
 
     const res = await fetch("http://localhost:8288/v0/gql", {
@@ -699,7 +752,7 @@ export const receivedEventWithName = async (
       return event;
     }
 
-    await waitUpTo(1000, start);
+    await waitUpTo(400, start);
   }
 
   throw new Error("Event not received");
@@ -715,7 +768,7 @@ export const eventRunWithName = async (
   eventId: string,
   name: string
 ): Promise<string> => {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 140; i++) {
     const start = new Date();
 
     const res = await fetch("http://localhost:8288/v0/gql", {
@@ -755,7 +808,7 @@ export const eventRunWithName = async (
       return run.id;
     }
 
-    await waitUpTo(1000, start);
+    await waitUpTo(400, start);
   }
 
   throw new Error("Event run not found");
@@ -778,7 +831,7 @@ export const runHasTimeline = async (
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> => {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 140; i++) {
     const start = new Date();
 
     const res = await fetch("http://localhost:8288/v0/gql", {
@@ -830,7 +883,7 @@ export const runHasTimeline = async (
       return timelineItem;
     }
 
-    await waitUpTo(1000, start);
+    await waitUpTo(400, start);
   }
 
   return;
