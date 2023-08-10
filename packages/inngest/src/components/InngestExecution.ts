@@ -64,6 +64,7 @@ export interface InngestExecutionOptions {
   requestedRunStep?: string;
   timer?: ServerTiming;
   isFailureHandler?: boolean;
+  disableImmediateExecution?: boolean;
 }
 
 export class InngestExecution {
@@ -184,14 +185,14 @@ export class InngestExecution {
         if (stepResult) {
           const transformResult = await this.#transformOutput(stepResult);
 
-          if (transformResult.type === "function-rejected") {
-            return transformResult;
+          if (transformResult.type === "function-resolved") {
+            return {
+              type: "step-ran",
+              step: { ...stepResult, ...(transformResult.data as {}) },
+            };
           }
 
-          return {
-            type: "step-ran",
-            step: { ...stepResult, ...transformResult },
-          };
+          return transformResult;
         }
 
         const newSteps = await this.#filterNewSteps(steps);
@@ -220,20 +221,49 @@ export class InngestExecution {
   }
 
   async #tryExecuteStep(steps: FoundStep[]): Promise<OutgoingOp | void> {
-    if (!this.options.requestedRunStep) {
+    const stepIdToRun =
+      this.options.requestedRunStep || this.#getEarlyExecRunStep(steps);
+    if (!stepIdToRun) {
       return;
     }
 
-    const step = steps.find(
-      (step) => step.id === this.options.requestedRunStep && step.fn
-    );
+    const step = steps.find((step) => step.id === stepIdToRun && step.fn);
 
     if (step) {
       this.timeout?.clear(); // TODO duplicate clean-up; bad
       return await this.#executeStep(step);
     }
 
-    return void this.timeout?.reset();
+    /**
+     * Ensure we reset the timeout if we have a requested run step but couldn't
+     * find it, but also that we don't reset if we found and executed it.
+     */
+    this.timeout?.reset();
+  }
+
+  /**
+   * Given a list of outgoing ops, decide if we can execute an op early and
+   * return the ID of the step to execute if we can.
+   */
+  #getEarlyExecRunStep(steps: FoundStep[]): string | void {
+    /**
+     * We may have been disabled due to parallelism, in which case we can't
+     * immediately execute unless explicitly requested.
+     */
+    if (this.options.disableImmediateExecution) return;
+
+    const unfulfilledSteps = steps.filter((step) => !step.fulfilled);
+    if (unfulfilledSteps.length !== 1) return;
+
+    const op = unfulfilledSteps[0];
+
+    if (
+      op &&
+      op.op === StepOpCode.StepPlanned &&
+      typeof op.opts === "undefined"
+    ) {
+      return op.id;
+    }
   }
 
   async #filterNewSteps(
@@ -290,9 +320,9 @@ export class InngestExecution {
     await this.state.hooks?.afterMemoization?.();
     await this.state.hooks?.beforeExecution?.();
 
-    this.state.executingStep = { op: StepOpCode.RunStep, name, opts };
-    this.#debug(`executing step "${id}"`);
     const outgoingOp: OutgoingOp = { id, op: StepOpCode.RunStep, name, opts };
+    this.state.executingStep = outgoingOp;
+    this.#debug(`executing step "${id}"`);
 
     return (
       Promise.resolve(fn?.())
