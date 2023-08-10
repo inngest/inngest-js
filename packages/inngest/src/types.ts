@@ -1087,5 +1087,6 @@ export const fnDataSchema = z.object({
     .optional()
     .nullable(),
   use_api: z.boolean().default(false),
+  disable_immediate_execution: z.boolean().default(false),
 });
 export type FnData = z.infer<typeof fnDataSchema>;
