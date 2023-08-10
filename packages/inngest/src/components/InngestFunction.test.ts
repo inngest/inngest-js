@@ -11,7 +11,7 @@ import {
 import { NonRetriableError } from "@local/components/NonRetriableError";
 import { ServerTiming } from "@local/helpers/ServerTiming";
 import { internalEvents } from "@local/helpers/consts";
-import { ErrCode, OutgoingResultError } from "@local/helpers/errors";
+import { OutgoingResultError, serializeError } from "@local/helpers/errors";
 import {
   DefaultLogger,
   ProxyLogger,
@@ -48,6 +48,14 @@ const opts = (<T extends ClientOptions>(x: T): T => x)({
 const inngest = createClient(opts);
 
 const timer = new ServerTiming();
+
+const matchError = (err: any) => {
+  const serializedErr = serializeError(err);
+  return expect.objectContaining({
+    ...serializedErr,
+    stack: expect.any(String),
+  });
+};
 
 describe("#generateID", () => {
   it("Returns a correct name", () => {
@@ -153,7 +161,8 @@ describe("runFn", () => {
 
             expect(ret.type).toBe("function-rejected");
             expect(ret).toMatchObject({
-              error: stepErr,
+              error: matchError(stepErr),
+              retriable: true,
             });
           });
         });
@@ -170,6 +179,7 @@ describe("runFn", () => {
         runStep?: string;
         onFailure?: boolean;
         event?: EventPayload;
+        disableImmediateExecution?: boolean;
       }
     ) => {
       const execution = fn["createExecution"]({
@@ -178,6 +188,7 @@ describe("runFn", () => {
         isFailureHandler: Boolean(opts?.onFailure),
         requestedRunStep: opts?.runStep,
         timer,
+        disableImmediateExecution: opts?.disableImmediateExecution,
       });
 
       return execution.start();
@@ -216,6 +227,7 @@ describe("runFn", () => {
           expectedStepsRun?: (keyof T["steps"])[];
           event?: EventPayload;
           customTests?: () => void;
+          disableImmediateExecution?: boolean;
         }
       >
     ) => {
@@ -246,6 +258,7 @@ describe("runFn", () => {
                 runStep: t.runStep,
                 onFailure: t.onFailure || tools.onFailure,
                 event: t.event || tools.event,
+                disableImmediateExecution: t.disableImmediateExecution,
               }).catch((err: Error) => {
                 retErr = err;
                 return undefined;
@@ -315,8 +328,8 @@ describe("runFn", () => {
         return { fn, steps: { A, B } };
       },
       {
-        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
-        B: "b494def3936f5c59986e81bc29443609bfc2384a",
+        A: "A",
+        B: "B",
       },
       ({ A, B }) => ({
         "first run runs A step": {
@@ -391,9 +404,9 @@ describe("runFn", () => {
         return { fn, steps: { A, B } };
       },
       {
-        foo: "715347facf54baa82ad66dafed5ed6f1f84eaf8a",
-        A: "cfae9b35319fd155051a76b9208840185cecdc07",
-        B: "1352bc51e5732952742e6d103747c954c16570f5",
+        foo: "wait-id",
+        A: "A",
+        B: "B",
       },
       ({ foo, A, B }) => ({
         "first run reports waitForEvent": {
@@ -472,9 +485,9 @@ describe("runFn", () => {
         return { fn, steps: { A, B, C } };
       },
       {
-        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
-        B: "1b724c1e706194ce9fa9aa57c0fb1c5075c7f7f4",
-        C: "b9996145f3de0c6073d3526ec18bb73be43e8bd6",
+        A: "A",
+        B: "B",
+        C: "C",
       },
       ({ A, B, C }) => ({
         "first run reports A and B steps": {
@@ -496,6 +509,7 @@ describe("runFn", () => {
         },
 
         "requesting to run B runs B": {
+          disableImmediateExecution: true,
           runStep: B,
           expectedReturn: {
             type: "step-ran",
@@ -510,6 +524,7 @@ describe("runFn", () => {
         },
 
         "request with only B state returns discovery of A": {
+          disableImmediateExecution: true,
           stack: {
             [B]: {
               id: B,
@@ -529,6 +544,7 @@ describe("runFn", () => {
         },
 
         "requesting to run A runs A": {
+          disableImmediateExecution: true,
           runStep: A,
           expectedReturn: {
             type: "step-ran",
@@ -543,6 +559,7 @@ describe("runFn", () => {
         },
 
         "request with B,A state discovers C step": {
+          disableImmediateExecution: true,
           stack: {
             [B]: {
               id: B,
@@ -566,6 +583,7 @@ describe("runFn", () => {
         },
 
         "requesting to run C runs C": {
+          disableImmediateExecution: true,
           stack: {
             [B]: {
               id: B,
@@ -576,6 +594,7 @@ describe("runFn", () => {
               data: "A",
             },
           },
+          runStep: C,
           expectedReturn: {
             type: "step-ran",
             step: expect.objectContaining({
@@ -589,6 +608,7 @@ describe("runFn", () => {
         },
 
         "final request returns empty response": {
+          disableImmediateExecution: true,
           stack: {
             [B]: {
               id: B,
@@ -634,9 +654,9 @@ describe("runFn", () => {
         return { fn, steps: { A, B, BFailed } };
       },
       {
-        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
-        B: "1b724c1e706194ce9fa9aa57c0fb1c5075c7f7f4",
-        BFailed: "0ccca8a0c6463bcf972afb233f1f0baa47d90cc3",
+        A: "A",
+        B: "B",
+        BFailed: "B failed",
       },
       ({ A, B, BFailed }) => ({
         "first run reports A and B steps": {
@@ -658,6 +678,7 @@ describe("runFn", () => {
         },
 
         "requesting to run A runs A": {
+          disableImmediateExecution: true,
           runStep: A,
           expectedReturn: {
             type: "step-ran",
@@ -672,6 +693,7 @@ describe("runFn", () => {
         },
 
         "request with only A state returns B found": {
+          disableImmediateExecution: true,
           stack: { [A]: { id: A, data: "A" } },
           expectedReturn: {
             type: "steps-found",
@@ -686,24 +708,41 @@ describe("runFn", () => {
         },
 
         "requesting to run B runs B, which fails": {
+          disableImmediateExecution: true,
           runStep: B,
           expectedReturn: {
-            type: "step-ran",
-            step: expect.objectContaining({
-              id: B,
-              name: "B",
-              op: StepOpCode.RunStep,
-              error: "B",
-            }),
+            type: "function-rejected",
+            error: matchError("B"),
+            retriable: true,
           },
           expectedStepsRun: ["B"],
         },
 
-        "request following B runs 'B failed' step": {
+        "request following B reports 'B failed' step": {
+          disableImmediateExecution: true,
           stack: {
             [A]: { id: A, data: "A" },
             [B]: { id: B, error: "B" },
           },
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
+              expect.objectContaining({
+                id: BFailed,
+                name: "B failed",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          },
+        },
+
+        "requesting to run 'B failed' runs 'B failed'": {
+          disableImmediateExecution: true,
+          stack: {
+            [A]: { id: A, data: "A" },
+            [B]: { id: B, error: "B" },
+          },
+          runStep: BFailed,
           expectedReturn: {
             type: "step-ran",
             step: expect.objectContaining({
@@ -717,6 +756,7 @@ describe("runFn", () => {
         },
 
         "final request returns empty response": {
+          disableImmediateExecution: true,
           stack: {
             [A]: { id: A, data: "A" },
             [B]: { id: B, error: "B" },
@@ -726,32 +766,6 @@ describe("runFn", () => {
             type: "function-resolved",
             data: ["A", "B failed"],
           },
-        },
-      })
-    );
-
-    testFn(
-      "throw when a non-step fn becomes a step-fn",
-      () => {
-        const A = jest.fn(() => "A");
-
-        const fn = inngest.createFunction(
-          { name: "Foo" },
-          "foo",
-          async ({ step: { run } }) => {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            await run("A", A);
-          }
-        );
-
-        return { fn, steps: { A } };
-      },
-      {
-        A: "",
-      },
-      () => ({
-        "first run throws, as we find a step late": {
-          expectedThrowMessage: ErrCode.STEP_USED_AFTER_ASYNC,
         },
       })
     );
@@ -776,14 +790,19 @@ describe("runFn", () => {
         return { fn, steps: { A } };
       },
       {
-        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+        A: "A",
       },
       ({ A }) => ({
         "first run executes A, which throws a NonRetriable error": {
           expectedReturn: {
             type: "function-rejected",
             retriable: false,
-            error: expect.any(NonRetriableError),
+            error: expect.objectContaining({
+              name: "Error",
+              message: "A",
+              __serialized: true,
+              stack: expect.stringContaining("Error: A"),
+            }),
           },
           expectedStepsRun: ["A"],
         },
@@ -828,24 +847,11 @@ describe("runFn", () => {
         return { fn, steps: { A, B }, event, onFailure: true };
       },
       {
-        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
-        B: "b494def3936f5c59986e81bc29443609bfc2384a",
-      },
+        A: "A",
+        B: "B",
+      } as const,
       ({ A, B }) => ({
         "first run runs A step": {
-          expectedReturn: {
-            type: "step-ran",
-            step: expect.objectContaining({
-              id: A,
-              name: "A",
-              op: StepOpCode.RunStep,
-              data: "A",
-            }),
-          },
-          expectedStepsRun: ["A"],
-        },
-        "requesting to run A runs A": {
-          runStep: A,
           expectedReturn: {
             type: "step-ran",
             step: expect.objectContaining({
@@ -923,8 +929,8 @@ describe("runFn", () => {
         return { fn, steps: { A, B } };
       },
       {
-        A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
-        B: "b494def3936f5c59986e81bc29443609bfc2384a",
+        A: "A",
+        B: "B",
       },
       ({ A, B }) => ({
         "first run runs A step": {
