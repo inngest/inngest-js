@@ -3,6 +3,11 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { jest } from "@jest/globals";
 import { EventSchemas, type EventPayload } from "@local";
+import {
+  ExecutionResult,
+  ExecutionResults,
+  InngestExecutionOptions,
+} from "@local/components/InngestExecution";
 import { InngestFunction } from "@local/components/InngestFunction";
 import {
   _internals,
@@ -25,11 +30,6 @@ import {
 import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
-import {
-  ExecutionResult,
-  ExecutionResults,
-  InngestExecutionOptions,
-} from "./InngestExecution";
 
 type TestEvents = {
   foo: { data: { foo: string } };
