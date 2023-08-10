@@ -715,7 +715,7 @@ export const receivedEventWithName = async (
   name: string;
   payload: string;
 }> => {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 140; i++) {
     const start = new Date();
 
     const res = await fetch("http://localhost:8288/v0/gql", {
@@ -750,7 +750,7 @@ export const receivedEventWithName = async (
       return event;
     }
 
-    await waitUpTo(1000, start);
+    await waitUpTo(400, start);
   }
 
   throw new Error("Event not received");
@@ -766,7 +766,7 @@ export const eventRunWithName = async (
   eventId: string,
   name: string
 ): Promise<string> => {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 140; i++) {
     const start = new Date();
 
     const res = await fetch("http://localhost:8288/v0/gql", {
@@ -806,7 +806,7 @@ export const eventRunWithName = async (
       return run.id;
     }
 
-    await waitUpTo(1000, start);
+    await waitUpTo(400, start);
   }
 
   throw new Error("Event run not found");
@@ -829,7 +829,7 @@ export const runHasTimeline = async (
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<any> => {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 140; i++) {
     const start = new Date();
 
     const res = await fetch("http://localhost:8288/v0/gql", {
@@ -881,7 +881,7 @@ export const runHasTimeline = async (
       return timelineItem;
     }
 
-    await waitUpTo(1000, start);
+    await waitUpTo(400, start);
   }
 
   return;

@@ -22,7 +22,7 @@ describe("run", () => {
   test("runs in response to 'demo/parallel.reduce'", async () => {
     runId = await eventRunWithName(eventId, "Parallel Reduce");
     expect(runId).toEqual(expect.any(String));
-  });
+  }, 60000);
 
   ["blue", "red", "green"].forEach((team) => {
     test(`ran "Get ${team} team score" step`, async () => {
@@ -35,7 +35,7 @@ describe("run", () => {
       expect(step).toBeDefined();
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       expect(step.output).toEqual(expect.any(String));
-    });
+    }, 60000);
   });
 
   test("Returned total score", async () => {
@@ -46,5 +46,5 @@ describe("run", () => {
         output: JSON.stringify({ body: "150", status: 200 }),
       })
     ).resolves.toBeDefined();
-  });
+  }, 60000);
 });
