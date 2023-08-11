@@ -1,9 +1,11 @@
+import { type VercelRequest, type VercelResponse } from "@vercel/node";
 import { type Request, type Response } from "express";
 import {
   InngestCommHandler,
   type ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
+import { Either } from "./helpers/types";
 import { type SupportedFrameworkName } from "./types";
 
 export const name: SupportedFrameworkName = "express";
@@ -20,10 +22,20 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
     nameOrInngest,
     fns,
     opts,
-    (req: Request, _res: Response) => {
-      const hostname = req.get("host") || req.headers["host"];
-      const protocol = hostname?.includes("://") ? "" : `${req.protocol}://`;
-      const url = new URL(req.originalUrl, `${protocol}${hostname || ""}`);
+    (
+      req: Either<Request, VercelRequest>,
+      _res: Either<Response, VercelResponse>
+    ) => {
+      const hostname = req.headers["host"];
+
+      const protocol = hostname?.includes("://")
+        ? ""
+        : `${req.protocol || "https"}://`;
+
+      const url = new URL(
+        req.originalUrl || req.url || "",
+        `${protocol}${hostname || ""}`
+      );
 
       return {
         url,
