@@ -774,7 +774,7 @@ export class InngestCommHandler<
           }) ?? [];
 
       const ret = await fn.fn["runFn"](
-        { event, events, runId: ctx?.run_id },
+        { event, events, runId: ctx?.run_id, attempt: ctx?.attempt },
         opStack,
         /**
          * TODO The executor is sending `"step"` as the step ID when it is not
