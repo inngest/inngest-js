@@ -14,4 +14,11 @@ let
     '';
   };
 
-in pkgs.mkShell { packages = [ corepack ]; }
+in pkgs.mkShell {
+  buildInputs = [
+    pkgs.nodePackages.typescript-language-server
+    pkgs.nodePackages.vscode-langservers-extracted
+  ];
+
+  packages = [ corepack ];
+}
