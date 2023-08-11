@@ -3,12 +3,15 @@
 
 with pkgs;
 
-mkShell {
-  buildInputs = [
-    # Node
-    pkgs.yarn
-    pkgs.nodejs-18_x
+let
+  corepack = pkgs.stdenv.mkDerivation {
+    name = "corepack";
+    buildInputs = [ pkgs.nodejs-18_x ];
+    phases = [ "installPhase" ];
+    installPhase = ''
+      mkdir -p $out/bin
+      corepack enable --install-directory=$out/bin
+    '';
+  };
 
-    # Tools
-  ];
-}
+in pkgs.mkShell { packages = [ corepack ]; }
