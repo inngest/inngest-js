@@ -7,14 +7,14 @@ testFramework("Express", ExpressHandler);
 
 testFramework("Express (Vercel)", ExpressHandler, {
   transformReq: (expressReq, res) => {
-    const req = {
+    const req: Partial<VercelRequest> = {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       body: expressReq.body,
       headers: expressReq.headers,
       query: expressReq.query as VercelRequestQuery,
       method: expressReq.method,
       url: expressReq.url,
-    } satisfies Partial<VercelRequest>;
+    };
 
     return [req, res];
   },
