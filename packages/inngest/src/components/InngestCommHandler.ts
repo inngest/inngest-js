@@ -786,7 +786,7 @@ export class InngestCommHandler<
     }, {});
 
     const execution = fn.fn["createExecution"]({
-      data: { event, events, runId: ctx?.run_id },
+      data: { event, events, runId: ctx?.run_id, attempt: ctx?.attempt },
       stepState,
       requestedRunStep: stepId === "step" ? undefined : stepId || undefined,
       timer,

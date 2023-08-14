@@ -142,12 +142,12 @@ jobs:
       # Don't use "npm ci", "--immutable" etc., as example repos won't be
       # shipped with lock files.
       - name: Install example dependencies
-        run: ni
+        run: npm install
         working-directory: examples/apps/${{ matrix.example }}
 
       - name: Add local SDK to example
         working-directory: examples/apps/${{ matrix.example }}
-        run: ni ./inngest.tgz
+        run: npm install ./inngest.tgz
 
       # Copy any SDK function examples to the example repo so that we're always
       # testing many functions against many handlers.
@@ -169,7 +169,7 @@ jobs:
 
       # Try to build the example
       - name: Build the example
-        run: nr build
+        run: npm run build
         working-directory: examples/apps/${{ matrix.example }}
 
       - name: Run the Inngest dev server
@@ -185,7 +185,7 @@ jobs:
 
       # Run the example
       - name: Run the example's dev server
-        run: (nr dev > dev.log 2>&1 &)
+        run: (npm run dev > dev.log 2>&1 &)
         working-directory: examples/apps/${{ matrix.example }}
         # Provide the example any env vars it might need
         env:

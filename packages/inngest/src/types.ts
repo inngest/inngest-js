@@ -242,6 +242,13 @@ export type BaseContext<
    * ```
    */
   fns: TShimmedFns;
+
+  /**
+   * The current zero-indexed attempt number for this function execution. The
+   * first attempt will be `0`, the second `1`, and so on. The attempt number
+   * is incremented every time the function throws an error and is retried.
+   */
+  attempt: number;
 };
 
 /**
@@ -1072,6 +1079,7 @@ export const fnDataSchema = z.object({
   ctx: z
     .object({
       run_id: z.string(),
+      attempt: z.number().default(0),
       stack: z
         .object({
           stack: z

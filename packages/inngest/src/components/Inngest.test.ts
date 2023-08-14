@@ -400,6 +400,25 @@ describe("send", () => {
 
 describe("createFunction", () => {
   describe("types", () => {
+    describe("function input", () => {
+      const inngest = createClient({ name: "test" });
+
+      test("has attempt number", () => {
+        inngest.createFunction(
+          {
+            name: "test",
+            onFailure: ({ attempt }) => {
+              assertType<number>(attempt);
+            },
+          },
+          { event: "test" },
+          ({ attempt }) => {
+            assertType<number>(attempt);
+          }
+        );
+      });
+    });
+
     describe("no custom types", () => {
       const inngest = createClient({ name: "test" });
 

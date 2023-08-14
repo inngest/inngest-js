@@ -188,6 +188,7 @@ export class InngestExecution {
           if (transformResult.type === "function-resolved") {
             return {
               type: "step-ran",
+              // eslint-disable-next-line @typescript-eslint/ban-types
               step: { ...stepResult, ...(transformResult.data as {}) },
             };
           }
@@ -238,7 +239,7 @@ export class InngestExecution {
      * Ensure we reset the timeout if we have a requested run step but couldn't
      * find it, but also that we don't reset if we found and executed it.
      */
-    this.timeout?.reset();
+    void this.timeout?.reset();
   }
 
   /**

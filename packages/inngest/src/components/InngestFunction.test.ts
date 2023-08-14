@@ -1,12 +1,15 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/require-await */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { jest } from "@jest/globals";
 import { EventSchemas, type EventPayload } from "@local";
 import {
-  ExecutionResult,
-  ExecutionResults,
-  InngestExecutionOptions,
+  type ExecutionResult,
+  type ExecutionResults,
+  type InngestExecutionOptions,
 } from "@local/components/InngestExecution";
 import { InngestFunction } from "@local/components/InngestFunction";
 import {
@@ -770,8 +773,6 @@ describe("runFn", () => {
       })
     );
 
-    let firstRun = true;
-
     testFn(
       "throws a NonRetriableError when one is thrown inside a step",
       () => {
@@ -792,7 +793,7 @@ describe("runFn", () => {
       {
         A: "A",
       },
-      ({ A }) => ({
+      () => ({
         "first run executes A, which throws a NonRetriable error": {
           expectedReturn: {
             type: "function-rejected",
