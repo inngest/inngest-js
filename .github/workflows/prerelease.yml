@@ -25,6 +25,8 @@ jobs:
         working-directory: packages/inngest
         env:
           TAG: pr-${{ github.event.pull_request.number }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_ENV: test # disable npm access checks; they don't work in CI
 
       - name: Update PR with latest prerelease
         uses: edumserrano/find-create-or-update-comment@v1
