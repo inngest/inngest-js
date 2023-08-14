@@ -5,7 +5,7 @@ import {
   type ServeHandler,
 } from "./components/InngestCommHandler";
 import { headerKeys, queryKeys } from "./helpers/consts";
-import { Either } from "./helpers/types";
+import { type Either } from "./helpers/types";
 import { type SupportedFrameworkName } from "./types";
 
 export const name: SupportedFrameworkName = "express";
