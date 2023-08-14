@@ -26,7 +26,7 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
       req: Either<Request, VercelRequest>,
       _res: Either<Response, VercelResponse>
     ) => {
-      const hostname = req.headers["host"];
+      const hostname = req.hostname || req.headers["host"] || opts?.serveHost;
 
       const protocol = hostname?.includes("://")
         ? ""
