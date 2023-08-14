@@ -34,6 +34,7 @@ jobs:
       - name: Update PR with latest prerelease
         uses: edumserrano/find-create-or-update-comment@v1
         with:
+          token: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
           issue-number: ${{ github.event.pull_request.number }}
           body-includes: '<!-- pr-prerelease-comment -->'
           comment-author: 'inngest-release-bot'
