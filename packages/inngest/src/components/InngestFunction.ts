@@ -268,7 +268,7 @@ export class InngestFunction<
           Record<string, (...args: unknown[]) => unknown>
         >
       >,
-      "event" | "events" | "runId"
+      "event" | "events" | "runId" | "attempt"
     >;
 
     const hookStack = await getHookStack(
