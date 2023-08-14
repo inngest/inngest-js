@@ -1,0 +1,46 @@
+name: Prelease
+
+on:
+  pull_request:
+    types: [labeled, unlabeled, opened, reopened, synchronize]
+
+concurrency: ${{ github.workflow }}
+
+jobs:
+  prelease:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    if: contains(github.event.pull_request.labels.*.name, 'prerelease/inngest')
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-and-build
+
+      - name: Prerelease PR
+        run: node scripts/prerelease.js
+        working-directory: packages/inngest
+        env:
+          TAG: pr-${{ github.event.pull_request.number }}
+
+      - name: Update PR with latest prerelease
+        uses: edumserrano/find-create-or-update-comment@v1
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: '<!-- pr-prerelease-comment -->'
+          comment-author: 'inngest-release-bot'
+          body: | # can be a single value or you can compose text with multi-line values
+            <!-- pr-prerelease-comment -->
+            A user has added the <kbd>[prerelease/inngest](https://github.com/inngest/inngest-js/labels/prerelease%2Finngest)</kbd> label, so this PR will be published to npm with the tag `pr-${{ github.event.pull_request.number }}`. It will be updated with the latest changes as you push commits to this PR.
+
+            You can install this prerelease version with:
+
+            ```sh
+            npm install inngest@pr-${{ github.event.pull_request.number }}
+            ```
+
+            The last release was built and published from ${{ github.event.pull_request.head.sha }}.
+          edit-mode: replace
