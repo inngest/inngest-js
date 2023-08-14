@@ -662,7 +662,7 @@ export interface FunctionOptions<
    *
    * Specifying just a number means specifying only the concurrency limit.
    */
-  concurrency?: number | { limit: number };
+  concurrency?: number | { limit: number; key?: string };
 
   /**
    * batchEvents specifies the batch configuration on when this function
