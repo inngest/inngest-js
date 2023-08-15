@@ -112,6 +112,10 @@ export const createStepTools = <
     }
   ): T => {
     return (async (...args: Parameters<T>): Promise<unknown> => {
+      if (!state.hasSteps && opts?.nonStepExecuteInline && opts.fn) {
+        return Promise.resolve(opts.fn(...args));
+      }
+
       if (state.executingStep) {
         /**
          * TODO This could also happen as we could now be resolving steps from
@@ -144,6 +148,7 @@ export const createStepTools = <
         fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
         fulfilled: Boolean(state.stepState[opId.id]),
       });
+      state.hasSteps = true;
 
       pushStepToReport(step);
 

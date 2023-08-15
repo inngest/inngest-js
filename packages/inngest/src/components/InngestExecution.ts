@@ -476,6 +476,7 @@ export class InngestExecution {
       stepState,
       steps: {},
       loop,
+      hasSteps: Boolean(Object.keys(stepState).length),
       setCheckpoint: (checkpoint: Checkpoint) => {
         ({ promise: checkpointPromise, resolve: checkpointResolve } =
           checkpointResolve(checkpoint));
@@ -662,6 +663,13 @@ export interface ExecutionState {
    * specific step to run, so we need to store the function to run here.
    */
   steps: Record<string, FoundStep>;
+
+  /**
+   * A flag which represents whether or not steps are understood to be used in
+   * this function. This is used to determine whether or not we should run
+   * some steps (such as `step.sendEvent`) inline as they are found.
+   */
+  hasSteps: boolean;
 
   /**
    * The core loop - a generator used to take an action upon finding the next
