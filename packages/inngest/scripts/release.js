@@ -15,7 +15,7 @@ const {
   publishConfig: { registry },
 } = require("../package.json");
 console.log("version:", version);
-const tag = `v${version}`;
+const tag = `inngest@${version}`;
 console.log("tag:", tag);
 
 const [, tagEnd = ""] = version.split("-");
