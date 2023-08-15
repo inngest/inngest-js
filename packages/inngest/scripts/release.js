@@ -22,9 +22,13 @@ const [, tagEnd = ""] = version.split("-");
 const distTag = tagEnd.split(".")[0] || "latest";
 console.log("distTag:", distTag);
 
-const rootDir = path.join(__dirname, "..");
-const distDir = path.join(rootDir, "dist");
-process.chdir(rootDir);
+const packageRootDir = path.join(__dirname, "..");
+console.log("package root:", packageRootDir);
+const repoRootDir = path.join(packageRootDir, "..", "..");
+console.log("repo root:", repoRootDir);
+const distDir = path.join(packageRootDir, "dist");
+console.log("dist dir:", distDir);
+process.chdir(packageRootDir);
 
 const exec = async (...args) => {
   const exitCode = await rawExec(...args);
@@ -113,7 +117,7 @@ const exec = async (...args) => {
 
   // Tag and push the release commit
   console.log('running "changeset tag" to tag the release commit');
-  await exec("changeset", ["tag"]);
+  await exec("changeset", ["tag"], { cwd: repoRootDir });
 
   console.log(`pushing git tags to origin/${branch}`);
   await exec("git", ["push", "--follow-tags", "origin", branch]);
