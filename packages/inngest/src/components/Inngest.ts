@@ -78,10 +78,14 @@ export type AnyInngest = Inngest<any>;
  */
 export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   /**
-   * The name of this instance, most commonly the name of the application it
+   * The ID of this instance, most commonly a reference to the application it
    * resides in.
+   *
+   * The ID of your client should remain the same for its lifetime; if you'd
+   * like to change the name of your client as it appears in the Inngest UI,
+   * change the `name` property instead.
    */
-  public readonly name: string;
+  public readonly id: string;
 
   /**
    * Inngest event key, used to send events to Inngest Cloud.
@@ -133,7 +137,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    * ```
    */
   constructor({
-    name,
+    id,
     eventKey,
     inngestBaseUrl = "https://inn.gs/",
     fetch,
@@ -141,12 +145,12 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     logger = new DefaultLogger(),
     middleware,
   }: TOpts) {
-    if (!name) {
+    if (!id) {
       // TODO PrettyError
-      throw new Error("A name must be passed to create an Inngest instance.");
+      throw new Error("An `id` must be passed to create an Inngest instance.");
     }
 
-    this.name = name;
+    this.id = id;
     this.inngestBaseUrl = new URL(inngestBaseUrl);
     this.setEventKey(eventKey || processEnv(envKeys.EventKey) || "");
 

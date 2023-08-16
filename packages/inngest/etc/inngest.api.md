@@ -13,6 +13,7 @@ export interface ClientOptions {
     env?: string;
     eventKey?: string;
     fetch?: typeof fetch;
+    id: string;
     inngestBaseUrl?: string;
     // Warning: (ae-forgotten-export) The symbol "Logger" needs to be exported by the entry point index.d.ts
     logger?: Logger;
@@ -20,7 +21,6 @@ export interface ClientOptions {
     //
     // (undocumented)
     middleware?: MiddlewareStack;
-    name: string;
     schemas?: EventSchemas<Record<string, EventPayload>>;
 }
 
@@ -131,7 +131,7 @@ export enum headerKeys {
 
 // @public
 export class Inngest<TOpts extends ClientOptions = ClientOptions> {
-    constructor({ name, eventKey, inngestBaseUrl, fetch, env, logger, middleware, }: TOpts);
+    constructor({ id, eventKey, inngestBaseUrl, fetch, env, logger, middleware, }: TOpts);
     // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "ExclusiveKeys" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
@@ -154,8 +154,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     NonNullable<TOpts["middleware"]>,
     TMiddleware
     ]>>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
+    readonly id: string;
     readonly inngestBaseUrl: URL;
-    readonly name: string;
     // Warning: (ae-forgotten-export) The symbol "SendEventPayload" needs to be exported by the entry point index.d.ts
     send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(payload: Payload): Promise<void>;
     setEventKey(
@@ -171,7 +171,7 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     constructor(
     frameworkName: string,
     client: AnyInngest,
-    functions: AnyInngestFunction[], { inngestRegisterUrl, fetch, logLevel, signingKey, serveHost, servePath, streaming, name, }: RegisterOptions | undefined,
+    functions: AnyInngestFunction[], { inngestRegisterUrl, fetch, logLevel, signingKey, serveHost, servePath, streaming, id, }: RegisterOptions | undefined,
     handler: H,
     transformRes: TResTransform,
     streamTransformRes?: TStreamTransform);
@@ -182,10 +182,10 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     createHandler(): (...args: Parameters<H>) => Promise<Awaited<ReturnType<TResTransform>>>;
     protected readonly frameworkName: string;
     readonly handler: H;
+    readonly id: string;
     protected _isProd: boolean;
     protected log(level: LogLevel, ...args: unknown[]): void;
     protected readonly logLevel: LogLevel;
-    readonly name: string;
     // (undocumented)
     protected register(url: URL, devServerHost: string | undefined, deployId: string | undefined | null, getHeaders: () => Record<string, string>): Promise<{
         status: number;
@@ -291,11 +291,11 @@ export enum queryKeys {
 // @public
 export interface RegisterOptions {
     fetch?: typeof fetch;
+    id?: string;
     inngestRegisterUrl?: string;
     // @deprecated
     landingPage?: boolean;
     logLevel?: LogLevel;
-    name?: string;
     serveHost?: string;
     servePath?: string;
     signingKey?: string;
@@ -352,7 +352,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:330:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:340:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/types.ts:54:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:703:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:707:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

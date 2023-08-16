@@ -43,7 +43,7 @@ type TestEvents = {
 const schemas = new EventSchemas().fromRecord<TestEvents>();
 
 const opts = (<T extends ClientOptions>(x: T): T => x)({
-  name: "test",
+  id: "test",
   eventKey: "event-key-123",
   schemas,
 });
@@ -64,7 +64,7 @@ describe("#generateID", () => {
   it("Returns a correct name", () => {
     const fn = () =>
       new InngestFunction(
-        createClient({ name: "test" }),
+        createClient({ id: "test" }),
         { name: "HELLO 👋 there mr Wolf 🥳!" },
         { event: "test/event.name" },
         () => undefined
@@ -1081,7 +1081,7 @@ describe("runFn", () => {
   describe("onFailure functions", () => {
     describe("types", () => {
       describe("no custom types", () => {
-        const inngest = createClient({ name: "test" });
+        const inngest = createClient({ id: "test" });
 
         test("onFailure function has unknown internal event", () => {
           inngest.createFunction(
@@ -1103,7 +1103,7 @@ describe("runFn", () => {
 
       describe("multiple custom types", () => {
         const inngest = createClient({
-          name: "test",
+          id: "test",
           schemas: new EventSchemas().fromRecord<{
             foo: {
               name: "foo";
@@ -1139,7 +1139,7 @@ describe("runFn", () => {
       });
 
       describe("passed fns have correct types", () => {
-        const inngest = createClient({ name: "test" });
+        const inngest = createClient({ id: "test" });
 
         const lib = {
           foo: true,
@@ -1184,7 +1184,7 @@ describe("runFn", () => {
 
     test("specifying an onFailure function registers correctly", () => {
       const inngest = createClient({
-        name: "test",
+        id: "test",
         schemas: new EventSchemas().fromRecord<{
           foo: {
             name: "foo";
@@ -1258,7 +1258,7 @@ describe("runFn", () => {
   describe("cancellation", () => {
     describe("types", () => {
       describe("no custom types", () => {
-        const inngest = createClient({ name: "test" });
+        const inngest = createClient({ id: "test" });
 
         test("allows any event name", () => {
           inngest.createFunction(
@@ -1286,7 +1286,7 @@ describe("runFn", () => {
 
       describe("multiple custom types", () => {
         const inngest = createClient({
-          name: "test",
+          id: "test",
           schemas: new EventSchemas().fromRecord<{
             foo: {
               name: "foo";
@@ -1359,7 +1359,7 @@ describe("runFn", () => {
 
     test("specifying a cancellation event registers correctly", () => {
       const inngest = createClient({
-        name: "test",
+        id: "test",
         schemas: new EventSchemas().fromRecord<{
           foo: {
             name: "foo";

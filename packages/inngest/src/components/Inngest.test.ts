@@ -33,20 +33,20 @@ describe("instantiation", () => {
     });
 
     test("should log a warning if event key not specified", () => {
-      createClient({ name: "test" });
+      createClient({ id: "test" });
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining("Could not find event key")
       );
     });
 
     test("should not log a warning if event key is specified", () => {
-      createClient({ name: "test", eventKey: testEventKey });
+      createClient({ id: "test", eventKey: testEventKey });
       expect(warnSpy).not.toHaveBeenCalled();
     });
 
     test("should not log a warning if event key is specified in env", () => {
       process.env[envKeys.EventKey] = testEventKey;
-      createClient({ name: "test" });
+      createClient({ id: "test" });
       expect(warnSpy).not.toHaveBeenCalled();
     });
   });
@@ -81,7 +81,7 @@ describe("send", () => {
     });
 
     test("should fail to send if event key not specified at instantiation", async () => {
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
 
       await expect(() => inngest.send(testEvent)).rejects.toThrowError(
         "Failed to send event"
@@ -89,7 +89,7 @@ describe("send", () => {
     });
 
     test("should succeed if event key specified at instantiation", async () => {
-      const inngest = createClient({ name: "test", eventKey: testEventKey });
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       await expect(inngest.send(testEvent)).resolves.toBeUndefined();
 
@@ -104,7 +104,7 @@ describe("send", () => {
 
     test("should succeed if event key specified in env", async () => {
       process.env[envKeys.EventKey] = testEventKey;
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
 
       await expect(inngest.send(testEvent)).resolves.toBeUndefined();
 
@@ -118,7 +118,7 @@ describe("send", () => {
     });
 
     test("should succeed if event key given at runtime", async () => {
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
       inngest.setEventKey(testEventKey);
 
       await expect(inngest.send(testEvent)).resolves.toBeUndefined();
@@ -133,7 +133,7 @@ describe("send", () => {
     });
 
     test("should succeed if an empty list of payloads is given", async () => {
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
       inngest.setEventKey(testEventKey);
 
       await expect(inngest.send([])).resolves.toBeUndefined();
@@ -142,7 +142,7 @@ describe("send", () => {
 
     test("should send env:foo if explicitly set", async () => {
       const inngest = createClient({
-        name: "test",
+        id: "test",
         eventKey: testEventKey,
         env: "foo",
       });
@@ -164,7 +164,7 @@ describe("send", () => {
       process.env[envKeys.Environment] = "foo";
 
       const inngest = createClient({
-        name: "test",
+        id: "test",
         eventKey: testEventKey,
       });
 
@@ -185,7 +185,7 @@ describe("send", () => {
       process.env[envKeys.Environment] = "bar";
 
       const inngest = createClient({
-        name: "test",
+        id: "test",
         eventKey: testEventKey,
         env: "foo",
       });
@@ -207,7 +207,7 @@ describe("send", () => {
       process.env[envKeys.VercelBranch] = "foo";
 
       const inngest = createClient({
-        name: "test",
+        id: "test",
         eventKey: testEventKey,
       });
 
@@ -225,7 +225,7 @@ describe("send", () => {
     });
 
     test("should insert `ts` timestamp ", async () => {
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
       inngest.setEventKey(testEventKey);
 
       const testEventWithoutTs = {
@@ -256,7 +256,7 @@ describe("send", () => {
 
     test("should allow middleware to mutate input", async () => {
       const inngest = createClient({
-        name: "test",
+        id: "test",
         eventKey: testEventKey,
         middleware: [
           new InngestMiddleware({
@@ -303,7 +303,7 @@ describe("send", () => {
 
   describe("types", () => {
     describe("no custom types", () => {
-      const inngest = createClient({ name: "test", eventKey: testEventKey });
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       test("allows sending a single event with an object", () => {
         const _fn = () => inngest.send({ name: "anything", data: "foo" });
@@ -320,7 +320,7 @@ describe("send", () => {
 
     describe("multiple custom types", () => {
       const inngest = createClient({
-        name: "test",
+        id: "test",
         eventKey: testEventKey,
         schemas: new EventSchemas().fromRecord<{
           foo: {
@@ -401,7 +401,7 @@ describe("send", () => {
 describe("createFunction", () => {
   describe("types", () => {
     describe("function input", () => {
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
 
       test("has attempt number", () => {
         inngest.createFunction(
@@ -420,7 +420,7 @@ describe("createFunction", () => {
     });
 
     describe("no custom types", () => {
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
 
       test("allows name to be a string", () => {
         inngest.createFunction("test", { event: "test" }, ({ event }) => {
@@ -526,7 +526,7 @@ describe("createFunction", () => {
 
     describe("multiple custom types", () => {
       const inngest = createClient({
-        name: "test",
+        id: "test",
         schemas: new EventSchemas().fromRecord<{
           foo: {
             name: "foo";

@@ -163,11 +163,11 @@ export class InngestCommHandler<
   any
 > {
   /**
-   * The name of this serve handler, e.g. `"My App"`. It's recommended that this
+   * The ID of this serve handler, e.g. `"my-app"`. It's recommended that this
    * value represents the overarching app/service that this set of functions is
    * being served from.
    */
-  public readonly name: string;
+  public readonly id: string;
 
   /**
    * The handler specified during instantiation of the class.
@@ -314,7 +314,7 @@ export class InngestCommHandler<
       serveHost,
       servePath,
       streaming,
-      name,
+      id,
     }: RegisterOptions = {},
 
     /**
@@ -397,7 +397,7 @@ export class InngestCommHandler<
   ) {
     this.frameworkName = frameworkName;
     this.client = client;
-    this.name = name || this.client.name;
+    this.id = id || this.client.id;
 
     this.handler = handler;
     this.transformRes = transformRes;
@@ -425,10 +425,7 @@ export class InngestCommHandler<
     this.fns = this.rawFns.reduce<
       Record<string, { fn: InngestFunction; onFailure: boolean }>
     >((acc, fn) => {
-      const configs = fn["getConfig"](
-        new URL("https://example.com"),
-        this.name
-      );
+      const configs = fn["getConfig"](new URL("https://example.com"), this.id);
 
       const fns = configs.reduce((acc, { id }, index) => {
         return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
@@ -799,7 +796,7 @@ export class InngestCommHandler<
 
   protected configs(url: URL): FunctionConfig[] {
     return Object.values(this.rawFns).reduce<FunctionConfig[]>(
-      (acc, fn) => [...acc, ...fn["getConfig"](url, this.name)],
+      (acc, fn) => [...acc, ...fn["getConfig"](url, this.id)],
       []
     );
   }
@@ -830,7 +827,7 @@ export class InngestCommHandler<
       url: url.href,
       deployType: "ping",
       framework: this.frameworkName,
-      appName: this.name,
+      appName: this.id,
       functions: this.configs(url),
       sdk: `js:v${version}`,
       v: "0.1",

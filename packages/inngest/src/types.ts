@@ -410,10 +410,14 @@ export type Step<TContext = unknown> = (
  */
 export interface ClientOptions {
   /**
-   * The name of this instance, most commonly the name of the application it
+   * The ID of this instance, most commonly a reference to the application it
    * resides in.
+   *
+   * The ID of your client should remain the same for its lifetime; if you'd
+   * like to change the name of your client as it appears in the Inngest UI,
+   * change the `name` property instead.
    */
-  name: string;
+  id: string;
 
   /**
    * Inngest event key, used to send events to Inngest Cloud. If not provided,
@@ -617,10 +621,10 @@ export interface RegisterOptions {
   streaming?: "allow" | "force" | false;
 
   /**
-   * The name of this app as it will be seen in the Inngest dashboard. Will use
-   * the name of the client passed if not provided.
+   * The ID of this app. This is used to group functions together in the Inngest
+   * UI. The ID of the passed client is used by default.
    */
-  name?: string;
+  id?: string;
 }
 
 /**

@@ -7,7 +7,7 @@ import { z } from "zod";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Schemas<T extends EventSchemas<any>> = GetEvents<
-  Inngest<{ name: "test"; schemas: T }>
+  Inngest<{ id: "test"; schemas: T }>
 >;
 
 describe("EventSchemas", () => {
@@ -402,7 +402,7 @@ describe("EventSchemas", () => {
       }>();
 
       const inngest = new Inngest({
-        name: "test",
+        id: "test",
         schemas,
         eventKey: "test-key-123",
       });
@@ -425,7 +425,7 @@ describe("EventSchemas", () => {
       }>();
 
       const inngest = new Inngest({
-        name: "test",
+        id: "test",
         schemas,
         eventKey: "test-key-123",
       });
@@ -450,7 +450,7 @@ describe("EventSchemas", () => {
       }>();
 
       const inngest = new Inngest({
-        name: "test",
+        id: "test",
         schemas,
         eventKey: "test-key-123",
       });
@@ -478,7 +478,7 @@ describe("EventSchemas", () => {
       }>();
 
       const inngest = new Inngest({
-        name: "test",
+        id: "test",
         schemas,
         eventKey: "test-key-123",
       });
@@ -506,7 +506,7 @@ describe("EventSchemas", () => {
       }>();
 
       const inngest = new Inngest({
-        name: "test",
+        id: "test",
         schemas,
         eventKey: "test-key-123",
       });
