@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -72,6 +72,7 @@
     "@types/sha.js": "^2.4.0",
     "@typescript-eslint/eslint-plugin": "^5.47.0",
     "@typescript-eslint/parser": "^5.47.0",
+    "@vercel/node": "^2.15.9",
     "concurrently": "^7.4.0",
     "eslint": "^8.30.0",
     "eslint-config-prettier": "^8.5.0",
