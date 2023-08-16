@@ -1,8 +1,0 @@
-{
-  "compilerOptions": {
-    "paths": {
-      "inngest": ["../../packages/inngest/dist"],
-      "@local/*": ["../../packages/inngest/src/*"],
-    }
-  }
-}

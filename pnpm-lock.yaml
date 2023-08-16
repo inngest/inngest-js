@@ -15,12 +15,6 @@ importers:
         specifier: ^2.26.2
         version: 2.26.2
 
-  examples/functions:
-    devDependencies:
-      '@types/jest':
-        specifier: ^27.4.1
-        version: 27.4.1
-
   packages/eslint-plugin-internal:
     dependencies:
       eslint:
