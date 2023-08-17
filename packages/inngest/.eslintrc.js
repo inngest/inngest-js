@@ -30,7 +30,7 @@ module.exports = {
   },
   overrides: [
     {
-      files: ["src/**/*.ts"],
+      files: ["src/**/*.ts", "scripts/**/*.ts"],
       excludedFiles: [
         "*.d.ts",
         "*.test.ts",
