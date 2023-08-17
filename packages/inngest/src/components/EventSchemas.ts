@@ -41,15 +41,24 @@ export type ExcludeEmptyZodLiterals<T> = T extends LiteralZodEventSchemas
   : T;
 
 /**
+ * A literal Zod schema, which is a Zod schema that has a literal string as the
+ * event name. This can be used to create correct Zod schemas outside of the
+ * `EventSchemas` class.
+ *
+ * @public
+ */
+export type LiteralZodEventSchema = z.ZodObject<{
+  name: z.ZodLiteral<string>;
+  data: z.AnyZodObject | z.ZodAny;
+  user?: z.AnyZodObject | z.ZodAny;
+}>;
+
+/**
  * An array of literal zod event schemas.
  *
  * @public
  */
-export type LiteralZodEventSchemas = z.ZodObject<{
-  name: z.ZodLiteral<string>;
-  data: z.AnyZodObject | z.ZodAny;
-  user?: z.AnyZodObject | z.ZodAny;
-}>[];
+export type LiteralZodEventSchemas = LiteralZodEventSchema[];
 
 /**
  * A helper type that declares a standardised custom part of the event schema,
