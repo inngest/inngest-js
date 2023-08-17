@@ -25,6 +25,33 @@ export type StandardEventSchema = {
 export type StandardEventSchemas = Record<string, StandardEventSchema>;
 
 /**
+ * A helper type that ensures users cannot declare a literal Zod schema with
+ * an empty string as the event name.
+ *
+ * @public
+ */
+export type ExcludeEmptyZodLiterals<T> = T extends LiteralZodEventSchemas
+  ? {
+      [I in keyof T]: T[I] extends z.ZodObject<infer U extends z.ZodRawShape>
+        ? U extends { name: z.ZodLiteral<""> }
+          ? "ERROR: Empty event names are now allowed."
+          : T[I]
+        : never;
+    }
+  : T;
+
+/**
+ * An array of literal zod event schemas.
+ *
+ * @public
+ */
+export type LiteralZodEventSchemas = z.ZodObject<{
+  name: z.ZodLiteral<string>;
+  data: z.AnyZodObject | z.ZodAny;
+  user?: z.AnyZodObject | z.ZodAny;
+}>[];
+
+/**
  * A helper type that declares a standardised custom part of the event schema,
  * defined using Zod.
  *
@@ -37,6 +64,66 @@ export type ZodEventSchemas = Record<
     user?: z.AnyZodObject | z.ZodAny;
   }
 >;
+
+/**
+ * A helper type that takes a union of Zod schemas and extracts the literal
+ * matching event from the given schemas. Required when picking out types from
+ * a union that require inference to work.
+ *
+ * @public
+ */
+export type PickLiterals<T> = {
+  [K in keyof T]: Extract<T[K], { name: z.ZodLiteral<K> }>;
+};
+
+/**
+ * A helper type to extract the name from a given literal Zod schema.
+ *
+ * @public
+ */
+export type GetName<T> = T extends z.ZodObject<infer U extends z.ZodRawShape>
+  ? U extends { name: z.ZodLiteral<infer S extends string> }
+    ? S
+    : never
+  : never;
+
+/**
+ * Given an input T, infer the shape of the Zod schema if that input is a Zod
+ * object.
+ *
+ * @public
+ */
+export type InferZodShape<T> = T extends z.AnyZodObject ? T["shape"] : never;
+
+/**
+ * Given a set of literal Zod schemas, convert them into a record of Zod schemas
+ * with the literal name as the key.
+ *
+ * @public
+ */
+export type LiteralToRecordZodSchemas<T> = PickLiterals<
+  T extends LiteralZodEventSchemas
+    ? {
+        [I in keyof T as GetName<T[I]>]: InferZodShape<T[I]>;
+      }
+    : T extends ZodEventSchemas
+    ? T
+    : never
+>;
+
+/**
+ * Given a set of Zod schemas in a record format, convert them into a standard
+ * event schema format.
+ *
+ * @public
+ */
+export type ZodToStandardSchema<T extends ZodEventSchemas> = {
+  [EventName in keyof T & string]: {
+    [Key in keyof T[EventName] & string]: T[EventName][Key] extends z.ZodTypeAny
+      ? z.infer<T[EventName][Key]>
+      : T[EventName][Key];
+  };
+};
 
 /**
  * A helper type to convert input schemas into the format expected by the
@@ -187,19 +274,16 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
    * });
    * ```
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public fromZod<T extends ZodEventSchemas>(schemas: T) {
+  public fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    schemas: ExcludeEmptyZodLiterals<T>
+  ) {
     return new EventSchemas<
       Combine<
         S,
-        {
-          [EventName in keyof T & string]: {
-            [Key in keyof T[EventName] &
-              string]: T[EventName][Key] extends z.ZodTypeAny
-              ? z.infer<T[EventName][Key]>
-              : T[EventName][Key];
-          };
-        }
+        ZodToStandardSchema<
+          T extends ZodEventSchemas ? T : LiteralToRecordZodSchemas<T>
+        >
       >
     >();
   }
