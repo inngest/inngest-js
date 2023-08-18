@@ -112,7 +112,7 @@ jobs:
 
       - id: matrix
         run: |
-          echo "matrix=$(find examples/apps -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+          echo "matrix=$(find examples -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
 
   examples:
     name: Test examples
@@ -136,17 +136,17 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: inngestpkg
-          path: examples/apps/${{ matrix.example }}
+          path: examples/${{ matrix.example }}
 
       # Install dependencies in the example repo
       # Don't use "npm ci", "--immutable" etc., as example repos won't be
       # shipped with lock files.
       - name: Install example dependencies
         run: npm install
-        working-directory: examples/apps/${{ matrix.example }}
+        working-directory: examples/${{ matrix.example }}
 
       - name: Add local SDK to example
-        working-directory: examples/apps/${{ matrix.example }}
+        working-directory: examples/${{ matrix.example }}
         run: npm install ./inngest.tgz
 
       # Copy any SDK function examples to the example repo so that we're always
@@ -154,27 +154,27 @@ jobs:
       - name: Find inngest functions path in example
         id: inngest-functions-path
         run: echo "dir=$(dirname $(echo \"$(git ls-files | grep inngest/index.ts)))\"" >> $GITHUB_OUTPUT
-        working-directory: examples/apps/${{ matrix.example }}
+        working-directory: examples/${{ matrix.example }}
       - name: Remove any existing inngest functions
         run: rm -rf ${{ steps.inngest-functions-path.outputs.dir }}
-        working-directory: examples/apps/${{ matrix.example }}
+        working-directory: examples/${{ matrix.example }}
       - name: Copy functions to test to example
-        run: cp -Tr ../../../examples/functions/ ${{ steps.inngest-functions-path.outputs.dir }}
-        working-directory: examples/apps/${{ matrix.example }}
+        run: cp -Tr ../../packages/inngest/src/test/functions/ ${{ steps.inngest-functions-path.outputs.dir }}
+        working-directory: examples/${{ matrix.example }}
       # Rules for every project can be different; ignore the example functions
       # we've just added.
       - name: Ignore ESLint in example functions
         run: echo '**/inngest/**' >> .eslintignore
-        working-directory: examples/apps/${{ matrix.example }}
+        working-directory: examples/${{ matrix.example }}
 
       # Try to build the example
       - name: Build the example
         run: npm run build
-        working-directory: examples/apps/${{ matrix.example }}
+        working-directory: examples/${{ matrix.example }}
 
       - name: Run the Inngest dev server
         run: npx inngest-cli@latest dev > cli.log 2>&1 &
-        working-directory: examples/apps/${{ matrix.example }}
+        working-directory: examples/${{ matrix.example }}
         env:
           DO_NOT_TRACK: 1
       - name: Wait for the Inngest dev server to start
@@ -186,7 +186,7 @@ jobs:
       # Run the example
       - name: Run the example's dev server
         run: (npm run dev > dev.log 2>&1 &)
-        working-directory: examples/apps/${{ matrix.example }}
+        working-directory: examples/${{ matrix.example }}
         # Provide the example any env vars it might need
         env:
           PORT: 3000
@@ -208,8 +208,8 @@ jobs:
 
       - if: ${{ always() }}
         run: cat dev.log
-        working-directory: examples/apps/${{ matrix.example }}
+        working-directory: examples/${{ matrix.example }}
 
       - if: ${{ always() }}
         run: cat cli.log
-        working-directory: examples/apps/${{ matrix.example }}
+        working-directory: examples/${{ matrix.example }}

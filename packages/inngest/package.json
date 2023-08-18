@@ -13,7 +13,7 @@
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
     "build": "pnpm run clean && tsc --project tsconfig.build.json",
     "test": "jest --silent --logHeapUsage --maxWorkers=8 --coverage --ci",
-    "test:examples": "jest --logHeapUsage --maxWorkers=8 --testMatch \"**/examples/**/*.test.ts\" --ci --verbose",
+    "test:examples": "jest --logHeapUsage --maxWorkers=8 --testMatch \"**/test/functions/**/*.test.ts\" --ci --verbose",
     "test:types": "tsc --noEmit --project tsconfig.types.json --listFiles",
     "clean": "rm -rf ./dist",
     "lint": "eslint .",

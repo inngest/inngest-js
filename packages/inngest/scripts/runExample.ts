@@ -21,11 +21,11 @@ const exec = (
 const argv = minimist(process.argv.slice(2));
 
 const inngestPath = path.join(__dirname, "..");
-const examplesPath = path.join(__dirname, "..", "..", "..", "examples", "apps");
+const examplesPath = path.join(__dirname, "..", "..", "..", "examples");
 
 const examples: string[] = fs
   .readdirSync(examplesPath, { withFileTypes: true })
-  .filter((file) => file.isDirectory() && file.name.startsWith("framework-"))
+  .filter((file) => file.isDirectory())
   .map((file) => file.name);
 
 const exampleFromFlag: string = (argv.example as string) ?? "";
