@@ -63,6 +63,8 @@
     "@inngest/eslint-plugin-internal": "workspace:^",
     "@jest/globals": "^29.5.0",
     "@microsoft/api-extractor": "^7.33.7",
+    "@sveltejs/kit": "^1.22.6",
+    "@total-typescript/shoehorn": "^0.1.1",
     "@types/aws-lambda": "^8.10.108",
     "@types/express": "^4.17.13",
     "@types/inquirer": "^9.0.3",
