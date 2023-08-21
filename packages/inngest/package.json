@@ -8,7 +8,6 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "preinstall": "npx only-allow pnpm",
     "prebuild": "pnpm run pb:version",
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
     "build": "pnpm run clean && tsc --project tsconfig.build.json",
