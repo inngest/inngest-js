@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -8,7 +8,6 @@
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
-    "preinstall": "npx only-allow pnpm",
     "prebuild": "pnpm run pb:version",
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
     "build": "pnpm run clean && tsc --project tsconfig.build.json",
