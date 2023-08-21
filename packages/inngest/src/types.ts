@@ -630,17 +630,15 @@ export interface RegisterOptions {
 /**
  * A user-friendly method of specifying a trigger for an Inngest function.
  */
-export type TriggerOptions<T extends string> =
-  | T
-  | StrictUnion<
-      | {
-          event: T;
-          if?: string;
-        }
-      | {
-          cron: string;
-        }
-    >;
+export type TriggerOptions<T extends string> = StrictUnion<
+  | {
+      event: T;
+      if?: string;
+    }
+  | {
+      cron: string;
+    }
+>;
 
 /**
  * A set of options for configuring an Inngest function.
@@ -652,30 +650,19 @@ export interface FunctionOptions<
   Event extends keyof Events & string
 > {
   /**
-   * An optional unique ID used to identify the function. This is used
-   * internally for versioning and referring to your function, so should not
-   * change between deployments.
+   * An unique ID used to identify the function. This is used internally for
+   * versioning and referring to your function, so should not change between
+   * deployments.
    *
-   * By default, this is a slugified version of the given `name`, e.g.
-   * `"My FN :)"` would be slugified to `"my-fn"`.
-   *
-   * If you are not specifying an ID and get a warning about duplicate
-   * functions, make sure to explicitly set an ID for the duplicate or change
-   * the name.
+   * If you'd like to set a prettier name for your function, use the `name`
+   * option.
    */
-  id?: string;
+  id: string;
 
   /**
    * A name for the function as it will appear in the Inngest Cloud UI.
-   *
-   * This is used to create a slugified ID for the function too, e.g.
-   * `"My FN :)"` would create a slugified ID of `"my-fn"`.
-   *
-   * If you are not specifying an ID and get a warning about duplicate
-   * functions, make sure to explicitly set an ID for the duplicate or change
-   * the name.
    */
-  name: string;
+  name?: string;
 
   /**
    * Concurrency specifies a limit on the total number of concurrent steps that
@@ -948,7 +935,7 @@ export type FunctionTrigger<T = string> =
  * @internal
  */
 export interface FunctionConfig {
-  name: string;
+  name?: string;
   id: string;
   triggers: FunctionTrigger[];
   steps: Record<

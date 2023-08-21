@@ -60,20 +60,8 @@ const matchError = (err: any) => {
   });
 };
 
-describe("#generateID", () => {
-  it("Returns a correct name", () => {
-    const fn = () =>
-      new InngestFunction(
-        createClient({ id: "test" }),
-        { name: "HELLO 👋 there mr Wolf 🥳!" },
-        { event: "test/event.name" },
-        () => undefined
-      );
-    expect(fn().id("MY MAGIC APP 🥳!")).toEqual(
-      "my-magic-app-hello-there-mr-wolf"
-    );
-    expect(fn().id()).toEqual("hello-there-mr-wolf");
-  });
+describe("ID restrictions", () => {
+  it.todo("does not allow characters outside of the character set");
 });
 
 describe("runFn", () => {
@@ -113,7 +101,7 @@ describe("runFn", () => {
 
             fn = new InngestFunction(
               createClient(opts),
-              { name: "Foo" },
+              { id: "Foo" },
               { event: "foo" },
               flowFn
             );
@@ -148,7 +136,7 @@ describe("runFn", () => {
           beforeAll(() => {
             fn = new InngestFunction(
               createClient(opts),
-              { name: "Foo" },
+              { id: "Foo" },
               { event: "foo" },
               badFlowFn
             );
@@ -320,8 +308,8 @@ describe("runFn", () => {
         const B = jest.fn(() => "B");
 
         const fn = inngest.createFunction(
-          "name",
-          "foo",
+          { id: "name" },
+          { event: "foo" },
           async ({ step: { run } }) => {
             await run("A", A);
             await run("B", B);
@@ -391,8 +379,8 @@ describe("runFn", () => {
         const B = jest.fn(() => "B");
 
         const fn = inngest.createFunction(
-          "name",
-          "foo",
+          { id: "name" },
+          { event: "foo" },
           async ({ step: { waitForEvent, run } }) => {
             const foo = await waitForEvent("wait-id", "foo", "2h");
 
@@ -477,8 +465,8 @@ describe("runFn", () => {
         const C = jest.fn(() => "C");
 
         const fn = inngest.createFunction(
-          "name",
-          "foo",
+          { id: "name" },
+          { event: "foo" },
           async ({ step: { run } }) => {
             await Promise.all([run("A", A), run("B", B)]);
             await run("C", C);
@@ -644,8 +632,8 @@ describe("runFn", () => {
         const BFailed = jest.fn(() => "B failed");
 
         const fn = inngest.createFunction(
-          "name",
-          "foo",
+          { id: "name" },
+          { event: "foo" },
           async ({ step: { run } }) => {
             return Promise.all([
               run("A", A),
@@ -781,8 +769,8 @@ describe("runFn", () => {
         });
 
         const fn = inngest.createFunction(
-          { name: "Foo" },
-          "foo",
+          { id: "Foo" },
+          { event: "foo" },
           async ({ step: { run } }) => {
             await run("A", A);
           }
@@ -808,9 +796,13 @@ describe("runFn", () => {
     testFn(
       "throws a NonRetriableError when thrown inside the main function body",
       () => {
-        const fn = inngest.createFunction({ name: "Foo" }, "foo", async () => {
-          throw new NonRetriableError("Error");
-        });
+        const fn = inngest.createFunction(
+          { id: "Foo" },
+          { event: "foo" },
+          async () => {
+            throw new NonRetriableError("Error");
+          }
+        );
 
         return { fn, steps: {} };
       },
@@ -830,9 +822,13 @@ describe("runFn", () => {
     testFn(
       "throws a retriable error when a string is thrown inside the main function body",
       () => {
-        const fn = inngest.createFunction({ name: "Foo" }, "foo", async () => {
-          throw "foo";
-        });
+        const fn = inngest.createFunction(
+          { id: "Foo" },
+          { event: "foo" },
+          async () => {
+            throw "foo";
+          }
+        );
 
         return { fn, steps: {} };
       },
@@ -852,9 +848,13 @@ describe("runFn", () => {
     testFn(
       "throws a retriable error when an empty object is thrown inside the main function body",
       () => {
-        const fn = inngest.createFunction({ name: "Foo" }, "foo", async () => {
-          throw {};
-        });
+        const fn = inngest.createFunction(
+          { id: "Foo" },
+          { event: "foo" },
+          async () => {
+            throw {};
+          }
+        );
 
         return { fn, steps: {} };
       },
@@ -879,13 +879,13 @@ describe("runFn", () => {
 
         const fn = inngest.createFunction(
           {
-            name: "name",
+            id: "name",
             onFailure: async ({ step: { run } }) => {
               await run("A", A);
               await run("B", B);
             },
           },
-          "foo",
+          { event: "foo" },
           () => undefined
         );
 
@@ -976,8 +976,8 @@ describe("runFn", () => {
         });
 
         const fn = inngest.createFunction(
-          "name",
-          "foo",
+          { id: "name" },
+          { event: "foo" },
           async ({ step: { run }, logger }) => {
             assertType<IsEqual<Logger, typeof logger>>(true);
             logger.info("info1");
@@ -1086,7 +1086,7 @@ describe("runFn", () => {
         test("onFailure function has unknown internal event", () => {
           inngest.createFunction(
             {
-              name: "test",
+              id: "test",
               onFailure: ({ error, event }) => {
                 assertType<`${internalEvents.FunctionFailed}`>(event.name);
                 assertType<FailureEventPayload>(event);
@@ -1119,7 +1119,7 @@ describe("runFn", () => {
         test("onFailure function has known internal event", () => {
           inngest.createFunction(
             {
-              name: "test",
+              id: "test",
               onFailure: ({ error, event }) => {
                 assertType<`${internalEvents.FunctionFailed}`>(event.name);
                 assertType<FailureEventPayload>(event);
@@ -1151,7 +1151,7 @@ describe("runFn", () => {
         test("has shimmed fn types", () => {
           inngest.createFunction(
             {
-              name: "test",
+              id: "test",
               fns: { ...lib },
               onFailure: ({ fns: { qux } }) => {
                 assertType<Promise<string>>(qux("world"));
@@ -1167,7 +1167,7 @@ describe("runFn", () => {
         test.skip("has shimmed fn types that preserve generics", () => {
           inngest.createFunction(
             {
-              name: "test",
+              id: "test",
               fns: { ...lib },
               onFailure: ({ fns: { baz: _baz } }) => {
                 // assertType<Promise<"Hello, world!">>(baz("world"));
@@ -1183,8 +1183,10 @@ describe("runFn", () => {
     });
 
     test("specifying an onFailure function registers correctly", () => {
+      const clientId = "testclient";
+
       const inngest = createClient({
-        id: "test",
+        id: clientId,
         schemas: new EventSchemas().fromRecord<{
           foo: {
             name: "foo";
@@ -1199,7 +1201,7 @@ describe("runFn", () => {
 
       const fn = inngest.createFunction(
         {
-          name: "test",
+          id: "testfn",
           onFailure: () => {
             // no-op
           },
@@ -1213,19 +1215,19 @@ describe("runFn", () => {
       expect(fn).toBeInstanceOf(InngestFunction);
 
       const [fnConfig, failureFnConfig] = fn["getConfig"](
-        new URL("https://example.com")
+        new URL("https://example.com"),
+        clientId
       );
 
       expect(fnConfig).toMatchObject({
-        id: "test",
-        name: "test",
+        id: "testclient-testfn",
         steps: {
           [InngestFunction.stepId]: {
             id: InngestFunction.stepId,
             name: InngestFunction.stepId,
             runtime: {
               type: "http",
-              url: `https://example.com/?fnId=test&stepId=${InngestFunction.stepId}`,
+              url: `https://example.com/?fnId=testclient-testfn&stepId=${InngestFunction.stepId}`,
             },
           },
         },
@@ -1233,22 +1235,21 @@ describe("runFn", () => {
       });
 
       expect(failureFnConfig).toMatchObject({
-        id: "test-failure",
-        name: "test (failure)",
+        id: "testclient-testfn-failure",
         steps: {
           [InngestFunction.stepId]: {
             id: InngestFunction.stepId,
             name: InngestFunction.stepId,
             runtime: {
               type: "http",
-              url: `https://example.com/?fnId=test-failure&stepId=${InngestFunction.stepId}`,
+              url: `https://example.com/?fnId=testclient-testfn-failure&stepId=${InngestFunction.stepId}`,
             },
           },
         },
         triggers: [
           {
             event: internalEvents.FunctionFailed,
-            expression: "event.data.function_id == 'test'",
+            expression: "event.data.function_id == 'testclient-testfn'",
           },
         ],
       });
@@ -1262,7 +1263,7 @@ describe("runFn", () => {
 
         test("allows any event name", () => {
           inngest.createFunction(
-            { name: "test", cancelOn: [{ event: "anything" }] },
+            { id: "test", cancelOn: [{ event: "anything" }] },
             { event: "test" },
             () => {
               // no-op
@@ -1273,7 +1274,7 @@ describe("runFn", () => {
         test("allows any match", () => {
           inngest.createFunction(
             {
-              name: "test",
+              id: "test",
               cancelOn: [{ event: "anything", match: "data.anything" }],
             },
             { event: "test" },
@@ -1320,7 +1321,7 @@ describe("runFn", () => {
 
         test("allows known event name", () => {
           inngest.createFunction(
-            { name: "test", cancelOn: [{ event: "bar" }] },
+            { id: "test", cancelOn: [{ event: "bar" }] },
             { event: "foo" },
             () => {
               // no-op
@@ -1345,7 +1346,7 @@ describe("runFn", () => {
         test("allows known event name with good field match", () => {
           inngest.createFunction(
             {
-              name: "test",
+              id: "test",
               cancelOn: [{ event: "baz", match: "data.title" }],
             },
             { event: "foo" },
@@ -1358,8 +1359,10 @@ describe("runFn", () => {
     });
 
     test("specifying a cancellation event registers correctly", () => {
+      const clientId = "testclient";
+
       const inngest = createClient({
-        id: "test",
+        id: clientId,
         schemas: new EventSchemas().fromRecord<{
           foo: {
             name: "foo";
@@ -1377,25 +1380,27 @@ describe("runFn", () => {
       });
 
       const fn = inngest.createFunction(
-        { name: "test", cancelOn: [{ event: "baz", match: "data.title" }] },
+        { id: "testfn", cancelOn: [{ event: "baz", match: "data.title" }] },
         { event: "foo" },
         () => {
           // no-op
         }
       );
 
-      const [fnConfig] = fn["getConfig"](new URL("https://example.com"));
+      const [fnConfig] = fn["getConfig"](
+        new URL("https://example.com"),
+        clientId
+      );
 
       expect(fnConfig).toMatchObject({
-        id: "test",
-        name: "test",
+        id: "testclient-testfn",
         steps: {
           [InngestFunction.stepId]: {
             id: InngestFunction.stepId,
             name: InngestFunction.stepId,
             runtime: {
               type: "http",
-              url: `https://example.com/?fnId=test&stepId=${InngestFunction.stepId}`,
+              url: `https://example.com/?fnId=testclient-testfn&stepId=${InngestFunction.stepId}`,
             },
           },
         },

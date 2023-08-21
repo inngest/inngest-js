@@ -1,6 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { EventSchemas, type EventsFromOpts } from "@local";
-import { InngestExecution } from "@local/components/InngestExecution";
+import { EventSchemas } from "@local/components/EventSchemas";
+import {
+  type AnyInngest,
+  type EventsFromOpts,
+} from "@local/components/Inngest";
+import {
+  InngestExecution,
+  type MemoizedOp,
+} from "@local/components/InngestExecution";
 import {
   createStepTools,
   type FoundStep,
@@ -10,13 +17,17 @@ import ms from "ms";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
 
-const getStepTools = (): {
+const getStepTools = ({
+  client = createClient({ id: "test" }),
+  stepState = {},
+}: {
+  client?: AnyInngest;
+  stepState?: Record<string, MemoizedOp>;
+} = {}): {
   tools: ReturnType<typeof createStepTools>;
   getOp: GetOp;
 } => {
-  const client = createClient({ name: "test" });
-
-  const fn = client.createFunction({ name: "test" }, { event: "any" }, () => {
+  const fn = client.createFunction({ id: "test" }, { event: "any" }, () => {
     /** no-op */
   });
 
@@ -24,7 +35,7 @@ const getStepTools = (): {
     client,
     fn,
     data: {},
-    stepState: {},
+    stepState,
   });
 
   const tools = createStepTools(client, execution.state);
@@ -262,18 +273,18 @@ describe("sleepUntil", () => {
     });
   });
 
-  test("throws if invalid date given", () => {
+  test("throws if invalid date given", async () => {
     const next = new Date("bad");
 
-    expect(() => sleepUntil("id", next)).toThrow(
+    await expect(() => sleepUntil("id", next)).rejects.toThrow(
       "Invalid date or date string passed"
     );
   });
 
-  test("throws if invalid time string given", () => {
+  test("throws if invalid time string given", async () => {
     const next = "bad";
 
-    expect(() => sleepUntil("id", next)).toThrow(
+    await expect(() => sleepUntil("id", next)).rejects.toThrow(
       "Invalid date or date string passed"
     );
   });
@@ -286,7 +297,7 @@ describe("sendEvent", () => {
     ) as unknown as typeof fetch;
 
     const client = createClient({
-      name: "test",
+      id: "test",
       fetch: fetchMock,
       eventKey: "123",
     });
@@ -299,7 +310,17 @@ describe("sendEvent", () => {
       ({
         tools: { sendEvent },
         getOp,
-      } = getStepTools());
+      } = getStepTools({
+        client,
+        stepState: {
+          /**
+           * We define a fake step here to ensure that the `sendEvent` tool
+           * doesn't run inline, which it will do if no other steps have been
+           * detected before it's been run.
+           */
+          "fake-other-step": { id: "fake-other-step" },
+        },
+      }));
     });
 
     test("return id", () => {
@@ -360,7 +381,7 @@ describe("sendEvent", () => {
       }>();
 
       const opts = (<T extends ClientOptions>(x: T): T => x)({
-        name: "",
+        id: "",
         schemas,
       });
 

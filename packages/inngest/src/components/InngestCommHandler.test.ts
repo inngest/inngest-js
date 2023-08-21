@@ -18,7 +18,7 @@ describe("#153", () => {
     type Json = Literal | { [key: string]: Json } | Json[];
 
     const inngest = createClient({
-      name: "My App",
+      id: "My App",
       schemas: new EventSchemas().fromRecord<{
         foo: {
           name: "foo";

@@ -408,7 +408,7 @@ describe("EventSchemas", () => {
       });
 
       inngest.createFunction(
-        { name: "test" },
+        { id: "test" },
         { event: "test.event" },
         ({ event }) => {
           assertType<"test.event">(event.name);
@@ -431,7 +431,7 @@ describe("EventSchemas", () => {
       });
 
       inngest.createFunction(
-        { name: "test" },
+        { id: "test" },
         { event: "test.event" },
         ({ event }) => {
           assertType<"test.event">(event.name);
@@ -457,7 +457,7 @@ describe("EventSchemas", () => {
 
       inngest.createFunction(
         {
-          name: "test",
+          id: "test",
           cancelOn: [{ event: "test.event2", match: "data.foo" }],
         },
         { event: "test.event" },
@@ -485,7 +485,7 @@ describe("EventSchemas", () => {
 
       inngest.createFunction(
         {
-          name: "test",
+          id: "test",
           cancelOn: [{ event: "test.event2", match: "data.foo" }],
         },
         { event: "test.event" },
@@ -513,7 +513,7 @@ describe("EventSchemas", () => {
 
       inngest.createFunction(
         {
-          name: "test",
+          id: "test",
           cancelOn: [{ event: "test.event2", match: "data.foo" }],
         },
         { event: "test.event" },

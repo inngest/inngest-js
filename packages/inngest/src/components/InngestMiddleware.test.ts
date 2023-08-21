@@ -24,12 +24,12 @@ describe("stacking and inference", () => {
           },
         });
 
-        const inngest = new Inngest({ name: "test", middleware: [mw] });
+        const inngest = new Inngest({ id: "test", middleware: [mw] });
 
         test("input context has value", () => {
           inngest.createFunction(
             {
-              name: "",
+              id: "",
               onFailure: (ctx) => {
                 assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
               },
@@ -60,12 +60,12 @@ describe("stacking and inference", () => {
           },
         });
 
-        const inngest = new Inngest({ name: "test", middleware: [mw] });
+        const inngest = new Inngest({ id: "test", middleware: [mw] });
 
         test("input context has value", () => {
           inngest.createFunction(
             {
-              name: "",
+              id: "",
               onFailure: (ctx) => {
                 assertType<IsEqual<(typeof ctx)["foo"], "bar">>(true);
               },
@@ -96,12 +96,12 @@ describe("stacking and inference", () => {
           },
         });
 
-        const inngest = new Inngest({ name: "test", middleware: [mw] });
+        const inngest = new Inngest({ id: "test", middleware: [mw] });
 
         test("input context has value", () => {
           inngest.createFunction(
             {
-              name: "",
+              id: "",
               onFailure: (ctx) => {
                 assertType<IsEqual<(typeof ctx)["event"], boolean>>(true);
               },
@@ -149,12 +149,12 @@ describe("stacking and inference", () => {
           },
         });
 
-        const inngest = new Inngest({ name: "test", middleware: [mw1, mw2] });
+        const inngest = new Inngest({ id: "test", middleware: [mw1, mw2] });
 
         test("input context has foo value", () => {
           inngest.createFunction(
             {
-              name: "",
+              id: "",
               onFailure: (ctx) => {
                 assertType<IsEqual<(typeof ctx)["foo"], string>>(true);
               },
@@ -169,7 +169,7 @@ describe("stacking and inference", () => {
         test("input context has bar value", () => {
           inngest.createFunction(
             {
-              name: "",
+              id: "",
               onFailure: (ctx) => {
                 assertType<IsEqual<(typeof ctx)["bar"], boolean>>(true);
               },
@@ -217,12 +217,12 @@ describe("stacking and inference", () => {
           },
         });
 
-        const inngest = new Inngest({ name: "test", middleware: [mw1, mw2] });
+        const inngest = new Inngest({ id: "test", middleware: [mw1, mw2] });
 
         test("input context has new value", () => {
           inngest.createFunction(
             {
-              name: "",
+              id: "",
               onFailure: (ctx) => {
                 assertType<IsEqual<(typeof ctx)["foo"], boolean>>(true);
               },

@@ -640,7 +640,7 @@ export type ExecutionResultHandlers<T = ActionResponse> = {
   [E in ExecutionResult as E["type"]]: (result: E) => MaybePromise<T>;
 };
 
-interface MemoizedOp extends IncomingOp {
+export interface MemoizedOp extends IncomingOp {
   fulfilled?: boolean;
 }
 

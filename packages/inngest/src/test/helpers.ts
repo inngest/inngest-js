@@ -43,7 +43,7 @@ export const createClient = <T extends ConstructorParameters<typeof Inngest>>(
   ) as unknown as Inngest<T["0"]>;
 };
 
-const inngest = createClient({ name: "test", eventKey: "event-key-123" });
+const inngest = createClient({ id: "test", eventKey: "event-key-123" });
 
 export const testFramework = (
   /**
@@ -366,8 +366,8 @@ export const testFramework = (
             });
 
           const fn1 = inngest.createFunction(
-            "fn1",
-            "demo/event.sent",
+            { id: "fn1" },
+            { event: "demo/event.sent" },
             () => "fn1"
           );
           const serveHost = "https://example.com";
@@ -406,8 +406,8 @@ export const testFramework = (
             });
 
           const fn1 = inngest.createFunction(
-            "fn1",
-            "demo/event.sent",
+            { id: "fn1" },
+            { event: "demo/event.sent" },
             () => "fn1"
           );
           const servePath = "/foo/bar/inngest/endpoint";
@@ -437,7 +437,7 @@ export const testFramework = (
           nock("https://api.inngest.com").post("/fn/register").reply(200);
 
           const ret = await run(
-            [new Inngest({ name: "Test", env: "FOO" }), []],
+            [new Inngest({ id: "Test", env: "FOO" }), []],
             [{ method: "PUT" }]
           );
 
@@ -465,8 +465,8 @@ export const testFramework = (
           });
 
         const fn1 = inngest.createFunction(
-          "fn1",
-          "demo/event.sent",
+          { id: "fn1" },
+          { event: "demo/event.sent" },
           () => "fn1"
         );
         const serveHost = "https://example.com";
@@ -500,7 +500,7 @@ export const testFramework = (
 
     describe("POST (run function)", () => {
       describe("signature validation", () => {
-        const client = createClient({ name: "test" });
+        const client = createClient({ id: "test" });
 
         const fn = client.createFunction(
           { name: "Test", id: "test" },
@@ -553,7 +553,7 @@ export const testFramework = (
                     yesterday.getTime() / 1000
                   )}&s=expired`,
                 },
-                url: "/api/inngest?fnId=test",
+                url: "/api/inngest?fnId=test-test",
                 body: { event: {}, events: [{}] },
               },
             ],
@@ -608,7 +608,7 @@ export const testFramework = (
                   [headerKeys.Signature]:
                     "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
                 },
-                url: "/api/inngest?fnId=test&stepId=step",
+                url: "/api/inngest?fnId=test-test&stepId=step",
                 body,
               },
             ],
@@ -622,9 +622,7 @@ export const testFramework = (
       });
 
       describe("malformed payloads", () => {
-        const client = createClient({ name: "test" });
-
-        const fn = client.createFunction(
+        const fn = inngest.createFunction(
           { name: "Test", id: "test" },
           { event: "demo/event.sent" },
           () => "fn"
@@ -641,7 +639,7 @@ export const testFramework = (
             [
               {
                 method: "POST",
-                url: "/api/inngest?fnId=test",
+                url: "/api/inngest?fnId=test-test",
                 body: undefined,
               },
             ],

@@ -23,10 +23,10 @@ testFramework("Express (Vercel)", ExpressHandler, {
 describe("InngestCommHandler", () => {
   describe("registerBody", () => {
     it("Includes correct base URL for functions", () => {
-      const client = createClient({ name: "test" });
+      const client = createClient({ id: "test" });
 
       const fn = client.createFunction(
-        { name: "Test Express Function" },
+        { id: "Test Express Function" },
         { event: "test/event.name" },
         () => undefined
       );

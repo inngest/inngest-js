@@ -94,10 +94,10 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     };
     // (undocumented)
     fns?: Record<string, unknown>;
-    id?: string;
+    id: string;
     idempotency?: string;
     middleware?: MiddlewareStack;
-    name: string;
+    name?: string;
     // (undocumented)
     onFailure?: (...args: unknown[]) => unknown;
     rateLimit?: {
@@ -352,7 +352,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:330:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:340:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/types.ts:54:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:707:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:694:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

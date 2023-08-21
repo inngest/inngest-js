@@ -1,5 +1,5 @@
 import { internalEvents, queryKeys } from "../helpers/consts";
-import { slugify, timeStr } from "../helpers/strings";
+import { timeStr } from "../helpers/strings";
 import {
   type ClientOptions,
   type EventNameFromTrigger,
@@ -80,14 +80,14 @@ export class InngestFunction<
   /**
    * The generated or given ID for this function.
    */
-  public id(prefix?: string) {
-    return this.opts.id || this.#generateId(prefix);
+  public id(prefix?: string): string {
+    return [prefix, this.opts.id].filter(Boolean).join("-");
   }
 
   /**
    * The name of this function as it will appear in the Inngest Cloud UI.
    */
-  public get name() {
+  public get name(): string | undefined {
     return this.opts.name;
   }
 
@@ -159,7 +159,7 @@ export class InngestFunction<
     if (this.onFailureFn) {
       const failureOpts = { ...opts };
       const id = `${fn.id}${InngestFunction.failureSuffix}`;
-      const name = `${fn.name} (failure)`;
+      const name = `${fn.name ?? fn.id} (failure)`;
 
       const failureStepUrl = new URL(stepUrl.href);
       failureStepUrl.searchParams.set(queryKeys.FnId, id);
@@ -199,12 +199,5 @@ export class InngestFunction<
       fn: this,
       ...options,
     });
-  }
-
-  /**
-   * Generate an ID based on the function's name.
-   */
-  #generateId(prefix?: string) {
-    return slugify([prefix || "", this.opts.name].join("-"));
   }
 }

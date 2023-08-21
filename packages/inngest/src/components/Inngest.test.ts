@@ -406,7 +406,7 @@ describe("createFunction", () => {
       test("has attempt number", () => {
         inngest.createFunction(
           {
-            name: "test",
+            id: "test",
             onFailure: ({ attempt }) => {
               assertType<number>(attempt);
             },
@@ -422,16 +422,9 @@ describe("createFunction", () => {
     describe("no custom types", () => {
       const inngest = createClient({ id: "test" });
 
-      test("allows name to be a string", () => {
-        inngest.createFunction("test", { event: "test" }, ({ event }) => {
-          assertType<string>(event.name);
-          assertType<IsAny<typeof event.data>>(true);
-        });
-      });
-
       test("allows name to be an object", () => {
         inngest.createFunction(
-          { name: "test" },
+          { id: "test" },
           { event: "test" },
           ({ event }) => {
             assertType<string>(event.name);
@@ -454,10 +447,10 @@ describe("createFunction", () => {
 
       test("disallows specifying cancellation with batching", () => {
         inngest.createFunction(
+          // @ts-expect-error Cannot specify cancellation with batching
           {
-            name: "test",
+            id: "test",
             batchEvents: { maxSize: 5, timeout: "5s" },
-            // @ts-expect-error Cannot specify cancellation with batching
             cancelOn: [{ event: "test2" }],
           },
           { event: "test" },
@@ -469,10 +462,10 @@ describe("createFunction", () => {
 
       test("disallows specifying rate limit with batching", () => {
         inngest.createFunction(
+          // @ts-expect-error Cannot specify rate limit with batching
           {
-            name: "test",
+            id: "test",
             batchEvents: { maxSize: 5, timeout: "5s" },
-            // @ts-expect-error Cannot specify rate limit with batching
             rateLimit: { limit: 5, period: "5s" },
           },
           { event: "test" },
@@ -482,30 +475,31 @@ describe("createFunction", () => {
         );
       });
 
-      test("allows trigger to be a string", () => {
-        inngest.createFunction("test", "test", ({ event }) => {
-          assertType<string>(event.name);
-          assertType<IsAny<typeof event.data>>(true);
-        });
-      });
-
       test("allows trigger to be an object with an event property", () => {
-        inngest.createFunction("test", { event: "test" }, ({ event }) => {
-          assertType<string>(event.name);
-          assertType<IsAny<typeof event.data>>(true);
-        });
+        inngest.createFunction(
+          { id: "test" },
+          { event: "test" },
+          ({ event }) => {
+            assertType<string>(event.name);
+            assertType<IsAny<typeof event.data>>(true);
+          }
+        );
       });
 
       test("allows trigger to be an object with a cron property", () => {
-        inngest.createFunction("test", { cron: "test" }, ({ event }) => {
-          assertType<string>(event.name);
-          assertType<IsAny<typeof event.data>>(true);
-        });
+        inngest.createFunction(
+          { id: "test" },
+          { cron: "test" },
+          ({ event }) => {
+            assertType<string>(event.name);
+            assertType<IsAny<typeof event.data>>(true);
+          }
+        );
       });
 
       test("disallows trigger with unknown properties", () => {
         // @ts-expect-error Unknown property
-        inngest.createFunction("test", { foo: "bar" }, ({ event }) => {
+        inngest.createFunction({ id: "test" }, { foo: "bar" }, ({ event }) => {
           assertType<string>(event.name);
           assertType<IsAny<typeof event.data>>(true);
         });
@@ -513,7 +507,7 @@ describe("createFunction", () => {
 
       test("disallows trigger with both event and cron properties", () => {
         inngest.createFunction(
-          "test",
+          { id: "test" },
           // @ts-expect-error Both event and cron
           { event: "test", cron: "test" },
           ({ event }) => {
@@ -553,16 +547,9 @@ describe("createFunction", () => {
         });
       });
 
-      test("allows name to be a string", () => {
-        inngest.createFunction("test", { event: "foo" }, ({ event }) => {
-          assertType<"foo">(event.name);
-          assertType<{ title: string }>(event.data);
-        });
-      });
-
       test("allows name to be an object", () => {
         inngest.createFunction(
-          { name: "test" },
+          { id: "test" },
           { event: "bar" },
           ({ event }) => {
             assertType<"bar">(event.name);
@@ -583,24 +570,25 @@ describe("createFunction", () => {
         );
       });
 
-      test("allows trigger to be a string", () => {
-        inngest.createFunction("test", "bar", ({ event }) => {
-          assertType<"bar">(event.name);
-          assertType<{ message: string }>(event.data);
-        });
-      });
-
       test("allows trigger to be an object with an event property", () => {
-        inngest.createFunction("test", { event: "foo" }, ({ event }) => {
-          assertType<"foo">(event.name);
-          assertType<{ title: string }>(event.data);
-        });
+        inngest.createFunction(
+          { id: "test" },
+          { event: "foo" },
+          ({ event }) => {
+            assertType<"foo">(event.name);
+            assertType<{ title: string }>(event.data);
+          }
+        );
       });
 
       test("allows trigger to be an object with a cron property", () => {
-        inngest.createFunction("test", { cron: "test" }, ({ event }) => {
-          assertType<unknown>(event);
-        });
+        inngest.createFunction(
+          { id: "test" },
+          { cron: "test" },
+          ({ event }) => {
+            assertType<unknown>(event);
+          }
+        );
       });
 
       test("disallows trigger with unknown properties", () => {
@@ -612,7 +600,7 @@ describe("createFunction", () => {
 
       test("disallows trigger with both event and cron properties", () => {
         inngest.createFunction(
-          "test",
+          { id: "test" },
           // @ts-expect-error Both event and cron
           { event: "foo", cron: "test" },
           ({ event }) => {
