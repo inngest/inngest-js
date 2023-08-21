@@ -141,7 +141,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     // Warning: (ae-forgotten-export) The symbol "FunctionTrigger" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    createFunction<TFns extends Record<string, unknown>, TMiddleware extends MiddlewareStack, TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof EventsFromOpts<TOpts> & string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>>(nameOrOpts: string | ExclusiveKeys<Omit<FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>, "fns" | "onFailure" | "middleware"> & {
+    createFunction<TFns extends Record<string, unknown>, TMiddleware extends MiddlewareStack, TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof EventsFromOpts<TOpts> & string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>>(options: ExclusiveKeys<Omit<FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>, "fns" | "onFailure" | "middleware"> & {
         fns?: TFns;
         onFailure?: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, ExtendWithMiddleware<[
         typeof builtInMiddleware,
