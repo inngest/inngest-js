@@ -6,6 +6,7 @@ import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
   allProcessEnv,
+  devServerHost,
   getFetch,
   inngestHeaders,
   isProd,
@@ -621,8 +622,15 @@ export class InngestCommHandler<
       });
 
     this._isProd = actions.isProduction ?? isProd(env);
-    // If we're in production always skip.
+
     this._skipDevServer = this._isProd ?? skipDevServer(env);
+    /**
+     * If we've been explicitly passed an Inngest dev sever URL, assume that
+     * we shouldn't skip the dev server.
+     */
+    if (devServerHost(env)) {
+      this._skipDevServer = false;
+    }
 
     try {
       const runRes = await actions.run();
