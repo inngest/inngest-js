@@ -21,6 +21,9 @@ jobs:
       - uses: actions/checkout@v3
         with:
           persist-credentials: false
+          # Used to fetch all history so that changesets doesn't attempt to
+          # publish duplicate tags.
+          fetch-depth: 0
       - uses: ./.github/actions/setup-and-build
       - run: node scripts/generateReleaseConfig.js
         env:
