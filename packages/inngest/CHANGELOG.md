@@ -1,5 +1,11 @@
 # inngest
 
+## 2.5.1
+
+### Patch Changes
+
+- [#302](https://github.com/inngest/inngest-js/pull/302) [`5b2bfac`](https://github.com/inngest/inngest-js/commit/5b2bfac61f3b3f4ecbfdedca3e3c18be1393eb88) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove `preinstall` script from `inngest` package causing errors when consuming the package
+
 ## 2.5.0
 
 ### Minor Changes
