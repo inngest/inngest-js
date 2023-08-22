@@ -23,7 +23,9 @@ type Headers = {
 };
 
 type InngestPluginOptions = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   client: Inngest<any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   functions: InngestFunction<any, any, any, any>[];
   options?: RegisterOptions;
 };
@@ -53,10 +55,10 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         run: () => {
           if (req.method === "POST") {
             return {
-              fnId: req.query[queryKeys.FnId] as string,
-              stepId: req.query[queryKeys.StepId] as string,
+              fnId: req.query[queryKeys.FnId],
+              stepId: req.query[queryKeys.StepId],
               data: req.body as Record<string, unknown>,
-              signature: req.headers[headerKeys.Signature] as string,
+              signature: req.headers[headerKeys.Signature],
             };
           }
         },
@@ -81,9 +83,9 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
     },
     (actionRes, _req, reply) => {
       for (const [name, value] of Object.entries(actionRes.headers)) {
-        reply.header(name, value);
+        void reply.header(name, value);
       }
-      reply.code(actionRes.status);
+      void reply.code(actionRes.status);
       return reply.send(actionRes.body);
     }
   );
@@ -99,10 +101,12 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
  */
 const fastifyPlugin = ((fastify, options, done) => {
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const handler = serve(options.client, options.functions, options.options);
 
     fastify.route({
       method: ["GET", "POST", "PUT"],
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       handler,
       url: options.options?.serveHost || "/api/inngest",
     });
