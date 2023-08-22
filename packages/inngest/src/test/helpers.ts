@@ -446,7 +446,6 @@ export const testFramework = (
             [envKeys.DevServerUrl]: testDevServerHost,
             NODE_ENV: "production",
             ENVIRONMENT: "production",
-            CONTEXT: "production",
           });
 
           expect(devServerCalled).toBe(true);
