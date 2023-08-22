@@ -17,7 +17,9 @@ import { stringifyUnknown } from "./strings";
  *
  * @example devServerHost()
  */
-export const devServerHost = (): string | undefined => {
+export const devServerHost = (
+  env: Record<string, unknown> = allProcessEnv()
+): string | undefined => {
   // devServerKeys are the env keys we search for to discover the dev server
   // URL.  This includes the standard key first, then includes prefixed keys
   // for use within common frameworks (eg. CRA, next).
@@ -27,12 +29,12 @@ export const devServerHost = (): string | undefined => {
   // text replacement instead of actually understanding the AST, despite webpack
   // being fully capable of understanding the AST.
   const values = [
-    processEnv(envKeys.DevServerUrl),
-    processEnv("REACT_APP_INNGEST_DEVSERVER_URL"),
-    processEnv("NEXT_PUBLIC_INNGEST_DEVSERVER_URL"),
+    env[envKeys.DevServerUrl],
+    env["REACT_APP_INNGEST_DEVSERVER_URL"],
+    env["NEXT_PUBLIC_INNGEST_DEVSERVER_URL"],
   ];
 
-  return values.find((a) => !!a);
+  return values.find((a) => !!a) as string;
 };
 
 const checkFns = (<
