@@ -623,14 +623,13 @@ export class InngestCommHandler<
 
     this._isProd = actions.isProduction ?? isProd(env);
 
-    this._skipDevServer = this._isProd ?? skipDevServer(env);
     /**
      * If we've been explicitly passed an Inngest dev sever URL, assume that
      * we shouldn't skip the dev server.
      */
-    if (devServerHost(env)) {
-      this._skipDevServer = false;
-    }
+    this._skipDevServer = devServerHost(env)
+      ? false
+      : this._isProd ?? skipDevServer(env);
 
     try {
       const runRes = await actions.run();
