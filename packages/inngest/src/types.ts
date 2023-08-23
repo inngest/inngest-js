@@ -13,7 +13,6 @@ import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
 import {
   type IsStringLiteral,
-  type KeysNotOfType,
   type ObjectPaths,
   type StrictUnion,
 } from "./helpers/types";
@@ -195,8 +194,7 @@ export type TimeStrBatch = `${`${number}s`}`;
 
 export type BaseContext<
   TOpts extends ClientOptions,
-  TTrigger extends keyof EventsFromOpts<TOpts> & string,
-  TShimmedFns extends Record<string, (...args: unknown[]) => unknown>
+  TTrigger extends keyof EventsFromOpts<TOpts> & string
 > = {
   /**
    * The event data present in the payload.
@@ -218,68 +216,11 @@ export type BaseContext<
   >;
 
   /**
-   * Any `fns` passed when creating your Inngest function will be
-   * available here and can be used as normal.
-   *
-   * Every call to one of these functions will become a new retryable
-   * step.
-   *
-   * @example
-   *
-   * Both examples behave the same; it's preference as to which you
-   * prefer.
-   *
-   * ```ts
-   * import { userDb } from "./db";
-   *
-   * // Specify `fns` and be able to use them in your Inngest function
-   * inngest.createFunction(
-   *   { name: "Create user from PR", fns: { ...userDb } },
-   *   { event: "github/pull_request" },
-   *   async ({ tools: { run }, fns: { createUser } }) => {
-   *     await createUser("Alice");
-   *   }
-   * );
-   *
-   * // Or always use `run()` to run inline steps and use them directly
-   * inngest.createFunction(
-   *   { name: "Create user from PR" },
-   *   { event: "github/pull_request" },
-   *   async ({ tools: { run } }) => {
-   *     await run("createUser", () => userDb.createUser("Alice"));
-   *   }
-   * );
-   * ```
-   */
-  fns: TShimmedFns;
-
-  /**
    * The current zero-indexed attempt number for this function execution. The
    * first attempt will be `0`, the second `1`, and so on. The attempt number
    * is incremented every time the function throws an error and is retried.
    */
   attempt: number;
-};
-
-/**
- * Given a set of generic objects, extract any top-level functions and
- * appropriately shim their types.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ShimmedFns<Fns extends Record<string, any>> = {
-  /**
-   * The key omission here allows the user to pass anything to the `fns`
-   * object and have it be correctly understand and transformed.
-   *
-   * Crucially, we use a complex `Omit` here to ensure that function
-   * comments and metadata is preserved, meaning the user can still use
-   * the function exactly like they would in the rest of their codebase,
-   * even though we're shimming with `tools.run()`.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  [K in keyof Omit<Fns, KeysNotOfType<Fns, (...args: any[]) => any>>]: (
-    ...args: Parameters<Fns[K]>
-  ) => Promise<Awaited<ReturnType<Fns[K]>>>;
 };
 
 /**
@@ -290,13 +231,11 @@ export type Context<
   TOpts extends ClientOptions,
   TEvents extends Record<string, EventPayload>,
   TTrigger extends keyof TEvents & string,
-  TShimmedFns extends Record<string, (...args: unknown[]) => unknown>,
   TOverrides extends Record<string, unknown> = Record<never, never>
-> = Omit<BaseContext<TOpts, TTrigger, TShimmedFns>, keyof TOverrides> &
-  TOverrides;
+> = Omit<BaseContext<TOpts, TTrigger>, keyof TOverrides> & TOverrides;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyContext = Context<any, any, any, any>;
+export type AnyContext = Context<any, any, any>;
 
 /**
  * The shape of a Inngest function, taking in event, step, ctx, and step
@@ -308,21 +247,17 @@ export type Handler<
   TOpts extends ClientOptions,
   TEvents extends EventsFromOpts<TOpts>,
   TTrigger extends keyof TEvents & string,
-  TShimmedFns extends Record<string, (...args: unknown[]) => unknown> = Record<
-    never,
-    never
-  >,
   TOverrides extends Record<string, unknown> = Record<never, never>
 > = (
   /**
    * The context argument provides access to all data and tooling available to
    * the function.
    */
-  ctx: Context<TOpts, TEvents, TTrigger, TShimmedFns, TOverrides>
+  ctx: Context<TOpts, TEvents, TTrigger, TOverrides>
 ) => unknown;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyHandler = Handler<any, any, any, any, any>;
+export type AnyHandler = Handler<any, any, any, any>;
 
 /**
  * The shape of a single event's payload. It should be extended to enforce
@@ -703,8 +638,6 @@ export interface FunctionOptions<
      */
     timeout: TimeStrBatch;
   };
-
-  fns?: Record<string, unknown>;
 
   /**
    * Allow the specification of an idempotency key using event data. If

@@ -108,7 +108,7 @@ export class InngestFunction<
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
 
-    const { retries: attempts, cancelOn, fns: _, ...opts } = this.opts;
+    const { retries: attempts, cancelOn, ...opts } = this.opts;
 
     /**
      * Convert retries into the format required when defining function

@@ -21,7 +21,6 @@ import {
   type ClientOptions,
   type EventPayload,
   type FailureEventArgs,
-  type FunctionOptions,
   type IncomingOp,
   type OutgoingOp,
 } from "../types";
@@ -513,28 +512,6 @@ export class InngestExecution {
       };
     }
 
-    /**
-     * Handle use of the `fns` option by wrapping given functions in step
-     * tooling.
-     */
-    const fnOpts = this.options.fn.opts as FunctionOptions<
-      Record<string, EventPayload>,
-      string
-    >;
-    if (fnOpts.fns) {
-      fnArg.fns = Object.entries(fnOpts.fns).reduce((acc, [key, fn]) => {
-        if (typeof fn !== "function") {
-          return acc;
-        }
-
-        return {
-          ...acc,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          [key]: (...args: unknown[]) => step.run(key, () => fn(...args)),
-        };
-      }, {});
-    }
-
     return fnArg;
   }
 
@@ -574,13 +551,7 @@ export class InngestExecution {
 
   async #initializeMiddleware(): Promise<RunHookStack> {
     const ctx = this.options.data as Pick<
-      Readonly<
-        BaseContext<
-          ClientOptions,
-          string,
-          Record<string, (...args: unknown[]) => unknown>
-        >
-      >,
+      Readonly<BaseContext<ClientOptions, string>>,
       "event" | "events" | "runId"
     >;
 

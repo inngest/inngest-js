@@ -98,8 +98,6 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
         limit: number;
         key?: string;
     };
-    // (undocumented)
-    fns?: Record<string, unknown>;
     id: string;
     idempotency?: string;
     middleware?: MiddlewareStack;
@@ -138,7 +136,6 @@ export enum headerKeys {
 // @public
 export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     constructor({ id, eventKey, inngestBaseUrl, fetch, env, logger, middleware, }: TOpts);
-    // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "ExclusiveKeys" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "ExtendWithMiddleware" needs to be exported by the entry point index.d.ts
@@ -147,15 +144,14 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     // Warning: (ae-forgotten-export) The symbol "FunctionTrigger" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    createFunction<TFns extends Record<string, unknown>, TMiddleware extends MiddlewareStack, TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>, TShimmedFns extends Record<string, (...args: any[]) => any> = ShimmedFns<TFns>, TTriggerName extends keyof EventsFromOpts<TOpts> & string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>>(options: ExclusiveKeys<Omit<FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>, "fns" | "onFailure" | "middleware"> & {
-        fns?: TFns;
-        onFailure?: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, ExtendWithMiddleware<[
+    createFunction<TMiddleware extends MiddlewareStack, TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>, TTriggerName extends keyof EventsFromOpts<TOpts> & string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>>(options: ExclusiveKeys<Omit<FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>, "onFailure" | "middleware"> & {
+        onFailure?: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, ExtendWithMiddleware<[
         typeof builtInMiddleware,
         NonNullable<TOpts["middleware"]>,
         TMiddleware
         ], FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>>>;
         middleware?: TMiddleware;
-    }, "batchEvents", "cancelOn" | "rateLimit">, trigger: TTrigger, handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, TShimmedFns, ExtendWithMiddleware<[
+    }, "batchEvents", "cancelOn" | "rateLimit">, trigger: TTrigger, handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, ExtendWithMiddleware<[
     typeof builtInMiddleware,
     NonNullable<TOpts["middleware"]>,
     TMiddleware
@@ -364,8 +360,8 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:311:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:330:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:340:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
-// src/types.ts:54:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:704:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:53:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:639:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

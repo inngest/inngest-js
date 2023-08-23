@@ -1137,49 +1137,6 @@ describe("runFn", () => {
           );
         });
       });
-
-      describe("passed fns have correct types", () => {
-        const inngest = createClient({ id: "test" });
-
-        const lib = {
-          foo: true,
-          bar: 5,
-          baz: <T extends string>(name: T) => `Hello, ${name}!` as const,
-          qux: (name: string) => `Hello, ${name}!`,
-        };
-
-        test("has shimmed fn types", () => {
-          inngest.createFunction(
-            {
-              id: "test",
-              fns: { ...lib },
-              onFailure: ({ fns: { qux } }) => {
-                assertType<Promise<string>>(qux("world"));
-              },
-            },
-            { event: "foo" },
-            () => {
-              // no-op
-            }
-          );
-        });
-
-        test.skip("has shimmed fn types that preserve generics", () => {
-          inngest.createFunction(
-            {
-              id: "test",
-              fns: { ...lib },
-              onFailure: ({ fns: { baz: _baz } }) => {
-                // assertType<Promise<"Hello, world!">>(baz("world"));
-              },
-            },
-            { event: "foo" },
-            () => {
-              // no-op
-            }
-          );
-        });
-      });
     });
 
     test("specifying an onFailure function registers correctly", () => {

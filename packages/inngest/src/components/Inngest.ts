@@ -21,7 +21,6 @@ import {
   type FunctionTrigger,
   type Handler,
   type MiddlewareStack,
-  type ShimmedFns,
   type TriggerOptions,
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
@@ -397,56 +396,16 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   }
 
   public createFunction<
-    TFns extends Record<string, unknown>,
     TMiddleware extends MiddlewareStack,
     TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>,
-    TShimmedFns extends Record<
-      string,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (...args: any[]) => any
-    > = ShimmedFns<TFns>,
     TTriggerName extends keyof EventsFromOpts<TOpts> &
       string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
   >(
     options: ExclusiveKeys<
       Omit<
         FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>,
-        "fns" | "onFailure" | "middleware"
+        "onFailure" | "middleware"
       > & {
-        /**
-         * Pass in an object of functions that will be wrapped in Inngest
-         * tooling and passes to your handler. This wrapping ensures that each
-         * function is automatically separated and retried.
-         *
-         * @example
-         *
-         * Both examples behave the same; it's preference as to which you
-         * prefer.
-         *
-         * ```ts
-         * import { userDb } from "./db";
-         *
-         * // Specify `fns` and be able to use them in your Inngest function
-         * inngest.createFunction(
-         *   { name: "Create user from PR", fns: { ...userDb } },
-         *   { event: "github/pull_request" },
-         *   async ({ fns: { createUser } }) => {
-         *     await createUser("Alice");
-         *   }
-         * );
-         *
-         * // Or always use `run()` to run inline steps and use them directly
-         * inngest.createFunction(
-         *   { name: "Create user from PR" },
-         *   { event: "github/pull_request" },
-         *   async ({ step: { run } }) => {
-         *     await run("createUser", () => userDb.createUser("Alice"));
-         *   }
-         * );
-         * ```
-         */
-        fns?: TFns;
-
         /**
          * Provide a function to be called if your function fails, meaning
          * that it ran out of retries and was unable to complete successfully.
@@ -459,7 +418,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
           TOpts,
           EventsFromOpts<TOpts>,
           TTriggerName,
-          TShimmedFns,
           ExtendWithMiddleware<
             [
               typeof builtInMiddleware,
@@ -502,7 +460,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       TOpts,
       EventsFromOpts<TOpts>,
       TTriggerName,
-      TShimmedFns,
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
