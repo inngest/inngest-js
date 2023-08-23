@@ -55,7 +55,13 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
     } & StandardEventSchema>(): EventSchemas<Combine<S, { [K in T["name"]]: Extract<T, {
             name: K;
         }>; }>>;
-    fromZod<T extends ZodEventSchemas>(schemas: T): EventSchemas<Combine<S, { [EventName in keyof T & string]: { [Key in keyof T[EventName] & string]: T[EventName][Key] extends z.ZodTypeAny ? z.TypeOf<T[EventName][Key]> : T[EventName][Key]; }; }>>;
+    // Warning: (ae-forgotten-export) The symbol "LiteralZodEventSchemas" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "ExcludeEmptyZodLiterals" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "ZodToStandardSchema" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "PickLiterals" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "GetName" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "InferZodShape" needs to be exported by the entry point index.d.ts
+    fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(schemas: ExcludeEmptyZodLiterals<T>): EventSchemas<Combine<S, ZodToStandardSchema<T extends ZodEventSchemas ? T : PickLiterals<T extends LiteralZodEventSchemas ? T extends infer T_1 extends LiteralZodEventSchemas ? { [I in keyof T_1 as GetName<T[I]>]: InferZodShape<T[I]>; } : never : T extends ZodEventSchemas ? T : never>>>>;
 }
 
 // @public
@@ -233,6 +239,13 @@ export enum internalEvents {
 //
 // @internal
 export type IsStringLiteral<T extends string> = string extends T ? false : true;
+
+// @public
+export type LiteralZodEventSchema = z.ZodObject<{
+    name: z.ZodLiteral<string>;
+    data: z.AnyZodObject | z.ZodAny;
+    user?: z.AnyZodObject | z.ZodAny;
+}>;
 
 // @public
 export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
