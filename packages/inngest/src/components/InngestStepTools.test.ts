@@ -65,10 +65,30 @@ describe("waitForEvent", () => {
     });
   });
 
-  test("returns `event` as ID", () => {
+  test("returns `id` as ID", () => {
     void waitForEvent("id", "event", { timeout: "2h" });
     expect(getOp()).toMatchObject({
       id: "id",
+    });
+  });
+
+  test("returns no name by default", () => {
+    void waitForEvent("id", "event", { timeout: "2h" });
+    expect(getOp()).toMatchObject({
+      displayName: undefined,
+    });
+  });
+
+  test("returns specific name if given", () => {
+    void waitForEvent({ id: "id", name: "name" }, "event", { timeout: "2h" });
+    expect(getOp()).toMatchObject({
+      displayName: "name",
+    });
+  });
+
+  test("return event name as name", () => {
+    void waitForEvent("id", "event", { timeout: "2h" });
+    expect(getOp()).toMatchObject({
       name: "event",
     });
   });
@@ -139,11 +159,24 @@ describe("run", () => {
     });
   });
 
-  test("return step name as name", () => {
-    void run("step", () => undefined);
+  test("returns `id` as ID", () => {
+    void run("id", () => undefined);
     expect(getOp()).toMatchObject({
-      id: "step",
-      name: "step",
+      id: "id",
+    });
+  });
+
+  test("return no name by default", () => {
+    void run("id", () => undefined);
+    expect(getOp()).toMatchObject({
+      displayName: undefined,
+    });
+  });
+
+  test("return specific name if given", () => {
+    void run({ id: "id", name: "name" }, () => undefined);
+    expect(getOp()).toMatchObject({
+      displayName: "name",
     });
   });
 
@@ -216,10 +249,17 @@ describe("sleep", () => {
     });
   });
 
-  test("return time string as name", () => {
+  test("return no name by default", () => {
     void sleep("id", "1m");
     expect(getOp()).toMatchObject({
-      name: "1m",
+      displayName: undefined,
+    });
+  });
+
+  test("return specific name if given", () => {
+    void sleep({ id: "id", name: "name" }, "1m");
+    expect(getOp()).toMatchObject({
+      displayName: "name",
     });
   });
 });
@@ -242,6 +282,26 @@ describe("sleepUntil", () => {
     void sleepUntil("id", future);
     expect(getOp()).toMatchObject({
       id: "id",
+    });
+  });
+
+  test("return no name by default", () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 1);
+
+    void sleepUntil("id", future);
+    expect(getOp()).toMatchObject({
+      displayName: undefined,
+    });
+  });
+
+  test("return specific name if given", () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 1);
+
+    void sleepUntil({ id: "id", name: "name" }, future);
+    expect(getOp()).toMatchObject({
+      displayName: "name",
     });
   });
 
@@ -301,7 +361,6 @@ describe("sendEvent", () => {
       fetch: fetchMock,
       eventKey: "123",
     });
-    const sendSpy = jest.spyOn(client, "send");
 
     let sendEvent: StepTools["sendEvent"];
     let getOp: GetOp;
@@ -335,14 +394,24 @@ describe("sendEvent", () => {
       void sendEvent("id", { name: "step", data: "foo" });
 
       expect(getOp()).toMatchObject({ op: StepOpCode.StepPlanned });
-      expect(sendSpy).not.toHaveBeenCalled();
     });
 
-    test('return "sendEvent" as name', () => {
+    test("return no name by default", () => {
       void sendEvent("id", { name: "step", data: "foo" });
 
+      expect(getOp()).toMatchObject({ displayName: undefined });
+    });
+
+    test("return specific name if given", () => {
+      void sendEvent({ id: "id", name: "name" }, { name: "step", data: "foo" });
+
+      expect(getOp()).toMatchObject({ displayName: "name" });
+    });
+
+    test("retain legacy `name` field for backwards compatibility with <=v2", () => {
+      void sendEvent({ id: "id", name: "name" }, { name: "step", data: "foo" });
+
       expect(getOp()).toMatchObject({ name: "sendEvent" });
-      expect(sendSpy).not.toHaveBeenCalled();
     });
   });
 

@@ -192,3 +192,16 @@ export type ExclusiveKeys<T, Keys1 extends keyof T, Keys2 extends keyof T> =
  * types and unique properties are marked as optional.
  */
 export type Either<A, B> = Partial<A> & Partial<B> & (A | B);
+
+/**
+ * Given a function `T`, return the parameters of that function, except for the
+ * first one.
+ */
+export type ParametersExceptFirst<T> = T extends (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  arg0: any,
+  ...rest: infer U
+) => // eslint-disable-next-line @typescript-eslint/no-explicit-any
+any
+  ? U
+  : never;

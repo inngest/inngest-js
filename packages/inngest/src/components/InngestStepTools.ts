@@ -4,12 +4,17 @@ import { type Jsonify } from "type-fest";
 import { ErrCode, prettyError } from "../helpers/errors";
 import { createFrozenPromise, resolveAfterPending } from "../helpers/promises";
 import { timeStr } from "../helpers/strings";
-import { type ObjectPaths, type SendEventPayload } from "../helpers/types";
+import {
+  type ObjectPaths,
+  type ParametersExceptFirst,
+  type SendEventPayload,
+} from "../helpers/types";
 import {
   StepOpCode,
   type ClientOptions,
   type EventPayload,
   type HashedOp,
+  type StepOptions,
   type StepOptionsOrId,
 } from "../types";
 import { type EventsFromOpts, type Inngest } from "./Inngest";
@@ -74,10 +79,11 @@ export const createStepTools = <
      * Most simple tools will likely only need to define this.
      */
     matchOp: (
+      stepOptions: StepOptions,
       /**
        * Arguments passed by the user.
        */
-      ...args: Parameters<T>
+      ...args: ParametersExceptFirst<T>
     ) => Omit<HashedOp, "data" | "error">,
 
     opts?: {
@@ -136,7 +142,13 @@ export const createStepTools = <
         );
       }
 
-      const opId = matchOp(...args);
+      const [stepOptionsOrId, ...remainingArgs] = args as unknown as [
+        StepOptionsOrId,
+        ...ParametersExceptFirst<T>
+      ];
+      const stepOptions = getStepOptions(stepOptionsOrId);
+
+      const opId = matchOp(stepOptions, ...remainingArgs);
 
       // TODO Need indexing?
       if (state.steps[opId.id]) {
@@ -176,12 +188,12 @@ export const createStepTools = <
     }) as T;
   };
 
-  const getStepIdFromOptions = (options: StepOptionsOrId): string => {
+  const getStepOptions = (options: StepOptionsOrId): StepOptions => {
     if (typeof options === "string") {
-      return options;
+      return { id: options };
     }
 
-    return options.id;
+    return options;
   };
 
   /**
@@ -222,11 +234,12 @@ export const createStepTools = <
         payload: Payload
       ): Promise<void>;
     }>(
-      (idOrOptions) => {
+      ({ id, name }) => {
         return {
-          id: getStepIdFromOptions(idOrOptions),
+          id,
           op: StepOpCode.StepPlanned,
-          name: "sendEvent",
+          name: "sendEvent", // TODO is this needed?
+          displayName: name,
         };
       },
       {
@@ -277,7 +290,7 @@ export const createStepTools = <
       >
     >(
       (
-        idOrOptions,
+        { id, name },
 
         /**
          * The event name to wait for.
@@ -303,10 +316,11 @@ export const createStepTools = <
         }
 
         return {
-          id: getStepIdFromOptions(idOrOptions),
+          id,
           op: StepOpCode.WaitForEvent,
           name: event as string,
           opts: matchOpts,
+          displayName: name,
         };
       }
     ),
@@ -350,19 +364,15 @@ export const createStepTools = <
         >
       >
     >(
-      (idOrOptions) => {
-        const id = getStepIdFromOptions(idOrOptions);
-
+      ({ id, name }) => {
         return {
           id,
           op: StepOpCode.StepPlanned,
-
-          // TODO Bad idea to default the name to the ID? Might be confusing
-          // what the user can safely change.
           name: id,
+          displayName: name,
         };
       },
-      { fn: (idOrOptions, fn) => fn() }
+      { fn: (stepOptions, fn) => fn() }
     ),
 
     /**
@@ -384,15 +394,16 @@ export const createStepTools = <
          */
         time: number | string
       ) => Promise<void>
-    >((idOrOptions, time) => {
+    >(({ id, name }, time) => {
       /**
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
       return {
-        id: getStepIdFromOptions(idOrOptions),
+        id,
         op: StepOpCode.Sleep,
         name: timeStr(time),
+        displayName: name,
       };
     }),
 
@@ -411,7 +422,7 @@ export const createStepTools = <
          */
         time: Date | string
       ) => Promise<void>
-    >((idOrOptions, time) => {
+    >(({ id, name }, time) => {
       const date = typeof time === "string" ? new Date(time) : time;
 
       /**
@@ -420,9 +431,10 @@ export const createStepTools = <
        */
       try {
         return {
-          id: getStepIdFromOptions(idOrOptions),
+          id,
           op: StepOpCode.Sleep,
           name: date.toISOString(),
+          displayName: name,
         };
       } catch (err) {
         /**

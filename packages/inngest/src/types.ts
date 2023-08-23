@@ -104,9 +104,19 @@ export type Op = {
   op: StepOpCode;
 
   /**
-   * The unhashed step name for this operation.
+   * The unhashed step name for this operation. This is a legacy field that is
+   * sometimes used for critical data, like the sleep duration for
+   * `step.sleep()`.
+   *
+   * @deprecated For display name, use `displayName` instead.
    */
   name?: string;
+
+  /**
+   * An optional name for this step that can be used to display in the Inngest
+   * UI.
+   */
+  displayName?: string;
 
   /**
    * Any additional data required for this operation to send to Inngest. This
@@ -1017,9 +1027,16 @@ export type SupportedFrameworkName =
 export interface StepOptions {
   /**
    * The ID to use to memoize the result of this step, ensuring it is run only
-   * once.
+   * once. Changing this ID in an existing function will cause the step to be
+   * run again for in-progress runs; it is recommended to use a stable ID.
    */
   id: string;
+
+  /**
+   * The display name to use for this step in the Inngest UI. This can be
+   * changed at any time without affecting the step's behaviour.
+   */
+  name?: string;
 }
 
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
