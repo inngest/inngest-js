@@ -108,7 +108,7 @@ const fastifyPlugin = ((fastify, options, done) => {
       method: ["GET", "POST", "PUT"],
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       handler,
-      url: options.options?.serveHost || "/api/inngest",
+      url: options.options?.servePath || "/api/inngest",
     });
 
     done();
