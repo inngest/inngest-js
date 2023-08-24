@@ -344,6 +344,15 @@ export type StandardEventSchemaToPayload<T> = Simplify<{
 }>;
 
 // @public
+export interface StepOptions {
+    id: string;
+    name?: string;
+}
+
+// @public
+export type StepOptionsOrId = StepOptions["id"] | StepOptions;
+
+// @public
 export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${`${number}h` | ""}${`${number}m` | ""}${`${number}s` | ""}`;
 
 // @public

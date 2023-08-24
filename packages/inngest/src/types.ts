@@ -956,6 +956,8 @@ export type SupportedFrameworkName =
 
 /**
  * A set of options that can be passed to any step to configure it.
+ *
+ * @public
  */
 export interface StepOptions {
   /**
@@ -972,6 +974,11 @@ export interface StepOptions {
   name?: string;
 }
 
+/**
+ * Either a step ID or a set of step options.
+ *
+ * @public
+ */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
 /**
