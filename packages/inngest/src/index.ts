@@ -29,5 +29,7 @@ export type {
   GetEvents,
   LogLevel,
   RegisterOptions,
+  StepOptions,
+  StepOptionsOrId,
   TimeStr,
 } from "./types";
