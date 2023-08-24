@@ -161,10 +161,15 @@ jobs:
       - name: Copy functions to test to example
         run: cp -Tr ../../packages/inngest/src/test/functions/ ${{ steps.inngest-functions-path.outputs.dir }}
         working-directory: examples/${{ matrix.example }}
+
       # Rules for every project can be different; ignore the example functions
       # we've just added.
       - name: Ignore ESLint in example functions
         run: echo '**/inngest/**' >> .eslintignore
+        working-directory: examples/${{ matrix.example }}
+      # This also covers projects not using ESLint.
+      - name: Ignore TS checks in examples functions
+        run: find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i '1i // @ts-nocheck' {} \;
         working-directory: examples/${{ matrix.example }}
 
       # Try to build the example
