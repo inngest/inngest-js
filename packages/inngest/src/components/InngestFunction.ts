@@ -87,8 +87,8 @@ export class InngestFunction<
   /**
    * The name of this function as it will appear in the Inngest Cloud UI.
    */
-  public get name(): string | undefined {
-    return this.opts.name;
+  public get name(): string {
+    return this.opts.name || this.id();
   }
 
   /**
