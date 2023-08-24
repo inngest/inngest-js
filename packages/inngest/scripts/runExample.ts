@@ -56,7 +56,11 @@ void inquirer
       path.relative(examplePath, inngestPath),
       "inngest.tgz"
     );
-    await exec("npm", ["install", relativeTgzPath], { cwd: examplePath });
+    await exec(
+      "npm",
+      ["install", "--no-save", "--no-package-lock", relativeTgzPath],
+      { cwd: examplePath }
+    );
 
     await exec("npm", ["run", "dev"], {
       cwd: examplePath,
