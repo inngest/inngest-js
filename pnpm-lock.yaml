@@ -75,6 +75,9 @@ importers:
       '@microsoft/api-extractor':
         specifier: ^7.33.7
         version: 7.34.4(@types/node@18.16.16)
+      '@total-typescript/shoehorn':
+        specifier: ^0.1.1
+        version: 0.1.1
       '@types/aws-lambda':
         specifier: ^8.10.108
         version: 8.10.108
@@ -1626,6 +1629,10 @@ packages:
     resolution: {integrity: sha512-rEUrBSGIoSFuYxwBYtlUFMlE2CwGhmW+w9355/5oduSw8e5h2+Tj4UrAGNNgP9915++wj5vkQo0UuOBqOAq4nw==}
     dependencies:
       tslib: 2.4.0
+    dev: true
+
+  /@total-typescript/shoehorn@0.1.1:
+    resolution: {integrity: sha512-XSPcazQsC2Cr7eCiAI+M2bTmMziBvFWYTYMgUDKLbU6i+7m3I2BF5gXF5vKDO8577fONs9CvmTvVa7+nMHMfxg==}
     dev: true
 
   /@ts-morph/common@0.11.1:
