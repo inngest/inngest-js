@@ -1,9 +1,10 @@
 export {
-  Combine,
   EventSchemas,
-  StandardEventSchemaToPayload,
-  StandardEventSchemas,
-  ZodEventSchemas,
+  type Combine,
+  type LiteralZodEventSchema,
+  type StandardEventSchemaToPayload,
+  type StandardEventSchemas,
+  type ZodEventSchemas,
 } from "./components/EventSchemas";
 export { Inngest } from "./components/Inngest";
 export type { EventsFromOpts } from "./components/Inngest";
