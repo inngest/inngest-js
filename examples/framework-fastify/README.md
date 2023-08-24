@@ -12,7 +12,7 @@ npm run dev
 Open http://localhost:3000 with your browser to see the result.
 
 - [Inngest functions](https://www.inngest.com/docs/functions) are available at `inngest/`.
-- The [Inngest handler](https://www.inngest.com/docs/sdk/serve#framework-nuxt) is available at `index.ts`.
+- The [Inngest handler](https://www.inngest.com/docs/sdk/serve#framework-fastify) is available at `index.ts`.
 
 ## Learn More
 
