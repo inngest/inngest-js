@@ -1,5 +1,88 @@
 # inngest
 
+## 2.6.0
+
+### Minor Changes
+
+- [#202](https://github.com/inngest/inngest-js/pull/202) [`21053ed`](https://github.com/inngest/inngest-js/commit/21053edeb5a11f2eaa0242d56d36b0aee6ae994f) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Add support for Fastify, either via a custom `.route()` or using a Fastify plugin
+
+  ```ts
+  import Fastify from "fastify";
+  import inngestFastify, { serve } from "inngest/fastify";
+  import { functions, inngest } from "./inngest";
+
+  const fastify = Fastify({
+    logger: true,
+  });
+
+  // The lead maintainer of Fastify recommends using this as a plugin:
+  fastify.register(inngestFastify, {
+    client: inngest,
+    functions,
+    options: {},
+  });
+
+  // We do also export `serve()` if you want to use it directly, though.
+  fastify.route({
+    method: ["GET", "POST", "PUT"],
+    handler: serve(inngest, functions),
+    url: "/api/inngest",
+  });
+
+  fastify.listen({ port: 3000 }, function (err, address) {
+    if (err) {
+      fastify.log.error(err);
+      process.exit(1);
+    }
+  });
+  ```
+
+- [#298](https://github.com/inngest/inngest-js/pull/298) [`4984aa8`](https://github.com/inngest/inngest-js/commit/4984aa85b97fd7b3d38d4fdcb5559c0ecb4307a3) Thanks [@z.object({](https://github.com/z.object({), [@z.object({](https://github.com/z.object({)! - Add the ability to provide Zod schemas using `z.object()` instead of requiring a record format
+
+  ```ts
+  // Previously we supported this
+  new EventSchemas().fromZod({
+    "test.event": {
+      data: z.object({ a: z.string() }),
+   b: z.number() }),
+    },
+  });
+
+  // Now we ALSO support this
+  new EventSchemas().fromZod([
+    z.object({
+      name: z.literal("test.event"),
+      data: z.object({ a: z.string() }),
+   b: z.number() }),
+    }),
+  ]);
+  ```
+
+  This should help if you wish to declare your events piece-by-piece instead of in a single object.
+
+  ```ts
+  const firstEvent = z.object({
+    name: z.literal("app/user.created"),
+    data: z.object({ id: z.string() }),
+  });
+
+  const secondEvent = z.object({
+    name: z.literal("shop/product.deleted"),
+    data: z.object({ id: z.string() }),
+  });
+
+  new EventSchemas().fromZod([firstEvent, secondEvent]);
+  ```
+
+  You can use the exported `LiteralZodEventSchema` type to provide some autocomplete when writing your events, too.
+
+  ```ts
+  const ShopProductOrdered = z.object({
+    name: z.literal("shop/product.ordered"),
+    data: z.object({ productId: z.string() }),
+  }) satisfies LiteralZodEventSchema;
+  ```
+
 ## 2.5.2
 
 ### Patch Changes
