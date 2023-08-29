@@ -17,9 +17,9 @@ export const frameworkName: SupportedFrameworkName = "edge";
  * @example
  * ```ts
  * import { serve } from "inngest/edge";
- * import fns from "~/inngest";
+ * import functions from "~/inngest";
  *
- * export const handler = serve("My Edge App", fns);
+ * export const handler = serve({ id: "my-edge-app", functions });
  * ```
  */
 export const serve = (options: ServeHandlerOptions) => {

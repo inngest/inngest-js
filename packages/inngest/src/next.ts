@@ -21,12 +21,15 @@ const isNextEdgeRequest = (
  *
  * @example Next.js <=12 can export the handler directly
  * ```ts
- * export default serve(inngest, [fn1, fn2]);
+ * export default serve({ client: inngest, functions: [fn1, fn2] });
  * ```
  *
  * @example Next.js >=13 with the `app` dir must export individual methods
  * ```ts
- * export const { GET, POST, PUT } = serve(inngest, [fn1, fn2]);
+ * export const { GET, POST, PUT } = serve({
+ *            client: inngest,
+ *            functions: [fn1, fn2],
+ * });
  * ```
  *
  * @public

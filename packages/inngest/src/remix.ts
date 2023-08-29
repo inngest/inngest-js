@@ -46,9 +46,9 @@ const createNewResponse = ({
  * @example
  * ```ts
  * import { serve } from "inngest/remix";
- * import fns from "~/inngest";
+ * import functions from "~/inngest";
  *
- * const handler = serve("My Remix App", fns);
+ * const handler = serve({ id: "my-remix-app", functions });
  *
  * export { handler as loader, handler as action };
  * ```

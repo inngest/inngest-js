@@ -23,17 +23,17 @@ export const frameworkName: SupportedFrameworkName = "aws-lambda";
  * import { Inngest } from "inngest";
  * import { serve } from "inngest/lambda";
  *
- * const inngest = new Inngest({ name: "My Lambda App" });
+ * const inngest = new Inngest({ id: "my-lambda-app" });
  *
  * const fn = inngest.createFunction(
- *   { name: "Hello World" },
+ *   { id: "hello-world" },
  *   { event: "test/hello.world" },
  *   async ({ event }) => {
- *     return "Hello World";
- *   }
+ *    return "Hello World";
+ *  }
  * );
  *
- * export const handler = serve(inngest, [fn]);
+ * export const handler = serve({ client: inngest, functions: [fn] });
  * ```
  *
  * @public
