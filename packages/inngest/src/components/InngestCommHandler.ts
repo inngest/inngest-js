@@ -727,11 +727,6 @@ export class InngestCommHandler<
     if (this.serveHost)
       ret = new URL(ret.pathname + ret.search, this.serveHost);
 
-    /**
-     * Remove any introspection query strings.
-     */
-    ret.searchParams.delete(queryKeys.Introspect);
-
     return ret;
   }
 

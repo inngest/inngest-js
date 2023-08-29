@@ -281,8 +281,6 @@ export enum queryKeys {
     // (undocumented)
     FnId = "fnId",
     // (undocumented)
-    Introspect = "introspect",
-    // (undocumented)
     StepId = "stepId"
 }
 

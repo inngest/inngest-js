@@ -10,7 +10,6 @@
 export enum queryKeys {
   FnId = "fnId",
   StepId = "stepId",
-  Introspect = "introspect",
   DeployId = "deployId",
 }
 
