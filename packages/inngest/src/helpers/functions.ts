@@ -8,14 +8,14 @@ import { type Await } from "./types";
  * Wraps a function with a cache. When the returned function is run, it will
  * cache the result and return it on subsequent calls.
  */
-export const cacheFn = <T extends (...args: unknown[]) => unknown>(
-  fn: T
-): T => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const cacheFn = <T extends (...args: any[]) => any>(fn: T): T => {
   const key = "value";
   const cache = new Map<typeof key, unknown>();
 
   return ((...args) => {
     if (!cache.has(key)) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       cache.set(key, fn(...args));
     }
 
