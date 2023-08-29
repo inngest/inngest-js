@@ -14,7 +14,7 @@ import {
   skipDevServer,
 } from "../helpers/env";
 import { serializeError } from "../helpers/errors";
-import { cacheFn, parseFnData } from "../helpers/functions";
+import { parseFnData } from "../helpers/functions";
 import { createStream } from "../helpers/stream";
 import {
   hashSigningKey,
@@ -43,62 +43,83 @@ import {
   type InngestFunction,
 } from "./InngestFunction";
 
-/**
- * A handler for serving Inngest functions. This type should be used
- * whenever a handler for a new framework is being added to enforce that the
- * registration process is always the same for the user.
- *
- * @example
- * ```
- * // my-custom-handler.ts
- * import { InngestCommHandler, ServeHandler } from "inngest";
- *
- * export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
- *   const handler = new InngestCommHandler(
- *     "my-custom-handler",
- *     nameOrInngest,
- *     fns,
- *     opts,
- *     () => { ... },
- *     () => { ... }
- *   );
- *
- *   return handler.createHandler();
- * };
- * ```
- *
- * @public
- */
-export type ServeHandler = (
+export interface ServeHandlerOptions extends RegisterOptions {
   /**
    * The name of this app, used to scope and group Inngest functions, or
    * the `Inngest` instance used to declare all functions.
    */
-  client: AnyInngest,
+  client: AnyInngest;
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: AnyInngestFunction[],
+  functions: AnyInngestFunction[];
+}
+
+interface InngestCommHandlerOptions<
+  Input extends any[] = any[],
+  Output = any,
+  StreamOutput = any
+> extends RegisterOptions {
+  /**
+   * The name of the framework this handler is designed for. Should be
+   * lowercase, alphanumeric characters inclusive of `-` and `/`.
+   *
+   * This should never be defined by the user; a {@link ServeHandler} should
+   * abstract this.
+   */
+  frameworkName: string;
 
   /**
-   * A set of options to further configure the registration of Inngest
-   * functions.
+   * The name of this serve handler, e.g. `"My App"`. It's recommended that this
+   * value represents the overarching app/service that this set of functions is
+   * being served from.
+   *
+   * This can also be an `Inngest` client, in which case the name given when
+   * instantiating the client is used. This is useful if you're sending and
+   * receiving events from the same service, as you can reuse a single
+   * definition of Inngest.
    */
-  opts?: RegisterOptions
+  client: AnyInngest;
+
   /**
-   * This `any` return is appropriate.
-   *
-   * While we can infer the signature of the returned value, we cannot guarantee
-   * that we have used the same types as the framework we are integrating with,
-   * which sometimes can cause frustrating collisions for a user that result in
-   * `as unknown as X` casts.
-   *
-   * Instead, we will use `any` here and have the user be able to place it
-   * anywhere they need.
+   * An array of the functions to serve and register with Inngest.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-) => any;
+  functions: AnyInngestFunction[];
+
+  /**
+   * The `handler` is the function your framework requires to handle a
+   * request. For example, this is most commonly a function that is given a
+   * `Request` and must return a `Response`.
+   *
+   * The handler must map out any incoming parameters, then return a
+   * strictly-typed object to assess what kind of request is being made,
+   * collecting any relevant data as we go.
+   *
+   * @example
+   * ```
+   * return {
+   *   register: () => { ... },
+   *   run: () => { ... },
+   *   view: () => { ... }
+   * };
+   * ```
+   *
+   * Every key must be specified and must be a function that either returns
+   * a strictly-typed payload or `undefined` if the request is not for that
+   * purpose.
+   *
+   * This gives handlers freedom to choose how their platform of choice will
+   * trigger differing actions, whilst also ensuring all required information
+   * is given for each request type.
+   *
+   * See any existing handler for a full example.
+   *
+   * This should never be defined by the user; a {@link ServeHandler} should
+   * abstract this.
+   */
+  handler: Handler<Input, Output, StreamOutput>;
+}
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -151,17 +172,9 @@ const registerResSchema = z.object({
  * @public
  */
 export class InngestCommHandler<
-  H extends Handler,
-  TResTransform extends (
-    res: ActionResponse<string>,
-    ...args: Parameters<H>
-  ) => // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any,
-  TStreamTransform extends (
-    res: ActionResponse<ReadableStream>,
-    ...args: Parameters<H>
-  ) => // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  any
+  Input extends any[] = any[],
+  Output = any,
+  StreamOutput = any
 > {
   /**
    * The ID of this serve handler, e.g. `"my-app"`. It's recommended that this
@@ -173,14 +186,7 @@ export class InngestCommHandler<
   /**
    * The handler specified during instantiation of the class.
    */
-  public readonly handler: H;
-
-  /**
-   * The response transformer specified during instantiation of the class.
-   */
-  public readonly transformRes: TResTransform;
-
-  public readonly streamTransformRes: TStreamTransform | undefined;
+  public readonly handler: Handler;
 
   /**
    * The URL of the Inngest function registration endpoint.
@@ -281,128 +287,12 @@ export class InngestCommHandler<
 
   private allowExpiredSignatures: boolean;
 
-  constructor(
-    /**
-     * The name of the framework this handler is designed for. Should be
-     * lowercase, alphanumeric characters inclusive of `-` and `/`.
-     *
-     * This should never be defined by the user; a {@link ServeHandler} should
-     * abstract this.
-     */
-    frameworkName: string,
+  constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>) {
+    this.frameworkName = options.frameworkName;
+    this.client = options.client;
+    this.id = options.id || this.client.id;
 
-    /**
-     * The name of this serve handler, e.g. `"My App"`. It's recommended that this
-     * value represents the overarching app/service that this set of functions is
-     * being served from.
-     *
-     * This can also be an `Inngest` client, in which case the name given when
-     * instantiating the client is used. This is useful if you're sending and
-     * receiving events from the same service, as you can reuse a single
-     * definition of Inngest.
-     */
-    client: AnyInngest,
-
-    /**
-     * An array of the functions to serve and register with Inngest.
-     */
-    functions: AnyInngestFunction[],
-    {
-      inngestRegisterUrl,
-      fetch,
-      logLevel = "info",
-      signingKey,
-      serveHost,
-      servePath,
-      streaming,
-      id,
-    }: RegisterOptions = {},
-
-    /**
-     * The `handler` is the function your framework requires to handle a
-     * request. For example, this is most commonly a function that is given a
-     * `Request` and must return a `Response`.
-     *
-     * The handler must map out any incoming parameters, then return a
-     * strictly-typed object to assess what kind of request is being made,
-     * collecting any relevant data as we go.
-     *
-     * @example
-     * ```
-     * return {
-     *   register: () => { ... },
-     *   run: () => { ... },
-     *   view: () => { ... }
-     * };
-     * ```
-     *
-     * Every key must be specified and must be a function that either returns
-     * a strictly-typed payload or `undefined` if the request is not for that
-     * purpose.
-     *
-     * This gives handlers freedom to choose how their platform of choice will
-     * trigger differing actions, whilst also ensuring all required information
-     * is given for each request type.
-     *
-     * See any existing handler for a full example.
-     *
-     * This should never be defined by the user; a {@link ServeHandler} should
-     * abstract this.
-     */
-    handler: H,
-
-    /**
-     * The `transformRes` function receives the output of the Inngest SDK and
-     * can decide how to package up that information to appropriately return the
-     * information to Inngest.
-     *
-     * Mostly, this is taking the given parameters and returning a new
-     * `Response`.
-     *
-     * The function is passed an {@link ActionResponse} (an object containing a
-     * `status` code, a `headers` object, and a stringified `body`), as well as
-     * every parameter passed to the given `handler` function. This ensures you
-     * can appropriately handle the response, including use of any required
-     * parameters such as `res` in Express-/Connect-like frameworks.
-     *
-     * This should never be defined by the user; a {@link ServeHandler} should
-     * abstract this.
-     */
-    transformRes: TResTransform,
-
-    /**
-     * The `streamTransformRes` function, if defined, declares that this handler
-     * supports streaming responses back to Inngest. This is useful for
-     * functions that are expected to take a long time, as edge streaming can
-     * often circumvent restrictive request timeouts and other limitations.
-     *
-     * If your handler does not support streaming, do not define this function.
-     *
-     * It receives the output of the Inngest SDK and can decide how to package
-     * up that information to appropriately return the information in a stream
-     * to Inngest.
-     *
-     * Mostly, this is taking the given parameters and returning a new
-     * `Response`.
-     *
-     * The function is passed an {@link ActionResponse} (an object containing a
-     * `status` code, a `headers` object, and `body`, a `ReadableStream`), as
-     * well as every parameter passed to the given `handler` function. This
-     * ensures you can appropriately handle the response, including use of any
-     * required parameters such as `res` in Express-/Connect-like frameworks.
-     *
-     * This should never be defined by the user; a {@link ServeHandler} should
-     * abstract this.
-     */
-    streamTransformRes?: TStreamTransform
-  ) {
-    this.frameworkName = frameworkName;
-    this.client = client;
-    this.id = id || this.client.id;
-
-    this.handler = handler;
-    this.transformRes = transformRes;
-    this.streamTransformRes = streamTransformRes;
+    this.handler = options.handler as Handler;
 
     /**
      * Provide a hidden option to allow expired signatures to be accepted during
@@ -410,13 +300,13 @@ export class InngestCommHandler<
      */
     this.allowExpiredSignatures = Boolean(
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, prefer-rest-params
-      arguments["3"]?.__testingAllowExpiredSignatures
+      arguments["0"]?.__testingAllowExpiredSignatures
     );
 
     // Ensure we filter any undefined functions in case of missing imports.
-    this.rawFns = functions.filter(Boolean);
+    this.rawFns = options.functions.filter(Boolean);
 
-    if (this.rawFns.length !== functions.length) {
+    if (this.rawFns.length !== options.functions.length) {
       // TODO PrettyError
       console.warn(
         `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`
@@ -448,16 +338,16 @@ export class InngestCommHandler<
     }, {});
 
     this.inngestRegisterUrl = new URL(
-      inngestRegisterUrl || "https://api.inngest.com/fn/register"
+      options.inngestRegisterUrl || "https://api.inngest.com/fn/register"
     );
 
-    this.signingKey = signingKey;
-    this.serveHost = serveHost;
-    this.servePath = servePath;
-    this.logLevel = logLevel;
-    this.streaming = streaming ?? false;
+    this.signingKey = options.signingKey;
+    this.serveHost = options.serveHost;
+    this.servePath = options.servePath;
+    this.logLevel = options.logLevel ?? "info";
+    this.streaming = options.streaming ?? false;
 
-    this.fetch = getFetch(fetch || this.client["fetch"]);
+    this.fetch = getFetch(options.fetch || this.client["fetch"]);
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
@@ -489,10 +379,8 @@ export class InngestCommHandler<
    * };
    * ```
    */
-  public createHandler(): (
-    ...args: Parameters<H>
-  ) => Promise<Awaited<ReturnType<TResTransform>>> {
-    return async (...args: Parameters<H>) => {
+  public createHandler(): (...args: Input) => Promise<Awaited<Output>> {
+    return async (...args: Input) => {
       const timer = new ServerTiming();
 
       /**
@@ -500,29 +388,11 @@ export class InngestCommHandler<
        * async.
        */
       // eslint-disable-next-line @typescript-eslint/await-thenable
-      const rawActions = await timer.wrap("handler", () =>
-        this.handler(...args)
-      );
+      const actions = await timer.wrap("handler", () => this.handler(...args));
 
-      /**
-       * For each function within the actions returned, ensure that its value
-       * caches when run. This ensures that the function is only run once, even
-       * if it's called multiple times throughout this handler's invocation.
-       *
-       * Many frameworks have issues with multiple calls to req/res objects;
-       * reading a request's body multiple times is a common example. This makes
-       * sure to handle this without having to pass around references.
-       */
-      const actions = Object.fromEntries(
-        Object.entries(rawActions).map(([key, val]) => [
-          key,
-          typeof val === "function" ? cacheFn(val) : val,
-        ])
-      ) as typeof rawActions;
-
-      const getHeaders = (): Record<string, string> =>
+      const getInngestHeaders = async (): Promise<Record<string, string>> =>
         inngestHeaders({
-          env: actions.env as Record<string, string | undefined>,
+          env: await actions.env?.(),
           framework: this.frameworkName,
           client: this.client,
           extras: {
@@ -531,7 +401,7 @@ export class InngestCommHandler<
         });
 
       const actionRes = timer.wrap("action", () =>
-        this.handleAction(actions as ReturnType<Awaited<H>>, timer)
+        this.handleAction(actions, timer, getInngestHeaders)
       );
 
       /**
@@ -541,10 +411,12 @@ export class InngestCommHandler<
        * It should always prioritize the headers returned by the action, as
        * they may contain important information such as `Content-Type`.
        */
-      const prepareActionRes = (res: ActionResponse): ActionResponse => ({
+      const prepareActionRes = async (
+        res: ActionResponse
+      ): Promise<ActionResponse> => ({
         ...res,
         headers: {
-          ...getHeaders(),
+          ...(await getInngestHeaders()),
           ...res.headers,
         },
       });
@@ -554,38 +426,37 @@ export class InngestCommHandler<
         (this.streaming === "allow" &&
           platformSupportsStreaming(
             this.frameworkName as SupportedFrameworkName,
-            actions.env as Record<string, string | undefined>
+            await actions.env?.()
           ));
 
-      if (wantToStream && this.streamTransformRes) {
-        const runRes = await actions.run();
-        if (runRes) {
+      if (wantToStream && actions.transformStreamingResponse) {
+        const method = await actions.method?.();
+        if (method === "POST") {
           const { stream, finalize } = await createStream();
 
           /**
            * Errors are handled by `handleAction` here to ensure that an
            * appropriate response is always given.
            */
-          void actionRes.then((res) => finalize(prepareActionRes(res)));
+          void actionRes.then((res) => {
+            return finalize(prepareActionRes(res));
+          });
 
-          return timer.wrap("res", () =>
+          return timer.wrap("res", async () => {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-            this.streamTransformRes?.(
-              {
-                status: 201,
-                headers: getHeaders(),
-                body: stream,
-              },
-              ...args
-            )
-          );
+            return actions.transformStreamingResponse?.({
+              status: 201,
+              headers: await getInngestHeaders(),
+              body: stream,
+            });
+          });
         }
       }
 
       return timer.wrap("res", async () => {
-        return actionRes.then((res) => {
+        return actionRes.then(prepareActionRes).then((actionRes) => {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          return this.transformRes(prepareActionRes(res), ...args);
+          return actions.transformResponse(actionRes);
         });
       });
     };
@@ -603,22 +474,13 @@ export class InngestCommHandler<
    * found (e.g. env vars, options, etc).
    */
   private async handleAction(
-    actions: ReturnType<H>,
-    timer: ServerTiming
+    actions: HandlerResponse,
+    timer: ServerTiming,
+    getInngestHeaders: () => Promise<Record<string, string>>
   ): Promise<ActionResponse> {
-    const env = actions.env ?? allProcessEnv();
-
-    const getHeaders = (): Record<string, string> =>
-      inngestHeaders({
-        env: env as Record<string, string | undefined>,
-        framework: this.frameworkName,
-        client: this.client,
-        extras: {
-          "Server-Timing": timer.getHeader(),
-        },
-      });
-
-    this._isProd = actions.isProduction ?? isProd(env);
+    // TODO A unique pretty error for every call to `actions.*()`
+    const env = (await actions.env?.()) ?? allProcessEnv();
+    this._isProd = (await actions.isProduction?.()) ?? isProd(env);
 
     /**
      * If we've been explicitly passed an Inngest dev sever URL, assume that
@@ -628,13 +490,29 @@ export class InngestCommHandler<
       ? false
       : this._isProd ?? skipDevServer(env);
 
-    try {
-      const runRes = await actions.run();
+    this.upsertKeysFromEnv(env);
 
-      if (runRes) {
-        this.upsertKeysFromEnv(env);
-        this.validateSignature(runRes.signature, runRes.data);
-        this.client["inngestApi"].setSigningKey(this.signingKey);
+    try {
+      const url = await actions.url();
+      const method = await actions.method();
+
+      const getQuerystring = async (
+        key: string
+      ): Promise<string | undefined> => {
+        const ret =
+          (await actions.queryString?.(key, url)) ||
+          url.searchParams.get(key) ||
+          undefined;
+
+        return ret;
+      };
+
+      if (method === "POST") {
+        const signature = await actions.headers(headerKeys.Signature);
+
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        const body = await actions.body();
+        this.validateSignature(signature ?? undefined, body);
 
         const resultHandlers: ExecutionResultHandlers<ActionResponse> = {
           "function-rejected": (result) => {
@@ -683,10 +561,29 @@ export class InngestCommHandler<
           },
         };
 
+        const fnId = await getQuerystring(queryKeys.FnId);
+        // if (!fnId) {
+        //   throw new Error(
+        //     prettyError({
+        //       whatHappened: "TODO no fnid",
+        //     })
+        //   );
+        // }
+
+        const stepId = await getQuerystring(queryKeys.StepId);
+        // if (!stepId) {
+        //   throw new Error(
+        //     prettyError({
+        //       whatHappened: "TODO no stepid",
+        //     })
+        //   );
+        // }
+
+        // TODO Bad casts
         const result = await this.runStep(
-          runRes.fnId,
-          runRes.stepId,
-          runRes.data,
+          fnId as string,
+          stepId as string,
+          body,
           timer
         );
 
@@ -697,10 +594,8 @@ export class InngestCommHandler<
         return await handler(result);
       }
 
-      const viewRes = await actions.view();
-      if (viewRes) {
-        this.upsertKeysFromEnv(env);
-        const registerBody = this.registerBody(this.reqUrl(actions.url));
+      if (method === "GET") {
+        const registerBody = this.registerBody(this.reqUrl(url));
 
         const introspection: IntrospectRequest = {
           message: "Inngest endpoint configured correctly.",
@@ -718,15 +613,21 @@ export class InngestCommHandler<
         };
       }
 
-      const registerRes = await actions.register();
-      if (registerRes) {
-        this.upsertKeysFromEnv(env);
+      if (method === "PUT") {
+        const deployId = await getQuerystring(queryKeys.DeployId);
+        // if (!deployId) {
+        //   throw new Error(
+        //     prettyError({
+        //       whatHappened: "TODO no deployid",
+        //     })
+        //   );
+        // }
 
         const { status, message, modified } = await this.register(
-          this.reqUrl(actions.url),
+          this.reqUrl(url),
           stringifyUnknown(env[envKeys.DevServerUrl]),
-          registerRes.deployId,
-          getHeaders
+          deployId,
+          getInngestHeaders
         );
 
         return {
@@ -849,7 +750,7 @@ export class InngestCommHandler<
     url: URL,
     devServerHost: string | undefined,
     deployId: string | undefined | null,
-    getHeaders: () => Record<string, string>
+    getHeaders: () => Promise<Record<string, string>>
   ): Promise<{ status: number; message: string; modified: boolean }> {
     const body = this.registerBody(url);
 
@@ -875,7 +776,7 @@ export class InngestCommHandler<
         method: "POST",
         body: stringify(body),
         headers: {
-          ...getHeaders(),
+          ...(await getHeaders()),
           Authorization: `Bearer ${this.hashedSigningKey}`,
         },
         redirect: "follow",
@@ -931,8 +832,12 @@ export class InngestCommHandler<
    * are otherwise difficult to access during initialization.
    */
   private upsertKeysFromEnv(env: Record<string, unknown>) {
-    if (!this.signingKey && env[envKeys.SigningKey]) {
-      this.signingKey = String(env[envKeys.SigningKey]);
+    if (env[envKeys.SigningKey]) {
+      if (!this.signingKey) {
+        this.signingKey = String(env[envKeys.SigningKey]);
+      }
+
+      this.client["inngestApi"].setSigningKey(this.signingKey);
     }
 
     if (!this.client["eventKey"] && env[envKeys.EventKey]) {
@@ -940,10 +845,7 @@ export class InngestCommHandler<
     }
   }
 
-  protected validateSignature(
-    sig: string | undefined,
-    body: Record<string, unknown>
-  ) {
+  protected validateSignature(sig: string | undefined, body: unknown) {
     // Never validate signatures in development.
     if (!this.isProd) {
       // In dev, warning users about signing keys ensures that it's considered
@@ -1079,18 +981,70 @@ class RequestSignature {
  * The broad definition of a handler passed when instantiating an
  * {@link InngestCommHandler} instance.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Handler = (...args: any[]) => {
-  env?: Record<string, unknown>;
-  isProduction?: boolean;
-  url: URL;
-} & {
-  [K in Extract<
-    HandlerAction,
-    { action: "run" | "register" | "view" }
-  >["action"]]: () => MaybePromise<
-    Omit<Extract<HandlerAction, { action: K }>, "action"> | undefined
-  >;
+export type Handler<
+  Input extends any[] = any[],
+  Output = any,
+  StreamOutput = any
+> = (...args: Input) => HandlerResponse<Output, StreamOutput>;
+
+export type HandlerResponse<Output = any, StreamOutput = any> = {
+  body: () => MaybePromise<any>;
+  env?: () => MaybePromise<Record<string, string | undefined>>;
+  headers: (key: string) => MaybePromise<string | null | undefined>;
+
+  /**
+   * Whether the current environment is production. This is used to determine
+   * some functionality like whether to connect to the dev server or whether to
+   * show debug logging.
+   *
+   * If this is not provided--or is provided and returns `undefined`--we'll try
+   * to automatically detect whether we're in production by checking various
+   * environment variables.
+   */
+  isProduction?: () => MaybePromise<boolean | undefined>;
+  method: () => MaybePromise<string>;
+  queryString?: (
+    key: string,
+    url: URL
+  ) => MaybePromise<string | null | undefined>;
+  url: () => MaybePromise<URL>;
+
+  /**
+   * The `transformResponse` function receives the output of the Inngest SDK and
+   * can decide how to package up that information to appropriately return the
+   * information to Inngest.
+   *
+   * Mostly, this is taking the given parameters and returning a new `Response`.
+   *
+   * The function is passed an {@link ActionResponse}, an object containing a
+   * `status` code, a `headers` object, and a stringified `body`. This ensures
+   * you can appropriately handle the response, including use of any required
+   * parameters such as `res` in Express-/Connect-like frameworks.
+   */
+  transformResponse: (res: ActionResponse<string>) => Output;
+
+  /**
+   * The `transformStreamingResponse` function, if defined, declares that this
+   * handler supports streaming responses back to Inngest. This is useful for
+   * functions that are expected to take a long time, as edge streaming can
+   * often circumvent restrictive request timeouts and other limitations.
+   *
+   * If your handler does not support streaming, do not define this function.
+   *
+   * It receives the output of the Inngest SDK and can decide how to package
+   * up that information to appropriately return the information in a stream
+   * to Inngest.
+   *
+   * Mostly, this is taking the given parameters and returning a new `Response`.
+   *
+   * The function is passed an {@link ActionResponse}, an object containing a
+   * `status` code, a `headers` object, and `body`, a `ReadableStream`. This
+   * ensures you can appropriately handle the response, including use of any
+   * required parameters such as `res` in Express-/Connect-like frameworks.
+   */
+  transformStreamingResponse?: (
+    res: ActionResponse<ReadableStream>
+  ) => StreamOutput;
 };
 
 /**
@@ -1115,31 +1069,3 @@ export interface ActionResponse<
    */
   body: TBody;
 }
-
-/**
- * A set of actions the SDK is aware of, including any payloads they require
- * when requesting them.
- */
-type HandlerAction =
-  | {
-      action: "error";
-      data: Record<string, string>;
-    }
-  | {
-      action: "view";
-      isIntrospection: boolean;
-    }
-  | {
-      action: "register";
-      deployId?: null | string;
-    }
-  | {
-      action: "run";
-      fnId: string;
-      stepId: string | null;
-      data: Record<string, unknown>;
-      signature: string | undefined;
-    }
-  | {
-      action: "bad-method";
-    };

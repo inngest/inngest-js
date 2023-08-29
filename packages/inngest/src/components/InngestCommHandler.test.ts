@@ -1,8 +1,5 @@
 import { EventSchemas } from "@local";
-import { type ServeHandler } from "@local/components/InngestCommHandler";
-import { type IsAny } from "@local/helpers/types";
 import { serve } from "@local/next";
-import { assertType } from "type-plus";
 import { z } from "zod";
 import { createClient } from "../test/helpers";
 
@@ -33,12 +30,6 @@ describe("#153", () => {
      * This would throw:
      * "Type instantiation is excessively deep and possibly infinite.ts(2589)"
      */
-    serve(inngest, []);
-  });
-});
-
-describe("ServeHandler", () => {
-  test("serve handlers return any", () => {
-    assertType<IsAny<ReturnType<ServeHandler>>>(true);
+    serve({ client: inngest, functions: [] });
   });
 });
