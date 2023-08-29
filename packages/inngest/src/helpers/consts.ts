@@ -14,12 +14,12 @@ export enum queryKeys {
 }
 
 export enum envKeys {
-  SigningKey = "INNGEST_SIGNING_KEY",
-  EventKey = "INNGEST_EVENT_KEY",
-  DevServerUrl = "INNGEST_DEVSERVER_URL",
-  Environment = "INNGEST_ENV",
+  InngestSigningKey = "INNGEST_SIGNING_KEY",
+  InngestEventKey = "INNGEST_EVENT_KEY",
+  InngestEnvironment = "INNGEST_ENV",
+  InngestBaseUrl = "INNGEST_BASE_URL",
+
   BranchName = "BRANCH_NAME",
-  InngestApiBaseUrl = "INNGEST_API_BASE_URL",
 
   /**
    * The git branch of the commit the deployment was triggered by. Example:
@@ -110,6 +110,8 @@ export enum headerKeys {
   NoRetry = "x-inngest-no-retry",
 }
 
+export const defaultInngestBaseUrl = "https://api.inngest.com/";
+export const defaultInngestEventBaseUrl = "https://inn.gs/";
 export const defaultDevServerHost = "http://127.0.0.1:8288/";
 
 /**

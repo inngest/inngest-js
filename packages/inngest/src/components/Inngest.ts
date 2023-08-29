@@ -1,5 +1,9 @@
 import { InngestApi } from "../api/api";
-import { envKeys } from "../helpers/consts";
+import {
+  defaultInngestBaseUrl,
+  defaultInngestEventBaseUrl,
+  envKeys,
+} from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
   devServerHost,
@@ -91,17 +95,17 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    */
   private eventKey = "";
 
-  /**
-   * Base URL for Inngest Cloud.
-   */
-  public readonly inngestBaseUrl: URL;
+  private readonly baseUrl: string | undefined;
 
   private readonly inngestApi: InngestApi;
 
   /**
    * The absolute URL of the Inngest Cloud API.
    */
-  private inngestApiUrl: URL = new URL(`e/${this.eventKey}`, "https://inn.gs/");
+  private sendEventUrl: URL = new URL(
+    `e/${this.eventKey}`,
+    defaultInngestEventBaseUrl
+  );
 
   private readonly headers: Record<string, string>;
 
@@ -138,7 +142,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   constructor({
     id,
     eventKey,
-    inngestBaseUrl = "https://inn.gs/",
+    baseUrl,
     fetch,
     env,
     logger = new DefaultLogger(),
@@ -150,8 +154,10 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     }
 
     this.id = id;
-    this.inngestBaseUrl = new URL(inngestBaseUrl);
-    this.setEventKey(eventKey || processEnv(envKeys.EventKey) || "");
+
+    this.baseUrl = baseUrl || processEnv(envKeys.InngestBaseUrl);
+
+    this.setEventKey(eventKey || processEnv(envKeys.InngestEventKey) || "");
 
     if (!this.eventKey) {
       console.warn(
@@ -171,13 +177,12 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     this.headers = inngestHeaders({
       inngestEnv: env,
     });
+
     this.fetch = getFetch(fetch);
 
-    const signingKey = processEnv(envKeys.SigningKey) || "";
     this.inngestApi = new InngestApi({
-      baseUrl:
-        processEnv(envKeys.InngestApiBaseUrl) || "https://api.inngest.com",
-      signingKey: signingKey,
+      baseUrl: this.baseUrl || defaultInngestBaseUrl,
+      signingKey: processEnv(envKeys.InngestSigningKey) || "",
       fetch: this.fetch,
     });
 
@@ -273,7 +278,11 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     eventKey: string
   ): void {
     this.eventKey = eventKey;
-    this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
+
+    this.sendEventUrl = new URL(
+      `e/${this.eventKey}`,
+      this.baseUrl || defaultInngestEventBaseUrl
+    );
   }
 
   /**
@@ -370,7 +379,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     // When sending events, check if the dev server is available.  If so, use the
     // dev server.
-    let url = this.inngestApiUrl.href;
+    let url = this.sendEventUrl.href;
 
     if (!skipDevServer()) {
       const host = devServerHost();

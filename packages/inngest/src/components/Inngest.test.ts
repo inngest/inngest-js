@@ -15,7 +15,7 @@ const testEventKey = "foo-bar-baz-test";
 describe("instantiation", () => {
   describe("event key warnings", () => {
     let warnSpy: jest.SpyInstance;
-    const originalEnvEventKey = process.env[envKeys.EventKey];
+    const originalEnvEventKey = process.env[envKeys.InngestEventKey];
 
     beforeEach(() => {
       warnSpy = jest.spyOn(console, "warn");
@@ -26,9 +26,9 @@ describe("instantiation", () => {
       warnSpy.mockRestore();
 
       if (originalEnvEventKey) {
-        process.env[envKeys.EventKey] = originalEnvEventKey;
+        process.env[envKeys.InngestEventKey] = originalEnvEventKey;
       } else {
-        delete process.env[envKeys.EventKey];
+        delete process.env[envKeys.InngestEventKey];
       }
     });
 
@@ -45,7 +45,7 @@ describe("instantiation", () => {
     });
 
     test("should not log a warning if event key is specified in env", () => {
-      process.env[envKeys.EventKey] = testEventKey;
+      process.env[envKeys.InngestEventKey] = testEventKey;
       createClient({ id: "test" });
       expect(warnSpy).not.toHaveBeenCalled();
     });
@@ -103,7 +103,7 @@ describe("send", () => {
     });
 
     test("should succeed if event key specified in env", async () => {
-      process.env[envKeys.EventKey] = testEventKey;
+      process.env[envKeys.InngestEventKey] = testEventKey;
       const inngest = createClient({ id: "test" });
 
       await expect(inngest.send(testEvent)).resolves.toBeUndefined();
@@ -161,7 +161,7 @@ describe("send", () => {
     });
 
     test("should send env:foo if set in INNGEST_ENV", async () => {
-      process.env[envKeys.Environment] = "foo";
+      process.env[envKeys.InngestEnvironment] = "foo";
 
       const inngest = createClient({
         id: "test",
@@ -182,7 +182,7 @@ describe("send", () => {
     });
 
     test("should send explicit env:foo over env var if set in both", async () => {
-      process.env[envKeys.Environment] = "bar";
+      process.env[envKeys.InngestEnvironment] = "bar";
 
       const inngest = createClient({
         id: "test",

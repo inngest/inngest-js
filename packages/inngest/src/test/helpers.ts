@@ -455,26 +455,6 @@ export const testFramework = (
             ],
           });
         });
-
-        test("still access dev server if URL passed as environment variable", async () => {
-          const testDevServerHost = "https://exampledevserver.com";
-          let devServerCalled = false;
-
-          nock(testDevServerHost)
-            .get("/dev", (body) => {
-              devServerCalled = true;
-              return body;
-            })
-            .reply(500, { status: 500 });
-
-          await run([{ client: inngest, functions: [] }], [{ method: "PUT" }], {
-            [envKeys.DevServerUrl]: testDevServerHost,
-            NODE_ENV: "production",
-            ENVIRONMENT: "production",
-          });
-
-          expect(devServerCalled).toBe(true);
-        });
       });
 
       describe("env detection and headers", () => {

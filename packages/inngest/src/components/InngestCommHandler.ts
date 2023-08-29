@@ -2,7 +2,12 @@ import canonicalize from "canonicalize";
 import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
-import { envKeys, headerKeys, queryKeys } from "../helpers/consts";
+import {
+  defaultInngestBaseUrl,
+  envKeys,
+  headerKeys,
+  queryKeys,
+} from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
   allProcessEnv,
@@ -11,16 +16,13 @@ import {
   inngestHeaders,
   isProd,
   platformSupportsStreaming,
+  processEnv,
   skipDevServer,
 } from "../helpers/env";
 import { serializeError } from "../helpers/errors";
 import { parseFnData } from "../helpers/functions";
 import { createStream } from "../helpers/stream";
-import {
-  hashSigningKey,
-  stringify,
-  stringifyUnknown,
-} from "../helpers/strings";
+import { hashSigningKey, stringify } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
 import {
   type FunctionConfig,
@@ -343,7 +345,11 @@ export class InngestCommHandler<
     }, {});
 
     this.inngestRegisterUrl = new URL(
-      options.inngestRegisterUrl || "https://api.inngest.com/fn/register"
+      "/fn/register",
+      options.baseUrl ||
+        processEnv(envKeys.InngestBaseUrl) ||
+        this.client["baseUrl"] ||
+        defaultInngestBaseUrl
     );
 
     this.signingKey = options.signingKey;
@@ -630,7 +636,7 @@ export class InngestCommHandler<
 
         const { status, message, modified } = await this.register(
           this.reqUrl(url),
-          stringifyUnknown(env[envKeys.DevServerUrl]),
+          env,
           deployId,
           getInngestHeaders
         );
@@ -748,7 +754,7 @@ export class InngestCommHandler<
 
   protected async register(
     url: URL,
-    devServerHost: string | undefined,
+    env: Record<string, string | undefined>,
     deployId: string | undefined | null,
     getHeaders: () => Promise<Record<string, string>>
   ): Promise<{ status: number; message: string; modified: boolean }> {
@@ -761,9 +767,10 @@ export class InngestCommHandler<
     let registerURL = this.inngestRegisterUrl;
 
     if (!this._skipDevServer) {
-      const hasDevServer = await devServerAvailable(devServerHost, this.fetch);
+      const host = devServerHost(env);
+      const hasDevServer = await devServerAvailable(host, this.fetch);
       if (hasDevServer) {
-        registerURL = devServerUrl(devServerHost, "/fn/register");
+        registerURL = devServerUrl(host, "/fn/register");
       }
     }
 
@@ -832,16 +839,16 @@ export class InngestCommHandler<
    * are otherwise difficult to access during initialization.
    */
   private upsertKeysFromEnv(env: Record<string, unknown>) {
-    if (env[envKeys.SigningKey]) {
+    if (env[envKeys.InngestSigningKey]) {
       if (!this.signingKey) {
-        this.signingKey = String(env[envKeys.SigningKey]);
+        this.signingKey = String(env[envKeys.InngestSigningKey]);
       }
 
       this.client["inngestApi"].setSigningKey(this.signingKey);
     }
 
-    if (!this.client["eventKey"] && env[envKeys.EventKey]) {
-      this.client.setEventKey(String(env[envKeys.EventKey]));
+    if (!this.client["eventKey"] && env[envKeys.InngestEventKey]) {
+      this.client.setEventKey(String(env[envKeys.InngestEventKey]));
     }
   }
 
@@ -863,7 +870,7 @@ export class InngestCommHandler<
     if (!this.signingKey) {
       // TODO PrettyError
       throw new Error(
-        `No signing key found in client options or ${envKeys.SigningKey} env var. Find your keys at https://app.inngest.com/secrets`
+        `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`
       );
     }
 

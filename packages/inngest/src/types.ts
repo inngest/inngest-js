@@ -373,10 +373,12 @@ export interface ClientOptions {
   eventKey?: string;
 
   /**
-   * The base Inngest Source API URL to append the Source API Key to.
-   * Defaults to https://inn.gs/
+   * The base URL to use when contacting Inngest.
+   *
+   * Defaults to https://inn.gs/ for sending events and https://api.inngest.com
+   * for all other communication with Inngest.
    */
-  inngestBaseUrl?: string;
+  baseUrl?: string;
 
   /**
    * If provided, will override the used `fetch` implementation. Useful for
@@ -476,7 +478,7 @@ export interface RegisterOptions {
    * The URL used to register functions with Inngest.
    * Defaults to https://api.inngest.com/fn/register
    */
-  inngestRegisterUrl?: string;
+  baseUrl?: string;
 
   /**
    * If provided, will override the used `fetch` implementation. Useful for

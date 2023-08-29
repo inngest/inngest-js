@@ -10,11 +10,11 @@ import { z } from 'zod';
 
 // @public
 export interface ClientOptions {
+    baseUrl?: string;
     env?: string;
     eventKey?: string;
     fetch?: typeof fetch;
     id: string;
-    inngestBaseUrl?: string;
     // Warning: (ae-forgotten-export) The symbol "Logger" needs to be exported by the entry point index.d.ts
     logger?: Logger;
     // Warning: (ae-forgotten-export) The symbol "MiddlewareStack" needs to be exported by the entry point index.d.ts
@@ -135,7 +135,7 @@ export enum headerKeys {
 
 // @public
 export class Inngest<TOpts extends ClientOptions = ClientOptions> {
-    constructor({ id, eventKey, inngestBaseUrl, fetch, env, logger, middleware, }: TOpts);
+    constructor({ id, eventKey, baseUrl, fetch, env, logger, middleware, }: TOpts);
     // Warning: (ae-forgotten-export) The symbol "ExclusiveKeys" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "ExtendWithMiddleware" needs to be exported by the entry point index.d.ts
@@ -157,7 +157,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     TMiddleware
     ]>>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
     readonly id: string;
-    readonly inngestBaseUrl: URL;
     // Warning: (ae-forgotten-export) The symbol "SendEventPayload" needs to be exported by the entry point index.d.ts
     send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(payload: Payload): Promise<void>;
     setEventKey(
@@ -181,7 +180,7 @@ export class InngestCommHandler<Input extends any[] = any[], Output = any, Strea
     protected log(level: LogLevel, ...args: unknown[]): void;
     protected readonly logLevel: LogLevel;
     // (undocumented)
-    protected register(url: URL, devServerHost: string | undefined, deployId: string | undefined | null, getHeaders: () => Promise<Record<string, string>>): Promise<{
+    protected register(url: URL, env: Record<string, string | undefined>, deployId: string | undefined | null, getHeaders: () => Promise<Record<string, string>>): Promise<{
         status: number;
         message: string;
         modified: boolean;
@@ -286,9 +285,9 @@ export enum queryKeys {
 
 // @public
 export interface RegisterOptions {
+    baseUrl?: string;
     fetch?: typeof fetch;
     id?: string;
-    inngestRegisterUrl?: string;
     // @deprecated
     landingPage?: boolean;
     logLevel?: LogLevel;
@@ -340,7 +339,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:340:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:357:3 - (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
 // src/types.ts:53:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:639:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:641:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

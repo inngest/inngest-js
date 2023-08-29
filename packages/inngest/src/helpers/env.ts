@@ -18,7 +18,7 @@ import { stringifyUnknown } from "./strings";
  * @example devServerHost()
  */
 export const devServerHost = (
-  env: Record<string, unknown> = allProcessEnv()
+  env: Record<string, string | undefined> = allProcessEnv()
 ): string | undefined => {
   // devServerKeys are the env keys we search for to discover the dev server
   // URL.  This includes the standard key first, then includes prefixed keys
@@ -29,12 +29,12 @@ export const devServerHost = (
   // text replacement instead of actually understanding the AST, despite webpack
   // being fully capable of understanding the AST.
   const values = [
-    env[envKeys.DevServerUrl],
-    env["REACT_APP_INNGEST_DEVSERVER_URL"],
-    env["NEXT_PUBLIC_INNGEST_DEVSERVER_URL"],
+    env[envKeys.InngestBaseUrl],
+    env[`REACT_APP_${envKeys.InngestBaseUrl}`],
+    env[`NEXT_PUBLIC_${envKeys.InngestBaseUrl}`],
   ];
 
-  return values.find((a) => !!a) as string;
+  return values.find((a) => !!a);
 };
 
 const checkFns = (<
@@ -130,7 +130,7 @@ export const getEnvironmentName = (
    * that we check the most specific, most reliable env vars first.
    */
   return (
-    env[envKeys.Environment] ||
+    env[envKeys.InngestEnvironment] ||
     env[envKeys.BranchName] ||
     env[envKeys.VercelBranch] ||
     env[envKeys.NetlifyBranch] ||
