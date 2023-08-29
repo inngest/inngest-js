@@ -57,8 +57,11 @@ export interface ServeHandlerOptions extends RegisterOptions {
 }
 
 interface InngestCommHandlerOptions<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Input extends any[] = any[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Output = any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   StreamOutput = any
 > extends RegisterOptions {
   /**
@@ -172,8 +175,11 @@ const registerResSchema = z.object({
  * @public
  */
 export class InngestCommHandler<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Input extends any[] = any[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Output = any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   StreamOutput = any
 > {
   /**
@@ -195,8 +201,7 @@ export class InngestCommHandler<
 
   /**
    * The name of the framework this handler is designed for. Should be
-   * lowercase, alphanumeric characters inclusive of `-` and `/`. This should
-   * never be defined by the user; a {@link ServeHandler} should abstract this.
+   * lowercase, alphanumeric characters inclusive of `-` and `/`.
    */
   protected readonly frameworkName: string;
 
@@ -982,12 +987,17 @@ class RequestSignature {
  * {@link InngestCommHandler} instance.
  */
 export type Handler<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Input extends any[] = any[],
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Output = any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   StreamOutput = any
 > = (...args: Input) => HandlerResponse<Output, StreamOutput>;
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type HandlerResponse<Output = any, StreamOutput = any> = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   body: () => MaybePromise<any>;
   env?: () => MaybePromise<Record<string, string | undefined>>;
   headers: (key: string) => MaybePromise<string | null | undefined>;

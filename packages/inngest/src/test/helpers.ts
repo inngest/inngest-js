@@ -57,6 +57,7 @@ export const testFramework = (
    */
   handler: {
     frameworkName: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     serve: (options: ServeHandlerOptions) => any;
   },
 
