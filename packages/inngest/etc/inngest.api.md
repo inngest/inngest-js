@@ -164,32 +164,24 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     eventKey: string): void;
 }
 
-// Warning: (ae-forgotten-export) The symbol "Handler_2" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "ActionResponse" needs to be exported by the entry point index.d.ts
-//
 // @public
-export class InngestCommHandler<H extends Handler_2, TResTransform extends (res: ActionResponse<string>, ...args: Parameters<H>) => any, TStreamTransform extends (res: ActionResponse<ReadableStream>, ...args: Parameters<H>) => any> {
-    // Warning: (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
-    constructor(
-    frameworkName: string,
-    client: AnyInngest,
-    functions: AnyInngestFunction[], { inngestRegisterUrl, fetch, logLevel, signingKey, serveHost, servePath, streaming, id, }: RegisterOptions | undefined,
-    handler: H,
-    transformRes: TResTransform,
-    streamTransformRes?: TStreamTransform);
+export class InngestCommHandler<Input extends any[] = any[], Output = any, StreamOutput = any> {
+    // Warning: (ae-forgotten-export) The symbol "InngestCommHandlerOptions" needs to be exported by the entry point index.d.ts
+    constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>);
     // Warning: (ae-forgotten-export) The symbol "FunctionConfig" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
     protected configs(url: URL): FunctionConfig[];
-    createHandler(): (...args: Parameters<H>) => Promise<Awaited<ReturnType<TResTransform>>>;
+    createHandler(): (...args: Input) => Promise<Awaited<Output>>;
     protected readonly frameworkName: string;
-    readonly handler: H;
+    // Warning: (ae-forgotten-export) The symbol "Handler_2" needs to be exported by the entry point index.d.ts
+    readonly handler: Handler_2;
     readonly id: string;
     protected _isProd: boolean;
     protected log(level: LogLevel, ...args: unknown[]): void;
     protected readonly logLevel: LogLevel;
     // (undocumented)
-    protected register(url: URL, devServerHost: string | undefined, deployId: string | undefined | null, getHeaders: () => Record<string, string>): Promise<{
+    protected register(url: URL, devServerHost: string | undefined, deployId: string | undefined | null, getHeaders: () => Promise<Record<string, string>>): Promise<{
         status: number;
         message: string;
         modified: boolean;
@@ -213,10 +205,7 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     // (undocumented)
     protected readonly streaming: RegisterOptions["streaming"];
     // (undocumented)
-    readonly streamTransformRes: TStreamTransform | undefined;
-    readonly transformRes: TResTransform;
-    // (undocumented)
-    protected validateSignature(sig: string | undefined, body: Record<string, unknown>): void;
+    protected validateSignature(sig: string | undefined, body: unknown): void;
 }
 
 // @public
@@ -312,24 +301,6 @@ export interface RegisterOptions {
 }
 
 // @public
-export type ServeHandler = (
-client: AnyInngest,
-functions: AnyInngestFunction[],
-opts?: RegisterOptions
-/**
-* This `any` return is appropriate.
-*
-* While we can infer the signature of the returned value, we cannot guarantee
-* that we have used the same types as the framework we are integrating with,
-* which sometimes can cause frustrating collisions for a user that result in
-* `as unknown as X` casts.
-*
-* Instead, we will use `any` here and have the user be able to place it
-* anywhere they need.
-*/
-) => any;
-
-// @public
 export type StandardEventSchemas = Record<string, StandardEventSchema>;
 
 // @public
@@ -369,6 +340,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:311:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:330:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:340:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:357:3 - (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
 // src/types.ts:53:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
 // src/types.ts:639:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
