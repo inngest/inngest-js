@@ -1,11 +1,10 @@
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
-import { headerKeys, queryKeys } from "./helpers/consts";
 import { type SupportedFrameworkName } from "./types";
 
-export const name: SupportedFrameworkName = "cloudflare-pages";
+export const frameworkName: SupportedFrameworkName = "cloudflare-pages";
 
 /**
  * In Cloudflare, serve and register any declared functions with Inngest, making
@@ -13,65 +12,32 @@ export const name: SupportedFrameworkName = "cloudflare-pages";
  *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    {
-      /**
-       * Assume that we want to override the `fetch` implementation with the one
-       * globally available in the Cloudflare env. Specifying it here will
-       * ensure we avoid trying to load a Node-compatible version later.
-       */
-      fetch: fetch.bind(globalThis),
-      ...opts,
-    },
-    ({
+export const serve = (options: ServeHandlerOptions) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: ({
       request: req,
       env,
     }: {
       request: Request;
       env: Record<string, string | undefined>;
     }) => {
-      const url = new URL(req.url, `https://${req.headers.get("host") || ""}`);
-
       return {
-        env,
-        url,
-        view: () => {
-          if (req.method === "GET") {
-            return {
-              isIntrospection: url.searchParams.has(queryKeys.Introspect),
-            };
-          }
-        },
-        register: () => {
-          if (req.method === "PUT") {
-            return {
-              deployId: url.searchParams.get(queryKeys.DeployId),
-            };
-          }
-        },
-        run: async () => {
-          if (req.method === "POST") {
-            return {
-              fnId: url.searchParams.get(queryKeys.FnId) as string,
-              stepId: url.searchParams.get(queryKeys.StepId) as string,
-              data: (await req.json()) as Record<string, unknown>,
-              signature: req.headers.get(headerKeys.Signature) || undefined,
-            };
-          }
+        body: () => req.json(),
+        headers: (key) => req.headers.get(key),
+        method: () => req.method,
+        env: () => env,
+        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+        transformResponse: ({ body, status, headers }) => {
+          return new Response(body, {
+            status,
+            headers,
+          });
         },
       };
     },
-    ({ body, status, headers }): Response => {
-      return new Response(body, {
-        status,
-        headers,
-      });
-    }
-  );
+  });
 
   return handler.createHandler();
 };

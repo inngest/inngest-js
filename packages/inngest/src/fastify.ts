@@ -6,21 +6,12 @@ import {
 import { type Inngest } from "./components/Inngest";
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
 import { type InngestFunction } from "./components/InngestFunction";
-import { headerKeys, queryKeys } from "./helpers/consts";
 import { type RegisterOptions, type SupportedFrameworkName } from "./types";
 
-export const name: SupportedFrameworkName = "fastify";
-
-type QueryString = {
-  [key in queryKeys]: string;
-};
-
-type Headers = {
-  [key in headerKeys]: string;
-};
+export const frameworkName: SupportedFrameworkName = "fastify";
 
 type InngestPluginOptions = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -36,59 +27,42 @@ type InngestPluginOptions = {
  *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    opts,
-    (
-      req: FastifyRequest<{ Querystring: QueryString; Headers: Headers }>,
-      _reply: FastifyReply
+export const serve = (options: ServeHandlerOptions) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: (
+      req: FastifyRequest<{ Querystring: Record<string, string | undefined> }>,
+      reply: FastifyReply
     ) => {
-      const hostname = req.headers["host"];
-      const protocol = hostname?.includes("://") ? "" : `${req.protocol}://`;
-      const url = new URL(req.url, `${protocol}${hostname || ""}`);
-
       return {
-        url,
-        run: () => {
-          if (req.method === "POST") {
-            return {
-              fnId: req.query[queryKeys.FnId],
-              stepId: req.query[queryKeys.StepId],
-              data: req.body as Record<string, unknown>,
-              signature: req.headers[headerKeys.Signature],
-            };
-          }
+        body: () => req.body,
+        headers: (key) => {
+          const header = req.headers[key];
+          return Array.isArray(header) ? header[0] : header;
         },
-        register: () => {
-          if (req.method === "PUT") {
-            return {
-              deployId: req.query[queryKeys.DeployId]?.toString(),
-            };
-          }
+        method: () => req.method,
+        url: () => {
+          const hostname = req.headers["host"];
+          const protocol = hostname?.includes("://")
+            ? ""
+            : `${req.protocol}://`;
+
+          const url = new URL(req.url, `${protocol}${hostname || ""}`);
+
+          return url;
         },
-        view: () => {
-          if (req.method === "GET") {
-            return {
-              isIntrospection: Object.hasOwnProperty.call(
-                req.query,
-                queryKeys.Introspect
-              ),
-            };
+        queryString: (key) => req.query[key],
+        transformResponse: ({ body, status, headers }) => {
+          for (const [name, value] of Object.entries(headers)) {
+            void reply.header(name, value);
           }
+          void reply.code(status);
+          return reply.send(body);
         },
       };
     },
-    (actionRes, _req, reply) => {
-      for (const [name, value] of Object.entries(actionRes.headers)) {
-        void reply.header(name, value);
-      }
-      void reply.code(actionRes.status);
-      return reply.send(actionRes.body);
-    }
-  );
+  });
 
   return handler.createHandler();
 };
@@ -102,7 +76,12 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
 const fastifyPlugin = ((fastify, options, done) => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const handler = serve(options.client, options.functions, options.options);
+    // const handler = serve(options.client, options.functions, options.options);
+    const handler = serve({
+      client: options.client,
+      functions: options.functions,
+      ...options.options,
+    });
 
     fastify.route({
       method: ["GET", "POST", "PUT"],

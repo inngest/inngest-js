@@ -1,11 +1,10 @@
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
-import { headerKeys, queryKeys } from "./helpers/consts";
 import { type SupportedFrameworkName } from "./types";
 
-export const name: SupportedFrameworkName = "edge";
+export const frameworkName: SupportedFrameworkName = "edge";
 
 /**
  * In an edge runtime, serve and register any declared functions with Inngest,
@@ -23,50 +22,22 @@ export const name: SupportedFrameworkName = "edge";
  * export const handler = serve("My Edge App", fns);
  * ```
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    {
-      fetch: fetch.bind(globalThis),
-      ...opts,
-    },
-    (req: Request) => {
-      const url = new URL(req.url, `https://${req.headers.get("host") || ""}`);
-
+export const serve = (options: ServeHandlerOptions) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: (req: Request) => {
       return {
-        url,
-        register: () => {
-          if (req.method === "PUT") {
-            return {
-              deployId: url.searchParams.get(queryKeys.DeployId) as string,
-            };
-          }
-        },
-        run: async () => {
-          if (req.method === "POST") {
-            return {
-              data: (await req.json()) as Record<string, unknown>,
-              fnId: url.searchParams.get(queryKeys.FnId) as string,
-              stepId: url.searchParams.get(queryKeys.StepId) as string,
-              signature: req.headers.get(headerKeys.Signature) as string,
-            };
-          }
-        },
-        view: () => {
-          if (req.method === "GET") {
-            return {
-              isIntrospection: url.searchParams.has(queryKeys.Introspect),
-            };
-          }
+        body: () => req.json(),
+        headers: (key) => req.headers.get(key),
+        method: () => req.method,
+        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+        transformResponse: ({ body, status, headers }) => {
+          return new Response(body, { status, headers });
         },
       };
     },
-    ({ body, status, headers }): Response => {
-      return new Response(body, { status, headers });
-    }
-  );
+  });
 
   return handler.createHandler();
 };

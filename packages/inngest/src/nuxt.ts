@@ -9,13 +9,12 @@ import {
 } from "h3";
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
-import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
 import { type SupportedFrameworkName } from "./types";
 
-export const name: SupportedFrameworkName = "nuxt";
+export const frameworkName: SupportedFrameworkName = "nuxt";
 
 /**
  * In Nuxt 3, serve and register any declared functions with Inngest, making
@@ -23,55 +22,36 @@ export const name: SupportedFrameworkName = "nuxt";
  *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    opts,
-    (event: H3Event) => {
-      const host = String(getHeader(event, "host"));
-      const protocol =
-        processEnv("NODE_ENV") === "development" ? "http" : "https";
-      const url = new URL(String(event.path), `${protocol}://${host}`);
-      const method = getMethod(event);
-      const query = getQuery(event);
-
+export const serve = (options: ServeHandlerOptions) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: (event: H3Event) => {
       return {
-        url,
-        run: async () => {
-          if (method === "POST") {
-            return {
-              fnId: query[queryKeys.FnId]?.toString() ?? "",
-              stepId: query[queryKeys.StepId]?.toString() ?? "",
-              signature: getHeader(event, headerKeys.Signature),
-              data: await readBody(event),
-            };
-          }
+        body: () => readBody(event),
+        headers: (key) => getHeader(event, key),
+        method: () => getMethod(event),
+        url: () => {
+          const host = String(getHeader(event, "host"));
+          const protocol =
+            processEnv("NODE_ENV") === "development" ? "http" : "https";
+
+          const url = new URL(String(event.path), `${protocol}://${host}`);
+
+          return url;
         },
-        register: () => {
-          if (method === "PUT") {
-            return {
-              deployId: query[queryKeys.DeployId]?.toString(),
-            };
-          }
-        },
-        view: () => {
-          if (method === "GET") {
-            return {
-              isIntrospection: query && queryKeys.Introspect in query,
-            };
-          }
+        queryString: (key) => getQuery(event)[key]?.toString(),
+        transformResponse: ({ body, status, headers }) => {
+          const { res } = event.node;
+
+          res.statusCode = status;
+          setHeaders(event, headers);
+
+          return send(event, body);
         },
       };
     },
-    (actionRes, event: H3Event) => {
-      const { res } = event.node;
-      res.statusCode = actionRes.status;
-      setHeaders(event, actionRes.headers);
-      return send(event, actionRes.body);
-    }
-  );
+  });
 
   return handler.createHandler();
 };
