@@ -534,7 +534,6 @@ export class InngestCommHandler<
     timer: ServerTiming,
     getInngestHeaders: () => Promise<Record<string, string>>
   ): Promise<ActionResponse> {
-    // TODO A unique pretty error for every call to `actions.*()`
     const env =
       (await actions.env?.("starting to handle request")) ?? allProcessEnv();
     this._isProd =
