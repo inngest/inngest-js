@@ -1,5 +1,7 @@
 import canonicalize from "canonicalize";
+import chalk from "chalk";
 import { hmac, sha256 } from "hash.js";
+import { runAsPromise } from "inngest/helpers/promises";
 import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import {
@@ -19,7 +21,7 @@ import {
   processEnv,
   skipDevServer,
 } from "../helpers/env";
-import { serializeError } from "../helpers/errors";
+import { rethrowError, serializeError } from "../helpers/errors";
 import { parseFnData } from "../helpers/functions";
 import { createStream } from "../helpers/stream";
 import { hashSigningKey, stringify } from "../helpers/strings";
@@ -398,12 +400,51 @@ export class InngestCommHandler<
        * We purposefully `await` the handler, as it could be either sync or
        * async.
        */
-      // eslint-disable-next-line @typescript-eslint/await-thenable
-      const actions = await timer.wrap("handler", () => this.handler(...args));
+      // TODO This should NOT throw all the way to the handler.
+      const rawActions = await timer
+        .wrap("handler", () => this.handler(...args))
+        .catch(rethrowError("Serve handler failed to run"));
+
+      /**
+       * Map over every `action` in `rawActions` and create a new `actions`
+       * object where each function is safely promisifed with each access
+       * requiring a reason.
+       *
+       * This helps us provide high quality errors about what's going wrong for
+       * each access without having to wrap every access in a try/catch.
+       */
+      const actions: HandlerResponseWithErrors = Object.entries(
+        rawActions
+      ).reduce((acc, [key, value]) => {
+        if (typeof value !== "function") {
+          return acc;
+        }
+
+        return {
+          ...acc,
+          [key]: (reason: string, ...args: unknown[]) => {
+            const errMessage = [
+              `Failed calling \`${key}\` from serve handler`,
+              reason,
+            ]
+              .filter(Boolean)
+              .join(" when ");
+
+            const fn = () => (fn as (...args: unknown[]) => unknown)(...args);
+
+            return runAsPromise(fn)
+              .catch(rethrowError(errMessage))
+              .catch((err) => {
+                this.log("error", err);
+                throw err;
+              });
+          },
+        };
+      }, {} as HandlerResponseWithErrors);
 
       const getInngestHeaders = async (): Promise<Record<string, string>> =>
         inngestHeaders({
-          env: await actions.env?.(),
+          env: await actions.env?.("creating Inngest headers"),
           framework: this.frameworkName,
           client: this.client,
           extras: {
@@ -437,11 +478,12 @@ export class InngestCommHandler<
         (this.streaming === "allow" &&
           platformSupportsStreaming(
             this.frameworkName as SupportedFrameworkName,
-            await actions.env?.()
+            await actions.env?.("checking if streaming is allowed")
           ));
 
       if (wantToStream && actions.transformStreamingResponse) {
-        const method = await actions.method?.();
+        const method = await actions.method("starting streaming response");
+
         if (method === "POST") {
           const { stream, finalize } = await createStream();
 
@@ -454,12 +496,14 @@ export class InngestCommHandler<
           });
 
           return timer.wrap("res", async () => {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-            return actions.transformStreamingResponse?.({
-              status: 201,
-              headers: await getInngestHeaders(),
-              body: stream,
-            });
+            return actions.transformStreamingResponse?.(
+              "starting streaming response",
+              {
+                status: 201,
+                headers: await getInngestHeaders(),
+                body: stream,
+              }
+            );
           });
         }
       }
@@ -467,7 +511,7 @@ export class InngestCommHandler<
       return timer.wrap("res", async () => {
         return actionRes.then(prepareActionRes).then((actionRes) => {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          return actions.transformResponse(actionRes);
+          return actions.transformResponse("sending back response", actionRes);
         });
       });
     };
@@ -485,13 +529,16 @@ export class InngestCommHandler<
    * found (e.g. env vars, options, etc).
    */
   private async handleAction(
-    actions: HandlerResponse,
+    actions: HandlerResponseWithErrors,
     timer: ServerTiming,
     getInngestHeaders: () => Promise<Record<string, string>>
   ): Promise<ActionResponse> {
     // TODO A unique pretty error for every call to `actions.*()`
-    const env = (await actions.env?.()) ?? allProcessEnv();
-    this._isProd = (await actions.isProduction?.()) ?? isProd(env);
+    const env =
+      (await actions.env?.("starting to handle request")) ?? allProcessEnv();
+    this._isProd =
+      (await actions.isProduction?.("starting to handle request")) ??
+      isProd(env);
 
     /**
      * If we've been explicitly passed an Inngest dev sever URL, assume that
@@ -504,14 +551,15 @@ export class InngestCommHandler<
     this.upsertKeysFromEnv(env);
 
     try {
-      const url = await actions.url();
-      const method = await actions.method();
+      const url = await actions.url("starting to handle request");
+      const method = await actions.method("starting to handle request");
 
       const getQuerystring = async (
+        reason: string,
         key: string
       ): Promise<string | undefined> => {
         const ret =
-          (await actions.queryString?.(key, url)) ||
+          (await actions.queryString?.(reason, key, url)) ||
           url.searchParams.get(key) ||
           undefined;
 
@@ -519,10 +567,13 @@ export class InngestCommHandler<
       };
 
       if (method === "POST") {
-        const signature = await actions.headers(headerKeys.Signature);
+        const signature = await actions.headers(
+          "checking signature for run request",
+          headerKeys.Signature
+        );
 
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const body = await actions.body();
+        const body = await actions.body("processing run request");
         this.validateSignature(signature ?? undefined, body);
 
         const resultHandlers: ExecutionResultHandlers<ActionResponse> = {
@@ -572,7 +623,10 @@ export class InngestCommHandler<
           },
         };
 
-        const fnId = await getQuerystring(queryKeys.FnId);
+        const fnId = await getQuerystring(
+          "processing run request",
+          queryKeys.FnId
+        );
         // if (!fnId) {
         //   throw new Error(
         //     prettyError({
@@ -581,7 +635,10 @@ export class InngestCommHandler<
         //   );
         // }
 
-        const stepId = await getQuerystring(queryKeys.StepId);
+        const stepId = await getQuerystring(
+          "processing run request",
+          queryKeys.StepId
+        );
         // if (!stepId) {
         //   throw new Error(
         //     prettyError({
@@ -625,7 +682,10 @@ export class InngestCommHandler<
       }
 
       if (method === "PUT") {
-        const deployId = await getQuerystring(queryKeys.DeployId);
+        const deployId = await getQuerystring(
+          "processing deployment request",
+          queryKeys.DeployId
+        );
         // if (!deployId) {
         //   throw new Error(
         //     prettyError({
@@ -920,7 +980,10 @@ export class InngestCommHandler<
         logger = console[level as keyof typeof console] as typeof logger;
       }
 
-      logger(`inngest ${level as string}: `, ...args);
+      logger(
+        `${chalk.magenta.bold("[Inngest]")} ${level as string} -`,
+        ...args
+      );
     }
   }
 }
@@ -1081,3 +1144,18 @@ export interface ActionResponse<
    */
   body: TBody;
 }
+
+/**
+ * A version of {@link HandlerResponse} where each function is safely
+ * promisified and requires a reason for each access.
+ *
+ * This enables us to provide accurate errors for each access without having to
+ * wrap every access in a try/catch.
+ */
+type HandlerResponseWithErrors = {
+  [K in keyof HandlerResponse]: NonNullable<HandlerResponse[K]> extends (
+    ...args: infer Args
+  ) => infer R
+    ? (errMessage: string, ...args: Args) => Promise<R>
+    : HandlerResponse[K];
+};
