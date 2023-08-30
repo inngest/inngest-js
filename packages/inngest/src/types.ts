@@ -19,7 +19,27 @@ import {
 import { type Logger } from "./middleware/logger";
 
 /**
- * TODO
+ * When passed an Inngest client, will return all event types for that client.
+ *
+ * It's recommended to use this instead of directly reusing your event types, as
+ * Inngest will add extra properties and internal events such as `ts` and
+ * `inngest/function.failed`.
+ *
+ * @example
+ * ```ts
+ * import { EventSchemas, Inngest, type GetEvents } from "inngest";
+ *
+ * export const inngest = new Inngest({
+ *   name: "Example App",
+ *   schemas: new EventSchemas().fromRecord<{
+ *     "app/user.created": { data: { userId: string } };
+ *   }>(),
+ * });
+ *
+ * type Events = GetEvents<typeof inngest>;
+ * type AppUserCreated = Events["app/user.created"];
+ *
+ * ```
  *
  * @public
  */
