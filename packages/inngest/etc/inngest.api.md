@@ -61,7 +61,7 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
     // Warning: (ae-forgotten-export) The symbol "PickLiterals" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "GetName" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InferZodShape" needs to be exported by the entry point index.d.ts
-    fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(schemas: ExcludeEmptyZodLiterals<T>): EventSchemas<Combine<S, ZodToStandardSchema<T extends ZodEventSchemas ? T : PickLiterals<T extends LiteralZodEventSchemas ? T extends infer T_1 extends LiteralZodEventSchemas ? { [I in keyof T_1 as GetName<T[I]>]: InferZodShape<T[I]>; } : never : T extends ZodEventSchemas ? T : never>>>>;
+    fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(schemas: ExcludeEmptyZodLiterals<T>): EventSchemas<Combine<S, ZodToStandardSchema<T extends ZodEventSchemas ? T : PickLiterals<T extends LiteralZodEventSchemas ? { [I in keyof T as GetName<T[I]>]: InferZodShape<T[I]>; } : T extends ZodEventSchemas ? T : never>>>>;
 }
 
 // @public
@@ -338,8 +338,8 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:330:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:340:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:357:3 - (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
-// src/types.ts:53:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:641:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:73:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:661:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

@@ -96,7 +96,7 @@
     "ts-jest": "^29.1.0",
     "tsx": "^3.12.7",
     "type-plus": "^5.1.0",
-    "typescript": "^5.0.0",
+    "typescript": "^5.2.2",
     "ulid": "^2.3.0"
   },
   "volta": {
