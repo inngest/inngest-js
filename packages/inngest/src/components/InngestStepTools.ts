@@ -2,7 +2,11 @@ import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
 import { type Jsonify } from "type-fest";
 import { ErrCode, prettyError } from "../helpers/errors";
-import { createFrozenPromise, resolveAfterPending } from "../helpers/promises";
+import {
+  createFrozenPromise,
+  resolveAfterPending,
+  runAsPromise,
+} from "../helpers/promises";
 import { timeStr } from "../helpers/strings";
 import {
   type ObjectPaths,
@@ -119,7 +123,7 @@ export const createStepTools = <
   ): T => {
     return (async (...args: Parameters<T>): Promise<unknown> => {
       if (!state.hasSteps && opts?.nonStepExecuteInline && opts.fn) {
-        return Promise.resolve(opts.fn(...args));
+        return runAsPromise(() => opts.fn?.(...args));
       }
 
       if (state.executingStep) {

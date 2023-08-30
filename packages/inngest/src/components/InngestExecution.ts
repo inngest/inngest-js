@@ -10,6 +10,7 @@ import {
 import {
   createDeferredPromise,
   createTimeoutPromise,
+  runAsPromise,
 } from "../helpers/promises";
 import { type MaybePromise } from "../helpers/types";
 import {
@@ -325,7 +326,7 @@ export class InngestExecution {
     this.#debug(`executing step "${id}"`);
 
     return (
-      Promise.resolve(fn?.())
+      runAsPromise(fn)
         // eslint-disable-next-line @typescript-eslint/no-misused-promises
         .finally(async () => {
           await this.state.hooks?.afterExecution?.();
@@ -374,7 +375,7 @@ export class InngestExecution {
     /**
      * Trigger the user's function.
      */
-    Promise.resolve(this.#userFnToRun(this.fnArg))
+    runAsPromise(() => this.#userFnToRun(this.fnArg))
       // eslint-disable-next-line @typescript-eslint/no-misused-promises
       .finally(async () => {
         await this.state.hooks?.afterMemoization?.();
