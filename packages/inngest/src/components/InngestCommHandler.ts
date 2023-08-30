@@ -1,7 +1,6 @@
 import canonicalize from "canonicalize";
 import chalk from "chalk";
 import { hmac, sha256 } from "hash.js";
-import { runAsPromise } from "inngest/helpers/promises";
 import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import {
@@ -23,6 +22,7 @@ import {
 } from "../helpers/env";
 import { rethrowError, serializeError } from "../helpers/errors";
 import { parseFnData } from "../helpers/functions";
+import { runAsPromise } from "../helpers/promises";
 import { createStream } from "../helpers/stream";
 import { hashSigningKey, stringify } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
@@ -430,7 +430,8 @@ export class InngestCommHandler<
               .filter(Boolean)
               .join(" when ");
 
-            const fn = () => (fn as (...args: unknown[]) => unknown)(...args);
+            const fn = () =>
+              (value as (...args: unknown[]) => unknown)(...args);
 
             return runAsPromise(fn)
               .catch(rethrowError(errMessage))
