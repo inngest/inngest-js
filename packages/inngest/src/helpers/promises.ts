@@ -62,13 +62,6 @@ export const resolveAfterPending = (): Promise<void> => {
   });
 };
 
-/**
- * Returns a Promise that resolve after the current event loop tick.
- */
-export const resolveNextTick = (): Promise<void> => {
-  return new Promise((resolve) => setTimeout(resolve));
-};
-
 type DeferredPromiseReturn<T> = {
   promise: Promise<T>;
   resolve: (value: T) => DeferredPromiseReturn<T>;

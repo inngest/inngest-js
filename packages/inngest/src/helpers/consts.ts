@@ -87,9 +87,7 @@ export enum envKeys {
 }
 
 export enum prodEnvKeys {
-  NodeEnvKey = "NODE_ENV",
   VercelEnvKey = "VERCEL_ENV",
-  NetlifyEnvKey = "CONTEXT",
 }
 
 /**
