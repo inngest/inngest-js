@@ -3,12 +3,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Inngest } from "@local";
+import { type ServeHandlerOptions } from "@local/components/InngestCommHandler";
 import { envKeys, headerKeys, queryKeys } from "@local/helpers/consts";
 import { slugify } from "@local/helpers/strings";
 import { type FunctionTrigger } from "@local/types";
 import fetch from "cross-fetch";
 import { type Request, type Response } from "express";
-import { type ServeHandlerOptions } from "inngest/components/InngestCommHandler";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ulid } from "ulid";
