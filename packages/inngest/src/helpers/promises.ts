@@ -151,3 +151,19 @@ export const createTimeoutPromise = (duration: number): TimeoutPromise => {
 
   return ret;
 };
+
+/**
+ * Take any function and safely promisify such that both synchronous and
+ * asynchronous errors are caught and returned as a rejected Promise.
+ *
+ * The passed `fn` can be undefined to support functions that may conditionally
+ * be defined.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const runAsPromise = <T extends (() => any) | undefined>(
+  fn: T
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<T extends () => any ? Awaited<ReturnType<T>> : T> => {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  return Promise.resolve().then(fn);
+};
