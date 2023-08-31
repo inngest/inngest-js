@@ -1,7 +1,7 @@
 import { inngest } from "./client";
 
 export default inngest.createFunction(
-  { name: "Hello World" },
+  { id: "hello-world" },
   { event: "demo/event.sent" },
   async ({ event, step }) => {
     return {
