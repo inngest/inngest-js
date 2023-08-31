@@ -74,20 +74,29 @@ export const serve = (options: ServeHandlerOptions) => {
  * @public
  */
 const fastifyPlugin = ((fastify, options, done) => {
+  if (!options?.client) {
+    throw new Error(
+      "Inngest `client` is required when serving with Fastify plugin"
+    );
+  }
+
+  if (!options?.functions) {
+    throw new Error(
+      "Inngest `functions` are required when serving with Fastify plugin"
+    );
+  }
+
   try {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    // const handler = serve(options.client, options.functions, options.options);
     const handler = serve({
-      client: options.client,
-      functions: options.functions,
-      ...options.options,
+      client: options?.client,
+      functions: options?.functions,
+      ...options?.options,
     });
 
     fastify.route({
       method: ["GET", "POST", "PUT"],
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       handler,
-      url: options.options?.servePath || "/api/inngest",
+      url: options?.options?.servePath || "/api/inngest",
     });
 
     done();
