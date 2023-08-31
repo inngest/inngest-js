@@ -657,33 +657,16 @@ export class InngestCommHandler<
           "processing run request",
           queryKeys.FnId
         );
-        // if (!fnId) {
-        //   throw new Error(
-        //     prettyError({
-        //       whatHappened: "TODO no fnid",
-        //     })
-        //   );
-        // }
+        if (!fnId) {
+          // TODO PrettyError
+          throw new Error("No function ID found in request");
+        }
 
-        const stepId = await getQuerystring(
-          "processing run request",
-          queryKeys.StepId
-        );
-        // if (!stepId) {
-        //   throw new Error(
-        //     prettyError({
-        //       whatHappened: "TODO no stepid",
-        //     })
-        //   );
-        // }
+        const stepId =
+          (await getQuerystring("processing run request", queryKeys.StepId)) ||
+          null;
 
-        // TODO Bad casts
-        const result = await this.runStep(
-          fnId as string,
-          stepId as string,
-          body,
-          timer
-        );
+        const result = await this.runStep(fnId, stepId, body, timer);
 
         const handler = resultHandlers[
           result.type
@@ -716,13 +699,6 @@ export class InngestCommHandler<
           "processing deployment request",
           queryKeys.DeployId
         );
-        // if (!deployId) {
-        //   throw new Error(
-        //     prettyError({
-        //       whatHappened: "TODO no deployid",
-        //     })
-        //   );
-        // }
 
         const { status, message, modified } = await this.register(
           this.reqUrl(url),
