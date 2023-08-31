@@ -25,22 +25,6 @@ export type StandardEventSchema = {
 export type StandardEventSchemas = Record<string, StandardEventSchema>;
 
 /**
- * A helper type that ensures users cannot declare a literal Zod schema with
- * an empty string as the event name.
- *
- * @public
- */
-export type ExcludeEmptyZodLiterals<T> = T extends LiteralZodEventSchemas
-  ? {
-      [I in keyof T]: T[I] extends z.ZodObject<infer U extends z.ZodRawShape>
-        ? U extends { name: z.ZodLiteral<""> }
-          ? "ERROR: Empty event names are now allowed."
-          : T[I]
-        : never;
-    }
-  : T;
-
-/**
  * A literal Zod schema, which is a Zod schema that has a literal string as the
  * event name. This can be used to create correct Zod schemas outside of the
  * `EventSchemas` class.
@@ -285,7 +269,7 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
    */
   public fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    schemas: ExcludeEmptyZodLiterals<T>
+    schemas: T
   ) {
     return new EventSchemas<
       Combine<

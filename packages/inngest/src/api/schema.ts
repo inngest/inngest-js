@@ -11,9 +11,6 @@ export const StepsSchema = z.object({}).passthrough().default({});
 export type StepsResponse = z.infer<typeof StepsSchema>;
 
 export const BatchSchema = z.array(
-  z
-    .object({})
-    .passthrough()
-    .transform((v) => v as EventPayload)
+  z.record(z.any()).transform((v) => v as EventPayload)
 );
 export type BatchResponse = z.infer<typeof BatchSchema>;

@@ -1026,8 +1026,9 @@ export const err = <E>(error?: E): Result<never, E> => {
  * Format of data send from the executor to the SDK
  */
 export const fnDataSchema = z.object({
-  event: z.object({}).passthrough(),
-  events: z.array(z.object({}).passthrough()).default([]),
+  event: z.record(z.any()),
+  events: z.array(z.record(z.any())).default([]),
+
   /**
    * When handling per-step errors, steps will need to be an object with
    * either a `data` or an `error` key.

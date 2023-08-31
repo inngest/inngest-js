@@ -382,18 +382,20 @@ describe("EventSchemas", () => {
 
       test("can overwrite types with multiple calls", () => {
         const schemas = new EventSchemas()
-          .fromZod({
-            "test.event": {
+          .fromZod([
+            z.object({
+              name: z.literal("test.event"),
               data: z.object({ a: z.string() }),
               user: z.object({ b: z.number() }),
-            },
-          })
-          .fromZod({
-            "test.event": {
+            }),
+          ])
+          .fromZod([
+            z.object({
+              name: z.literal("test.event"),
               data: z.object({ c: z.string() }),
               user: z.object({ d: z.number() }),
-            },
-          });
+            }),
+          ]);
 
         assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
         assertType<Schemas<typeof schemas>["test.event"]["data"]>({ c: "" });
