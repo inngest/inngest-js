@@ -56,12 +56,11 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
             name: K;
         }>; }>>;
     // Warning: (ae-forgotten-export) The symbol "LiteralZodEventSchemas" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "ExcludeEmptyZodLiterals" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "ZodToStandardSchema" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "PickLiterals" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "GetName" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InferZodShape" needs to be exported by the entry point index.d.ts
-    fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(schemas: ExcludeEmptyZodLiterals<T>): EventSchemas<Combine<S, ZodToStandardSchema<T extends ZodEventSchemas ? T : PickLiterals<T extends LiteralZodEventSchemas ? { [I in keyof T as GetName<T[I]>]: InferZodShape<T[I]>; } : T extends ZodEventSchemas ? T : never>>>>;
+    fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(schemas: T): EventSchemas<Combine<S, ZodToStandardSchema<T extends ZodEventSchemas ? T : PickLiterals<T extends LiteralZodEventSchemas ? { [I in keyof T as GetName<T[I]>]: InferZodShape<T[I]>; } : T extends ZodEventSchemas ? T : never>>>>;
 }
 
 // @public
@@ -180,7 +179,7 @@ export class InngestCommHandler<Input extends any[] = any[], Output = any, Strea
     protected log(level: LogLevel, ...args: unknown[]): void;
     protected readonly logLevel: LogLevel;
     // (undocumented)
-    protected register(url: URL, env: Record<string, string | undefined>, deployId: string | undefined | null, getHeaders: () => Promise<Record<string, string>>): Promise<{
+    protected register(url: URL, deployId: string | undefined | null, getHeaders: () => Record<string, string>): Promise<{
         status: number;
         message: string;
         modified: boolean;
@@ -231,8 +230,10 @@ export type LiteralZodEventSchema = z.ZodObject<{
     user?: z.AnyZodObject | z.ZodAny;
 }>;
 
+// Warning: (ae-forgotten-export) The symbol "logLevels" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
+export type LogLevel = (typeof logLevels)[number];
 
 // @public
 export interface MiddlewareOptions {
@@ -339,7 +340,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:340:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:357:3 - (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
 // src/types.ts:73:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:661:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:676:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

@@ -17,7 +17,6 @@ import {
   inngestHeaders,
   isProd,
   platformSupportsStreaming,
-  processEnv,
   skipDevServer,
 } from "../helpers/env";
 import { rethrowError, serializeError } from "../helpers/errors";
@@ -27,6 +26,7 @@ import { createStream } from "../helpers/stream";
 import { hashSigningKey, stringify } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
 import {
+  logLevels,
   type FunctionConfig,
   type IntrospectRequest,
   type LogLevel,
@@ -294,6 +294,8 @@ export class InngestCommHandler<
     { fn: InngestFunction; onFailure: boolean }
   > = {};
 
+  private env: Record<string, string | undefined> = allProcessEnv();
+
   private allowExpiredSignatures: boolean;
 
   constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>) {
@@ -349,16 +351,46 @@ export class InngestCommHandler<
     this.inngestRegisterUrl = new URL(
       "/fn/register",
       options.baseUrl ||
-        processEnv(envKeys.InngestBaseUrl) ||
+        this.env[envKeys.InngestBaseUrl] ||
         this.client["baseUrl"] ||
         defaultInngestBaseUrl
     );
 
     this.signingKey = options.signingKey;
-    this.serveHost = options.serveHost;
-    this.servePath = options.servePath;
-    this.logLevel = options.logLevel ?? "info";
-    this.streaming = options.streaming ?? false;
+    this.serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
+    this.servePath = options.servePath || this.env[envKeys.InngestServePath];
+
+    const defaultLogLevel: typeof this.logLevel = "info";
+    this.logLevel = z
+      .enum(logLevels)
+      .default(defaultLogLevel)
+      .catch((ctx) => {
+        this.log(
+          "warn",
+          `Unknown log level passed: ${String(
+            ctx.input
+          )}; defaulting to ${defaultLogLevel}`
+        );
+
+        return defaultLogLevel;
+      })
+      .parse(options.logLevel || this.env[envKeys.InngestLogLevel]);
+
+    const defaultStreamingOption: typeof this.streaming = false;
+    this.streaming = z
+      .union([z.enum(["allow", "force"]), z.literal(false)])
+      .default(defaultStreamingOption)
+      .catch((ctx) => {
+        this.log(
+          "warn",
+          `Unknown streaming option passed: ${String(
+            ctx.input
+          )}; defaulting to ${String(defaultStreamingOption)}`
+        );
+
+        return defaultStreamingOption;
+      })
+      .parse(options.streaming || this.env[envKeys.InngestStreaming]);
 
     this.fetch = getFetch(options.fetch || this.client["fetch"]);
   }
@@ -443,9 +475,12 @@ export class InngestCommHandler<
         };
       }, {} as HandlerResponseWithErrors);
 
-      const getInngestHeaders = async (): Promise<Record<string, string>> =>
+      this.env =
+        (await actions.env?.("starting to handle request")) ?? allProcessEnv();
+
+      const getInngestHeaders = (): Record<string, string> =>
         inngestHeaders({
-          env: await actions.env?.("creating Inngest headers"),
+          env: this.env,
           framework: this.frameworkName,
           client: this.client,
           extras: {
@@ -464,12 +499,10 @@ export class InngestCommHandler<
        * It should always prioritize the headers returned by the action, as
        * they may contain important information such as `Content-Type`.
        */
-      const prepareActionRes = async (
-        res: ActionResponse
-      ): Promise<ActionResponse> => ({
+      const prepareActionRes = (res: ActionResponse): ActionResponse => ({
         ...res,
         headers: {
-          ...(await getInngestHeaders()),
+          ...getInngestHeaders(),
           ...res.headers,
         },
       });
@@ -479,7 +512,7 @@ export class InngestCommHandler<
         (this.streaming === "allow" &&
           platformSupportsStreaming(
             this.frameworkName as SupportedFrameworkName,
-            await actions.env?.("checking if streaming is allowed")
+            this.env
           ));
 
       if (wantToStream && actions.transformStreamingResponse) {
@@ -496,12 +529,12 @@ export class InngestCommHandler<
             return finalize(prepareActionRes(res));
           });
 
-          return timer.wrap("res", async () => {
+          return timer.wrap("res", () => {
             return actions.transformStreamingResponse?.(
               "starting streaming response",
               {
                 status: 201,
-                headers: await getInngestHeaders(),
+                headers: getInngestHeaders(),
                 body: stream,
               }
             );
@@ -532,23 +565,21 @@ export class InngestCommHandler<
   private async handleAction(
     actions: HandlerResponseWithErrors,
     timer: ServerTiming,
-    getInngestHeaders: () => Promise<Record<string, string>>
+    getInngestHeaders: () => Record<string, string>
   ): Promise<ActionResponse> {
-    const env =
-      (await actions.env?.("starting to handle request")) ?? allProcessEnv();
     this._isProd =
       (await actions.isProduction?.("starting to handle request")) ??
-      isProd(env);
+      isProd(this.env);
 
     /**
      * If we've been explicitly passed an Inngest dev sever URL, assume that
      * we shouldn't skip the dev server.
      */
-    this._skipDevServer = devServerHost(env)
+    this._skipDevServer = devServerHost(this.env)
       ? false
-      : this._isProd ?? skipDevServer(env);
+      : this._isProd ?? skipDevServer(this.env);
 
-    this.upsertKeysFromEnv(env);
+    this.upsertKeysFromEnv();
 
     try {
       const url = await actions.url("starting to handle request");
@@ -696,7 +727,6 @@ export class InngestCommHandler<
 
         const { status, message, modified } = await this.register(
           this.reqUrl(url),
-          env,
           deployId,
           getInngestHeaders
         );
@@ -789,9 +819,16 @@ export class InngestCommHandler<
   protected reqUrl(url: URL): URL {
     let ret = new URL(url);
 
-    if (this.servePath) ret.pathname = this.servePath;
-    if (this.serveHost)
-      ret = new URL(ret.pathname + ret.search, this.serveHost);
+    const serveHost = this.serveHost || this.env[envKeys.InngestServeHost];
+    const servePath = this.servePath || this.env[envKeys.InngestServePath];
+
+    if (servePath) {
+      ret.pathname = servePath;
+    }
+
+    if (serveHost) {
+      ret = new URL(ret.pathname + ret.search, serveHost);
+    }
 
     return ret;
   }
@@ -814,9 +851,8 @@ export class InngestCommHandler<
 
   protected async register(
     url: URL,
-    env: Record<string, string | undefined>,
     deployId: string | undefined | null,
-    getHeaders: () => Promise<Record<string, string>>
+    getHeaders: () => Record<string, string>
   ): Promise<{ status: number; message: string; modified: boolean }> {
     const body = this.registerBody(url);
 
@@ -827,7 +863,7 @@ export class InngestCommHandler<
     let registerURL = this.inngestRegisterUrl;
 
     if (!this._skipDevServer) {
-      const host = devServerHost(env);
+      const host = devServerHost(this.env);
       const hasDevServer = await devServerAvailable(host, this.fetch);
       if (hasDevServer) {
         registerURL = devServerUrl(host, "/fn/register");
@@ -843,7 +879,7 @@ export class InngestCommHandler<
         method: "POST",
         body: stringify(body),
         headers: {
-          ...(await getHeaders()),
+          ...getHeaders(),
           Authorization: `Bearer ${this.hashedSigningKey}`,
         },
         redirect: "follow",
@@ -898,17 +934,17 @@ export class InngestCommHandler<
    * situations where environment variables are passed directly to handlers or
    * are otherwise difficult to access during initialization.
    */
-  private upsertKeysFromEnv(env: Record<string, unknown>) {
-    if (env[envKeys.InngestSigningKey]) {
+  private upsertKeysFromEnv() {
+    if (this.env[envKeys.InngestSigningKey]) {
       if (!this.signingKey) {
-        this.signingKey = String(env[envKeys.InngestSigningKey]);
+        this.signingKey = String(this.env[envKeys.InngestSigningKey]);
       }
 
       this.client["inngestApi"].setSigningKey(this.signingKey);
     }
 
-    if (!this.client["eventKey"] && env[envKeys.InngestEventKey]) {
-      this.client.setEventKey(String(env[envKeys.InngestEventKey]));
+    if (!this.client["eventKey"] && this.env[envKeys.InngestEventKey]) {
+      this.client.setEventKey(String(this.env[envKeys.InngestEventKey]));
     }
   }
 

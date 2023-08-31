@@ -18,6 +18,10 @@ export enum envKeys {
   InngestEventKey = "INNGEST_EVENT_KEY",
   InngestEnvironment = "INNGEST_ENV",
   InngestBaseUrl = "INNGEST_BASE_URL",
+  InngestServeHost = "INNGEST_SERVE_HOST",
+  InngestServePath = "INNGEST_SERVE_PATH",
+  InngestLogLevel = "INNGEST_LOG_LEVEL",
+  InngestStreaming = "INNGEST_STREAMING",
 
   BranchName = "BRANCH_NAME",
 

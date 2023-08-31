@@ -468,7 +468,22 @@ export interface ClientOptions {
  *
  * @public
  */
-export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
+export const logLevels = [
+  "fatal",
+  "error",
+  "warn",
+  "info",
+  "debug",
+  "silent",
+] as const;
+
+/**
+ * A set of log levels that can be used to control the amount of logging output
+ * from various parts of the Inngest library.
+ *
+ * @public
+ */
+export type LogLevel = (typeof logLevels)[number];
 
 /**
  * A set of options for configuring the registration of Inngest functions.
