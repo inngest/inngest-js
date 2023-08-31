@@ -12,7 +12,7 @@
   "license": "ISC",
   "dependencies": {
     "fastify": "^4.21.0",
-    "inngest": "latest"
+    "inngest": "^2.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.5.2",
