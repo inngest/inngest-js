@@ -194,6 +194,7 @@ jobs:
         working-directory: examples/${{ matrix.example }}
         # Provide the example any env vars it might need
         env:
+          HOST: "0.0.0.0"
           PORT: 3000
           DO_NOT_TRACK: 1
       - name: Wait for the example to start
