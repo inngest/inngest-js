@@ -6,9 +6,18 @@ This is a [Nuxt](https://nuxt.com) v3 project. It is a reference on how to send 
 
 ## Getting Started
 
+Use [`create-next-app`](https://www.npmjs.com/package/create-next-app) with [npm](https://docs.npmjs.com/cli/init), [Yarn](https://yarnpkg.com/lang/en/docs/cli/create/), or [pnpm](https://pnpm.io) to bootstrap the example:
+
+```bash
+npx create-next-app --example https://github.com/inngest/inngest-js/tree/main/examples/framework-nuxt inngest-nuxt
 ```
-yarn install
-yarn dev
+
+```bash
+yarn create next-app --example https://github.com/inngest/inngest-js/tree/main/examples/framework-nuxt inngest-nuxt
+```
+
+```bash
+pnpm create next-app --example https://github.com/inngest/inngest-js/tree/main/examples/framework-nuxt inngest-nuxt
 ```
 
 Open http://localhost:3000 with your browser to see the result.

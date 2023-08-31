@@ -4,9 +4,18 @@ This is a [Fastify](https://fastify.dev/) v4 project. It is a reference on how t
 
 ## Getting Started
 
+Use [`create-next-app`](https://www.npmjs.com/package/create-next-app) with [npm](https://docs.npmjs.com/cli/init), [Yarn](https://yarnpkg.com/lang/en/docs/cli/create/), or [pnpm](https://pnpm.io) to bootstrap the example:
+
+```bash
+npx create-next-app --example https://github.com/inngest/inngest-js/tree/main/examples/framework-fastify inngest-fastify
 ```
-npm install
-npm run dev
+
+```bash
+yarn create next-app --example https://github.com/inngest/inngest-js/tree/main/examples/framework-fastify inngest-fastify
+```
+
+```bash
+pnpm create next-app --example https://github.com/inngest/inngest-js/tree/main/examples/framework-fastify inngest-fastify
 ```
 
 Open http://localhost:3000 with your browser to see the result.
