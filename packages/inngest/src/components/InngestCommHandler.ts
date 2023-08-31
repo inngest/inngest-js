@@ -432,7 +432,6 @@ export class InngestCommHandler<
        * We purposefully `await` the handler, as it could be either sync or
        * async.
        */
-      // TODO This should NOT throw all the way to the handler.
       const rawActions = await timer
         .wrap("handler", () => this.handler(...args))
         .catch(rethrowError("Serve handler failed to run"));
