@@ -23,7 +23,6 @@ import {
 } from "../types";
 import { type EventsFromOpts, type Inngest } from "./Inngest";
 import { type ExecutionState } from "./InngestExecution";
-import { NonRetriableError } from "./NonRetriableError";
 
 export interface FoundStep extends HashedOp {
   fn?: (...args: unknown[]) => unknown;
@@ -128,19 +127,28 @@ export const createStepTools = <
 
       if (state.executingStep) {
         /**
-         * TODO This could also happen as we could now be resolving steps from
-         * state in the background or while executing. Hm.
+         * If a step is found after asynchronous actions during another step's
+         * execution, everything is fine. The problem here is if we've found
+         * that a step nested inside another a step, which is something we don't
+         * support at the time of writing.
+         *
+         * In this case, we could use something like Async Hooks to understand
+         * how the step is being triggered, though this isn't available in all
+         * environments.
+         *
+         * Therefore, we'll only show a warning here to indicate that this is
+         * potentially an issue.
          */
-        throw new NonRetriableError(
+        console.warn(
           prettyError({
-            whatHappened: "Your function was stopped from running",
-            why: "We detected that you have nested `step.*` tooling.",
+            whatHappened: "We detected that you have nested `step.*` tooling.",
             consequences: "Nesting `step.*` tooling is not supported.",
+            type: "warn",
+            reassurance:
+              "It's possible to see this warning if steps are separated by regular asynchronous calls, which is fine.",
             stack: true,
             toFixNow:
               "Make sure you're not using `step.*` tooling inside of other `step.*` tooling. If you need to compose steps together, you can create a new async function and call it from within your step function, or use promise chaining.",
-            otherwise:
-              "For more information on step functions with Inngest, see https://www.inngest.com/docs/functions/multi-step",
             code: ErrCode.NESTING_STEPS,
           })
         );
@@ -242,7 +250,7 @@ export const createStepTools = <
         return {
           id,
           op: StepOpCode.StepPlanned,
-          name: "sendEvent", // TODO is this needed?
+          name: "sendEvent",
           displayName: name,
         };
       },

@@ -145,7 +145,11 @@ export class InngestExecution {
       await this.state.hooks?.beforeResponse?.();
     }
 
-    throw new Error("TODO generator finished or blew up");
+    /**
+     * If we're here, the generator somehow finished without returning a value.
+     * This should never happen.
+     */
+    throw new Error("Core loop finished without returning a value");
   }
 
   /**
@@ -231,7 +235,6 @@ export class InngestExecution {
     const step = steps.find((step) => step.id === stepIdToRun && step.fn);
 
     if (step) {
-      this.timeout?.clear(); // TODO duplicate clean-up; bad
       return await this.#executeStep(step);
     }
 
@@ -292,12 +295,16 @@ export class InngestExecution {
     const foundAllCompletedSteps = stepsToFulfil === fulfilledSteps;
 
     if (!foundAllCompletedSteps) {
+      // TODO Tag
       console.warn(
         prettyError({
-          whatHappened: "TODO bad mate",
-          reassurance: "not cool",
-          why: "state looks wrong",
-          consequences: "may be over-sensitive; needs tests",
+          type: "warn",
+          whatHappened: "Function may be indeterminate",
+          why: "We found new steps before seeing all previous steps, which may indicate that the function is non-deterministic.",
+          consequences:
+            "This may cause unexpected behaviour as Inngest executes your function.",
+          reassurance:
+            "This is expected if a function is updated in the middle of a run, but may indicate a bug if not.",
         })
       );
     }
@@ -318,6 +325,7 @@ export class InngestExecution {
   }
 
   async #executeStep({ id, name, opts, fn }: FoundStep): Promise<OutgoingOp> {
+    this.timeout?.clear();
     await this.state.hooks?.afterMemoization?.();
     await this.state.hooks?.beforeExecution?.();
 
@@ -522,7 +530,11 @@ export class InngestExecution {
     }
 
     if (!this.options.fn["onFailureFn"]) {
-      throw new Error("TODO");
+      /**
+       * Somehow, we've ended up detecting that this is a failure handler but
+       * doesn't have an `onFailure` function. This should never happen.
+       */
+      throw new Error("Cannot find function `onFailure` handler");
     }
 
     return this.options.fn["onFailureFn"];
