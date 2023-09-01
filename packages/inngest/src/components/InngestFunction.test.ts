@@ -382,7 +382,10 @@ describe("runFn", () => {
           { id: "name" },
           { event: "foo" },
           async ({ step: { waitForEvent, run } }) => {
-            const foo = await waitForEvent("wait-id", "foo", "2h");
+            const foo = await waitForEvent("wait-id", {
+              event: "foo",
+              timeout: "2h",
+            });
 
             if (foo?.data.foo === "foo") {
               await run("A", A);

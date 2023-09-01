@@ -9,6 +9,7 @@ import {
 } from "../helpers/promises";
 import { timeStr } from "../helpers/strings";
 import {
+  type ExclusiveKeys,
   type ObjectPaths,
   type ParametersExceptFirst,
   type SendEventPayload,
@@ -272,29 +273,9 @@ export const createStepTools = <
      * returning `null` instead of any event data.
      */
     waitForEvent: createTool<
-      <IncomingEvent extends keyof Events | EventPayload>(
+      <IncomingEvent extends keyof Events & string>(
         idOrOptions: StepOptionsOrId,
-        event: IncomingEvent extends keyof Events
-          ? IncomingEvent
-          : IncomingEvent extends EventPayload
-          ? IncomingEvent["name"]
-          : never,
-        opts:
-          | string
-          | ((IncomingEvent extends keyof Events
-              ? WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>
-              : IncomingEvent extends EventPayload
-              ? WaitForEventOpts<Events[TriggeringEvent], IncomingEvent>
-              : never) & {
-              if?: never;
-            })
-          | ((IncomingEvent extends keyof Events
-              ? WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>
-              : IncomingEvent extends EventPayload
-              ? WaitForEventOpts<Events[TriggeringEvent], IncomingEvent>
-              : never) & {
-              match?: never;
-            })
+        opts: WaitForEventOpts<Events, TriggeringEvent, IncomingEvent>
       ) => Promise<
         IncomingEvent extends keyof Events
           ? Events[IncomingEvent] | null
@@ -305,15 +286,9 @@ export const createStepTools = <
         { id, name },
 
         /**
-         * The event name to wait for.
-         */
-        event,
-
-        /**
          * Options to control the event we're waiting for.
          */
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        opts: WaitForEventOpts<any, any> | string
+        opts
       ) => {
         const matchOpts: { timeout: string; if?: string } = {
           timeout: timeStr(typeof opts === "string" ? opts : opts.timeout),
@@ -330,7 +305,7 @@ export const createStepTools = <
         return {
           id,
           op: StepOpCode.WaitForEvent,
-          name: event as string,
+          name: opts.event,
           opts: matchOpts,
           displayName: name,
         };
@@ -471,10 +446,13 @@ export const createStepTools = <
  * A set of optional parameters given to a `waitForEvent` call to control how
  * the event is handled.
  */
-interface WaitForEventOpts<
-  TriggeringEvent extends EventPayload,
-  IncomingEvent extends EventPayload
-> {
+type WaitForEventOpts<
+  Events extends Record<string, EventPayload>,
+  TriggeringEvent extends keyof Events,
+  IncomingEvent extends keyof Events
+> = {
+  event: IncomingEvent;
+
   /**
    * The step function will wait for the event for a maximum of this time, at
    * which point the event will be returned as `null` instead of any event data.
@@ -486,44 +464,49 @@ interface WaitForEventOpts<
    * {@link https://npm.im/ms}
    */
   timeout: number | string | Date;
+} & ExclusiveKeys<
+  {
+    /**
+     * If provided, the step function will wait for the incoming event to match
+     * particular criteria. If the event does not match, it will be ignored and
+     * the step function will wait for another event.
+     *
+     * It must be a string of a dot-notation field name within both events to
+     * compare, e.g. `"data.id"` or `"user.email"`.
+     *
+     * ```
+     * // Wait for an event where the `user.email` field matches
+     * match: "user.email"
+     * ```
+     *
+     * All of these are helpers for the `if` option, which allows you to specify
+     * a custom condition to check. This can be useful if you need to compare
+     * multiple fields or use a more complex condition.
+     *
+     * See the Inngest expressions docs for more information.
+     *
+     * {@link https://www.inngest.com/docs/functions/expressions}
+     */
+    match?: ObjectPaths<Events[TriggeringEvent]> &
+      ObjectPaths<Events[IncomingEvent]>;
 
-  /**
-   * If provided, the step function will wait for the incoming event to match
-   * particular criteria. If the event does not match, it will be ignored and
-   * the step function will wait for another event.
-   *
-   * It must be a string of a dot-notation field name within both events to
-   * compare, e.g. `"data.id"` or `"user.email"`.
-   *
-   * ```
-   * // Wait for an event where the `user.email` field matches
-   * match: "user.email"
-   * ```
-   *
-   * All of these are helpers for the `if` option, which allows you to specify
-   * a custom condition to check. This can be useful if you need to compare
-   * multiple fields or use a more complex condition.
-   *
-   * See the Inngest expressions docs for more information.
-   *
-   * {@link https://www.inngest.com/docs/functions/expressions}
-   */
-  match?: ObjectPaths<TriggeringEvent> & ObjectPaths<IncomingEvent>;
-
-  /**
-   * If provided, the step function will wait for the incoming event to match
-   * the given condition. If the event does not match, it will be ignored and
-   * the step function will wait for another event.
-   *
-   * The condition is a string of Google's Common Expression Language. For most
-   * simple cases, you might prefer to use `match` instead.
-   *
-   * See the Inngest expressions docs for more information.
-   *
-   * {@link https://www.inngest.com/docs/functions/expressions}
-   */
-  if?: string;
-}
+    /**
+     * If provided, the step function will wait for the incoming event to match
+     * the given condition. If the event does not match, it will be ignored and
+     * the step function will wait for another event.
+     *
+     * The condition is a string of Google's Common Expression Language. For most
+     * simple cases, you might prefer to use `match` instead.
+     *
+     * See the Inngest expressions docs for more information.
+     *
+     * {@link https://www.inngest.com/docs/functions/expressions}
+     */
+    if?: string;
+  },
+  "match",
+  "if"
+>;
 
 /**
  * An operation ready to hash to be used to memoise step function progress.

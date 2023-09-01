@@ -59,49 +59,52 @@ describe("waitForEvent", () => {
   });
 
   test("return WaitForEvent step op code", () => {
-    void waitForEvent("id", "event", { timeout: "2h" });
+    void waitForEvent("id", { event: "event", timeout: "2h" });
     expect(getOp()).toMatchObject({
       op: StepOpCode.WaitForEvent,
     });
   });
 
   test("returns `id` as ID", () => {
-    void waitForEvent("id", "event", { timeout: "2h" });
+    void waitForEvent("id", { event: "event", timeout: "2h" });
     expect(getOp()).toMatchObject({
       id: "id",
     });
   });
 
   test("returns no name by default", () => {
-    void waitForEvent("id", "event", { timeout: "2h" });
+    void waitForEvent("id", { event: "event", timeout: "2h" });
     expect(getOp()).toMatchObject({
       displayName: undefined,
     });
   });
 
   test("returns specific name if given", () => {
-    void waitForEvent({ id: "id", name: "name" }, "event", { timeout: "2h" });
+    void waitForEvent(
+      { id: "id", name: "name" },
+      { event: "event", timeout: "2h" }
+    );
     expect(getOp()).toMatchObject({
       displayName: "name",
     });
   });
 
   test("return event name as name", () => {
-    void waitForEvent("id", "event", { timeout: "2h" });
+    void waitForEvent("id", { event: "event", timeout: "2h" });
     expect(getOp()).toMatchObject({
       name: "event",
     });
   });
 
   test("return blank opts if none given", () => {
-    void waitForEvent("id", "event", { timeout: "2h" });
+    void waitForEvent("id", { event: "event", timeout: "2h" });
     expect(getOp()).toMatchObject({
       opts: {},
     });
   });
 
   test("return TTL if string `timeout` given", () => {
-    void waitForEvent("id", "event", { timeout: "1m" });
+    void waitForEvent("id", { event: "event", timeout: "1m" });
     expect(getOp()).toMatchObject({
       opts: {
         timeout: "1m",
@@ -114,7 +117,7 @@ describe("waitForEvent", () => {
     upcoming.setDate(upcoming.getDate() + 6);
     upcoming.setHours(upcoming.getHours() + 1);
 
-    void waitForEvent("id", "event", { timeout: upcoming });
+    void waitForEvent("id", { event: "event", timeout: upcoming });
     expect(getOp()).toMatchObject({
       opts: {
         timeout: expect.stringMatching(upcoming.toISOString()),
@@ -123,7 +126,7 @@ describe("waitForEvent", () => {
   });
 
   test("return simple field match if `match` string given", () => {
-    void waitForEvent("id", "event", { match: "name", timeout: "2h" });
+    void waitForEvent("id", { event: "event", match: "name", timeout: "2h" });
     expect(getOp()).toMatchObject({
       opts: {
         if: "event.name == async.name",
@@ -132,11 +135,27 @@ describe("waitForEvent", () => {
   });
 
   test("return custom match statement if `if` given", () => {
-    void waitForEvent("id", "event", { if: "name == 123", timeout: "2h" });
+    void waitForEvent("id", {
+      event: "event",
+      if: "name == 123",
+      timeout: "2h",
+    });
     expect(getOp()).toMatchObject({
       opts: {
         if: "name == 123",
       },
+    });
+  });
+
+  describe("type errors", () => {
+    test("does not allow both `match` and `if`", () => {
+      // @ts-expect-error `match` and `if` cannot be defined together
+      void waitForEvent("id", {
+        event: "event",
+        match: "name",
+        if: "name",
+        timeout: "2h",
+      });
     });
   });
 });
