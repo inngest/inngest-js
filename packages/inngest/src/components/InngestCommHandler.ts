@@ -57,7 +57,7 @@ export interface ServeHandlerOptions extends RegisterOptions {
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: AnyInngestFunction[];
+  functions: readonly AnyInngestFunction[];
 }
 
 interface InngestCommHandlerOptions<
@@ -92,7 +92,7 @@ interface InngestCommHandlerOptions<
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: AnyInngestFunction[];
+  functions: readonly AnyInngestFunction[];
 
   /**
    * The `handler` is the function your framework requires to handle a
