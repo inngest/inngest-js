@@ -921,6 +921,21 @@ export class InngestCommHandler<
     if (!this.client["eventKey"] && this.env[envKeys.InngestEventKey]) {
       this.client.setEventKey(String(this.env[envKeys.InngestEventKey]));
     }
+
+    // v2 -> v3 migration warnings
+    if (this.env[envKeys.InngestDevServerUrl]) {
+      this.log(
+        "warn",
+        `Use of ${envKeys.InngestDevServerUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`
+      );
+    }
+
+    if (this.env[envKeys.InngestApiBaseUrl]) {
+      this.log(
+        "warn",
+        `Use of ${envKeys.InngestApiBaseUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`
+      );
+    }
   }
 
   protected validateSignature(sig: string | undefined, body: unknown) {

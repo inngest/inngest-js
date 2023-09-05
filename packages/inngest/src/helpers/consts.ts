@@ -18,6 +18,11 @@ export enum queryKeys {
 export enum envKeys {
   InngestSigningKey = "INNGEST_SIGNING_KEY",
   InngestEventKey = "INNGEST_EVENT_KEY",
+
+  /**
+   * @deprecated Removed in v3. Use {@link InngestBaseUrl} instead.
+   */
+  InngestDevServerUrl = "INNGEST_DEVSERVER_URL",
   InngestEnvironment = "INNGEST_ENV",
   InngestBaseUrl = "INNGEST_BASE_URL",
   InngestServeHost = "INNGEST_SERVE_HOST",
@@ -26,6 +31,11 @@ export enum envKeys {
   InngestStreaming = "INNGEST_STREAMING",
 
   BranchName = "BRANCH_NAME",
+
+  /**
+   * @deprecated Removed in v3. Use {@link InngestBaseUrl} instead.
+   */
+  InngestApiBaseUrl = "INNGEST_API_BASE_URL",
 
   /**
    * The git branch of the commit the deployment was triggered by. Example:
