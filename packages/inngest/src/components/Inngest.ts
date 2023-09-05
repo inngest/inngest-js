@@ -3,6 +3,7 @@ import {
   defaultInngestBaseUrl,
   defaultInngestEventBaseUrl,
   envKeys,
+  logPrefix,
 } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
@@ -17,6 +18,7 @@ import { stringify } from "../helpers/strings";
 import { type ExclusiveKeys, type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
+  type AnyHandler,
   type ClientOptions,
   type EventNameFromTrigger,
   type EventPayload,
@@ -498,12 +500,18 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       sanitizedTrigger = trigger;
     }
 
+    if (Object.hasOwnProperty.call(sanitizedOpts, "fns")) {
+      // v2 -> v3 migration warning
+      console.warn(
+        `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`
+      );
+    }
+
     return new InngestFunction(
       this,
       sanitizedOpts,
       sanitizedTrigger,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
-      handler as any
+      handler as AnyHandler
     );
   }
 }
