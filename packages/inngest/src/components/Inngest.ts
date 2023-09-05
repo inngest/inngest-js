@@ -485,10 +485,21 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     FunctionTrigger<keyof EventsFromOpts<TOpts> & string>,
     FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>
   > {
-    const sanitizedOpts = options as FunctionOptions<
+    let sanitizedOpts: FunctionOptions<
       EventsFromOpts<TOpts>,
       keyof EventsFromOpts<TOpts> & string
     >;
+
+    if (typeof options === "string") {
+      // v2 -> v3 runtime migraton warning
+      console.warn(
+        `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
+      );
+
+      sanitizedOpts = { id: options };
+    } else {
+      sanitizedOpts = options as typeof sanitizedOpts;
+    }
 
     let sanitizedTrigger: FunctionTrigger<keyof EventsFromOpts<TOpts> & string>;
     if (trigger.event) {
