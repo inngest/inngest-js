@@ -1,5 +1,4 @@
 import canonicalize from "canonicalize";
-import chalk from "chalk";
 import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
@@ -7,6 +6,7 @@ import {
   defaultInngestBaseUrl,
   envKeys,
   headerKeys,
+  logPrefix,
   queryKeys,
 } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
@@ -991,10 +991,7 @@ export class InngestCommHandler<
         logger = console[level as keyof typeof console] as typeof logger;
       }
 
-      logger(
-        `${chalk.magenta.bold("[Inngest]")} ${level as string} -`,
-        ...args
-      );
+      logger(`${logPrefix} ${level as string} -`, ...args);
     }
   }
 }

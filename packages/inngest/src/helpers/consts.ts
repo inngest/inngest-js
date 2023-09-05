@@ -1,3 +1,5 @@
+import chalk from "chalk";
+
 /**
  * Keys for accessing query parameters included in requests from Inngest to run
  * functions.
@@ -129,3 +131,5 @@ export enum internalEvents {
    */
   FunctionFailed = "inngest/function.failed",
 }
+
+export const logPrefix = chalk.magenta.bold("[Inngest]");
