@@ -1015,7 +1015,7 @@ export class InngestCommHandler<
     if (currentLevel >= logLevelSetting) {
       let logger = console.log;
 
-      if (Object.hasOwnProperty.call(console, level)) {
+      if (Object.prototype.hasOwnProperty.call(console, level)) {
         logger = console[level as keyof typeof console] as typeof logger;
       }
 

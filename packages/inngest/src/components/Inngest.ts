@@ -521,7 +521,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       sanitizedTrigger = trigger;
     }
 
-    if (Object.hasOwnProperty.call(sanitizedOpts, "fns")) {
+    if (Object.prototype.hasOwnProperty.call(sanitizedOpts, "fns")) {
       // v2 -> v3 migration warning
       console.warn(
         `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`
