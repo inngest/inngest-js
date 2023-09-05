@@ -502,7 +502,17 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     }
 
     let sanitizedTrigger: FunctionTrigger<keyof EventsFromOpts<TOpts> & string>;
-    if (trigger.event) {
+
+    if (typeof trigger === "string") {
+      // v2 -> v3 migration warning
+      console.warn(
+        `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
+      );
+
+      sanitizedTrigger = {
+        event: trigger,
+      };
+    } else if (trigger.event) {
       sanitizedTrigger = {
         event: trigger.event,
         expression: trigger.if,
