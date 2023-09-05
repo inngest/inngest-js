@@ -299,6 +299,19 @@ export class InngestCommHandler<
   private allowExpiredSignatures: boolean;
 
   constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>) {
+    /**
+     * v2 -> v3 migration error.
+     *
+     * If a serve handler is passed a client as the first argument, it'll be
+     * spread in to these options. We should be able to detect this by picking
+     * up a unique property on the object.
+     */
+    if (Object.prototype.hasOwnProperty.call(options, "eventKey")) {
+      throw new Error(
+        `${logPrefix} You've passed an Inngest client as the first argument to your serve handler. This is no longer supported in v3; please pass the Inngest client as the \`client\` property of an options object instead. See https://www.inngest.com/docs/sdk/migration`
+      );
+    }
+
     this.frameworkName = options.frameworkName;
     this.client = options.client;
     this.id = options.id || this.client.id;
