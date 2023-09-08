@@ -1019,6 +1019,7 @@ export type SupportedFrameworkName =
   | "aws-lambda"
   | "nextjs"
   | "nuxt"
+  | "h3"
   | "redwoodjs"
   | "remix"
   | "deno/fresh"
