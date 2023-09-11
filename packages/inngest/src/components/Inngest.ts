@@ -423,7 +423,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
       return await applyHookToOutput({ result: { ids: body.ids } });
     } catch (err) {
-      console.warn("gluhdflioghuisdfhgiusdfhguisdhgiuhsdighusd", err);
       throw await this.#getResponseError(response);
     }
   }

@@ -239,22 +239,18 @@ describe("stacking and inference", () => {
 
   describe("onSendEvent", () => {
     describe("transformOutput", () => {
-      const originalFetch = global.fetch;
-
-      beforeAll(() => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        global.fetch = jest.fn(() =>
-          Promise.resolve({ status: 200, json: () => Promise.resolve({}) })
-        ) as any;
-      });
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const mockFetch = jest.fn(() =>
+        Promise.resolve({
+          status: 200,
+          json: () => Promise.resolve({ ids: [], status: 200 }),
+          text: () => Promise.resolve(""),
+        })
+      ) as any;
 
       beforeEach(() => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-        (global.fetch as any).mockClear();
-      });
-
-      afterAll(() => {
-        global.fetch = originalFetch;
+        mockFetch.mockClear();
       });
 
       describe("can add a value to output context", () => {
@@ -279,6 +275,8 @@ describe("stacking and inference", () => {
           id: "test",
           middleware: [mw],
           eventKey: "123",
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          fetch: mockFetch,
         });
 
         test("output context has value", () => {
@@ -314,6 +312,8 @@ describe("stacking and inference", () => {
           id: "test",
           middleware: [mw],
           eventKey: "123",
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          fetch: mockFetch,
         });
 
         test("output context has value", () => {
@@ -349,6 +349,8 @@ describe("stacking and inference", () => {
           id: "test",
           middleware: [mw],
           eventKey: "123",
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          fetch: mockFetch,
         });
 
         test("output context has value", () => {
@@ -396,6 +398,8 @@ describe("stacking and inference", () => {
           id: "test",
           middleware: [mw1, mw2],
           eventKey: "123",
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          fetch: mockFetch,
         });
 
         test("output context has foo value", () => {
@@ -448,6 +452,8 @@ describe("stacking and inference", () => {
           id: "test",
           middleware: [mw1, mw2],
           eventKey: "123",
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          fetch: mockFetch,
         });
 
         test("output context has new value", () => {
