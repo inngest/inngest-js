@@ -12,7 +12,11 @@ import {
   createStepTools,
   type FoundStep,
 } from "@local/components/InngestStepTools";
-import { StepOpCode, type ClientOptions } from "@local/types";
+import {
+  StepOpCode,
+  type ClientOptions,
+  type EventPayload,
+} from "@local/types";
 import ms from "ms";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
@@ -371,8 +375,19 @@ describe("sleepUntil", () => {
 
 describe("sendEvent", () => {
   describe("runtime", () => {
-    const fetchMock = jest.fn(() =>
-      Promise.resolve({ status: 200 })
+    const fetchMock = jest.fn(
+      (url: string, opts: { body: string }) =>
+        Promise.resolve({
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              status: 200,
+              ids: (JSON.parse(opts.body) as EventPayload[]).map(
+                () => "test-id"
+              ),
+            }),
+        })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ) as unknown as typeof fetch;
 
     const client = createClient({

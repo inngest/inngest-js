@@ -18,6 +18,7 @@ import { stringify } from "../helpers/strings";
 import { type ExclusiveKeys, type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
+  sendEventResponseSchema,
   type AnyHandler,
   type ClientOptions,
   type EventNameFromTrigger,
@@ -27,6 +28,7 @@ import {
   type FunctionTrigger,
   type Handler,
   type MiddlewareStack,
+  type SendEventOutput,
   type TriggerOptions,
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
@@ -38,6 +40,7 @@ import {
   type MiddlewareOptions,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
+  type SendEventHookStack,
 } from "./InngestMiddleware";
 
 /**
@@ -316,7 +319,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    */
   public async send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
     payload: Payload
-  ): Promise<void> {
+  ): Promise<SendEventOutput<TOpts>> {
     const hooks = await getHookStack(
       this.middleware,
       "onSendEvent",
@@ -325,8 +328,10 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
         transformInput: (prev, output) => {
           return { ...prev, ...output };
         },
-        transformOutput: (prev, _output) => {
-          return prev;
+        transformOutput(prev, output) {
+          return {
+            result: { ...prev.result, ...output.result },
+          };
         },
       }
     );
@@ -361,12 +366,23 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       p.ts ? p : { ...p, ts: new Date().getTime() }
     );
 
+    const applyHookToOutput = async (
+      arg: Parameters<NonNullable<SendEventHookStack["transformOutput"]>>[0]
+    ): Promise<SendEventOutput<TOpts>> => {
+      const hookOutput = await hooks.transformOutput?.(arg);
+      return {
+        ...arg.result,
+        ...hookOutput?.result,
+        // 🤮
+      } as unknown as SendEventOutput<TOpts>;
+    };
+
     /**
      * It can be valid for a user to send an empty list of events; if this
      * happens, show a warning that this may not be intended, but don't throw.
      */
     if (!payloads.length) {
-      return console.warn(
+      console.warn(
         prettyError({
           type: "warn",
           whatHappened: "`inngest.send()` called with no events",
@@ -377,6 +393,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
           stack: true,
         })
       );
+
+      return await applyHookToOutput({ result: { ids: [] } });
     }
 
     // When sending events, check if the dev server is available.  If so, use the
@@ -399,11 +417,15 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       headers: { ...this.headers },
     });
 
-    if (response.status >= 200 && response.status < 300) {
-      return void (await hooks.transformOutput?.({ payloads: [...payloads] }));
-    }
+    try {
+      const rawBody: unknown = await response.json();
+      const body = await sendEventResponseSchema.parseAsync(rawBody);
 
-    throw await this.#getResponseError(response);
+      return await applyHookToOutput({ result: { ids: body.ids } });
+    } catch (err) {
+      console.warn("gluhdflioghuisdfhgiusdfhguisdhgiuhsdighusd", err);
+      throw await this.#getResponseError(response);
+    }
   }
 
   public createFunction<
@@ -548,7 +570,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
  * If this is moved, please ensure that using this package in another project
  * can correctly access comments on mutated input and output.
  */
-const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
+export const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
   new InngestMiddleware({
     name: "Inngest: Logger",
     init({ client }) {

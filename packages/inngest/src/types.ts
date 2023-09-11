@@ -4,15 +4,18 @@ import {
   type AnyInngest,
   type EventsFromOpts,
   type Inngest,
+  type builtInMiddleware,
 } from "./components/Inngest";
 import {
   type InngestMiddleware,
   type MiddlewareOptions,
+  type MiddlewareStackSendEventOutputMutation,
 } from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
 import {
   type IsStringLiteral,
+  type ObjectAssign,
   type ObjectPaths,
   type StrictUnion,
 } from "./helpers/types";
@@ -320,6 +323,43 @@ export interface EventPayload {
    */
   ts?: number;
 }
+
+export const sendEventResponseSchema = z.object({
+  /**
+   * Event IDs
+   */
+  ids: z.array(z.string()),
+
+  /**
+   * HTTP Status Code. Will be undefined if no request was sent.
+   */
+  status: z.number().min(200).max(299),
+});
+
+/**
+ * The response from the Inngest Event API
+ */
+export type SendEventResponse = z.output<typeof sendEventResponseSchema>;
+
+/**
+ * The response in code from sending an event to Inngest.
+ */
+export type SendEventBaseOutput = {
+  ids: SendEventResponse["ids"];
+};
+
+export type SendEventOutput<TOpts extends ClientOptions> = ObjectAssign<
+  [
+    // eslint-disable-next-line @typescript-eslint/ban-types
+    MiddlewareStackSendEventOutputMutation<{}, typeof builtInMiddleware>,
+    MiddlewareStackSendEventOutputMutation<
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      {},
+      NonNullable<TOpts["middleware"]>
+    >
+  ],
+  SendEventBaseOutput
+>;
 
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
