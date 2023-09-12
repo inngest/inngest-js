@@ -279,14 +279,28 @@ describe("stacking and inference", () => {
           fetch: mockFetch,
         });
 
+        const payload = { name: "foo", data: { foo: "bar" } };
+
         test("output context has value", () => {
-          const res = inngest.send({ name: "foo", data: { foo: "bar" } });
-          assertType<IsEqual<Awaited<typeof res>["foo"], string>>(true);
+          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
+            const directRes = inngest.send(payload);
+            assertType<IsEqual<Awaited<typeof directRes>["foo"], string>>(true);
+
+            const res = step.sendEvent("id", payload);
+            assertType<IsEqual<Awaited<typeof res>["foo"], string>>(true);
+          });
         });
 
         test("output context retains default 'ids' value", () => {
-          const res = inngest.send({ name: "foo", data: { foo: "bar" } });
-          assertType<IsEqual<Awaited<typeof res>["ids"], string[]>>(true);
+          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
+            const directRes = inngest.send(payload);
+            assertType<IsEqual<Awaited<typeof directRes>["ids"], string[]>>(
+              true
+            );
+
+            const res = step.sendEvent("id", payload);
+            assertType<IsEqual<Awaited<typeof res>["ids"], string[]>>(true);
+          });
         });
       });
 
@@ -316,14 +330,28 @@ describe("stacking and inference", () => {
           fetch: mockFetch,
         });
 
+        const payload = { name: "foo", data: { foo: "bar" } };
+
         test("output context has value", () => {
-          const res = inngest.send({ name: "foo", data: { foo: "bar" } });
-          assertType<IsEqual<Awaited<typeof res>["foo"], "bar">>(true);
+          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
+            const directRes = inngest.send(payload);
+            assertType<IsEqual<Awaited<typeof directRes>["foo"], "bar">>(true);
+
+            const res = step.sendEvent("id", payload);
+            assertType<IsEqual<Awaited<typeof res>["foo"], "bar">>(true);
+          });
         });
 
         test("output context retains default 'ids' value", () => {
-          const res = inngest.send({ name: "foo", data: { foo: "bar" } });
-          assertType<IsEqual<Awaited<typeof res>["ids"], string[]>>(true);
+          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
+            const directRes = inngest.send(payload);
+            assertType<IsEqual<Awaited<typeof directRes>["ids"], string[]>>(
+              true
+            );
+
+            const res = step.sendEvent("id", payload);
+            assertType<IsEqual<Awaited<typeof res>["ids"], string[]>>(true);
+          });
         });
       });
 
@@ -353,9 +381,18 @@ describe("stacking and inference", () => {
           fetch: mockFetch,
         });
 
+        const payload = { name: "foo", data: { foo: "bar" } };
+
         test("output context has value", () => {
-          const res = inngest.send({ name: "foo", data: { foo: "bar" } });
-          assertType<IsEqual<Awaited<typeof res>["ids"], boolean>>(true);
+          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
+            const directRes = inngest.send(payload);
+            assertType<IsEqual<Awaited<typeof directRes>["ids"], boolean>>(
+              true
+            );
+
+            const res = step.sendEvent("id", payload);
+            assertType<IsEqual<Awaited<typeof res>["ids"], boolean>>(true);
+          });
         });
       });
 
@@ -402,14 +439,28 @@ describe("stacking and inference", () => {
           fetch: mockFetch,
         });
 
+        const payload = { name: "foo", data: { foo: "bar" } };
+
         test("output context has foo value", () => {
-          const res = inngest.send({ name: "foo", data: { foo: "bar" } });
-          assertType<IsEqual<Awaited<typeof res>["foo"], string>>(true);
+          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
+            const directRes = inngest.send(payload);
+            assertType<IsEqual<Awaited<typeof directRes>["foo"], string>>(true);
+
+            const res = step.sendEvent("id", payload);
+            assertType<IsEqual<Awaited<typeof res>["foo"], string>>(true);
+          });
         });
 
         test("output context has bar value", () => {
-          const res = inngest.send({ name: "foo", data: { foo: "bar" } });
-          assertType<IsEqual<Awaited<typeof res>["bar"], boolean>>(true);
+          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
+            const directRes = inngest.send(payload);
+            assertType<IsEqual<Awaited<typeof directRes>["bar"], boolean>>(
+              true
+            );
+
+            const res = step.sendEvent("id", payload);
+            assertType<IsEqual<Awaited<typeof res>["bar"], boolean>>(true);
+          });
         });
       });
 
@@ -456,9 +507,18 @@ describe("stacking and inference", () => {
           fetch: mockFetch,
         });
 
+        const payload = { name: "foo", data: { foo: "bar" } };
+
         test("output context has new value", () => {
-          const res = inngest.send({ name: "foo", data: { foo: "bar" } });
-          assertType<IsEqual<Awaited<typeof res>["foo"], boolean>>(true);
+          inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
+            const directRes = inngest.send(payload);
+            assertType<IsEqual<Awaited<typeof directRes>["foo"], boolean>>(
+              true
+            );
+
+            const res = step.sendEvent("id", payload);
+            assertType<IsEqual<Awaited<typeof res>["foo"], boolean>>(true);
+          });
         });
       });
     });
