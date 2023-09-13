@@ -25,6 +25,7 @@ import { type MaybePromise } from "../helpers/types";
 import {
   type FunctionConfig,
   type IncomingOp,
+  type InternalRegisterOptions,
   type IntrospectRequest,
   type LogLevel,
   type RegisterOptions,
@@ -307,16 +308,7 @@ export class InngestCommHandler<
      */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     functions: InngestFunction<any, any, any, any>[],
-    {
-      inngestRegisterUrl,
-      fetch,
-      logLevel = "info",
-      signingKey,
-      serveHost,
-      servePath,
-      streaming,
-      name,
-    }: RegisterOptions = {},
+    options: RegisterOptions = {},
 
     /**
      * The `handler` is the function your framework requires to handle a
@@ -396,9 +388,10 @@ export class InngestCommHandler<
      */
     streamTransformRes?: TStreamTransform
   ) {
-    this.frameworkName = frameworkName;
+    this.frameworkName =
+      (options as InternalRegisterOptions)?.frameworkName || frameworkName;
     this.client = client;
-    this.name = name || this.client.name;
+    this.name = options.name || this.client.name;
 
     this.handler = handler;
     this.transformRes = transformRes;
@@ -451,16 +444,16 @@ export class InngestCommHandler<
     }, {});
 
     this.inngestRegisterUrl = new URL(
-      inngestRegisterUrl || "https://api.inngest.com/fn/register"
+      options.inngestRegisterUrl || "https://api.inngest.com/fn/register"
     );
 
-    this.signingKey = signingKey;
-    this.serveHost = serveHost;
-    this.servePath = servePath;
-    this.logLevel = logLevel;
-    this.streaming = streaming ?? false;
+    this.signingKey = options.signingKey;
+    this.serveHost = options.serveHost;
+    this.servePath = options.servePath;
+    this.logLevel = options.logLevel ?? "info";
+    this.streaming = options.streaming ?? false;
 
-    this.fetch = getFetch(fetch || this.client["fetch"]);
+    this.fetch = getFetch(options.fetch || this.client["fetch"]);
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the

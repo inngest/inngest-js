@@ -1,6 +1,9 @@
-import { serve as serveH3 } from "./h3";
 import { type ServeHandler } from "./components/InngestCommHandler";
-import { type SupportedFrameworkName } from "./types";
+import { serve as serveH3 } from "./h3";
+import {
+  type InternalRegisterOptions,
+  type SupportedFrameworkName,
+} from "./types";
 
 export const name: SupportedFrameworkName = "nuxt";
 
@@ -10,4 +13,12 @@ export const name: SupportedFrameworkName = "nuxt";
  *
  * @public
  */
-export const serve: ServeHandler = serveH3;
+export const serve: ServeHandler = (client, functions, opts) => {
+  const optsOverrides: InternalRegisterOptions = {
+    ...opts,
+    frameworkName: name,
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+  return serveH3(client, functions, optsOverrides);
+};

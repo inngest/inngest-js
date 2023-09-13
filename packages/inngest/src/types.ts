@@ -605,6 +605,14 @@ export interface RegisterOptions {
   name?: string;
 }
 
+export interface InternalRegisterOptions extends RegisterOptions {
+  /**
+   * Can be used to override the framework name given to a particular serve
+   * handler.
+   */
+  frameworkName?: string;
+}
+
 /**
  * A user-friendly method of specifying a trigger for an Inngest function.
  */
