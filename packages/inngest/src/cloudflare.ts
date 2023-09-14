@@ -70,6 +70,12 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         status,
         headers,
       });
+    },
+    ({ body, status, headers }): Response => {
+      return new Response(body, {
+        status,
+        headers,
+      });
     }
   );
 
