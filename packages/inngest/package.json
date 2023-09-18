@@ -46,7 +46,7 @@
     "buffer": "^6.0.3",
     "canonicalize": "^1.0.8",
     "chalk": "^4.1.2",
-    "cross-fetch": "^3.1.5",
+    "cross-fetch": "^4.0.0",
     "h3": "^1.0.2",
     "hash.js": "^1.1.7",
     "json-stringify-safe": "^5.0.1",
