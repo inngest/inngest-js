@@ -254,6 +254,34 @@ describe("send", () => {
       );
     });
 
+    test("should insert blank `data` if none given", async () => {
+      const inngest = createClient({ name: "test" });
+      inngest.setEventKey(testEventKey);
+
+      const testEventWithoutData = {
+        name: "test.without.data",
+      };
+
+      const mockedFetch = jest.mocked(global.fetch);
+
+      await expect(inngest.send(testEventWithoutData)).resolves.toBeUndefined();
+
+      expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
+      expect(mockedFetch.mock.calls[1]).toHaveLength(2);
+      expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+      const body: Array<Record<string, any>> = JSON.parse(
+        mockedFetch.mock.calls[1]?.[1]?.body as string
+      );
+      expect(body).toHaveLength(1);
+      expect(body[0]).toEqual(
+        expect.objectContaining({
+          ...testEventWithoutData,
+          data: {},
+        })
+      );
+    });
+
     test("should allow middleware to mutate input", async () => {
       const inngest = createClient({
         name: "test",
@@ -314,6 +342,7 @@ describe("send", () => {
           inngest.send([
             { name: "anything", data: "foo" },
             { name: "anything", data: "foo" },
+            { name: "anythingelse" },
           ]);
       });
     });
@@ -324,13 +353,12 @@ describe("send", () => {
         eventKey: testEventKey,
         schemas: new EventSchemas().fromRecord<{
           foo: {
-            name: "foo";
             data: { foo: string };
           };
           bar: {
-            name: "bar";
             data: { bar: string };
           };
+          baz: {};
         }>(),
       });
 
@@ -381,6 +409,24 @@ describe("send", () => {
             // @ts-expect-error Invalid data
             { name: "bar", data: { foo: "" } },
           ]);
+      });
+
+      test("disallows sending known data-filled event with no data", () => {
+        // @ts-expect-error No data
+        const _fn = () => inngest.send({ name: "foo" });
+      });
+
+      test("disallows sending known data-filled event with empty data object", () => {
+        // @ts-expect-error Empty data
+        const _fn = () => inngest.send({ name: "foo", data: {} });
+      });
+
+      test("allows sending known data-empty event with no data", () => {
+        const _fn = () => inngest.send({ name: "baz" });
+      });
+
+      test("allows sending known data-empty event with empty data object", () => {
+        const _fn = () => inngest.send({ name: "baz", data: {} });
       });
 
       test("allows sending a single known event with an object", () => {

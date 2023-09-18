@@ -338,11 +338,16 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       payloads = [...inputChanges.payloads];
     }
 
-    // Ensure that we always add a "ts" field to events.  This is auto-filled by the
-    // event server so is safe, and adding here fixes Next.js server action cache issues.
-    payloads = payloads.map((p) =>
-      p.ts ? p : { ...p, ts: new Date().getTime() }
-    );
+    // Ensure that we always add "ts" and "data" fields to events. "ts" is auto-
+    // filled by the event server so is safe, and adding here fixes Next.js
+    // server action cache issues.
+    payloads = payloads.map((p) => {
+      return {
+        ...p,
+        ts: p.ts || new Date().getTime(),
+        data: p.data || {},
+      };
+    });
 
     /**
      * It can be valid for a user to send an empty list of events; if this
