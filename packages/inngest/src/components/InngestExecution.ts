@@ -31,6 +31,7 @@ import { type AnyInngestFunction } from "./InngestFunction";
 import { getHookStack, type RunHookStack } from "./InngestMiddleware";
 import { createStepTools, type FoundStep } from "./InngestStepTools";
 import { NonRetriableError } from "./NonRetriableError";
+import { RetryAfterError } from "./RetryAfterError";
 
 /**
  * Types of checkpoints that can be reached during execution.
@@ -48,7 +49,7 @@ export interface Checkpoints {
 export interface ExecutionResults {
   "function-resolved": { data: unknown };
   "step-ran": { step: OutgoingOp };
-  "function-rejected": { error: unknown; retriable: boolean };
+  "function-rejected": { error: unknown; retriable: boolean | string };
   "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
   "step-not-found": { step: OutgoingOp };
 }
@@ -451,7 +452,11 @@ export class InngestExecution {
        * Ensure we give middleware the chance to decide on retriable behaviour
        * by looking at the error returned from output transformation.
        */
-      const retriable = !(error instanceof NonRetriableError);
+      let retriable: boolean | string = !(error instanceof NonRetriableError);
+      if (retriable && error instanceof RetryAfterError) {
+        retriable = error.retryAfter;
+      }
+
       const serializedError = serializeError(error);
 
       return { type: "function-rejected", error: serializedError, retriable };

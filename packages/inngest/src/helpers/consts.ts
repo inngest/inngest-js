@@ -122,6 +122,7 @@ export enum headerKeys {
   Platform = "x-inngest-platform",
   Framework = "x-inngest-framework",
   NoRetry = "x-inngest-no-retry",
+  RetryAfter = "retry-after",
 }
 
 export const defaultInngestBaseUrl = "https://api.inngest.com/";
