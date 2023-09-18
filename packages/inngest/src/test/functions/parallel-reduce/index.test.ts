@@ -7,7 +7,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Parallel Reduce",
+  name: "parallel-reduce",
   triggers: [{ event: "demo/parallel.reduce" }],
 });
 
@@ -20,7 +20,7 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/parallel.reduce'", async () => {
-    runId = await eventRunWithName(eventId, "Parallel Reduce");
+    runId = await eventRunWithName(eventId, "parallel-reduce");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 

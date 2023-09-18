@@ -1,12 +1,13 @@
 import { inngest } from "../client";
 
 export default inngest.createFunction(
-  { name: "Polling" },
+  { id: "polling" },
   { event: "demo/polling" },
   async ({ step }) => {
     const poll = async () => {
       let timedOut = false;
-      void step.sleep("30s").then(() => (timedOut = true));
+      void step.sleep("polling-time-out", "30s").then(() => (timedOut = true));
+      let interval = 0;
 
       do {
         const jobData = await step.run("Check if external job complete", () => {
@@ -23,7 +24,7 @@ export default inngest.createFunction(
           return jobData;
         }
 
-        await step.sleep("10s");
+        await step.sleep(`interval-${interval++}`, "10s");
       } while (!timedOut);
 
       return null;

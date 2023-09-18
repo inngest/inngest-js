@@ -2,6 +2,6 @@
 import { checkIntrospection } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Polling",
+  name: "polling",
   triggers: [{ event: "demo/polling" }],
 });

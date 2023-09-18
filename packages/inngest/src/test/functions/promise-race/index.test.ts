@@ -9,7 +9,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Promise.race",
+  name: "promise-race",
   triggers: [{ event: "demo/promise.race" }],
 });
 
@@ -22,7 +22,7 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/promise.race'", async () => {
-    runId = await eventRunWithName(eventId, "Promise.race");
+    runId = await eventRunWithName(eventId, "promise-race");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 
