@@ -61,6 +61,7 @@ export interface InngestExecutionOptions {
   fn: AnyInngestFunction;
   data: unknown;
   stepState: Record<string, MemoizedOp>;
+  stepCompletionOrder: string[];
   requestedRunStep?: string;
   timer?: ServerTiming;
   isFailureHandler?: boolean;
@@ -90,7 +91,7 @@ export class InngestExecution {
     this.options = options;
 
     this.#userFnToRun = this.#getUserFnToRun();
-    this.state = this.#createExecutionState(this.options.stepState);
+    this.state = this.#createExecutionState(this.options);
     this.fnArg = this.#createFnArg(this.state);
     this.checkpointHandlers = this.#createCheckpointHandlers();
     this.#initializeTimer(this.state);
@@ -185,6 +186,20 @@ export class InngestExecution {
        * them back to Inngest.
        */
       "steps-found": async ({ steps }) => {
+        /**
+         * Iterate over state stack first, resolving promises in order to support
+         * racing.
+         *
+         * Then, find all remaining steps and handle them too.
+         *
+         * If we "handle" any steps in this pass, we must wait for the next
+         * checkpoint before taking any action. This is because we could be
+         * seeing a mix of previously-reported steps and new steps, which we
+         * can't differentiate.
+         *
+         * Because of this, we must also roll up any steps not necessarily found
+         * in only this checkpoint.
+         */
         const stepResult = await this.#tryExecuteStep(steps);
         if (stepResult) {
           const transformResult = await this.#transformOutput(stepResult);
@@ -200,7 +215,9 @@ export class InngestExecution {
           return transformResult;
         }
 
-        const newSteps = await this.#filterNewSteps(steps);
+        const newSteps = await this.#filterNewSteps(
+          Object.values(this.state.steps)
+        );
         if (newSteps) {
           return {
             type: "steps-found",
@@ -460,9 +477,10 @@ export class InngestExecution {
     return { type: "function-resolved", data };
   }
 
-  #createExecutionState(
-    stepState: InngestExecutionOptions["stepState"]
-  ): ExecutionState {
+  #createExecutionState({
+    stepState,
+    stepCompletionOrder,
+  }: InngestExecutionOptions): ExecutionState {
     let { promise: checkpointPromise, resolve: checkpointResolve } =
       createDeferredPromise<Checkpoint>();
 
@@ -485,13 +503,14 @@ export class InngestExecution {
       steps: {},
       loop,
       hasSteps: Boolean(Object.keys(stepState).length),
+      stepCompletionOrder,
       setCheckpoint: (checkpoint: Checkpoint) => {
         ({ promise: checkpointPromise, resolve: checkpointResolve } =
           checkpointResolve(checkpoint));
       },
       allStateUsed: () => {
         return Object.values(state.stepState).every((step) => {
-          return step.fulfilled;
+          return step.seen;
         });
       },
     };
@@ -626,6 +645,7 @@ export type ExecutionResultHandlers<T = ActionResponse> = {
 
 export interface MemoizedOp extends IncomingOp {
   fulfilled?: boolean;
+  seen?: boolean;
 }
 
 export interface ExecutionState {
@@ -680,4 +700,10 @@ export interface ExecutionState {
    * fulfill found steps.
    */
   allStateUsed: () => boolean;
+
+  /**
+   * An ordered list of step IDs that represents the order in which their
+   * execution was completed.
+   */
+  stepCompletionOrder: string[];
 }
