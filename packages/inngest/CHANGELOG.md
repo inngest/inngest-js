@@ -1,5 +1,11 @@
 # inngest
 
+## 2.6.1
+
+### Patch Changes
+
+- [#312](https://github.com/inngest/inngest-js/pull/312) [`ca6d6aa`](https://github.com/inngest/inngest-js/commit/ca6d6aa31512468de0d662e770d622a069adb65e) Thanks [@mmachatschek](https://github.com/mmachatschek)! - chore: update cross-fetch to ^4.0.0 package
+
 ## 2.6.0
 
 ### Minor Changes
