@@ -47,7 +47,7 @@
     "canonicalize": "^1.0.8",
     "chalk": "^4.1.2",
     "cross-fetch": "^4.0.0",
-    "h3": "^1.0.2",
+    "h3": "^1.8.1",
     "hash.js": "^1.1.7",
     "json-stringify-safe": "^5.0.1",
     "ms": "^2.1.3",

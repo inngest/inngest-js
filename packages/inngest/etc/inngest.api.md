@@ -174,7 +174,7 @@ export class InngestCommHandler<H extends Handler_2, TResTransform extends (res:
     constructor(
     frameworkName: string,
     client: Inngest<any>,
-    functions: InngestFunction<any, any, any, any>[], { inngestRegisterUrl, fetch, logLevel, signingKey, serveHost, servePath, streaming, name, }: RegisterOptions | undefined,
+    functions: InngestFunction<any, any, any, any>[], options: RegisterOptions | undefined,
     handler: H,
     transformRes: TResTransform,
     streamTransformRes?: TStreamTransform);
@@ -362,7 +362,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:332:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:342:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/types.ts:51:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:685:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:693:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
