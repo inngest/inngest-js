@@ -626,6 +626,9 @@ export class InngestCommHandler<
               headers: {
                 "Content-Type": "application/json",
                 [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+                ...(typeof result.retriable === "string"
+                  ? { [headerKeys.RetryAfter]: result.retriable }
+                  : {}),
               },
               body: stringify(result.error),
             };

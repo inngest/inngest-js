@@ -127,6 +127,8 @@ export enum headerKeys {
     // (undocumented)
     Platform = "x-inngest-platform",
     // (undocumented)
+    RetryAfter = "retry-after",
+    // (undocumented)
     SdkVersion = "x-inngest-sdk",
     // (undocumented)
     Signature = "x-inngest-signature"
@@ -296,6 +298,16 @@ export interface RegisterOptions {
     servePath?: string;
     signingKey?: string;
     streaming?: "allow" | "force" | false;
+}
+
+// @public
+export class RetryAfterError extends Error {
+    constructor(message: string,
+    retryAfter: number | string | Date, options?: {
+        cause?: unknown;
+    });
+    readonly cause?: unknown;
+    readonly retryAfter: string;
 }
 
 // @public

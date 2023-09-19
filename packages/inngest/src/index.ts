@@ -16,6 +16,7 @@ export type {
   MiddlewareRegisterReturn,
 } from "./components/InngestMiddleware";
 export { NonRetriableError } from "./components/NonRetriableError";
+export { RetryAfterError } from "./components/RetryAfterError";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts";
 export type { IsStringLiteral } from "./helpers/types";
 export type {
