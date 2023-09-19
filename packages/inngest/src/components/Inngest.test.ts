@@ -358,6 +358,7 @@ describe("send", () => {
           bar: {
             data: { bar: string };
           };
+          // eslint-disable-next-line @typescript-eslint/ban-types
           baz: {};
         }>(),
       });

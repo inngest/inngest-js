@@ -345,6 +345,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       return {
         ...p,
         ts: p.ts || new Date().getTime(),
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: p.data || {},
       };
     });
