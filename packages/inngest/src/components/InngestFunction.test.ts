@@ -5,7 +5,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { jest } from "@jest/globals";
-import { EventSchemas, type EventPayload } from "@local";
+import { EventSchemas, RetryAfterError, type EventPayload } from "@local";
 import {
   type ExecutionResult,
   type ExecutionResults,
@@ -39,6 +39,9 @@ type TestEvents = {
   bar: { data: { bar: string } };
   baz: { data: { baz: string } };
 };
+
+export const ISO_DATETIME_REGEX =
+  /\d{4}-[01]\d-[0-3]\dT[0-2]\d:[0-5]\d:[0-5]\d\.\d+([+-][0-2]\d:[0-5]\d|Z)/;
 
 const schemas = new EventSchemas().fromRecord<TestEvents>();
 
@@ -870,6 +873,111 @@ describe("runFn", () => {
             error: matchError({}),
           },
           expectedStepsRun: [],
+        },
+      })
+    );
+
+    testFn(
+      "throws a specific retry time when RetryAfterError is used with a string",
+      () => {
+        const fn = inngest.createFunction(
+          { id: "Foo" },
+          { event: "foo" },
+          async () => {
+            throw new RetryAfterError("Error", "5s");
+          }
+        );
+
+        return { fn, steps: {} };
+      },
+      {},
+      () => ({
+        "throws a specific retry time": {
+          expectedReturn: {
+            type: "function-rejected",
+            retriable: "5",
+            error: matchError(new Error("Error")),
+          },
+        },
+      })
+    );
+
+    testFn(
+      "throws a specific retry time when RetryAfterError is used with a number",
+      () => {
+        const fn = inngest.createFunction(
+          { id: "Foo" },
+          { event: "foo" },
+          async () => {
+            throw new RetryAfterError("Error", 5_000);
+          }
+        );
+
+        return { fn, steps: {} };
+      },
+      {},
+      () => ({
+        "throws a specific retry time": {
+          expectedReturn: {
+            type: "function-rejected",
+            retriable: "5",
+            error: matchError(new Error("Error")),
+          },
+        },
+      })
+    );
+
+    testFn(
+      "throws a specific retry time when RetryAfterError is used with a date",
+      () => {
+        const fn = inngest.createFunction(
+          { id: "Foo" },
+          { event: "foo" },
+          async () => {
+            throw new RetryAfterError("Error", new Date(Date.now() + 60_000));
+          }
+        );
+
+        return { fn, steps: {} };
+      },
+      {},
+      () => ({
+        "throws a specific retry time": {
+          expectedReturn: {
+            type: "function-rejected",
+            retriable: expect.stringMatching(ISO_DATETIME_REGEX),
+            error: matchError(new Error("Error")),
+          },
+        },
+      })
+    );
+
+    testFn(
+      "throws a specific retry time when a RetryAfterError is used within a step",
+      () => {
+        const A = jest.fn(() => {
+          throw new RetryAfterError("Error", "5s");
+        });
+
+        const fn = inngest.createFunction(
+          { id: "Foo" },
+          { event: "foo" },
+          async ({ step: { run } }) => {
+            await run("A", A);
+          }
+        );
+
+        return { fn, steps: { A } };
+      },
+      { A: "A" },
+      () => ({
+        "throws a specific retry time": {
+          expectedReturn: {
+            type: "function-rejected",
+            retriable: "5",
+            error: matchError(new Error("Error")),
+          },
+          expectedStepsRun: ["A"],
         },
       })
     );
