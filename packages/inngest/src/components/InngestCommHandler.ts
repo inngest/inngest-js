@@ -786,6 +786,7 @@ export class InngestCommHandler<
       timer,
       isFailureHandler: fn.onFailure,
       disableImmediateExecution: fndata.value.disable_immediate_execution,
+      stepCompletionOrder: ctx?.stack?.stack ?? [],
     });
 
     return execution.start();
