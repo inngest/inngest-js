@@ -12,7 +12,7 @@ import { type EventPayload } from "../types";
  */
 export type StandardEventSchema = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: Record<string, any>;
+  data?: Record<string, any>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   user?: Record<string, any>;
 };
@@ -49,7 +49,7 @@ export type ExcludeEmptyZodLiterals<T> = T extends LiteralZodEventSchemas
  */
 export type LiteralZodEventSchema = z.ZodObject<{
   name: z.ZodLiteral<string>;
-  data: z.AnyZodObject | z.ZodAny;
+  data?: z.AnyZodObject | z.ZodAny;
   user?: z.AnyZodObject | z.ZodAny;
 }>;
 
@@ -69,7 +69,7 @@ export type LiteralZodEventSchemas = LiteralZodEventSchema[];
 export type ZodEventSchemas = Record<
   string,
   {
-    data: z.AnyZodObject | z.ZodAny;
+    data?: z.AnyZodObject | z.ZodAny;
     user?: z.AnyZodObject | z.ZodAny;
   }
 >;
