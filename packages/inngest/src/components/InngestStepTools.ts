@@ -57,7 +57,12 @@ export const createStepTools = <
   let foundStepsReportPromise: Promise<void> | undefined;
 
   const reportNextTick = () => {
-    foundStepsReportPromise ??= resolveAfterPending().then(() => {
+    // Being explicit instead of using `??=` to appease TypeScript.
+    if (foundStepsReportPromise) {
+      return;
+    }
+
+    foundStepsReportPromise = resolveAfterPending().then(() => {
       foundStepsReportPromise = undefined;
 
       for (let i = 0; i < state.stepCompletionOrder.length; i++) {
@@ -202,7 +207,7 @@ export const createStepTools = <
         ...opId,
         fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
         fulfilled: Boolean(stepState),
-        handled: !Boolean(stepState),
+        handled: !stepState,
         handle: () => {
           if (step.handled) {
             return false;

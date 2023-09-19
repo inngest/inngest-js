@@ -808,7 +808,7 @@ describe("runFn", () => {
         AWins: "A wins",
         BWins: "B wins",
       },
-      ({ A, B, B2, AWins, BWins }) => ({
+      ({ A, B, B2, BWins }) => ({
         "if B chain wins without 'A', reports 'A' and 'B wins' steps": {
           stack: { [B]: { id: B, data: "B" }, [B2]: { id: B2, data: "B2" } },
           expectedReturn: {
