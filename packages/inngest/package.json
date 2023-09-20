@@ -28,6 +28,73 @@
     "local:pack": "pnpm run build && pnpm run build:copy && yarn pack --verbose --frozen-lockfile --filename inngest.tgz --cwd dist",
     "dev:example": "tsx scripts/runExample.ts"
   },
+  "exports": {
+    ".": {
+      "require": "./index.js",
+      "import": "./index.js",
+      "types": "./index.d.ts"
+    },
+    "./cloudflare": {
+      "require": "./cloudflare.js",
+      "import": "./cloudflare.js",
+      "types": "./cloudflare.d.ts"
+    },
+    "./digitalocean": {
+      "require": "./digitalocean.js",
+      "import": "./digitalocean.js",
+      "types": "./digitalocean.d.ts"
+    },
+    "./edge": {
+      "require": "./edge.js",
+      "import": "./edge.js",
+      "types": "./edge.d.ts"
+    },
+    "./express": {
+      "require": "./express.js",
+      "import": "./express.js",
+      "types": "./express.d.ts"
+    },
+    "./fastify": {
+      "require": "./fastify.js",
+      "import": "./fastify.js",
+      "types": "./fastify.d.ts"
+    },
+    "./h3": {
+      "require": "./h3.js",
+      "import": "./h3.js",
+      "types": "./h3.d.ts"
+    },
+    "./lambda": {
+      "require": "./lambda.js",
+      "import": "./lambda.js",
+      "types": "./lambda.d.ts"
+    },
+    "./next": {
+      "require": "./next.js",
+      "import": "./next.js",
+      "types": "./next.d.ts"
+    },
+    "./nuxt": {
+      "require": "./nuxt.js",
+      "import": "./nuxt.js",
+      "types": "./nuxt.d.ts"
+    },
+    "./redwood": {
+      "require": "./redwood.js",
+      "import": "./redwood.js",
+      "types": "./redwood.d.ts"
+    },
+    "./remix": {
+      "require": "./remix.js",
+      "import": "./remix.js",
+      "types": "./remix.d.ts"
+    },
+    "./deno/fresh": {
+      "require": "./deno/fresh.js",
+      "import": "./deno/fresh.js",
+      "types": "./deno/fresh.d.ts"
+    }
+  },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
     "type": "git",
