@@ -202,6 +202,8 @@ jobs:
           HOST: "0.0.0.0"
           PORT: 3000
           DO_NOT_TRACK: 1
+          INNGEST_BASE_URL: "http://127.0.0.1:8288/"
+          INNGEST_DEVSERVER_URL: "http://127.0.0.1:8288/"
       - name: Wait for the example to start
         uses: mydea/action-wait-for-api@v1
         with:
