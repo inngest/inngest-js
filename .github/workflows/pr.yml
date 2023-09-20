@@ -190,7 +190,12 @@ jobs:
 
       # Run the example
       - name: Run the example's dev server
-        run: (npm run dev > dev.log 2>&1 &)
+        run: |
+          if [[ $(jq '.scripts["start"]' < package.json;) != null ]]; then
+            (npm run start > dev.log 2>&1 &)
+          else
+            (npm run dev > dev.log 2>&1 &)
+          fi
         working-directory: examples/${{ matrix.example }}
         # Provide the example any env vars it might need
         env:
