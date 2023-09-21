@@ -1,5 +1,4 @@
-import canonicalize from "canonicalize";
-import { sha1 } from "hash.js";
+import { logPrefix } from "inngest/helpers/consts";
 import { type Jsonify } from "type-fest";
 import { ErrCode, prettyError } from "../helpers/errors";
 import {
@@ -23,9 +22,10 @@ import {
   type StepOptionsOrId,
 } from "../types";
 import { type EventsFromOpts, type Inngest } from "./Inngest";
-import { type ExecutionState } from "./InngestExecution";
+import { _internals, type ExecutionState } from "./InngestExecution";
 
 export interface FoundStep extends HashedOp {
+  hashedId: string;
   fn?: (...args: unknown[]) => unknown;
   fulfilled: boolean;
   handled: boolean;
@@ -36,6 +36,11 @@ export interface FoundStep extends HashedOp {
    */
   handle: () => boolean;
 }
+
+/**
+ * Suffix used to namespace steps that are automatically indexed.
+ */
+export const STEP_INDEXING_SUFFIX = ":";
 
 /**
  * Create a new set of step function tools ready to be used in a step function.
@@ -68,7 +73,7 @@ export const createStepTools = <
       for (let i = 0; i < state.stepCompletionOrder.length; i++) {
         const handled = foundStepsToReport
           .find((step) => {
-            return step.id === state.stepCompletionOrder[i];
+            return step.hashedId === state.stepCompletionOrder[i];
           })
           ?.handle();
 
@@ -192,19 +197,62 @@ export const createStepTools = <
 
       const opId = matchOp(stepOptions, ...remainingArgs);
 
-      // TODO Need indexing?
       if (state.steps[opId.id]) {
-        throw new Error("TODO: Step already exists?");
+        const prevId = opId.id;
+        let warnOfParallelIndexing = false;
+
+        for (let i = 1; ; i++) {
+          const newId = [opId.id, STEP_INDEXING_SUFFIX, i].join("");
+
+          if (!state.steps[newId]) {
+            opId.id = newId;
+            break;
+          }
+
+          // This index already exists. If it's not in the current tick, warn.
+          if (
+            !warnOfParallelIndexing &&
+            !foundStepsToReport.some((step) => {
+              return step.id === newId;
+            })
+          ) {
+            warnOfParallelIndexing = true;
+          }
+        }
+
+        console.debug(
+          `${logPrefix} debug - Step "${prevId}" already exists; automatically indexing to "${opId.id}"`
+        );
+
+        if (warnOfParallelIndexing) {
+          console.warn(
+            prettyError({
+              type: "warn",
+              whatHappened:
+                "We detected that you have multiple steps with the same ID.",
+              code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
+              why: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${prevId}".`,
+              reassurance:
+                "Your function is still running, though it may exhibit unexpected behaviour.",
+              consequences:
+                "Using the same IDs across parallel chains of work can cause unexpected behaviour.",
+              toFixNow:
+                "We recommend using a unique ID for each step, especially those happening in parallel.",
+            })
+          );
+        }
       }
 
       const { promise, resolve, reject } = createDeferredPromise();
-      const stepState = state.stepState[opId.id];
+      const hashedId = _internals.hashId(opId.id);
+      const stepState = state.stepState[hashedId];
       if (stepState) {
         stepState.seen = true;
       }
 
       const step: FoundStep = (state.steps[opId.id] = {
         ...opId,
+        hashedId,
         fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
         fulfilled: Boolean(stepState),
         handled: !stepState,
@@ -551,25 +599,3 @@ type WaitForEventOpts<
   "match",
   "if"
 >;
-
-/**
- * An operation ready to hash to be used to memoise step function progress.
- *
- * @internal
- */
-export type UnhashedOp = {
-  name: string;
-  op: StepOpCode;
-  opts: Record<string, unknown> | null;
-  parent: string | null;
-  pos?: number;
-};
-
-const hashData = (op: UnhashedOp): string => {
-  return sha1().update(canonicalize(op)).digest("hex");
-};
-
-/**
- * Exported for testing.
- */
-export const _internals = { hashData };

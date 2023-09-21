@@ -69,7 +69,7 @@ export const parseFnData = async (
   try {
     const result = fnDataSchema.parse(data);
 
-    if (result.use_api) {
+    if (result.ctx?.use_api) {
       if (!result.ctx?.run_id) {
         return err(
           prettyError({

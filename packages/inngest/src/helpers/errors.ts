@@ -182,6 +182,7 @@ export const deserializeError = (subject: Partial<SerializedError>): Error => {
 
 export enum ErrCode {
   NESTING_STEPS = "NESTING_STEPS",
+  AUTOMATIC_PARALLEL_INDEXING = "AUTOMATIC_PARALLEL_INDEXING",
 }
 
 export interface PrettyError {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-non-null-assertion */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/require-await */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
@@ -7,19 +8,21 @@
 import { jest } from "@jest/globals";
 import { EventSchemas, type EventPayload } from "@local";
 import {
+  _internals,
   type ExecutionResult,
   type ExecutionResults,
   type InngestExecutionOptions,
 } from "@local/components/InngestExecution";
 import { InngestFunction } from "@local/components/InngestFunction";
-import {
-  _internals,
-  type UnhashedOp,
-} from "@local/components/InngestStepTools";
+import { STEP_INDEXING_SUFFIX } from "@local/components/InngestStepTools";
 import { NonRetriableError } from "@local/components/NonRetriableError";
 import { ServerTiming } from "@local/helpers/ServerTiming";
 import { internalEvents } from "@local/helpers/consts";
-import { OutgoingResultError, serializeError } from "@local/helpers/errors";
+import {
+  ErrCode,
+  OutgoingResultError,
+  serializeError,
+} from "@local/helpers/errors";
 import {
   DefaultLogger,
   ProxyLogger,
@@ -29,6 +32,7 @@ import {
   StepOpCode,
   type ClientOptions,
   type FailureEventPayload,
+  type OutgoingOp,
 } from "@local/types";
 import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
@@ -189,7 +193,8 @@ describe("runFn", () => {
       return execution.start();
     };
 
-    const getHashDataSpy = () => jest.spyOn(_internals, "hashData");
+    const getHashDataSpy = () => jest.spyOn(_internals, "hashOp");
+    const getWarningSpy = () => jest.spyOn(console, "warn");
 
     const testFn = <
       T extends {
@@ -219,18 +224,26 @@ describe("runFn", () => {
           runStep?: string;
           expectedReturn?: Awaited<ReturnType<typeof runFnWithStack>>;
           expectedThrowMessage?: string;
-          expectedHashOps?: UnhashedOp[];
+          expectedHashOps?: OutgoingOp[];
           expectedStepsRun?: (keyof T["steps"])[];
           event?: EventPayload;
           customTests?: () => void;
           disableImmediateExecution?: boolean;
+          expectedWarnings?: string[];
         }
       >
     ) => {
       describe(fnName, () => {
-        Object.entries(tests(hashes)).forEach(([name, t]) => {
+        const processedHashes = Object.fromEntries(
+          Object.entries(hashes).map(([key, value]) => {
+            return [key, _internals.hashId(value)];
+          })
+        ) as typeof hashes;
+
+        Object.entries(tests(processedHashes)).forEach(([name, t]) => {
           describe(name, () => {
             let hashDataSpy: ReturnType<typeof getHashDataSpy>;
+            let warningSpy: ReturnType<typeof getWarningSpy>;
             let tools: T;
             let ret: Awaited<ReturnType<typeof runFnWithStack>> | undefined;
             let retErr: Error | undefined;
@@ -244,6 +257,7 @@ describe("runFn", () => {
                   /* noop */
                 });
               hashDataSpy = getHashDataSpy();
+              warningSpy = getWarningSpy();
               tools = createTools();
             });
 
@@ -284,6 +298,18 @@ describe("runFn", () => {
               });
             }
 
+            if (t.expectedWarnings?.length) {
+              describe("warnings", () => {
+                t.expectedWarnings?.forEach((warning) => {
+                  test(`includes "${warning}"`, () => {
+                    expect(warningSpy).toHaveBeenCalledWith(
+                      expect.stringContaining(warning)
+                    );
+                  });
+                });
+              });
+            }
+
             test("runs expected steps", () => {
               Object.keys(tools.steps).forEach((k) => {
                 const step = tools.steps[k];
@@ -300,6 +326,24 @@ describe("runFn", () => {
               // could be flushed multiple times so no specifying counts
               expect(flush).toHaveBeenCalled();
             });
+
+            if (
+              ret &&
+              (ret.type === "step-ran" || ret.type === "steps-found")
+            ) {
+              test("output hashes match expected shape", () => {
+                const outgoingOps: OutgoingOp[] =
+                  ret!.type === "step-ran"
+                    ? [ret!.step]
+                    : ret!.type === "steps-found"
+                    ? ret!.steps
+                    : [];
+
+                outgoingOps.forEach((op) => {
+                  expect(op.id).toMatch(/^[a-f0-9]{40}$/i);
+                });
+              });
+            }
 
             t.customTests?.();
           });
@@ -846,6 +890,135 @@ describe("runFn", () => {
             ],
           },
           disableImmediateExecution: true,
+        },
+      })
+    );
+
+    testFn(
+      "step indexing in sequence",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => "B");
+        const C = jest.fn(() => "C");
+
+        const fn = inngest.createFunction(
+          { id: "name" },
+          { event: "foo" },
+          async ({ step: { run } }) => {
+            await run("A", A);
+            await run("A", B);
+            await run("A", C);
+          }
+        );
+
+        return { fn, steps: { A, B, C } };
+      },
+      {
+        A: "A",
+        B: `A${STEP_INDEXING_SUFFIX}1`,
+        C: `A${STEP_INDEXING_SUFFIX}2`,
+      },
+      ({ A, B, C }) => ({
+        "first run runs A step": {
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "A",
+            }),
+          },
+          expectedStepsRun: ["A"],
+        },
+        "request with A in stack runs B step": {
+          stack: {
+            [A]: {
+              id: A,
+              data: "A",
+            },
+          },
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
+              id: B,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "B",
+            }),
+          },
+          expectedStepsRun: ["B"],
+        },
+        "request with B in stack runs C step": {
+          stack: {
+            [A]: {
+              id: A,
+              data: "A",
+            },
+            [B]: {
+              id: B,
+              data: "B",
+            },
+          },
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
+              id: C,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "C",
+            }),
+          },
+          expectedStepsRun: ["C"],
+        },
+      })
+    );
+
+    testFn(
+      "step indexing in parallel",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => "B");
+        const C = jest.fn(() => "C");
+
+        const fn = inngest.createFunction(
+          { id: "name" },
+          { event: "foo" },
+          async ({ step: { run } }) => {
+            await Promise.all([run("A", A), run("A", B), run("A", C)]);
+          }
+        );
+
+        return { fn, steps: { A, B, C } };
+      },
+      {
+        A: "A",
+        B: `A${STEP_INDEXING_SUFFIX}1`,
+        C: `A${STEP_INDEXING_SUFFIX}2`,
+      },
+      ({ A, B, C }) => ({
+        "first run reports all steps": {
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.StepPlanned,
+              }),
+              expect.objectContaining({
+                id: B,
+                name: "A",
+                op: StepOpCode.StepPlanned,
+              }),
+              expect.objectContaining({
+                id: C,
+                name: "A",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          },
+          expectedWarnings: [ErrCode.AUTOMATIC_PARALLEL_INDEXING],
         },
       })
     );

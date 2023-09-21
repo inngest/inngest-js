@@ -788,7 +788,7 @@ export class InngestCommHandler<
       requestedRunStep: stepId === "step" ? undefined : stepId || undefined,
       timer,
       isFailureHandler: fn.onFailure,
-      disableImmediateExecution: fndata.value.disable_immediate_execution,
+      disableImmediateExecution: fndata.value.ctx?.disable_immediate_execution,
       stepCompletionOrder: ctx?.stack?.stack ?? [],
     });
 

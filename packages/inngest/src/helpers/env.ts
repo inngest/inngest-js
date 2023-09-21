@@ -223,6 +223,7 @@ export const inngestHeaders = (opts?: {
     "Content-Type": "application/json",
     "User-Agent": sdkVersion,
     [headerKeys.SdkVersion]: sdkVersion,
+    [headerKeys.RequestVersion]: "1",
   };
 
   if (opts?.framework) {
