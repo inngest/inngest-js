@@ -207,6 +207,7 @@ export const createStepTools = <
         ...opId,
         fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
         fulfilled: Boolean(stepState),
+        displayName: opId.displayName ?? opId.id,
         handled: !stepState,
         handle: () => {
           if (step.handled) {
