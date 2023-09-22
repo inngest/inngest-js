@@ -6,7 +6,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { jest } from "@jest/globals";
-import { EventSchemas, type EventPayload } from "@local";
+import { EventSchemas, InngestMiddleware, type EventPayload } from "@local";
 import {
   _internals,
   type ExecutionResult,
@@ -50,6 +50,40 @@ const opts = (<T extends ClientOptions>(x: T): T => x)({
   id: "test",
   eventKey: "event-key-123",
   schemas,
+  /**
+   * Create some test middleware that purposefully takes time for every hook.
+   * This ensures that the engine accounts for the potential time taken by
+   * middleware to run.
+   */
+  middleware: [
+    new InngestMiddleware({
+      name: "Mock",
+      init: () => {
+        const mockHook = () =>
+          new Promise<void>((resolve) => setTimeout(() => setTimeout(resolve)));
+
+        return {
+          onFunctionRun: () => {
+            return {
+              afterExecution: mockHook,
+              afterMemoization: mockHook,
+              beforeExecution: mockHook,
+              beforeMemoization: mockHook,
+              beforeResponse: mockHook,
+              transformInput: mockHook,
+              transformOutput: mockHook,
+            };
+          },
+          onSendEvent: () => {
+            return {
+              transformInput: mockHook,
+              transformOutput: mockHook,
+            };
+          },
+        };
+      },
+    }),
+  ],
 });
 
 const inngest = createClient(opts);
@@ -195,6 +229,7 @@ describe("runFn", () => {
 
     const getHashDataSpy = () => jest.spyOn(_internals, "hashOp");
     const getWarningSpy = () => jest.spyOn(console, "warn");
+    const getErrorSpy = () => jest.spyOn(console, "error");
 
     const testFn = <
       T extends {
@@ -230,6 +265,7 @@ describe("runFn", () => {
           customTests?: () => void;
           disableImmediateExecution?: boolean;
           expectedWarnings?: string[];
+          expectedErrors?: string[];
         }
       >
     ) => {
@@ -244,6 +280,7 @@ describe("runFn", () => {
           describe(name, () => {
             let hashDataSpy: ReturnType<typeof getHashDataSpy>;
             let warningSpy: ReturnType<typeof getWarningSpy>;
+            let errorSpy: ReturnType<typeof getErrorSpy>;
             let tools: T;
             let ret: Awaited<ReturnType<typeof runFnWithStack>> | undefined;
             let retErr: Error | undefined;
@@ -258,6 +295,7 @@ describe("runFn", () => {
                 });
               hashDataSpy = getHashDataSpy();
               warningSpy = getWarningSpy();
+              errorSpy = getErrorSpy();
               tools = createTools();
             });
 
@@ -299,14 +337,38 @@ describe("runFn", () => {
             }
 
             if (t.expectedWarnings?.length) {
-              describe("warnings", () => {
-                t.expectedWarnings?.forEach((warning) => {
-                  test(`includes "${warning}"`, () => {
-                    expect(warningSpy).toHaveBeenCalledWith(
+              describe("warning logs", () => {
+                t.expectedWarnings?.forEach((warning, i) => {
+                  test(`warning log #${i + 1} includes "${warning}"`, () => {
+                    expect(warningSpy).toHaveBeenNthCalledWith(
+                      i + 1,
                       expect.stringContaining(warning)
                     );
                   });
                 });
+              });
+            } else {
+              test("no warning logs", () => {
+                expect(warningSpy).not.toHaveBeenCalled();
+              });
+            }
+
+            if (t.expectedErrors?.length) {
+              describe("error logs", () => {
+                t.expectedErrors?.forEach((error, i) => {
+                  test(`error log #${i + 1} includes "${error}"`, () => {
+                    const call = errorSpy.mock.calls[i];
+                    const stringifiedArgs = call?.map((arg) => {
+                      return arg instanceof Error ? serializeError(arg) : arg;
+                    });
+
+                    expect(JSON.stringify(stringifiedArgs)).toContain(error);
+                  });
+                });
+              });
+            } else {
+              test("no error logs", () => {
+                expect(errorSpy).not.toHaveBeenCalled();
               });
             }
 
@@ -774,13 +836,22 @@ describe("runFn", () => {
           disableImmediateExecution: true,
         },
 
-        "request following 'B wins' resolves": {
+        "request following 'B wins' re-reports missing 'A' step": {
           stack: {
             [B]: { id: B, data: "B" },
             [BWins]: { id: BWins, data: "B wins" },
           },
           stackOrder: [B, BWins],
-          expectedReturn: { type: "function-resolved", data: undefined },
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          },
           disableImmediateExecution: true,
         },
 
@@ -901,13 +972,15 @@ describe("runFn", () => {
         const B = jest.fn(() => "B");
         const C = jest.fn(() => "C");
 
+        const id = "A";
+
         const fn = inngest.createFunction(
           { id: "name" },
           { event: "foo" },
           async ({ step: { run } }) => {
-            await run("A", A);
-            await run("A", B);
-            await run("A", C);
+            await run(id, A);
+            await run(id, B);
+            await run(id, C);
           }
         );
 
@@ -975,17 +1048,19 @@ describe("runFn", () => {
     );
 
     testFn(
-      "step indexing in parallel",
+      "step indexing synchronously",
       () => {
         const A = jest.fn(() => "A");
         const B = jest.fn(() => "B");
         const C = jest.fn(() => "C");
 
+        const id = "A";
+
         const fn = inngest.createFunction(
           { id: "name" },
           { event: "foo" },
           async ({ step: { run } }) => {
-            await Promise.all([run("A", A), run("A", B), run("A", C)]);
+            await Promise.all([run(id, A), run(id, B), run(id, C)]);
           }
         );
 
@@ -1018,7 +1093,122 @@ describe("runFn", () => {
               }),
             ],
           },
+        },
+      })
+    );
+
+    testFn(
+      "step indexing in parallel",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => "B");
+
+        const id = "A";
+        const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+        const fn = inngest.createFunction(
+          { id: "name" },
+          { event: "foo" },
+          async ({ step: { run } }) => {
+            await run(id, A);
+            await wait(200);
+            await run(id, B);
+          }
+        );
+
+        return { fn, steps: { A, B } };
+      },
+      {
+        A: "A",
+        B: `A${STEP_INDEXING_SUFFIX}1`,
+        C: `A${STEP_INDEXING_SUFFIX}2`,
+      },
+      ({ A, B }) => ({
+        "first run runs A step": {
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "A",
+            }),
+          },
+          expectedStepsRun: ["A"],
+        },
+        "request with A in stack runs B step": {
+          stack: {
+            [A]: {
+              id: A,
+              data: "A",
+            },
+          },
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
+              id: B,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "B",
+            }),
+          },
+          expectedStepsRun: ["B"],
           expectedWarnings: [ErrCode.AUTOMATIC_PARALLEL_INDEXING],
+        },
+      })
+    );
+
+    testFn(
+      "step indexing in parallel with separated indexes",
+      () => {
+        const A = jest.fn(() => "A");
+        const B = jest.fn(() => "B");
+        const C = jest.fn(() => "C");
+
+        const id = "A";
+        const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+        const fn = inngest.createFunction(
+          { id: "name" },
+          { event: "foo" },
+          async ({ step: { run } }) => {
+            await Promise.all([run(id, A), run(id, B)]);
+            await wait(200);
+            await run(id, C);
+          }
+        );
+
+        return { fn, steps: { A, B, C } };
+      },
+      {
+        A: "A",
+        B: `A${STEP_INDEXING_SUFFIX}1`,
+        C: `A${STEP_INDEXING_SUFFIX}2`,
+      },
+      ({ A, B, C }) => ({
+        "request with A,B in stack reports C step": {
+          stack: {
+            [A]: {
+              id: A,
+              data: "A",
+            },
+            [B]: {
+              id: B,
+              data: "B",
+            },
+          },
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
+              expect.objectContaining({
+                id: C,
+                name: "A",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          },
+          expectedWarnings: [ErrCode.AUTOMATIC_PARALLEL_INDEXING],
+          disableImmediateExecution: true,
         },
       })
     );
@@ -1028,7 +1218,7 @@ describe("runFn", () => {
       () => {
         const A = jest.fn(() => "A");
         const B = jest.fn(() => {
-          throw "B";
+          throw "B failed message";
         });
         const BFailed = jest.fn(() => "B failed");
 
@@ -1104,17 +1294,18 @@ describe("runFn", () => {
           runStep: B,
           expectedReturn: {
             type: "function-rejected",
-            error: matchError("B"),
+            error: matchError("B failed message"),
             retriable: true,
           },
           expectedStepsRun: ["B"],
+          expectedErrors: ["B failed message"],
         },
 
         "request following B reports 'B failed' step": {
           disableImmediateExecution: true,
           stack: {
             [A]: { id: A, data: "A" },
-            [B]: { id: B, error: "B" },
+            [B]: { id: B, error: "B failed message" },
           },
           expectedReturn: {
             type: "steps-found",
@@ -1132,7 +1323,7 @@ describe("runFn", () => {
           disableImmediateExecution: true,
           stack: {
             [A]: { id: A, data: "A" },
-            [B]: { id: B, error: "B" },
+            [B]: { id: B, error: "B failed message" },
           },
           runStep: BFailed,
           expectedReturn: {
@@ -1151,7 +1342,7 @@ describe("runFn", () => {
           disableImmediateExecution: true,
           stack: {
             [A]: { id: A, data: "A" },
-            [B]: { id: B, error: "B" },
+            [B]: { id: B, error: "B failed message" },
             [BFailed]: { id: BFailed, data: "B failed" },
           },
           expectedReturn: {
@@ -1166,7 +1357,7 @@ describe("runFn", () => {
       "throws a NonRetriableError when one is thrown inside a step",
       () => {
         const A = jest.fn(() => {
-          throw new NonRetriableError("A");
+          throw new NonRetriableError("A error message");
         });
 
         const fn = inngest.createFunction(
@@ -1187,9 +1378,10 @@ describe("runFn", () => {
           expectedReturn: {
             type: "function-rejected",
             retriable: false,
-            error: matchError(new NonRetriableError("A")),
+            error: matchError(new NonRetriableError("A error message")),
           },
           expectedStepsRun: ["A"],
+          expectedErrors: ["A error message"],
         },
       })
     );
@@ -1201,7 +1393,7 @@ describe("runFn", () => {
           { id: "Foo" },
           { event: "foo" },
           async () => {
-            throw new NonRetriableError("Error");
+            throw new NonRetriableError("Error message");
           }
         );
 
@@ -1213,8 +1405,9 @@ describe("runFn", () => {
           expectedReturn: {
             type: "function-rejected",
             retriable: false,
-            error: matchError(new NonRetriableError("Error")),
+            error: matchError(new NonRetriableError("Error message")),
           },
+          expectedErrors: ["Error message"],
           expectedStepsRun: [],
         },
       })
@@ -1241,6 +1434,7 @@ describe("runFn", () => {
             retriable: true,
             error: matchError("foo"),
           },
+          expectedErrors: ["foo"],
           expectedStepsRun: [],
         },
       })
@@ -1267,6 +1461,7 @@ describe("runFn", () => {
             retriable: true,
             error: matchError({}),
           },
+          expectedErrors: ["{}"],
           expectedStepsRun: [],
         },
       })

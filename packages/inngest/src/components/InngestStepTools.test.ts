@@ -40,13 +40,18 @@ const getStepTools = ({
   });
 
   const tools = createStepTools(client, execution.state);
-  const getOp = () => Object.values(execution.state.steps)[0];
+  const getOp = () =>
+    new Promise<FoundStep | undefined>((resolve) => {
+      setTimeout(() =>
+        setTimeout(() => resolve(Object.values(execution.state.steps)[0]))
+      );
+    });
 
   return { tools, getOp };
 };
 
 type StepTools = ReturnType<typeof getStepTools>["tools"];
-type GetOp = () => FoundStep | undefined;
+type GetOp = () => Promise<FoundStep | undefined>;
 
 describe("waitForEvent", () => {
   let waitForEvent: StepTools["waitForEvent"];
@@ -59,89 +64,89 @@ describe("waitForEvent", () => {
     } = getStepTools());
   });
 
-  test("return WaitForEvent step op code", () => {
+  test("return WaitForEvent step op code", async () => {
     void waitForEvent("id", { event: "event", timeout: "2h" });
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       op: StepOpCode.WaitForEvent,
     });
   });
 
-  test("returns `id` as ID", () => {
+  test("returns `id` as ID", async () => {
     void waitForEvent("id", { event: "event", timeout: "2h" });
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       id: "id",
     });
   });
 
-  test("returns no name by default", () => {
+  test("returns ID by default", async () => {
     void waitForEvent("id", { event: "event", timeout: "2h" });
-    expect(getOp()).toMatchObject({
-      displayName: undefined,
+    await expect(getOp()).resolves.toMatchObject({
+      displayName: "id",
     });
   });
 
-  test("returns specific name if given", () => {
+  test("returns specific name if given", async () => {
     void waitForEvent(
       { id: "id", name: "name" },
       { event: "event", timeout: "2h" }
     );
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       displayName: "name",
     });
   });
 
-  test("return event name as name", () => {
+  test("return event name as name", async () => {
     void waitForEvent("id", { event: "event", timeout: "2h" });
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       name: "event",
     });
   });
 
-  test("return blank opts if none given", () => {
+  test("return blank opts if none given", async () => {
     void waitForEvent("id", { event: "event", timeout: "2h" });
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       opts: {},
     });
   });
 
-  test("return TTL if string `timeout` given", () => {
+  test("return TTL if string `timeout` given", async () => {
     void waitForEvent("id", { event: "event", timeout: "1m" });
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       opts: {
         timeout: "1m",
       },
     });
   });
 
-  test("return TTL if date `timeout` given", () => {
+  test("return TTL if date `timeout` given", async () => {
     const upcoming = new Date();
     upcoming.setDate(upcoming.getDate() + 6);
     upcoming.setHours(upcoming.getHours() + 1);
 
     void waitForEvent("id", { event: "event", timeout: upcoming });
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       opts: {
         timeout: expect.stringMatching(upcoming.toISOString()),
       },
     });
   });
 
-  test("return simple field match if `match` string given", () => {
+  test("return simple field match if `match` string given", async () => {
     void waitForEvent("id", { event: "event", match: "name", timeout: "2h" });
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       opts: {
         if: "event.name == async.name",
       },
     });
   });
 
-  test("return custom match statement if `if` given", () => {
+  test("return custom match statement if `if` given", async () => {
     void waitForEvent("id", {
       event: "event",
       if: "name == 123",
       timeout: "2h",
     });
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       opts: {
         if: "name == 123",
       },
@@ -172,30 +177,30 @@ describe("run", () => {
     } = getStepTools());
   });
 
-  test("return Step step op code", () => {
+  test("return Step step op code", async () => {
     void run("step", () => undefined);
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       op: StepOpCode.StepPlanned,
     });
   });
 
-  test("returns `id` as ID", () => {
+  test("returns `id` as ID", async () => {
     void run("id", () => undefined);
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       id: "id",
     });
   });
 
-  test("return no name by default", () => {
+  test("return ID by default", async () => {
     void run("id", () => undefined);
-    expect(getOp()).toMatchObject({
-      displayName: undefined,
+    await expect(getOp()).resolves.toMatchObject({
+      displayName: "id",
     });
   });
 
-  test("return specific name if given", () => {
+  test("return specific name if given", async () => {
     void run({ id: "id", name: "name" }, () => undefined);
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       displayName: "name",
     });
   });
@@ -255,30 +260,30 @@ describe("sleep", () => {
     } = getStepTools());
   });
 
-  test("return id", () => {
+  test("return id", async () => {
     void sleep("id", "1m");
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       id: "id",
     });
   });
 
-  test("return Sleep step op code", () => {
+  test("return Sleep step op code", async () => {
     void sleep("id", "1m");
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       op: StepOpCode.Sleep,
     });
   });
 
-  test("return no name by default", () => {
+  test("return ID by default", async () => {
     void sleep("id", "1m");
-    expect(getOp()).toMatchObject({
-      displayName: undefined,
+    await expect(getOp()).resolves.toMatchObject({
+      displayName: "id",
     });
   });
 
-  test("return specific name if given", () => {
+  test("return specific name if given", async () => {
     void sleep({ id: "id", name: "name" }, "1m");
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       displayName: "name",
     });
   });
@@ -295,60 +300,60 @@ describe("sleepUntil", () => {
     } = getStepTools());
   });
 
-  test("return id", () => {
+  test("return id", async () => {
     const future = new Date();
     future.setDate(future.getDate() + 1);
 
     void sleepUntil("id", future);
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       id: "id",
     });
   });
 
-  test("return no name by default", () => {
+  test("return ID by default", async () => {
     const future = new Date();
     future.setDate(future.getDate() + 1);
 
     void sleepUntil("id", future);
-    expect(getOp()).toMatchObject({
-      displayName: undefined,
+    await expect(getOp()).resolves.toMatchObject({
+      displayName: "id",
     });
   });
 
-  test("return specific name if given", () => {
+  test("return specific name if given", async () => {
     const future = new Date();
     future.setDate(future.getDate() + 1);
 
     void sleepUntil({ id: "id", name: "name" }, future);
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       displayName: "name",
     });
   });
 
-  test("return Sleep step op code", () => {
+  test("return Sleep step op code", async () => {
     const future = new Date();
     future.setDate(future.getDate() + 1);
 
     void sleepUntil("id", future);
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       op: StepOpCode.Sleep,
     });
   });
 
-  test("parses dates", () => {
+  test("parses dates", async () => {
     const next = new Date();
 
     void sleepUntil("id", next);
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       name: next.toISOString(),
     });
   });
 
-  test("parses ISO strings", () => {
+  test("parses ISO strings", async () => {
     const next = new Date(new Date().valueOf() + ms("6d")).toISOString();
 
     void sleepUntil("id", next);
-    expect(getOp()).toMatchObject({
+    await expect(getOp()).resolves.toMatchObject({
       name: next,
     });
   });
@@ -402,36 +407,38 @@ describe("sendEvent", () => {
       }));
     });
 
-    test("return id", () => {
+    test("return id", async () => {
       void sendEvent("id", { name: "step", data: "foo" });
 
-      expect(getOp()).toMatchObject({
+      await expect(getOp()).resolves.toMatchObject({
         id: "id",
       });
     });
 
-    test("return Step step op code", () => {
+    test("return Step step op code", async () => {
       void sendEvent("id", { name: "step", data: "foo" });
 
-      expect(getOp()).toMatchObject({ op: StepOpCode.StepPlanned });
+      await expect(getOp()).resolves.toMatchObject({
+        op: StepOpCode.StepPlanned,
+      });
     });
 
-    test("return no name by default", () => {
+    test("return ID by default", async () => {
       void sendEvent("id", { name: "step", data: "foo" });
 
-      expect(getOp()).toMatchObject({ displayName: undefined });
+      await expect(getOp()).resolves.toMatchObject({ displayName: "id" });
     });
 
-    test("return specific name if given", () => {
+    test("return specific name if given", async () => {
       void sendEvent({ id: "id", name: "name" }, { name: "step", data: "foo" });
 
-      expect(getOp()).toMatchObject({ displayName: "name" });
+      await expect(getOp()).resolves.toMatchObject({ displayName: "name" });
     });
 
-    test("retain legacy `name` field for backwards compatibility with <=v2", () => {
+    test("retain legacy `name` field for backwards compatibility with <=v2", async () => {
       void sendEvent({ id: "id", name: "name" }, { name: "step", data: "foo" });
 
-      expect(getOp()).toMatchObject({ name: "sendEvent" });
+      await expect(getOp()).resolves.toMatchObject({ name: "sendEvent" });
     });
   });
 
