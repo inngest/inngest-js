@@ -1,5 +1,5 @@
-import { logPrefix } from "inngest/helpers/consts";
 import { type Jsonify } from "type-fest";
+import { logPrefix } from "../helpers/consts";
 import { ErrCode, prettyError } from "../helpers/errors";
 import {
   createDeferredPromise,
@@ -60,6 +60,40 @@ export const createStepTools = <
 ) => {
   let foundStepsToReport: FoundStep[] = [];
   let foundStepsReportPromise: Promise<void> | undefined;
+  let beforeExecHooksPromise: Promise<void> | undefined;
+  let warnOfParallelIndexing = false;
+
+  const maybeWarnOfParallelIndexing = (collisionId: string) => {
+    if (warnOfParallelIndexing) {
+      return;
+    }
+
+    const stepExists = Boolean(state.steps[collisionId]);
+
+    const stepFoundThisTick = foundStepsToReport.some((step) => {
+      return step.id === collisionId;
+    });
+
+    if (stepExists && !stepFoundThisTick) {
+      warnOfParallelIndexing = true;
+
+      console.warn(
+        prettyError({
+          type: "warn",
+          whatHappened:
+            "We detected that you have multiple steps with the same ID.",
+          code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
+          why: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${collisionId}".`,
+          reassurance:
+            "Your function is still running, though it may exhibit unexpected behaviour.",
+          consequences:
+            "Using the same IDs across parallel chains of work can cause unexpected behaviour.",
+          toFixNow:
+            "We recommend using a unique ID for each step, especially those happening in parallel.",
+        })
+      );
+    }
+  };
 
   const reportNextTick = () => {
     // Being explicit instead of using `??=` to appease TypeScript.
@@ -67,31 +101,33 @@ export const createStepTools = <
       return;
     }
 
-    foundStepsReportPromise = resolveAfterPending().then(() => {
-      foundStepsReportPromise = undefined;
+    foundStepsReportPromise = resolveAfterPending()
+      .then(() => beforeExecHooksPromise)
+      .then(() => {
+        foundStepsReportPromise = undefined;
 
-      for (let i = 0; i < state.stepCompletionOrder.length; i++) {
-        const handled = foundStepsToReport
-          .find((step) => {
-            return step.hashedId === state.stepCompletionOrder[i];
-          })
-          ?.handle();
+        for (let i = 0; i < state.stepCompletionOrder.length; i++) {
+          const handled = foundStepsToReport
+            .find((step) => {
+              return step.hashedId === state.stepCompletionOrder[i];
+            })
+            ?.handle();
 
-        if (handled) {
-          return void reportNextTick();
+          if (handled) {
+            return void reportNextTick();
+          }
         }
-      }
 
-      // If we've handled no steps in this "tick," roll up everything we've
-      // found and report it.
-      const steps = [...foundStepsToReport] as [FoundStep, ...FoundStep[]];
-      foundStepsToReport = [];
+        // If we've handled no steps in this "tick," roll up everything we've
+        // found and report it.
+        const steps = [...foundStepsToReport] as [FoundStep, ...FoundStep[]];
+        foundStepsToReport = [];
 
-      return void state.setCheckpoint({
-        type: "steps-found",
-        steps: steps,
+        return void state.setCheckpoint({
+          type: "steps-found",
+          steps: steps,
+        });
       });
-    });
   };
 
   const pushStepToReport = (step: FoundStep) => {
@@ -156,6 +192,8 @@ export const createStepTools = <
     }
   ): T => {
     return (async (...args: Parameters<T>): Promise<unknown> => {
+      await beforeExecHooksPromise;
+
       if (!state.hasSteps && opts?.nonStepExecuteInline && opts.fn) {
         return runAsPromise(() => opts.fn?.(...args));
       }
@@ -198,49 +236,21 @@ export const createStepTools = <
       const opId = matchOp(stepOptions, ...remainingArgs);
 
       if (state.steps[opId.id]) {
-        const prevId = opId.id;
-        let warnOfParallelIndexing = false;
+        const originalId = opId.id;
+        maybeWarnOfParallelIndexing(originalId);
 
         for (let i = 1; ; i++) {
-          const newId = [opId.id, STEP_INDEXING_SUFFIX, i].join("");
+          const newId = [originalId, STEP_INDEXING_SUFFIX, i].join("");
 
           if (!state.steps[newId]) {
             opId.id = newId;
             break;
           }
-
-          // This index already exists. If it's not in the current tick, warn.
-          if (
-            !warnOfParallelIndexing &&
-            !foundStepsToReport.some((step) => {
-              return step.id === newId;
-            })
-          ) {
-            warnOfParallelIndexing = true;
-          }
         }
 
         console.debug(
-          `${logPrefix} debug - Step "${prevId}" already exists; automatically indexing to "${opId.id}"`
+          `${logPrefix} debug - Step "${originalId}" already exists; automatically indexing to "${opId.id}"`
         );
-
-        if (warnOfParallelIndexing) {
-          console.warn(
-            prettyError({
-              type: "warn",
-              whatHappened:
-                "We detected that you have multiple steps with the same ID.",
-              code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
-              why: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${prevId}".`,
-              reassurance:
-                "Your function is still running, though it may exhibit unexpected behaviour.",
-              consequences:
-                "Using the same IDs across parallel chains of work can cause unexpected behaviour.",
-              toFixNow:
-                "We recommend using a unique ID for each step, especially those happening in parallel.",
-            })
-          );
-        }
       }
 
       const { promise, resolve, reject } = createDeferredPromise();
@@ -250,12 +260,12 @@ export const createStepTools = <
         stepState.seen = true;
       }
 
-      const step: FoundStep = (state.steps[opId.id] = {
+      const step: FoundStep = {
         ...opId,
         hashedId,
         fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
         fulfilled: Boolean(stepState),
-        handled: !stepState,
+        handled: false,
         handle: () => {
           if (step.handled) {
             return false;
@@ -275,19 +285,22 @@ export const createStepTools = <
 
           return true;
         },
-      });
+      };
+
+      state.steps[opId.id] = step;
+      state.hasSteps = true;
+      pushStepToReport(step);
 
       /**
        * If this is the last piece of state we had, we've now finished
        * memoizing.
        */
-      if (state.allStateUsed()) {
-        await state.hooks?.afterMemoization?.();
-        await state.hooks?.beforeExecution?.();
+      if (!beforeExecHooksPromise && state.allStateUsed()) {
+        await (beforeExecHooksPromise = (async () => {
+          await state.hooks?.beforeExecution?.();
+          await state.hooks?.afterMemoization?.();
+        })());
       }
-
-      state.hasSteps = true;
-      pushStepToReport(step);
 
       return promise;
     }) as T;
