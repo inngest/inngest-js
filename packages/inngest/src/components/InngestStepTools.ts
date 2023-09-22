@@ -58,11 +58,33 @@ export const createStepTools = <
   client: Inngest<TOpts>,
   state: ExecutionState
 ) => {
+  /**
+   * A list of steps that have been found and are being rolled up before being
+   * reported to the core loop.
+   */
   let foundStepsToReport: FoundStep[] = [];
+
+  /**
+   * A promise that's used to ensure that step reporting cannot be run more than
+   * once in a given asynchronous time span.
+   */
   let foundStepsReportPromise: Promise<void> | undefined;
+
+  /**
+   * A promise that's used to represent middleware hooks running before
+   * execution.
+   */
   let beforeExecHooksPromise: Promise<void> | undefined;
+
+  /**
+   * A flag used to ensure that we only warn about parallel indexing once per
+   * execution to avoid spamming the console.
+   */
   let warnOfParallelIndexing = false;
 
+  /**
+   * Given a colliding step ID, maybe warn the user about parallel indexing.
+   */
   const maybeWarnOfParallelIndexing = (collisionId: string) => {
     if (warnOfParallelIndexing) {
       return;
@@ -95,6 +117,10 @@ export const createStepTools = <
     }
   };
 
+  /**
+   * A helper used to report steps to the core loop. Used after adding an item
+   * to `foundStepsToReport`.
+   */
   const reportNextTick = () => {
     // Being explicit instead of using `??=` to appease TypeScript.
     if (foundStepsReportPromise) {
@@ -102,6 +128,18 @@ export const createStepTools = <
     }
 
     foundStepsReportPromise = resolveAfterPending()
+      /**
+       * Ensure that we wait for this promise to resolve before continuing.
+       *
+       * The groups in which steps are reported can affect how we detect some
+       * more complex determinism issues like parallel indexing. This promise
+       * can represent middleware hooks being run early, in the middle of
+       * ingesting steps to report.
+       *
+       * Because of this, it's important we wait for this middleware to resolve
+       * before continuing to report steps to ensure that all steps have a
+       * chance to be reported throughout this asynchronous action.
+       */
       .then(() => beforeExecHooksPromise)
       .then(() => {
         foundStepsReportPromise = undefined;
@@ -130,6 +168,9 @@ export const createStepTools = <
       });
   };
 
+  /**
+   * A helper used to push a step to the list of steps to report.
+   */
   const pushStepToReport = (step: FoundStep) => {
     foundStepsToReport.push(step);
     reportNextTick();
@@ -231,8 +272,8 @@ export const createStepTools = <
         StepOptionsOrId,
         ...ParametersExceptFirst<T>
       ];
-      const stepOptions = getStepOptions(stepOptionsOrId);
 
+      const stepOptions = getStepOptions(stepOptionsOrId);
       const opId = matchOp(stepOptions, ...remainingArgs);
 
       if (state.steps[opId.id]) {
