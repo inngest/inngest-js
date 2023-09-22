@@ -49,8 +49,8 @@ void inquirer
     console.log("Running example:", example);
     const examplePath = path.join(examplesPath, example);
 
-    await exec("pnpm", ["install"], { cwd: inngestPath });
-    await exec("pnpm", ["run", "-r", "local:pack"], { cwd: inngestPath });
+    await exec("bun", ["install"], { cwd: inngestPath });
+    await exec("bun", ["run", "-r", "local:pack"], { cwd: inngestPath });
 
     const relativeTgzPath = path.join(
       path.relative(examplePath, inngestPath),
