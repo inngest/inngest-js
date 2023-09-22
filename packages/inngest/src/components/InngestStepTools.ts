@@ -265,6 +265,7 @@ export const createStepTools = <
         hashedId,
         fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
         fulfilled: Boolean(stepState),
+        displayName: opId.displayName ?? opId.id,
         handled: false,
         handle: () => {
           if (step.handled) {
