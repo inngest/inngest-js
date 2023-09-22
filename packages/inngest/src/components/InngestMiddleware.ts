@@ -456,7 +456,7 @@ type MiddlewareSendEventOutput = (
 type MiddlewareRunOutput = (ctx: {
   result: Readonly<Pick<OutgoingOp, "error" | "data">>;
   step?: Readonly<Omit<OutgoingOp, "id">>;
-}) => { result?: Partial<Pick<OutgoingOp, "data">> } | void;
+}) => MaybePromise<{ result?: Partial<Pick<OutgoingOp, "data">> } | void>;
 
 /**
  * @internal
