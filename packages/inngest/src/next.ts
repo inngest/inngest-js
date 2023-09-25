@@ -58,20 +58,45 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
 
       const isEdge = isNextEdgeRequest(req);
 
-      let scheme: "http" | "https" = "https";
+      let url: URL;
 
-      try {
-        // eslint-disable-next-line @inngest/internal/process-warn
-        if (process.env.NODE_ENV === "development") {
-          scheme = "http";
+      if (isEdge) {
+        url = new URL(req.url);
+      } else {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          const nextRequestMeta:
+            | Record<string, string | undefined>
+            | undefined =
+            req[
+              Reflect.ownKeys(req).find(
+                (s) => String(s) === "Symbol(NextRequestMeta)"
+              ) as keyof typeof req
+            ];
+
+          if (nextRequestMeta?.__NEXT_INIT_URL) {
+            url = new URL(nextRequestMeta.__NEXT_INIT_URL);
+          } else {
+            throw new Error("Couldn't find __NEXT_INIT_URL");
+          }
+        } catch (err) {
+          let scheme: "http" | "https" = "https";
+
+          try {
+            // eslint-disable-next-line @inngest/internal/process-warn
+            if (process.env.NODE_ENV === "development") {
+              scheme = "http";
+            }
+          } catch (err) {
+            // no-op
+          }
+
+          url = new URL(
+            req.url as string,
+            `${scheme}://${req.headers.host || ""}`
+          );
         }
-      } catch (err) {
-        // no-op
       }
-
-      const url = isEdge
-        ? new URL(req.url)
-        : new URL(req.url as string, `${scheme}://${req.headers.host || ""}`);
 
       const getQueryParam = (key: string): string | undefined => {
         return (
