@@ -459,7 +459,7 @@ type MiddlewareSendEventOutputArgs = { result: Readonly<SendEventBaseOutput> };
  */
 type MiddlewareSendEventOutput = (
   ctx: MiddlewareSendEventOutputArgs
-) => MaybePromise<{ result?: Record<string, unknown> }>;
+) => MaybePromise<{ result?: Record<string, unknown> } | void>;
 
 /**
  * @internal
