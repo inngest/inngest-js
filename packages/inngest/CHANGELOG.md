@@ -1,5 +1,11 @@
 # inngest
 
+## 2.7.1
+
+### Patch Changes
+
+- [#325](https://github.com/inngest/inngest-js/pull/325) [`b8858c9`](https://github.com/inngest/inngest-js/commit/b8858c9be1cab32d4e781cf3588047181bfed6a7) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Hotfix: Ensure `ProxyLogger` (and some other used classes/types) is correctly exported from `"inngest"`
+
 ## 2.7.0
 
 ### Minor Changes
