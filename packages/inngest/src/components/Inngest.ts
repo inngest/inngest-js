@@ -337,7 +337,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
         },
         transformOutput(prev, output) {
           return {
-            result: { ...prev.result, ...output.result },
+            result: { ...prev.result, ...output?.result },
           };
         },
       }

@@ -182,8 +182,8 @@ export type OutgoingOp = Pick<
  */
 export type HashedOp = Op & {
   /**
-   * The hashed identifier for this operation, used to confirm that the operation
-   * was completed when it is received from Inngest.
+   * The hashed identifier for this operation, used to confirm that the
+   * operation was completed when it is received from Inngest.
    */
   id: string;
 };
@@ -1113,6 +1113,8 @@ export const fnDataSchema = z.object({
     .object({
       run_id: z.string(),
       attempt: z.number().default(0),
+      disable_immediate_execution: z.boolean().default(false),
+      use_api: z.boolean().default(false),
       stack: z
         .object({
           stack: z
@@ -1127,7 +1129,6 @@ export const fnDataSchema = z.object({
     })
     .optional()
     .nullable(),
-  use_api: z.boolean().default(false),
-  disable_immediate_execution: z.boolean().default(false),
+  version: z.number().default(-1),
 });
 export type FnData = z.infer<typeof fnDataSchema>;

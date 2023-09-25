@@ -1,6 +1,5 @@
-import canonicalize from "canonicalize";
-import { sha1 } from "hash.js";
 import { type Jsonify } from "type-fest";
+import { logPrefix } from "../helpers/consts";
 import { ErrCode, prettyError } from "../helpers/errors";
 import {
   createDeferredPromise,
@@ -24,9 +23,10 @@ import {
   type StepOptionsOrId,
 } from "../types";
 import { type EventsFromOpts, type Inngest } from "./Inngest";
-import { type ExecutionState } from "./InngestExecution";
+import { _internals, type ExecutionState } from "./InngestExecution";
 
 export interface FoundStep extends HashedOp {
+  hashedId: string;
   fn?: (...args: unknown[]) => unknown;
   fulfilled: boolean;
   handled: boolean;
@@ -37,6 +37,11 @@ export interface FoundStep extends HashedOp {
    */
   handle: () => boolean;
 }
+
+/**
+ * Suffix used to namespace steps that are automatically indexed.
+ */
+export const STEP_INDEXING_SUFFIX = ":";
 
 /**
  * Create a new set of step function tools ready to be used in a step function.
@@ -54,42 +59,119 @@ export const createStepTools = <
   client: Inngest<TOpts>,
   state: ExecutionState
 ) => {
+  /**
+   * A list of steps that have been found and are being rolled up before being
+   * reported to the core loop.
+   */
   let foundStepsToReport: FoundStep[] = [];
+
+  /**
+   * A promise that's used to ensure that step reporting cannot be run more than
+   * once in a given asynchronous time span.
+   */
   let foundStepsReportPromise: Promise<void> | undefined;
 
+  /**
+   * A promise that's used to represent middleware hooks running before
+   * execution.
+   */
+  let beforeExecHooksPromise: Promise<void> | undefined;
+
+  /**
+   * A flag used to ensure that we only warn about parallel indexing once per
+   * execution to avoid spamming the console.
+   */
+  let warnOfParallelIndexing = false;
+
+  /**
+   * Given a colliding step ID, maybe warn the user about parallel indexing.
+   */
+  const maybeWarnOfParallelIndexing = (collisionId: string) => {
+    if (warnOfParallelIndexing) {
+      return;
+    }
+
+    const stepExists = Boolean(state.steps[collisionId]);
+
+    const stepFoundThisTick = foundStepsToReport.some((step) => {
+      return step.id === collisionId;
+    });
+
+    if (stepExists && !stepFoundThisTick) {
+      warnOfParallelIndexing = true;
+
+      console.warn(
+        prettyError({
+          type: "warn",
+          whatHappened:
+            "We detected that you have multiple steps with the same ID.",
+          code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
+          why: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${collisionId}".`,
+          reassurance:
+            "Your function is still running, though it may exhibit unexpected behaviour.",
+          consequences:
+            "Using the same IDs across parallel chains of work can cause unexpected behaviour.",
+          toFixNow:
+            "We recommend using a unique ID for each step, especially those happening in parallel.",
+        })
+      );
+    }
+  };
+
+  /**
+   * A helper used to report steps to the core loop. Used after adding an item
+   * to `foundStepsToReport`.
+   */
   const reportNextTick = () => {
     // Being explicit instead of using `??=` to appease TypeScript.
     if (foundStepsReportPromise) {
       return;
     }
 
-    foundStepsReportPromise = resolveAfterPending().then(() => {
-      foundStepsReportPromise = undefined;
+    foundStepsReportPromise = resolveAfterPending()
+      /**
+       * Ensure that we wait for this promise to resolve before continuing.
+       *
+       * The groups in which steps are reported can affect how we detect some
+       * more complex determinism issues like parallel indexing. This promise
+       * can represent middleware hooks being run early, in the middle of
+       * ingesting steps to report.
+       *
+       * Because of this, it's important we wait for this middleware to resolve
+       * before continuing to report steps to ensure that all steps have a
+       * chance to be reported throughout this asynchronous action.
+       */
+      .then(() => beforeExecHooksPromise)
+      .then(() => {
+        foundStepsReportPromise = undefined;
 
-      for (let i = 0; i < state.stepCompletionOrder.length; i++) {
-        const handled = foundStepsToReport
-          .find((step) => {
-            return step.id === state.stepCompletionOrder[i];
-          })
-          ?.handle();
+        for (let i = 0; i < state.stepCompletionOrder.length; i++) {
+          const handled = foundStepsToReport
+            .find((step) => {
+              return step.hashedId === state.stepCompletionOrder[i];
+            })
+            ?.handle();
 
-        if (handled) {
-          return void reportNextTick();
+          if (handled) {
+            return void reportNextTick();
+          }
         }
-      }
 
-      // If we've handled no steps in this "tick," roll up everything we've
-      // found and report it.
-      const steps = [...foundStepsToReport] as [FoundStep, ...FoundStep[]];
-      foundStepsToReport = [];
+        // If we've handled no steps in this "tick," roll up everything we've
+        // found and report it.
+        const steps = [...foundStepsToReport] as [FoundStep, ...FoundStep[]];
+        foundStepsToReport = [];
 
-      return void state.setCheckpoint({
-        type: "steps-found",
-        steps: steps,
+        return void state.setCheckpoint({
+          type: "steps-found",
+          steps: steps,
+        });
       });
-    });
   };
 
+  /**
+   * A helper used to push a step to the list of steps to report.
+   */
   const pushStepToReport = (step: FoundStep) => {
     foundStepsToReport.push(step);
     reportNextTick();
@@ -152,6 +234,8 @@ export const createStepTools = <
     }
   ): T => {
     return (async (...args: Parameters<T>): Promise<unknown> => {
+      await beforeExecHooksPromise;
+
       if (!state.hasSteps && opts?.nonStepExecuteInline && opts.fn) {
         return runAsPromise(() => opts.fn?.(...args));
       }
@@ -189,27 +273,42 @@ export const createStepTools = <
         StepOptionsOrId,
         ...ParametersExceptFirst<T>
       ];
-      const stepOptions = getStepOptions(stepOptionsOrId);
 
+      const stepOptions = getStepOptions(stepOptionsOrId);
       const opId = matchOp(stepOptions, ...remainingArgs);
 
-      // TODO Need indexing?
       if (state.steps[opId.id]) {
-        throw new Error("TODO: Step already exists?");
+        const originalId = opId.id;
+        maybeWarnOfParallelIndexing(originalId);
+
+        for (let i = 1; ; i++) {
+          const newId = [originalId, STEP_INDEXING_SUFFIX, i].join("");
+
+          if (!state.steps[newId]) {
+            opId.id = newId;
+            break;
+          }
+        }
+
+        console.debug(
+          `${logPrefix} debug - Step "${originalId}" already exists; automatically indexing to "${opId.id}"`
+        );
       }
 
       const { promise, resolve, reject } = createDeferredPromise();
-      const stepState = state.stepState[opId.id];
+      const hashedId = _internals.hashId(opId.id);
+      const stepState = state.stepState[hashedId];
       if (stepState) {
         stepState.seen = true;
       }
 
-      const step: FoundStep = (state.steps[opId.id] = {
+      const step: FoundStep = {
         ...opId,
+        hashedId,
         fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
         fulfilled: Boolean(stepState),
         displayName: opId.displayName ?? opId.id,
-        handled: !stepState,
+        handled: false,
         handle: () => {
           if (step.handled) {
             return false;
@@ -229,19 +328,22 @@ export const createStepTools = <
 
           return true;
         },
-      });
+      };
+
+      state.steps[opId.id] = step;
+      state.hasSteps = true;
+      pushStepToReport(step);
 
       /**
        * If this is the last piece of state we had, we've now finished
        * memoizing.
        */
-      if (state.allStateUsed()) {
-        await state.hooks?.afterMemoization?.();
-        await state.hooks?.beforeExecution?.();
+      if (!beforeExecHooksPromise && state.allStateUsed()) {
+        await (beforeExecHooksPromise = (async () => {
+          await state.hooks?.beforeExecution?.();
+          await state.hooks?.afterMemoization?.();
+        })());
       }
-
-      state.hasSteps = true;
-      pushStepToReport(step);
 
       return promise;
     }) as T;
@@ -553,25 +655,3 @@ type WaitForEventOpts<
   "match",
   "if"
 >;
-
-/**
- * An operation ready to hash to be used to memoise step function progress.
- *
- * @internal
- */
-export type UnhashedOp = {
-  name: string;
-  op: StepOpCode;
-  opts: Record<string, unknown> | null;
-  parent: string | null;
-  pos?: number;
-};
-
-const hashData = (op: UnhashedOp): string => {
-  return sha1().update(canonicalize(op)).digest("hex");
-};
-
-/**
- * Exported for testing.
- */
-export const _internals = { hashData };

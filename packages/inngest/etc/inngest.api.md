@@ -127,6 +127,8 @@ export enum headerKeys {
     // (undocumented)
     Platform = "x-inngest-platform",
     // (undocumented)
+    RequestVersion = "x-inngest-req-version",
+    // (undocumented)
     RetryAfter = "retry-after",
     // (undocumented)
     SdkVersion = "x-inngest-sdk",

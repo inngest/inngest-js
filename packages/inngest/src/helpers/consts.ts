@@ -122,6 +122,7 @@ export enum headerKeys {
   Platform = "x-inngest-platform",
   Framework = "x-inngest-framework",
   NoRetry = "x-inngest-no-retry",
+  RequestVersion = "x-inngest-req-version",
   RetryAfter = "retry-after",
 }
 

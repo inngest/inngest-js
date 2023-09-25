@@ -459,7 +459,7 @@ type MiddlewareSendEventOutputArgs = { result: Readonly<SendEventBaseOutput> };
  */
 type MiddlewareSendEventOutput = (
   ctx: MiddlewareSendEventOutputArgs
-) => MaybePromise<{ result?: Record<string, unknown> }>;
+) => MaybePromise<{ result?: Record<string, unknown> } | void>;
 
 /**
  * @internal
@@ -467,7 +467,7 @@ type MiddlewareSendEventOutput = (
 type MiddlewareRunOutput = (ctx: {
   result: Readonly<Pick<OutgoingOp, "error" | "data">>;
   step?: Readonly<Omit<OutgoingOp, "id">>;
-}) => { result?: Partial<Pick<OutgoingOp, "data">> } | void;
+}) => MaybePromise<{ result?: Partial<Pick<OutgoingOp, "data">> } | void>;
 
 /**
  * @internal

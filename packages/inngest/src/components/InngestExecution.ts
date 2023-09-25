@@ -1,4 +1,5 @@
 import Debug, { type Debugger } from "debug";
+import { sha1 } from "hash.js";
 import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { type ServerTiming } from "../helpers/ServerTiming";
@@ -187,29 +188,22 @@ export class InngestExecution {
        * them back to Inngest.
        */
       "steps-found": async ({ steps }) => {
-        /**
-         * Iterate over state stack first, resolving promises in order to support
-         * racing.
-         *
-         * Then, find all remaining steps and handle them too.
-         *
-         * If we "handle" any steps in this pass, we must wait for the next
-         * checkpoint before taking any action. This is because we could be
-         * seeing a mix of previously-reported steps and new steps, which we
-         * can't differentiate.
-         *
-         * Because of this, we must also roll up any steps not necessarily found
-         * in only this checkpoint.
-         */
         const stepResult = await this.#tryExecuteStep(steps);
         if (stepResult) {
           const transformResult = await this.#transformOutput(stepResult);
 
+          /**
+           * Transforming output will always return either function rejection or
+           * resolution. In most cases, this can be immediately returned, but in
+           * this particular case we want to handle it differently.
+           */
           if (transformResult.type === "function-resolved") {
             return {
               type: "step-ran",
-              // eslint-disable-next-line @typescript-eslint/ban-types
-              step: { ...stepResult, ...(transformResult.data as {}) },
+              step: _internals.hashOp({
+                ...stepResult,
+                data: transformResult.data,
+              }),
             };
           }
 
@@ -244,13 +238,15 @@ export class InngestExecution {
   }
 
   async #tryExecuteStep(steps: FoundStep[]): Promise<OutgoingOp | void> {
-    const stepIdToRun =
+    const hashedStepIdToRun =
       this.options.requestedRunStep || this.#getEarlyExecRunStep(steps);
-    if (!stepIdToRun) {
+    if (!hashedStepIdToRun) {
       return;
     }
 
-    const step = steps.find((step) => step.id === stepIdToRun && step.fn);
+    const step = steps.find(
+      (step) => step.hashedId === hashedStepIdToRun && step.fn
+    );
 
     if (step) {
       return await this.#executeStep(step);
@@ -284,7 +280,7 @@ export class InngestExecution {
       op.op === StepOpCode.StepPlanned &&
       typeof op.opts === "undefined"
     ) {
-      return op.id;
+      return op.hashedId;
     }
   }
 
@@ -336,7 +332,7 @@ export class InngestExecution {
 
     return newSteps.map<OutgoingOp>((step) => ({
       op: step.op,
-      id: step.id,
+      id: step.hashedId,
       name: step.name,
       opts: step.opts,
     })) as [OutgoingOp, ...OutgoingOp[]];
@@ -712,3 +708,19 @@ export interface ExecutionState {
    */
   stepCompletionOrder: string[];
 }
+
+const hashId = (id: string): string => {
+  return sha1().update(id).digest("hex");
+};
+
+const hashOp = (op: OutgoingOp): OutgoingOp => {
+  return {
+    ...op,
+    id: hashId(op.id),
+  };
+};
+
+/**
+ * Exported for testing.
+ */
+export const _internals = { hashOp, hashId };
