@@ -333,7 +333,12 @@ export const sendEventResponseSchema = z.object({
   /**
    * HTTP Status Code. Will be undefined if no request was sent.
    */
-  status: z.number().min(200).max(299),
+  status: z.number(),
+
+  /**
+   * Error message. Will be undefined if no error occurred.
+   */
+  error: z.string().optional(),
 });
 
 /**

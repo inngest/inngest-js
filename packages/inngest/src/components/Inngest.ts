@@ -29,6 +29,7 @@ import {
   type Handler,
   type MiddlewareStack,
   type SendEventOutput,
+  type SendEventResponse,
   type TriggerOptions,
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
@@ -233,37 +234,43 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   /**
    * Given a response from Inngest, relay the error to the caller.
    */
-  async #getResponseError(response: globalThis.Response): Promise<Error> {
-    let errorMessage = "Unknown error";
-    switch (response.status) {
-      case 401:
-        errorMessage = "Event key Not Found";
-        break;
-      case 400:
-        errorMessage = "Cannot process event payload";
-        break;
-      case 403:
-        errorMessage = "Forbidden";
-        break;
-      case 404:
-        errorMessage = "Event key not found";
-        break;
-      case 406:
-        errorMessage = `${JSON.stringify(await response.json())}`;
-        break;
-      case 409:
-      case 412:
-        errorMessage = "Event transformation failed";
-        break;
-      case 413:
-        errorMessage = "Event payload too large";
-        break;
-      case 500:
-        errorMessage = "Internal server error";
-        break;
-      default:
-        errorMessage = await response.text();
-        break;
+  async #getResponseError(
+    response: globalThis.Response,
+    foundErr = "Unknown error"
+  ): Promise<Error> {
+    let errorMessage = foundErr;
+
+    if (errorMessage === "Unknown error") {
+      switch (response.status) {
+        case 401:
+          errorMessage = "Event key Not Found";
+          break;
+        case 400:
+          errorMessage = "Cannot process event payload";
+          break;
+        case 403:
+          errorMessage = "Forbidden";
+          break;
+        case 404:
+          errorMessage = "Event key not found";
+          break;
+        case 406:
+          errorMessage = `${JSON.stringify(await response.json())}`;
+          break;
+        case 409:
+        case 412:
+          errorMessage = "Event transformation failed";
+          break;
+        case 413:
+          errorMessage = "Event payload too large";
+          break;
+        case 500:
+          errorMessage = "Internal server error";
+          break;
+        default:
+          errorMessage = await response.text();
+          break;
+      }
     }
 
     return new Error(`Inngest API Error: ${response.status} ${errorMessage}`);
@@ -417,14 +424,20 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       headers: { ...this.headers },
     });
 
+    let body: SendEventResponse | undefined;
+
     try {
       const rawBody: unknown = await response.json();
-      const body = await sendEventResponseSchema.parseAsync(rawBody);
-
-      return await applyHookToOutput({ result: { ids: body.ids } });
+      body = await sendEventResponseSchema.parseAsync(rawBody);
     } catch (err) {
       throw await this.#getResponseError(response);
     }
+
+    if (body.status / 100 !== 2 || body.error) {
+      throw await this.#getResponseError(response, body.error);
+    }
+
+    return await applyHookToOutput({ result: { ids: body.ids } });
   }
 
   public createFunction<
