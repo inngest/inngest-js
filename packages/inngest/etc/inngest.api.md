@@ -287,6 +287,27 @@ export class NonRetriableError extends Error {
 }
 
 // @public
+export class ProxyLogger implements Logger {
+    constructor(logger: Logger);
+    // (undocumented)
+    debug(...args: LogArg[]): void;
+    // (undocumented)
+    disable(): void;
+    // (undocumented)
+    enable(): void;
+    // (undocumented)
+    error(...args: LogArg[]): void;
+    // (undocumented)
+    flush(): Promise<void>;
+    // Warning: (ae-forgotten-export) The symbol "LogArg" needs to be exported by the entry point index.d.ts
+    //
+    // (undocumented)
+    info(...args: LogArg[]): void;
+    // (undocumented)
+    warn(...args: LogArg[]): void;
+}
+
+// @public
 export enum queryKeys {
     // (undocumented)
     DeployId = "deployId",

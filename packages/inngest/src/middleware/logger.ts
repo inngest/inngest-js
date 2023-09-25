@@ -46,6 +46,8 @@ export class DefaultLogger implements Logger {
  * context, so it doesn't result in duplicated logging.
  *
  * And also attempt to allow enough time for the logger to flush all logs.
+ *
+ * @public
  */
 export class ProxyLogger implements Logger {
   readonly #logger: Logger;
