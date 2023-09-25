@@ -1,6 +1,6 @@
 import { Inngest } from "inngest";
 
 export const inngest = new Inngest({
-  name: "Example App",
+  id: "example-app",
   eventKey: "test-key-123",
 });

@@ -626,6 +626,9 @@ export class InngestCommHandler<
               headers: {
                 "Content-Type": "application/json",
                 [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+                ...(typeof result.retriable === "string"
+                  ? { [headerKeys.RetryAfter]: result.retriable }
+                  : {}),
               },
               body: stringify(result.error),
             };
@@ -786,6 +789,7 @@ export class InngestCommHandler<
       timer,
       isFailureHandler: fn.onFailure,
       disableImmediateExecution: fndata.value.disable_immediate_execution,
+      stepCompletionOrder: ctx?.stack?.stack ?? [],
     });
 
     return execution.start();

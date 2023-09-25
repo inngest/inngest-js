@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -46,7 +46,7 @@
     "buffer": "^6.0.3",
     "canonicalize": "^1.0.8",
     "chalk": "^4.1.2",
-    "cross-fetch": "^3.1.5",
+    "cross-fetch": "^4.0.0",
     "debug": "^4.3.4",
     "h3": "^1.0.2",
     "hash.js": "^1.1.7",

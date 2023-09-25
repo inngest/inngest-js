@@ -7,7 +7,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Sequential Reduce",
+  name: "sequential-reduce",
   triggers: [{ event: "demo/sequential.reduce" }],
 });
 
@@ -20,7 +20,7 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/sequential.reduce'", async () => {
-    runId = await eventRunWithName(eventId, "Sequential Reduce");
+    runId = await eventRunWithName(eventId, "sequential-reduce");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 

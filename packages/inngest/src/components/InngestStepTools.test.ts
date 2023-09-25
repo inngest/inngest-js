@@ -40,6 +40,7 @@ const getStepTools = ({
     fn,
     data: {},
     stepState,
+    stepCompletionOrder: Object.keys(stepState),
   });
 
   const tools = createStepTools(client, execution.state);

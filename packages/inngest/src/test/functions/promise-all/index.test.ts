@@ -7,7 +7,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Promise.all",
+  name: "promise-all",
   triggers: [{ event: "demo/promise.all" }],
 });
 
@@ -20,7 +20,7 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/promise.all'", async () => {
-    runId = await eventRunWithName(eventId, "Promise.all");
+    runId = await eventRunWithName(eventId, "promise-all");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 

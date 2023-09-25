@@ -7,7 +7,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Hello World",
+  name: "hello-world",
   triggers: [{ event: "demo/hello.world" }],
 });
 
@@ -20,7 +20,7 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/hello.world'", async () => {
-    runId = await eventRunWithName(eventId, "Hello World");
+    runId = await eventRunWithName(eventId, "hello-world");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 

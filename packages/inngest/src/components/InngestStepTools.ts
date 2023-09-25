@@ -3,7 +3,7 @@ import { sha1 } from "hash.js";
 import { type Jsonify } from "type-fest";
 import { ErrCode, prettyError } from "../helpers/errors";
 import {
-  createFrozenPromise,
+  createDeferredPromise,
   resolveAfterPending,
   runAsPromise,
 } from "../helpers/promises";
@@ -29,6 +29,13 @@ import { type ExecutionState } from "./InngestExecution";
 export interface FoundStep extends HashedOp {
   fn?: (...args: unknown[]) => unknown;
   fulfilled: boolean;
+  handled: boolean;
+
+  /**
+   * Returns a boolean representing whether or not the step was handled on this
+   * invocation.
+   */
+  handle: () => boolean;
 }
 
 /**
@@ -50,20 +57,42 @@ export const createStepTools = <
   let foundStepsToReport: FoundStep[] = [];
   let foundStepsReportPromise: Promise<void> | undefined;
 
+  const reportNextTick = () => {
+    // Being explicit instead of using `??=` to appease TypeScript.
+    if (foundStepsReportPromise) {
+      return;
+    }
+
+    foundStepsReportPromise = resolveAfterPending().then(() => {
+      foundStepsReportPromise = undefined;
+
+      for (let i = 0; i < state.stepCompletionOrder.length; i++) {
+        const handled = foundStepsToReport
+          .find((step) => {
+            return step.id === state.stepCompletionOrder[i];
+          })
+          ?.handle();
+
+        if (handled) {
+          return void reportNextTick();
+        }
+      }
+
+      // If we've handled no steps in this "tick," roll up everything we've
+      // found and report it.
+      const steps = [...foundStepsToReport] as [FoundStep, ...FoundStep[]];
+      foundStepsToReport = [];
+
+      return void state.setCheckpoint({
+        type: "steps-found",
+        steps: steps,
+      });
+    });
+  };
+
   const pushStepToReport = (step: FoundStep) => {
     foundStepsToReport.push(step);
-
-    if (!foundStepsReportPromise) {
-      foundStepsReportPromise = resolveAfterPending().then(() => {
-        const steps = [...foundStepsToReport] as [FoundStep, ...FoundStep[]];
-
-        // Reset
-        foundStepsToReport = [];
-        foundStepsReportPromise = undefined;
-
-        void state.setCheckpoint({ type: "steps-found", steps });
-      });
-    }
+    reportNextTick();
   };
 
   /**
@@ -169,36 +198,52 @@ export const createStepTools = <
         throw new Error("TODO: Step already exists?");
       }
 
-      const step = (state.steps[opId.id] = {
-        ...opId,
-        fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
-        fulfilled: Boolean(state.stepState[opId.id]),
-      });
-      state.hasSteps = true;
-
-      pushStepToReport(step);
-
+      const { promise, resolve, reject } = createDeferredPromise();
       const stepState = state.stepState[opId.id];
-
       if (stepState) {
-        stepState.fulfilled = true;
-        /**
-         * If this is the last piece of state we had, we've now finished
-         * memoizing.
-         */
-        if (state.allStateUsed()) {
-          await state.hooks?.afterMemoization?.();
-          await state.hooks?.beforeExecution?.();
-        }
-
-        if (typeof stepState?.data !== "undefined") {
-          return Promise.resolve(stepState?.data);
-        } else {
-          return Promise.reject(stepState?.error);
-        }
+        stepState.seen = true;
       }
 
-      return createFrozenPromise();
+      const step: FoundStep = (state.steps[opId.id] = {
+        ...opId,
+        fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
+        fulfilled: Boolean(stepState),
+        displayName: opId.displayName ?? opId.id,
+        handled: !stepState,
+        handle: () => {
+          if (step.handled) {
+            return false;
+          }
+
+          step.handled = true;
+
+          if (stepState) {
+            stepState.fulfilled = true;
+
+            if (typeof stepState.data !== "undefined") {
+              resolve(stepState.data);
+            } else {
+              reject(stepState.error);
+            }
+          }
+
+          return true;
+        },
+      });
+
+      /**
+       * If this is the last piece of state we had, we've now finished
+       * memoizing.
+       */
+      if (state.allStateUsed()) {
+        await state.hooks?.afterMemoization?.();
+        await state.hooks?.beforeExecution?.();
+      }
+
+      state.hasSteps = true;
+      pushStepToReport(step);
+
+      return promise;
     }) as T;
   };
 

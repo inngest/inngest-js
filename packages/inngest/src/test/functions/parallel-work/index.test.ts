@@ -7,7 +7,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Parallel Work",
+  name: "parallel-work",
   triggers: [{ event: "demo/parallel.work" }],
 });
 
@@ -20,7 +20,7 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/parallel.work'", async () => {
-    runId = await eventRunWithName(eventId, "Parallel Work");
+    runId = await eventRunWithName(eventId, "parallel-work");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 

@@ -1,7 +1,7 @@
 import { inngest } from "../client";
 
 export default inngest.createFunction(
-  { name: "Promise.all" },
+  { id: "promise-all" },
   { event: "demo/promise.all" },
   async ({ step }) => {
     const [one, two] = await Promise.all([

@@ -109,6 +109,7 @@ describe("runFn", () => {
             const execution = fn["createExecution"]({
               data: { event: { name: "foo", data: { foo: "foo" } } },
               stepState: {},
+              stepCompletionOrder: [],
             });
 
             ret = await execution.start();
@@ -146,6 +147,7 @@ describe("runFn", () => {
             const execution = fn["createExecution"]({
               data: { event: { name: "foo", data: { foo: "foo" } } },
               stepState: {},
+              stepCompletionOrder: [],
             });
 
             const ret = await execution.start();
@@ -170,12 +172,14 @@ describe("runFn", () => {
         runStep?: string;
         onFailure?: boolean;
         event?: EventPayload;
+        stackOrder?: InngestExecutionOptions["stepCompletionOrder"];
         disableImmediateExecution?: boolean;
       }
     ) => {
       const execution = fn["createExecution"]({
         data: { event: opts?.event || { name: "foo", data: {} } },
         stepState,
+        stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
         isFailureHandler: Boolean(opts?.onFailure),
         requestedRunStep: opts?.runStep,
         timer,
@@ -210,6 +214,7 @@ describe("runFn", () => {
         string,
         {
           stack?: InngestExecutionOptions["stepState"];
+          stackOrder?: InngestExecutionOptions["stepCompletionOrder"];
           onFailure?: boolean;
           runStep?: string;
           expectedReturn?: Awaited<ReturnType<typeof runFnWithStack>>;
@@ -246,6 +251,7 @@ describe("runFn", () => {
 
             beforeAll(async () => {
               ret = await runFnWithStack(tools.fn, t.stack || {}, {
+                stackOrder: t.stackOrder,
                 runStep: t.runStep,
                 onFailure: t.onFailure || tools.onFailure,
                 event: t.event || tools.event,
@@ -621,6 +627,225 @@ describe("runFn", () => {
             type: "function-resolved",
             data: undefined,
           },
+        },
+      })
+    );
+
+    testFn(
+      "Promise.race",
+      () => {
+        const A = jest.fn(() => Promise.resolve("A"));
+        const B = jest.fn(() => Promise.resolve("B"));
+        const AWins = jest.fn(() => Promise.resolve("A wins"));
+        const BWins = jest.fn(() => Promise.resolve("B wins"));
+
+        const fn = inngest.createFunction(
+          { id: "name" },
+          { event: "foo" },
+          async ({ step: { run } }) => {
+            const winner = await Promise.race([run("A", A), run("B", B)]);
+
+            if (winner === "A") {
+              await run("A wins", AWins);
+            } else if (winner === "B") {
+              await run("B wins", BWins);
+            }
+          }
+        );
+
+        return { fn, steps: { A, B, AWins, BWins } };
+      },
+      {
+        A: "A",
+        B: "B",
+        AWins: "A wins",
+        BWins: "B wins",
+      },
+      ({ A, B, AWins, BWins }) => ({
+        "first run reports A and B steps": {
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.StepPlanned,
+              }),
+              expect.objectContaining({
+                id: B,
+                name: "B",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          },
+        },
+
+        "requesting to run B runs B": {
+          runStep: B,
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
+              id: B,
+              name: "B",
+              op: StepOpCode.RunStep,
+              data: "B",
+            }),
+          },
+          expectedStepsRun: ["B"],
+          disableImmediateExecution: true,
+        },
+
+        "request following B reports 'A' and 'B wins' steps": {
+          stack: { [B]: { id: B, data: "B" } },
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.StepPlanned,
+              }),
+              expect.objectContaining({
+                id: BWins,
+                name: "B wins",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          },
+          disableImmediateExecution: true,
+        },
+
+        "requesting to run A runs A": {
+          runStep: A,
+          expectedReturn: {
+            type: "step-ran",
+            step: expect.objectContaining({
+              id: A,
+              name: "A",
+              op: StepOpCode.RunStep,
+              data: "A",
+            }),
+          },
+          expectedStepsRun: ["A"],
+          disableImmediateExecution: true,
+        },
+
+        "request following 'B wins' resolves": {
+          stack: {
+            [B]: { id: B, data: "B" },
+            [BWins]: { id: BWins, data: "B wins" },
+          },
+          stackOrder: [B, BWins],
+          expectedReturn: { type: "function-resolved", data: undefined },
+          disableImmediateExecution: true,
+        },
+
+        "request following A completion resolves": {
+          stack: {
+            [A]: { id: A, data: "A" },
+            [B]: { id: B, data: "B" },
+            [BWins]: { id: BWins, data: "B wins" },
+          },
+          stackOrder: [B, BWins, A],
+          expectedReturn: { type: "function-resolved", data: undefined },
+          disableImmediateExecution: true,
+        },
+
+        "request if 'A' is complete reports 'B' and 'A wins' steps": {
+          stack: { [A]: { id: A, data: "A" } },
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
+              expect.objectContaining({
+                id: B,
+                name: "B",
+                op: StepOpCode.StepPlanned,
+              }),
+              expect.objectContaining({
+                id: AWins,
+                name: "A wins",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          },
+          disableImmediateExecution: true,
+        },
+      })
+    );
+
+    testFn(
+      "Deep Promise.race",
+      () => {
+        const A = jest.fn(() => Promise.resolve("A"));
+        const B = jest.fn(() => Promise.resolve("B"));
+        const B2 = jest.fn(() => Promise.resolve("B2"));
+        const AWins = jest.fn(() => Promise.resolve("A wins"));
+        const BWins = jest.fn(() => Promise.resolve("B wins"));
+
+        const fn = inngest.createFunction(
+          { id: "name" },
+          { event: "foo" },
+          async ({ step: { run } }) => {
+            const winner = await Promise.race([
+              run("A", A),
+              run("B", B).then(() => run("B2", B2)),
+            ]);
+
+            if (winner === "A") {
+              await run("A wins", AWins);
+            } else if (winner === "B2") {
+              await run("B wins", BWins);
+            }
+          }
+        );
+
+        return { fn, steps: { A, B, B2, AWins, BWins } };
+      },
+      {
+        A: "A",
+        B: "B",
+        B2: "B2",
+        AWins: "A wins",
+        BWins: "B wins",
+      },
+      ({ A, B, B2, BWins }) => ({
+        "if B chain wins without 'A', reports 'A' and 'B wins' steps": {
+          stack: { [B]: { id: B, data: "B" }, [B2]: { id: B2, data: "B2" } },
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
+              expect.objectContaining({
+                id: A,
+                name: "A",
+                op: StepOpCode.StepPlanned,
+              }),
+              expect.objectContaining({
+                id: BWins,
+                name: "B wins",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          },
+          disableImmediateExecution: true,
+        },
+        "if B chain wins after with 'A' afterwards, reports 'B wins' step": {
+          stack: {
+            [B]: { id: B, data: "B" },
+            [B2]: { id: B2, data: "B2" },
+            [A]: { id: A, data: "A" },
+          },
+          stackOrder: [B, B2, A],
+          expectedReturn: {
+            type: "steps-found",
+            steps: [
+              expect.objectContaining({
+                id: BWins,
+                name: "B wins",
+                op: StepOpCode.StepPlanned,
+              }),
+            ],
+          },
+          disableImmediateExecution: true,
         },
       })
     );
