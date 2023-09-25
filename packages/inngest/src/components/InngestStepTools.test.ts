@@ -77,10 +77,10 @@ describe("waitForEvent", () => {
     });
   });
 
-  test("returns no name by default", () => {
+  test("returns ID by default", () => {
     void waitForEvent("id", { event: "event", timeout: "2h" });
     expect(getOp()).toMatchObject({
-      displayName: undefined,
+      displayName: "id",
     });
   });
 
@@ -190,10 +190,10 @@ describe("run", () => {
     });
   });
 
-  test("return no name by default", () => {
+  test("return ID by default", () => {
     void run("id", () => undefined);
     expect(getOp()).toMatchObject({
-      displayName: undefined,
+      displayName: "id",
     });
   });
 
@@ -273,10 +273,10 @@ describe("sleep", () => {
     });
   });
 
-  test("return no name by default", () => {
+  test("return ID by default", () => {
     void sleep("id", "1m");
     expect(getOp()).toMatchObject({
-      displayName: undefined,
+      displayName: "id",
     });
   });
 
@@ -309,13 +309,13 @@ describe("sleepUntil", () => {
     });
   });
 
-  test("return no name by default", () => {
+  test("return ID by default", () => {
     const future = new Date();
     future.setDate(future.getDate() + 1);
 
     void sleepUntil("id", future);
     expect(getOp()).toMatchObject({
-      displayName: undefined,
+      displayName: "id",
     });
   });
 
@@ -431,10 +431,10 @@ describe("sendEvent", () => {
       expect(getOp()).toMatchObject({ op: StepOpCode.StepPlanned });
     });
 
-    test("return no name by default", () => {
+    test("return ID by default", () => {
       void sendEvent("id", { name: "step", data: "foo" });
 
-      expect(getOp()).toMatchObject({ displayName: undefined });
+      expect(getOp()).toMatchObject({ displayName: "id" });
     });
 
     test("return specific name if given", () => {
