@@ -18,7 +18,12 @@ export type {
 } from "./components/InngestMiddleware";
 export { NonRetriableError } from "./components/NonRetriableError";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts";
-export type { IsStringLiteral } from "./helpers/types";
+export type {
+  IsStringLiteral,
+  StrictUnion,
+  StrictUnionHelper,
+  UnionKeys,
+} from "./helpers/types";
 export { ProxyLogger } from "./middleware/logger";
 export type { LogArg } from "./middleware/logger";
 export type {
@@ -32,4 +37,5 @@ export type {
   LogLevel,
   RegisterOptions,
   TimeStr,
+  TriggerOptions,
 } from "./types";
