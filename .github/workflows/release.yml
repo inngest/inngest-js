@@ -25,13 +25,13 @@ jobs:
           # publish duplicate tags.
           fetch-depth: 0
       - uses: ./.github/actions/setup-and-build
-      - run: node scripts/generateReleaseConfig.js
+      - run: bun run ./scripts/generateReleaseConfig.js
         env:
           BRANCH: ${{ github.ref_name }}
       - uses: changesets/action@v1
         id: changesets
         with:
-          publish: pnpm run --if-present --recursive release
+          publish: bun run --cwd packages/inngest release
           title: ${{ github.ref_name == 'main' && 'Release @latest' || format('Release {0}', github.ref_name) }}
         env:
           GITHUB_TOKEN: ${{ secrets.CHANGESET_GITHUB_TOKEN }}

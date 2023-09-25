@@ -24,7 +24,7 @@ jobs:
       - uses: ./.github/actions/setup-and-build
 
       - name: Prerelease PR
-        run: node scripts/prerelease.js
+        run: bun run ./scripts/prerelease.js
         working-directory: packages/inngest
         env:
           TAG: pr-${{ github.event.pull_request.number }}

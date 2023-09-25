@@ -134,15 +134,14 @@ inngest.send("app/user.signup", {
 Prerequisites:
 
 1. Clone this repository
-2. Intall [`pnpm`](https://pnpm.io/installation)
-3. Install [Volta](https://volta.sh/) to manage consistent Node versions (optional)
+2. Intall [`bun`](https://bun.sh/docs/installation)
 
 ### Development
 
 Run the following command in the `packages/inngest/` directory:
 
 ```sh
-pnpm dev
+bun dev
 ```
 
 This will install dependencies, build, and lint the package. It will watch for changes and re-run appropriate commands.
@@ -153,7 +152,7 @@ To test changes with other local repositories, we recommend packaging the librar
 
 ```sh
 # in packages/inngest/
-pnpm local:pack # creates inngest.tgz
+bun local:pack # creates inngest.tgz
 
 # in another repo
 yarn add ~/path/to/packages/inngest/inngest.tgz

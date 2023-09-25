@@ -1,5 +1,5 @@
 name: "Setup and build inngest"
-description: "Sets up Node, installs dependencies, and builds the inngest package."
+description: "Sets up Bun, installs dependencies, and builds the inngest package."
 inputs:
   working-directory:  # id of input
     description: 'The directory to run the action in.'
@@ -12,26 +12,18 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: pnpm/action-setup@v2
-      with:
-        run_install: false
+    - uses: oven-sh/setup-bun@v1
 
-    - uses: actions/setup-node@v3
-      with:
-        node-version: lts/*
-        cache: pnpm
-        registry-url: 'https://registry.npmjs.org'
-
-    - run: npm i -g @antfu/ni
+    - run: bun install -g @antfu/ni
       shell: bash
 
     - name: Install dependencies
-      run: pnpm install
+      run: bun install
       shell: bash
       working-directory: ${{ inputs.working-directory }}/packages/inngest
 
     - name: Build
       if: ${{ inputs.build == 'true' }}
-      run: pnpm run build
+      run: bun run build
       shell: bash
       working-directory: ${{ inputs.working-directory }}/packages/inngest
