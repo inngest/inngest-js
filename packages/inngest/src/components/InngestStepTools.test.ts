@@ -12,7 +12,11 @@ import {
   createStepTools,
   type FoundStep,
 } from "@local/components/InngestStepTools";
-import { StepOpCode, type ClientOptions } from "@local/types";
+import {
+  StepOpCode,
+  type ClientOptions,
+  type EventPayload,
+} from "@local/types";
 import ms from "ms";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
@@ -73,10 +77,10 @@ describe("waitForEvent", () => {
     });
   });
 
-  test("returns no name by default", () => {
+  test("returns ID by default", () => {
     void waitForEvent("id", { event: "event", timeout: "2h" });
     expect(getOp()).toMatchObject({
-      displayName: undefined,
+      displayName: "id",
     });
   });
 
@@ -186,10 +190,10 @@ describe("run", () => {
     });
   });
 
-  test("return no name by default", () => {
+  test("return ID by default", () => {
     void run("id", () => undefined);
     expect(getOp()).toMatchObject({
-      displayName: undefined,
+      displayName: "id",
     });
   });
 
@@ -269,10 +273,10 @@ describe("sleep", () => {
     });
   });
 
-  test("return no name by default", () => {
+  test("return ID by default", () => {
     void sleep("id", "1m");
     expect(getOp()).toMatchObject({
-      displayName: undefined,
+      displayName: "id",
     });
   });
 
@@ -305,13 +309,13 @@ describe("sleepUntil", () => {
     });
   });
 
-  test("return no name by default", () => {
+  test("return ID by default", () => {
     const future = new Date();
     future.setDate(future.getDate() + 1);
 
     void sleepUntil("id", future);
     expect(getOp()).toMatchObject({
-      displayName: undefined,
+      displayName: "id",
     });
   });
 
@@ -372,8 +376,19 @@ describe("sleepUntil", () => {
 
 describe("sendEvent", () => {
   describe("runtime", () => {
-    const fetchMock = jest.fn(() =>
-      Promise.resolve({ status: 200 })
+    const fetchMock = jest.fn(
+      (url: string, opts: { body: string }) =>
+        Promise.resolve({
+          status: 200,
+          json: () =>
+            Promise.resolve({
+              status: 200,
+              ids: (JSON.parse(opts.body) as EventPayload[]).map(
+                () => "test-id"
+              ),
+            }),
+        })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ) as unknown as typeof fetch;
 
     const client = createClient({
@@ -416,10 +431,10 @@ describe("sendEvent", () => {
       expect(getOp()).toMatchObject({ op: StepOpCode.StepPlanned });
     });
 
-    test("return no name by default", () => {
+    test("return ID by default", () => {
       void sendEvent("id", { name: "step", data: "foo" });
 
-      expect(getOp()).toMatchObject({ displayName: undefined });
+      expect(getOp()).toMatchObject({ displayName: "id" });
     });
 
     test("return specific name if given", () => {

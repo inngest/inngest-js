@@ -60,10 +60,16 @@ describe("send", () => {
     beforeAll(() => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       global.fetch = jest.fn(
-        () =>
+        (url: string, opts: { body: string }) =>
           Promise.resolve({
             status: 200,
-            json: () => Promise.resolve({}),
+            json: () =>
+              Promise.resolve({
+                status: 200,
+                ids: (JSON.parse(opts.body) as EventPayload[]).map(
+                  () => "test-id"
+                ),
+              }),
           })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ) as any;
@@ -91,7 +97,9 @@ describe("send", () => {
     test("should succeed if event key specified at instantiation", async () => {
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
@@ -106,7 +114,9 @@ describe("send", () => {
       process.env[envKeys.InngestEventKey] = testEventKey;
       const inngest = createClient({ id: "test" });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
@@ -121,7 +131,9 @@ describe("send", () => {
       const inngest = createClient({ id: "test" });
       inngest.setEventKey(testEventKey);
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
@@ -136,7 +148,9 @@ describe("send", () => {
       const inngest = createClient({ id: "test" });
       inngest.setEventKey(testEventKey);
 
-      await expect(inngest.send([])).resolves.toBeUndefined();
+      await expect(inngest.send([])).resolves.toMatchObject({
+        ids: Array(0).fill(expect.any(String)),
+      });
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
@@ -147,7 +161,9 @@ describe("send", () => {
         env: "foo",
       });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
@@ -168,7 +184,9 @@ describe("send", () => {
         eventKey: testEventKey,
       });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
@@ -190,7 +208,9 @@ describe("send", () => {
         env: "foo",
       });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
@@ -211,7 +231,9 @@ describe("send", () => {
         eventKey: testEventKey,
       });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
@@ -235,7 +257,9 @@ describe("send", () => {
 
       const mockedFetch = jest.mocked(global.fetch);
 
-      await expect(inngest.send(testEventWithoutTs)).resolves.toBeUndefined();
+      await expect(inngest.send(testEventWithoutTs)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
       expect(mockedFetch.mock.calls[1]).toHaveLength(2);
@@ -287,7 +311,9 @@ describe("send", () => {
 
       await expect(
         inngest.send({ ...testEvent, data: { foo: true } })
-      ).resolves.toBeUndefined();
+      ).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
@@ -298,6 +324,37 @@ describe("send", () => {
           ]),
         })
       );
+    });
+
+    test("should allow middleware to mutate output", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: testEventKey,
+        middleware: [
+          new InngestMiddleware({
+            name: "Test",
+            init() {
+              return {
+                onSendEvent() {
+                  return {
+                    transformOutput({ result }) {
+                      return {
+                        result: {
+                          ids: result.ids.map((id) => `${id}-bar`),
+                        },
+                      };
+                    },
+                  };
+                },
+              };
+            },
+          }),
+        ],
+      });
+
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.stringMatching(/-bar$/)),
+      });
     });
   });
 
