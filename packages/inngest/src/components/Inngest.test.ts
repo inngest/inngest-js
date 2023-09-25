@@ -60,10 +60,16 @@ describe("send", () => {
     beforeAll(() => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       global.fetch = jest.fn(
-        () =>
+        (url: string, opts: { body: string }) =>
           Promise.resolve({
             status: 200,
-            json: () => Promise.resolve({}),
+            json: () =>
+              Promise.resolve({
+                status: 200,
+                ids: (JSON.parse(opts.body) as EventPayload[]).map(
+                  () => "test-id"
+                ),
+              }),
           })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ) as any;
@@ -91,7 +97,9 @@ describe("send", () => {
     test("should succeed if event key specified at instantiation", async () => {
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
@@ -106,7 +114,9 @@ describe("send", () => {
       process.env[envKeys.InngestEventKey] = testEventKey;
       const inngest = createClient({ id: "test" });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
@@ -121,7 +131,9 @@ describe("send", () => {
       const inngest = createClient({ id: "test" });
       inngest.setEventKey(testEventKey);
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
@@ -136,7 +148,9 @@ describe("send", () => {
       const inngest = createClient({ id: "test" });
       inngest.setEventKey(testEventKey);
 
-      await expect(inngest.send([])).resolves.toBeUndefined();
+      await expect(inngest.send([])).resolves.toMatchObject({
+        ids: Array(0).fill(expect.any(String)),
+      });
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
@@ -147,7 +161,9 @@ describe("send", () => {
         env: "foo",
       });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
@@ -168,7 +184,9 @@ describe("send", () => {
         eventKey: testEventKey,
       });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
@@ -190,7 +208,9 @@ describe("send", () => {
         env: "foo",
       });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
@@ -211,7 +231,9 @@ describe("send", () => {
         eventKey: testEventKey,
       });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
@@ -235,7 +257,9 @@ describe("send", () => {
 
       const mockedFetch = jest.mocked(global.fetch);
 
-      await expect(inngest.send(testEventWithoutTs)).resolves.toBeUndefined();
+      await expect(inngest.send(testEventWithoutTs)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
       expect(mockedFetch.mock.calls[1]).toHaveLength(2);
@@ -250,6 +274,36 @@ describe("send", () => {
           ...testEventWithoutTs,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           ts: expect.any(Number),
+        })
+      );
+    });
+
+    test("should insert blank `data` if none given", async () => {
+      const inngest = createClient({ id: "test" });
+      inngest.setEventKey(testEventKey);
+
+      const testEventWithoutData = {
+        name: "test.without.data",
+      };
+
+      const mockedFetch = jest.mocked(global.fetch);
+
+      await expect(inngest.send(testEventWithoutData)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
+
+      expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
+      expect(mockedFetch.mock.calls[1]).toHaveLength(2);
+      expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+      const body: Array<Record<string, any>> = JSON.parse(
+        mockedFetch.mock.calls[1]?.[1]?.body as string
+      );
+      expect(body).toHaveLength(1);
+      expect(body[0]).toEqual(
+        expect.objectContaining({
+          ...testEventWithoutData,
+          data: {},
         })
       );
     });
@@ -287,7 +341,9 @@ describe("send", () => {
 
       await expect(
         inngest.send({ ...testEvent, data: { foo: true } })
-      ).resolves.toBeUndefined();
+      ).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
@@ -298,6 +354,37 @@ describe("send", () => {
           ]),
         })
       );
+    });
+
+    test("should allow middleware to mutate output", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: testEventKey,
+        middleware: [
+          new InngestMiddleware({
+            name: "Test",
+            init() {
+              return {
+                onSendEvent() {
+                  return {
+                    transformOutput({ result }) {
+                      return {
+                        result: {
+                          ids: result.ids.map((id) => `${id}-bar`),
+                        },
+                      };
+                    },
+                  };
+                },
+              };
+            },
+          }),
+        ],
+      });
+
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.stringMatching(/-bar$/)),
+      });
     });
   });
 
@@ -314,6 +401,7 @@ describe("send", () => {
           inngest.send([
             { name: "anything", data: "foo" },
             { name: "anything", data: "foo" },
+            { name: "anythingelse" },
           ]);
       });
     });
@@ -324,13 +412,13 @@ describe("send", () => {
         eventKey: testEventKey,
         schemas: new EventSchemas().fromRecord<{
           foo: {
-            name: "foo";
             data: { foo: string };
           };
           bar: {
-            name: "bar";
             data: { bar: string };
           };
+          // eslint-disable-next-line @typescript-eslint/ban-types
+          baz: {};
         }>(),
       });
 
@@ -381,6 +469,24 @@ describe("send", () => {
             // @ts-expect-error Invalid data
             { name: "bar", data: { foo: "" } },
           ]);
+      });
+
+      test("disallows sending known data-filled event with no data", () => {
+        // @ts-expect-error No data
+        const _fn = () => inngest.send({ name: "foo" });
+      });
+
+      test("disallows sending known data-filled event with empty data object", () => {
+        // @ts-expect-error Empty data
+        const _fn = () => inngest.send({ name: "foo", data: {} });
+      });
+
+      test("allows sending known data-empty event with no data", () => {
+        const _fn = () => inngest.send({ name: "baz" });
+      });
+
+      test("allows sending known data-empty event with empty data object", () => {
+        const _fn = () => inngest.send({ name: "baz", data: {} });
       });
 
       test("allows sending a single known event with an object", () => {

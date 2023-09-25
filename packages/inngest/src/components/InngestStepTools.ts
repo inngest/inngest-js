@@ -18,6 +18,7 @@ import {
   type ClientOptions,
   type EventPayload,
   type HashedOp,
+  type SendEventOutput,
   type StepOptions,
   type StepOptionsOrId,
 } from "../types";
@@ -392,7 +393,7 @@ export const createStepTools = <
       <Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
         idOrOptions: StepOptionsOrId,
         payload: Payload
-      ): Promise<void>;
+      ): Promise<SendEventOutput<TOpts>>;
     }>(
       ({ id, name }) => {
         return {

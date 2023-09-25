@@ -18,6 +18,7 @@ import { stringify } from "../helpers/strings";
 import { type ExclusiveKeys, type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
+  sendEventResponseSchema,
   type AnyHandler,
   type ClientOptions,
   type EventNameFromTrigger,
@@ -27,6 +28,8 @@ import {
   type FunctionTrigger,
   type Handler,
   type MiddlewareStack,
+  type SendEventOutput,
+  type SendEventResponse,
   type TriggerOptions,
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
@@ -38,6 +41,7 @@ import {
   type MiddlewareOptions,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
+  type SendEventHookStack,
 } from "./InngestMiddleware";
 
 /**
@@ -230,37 +234,43 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   /**
    * Given a response from Inngest, relay the error to the caller.
    */
-  async #getResponseError(response: globalThis.Response): Promise<Error> {
-    let errorMessage = "Unknown error";
-    switch (response.status) {
-      case 401:
-        errorMessage = "Event key Not Found";
-        break;
-      case 400:
-        errorMessage = "Cannot process event payload";
-        break;
-      case 403:
-        errorMessage = "Forbidden";
-        break;
-      case 404:
-        errorMessage = "Event key not found";
-        break;
-      case 406:
-        errorMessage = `${JSON.stringify(await response.json())}`;
-        break;
-      case 409:
-      case 412:
-        errorMessage = "Event transformation failed";
-        break;
-      case 413:
-        errorMessage = "Event payload too large";
-        break;
-      case 500:
-        errorMessage = "Internal server error";
-        break;
-      default:
-        errorMessage = await response.text();
-        break;
+  async #getResponseError(
+    response: globalThis.Response,
+    foundErr = "Unknown error"
+  ): Promise<Error> {
+    let errorMessage = foundErr;
+
+    if (errorMessage === "Unknown error") {
+      switch (response.status) {
+        case 401:
+          errorMessage = "Event key Not Found";
+          break;
+        case 400:
+          errorMessage = "Cannot process event payload";
+          break;
+        case 403:
+          errorMessage = "Forbidden";
+          break;
+        case 404:
+          errorMessage = "Event key not found";
+          break;
+        case 406:
+          errorMessage = `${JSON.stringify(await response.json())}`;
+          break;
+        case 409:
+        case 412:
+          errorMessage = "Event transformation failed";
+          break;
+        case 413:
+          errorMessage = "Event payload too large";
+          break;
+        case 500:
+          errorMessage = "Internal server error";
+          break;
+        default:
+          errorMessage = await response.text();
+          break;
+      }
     }
 
     return new Error(`Inngest API Error: ${response.status} ${errorMessage}`);
@@ -316,7 +326,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    */
   public async send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
     payload: Payload
-  ): Promise<void> {
+  ): Promise<SendEventOutput<TOpts>> {
     const hooks = await getHookStack(
       this.middleware,
       "onSendEvent",
@@ -325,8 +335,10 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
         transformInput: (prev, output) => {
           return { ...prev, ...output };
         },
-        transformOutput: (prev, _output) => {
-          return prev;
+        transformOutput(prev, output) {
+          return {
+            result: { ...prev.result, ...output.result },
+          };
         },
       }
     );
@@ -355,18 +367,35 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       payloads = [...inputChanges.payloads];
     }
 
-    // Ensure that we always add a "ts" field to events.  This is auto-filled by the
-    // event server so is safe, and adding here fixes Next.js server action cache issues.
-    payloads = payloads.map((p) =>
-      p.ts ? p : { ...p, ts: new Date().getTime() }
-    );
+    // Ensure that we always add "ts" and "data" fields to events. "ts" is auto-
+    // filled by the event server so is safe, and adding here fixes Next.js
+    // server action cache issues.
+    payloads = payloads.map((p) => {
+      return {
+        ...p,
+        ts: p.ts || new Date().getTime(),
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        data: p.data || {},
+      };
+    });
+
+    const applyHookToOutput = async (
+      arg: Parameters<NonNullable<SendEventHookStack["transformOutput"]>>[0]
+    ): Promise<SendEventOutput<TOpts>> => {
+      const hookOutput = await hooks.transformOutput?.(arg);
+      return {
+        ...arg.result,
+        ...hookOutput?.result,
+        // 🤮
+      } as unknown as SendEventOutput<TOpts>;
+    };
 
     /**
      * It can be valid for a user to send an empty list of events; if this
      * happens, show a warning that this may not be intended, but don't throw.
      */
     if (!payloads.length) {
-      return console.warn(
+      console.warn(
         prettyError({
           type: "warn",
           whatHappened: "`inngest.send()` called with no events",
@@ -377,6 +406,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
           stack: true,
         })
       );
+
+      return await applyHookToOutput({ result: { ids: [] } });
     }
 
     // When sending events, check if the dev server is available.  If so, use the
@@ -399,11 +430,20 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       headers: { ...this.headers },
     });
 
-    if (response.status >= 200 && response.status < 300) {
-      return void (await hooks.transformOutput?.({ payloads: [...payloads] }));
+    let body: SendEventResponse | undefined;
+
+    try {
+      const rawBody: unknown = await response.json();
+      body = await sendEventResponseSchema.parseAsync(rawBody);
+    } catch (err) {
+      throw await this.#getResponseError(response);
     }
 
-    throw await this.#getResponseError(response);
+    if (body.status / 100 !== 2 || body.error) {
+      throw await this.#getResponseError(response, body.error);
+    }
+
+    return await applyHookToOutput({ result: { ids: body.ids } });
   }
 
   public createFunction<
@@ -548,7 +588,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
  * If this is moved, please ensure that using this package in another project
  * can correctly access comments on mutated input and output.
  */
-const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
+export const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
   new InngestMiddleware({
     name: "Inngest: Logger",
     init({ client }) {

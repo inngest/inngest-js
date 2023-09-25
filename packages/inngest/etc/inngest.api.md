@@ -38,7 +38,7 @@ export type EventNameFromTrigger<Events extends Record<string, EventPayload>, T 
 
 // @public
 export interface EventPayload {
-    data: any;
+    data?: any;
     name: string;
     ts?: number;
     user?: any;
@@ -161,7 +161,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     ]>>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
     readonly id: string;
     // Warning: (ae-forgotten-export) The symbol "SendEventPayload" needs to be exported by the entry point index.d.ts
-    send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(payload: Payload): Promise<void>;
+    // Warning: (ae-forgotten-export) The symbol "SendEventOutput" needs to be exported by the entry point index.d.ts
+    send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(payload: Payload): Promise<SendEventOutput<TOpts>>;
     setEventKey(
     eventKey: string): void;
 }
@@ -230,7 +231,7 @@ export type IsStringLiteral<T extends string> = string extends T ? false : true;
 // @public
 export type LiteralZodEventSchema = z.ZodObject<{
     name: z.ZodLiteral<string>;
-    data: z.AnyZodObject | z.ZodAny;
+    data?: z.AnyZodObject | z.ZodAny;
     user?: z.AnyZodObject | z.ZodAny;
 }>;
 
@@ -340,21 +341,21 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${`${number}h` | 
 
 // @public
 export type ZodEventSchemas = Record<string, {
-    data: z.AnyZodObject | z.ZodAny;
+    data?: z.AnyZodObject | z.ZodAny;
     user?: z.AnyZodObject | z.ZodAny;
 }>;
 
 // Warnings were encountered during analysis:
 //
-// src/components/InngestMiddleware.ts:259:3 - (ae-forgotten-export) The symbol "InitialRunInfo" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:272:5 - (ae-forgotten-export) The symbol "MiddlewareRunInput" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:278:5 - (ae-forgotten-export) The symbol "BlankHook" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:311:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:330:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:340:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:357:3 - (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
-// src/types.ts:73:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:676:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:264:3 - (ae-forgotten-export) The symbol "InitialRunInfo" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:277:5 - (ae-forgotten-export) The symbol "MiddlewareRunInput" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:283:5 - (ae-forgotten-export) The symbol "BlankHook" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:316:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:335:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:342:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
+// src/components/InngestMiddleware.ts:359:3 - (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
+// src/types.ts:76:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:721:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

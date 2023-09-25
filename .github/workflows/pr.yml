@@ -187,13 +187,21 @@ jobs:
 
       # Run the example
       - name: Run the example's dev server
-        run: (npm run dev > dev.log 2>&1 &)
+        run: |
+          if [[ $(jq '.scripts["start"]' < package.json;) != null ]]; then
+            (npm run start > dev.log 2>&1 &)
+          else
+            (npm run dev > dev.log 2>&1 &)
+          fi
         working-directory: examples/${{ matrix.example }}
         # Provide the example any env vars it might need
         env:
           HOST: "0.0.0.0"
           PORT: 3000
           DO_NOT_TRACK: 1
+          NODE_ENV: "development"
+          INNGEST_BASE_URL: "http://127.0.0.1:8288/"
+          INNGEST_DEVSERVER_URL: "http://127.0.0.1:8288/"
       - name: Wait for the example to start
         uses: mydea/action-wait-for-api@v1
         with:

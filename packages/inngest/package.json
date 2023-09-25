@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "2.6.1",
+  "version": "2.7.0",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -28,6 +28,73 @@
     "local:pack": "pnpm run build && pnpm run build:copy && yarn pack --verbose --frozen-lockfile --filename inngest.tgz --cwd dist",
     "dev:example": "tsx scripts/runExample.ts"
   },
+  "exports": {
+    ".": {
+      "require": "./index.js",
+      "import": "./index.js",
+      "types": "./index.d.ts"
+    },
+    "./cloudflare": {
+      "require": "./cloudflare.js",
+      "import": "./cloudflare.js",
+      "types": "./cloudflare.d.ts"
+    },
+    "./digitalocean": {
+      "require": "./digitalocean.js",
+      "import": "./digitalocean.js",
+      "types": "./digitalocean.d.ts"
+    },
+    "./edge": {
+      "require": "./edge.js",
+      "import": "./edge.js",
+      "types": "./edge.d.ts"
+    },
+    "./express": {
+      "require": "./express.js",
+      "import": "./express.js",
+      "types": "./express.d.ts"
+    },
+    "./fastify": {
+      "require": "./fastify.js",
+      "import": "./fastify.js",
+      "types": "./fastify.d.ts"
+    },
+    "./h3": {
+      "require": "./h3.js",
+      "import": "./h3.js",
+      "types": "./h3.d.ts"
+    },
+    "./lambda": {
+      "require": "./lambda.js",
+      "import": "./lambda.js",
+      "types": "./lambda.d.ts"
+    },
+    "./next": {
+      "require": "./next.js",
+      "import": "./next.js",
+      "types": "./next.d.ts"
+    },
+    "./nuxt": {
+      "require": "./nuxt.js",
+      "import": "./nuxt.js",
+      "types": "./nuxt.d.ts"
+    },
+    "./redwood": {
+      "require": "./redwood.js",
+      "import": "./redwood.js",
+      "types": "./redwood.d.ts"
+    },
+    "./remix": {
+      "require": "./remix.js",
+      "import": "./remix.js",
+      "types": "./remix.d.ts"
+    },
+    "./deno/fresh": {
+      "require": "./deno/fresh.js",
+      "import": "./deno/fresh.js",
+      "types": "./deno/fresh.d.ts"
+    }
+  },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
     "type": "git",
@@ -48,7 +115,7 @@
     "chalk": "^4.1.2",
     "cross-fetch": "^4.0.0",
     "debug": "^4.3.4",
-    "h3": "^1.0.2",
+    "h3": "^1.8.1",
     "hash.js": "^1.1.7",
     "json-stringify-safe": "^5.0.1",
     "ms": "^2.1.3",
