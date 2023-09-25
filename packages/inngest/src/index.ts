@@ -20,6 +20,7 @@ export { NonRetriableError } from "./components/NonRetriableError";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts";
 export type { IsStringLiteral } from "./helpers/types";
 export { ProxyLogger } from "./middleware/logger";
+export type { LogArg } from "./middleware/logger";
 export type {
   ClientOptions,
   EventNameFromTrigger,

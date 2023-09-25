@@ -245,6 +245,9 @@ export type LiteralZodEventSchema = z.ZodObject<{
 }>;
 
 // @public
+export type LogArg = unknown;
+
+// @public
 export type LogLevel = "fatal" | "error" | "warn" | "info" | "debug" | "silent";
 
 // @public
@@ -299,8 +302,6 @@ export class ProxyLogger implements Logger {
     error(...args: LogArg[]): void;
     // (undocumented)
     flush(): Promise<void>;
-    // Warning: (ae-forgotten-export) The symbol "LogArg" needs to be exported by the entry point index.d.ts
-    //
     // (undocumented)
     info(...args: LogArg[]): void;
     // (undocumented)
