@@ -338,6 +338,28 @@ export interface EventPayload {
   ts?: number;
 }
 
+export const sendEventResponseSchema = z.object({
+  /**
+   * Event IDs
+   */
+  ids: z.array(z.string()),
+
+  /**
+   * HTTP Status Code. Will be undefined if no request was sent.
+   */
+  status: z.number(),
+
+  /**
+   * Error message. Will be undefined if no error occurred.
+   */
+  error: z.string().optional(),
+});
+
+/**
+ * The response from the Inngest Event API
+ */
+export type SendEventResponse = z.output<typeof sendEventResponseSchema>;
+
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
  * orchestrate steps and retries.
