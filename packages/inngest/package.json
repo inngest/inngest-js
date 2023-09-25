@@ -93,7 +93,12 @@
       "require": "./deno/fresh.js",
       "import": "./deno/fresh.js",
       "types": "./deno/fresh.d.ts"
-    }
+    },
+    "./api/*": "./api/*.js",
+    "./components": "./components/*.js",
+    "./deno/*": "./deno/*.js",
+    "./helpers/*": "./helpers/*.js",
+    "./middleware/*": "./middleware/*.js"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
