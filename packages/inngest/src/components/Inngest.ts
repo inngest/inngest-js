@@ -367,11 +367,17 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       payloads = [...inputChanges.payloads];
     }
 
-    // Ensure that we always add a "ts" field to events.  This is auto-filled by the
-    // event server so is safe, and adding here fixes Next.js server action cache issues.
-    payloads = payloads.map((p) =>
-      p.ts ? p : { ...p, ts: new Date().getTime() }
-    );
+    // Ensure that we always add "ts" and "data" fields to events. "ts" is auto-
+    // filled by the event server so is safe, and adding here fixes Next.js
+    // server action cache issues.
+    payloads = payloads.map((p) => {
+      return {
+        ...p,
+        ts: p.ts || new Date().getTime(),
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        data: p.data || {},
+      };
+    });
 
     const applyHookToOutput = async (
       arg: Parameters<NonNullable<SendEventHookStack["transformOutput"]>>[0]

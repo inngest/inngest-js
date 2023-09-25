@@ -1,17 +1,8 @@
 import {
-  getHeader,
-  getMethod,
-  getQuery,
-  readBody,
-  send,
-  setHeaders,
-  type H3Event,
-} from "h3";
-import {
-  InngestCommHandler,
+  type InternalServeHandlerOptions,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
-import { processEnv } from "./helpers/env";
+import { serve as serveH3 } from "./h3";
 import { type SupportedFrameworkName } from "./types";
 
 export const frameworkName: SupportedFrameworkName = "nuxt";
@@ -23,35 +14,10 @@ export const frameworkName: SupportedFrameworkName = "nuxt";
  * @public
  */
 export const serve = (options: ServeHandlerOptions) => {
-  const handler = new InngestCommHandler({
-    frameworkName,
+  const optsOverrides: InternalServeHandlerOptions = {
     ...options,
-    handler: (event: H3Event) => {
-      return {
-        body: () => readBody(event),
-        headers: (key) => getHeader(event, key),
-        method: () => getMethod(event),
-        url: () => {
-          const host = String(getHeader(event, "host"));
-          const protocol =
-            processEnv("NODE_ENV") === "development" ? "http" : "https";
+    frameworkName,
+  };
 
-          const url = new URL(String(event.path), `${protocol}://${host}`);
-
-          return url;
-        },
-        queryString: (key) => getQuery(event)[key]?.toString(),
-        transformResponse: ({ body, status, headers }) => {
-          const { res } = event.node;
-
-          res.statusCode = status;
-          setHeaders(event, headers);
-
-          return send(event, body);
-        },
-      };
-    },
-  });
-
-  return handler.createHandler();
+  return serveH3(optsOverrides);
 };

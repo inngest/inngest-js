@@ -299,7 +299,7 @@ export interface EventPayload {
    * Any data pertinent to the event
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: any;
+  data?: any;
 
   /**
    * Any user data associated with the event
@@ -1032,6 +1032,7 @@ export type SupportedFrameworkName =
   | "aws-lambda"
   | "nextjs"
   | "nuxt"
+  | "h3"
   | "redwoodjs"
   | "remix"
   | "deno/fresh"

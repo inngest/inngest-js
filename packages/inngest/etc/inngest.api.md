@@ -38,7 +38,7 @@ export type EventNameFromTrigger<Events extends Record<string, EventPayload>, T 
 
 // @public
 export interface EventPayload {
-    data: any;
+    data?: any;
     name: string;
     ts?: number;
     user?: any;
@@ -229,7 +229,7 @@ export type IsStringLiteral<T extends string> = string extends T ? false : true;
 // @public
 export type LiteralZodEventSchema = z.ZodObject<{
     name: z.ZodLiteral<string>;
-    data: z.AnyZodObject | z.ZodAny;
+    data?: z.AnyZodObject | z.ZodAny;
     user?: z.AnyZodObject | z.ZodAny;
 }>;
 
@@ -339,7 +339,7 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${`${number}h` | 
 
 // @public
 export type ZodEventSchemas = Record<string, {
-    data: z.AnyZodObject | z.ZodAny;
+    data?: z.AnyZodObject | z.ZodAny;
     user?: z.AnyZodObject | z.ZodAny;
 }>;
 

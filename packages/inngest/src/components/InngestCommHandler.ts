@@ -60,6 +60,14 @@ export interface ServeHandlerOptions extends RegisterOptions {
   functions: readonly AnyInngestFunction[];
 }
 
+export interface InternalServeHandlerOptions extends ServeHandlerOptions {
+  /**
+   * Can be used to override the framework name given to a particular serve
+   * handler.
+   */
+  frameworkName?: string;
+}
+
 interface InngestCommHandlerOptions<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Input extends any[] = any[],
@@ -862,7 +870,7 @@ export class InngestCommHandler<
       }
     }
 
-    if (deployId) {
+    if (deployId && deployId !== "undefined") {
       registerURL.searchParams.set(queryKeys.DeployId, deployId);
     }
 
