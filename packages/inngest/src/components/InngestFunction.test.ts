@@ -7,15 +7,15 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { jest } from "@jest/globals";
 import { EventSchemas, InngestMiddleware, type EventPayload } from "@local";
-import {
-  _internals,
-  type ExecutionResult,
-  type ExecutionResults,
-  type InngestExecutionOptions,
-} from "@local/components/InngestExecution";
 import { InngestFunction } from "@local/components/InngestFunction";
 import { STEP_INDEXING_SUFFIX } from "@local/components/InngestStepTools";
 import { NonRetriableError } from "@local/components/NonRetriableError";
+import {
+  type ExecutionResult,
+  type ExecutionResults,
+  type InngestExecutionOptions,
+} from "@local/components/execution/InngestExecution";
+import { _internals } from "@local/components/execution/v1";
 import { ServerTiming } from "@local/helpers/ServerTiming";
 import { internalEvents } from "@local/helpers/consts";
 import {
@@ -146,6 +146,7 @@ describe("runFn", () => {
 
             const execution = fn["createExecution"]({
               data: { event: { name: "foo", data: { foo: "foo" } } },
+              runId: "run",
               stepState: {},
               stepCompletionOrder: [],
             });
@@ -185,6 +186,7 @@ describe("runFn", () => {
             const execution = fn["createExecution"]({
               data: { event: { name: "foo", data: { foo: "foo" } } },
               stepState: {},
+              runId: "run",
               stepCompletionOrder: [],
             });
 
@@ -216,6 +218,7 @@ describe("runFn", () => {
     ) => {
       const execution = fn["createExecution"]({
         data: { event: opts?.event || { name: "foo", data: {} } },
+        runId: "run",
         stepState,
         stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
         isFailureHandler: Boolean(opts?.onFailure),

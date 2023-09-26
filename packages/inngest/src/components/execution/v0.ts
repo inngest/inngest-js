@@ -27,7 +27,6 @@ import {
   type IncomingOp,
   type OpStack,
   type OutgoingOp,
-  type StepOptionsOrId,
 } from "../../types";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware";
 import {
@@ -398,13 +397,8 @@ export class V0InngestExecution
 
       this.#state.hasUsedTools = true;
 
-      const [stepOptionsOrId, ...remainingArgs] = args as unknown as [
-        StepOptionsOrId,
-        ...unknown[]
-      ];
-
-      const stepOptions = getStepOptions(stepOptionsOrId);
-      const opId = hashOp(matchOp(stepOptions, ...remainingArgs));
+      const stepOptions = getStepOptions(args[0]);
+      const opId = hashOp(matchOp(stepOptions, ...args.slice(1)));
 
       return new Promise<unknown>((resolve, reject) => {
         this.#state.tickOps[opId.id] = {

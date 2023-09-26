@@ -25,7 +25,6 @@ import {
   type EventPayload,
   type FailureEventArgs,
   type OutgoingOp,
-  type StepOptionsOrId,
 } from "../../types";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware";
 import {
@@ -684,14 +683,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         );
       }
 
-      const [stepOptionsOrId, ...remainingArgs] = args as unknown as [
-        StepOptionsOrId,
-        ...unknown[]
-      ];
-
-      const stepOptions = getStepOptions(stepOptionsOrId);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      const opId = matchOp(stepOptions, ...remainingArgs);
+      const stepOptions = getStepOptions(args[0]);
+      const opId = matchOp(stepOptions, ...args.slice(1));
 
       if (this.#state.steps[opId.id]) {
         const originalId = opId.id;

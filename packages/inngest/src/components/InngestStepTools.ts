@@ -45,7 +45,7 @@ export type MatchOpFn<
 export type StepHandler = (info: {
   matchOp: MatchOpFn;
   opts?: StepToolOptions;
-  args: unknown[];
+  args: [StepOptionsOrId, ...unknown[]];
 }) => Promise<unknown>;
 
 export interface StepToolOptions<
@@ -134,9 +134,9 @@ export const createStepTools = <
     matchOp: MatchOpFn<T>,
     opts?: StepToolOptions<T>
   ): T => {
-    // return (async (...args: Parameters<T>): Promise<unknown> => {
     return (async (...args: Parameters<T>): Promise<unknown> => {
-      return stepHandler({ args, matchOp, opts });
+      const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
+      return stepHandler({ args: parsedArgs, matchOp, opts });
     }) as T;
   };
 
@@ -183,7 +183,7 @@ export const createStepTools = <
           id,
           op: StepOpCode.StepPlanned,
           name: "sendEvent",
-          displayName: name,
+          displayName: name ?? id,
         };
       },
       {
@@ -238,7 +238,7 @@ export const createStepTools = <
           op: StepOpCode.WaitForEvent,
           name: opts.event,
           opts: matchOpts,
-          displayName: name,
+          displayName: name ?? id,
         };
       }
     ),
@@ -287,7 +287,7 @@ export const createStepTools = <
           id,
           op: StepOpCode.StepPlanned,
           name: id,
-          displayName: name,
+          displayName: name ?? id,
         };
       },
       { fn: (stepOptions, fn) => fn() }
@@ -321,7 +321,7 @@ export const createStepTools = <
         id,
         op: StepOpCode.Sleep,
         name: timeStr(time),
-        displayName: name,
+        displayName: name ?? id,
       };
     }),
 
@@ -352,7 +352,7 @@ export const createStepTools = <
           id,
           op: StepOpCode.Sleep,
           name: date.toISOString(),
-          displayName: name,
+          displayName: name ?? id,
         };
       } catch (err) {
         /**
