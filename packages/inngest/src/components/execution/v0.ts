@@ -1,9 +1,33 @@
+import { z } from "zod";
 import {
+  ErrCode,
+  deserializeError,
+  functionStoppedRunningErr,
+  prettyError,
+  serializeError,
+} from "../../helpers/errors";
+import {
+  resolveAfterPending,
+  resolveNextTick,
+  runAsPromise,
+} from "../../helpers/promises";
+import {
+  StepOpCode,
+  failureEventErrorSchema,
+  type AnyContext,
+  type AnyHandler,
   type BaseContext,
   type ClientOptions,
+  type EventPayload,
+  type FailureEventArgs,
   type HashedOp,
+  type IncomingOp,
+  type OpStack,
+  type OutgoingOp,
 } from "../../types";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware";
+import { NonRetriableError } from "../NonRetriableError";
+import { RetryAfterError } from "../RetryAfterError";
 import {
   InngestExecution,
   type ExecutionResult,
@@ -16,17 +40,32 @@ export const createV0InngestExecution: InngestExecutionFactory = (options) => {
   return new V0InngestExecution(options);
 };
 
+/**
+ * TODO timer
+ *
+ * ---
+ *
+ * Step tools
+ * fn arg, incl failure handler
+ * opts.fns
+ * run user fn
+ * pos iteration - RIP OUT OF STEPTOOLS
+ */
 export class V0InngestExecution
   extends InngestExecution
   implements IInngestExecution
 {
   #state: V0ExecutionState;
   #execution: Promise<ExecutionResult> | undefined;
+  #userFnToRun: AnyHandler;
+  #fnArg: AnyContext;
 
   constructor(options: InngestExecutionOptions) {
     super(options);
 
+    this.#userFnToRun = this.#getUserFnToRun();
     this.#state = this.#createExecutionState();
+    this.#fnArg = this.#createFnArg(this.#state);
   }
 
   public start() {
@@ -41,7 +80,168 @@ export class V0InngestExecution
   async #start(): Promise<ExecutionResult> {
     this.#state.hooks = await this.#initializeMiddleware();
 
-    return { type: "function-resolved", data: {} };
+    try {
+      await this.#transformInput();
+      await this.#state.hooks.beforeMemoization?.();
+
+      if (this.#state.opStack.length === 0 && !this.options.requestedRunStep) {
+        await this.#state.hooks.afterMemoization?.();
+        await this.#state.hooks.beforeExecution?.();
+      }
+
+      const userFnPromise = runAsPromise(() => this.#userFnToRun(this.#fnArg));
+
+      let pos = -1;
+
+      do {
+        if (pos >= 0) {
+          if (
+            !this.options.requestedRunStep &&
+            pos === this.#state.opStack.length - 1
+          ) {
+            await this.#state.hooks.afterMemoization?.();
+            await this.#state.hooks.beforeExecution?.();
+          }
+
+          this.#state.tickOps = {};
+          const incomingOp = this.#state.opStack[pos] as IncomingOp;
+          this.#state.currentOp = this.#state.allFoundOps[incomingOp.id];
+
+          if (!this.#state.currentOp) {
+            /**
+             * We're trying to resume the function, but we can't find where to go.
+             *
+             * This means that either the function has changed or there are async
+             * actions in-between steps that we haven't noticed in previous
+             * executions.
+             *
+             * Whichever the case, this is bad and we can't continue in this
+             * undefined state.
+             */
+            throw new NonRetriableError(
+              prettyError({
+                whatHappened: " Your function was stopped from running",
+                why: "We couldn't resume your function's state because it may have changed since the run started or there are async actions in-between steps that we haven't noticed in previous executions.",
+                consequences:
+                  "Continuing to run the function may result in unexpected behaviour, so we've stopped your function to ensure nothing unexpected happened!",
+                toFixNow:
+                  "Ensure that your function is either entirely step-based or entirely non-step-based, by either wrapping all asynchronous logic in `step.run()` calls or by removing all `step.*()` calls.",
+                otherwise:
+                  "For more information on why step functions work in this manner, see https://www.inngest.com/docs/functions/multi-step#gotchas",
+                stack: true,
+                code: ErrCode.NON_DETERMINISTIC_FUNCTION,
+              })
+            );
+          }
+
+          this.#state.currentOp.fulfilled = true;
+
+          if (typeof incomingOp.data !== "undefined") {
+            this.#state.currentOp.resolve(incomingOp.data);
+          } else {
+            this.#state.currentOp.reject(incomingOp.error);
+          }
+        }
+
+        await resolveAfterPending();
+        this.#state.reset();
+        pos++;
+      } while (pos < this.#state.opStack.length);
+
+      await this.#state.hooks.afterMemoization?.();
+
+      const discoveredOps = Object.values(this.#state.tickOps).map<OutgoingOp>(
+        tickOpToOutgoing
+      );
+
+      const runStep =
+        this.options.requestedRunStep ||
+        this.#getEarlyExecRunStep(discoveredOps);
+
+      if (runStep) {
+        const userFnOp = this.#state.allFoundOps[runStep];
+        const stepToRun = userFnOp?.fn;
+
+        if (!stepToRun) {
+          throw new Error(
+            `Bad stack; executor requesting to run unknown step "${runStep}"`
+          );
+        }
+
+        const outgoingUserFnOp = {
+          ...tickOpToOutgoing(userFnOp),
+          op: StepOpCode.RunStep,
+        };
+
+        await this.#state.hooks.beforeExecution?.();
+        this.#state.executingStep = true;
+
+        const result = await runAsPromise(stepToRun)
+          .finally(() => {
+            this.#state.executingStep = false;
+          })
+          .catch(async (error: Error) => {
+            return await this.#transformOutput({ error }, outgoingUserFnOp);
+          })
+          .then(async (data) => {
+            await this.#state.hooks?.afterExecution?.();
+            return await this.#transformOutput({ data }, outgoingUserFnOp);
+          });
+
+        return { type: "step-ran", step: { ...outgoingUserFnOp, ...result } };
+      }
+
+      if (!discoveredOps.length) {
+        const fnRet = await Promise.race([
+          userFnPromise.then((data) => ({ type: "complete", data } as const)),
+          resolveNextTick().then(() => ({ type: "incomplete" } as const)),
+        ]);
+
+        if (fnRet.type === "complete") {
+          await this.#state.hooks.afterExecution?.();
+
+          const allOpsFulfilled = Object.values(this.#state.allFoundOps).every(
+            (op) => {
+              return op.fulfilled;
+            }
+          );
+
+          if (allOpsFulfilled) {
+            return await this.#transformOutput({ data: fnRet.data });
+          }
+        } else if (!this.#state.hasUsedTools) {
+          this.#state.nonStepFnDetected = true;
+          const data = await userFnPromise;
+          await this.#state.hooks.afterExecution?.();
+          return await this.#transformOutput({ data });
+        } else {
+          const hasOpsPending = Object.values(this.#state.allFoundOps).some(
+            (op) => {
+              return op.fulfilled === false;
+            }
+          );
+
+          if (!hasOpsPending) {
+            throw new NonRetriableError(
+              functionStoppedRunningErr(
+                ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION
+              )
+            );
+          }
+        }
+      }
+
+      await this.#state.hooks.afterExecution?.();
+
+      return {
+        type: "steps-found",
+        steps: discoveredOps as [OutgoingOp, ...OutgoingOp[]],
+      };
+    } catch (error) {
+      return await this.#transformOutput({ error });
+    } finally {
+      await this.#state.hooks.beforeResponse?.();
+    }
   }
 
   async #initializeMiddleware(): Promise<RunHookStack> {
@@ -94,9 +294,131 @@ export class V0InngestExecution
       },
       nonStepFnDetected: false,
       executingStep: false,
+      opStack: this.options.stepCompletionOrder.reduce<IncomingOp[]>(
+        (acc, stepId) => {
+          const stepState = this.options.stepState[stepId];
+          if (!stepState) {
+            return acc;
+          }
+
+          return [...acc, stepState];
+        },
+        []
+      ),
     };
 
     return state;
+  }
+
+  #getUserFnToRun(): AnyHandler {
+    if (!this.options.isFailureHandler) {
+      return this.options.fn["fn"];
+    }
+
+    if (!this.options.fn["onFailureFn"]) {
+      /**
+       * Somehow, we've ended up detecting that this is a failure handler but
+       * doesn't have an `onFailure` function. This should never happen.
+       */
+      throw new Error("Cannot find function `onFailure` handler");
+    }
+
+    return this.options.fn["onFailureFn"];
+  }
+
+  #createFnArg(state: V0ExecutionState): AnyContext {
+    const step = {} as any; // TODO
+
+    const fnArg = {
+      ...(this.options.data as { event: EventPayload }),
+      step,
+    } as AnyContext;
+
+    if (this.options.isFailureHandler) {
+      const eventData = z
+        .object({ error: failureEventErrorSchema })
+        .parse(fnArg.event?.data);
+
+      (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
+        ...fnArg,
+        error: deserializeError(eventData.error),
+      };
+    }
+
+    return fnArg;
+  }
+
+  /**
+   * Using middleware, transform input before running.
+   */
+  async #transformInput() {
+    const inputMutations = await this.#state.hooks?.transformInput?.({
+      ctx: { ...this.#fnArg },
+      steps: Object.values(this.options.stepState),
+      fn: this.options.fn,
+    });
+
+    if (inputMutations?.ctx) {
+      this.#fnArg = inputMutations.ctx;
+    }
+
+    if (inputMutations?.steps) {
+      this.#state.opStack = [...inputMutations.steps];
+    }
+  }
+
+  #getEarlyExecRunStep(ops: OutgoingOp[]): string | undefined {
+    if (ops.length !== 1) return;
+
+    const op = ops[0];
+
+    if (
+      op &&
+      op.op === StepOpCode.StepPlanned &&
+      typeof op.opts === "undefined"
+    ) {
+      return op.id;
+    }
+  }
+
+  /**
+   * Using middleware, transform output before returning.
+   */
+  async #transformOutput(
+    dataOrError: Parameters<
+      NonNullable<RunHookStack["transformOutput"]>
+    >[0]["result"],
+    step?: Readonly<Omit<OutgoingOp, "id">>
+  ): Promise<ExecutionResult> {
+    const output = { ...dataOrError };
+
+    if (typeof output.error !== "undefined") {
+      output.data = serializeError(output.error);
+    }
+
+    const transformedOutput = await this.#state.hooks?.transformOutput?.({
+      result: { ...output },
+      step,
+    });
+
+    const { data, error } = { ...output, ...transformedOutput?.result };
+
+    if (typeof error !== "undefined") {
+      /**
+       * Ensure we give middleware the chance to decide on retriable behaviour
+       * by looking at the error returned from output transformation.
+       */
+      let retriable: boolean | string = !(error instanceof NonRetriableError);
+      if (retriable && error instanceof RetryAfterError) {
+        retriable = error.retryAfter;
+      }
+
+      const serializedError = serializeError(error);
+
+      return { type: "function-rejected", error: serializedError, retriable };
+    }
+
+    return { type: "function-resolved", data };
   }
 }
 
@@ -186,4 +508,22 @@ export interface V0ExecutionState {
    * handle all possible execution paths.
    */
   hooks?: RunHookStack;
+
+  /**
+   * The op stack to pass to the function as state, likely stored in
+   * `ctx._state` in the Inngest payload.
+   *
+   * This must be provided in order to always be cognizant of step function
+   * state and to allow for multi-step functions.
+   */
+  opStack: OpStack;
 }
+
+const tickOpToOutgoing = (op: TickOp): OutgoingOp => {
+  return {
+    op: op.op,
+    id: op.id,
+    name: op.name,
+    opts: op.opts,
+  };
+};
