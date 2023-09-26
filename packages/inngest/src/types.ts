@@ -656,6 +656,8 @@ export interface RegisterOptions {
 
 /**
  * A user-friendly method of specifying a trigger for an Inngest function.
+ *
+ * @public
  */
 export type TriggerOptions<T extends string> = StrictUnion<
   | {

@@ -29,8 +29,6 @@ export interface ClientOptions {
 // @public
 export type Combine<TCurr extends Record<string, EventPayload>, TInc extends StandardEventSchemas> = IsStringLiteral<keyof TCurr & string> extends true ? Simplify<Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> & StandardEventSchemaToPayload<TInc>> : StandardEventSchemaToPayload<TInc>;
 
-// Warning: (ae-forgotten-export) The symbol "TriggerOptions" needs to be exported by the entry point index.d.ts
-//
 // @public
 export type EventNameFromTrigger<Events extends Record<string, EventPayload>, T extends TriggerOptions<keyof Events & string>> = T extends string ? T : T extends {
     event: string;
@@ -235,6 +233,9 @@ export type LiteralZodEventSchema = z.ZodObject<{
     user?: z.AnyZodObject | z.ZodAny;
 }>;
 
+// @public
+export type LogArg = unknown;
+
 // Warning: (ae-forgotten-export) The symbol "logLevels" needs to be exported by the entry point index.d.ts
 //
 // @public
@@ -277,6 +278,25 @@ export class NonRetriableError extends Error {
         cause?: unknown;
     });
     readonly cause?: unknown;
+}
+
+// @public
+export class ProxyLogger implements Logger {
+    constructor(logger: Logger);
+    // (undocumented)
+    debug(...args: LogArg[]): void;
+    // (undocumented)
+    disable(): void;
+    // (undocumented)
+    enable(): void;
+    // (undocumented)
+    error(...args: LogArg[]): void;
+    // (undocumented)
+    flush(): Promise<void>;
+    // (undocumented)
+    info(...args: LogArg[]): void;
+    // (undocumented)
+    warn(...args: LogArg[]): void;
 }
 
 // @public
@@ -337,7 +357,24 @@ export interface StepOptions {
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
 // @public
+export type StrictUnion<T> = StrictUnionHelper<T, T>;
+
+// @public
+export type StrictUnionHelper<T, TAll> = T extends any ? T & Partial<Record<Exclude<UnionKeys<TAll>, keyof T>, never>> : never;
+
+// @public
 export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${`${number}h` | ""}${`${number}m` | ""}${`${number}s` | ""}`;
+
+// @public
+export type TriggerOptions<T extends string> = StrictUnion<{
+    event: T;
+    if?: string;
+} | {
+    cron: string;
+}>;
+
+// @public
+export type UnionKeys<T> = T extends T ? keyof T : never;
 
 // @public
 export type ZodEventSchemas = Record<string, {
@@ -355,7 +392,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:342:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:359:3 - (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
 // src/types.ts:76:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:721:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:723:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

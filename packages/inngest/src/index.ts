@@ -18,7 +18,14 @@ export type {
 export { NonRetriableError } from "./components/NonRetriableError";
 export { RetryAfterError } from "./components/RetryAfterError";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts";
-export type { IsStringLiteral } from "./helpers/types";
+export type {
+  IsStringLiteral,
+  StrictUnion,
+  StrictUnionHelper,
+  UnionKeys,
+} from "./helpers/types";
+export { ProxyLogger } from "./middleware/logger";
+export type { LogArg } from "./middleware/logger";
 export type {
   ClientOptions,
   EventNameFromTrigger,
@@ -32,4 +39,5 @@ export type {
   StepOptions,
   StepOptionsOrId,
   TimeStr,
+  TriggerOptions,
 } from "./types";

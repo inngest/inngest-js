@@ -67,23 +67,29 @@ export type ObjectPaths<T extends Record<string, any>> = Path<T>;
 
 /**
  * Returns all keys from objects in the union `T`.
+ *
+ * @public
  */
-type UnionKeys<T> = T extends T ? keyof T : never;
+export type UnionKeys<T> = T extends T ? keyof T : never;
 
 /**
  * Enforces strict union comformity by ensuring that all potential keys in a
  * union of objects are accounted for in every object.
  *
  * Requires two generics to be used, so is abstracted by {@link StrictUnion}.
+ *
+ * @public
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type StrictUnionHelper<T, TAll> = T extends any
+export type StrictUnionHelper<T, TAll> = T extends any
   ? T & Partial<Record<Exclude<UnionKeys<TAll>, keyof T>, never>>
   : never;
 
 /**
  * Enforces strict union comformity by ensuring that all potential keys in a
  * union of objects are accounted for in every object.
+ *
+ * @public
  */
 export type StrictUnion<T> = StrictUnionHelper<T, T>;
 
