@@ -1,6 +1,7 @@
 import { EventSchemas, InngestMiddleware, type EventPayload } from "@local";
 import { envKeys, headerKeys } from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
+import { type SendEventResponse } from "@local/types";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
 
@@ -57,21 +58,38 @@ describe("send", () => {
     const originalProcessEnv = process.env;
     const originalFetch = global.fetch;
 
+    const setFetch = ({
+      status = 200,
+      ids,
+      error,
+    }: Partial<SendEventResponse> = {}) => {
+      return jest.fn((url: string, opts: { body: string }) => {
+        const json = {
+          status,
+          ids:
+            ids ??
+            (JSON.parse(opts.body) as EventPayload[]).map(() => "test-id"),
+          error,
+        };
+
+        return Promise.resolve({
+          status,
+          json: () => {
+            return Promise.resolve(json);
+          },
+          text: () => {
+            return Promise.resolve(JSON.stringify(json));
+          },
+        });
+      }) as unknown as typeof fetch;
+    };
+
     beforeAll(() => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      global.fetch = jest.fn(
-        () =>
-          Promise.resolve({
-            status: 200,
-            json: () => Promise.resolve({}),
-          })
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ) as any;
+      global.fetch = setFetch();
     });
 
     beforeEach(() => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
-      (global.fetch as any).mockClear();
+      (global.fetch as jest.Mock).mockClear();
       process.env = { ...originalProcessEnv };
     });
 
@@ -326,6 +344,36 @@ describe("send", () => {
           ]),
         })
       );
+    });
+
+    test("should return error from Inngest if parsed", () => {
+      global.fetch = setFetch({ status: 400, error: "Test Error" });
+      const inngest = createClient({ name: "test", eventKey: testEventKey });
+
+      return expect(inngest.send(testEvent)).rejects.toThrowError("Test Error");
+    });
+
+    test("should return error from Inngest if parsed even for 200", () => {
+      global.fetch = setFetch({ status: 200, error: "Test Error" });
+      const inngest = createClient({ name: "test", eventKey: testEventKey });
+
+      return expect(inngest.send(testEvent)).rejects.toThrowError("Test Error");
+    });
+
+    test("should return error if bad status code with no error string", () => {
+      global.fetch = setFetch({ status: 400 });
+      const inngest = createClient({ name: "test", eventKey: testEventKey });
+
+      return expect(inngest.send(testEvent)).rejects.toThrowError(
+        "Cannot process event payload"
+      );
+    });
+
+    test("should return unknown error from response text if very bad status code", () => {
+      global.fetch = setFetch({ status: 600 });
+      const inngest = createClient({ name: "test", eventKey: testEventKey });
+
+      return expect(inngest.send(testEvent)).rejects.toThrowError("600");
     });
   });
 
