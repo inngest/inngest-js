@@ -411,7 +411,7 @@ export class V0InngestExecution
       });
     };
 
-    const step = createStepTools(this.options.client, this.#state, stepHandler);
+    const step = createStepTools(this.options.client, stepHandler);
 
     const fnArg = {
       ...(this.options.data as { event: EventPayload }),

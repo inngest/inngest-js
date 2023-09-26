@@ -14,7 +14,6 @@ import { createClient } from "../test/helpers";
 const getStepTools = () => {
   const step = createStepTools(
     createClient({ id: "test" }),
-    {},
     ({ args, matchOp }) => {
       const stepOptions = getStepOptions(args[0]);
       return Promise.resolve(matchOp(stepOptions, ...args.slice(1)));
@@ -422,12 +421,7 @@ describe("sendEvent", () => {
       });
 
       const sendEvent: ReturnType<
-        typeof createStepTools<
-          typeof opts,
-          EventsFromOpts<typeof opts>,
-          "foo",
-          {}
-        >
+        typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       >["sendEvent"] = (() => undefined) as any;
 

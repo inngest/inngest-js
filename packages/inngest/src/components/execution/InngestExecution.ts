@@ -2,7 +2,7 @@ import Debug, { type Debugger } from "debug";
 import { type Simplify } from "type-fest";
 import { type MaybePromise } from "type-plus";
 import { type ServerTiming } from "../../helpers/ServerTiming";
-import { type IncomingOp, type OutgoingOp } from "../../types";
+import { type AnyContext, type IncomingOp, type OutgoingOp } from "../../types";
 import { type AnyInngest } from "../Inngest";
 import { type ActionResponse } from "../InngestCommHandler";
 import { type AnyInngestFunction } from "../InngestFunction";
@@ -35,6 +35,11 @@ export interface MemoizedOp extends IncomingOp {
   seen?: boolean;
 }
 
+export enum ExecutionVersion {
+  V0 = 0,
+  V1 = 1,
+}
+
 /**
  * Options for creating a new {@link InngestExecution} instance.
  */
@@ -42,7 +47,7 @@ export interface InngestExecutionOptions {
   client: AnyInngest;
   fn: AnyInngestFunction;
   runId: string;
-  data: unknown;
+  data: Omit<AnyContext, "step">;
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
   requestedRunStep?: string;

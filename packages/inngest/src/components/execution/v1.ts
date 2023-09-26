@@ -517,12 +517,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   #createStepTools(): ReturnType<
-    typeof createStepTools<
-      ClientOptions,
-      Record<string, EventPayload>,
-      string,
-      V1ExecutionState
-    >
+    typeof createStepTools<ClientOptions, Record<string, EventPayload>, string>
   > {
     /**
      * A list of steps that have been found and are being rolled up before being
@@ -758,7 +753,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       return promise;
     };
 
-    return createStepTools(this.options.client, this.#state, stepHandler);
+    return createStepTools(this.options.client, stepHandler);
   }
 
   #getUserFnToRun(): AnyHandler {

@@ -107,11 +107,9 @@ export const STEP_INDEXING_SUFFIX = ":";
 export const createStepTools = <
   TOpts extends ClientOptions,
   Events extends EventsFromOpts<TOpts>,
-  TriggeringEvent extends keyof Events & string,
-  TState
+  TriggeringEvent extends keyof Events & string
 >(
   client: Inngest<TOpts>,
-  state: TState,
   stepHandler: StepHandler
 ) => {
   /**

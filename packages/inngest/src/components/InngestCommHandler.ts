@@ -20,13 +20,14 @@ import {
   skipDevServer,
 } from "../helpers/env";
 import { rethrowError, serializeError } from "../helpers/errors";
-import { parseFnData } from "../helpers/functions";
+import { fetchAllFnData, parseFnData } from "../helpers/functions";
 import { runAsPromise } from "../helpers/promises";
 import { createStream } from "../helpers/stream";
 import { hashSigningKey, stringify } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
 import {
   logLevels,
+  type EventPayload,
   type FunctionConfig,
   type IntrospectRequest,
   type LogLevel,
@@ -41,6 +42,7 @@ import {
   type InngestFunction,
 } from "./InngestFunction";
 import {
+  ExecutionVersion,
   type ExecutionResult,
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
@@ -505,6 +507,7 @@ export class InngestCommHandler<
           client: this.client,
           extras: {
             "Server-Timing": timer.getHeader(),
+            [headerKeys.RequestVersion]: ExecutionVersion.V1.toString(),
           },
         });
 
@@ -774,11 +777,14 @@ export class InngestCommHandler<
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
 
-    const fndata = await parseFnData(data, this.client["inngestApi"]);
+    const fndata = await fetchAllFnData(
+      parseFnData(data),
+      this.client["inngestApi"]
+    );
     if (!fndata.ok) {
       throw new Error(fndata.error);
     }
-    const { event, events, steps, ctx } = fndata.value;
+    const { event, events, steps, ctx, version } = fndata.value;
 
     const stepState = Object.entries(steps ?? {}).reduce<
       InngestExecutionOptions["stepState"]
@@ -790,14 +796,22 @@ export class InngestCommHandler<
       };
     }, {});
 
-    const execution = fn.fn["createExecution"]({
+    const execution = fn.fn["createExecution"](version, {
       runId: ctx?.run_id || "",
-      data: { event, events, runId: ctx?.run_id, attempt: ctx?.attempt },
+      data: {
+        event: event as EventPayload,
+        events: events as [EventPayload, ...EventPayload[]],
+        runId: ctx?.run_id || "",
+        attempt: ctx?.attempt ?? 0,
+      },
       stepState,
       requestedRunStep: stepId === "step" ? undefined : stepId || undefined,
       timer,
       isFailureHandler: fn.onFailure,
-      disableImmediateExecution: fndata.value.ctx?.disable_immediate_execution,
+      disableImmediateExecution:
+        fndata.value.version === 1
+          ? fndata.value.ctx?.disable_immediate_execution
+          : undefined,
       stepCompletionOrder: ctx?.stack?.stack ?? [],
     });
 

@@ -11,6 +11,7 @@ import { InngestFunction } from "@local/components/InngestFunction";
 import { STEP_INDEXING_SUFFIX } from "@local/components/InngestStepTools";
 import { NonRetriableError } from "@local/components/NonRetriableError";
 import {
+  ExecutionVersion,
   type ExecutionResult,
   type ExecutionResults,
   type InngestExecutionOptions,
@@ -34,6 +35,7 @@ import {
   type FailureEventPayload,
   type OutgoingOp,
 } from "@local/types";
+import { fromPartial } from "@total-typescript/shoehorn";
 import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
@@ -144,8 +146,10 @@ describe("runFn", () => {
               flowFn
             );
 
-            const execution = fn["createExecution"]({
-              data: { event: { name: "foo", data: { foo: "foo" } } },
+            const execution = fn["createExecution"](ExecutionVersion.V1, {
+              data: fromPartial({
+                event: { name: "foo", data: { foo: "foo" } },
+              }),
               runId: "run",
               stepState: {},
               stepCompletionOrder: [],
@@ -183,8 +187,10 @@ describe("runFn", () => {
           });
 
           test("wrap thrown error", async () => {
-            const execution = fn["createExecution"]({
-              data: { event: { name: "foo", data: { foo: "foo" } } },
+            const execution = fn["createExecution"](ExecutionVersion.V1, {
+              data: fromPartial({
+                event: { name: "foo", data: { foo: "foo" } },
+              }),
               stepState: {},
               runId: "run",
               stepCompletionOrder: [],
@@ -216,8 +222,8 @@ describe("runFn", () => {
         disableImmediateExecution?: boolean;
       }
     ) => {
-      const execution = fn["createExecution"]({
-        data: { event: opts?.event || { name: "foo", data: {} } },
+      const execution = fn["createExecution"](ExecutionVersion.V1, {
+        data: fromPartial({ event: opts?.event || { name: "foo", data: {} } }),
         runId: "run",
         stepState,
         stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),

@@ -11,9 +11,11 @@ import {
 import { type EventsFromOpts, type Inngest } from "./Inngest";
 import { type MiddlewareRegisterReturn } from "./InngestMiddleware";
 import {
+  ExecutionVersion,
   type IInngestExecution,
   type InngestExecutionOptions,
 } from "./execution/InngestExecution";
+import { createV0InngestExecution } from "./execution/v0";
 import { createV1InngestExecution } from "./execution/v1";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -193,12 +195,20 @@ export class InngestFunction<
   }
 
   private createExecution(
-    options: Omit<InngestExecutionOptions, "client" | "fn">
+    version: ExecutionVersion,
+    partialOptions: Omit<InngestExecutionOptions, "client" | "fn">
   ): IInngestExecution {
-    return createV1InngestExecution({
+    const options: InngestExecutionOptions = {
       client: this.#client,
       fn: this,
-      ...options,
-    });
+      ...partialOptions,
+    };
+
+    const versionHandlers = {
+      [ExecutionVersion.V1]: () => createV1InngestExecution(options),
+      [ExecutionVersion.V0]: () => createV0InngestExecution(options),
+    } satisfies Record<ExecutionVersion, () => IInngestExecution>;
+
+    return versionHandlers[version]();
   }
 }
