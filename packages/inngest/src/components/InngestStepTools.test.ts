@@ -9,7 +9,11 @@ import {
   createStepTools,
   type TickOp,
 } from "@local/components/InngestStepTools";
-import { StepOpCode, type ClientOptions } from "@local/types";
+import {
+  StepOpCode,
+  type ClientOptions,
+  type SendEventResponse,
+} from "@local/types";
 import ms from "ms";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
@@ -281,9 +285,19 @@ describe("sleepUntil", () => {
 
 describe("sendEvent", () => {
   describe("runtime", () => {
-    const fetchMock = jest.fn(() =>
-      Promise.resolve({ status: 200 })
-    ) as unknown as typeof fetch;
+    const fetchMock = jest.fn(() => {
+      const json: SendEventResponse = {
+        status: 200,
+        ids: [],
+      };
+
+      return Promise.resolve({
+        status: 200,
+        json: () => {
+          return Promise.resolve(json);
+        },
+      });
+    }) as unknown as typeof fetch;
 
     const client = createClient({
       name: "test",
