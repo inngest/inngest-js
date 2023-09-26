@@ -186,14 +186,26 @@ export enum ErrCode {
   /**
    * Legacy v0 execution error code for when a function has changed and no
    * longer matches its in-progress state.
+   *
+   * @deprecated Not for use in latest execution method.
    */
   NON_DETERMINISTIC_FUNCTION = "NON_DETERMINISTIC_FUNCTION",
 
   /**
    * Legacy v0 execution error code for when a function is found to be using
    * async actions after memoziation has occurred, which v0 doesn't support.
+   *
+   * @deprecated Not for use in latest execution method.
    */
   ASYNC_DETECTED_AFTER_MEMOIZATION = "ASYNC_DETECTED_AFTER_MEMOIZATION",
+
+  /**
+   * Legacy v0 execution error code for when a function is found to be using
+   * steps after a non-step async action has occurred.
+   *
+   * @deprecated Not for use in latest execution method.
+   */
+  STEP_USED_AFTER_ASYNC = "STEP_USED_AFTER_ASYNC",
 
   AUTOMATIC_PARALLEL_INDEXING = "AUTOMATIC_PARALLEL_INDEXING",
 }

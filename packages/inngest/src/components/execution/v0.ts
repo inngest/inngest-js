@@ -1,3 +1,5 @@
+import canonicalize from "canonicalize";
+import { sha1 } from "hash.js";
 import { z } from "zod";
 import {
   ErrCode,
@@ -11,6 +13,7 @@ import {
   resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises";
+import { type PartialK } from "../../helpers/types";
 import {
   StepOpCode,
   failureEventErrorSchema,
@@ -24,8 +27,14 @@ import {
   type IncomingOp,
   type OpStack,
   type OutgoingOp,
+  type StepOptionsOrId,
 } from "../../types";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware";
+import {
+  createStepTools,
+  getStepOptions,
+  type StepHandler,
+} from "../InngestStepTools";
 import { NonRetriableError } from "../NonRetriableError";
 import { RetryAfterError } from "../RetryAfterError";
 import {
@@ -40,17 +49,6 @@ export const createV0InngestExecution: InngestExecutionFactory = (options) => {
   return new V0InngestExecution(options);
 };
 
-/**
- * TODO timer
- *
- * ---
- *
- * Step tools
- * fn arg, incl failure handler
- * opts.fns
- * run user fn
- * pos iteration - RIP OUT OF STEPTOOLS
- */
 export class V0InngestExecution
   extends InngestExecution
   implements IInngestExecution
@@ -65,7 +63,7 @@ export class V0InngestExecution
 
     this.#userFnToRun = this.#getUserFnToRun();
     this.#state = this.#createExecutionState();
-    this.#fnArg = this.#createFnArg(this.#state);
+    this.#fnArg = this.#createFnArg();
   }
 
   public start() {
@@ -326,8 +324,100 @@ export class V0InngestExecution
     return this.options.fn["onFailureFn"];
   }
 
-  #createFnArg(state: V0ExecutionState): AnyContext {
-    const step = {} as any; // TODO
+  #createFnArg(): AnyContext {
+    // Start referencing everything
+    this.#state.tickOps = this.#state.allFoundOps;
+
+    /**
+     * Create a unique hash of an operation using only a subset of the operation's
+     * properties; will never use `data` and will guarantee the order of the
+     * object so we don't rely on individual tools for that.
+     *
+     * If the operation already contains an ID, the current ID will be used
+     * instead, so that users can provide their own IDs.
+     */
+    const hashOp = (
+      /**
+       * The op to generate a hash from. We only use a subset of the op's
+       * properties when creating the hash.
+       */
+      op: PartialK<HashedOp, "id">
+    ): HashedOp => {
+      /**
+       * If the op already has an ID, we don't need to generate one. This allows
+       * users to specify their own IDs.
+       */
+      if (op.id) {
+        return op as HashedOp;
+      }
+
+      const obj = {
+        parent: this.#state.currentOp?.id ?? null,
+        op: op.op,
+        name: op.name as string,
+        opts: op.opts ?? null,
+      };
+
+      const collisionHash = _internals.hashData(obj);
+
+      const pos = (this.#state.tickOpHashes[collisionHash] =
+        (this.#state.tickOpHashes[collisionHash] ?? -1) + 1);
+
+      return {
+        ...op,
+        id: _internals.hashData({ pos, ...obj }),
+      };
+    };
+
+    const stepHandler: StepHandler = ({ args, matchOp, opts }) => {
+      if (this.#state.nonStepFnDetected) {
+        if (opts?.nonStepExecuteInline && opts.fn) {
+          return Promise.resolve(opts.fn(...args));
+        }
+
+        throw new NonRetriableError(
+          functionStoppedRunningErr(ErrCode.STEP_USED_AFTER_ASYNC)
+        );
+      }
+
+      if (this.#state.executingStep) {
+        throw new NonRetriableError(
+          prettyError({
+            whatHappened: "Your function was stopped from running",
+            why: "We detected that you have nested `step.*` tooling.",
+            consequences: "Nesting `step.*` tooling is not supported.",
+            stack: true,
+            toFixNow:
+              "Make sure you're not using `step.*` tooling inside of other `step.*` tooling. If you need to compose steps together, you can create a new async function and call it from within your step function, or use promise chaining.",
+            otherwise:
+              "For more information on step functions with Inngest, see https://www.inngest.com/docs/functions/multi-step",
+            code: ErrCode.NESTING_STEPS,
+          })
+        );
+      }
+
+      this.#state.hasUsedTools = true;
+
+      const [stepOptionsOrId, ...remainingArgs] = args as unknown as [
+        StepOptionsOrId,
+        ...unknown[]
+      ];
+
+      const stepOptions = getStepOptions(stepOptionsOrId);
+      const opId = hashOp(matchOp(stepOptions, ...remainingArgs));
+
+      return new Promise<unknown>((resolve, reject) => {
+        this.#state.tickOps[opId.id] = {
+          ...opId,
+          ...(opts?.fn ? { fn: () => opts.fn?.(...args) } : {}),
+          resolve,
+          reject,
+          fulfilled: false,
+        };
+      });
+    };
+
+    const step = createStepTools(this.options.client, this.#state, stepHandler);
 
     const fnArg = {
       ...(this.options.data as { event: EventPayload }),
@@ -527,3 +617,25 @@ const tickOpToOutgoing = (op: TickOp): OutgoingOp => {
     opts: op.opts,
   };
 };
+
+/**
+ * An operation ready to hash to be used to memoise step function progress.
+ *
+ * @internal
+ */
+export type UnhashedOp = {
+  name: string;
+  op: StepOpCode;
+  opts: Record<string, unknown> | null;
+  parent: string | null;
+  pos?: number;
+};
+
+const hashData = (op: UnhashedOp): string => {
+  return sha1().update(canonicalize(op)).digest("hex");
+};
+
+/**
+ * Exported for testing.
+ */
+export const _internals = { hashData };

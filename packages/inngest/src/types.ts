@@ -235,7 +235,7 @@ export type BaseContext<
   runId: string;
 
   step: ReturnType<
-    typeof createStepTools<TOpts, EventsFromOpts<TOpts>, TTrigger>
+    typeof createStepTools<TOpts, EventsFromOpts<TOpts>, TTrigger, unknown>
   >;
 
   /**
