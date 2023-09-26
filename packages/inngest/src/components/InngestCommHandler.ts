@@ -37,15 +37,15 @@ import {
 import { version } from "../version";
 import { type AnyInngest } from "./Inngest";
 import {
+  type AnyInngestFunction,
+  type InngestFunction,
+} from "./InngestFunction";
+import {
   type ExecutionResult,
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
-} from "./InngestExecution";
-import {
-  type AnyInngestFunction,
-  type InngestFunction,
-} from "./InngestFunction";
+} from "./execution/InngestExecution";
 
 export interface ServeHandlerOptions extends RegisterOptions {
   /**
@@ -791,6 +791,7 @@ export class InngestCommHandler<
     }, {});
 
     const execution = fn.fn["createExecution"]({
+      runId: ctx?.run_id || "",
       data: { event, events, runId: ctx?.run_id, attempt: ctx?.attempt },
       stepState,
       requestedRunStep: stepId === "step" ? undefined : stepId || undefined,

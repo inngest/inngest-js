@@ -9,11 +9,12 @@ import {
   type Handler,
 } from "../types";
 import { type EventsFromOpts, type Inngest } from "./Inngest";
-import {
-  InngestExecution,
-  type InngestExecutionOptions,
-} from "./InngestExecution";
 import { type MiddlewareRegisterReturn } from "./InngestMiddleware";
+import {
+  type IInngestExecution,
+  type InngestExecutionOptions,
+} from "./execution/InngestExecution";
+import { createV1InngestExecution } from "./execution/v1";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyInngestFunction = InngestFunction<any, any, any, any>;
@@ -193,8 +194,8 @@ export class InngestFunction<
 
   private createExecution(
     options: Omit<InngestExecutionOptions, "client" | "fn">
-  ): InngestExecution {
-    return new InngestExecution({
+  ): IInngestExecution {
+    return createV1InngestExecution({
       client: this.#client,
       fn: this,
       ...options,

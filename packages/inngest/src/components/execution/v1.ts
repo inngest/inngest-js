@@ -1,19 +1,17 @@
-import Debug, { type Debugger } from "debug";
 import { sha1 } from "hash.js";
 import { type Simplify } from "type-fest";
 import { z } from "zod";
-import { type ServerTiming } from "../helpers/ServerTiming";
 import {
   deserializeError,
   prettyError,
   serializeError,
-} from "../helpers/errors";
+} from "../../helpers/errors";
 import {
   createDeferredPromise,
   createTimeoutPromise,
   runAsPromise,
-} from "../helpers/promises";
-import { type MaybePromise } from "../helpers/types";
+} from "../../helpers/promises";
+import { type MaybePromise } from "../../helpers/types";
 import {
   StepOpCode,
   failureEventErrorSchema,
@@ -23,61 +21,31 @@ import {
   type ClientOptions,
   type EventPayload,
   type FailureEventArgs,
-  type IncomingOp,
   type OutgoingOp,
-} from "../types";
-import { type AnyInngest } from "./Inngest";
-import { type ActionResponse } from "./InngestCommHandler";
-import { type AnyInngestFunction } from "./InngestFunction";
-import { getHookStack, type RunHookStack } from "./InngestMiddleware";
-import { createStepTools, type FoundStep } from "./InngestStepTools";
-import { NonRetriableError } from "./NonRetriableError";
-import { RetryAfterError } from "./RetryAfterError";
+} from "../../types";
+import { getHookStack, type RunHookStack } from "../InngestMiddleware";
+import { createStepTools, type FoundStep } from "../InngestStepTools";
+import { NonRetriableError } from "../NonRetriableError";
+import { RetryAfterError } from "../RetryAfterError";
+import {
+  InngestExecution,
+  type ExecutionResult,
+  type IInngestExecution,
+  type InngestExecutionFactory,
+  type InngestExecutionOptions,
+  type MemoizedOp,
+} from "./InngestExecution";
 
-/**
- * Types of checkpoints that can be reached during execution.
- */
-export interface Checkpoints {
-  "steps-found": { steps: [FoundStep, ...FoundStep[]] };
-  "function-rejected": { error: unknown };
-  "function-resolved": { data: unknown };
-  "step-not-found": { step: OutgoingOp };
-}
+export const createV1InngestExecution: InngestExecutionFactory = (options) => {
+  return new V1InngestExecution(options);
+};
 
-/**
- * The possible results of an execution.
- */
-export interface ExecutionResults {
-  "function-resolved": { data: unknown };
-  "step-ran": { step: OutgoingOp };
-  "function-rejected": { error: unknown; retriable: boolean | string };
-  "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
-  "step-not-found": { step: OutgoingOp };
-}
-
-/**
- * Options for creating a new {@link InngestExecution} instance.
- */
-export interface InngestExecutionOptions {
-  client: AnyInngest;
-  fn: AnyInngestFunction;
-  data: unknown;
-  stepState: Record<string, MemoizedOp>;
-  stepCompletionOrder: string[];
-  requestedRunStep?: string;
-  timer?: ServerTiming;
-  isFailureHandler?: boolean;
-  disableImmediateExecution?: boolean;
-}
-
-export class InngestExecution {
-  options: InngestExecutionOptions;
-  state: ExecutionState;
-  fnArg: AnyContext;
-  checkpointHandlers: CheckpointHandlers;
-  timeoutDuration = 1000 * 10;
+class V1InngestExecution extends InngestExecution implements IInngestExecution {
+  #state: V1ExecutionState;
+  #fnArg: AnyContext;
+  #checkpointHandlers: CheckpointHandlers;
+  #timeoutDuration = 1000 * 10;
   #execution: Promise<ExecutionResult> | undefined;
-  #debug: Debugger = Debug("inngest");
   #userFnToRun: AnyHandler;
 
   /**
@@ -87,37 +55,35 @@ export class InngestExecution {
    *
    * If we're not supposed to run a particular step, this will be `undefined`.
    */
-  timeout?: ReturnType<typeof createTimeoutPromise>;
+  #timeout?: ReturnType<typeof createTimeoutPromise>;
 
   constructor(options: InngestExecutionOptions) {
-    this.options = options;
+    super(options);
 
     this.#userFnToRun = this.#getUserFnToRun();
-    this.state = this.#createExecutionState(this.options);
-    this.fnArg = this.#createFnArg(this.state);
-    this.checkpointHandlers = this.#createCheckpointHandlers();
-    this.#initializeTimer(this.state);
+    this.#state = this.#createExecutionState();
+    this.#fnArg = this.#createFnArg(this.#state);
+    this.#checkpointHandlers = this.#createCheckpointHandlers();
+    this.#initializeTimer(this.#state);
 
-    this.#debug = this.#debug.extend(this.fnArg.runId);
-
-    this.#debug(
+    this.debug(
       "created new execution for run;",
       this.options.requestedRunStep
         ? `wanting to run step "${this.options.requestedRunStep}"`
         : "discovering steps"
     );
 
-    this.#debug("existing state keys:", Object.keys(this.state.stepState));
+    this.debug("existing state keys:", Object.keys(this.#state.stepState));
   }
 
   /**
    * Idempotently start the execution of the user's function.
    */
-  public start(): Promise<ExecutionResult> {
-    this.#debug("starting execution");
+  public start() {
+    this.debug("starting execution");
 
     return (this.#execution ??= this.#start().then((result) => {
-      this.#debug("result:", result);
+      this.debug("result:", result);
       return result;
     }));
   }
@@ -128,10 +94,10 @@ export class InngestExecution {
   async #start(): Promise<ExecutionResult> {
     try {
       const allCheckpointHandler = this.#getCheckpointHandler("");
-      this.state.hooks = await this.#initializeMiddleware();
+      this.#state.hooks = await this.#initializeMiddleware();
       await this.#startExecution();
 
-      for await (const checkpoint of this.state.loop) {
+      for await (const checkpoint of this.#state.loop) {
         await allCheckpointHandler(checkpoint);
 
         const handler = this.#getCheckpointHandler(checkpoint.type);
@@ -144,8 +110,8 @@ export class InngestExecution {
     } catch (error) {
       return await this.#transformOutput({ error });
     } finally {
-      void this.state.loop.return();
-      await this.state.hooks?.beforeResponse?.();
+      void this.#state.loop.return();
+      await this.#state.hooks?.beforeResponse?.();
     }
 
     /**
@@ -166,7 +132,7 @@ export class InngestExecution {
        * Use other handlers to return values and interrupt the core loop.
        */
       "": (checkpoint) => {
-        this.#debug("checkpoint:", checkpoint);
+        this.debug("checkpoint:", checkpoint);
       },
 
       /**
@@ -211,7 +177,7 @@ export class InngestExecution {
         }
 
         const newSteps = await this.#filterNewSteps(
-          Object.values(this.state.steps)
+          Object.values(this.#state.steps)
         );
         if (newSteps) {
           return {
@@ -232,7 +198,7 @@ export class InngestExecution {
   }
 
   #getCheckpointHandler(type: keyof CheckpointHandlers) {
-    return this.checkpointHandlers[type] as (
+    return this.#checkpointHandlers[type] as (
       checkpoint: Checkpoint
     ) => MaybePromise<ExecutionResult | void>;
   }
@@ -256,7 +222,7 @@ export class InngestExecution {
      * Ensure we reset the timeout if we have a requested run step but couldn't
      * find it, but also that we don't reset if we found and executed it.
      */
-    void this.timeout?.reset();
+    void this.#timeout?.reset();
   }
 
   /**
@@ -304,7 +270,7 @@ export class InngestExecution {
      * Warn if we've found new steps but haven't yet seen all previous
      * steps. This may indicate that step presence isn't determinate.
      */
-    const stepsToFulfil = Object.keys(this.state.stepState).length;
+    const stepsToFulfil = Object.keys(this.#state.stepState).length;
     const fulfilledSteps = steps.filter((step) => step.fulfilled).length;
     const foundAllCompletedSteps = stepsToFulfil === fulfilledSteps;
 
@@ -326,9 +292,9 @@ export class InngestExecution {
     /**
      * We're finishing up; let's trigger the last of the hooks.
      */
-    await this.state.hooks?.afterMemoization?.();
-    await this.state.hooks?.beforeExecution?.();
-    await this.state.hooks?.afterExecution?.();
+    await this.#state.hooks?.afterMemoization?.();
+    await this.#state.hooks?.beforeExecution?.();
+    await this.#state.hooks?.afterExecution?.();
 
     return newSteps.map<OutgoingOp>((step) => ({
       op: step.op,
@@ -339,19 +305,19 @@ export class InngestExecution {
   }
 
   async #executeStep({ id, name, opts, fn }: FoundStep): Promise<OutgoingOp> {
-    this.timeout?.clear();
-    await this.state.hooks?.afterMemoization?.();
-    await this.state.hooks?.beforeExecution?.();
+    this.#timeout?.clear();
+    await this.#state.hooks?.afterMemoization?.();
+    await this.#state.hooks?.beforeExecution?.();
 
     const outgoingOp: OutgoingOp = { id, op: StepOpCode.RunStep, name, opts };
-    this.state.executingStep = outgoingOp;
-    this.#debug(`executing step "${id}"`);
+    this.#state.executingStep = outgoingOp;
+    this.debug(`executing step "${id}"`);
 
     return (
       runAsPromise(fn)
         // eslint-disable-next-line @typescript-eslint/no-misused-promises
         .finally(async () => {
-          await this.state.hooks?.afterExecution?.();
+          await this.#state.hooks?.afterExecution?.();
         })
         .then<OutgoingOp>((data) => {
           return {
@@ -382,35 +348,35 @@ export class InngestExecution {
     /**
      * Start the timer to time out the run if needed.
      */
-    void this.timeout?.start();
+    void this.#timeout?.start();
 
-    await this.state.hooks?.beforeMemoization?.();
+    await this.#state.hooks?.beforeMemoization?.();
 
     /**
      * If we had no state to begin with, immediately end the memoization phase.
      */
-    if (this.state.allStateUsed()) {
-      await this.state.hooks?.afterMemoization?.();
-      await this.state.hooks?.beforeExecution?.();
+    if (this.#state.allStateUsed()) {
+      await this.#state.hooks?.afterMemoization?.();
+      await this.#state.hooks?.beforeExecution?.();
     }
 
     /**
      * Trigger the user's function.
      */
-    runAsPromise(() => this.#userFnToRun(this.fnArg))
+    runAsPromise(() => this.#userFnToRun(this.#fnArg))
       // eslint-disable-next-line @typescript-eslint/no-misused-promises
       .finally(async () => {
-        await this.state.hooks?.afterMemoization?.();
-        await this.state.hooks?.beforeExecution?.();
-        await this.state.hooks?.afterExecution?.();
+        await this.#state.hooks?.afterMemoization?.();
+        await this.#state.hooks?.beforeExecution?.();
+        await this.#state.hooks?.afterExecution?.();
       })
       .then((data) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        this.state.setCheckpoint({ type: "function-resolved", data });
+        this.#state.setCheckpoint({ type: "function-resolved", data });
       })
       .catch((error) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        this.state.setCheckpoint({ type: "function-rejected", error });
+        this.#state.setCheckpoint({ type: "function-rejected", error });
       });
   }
 
@@ -418,18 +384,18 @@ export class InngestExecution {
    * Using middleware, transform input before running.
    */
   async #transformInput() {
-    const inputMutations = await this.state.hooks?.transformInput?.({
-      ctx: { ...this.fnArg },
-      steps: Object.values(this.state.stepState),
+    const inputMutations = await this.#state.hooks?.transformInput?.({
+      ctx: { ...this.#fnArg },
+      steps: Object.values(this.#state.stepState),
       fn: this.options.fn,
     });
 
     if (inputMutations?.ctx) {
-      this.fnArg = inputMutations.ctx;
+      this.#fnArg = inputMutations.ctx;
     }
 
     if (inputMutations?.steps) {
-      this.state.stepState = inputMutations.steps.reduce(
+      this.#state.stepState = inputMutations.steps.reduce(
         (steps, step) => ({
           ...steps,
           [step.id]: step,
@@ -453,9 +419,9 @@ export class InngestExecution {
       output.data = serializeError(output.error);
     }
 
-    const transformedOutput = await this.state.hooks?.transformOutput?.({
+    const transformedOutput = await this.#state.hooks?.transformOutput?.({
       result: { ...output },
-      step: this.state.executingStep,
+      step: this.#state.executingStep,
     });
 
     const { data, error } = { ...output, ...transformedOutput?.result };
@@ -478,14 +444,11 @@ export class InngestExecution {
     return { type: "function-resolved", data };
   }
 
-  #createExecutionState({
-    stepState,
-    stepCompletionOrder,
-  }: InngestExecutionOptions): ExecutionState {
+  #createExecutionState(): V1ExecutionState {
     let { promise: checkpointPromise, resolve: checkpointResolve } =
       createDeferredPromise<Checkpoint>();
 
-    const loop: ExecutionState["loop"] = (async function* (
+    const loop: V1ExecutionState["loop"] = (async function* (
       cleanUp?: () => void
     ) {
       try {
@@ -496,15 +459,15 @@ export class InngestExecution {
         cleanUp?.();
       }
     })(() => {
-      this.timeout?.clear();
+      this.#timeout?.clear();
     });
 
-    const state: ExecutionState = {
-      stepState,
+    const state: V1ExecutionState = {
+      stepState: this.options.stepState,
       steps: {},
       loop,
-      hasSteps: Boolean(Object.keys(stepState).length),
-      stepCompletionOrder,
+      hasSteps: Boolean(Object.keys(this.options.stepState).length),
+      stepCompletionOrder: this.options.stepCompletionOrder,
       setCheckpoint: (checkpoint: Checkpoint) => {
         ({ promise: checkpointPromise, resolve: checkpointResolve } =
           checkpointResolve(checkpoint));
@@ -519,7 +482,7 @@ export class InngestExecution {
     return state;
   }
 
-  #createFnArg(state: ExecutionState): AnyContext {
+  #createFnArg(state: V1ExecutionState): AnyContext {
     const step = createStepTools(this.options.client, state);
 
     let fnArg = {
@@ -560,17 +523,17 @@ export class InngestExecution {
     return this.options.fn["onFailureFn"];
   }
 
-  #initializeTimer(state: ExecutionState): void {
+  #initializeTimer(state: V1ExecutionState): void {
     if (!this.options.requestedRunStep) {
       return;
     }
 
-    this.timeout = createTimeoutPromise(this.timeoutDuration);
+    this.#timeout = createTimeoutPromise(this.#timeoutDuration);
 
-    void this.timeout.then(async () => {
-      await this.state.hooks?.afterMemoization?.();
-      await this.state.hooks?.beforeExecution?.();
-      await this.state.hooks?.afterExecution?.();
+    void this.#timeout.then(async () => {
+      await this.#state.hooks?.afterMemoization?.();
+      await this.#state.hooks?.beforeExecution?.();
+      await this.#state.hooks?.afterExecution?.();
 
       state.setCheckpoint({
         type: "step-not-found",
@@ -620,6 +583,16 @@ export class InngestExecution {
   }
 }
 
+/**
+ * Types of checkpoints that can be reached during execution.
+ */
+export interface Checkpoints {
+  "steps-found": { steps: [FoundStep, ...FoundStep[]] };
+  "function-rejected": { error: unknown };
+  "function-resolved": { data: unknown };
+  "step-not-found": { step: OutgoingOp };
+}
+
 type Checkpoint = {
   [K in keyof Checkpoints]: Simplify<{ type: K } & Checkpoints[K]>;
 }[keyof Checkpoints];
@@ -632,24 +605,7 @@ type CheckpointHandlers = {
   "": (checkpoint: Checkpoint) => MaybePromise<void>;
 };
 
-export type ExecutionResult = {
-  [K in keyof ExecutionResults]: Simplify<{ type: K } & ExecutionResults[K]>;
-}[keyof ExecutionResults];
-
-export type ExecutionResultHandler<T = ActionResponse> = (
-  result: ExecutionResult
-) => MaybePromise<T>;
-
-export type ExecutionResultHandlers<T = ActionResponse> = {
-  [E in ExecutionResult as E["type"]]: (result: E) => MaybePromise<T>;
-};
-
-export interface MemoizedOp extends IncomingOp {
-  fulfilled?: boolean;
-  seen?: boolean;
-}
-
-export interface ExecutionState {
+export interface V1ExecutionState {
   /**
    * A value that indicates that we're executing this step. Can be used to
    * ensure steps are not accidentally nested until we support this across all

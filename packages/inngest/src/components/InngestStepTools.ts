@@ -23,7 +23,7 @@ import {
   type StepOptionsOrId,
 } from "../types";
 import { type EventsFromOpts, type Inngest } from "./Inngest";
-import { _internals, type ExecutionState } from "./InngestExecution";
+import { _internals, type V1ExecutionState } from "./execution/v1";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -57,7 +57,7 @@ export const createStepTools = <
   TriggeringEvent extends keyof Events & string
 >(
   client: Inngest<TOpts>,
-  state: ExecutionState
+  state: V1ExecutionState
 ) => {
   /**
    * A list of steps that have been found and are being rolled up before being
