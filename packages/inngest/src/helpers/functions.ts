@@ -1,6 +1,9 @@
 import { ZodError, z } from "zod";
 import { type InngestApi } from "../api/api";
-import { ExecutionVersion } from "../components/execution/InngestExecution";
+import {
+  ExecutionVersion,
+  PREFERRED_EXECUTION_VERSION,
+} from "../components/execution/InngestExecution";
 import { err, ok, type Result } from "../types";
 import { prettyError } from "./errors";
 import { type Await } from "./types";
@@ -62,8 +65,6 @@ export const waterfall = <TFns extends ((arg?: any) => any)[]>(
   };
 };
 
-const defaultExecutionVersion = 1;
-
 const fnDataVersionSchema = z.object({
   version: z
     .literal(-1)
@@ -73,13 +74,13 @@ const fnDataVersionSchema = z.object({
     .transform<ExecutionVersion>((v) => {
       if (typeof v === "undefined") {
         console.warn(
-          `No request version specified by executor; defaulting to v${defaultExecutionVersion}`
+          `No request version specified by executor; defaulting to v${PREFERRED_EXECUTION_VERSION}`
         );
 
-        return defaultExecutionVersion;
+        return PREFERRED_EXECUTION_VERSION;
       }
 
-      return v === -1 ? defaultExecutionVersion : v;
+      return v === -1 ? PREFERRED_EXECUTION_VERSION : v;
     }),
 });
 

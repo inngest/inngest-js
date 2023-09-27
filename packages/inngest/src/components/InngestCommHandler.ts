@@ -42,10 +42,11 @@ import {
   type InngestFunction,
 } from "./InngestFunction";
 import {
-  ExecutionVersion,
+  PREFERRED_EXECUTION_VERSION,
   type ExecutionResult,
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
+  type ExecutionVersion,
   type InngestExecutionOptions,
 } from "./execution/InngestExecution";
 
@@ -507,7 +508,6 @@ export class InngestCommHandler<
           client: this.client,
           extras: {
             "Server-Timing": timer.getHeader(),
-            [headerKeys.RequestVersion]: ExecutionVersion.V1.toString(),
           },
         });
 
@@ -527,6 +527,13 @@ export class InngestCommHandler<
         headers: {
           ...getInngestHeaders(),
           ...res.headers,
+          ...(res.version === null
+            ? {}
+            : {
+                [headerKeys.RequestVersion]: (
+                  res.version ?? PREFERRED_EXECUTION_VERSION
+                ).toString(),
+              }),
         },
       });
 
@@ -559,6 +566,7 @@ export class InngestCommHandler<
                 status: 201,
                 headers: getInngestHeaders(),
                 body: stream,
+                version: null,
               }
             );
           });
@@ -630,56 +638,6 @@ export class InngestCommHandler<
         const body = await actions.body("processing run request");
         this.validateSignature(signature ?? undefined, body);
 
-        const resultHandlers: ExecutionResultHandlers<ActionResponse> = {
-          "function-rejected": (result) => {
-            return {
-              status: result.retriable ? 500 : 400,
-              headers: {
-                "Content-Type": "application/json",
-                [headerKeys.NoRetry]: result.retriable ? "false" : "true",
-                ...(typeof result.retriable === "string"
-                  ? { [headerKeys.RetryAfter]: result.retriable }
-                  : {}),
-              },
-              body: stringify(result.error),
-            };
-          },
-          "function-resolved": (result) => {
-            return {
-              status: 200,
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: stringify(result.data),
-            };
-          },
-          "step-not-found": (_result) => {
-            /**
-             * TODO Status decision. I think we should use a unique op code for
-             * this situation and keep the 206 status.
-             */
-            return {
-              status: 999,
-              headers: { "Content-Type": "application/json" },
-              body: "",
-            };
-          },
-          "step-ran": (result) => {
-            return {
-              status: 206,
-              headers: { "Content-Type": "application/json" },
-              body: stringify([result.step]),
-            };
-          },
-          "steps-found": (result) => {
-            return {
-              status: 206,
-              headers: { "Content-Type": "application/json" },
-              body: stringify(result.steps),
-            };
-          },
-        };
-
         const fnId = await getQuerystring(
           "processing run request",
           queryKeys.FnId
@@ -693,13 +651,69 @@ export class InngestCommHandler<
           (await getQuerystring("processing run request", queryKeys.StepId)) ||
           null;
 
-        const result = await this.runStep(fnId, stepId, body, timer);
+        const { version, result } = this.runStep(fnId, stepId, body, timer);
+        const stepOutput = await result;
+
+        const resultHandlers: ExecutionResultHandlers<ActionResponse> = {
+          "function-rejected": (result) => {
+            return {
+              status: result.retriable ? 500 : 400,
+              headers: {
+                "Content-Type": "application/json",
+                [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+                ...(typeof result.retriable === "string"
+                  ? { [headerKeys.RetryAfter]: result.retriable }
+                  : {}),
+              },
+              body: stringify(result.error),
+              version,
+            };
+          },
+          "function-resolved": (result) => {
+            return {
+              status: 200,
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: stringify(result.data),
+              version,
+            };
+          },
+          "step-not-found": (_result) => {
+            /**
+             * TODO Status decision. I think we should use a unique op code for
+             * this situation and keep the 206 status.
+             */
+            return {
+              status: 999,
+              headers: { "Content-Type": "application/json" },
+              body: "",
+              version,
+            };
+          },
+          "step-ran": (result) => {
+            return {
+              status: 206,
+              headers: { "Content-Type": "application/json" },
+              body: stringify([result.step]),
+              version,
+            };
+          },
+          "steps-found": (result) => {
+            return {
+              status: 206,
+              headers: { "Content-Type": "application/json" },
+              body: stringify(result.steps),
+              version,
+            };
+          },
+        };
 
         const handler = resultHandlers[
-          result.type
+          stepOutput.type
         ] as ExecutionResultHandler<ActionResponse>;
 
-        return await handler(result);
+        return await handler(stepOutput);
       }
 
       if (method === "GET") {
@@ -718,6 +732,7 @@ export class InngestCommHandler<
           headers: {
             "Content-Type": "application/json",
           },
+          version: undefined,
         };
       }
 
@@ -739,6 +754,7 @@ export class InngestCommHandler<
           headers: {
             "Content-Type": "application/json",
           },
+          version: undefined,
         };
       }
     } catch (err) {
@@ -751,6 +767,7 @@ export class InngestCommHandler<
         headers: {
           "Content-Type": "application/json",
         },
+        version: undefined,
       };
     }
 
@@ -762,60 +779,68 @@ export class InngestCommHandler<
         skipDevServer: this._skipDevServer,
       }),
       headers: {},
+      version: undefined,
     };
   }
 
-  protected async runStep(
+  protected runStep(
     functionId: string,
     stepId: string | null,
     data: unknown,
     timer: ServerTiming
-  ): Promise<ExecutionResult> {
+  ): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
     const fn = this.fns[functionId];
     if (!fn) {
       // TODO PrettyError
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
 
-    const fndata = await fetchAllFnData(
-      parseFnData(data),
-      this.client["inngestApi"]
-    );
-    if (!fndata.ok) {
-      throw new Error(fndata.error);
-    }
-    const { event, events, steps, ctx, version } = fndata.value;
+    const immediateFnData = parseFnData(data);
+    const { version } = immediateFnData;
 
-    const stepState = Object.entries(steps ?? {}).reduce<
-      InngestExecutionOptions["stepState"]
-    >((acc, [id, data]) => {
-      return {
-        ...acc,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        [id]: { id, data },
-      };
-    }, {});
+    const result = runAsPromise(async () => {
+      const fnData = await fetchAllFnData(
+        immediateFnData,
+        this.client["inngestApi"]
+      );
+      if (!fnData.ok) {
+        throw new Error(fnData.error);
+      }
+      const { event, events, steps, ctx, version } = fnData.value;
 
-    const execution = fn.fn["createExecution"](version, {
-      runId: ctx?.run_id || "",
-      data: {
-        event: event as EventPayload,
-        events: events as [EventPayload, ...EventPayload[]],
+      const stepState = Object.entries(steps ?? {}).reduce<
+        InngestExecutionOptions["stepState"]
+      >((acc, [id, data]) => {
+        return {
+          ...acc,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          [id]: { id, data },
+        };
+      }, {});
+
+      const execution = fn.fn["createExecution"](version, {
         runId: ctx?.run_id || "",
-        attempt: ctx?.attempt ?? 0,
-      },
-      stepState,
-      requestedRunStep: stepId === "step" ? undefined : stepId || undefined,
-      timer,
-      isFailureHandler: fn.onFailure,
-      disableImmediateExecution:
-        fndata.value.version === 1
-          ? fndata.value.ctx?.disable_immediate_execution
-          : undefined,
-      stepCompletionOrder: ctx?.stack?.stack ?? [],
+        data: {
+          event: event as EventPayload,
+          events: events as [EventPayload, ...EventPayload[]],
+          runId: ctx?.run_id || "",
+          attempt: ctx?.attempt ?? 0,
+        },
+        stepState,
+        requestedRunStep: stepId === "step" ? undefined : stepId || undefined,
+        timer,
+        isFailureHandler: fn.onFailure,
+        disableImmediateExecution:
+          fnData.value.version === 1
+            ? fnData.value.ctx?.disable_immediate_execution
+            : undefined,
+        stepCompletionOrder: ctx?.stack?.stack ?? [],
+      });
+
+      return execution.start();
     });
 
-    return execution.start();
+    return { version, result };
   }
 
   protected configs(url: URL): FunctionConfig[] {
@@ -1206,6 +1231,17 @@ export interface ActionResponse<
    * A stringified body to return.
    */
   body: TBody;
+
+  /**
+   * The version of the execution engine that was used to run this action.
+   *
+   * If the action didn't use the execution engine (for example, a GET request
+   * as a health check), this will be `undefined`.
+   *
+   * If the version should be entirely omitted from the response (for example,
+   * when sending preliminary headers when streaming), this will be `null`.
+   */
+  version: ExecutionVersion | null | undefined;
 }
 
 /**

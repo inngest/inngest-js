@@ -76,7 +76,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     this.#initializeTimer(this.#state);
 
     this.debug(
-      "created new execution for run;",
+      "created new V1 execution for run;",
       this.options.requestedRunStep
         ? `wanting to run step "${this.options.requestedRunStep}"`
         : "discovering steps"
@@ -89,7 +89,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * Idempotently start the execution of the user's function.
    */
   public start() {
-    this.debug("starting execution");
+    this.debug("starting V1 execution");
 
     return (this.#execution ??= this.#start().then((result) => {
       this.debug("result:", result);

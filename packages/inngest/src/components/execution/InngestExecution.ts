@@ -40,6 +40,8 @@ export enum ExecutionVersion {
   V1 = 1,
 }
 
+export const PREFERRED_EXECUTION_VERSION = ExecutionVersion.V1;
+
 /**
  * Options for creating a new {@link InngestExecution} instance.
  */

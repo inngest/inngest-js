@@ -193,10 +193,12 @@ export class InngestCommHandler<Input extends any[] = any[], Output = any, Strea
     protected registerBody(url: URL): RegisterRequest;
     protected reqUrl(url: URL): URL;
     // Warning: (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
     //
     // (undocumented)
-    protected runStep(functionId: string, stepId: string | null, data: unknown, timer: ServerTiming): Promise<ExecutionResult>;
+    protected runStep(functionId: string, stepId: string | null, data: unknown, timer: ServerTiming): {
+        version: ExecutionVersion;
+        result: Promise<ExecutionResult>;
+    };
     protected readonly serveHost: string | undefined;
     protected readonly servePath: string | undefined;
     protected signingKey: string | undefined;
@@ -384,6 +386,8 @@ export type ZodEventSchemas = Record<string, {
 
 // Warnings were encountered during analysis:
 //
+// src/components/InngestCommHandler.ts:791:8 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
+// src/components/InngestCommHandler.ts:791:35 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:264:3 - (ae-forgotten-export) The symbol "InitialRunInfo" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:277:5 - (ae-forgotten-export) The symbol "MiddlewareRunInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:283:5 - (ae-forgotten-export) The symbol "BlankHook" needs to be exported by the entry point index.d.ts

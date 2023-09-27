@@ -66,7 +66,7 @@ export class V0InngestExecution
   }
 
   public start() {
-    this.debug("starting execution");
+    this.debug("starting V0 execution");
 
     return (this.#execution ??= this.#start().then((result) => {
       this.debug("result:", result);
