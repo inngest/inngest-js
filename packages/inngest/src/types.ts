@@ -16,14 +16,66 @@ import {
 import { type Logger } from "./middleware/logger";
 
 /**
- * TODO
+ * A helper type to extract the inferred event schemas from a given Inngest
+ * instance.
+ *
+ * It's recommended to use this type instead of directly passing
+ * schemas around, as it will ensure that extra properties such as `ts` and
+ * `user` are always added.
+ *
+ * @example
+ * ```ts
+ * type Events = GetEvents<typeof inngest>;
+ * ```
  *
  * @public
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type GetEvents<T extends Inngest<any>> = T extends Inngest<infer U>
-  ? EventsFromOpts<U>
-  : never;
+export type GetEvents<TInngest extends Inngest<any>> = EventsFromOpts<
+  ClientOptionsFromInngest<TInngest>
+>;
+
+/**
+ * A helper type to extract the inferred options from a given Inngest instance.
+ *
+ * @example
+ * ```ts
+ * type Options = ClientOptionsFromInngest<typeof inngest>;
+ * ```
+ *
+ * @public
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ClientOptionsFromInngest<TInngest extends Inngest<any>> =
+  TInngest extends Inngest<infer U> ? U : ClientOptions;
+
+/**
+ * A helper type to extract the type of a set of event tooling from a given
+ * Inngest instance and optionally a trigger.
+ *
+ * @example Get generic step tools for an Inngest instance.
+ * ```ts
+ * type StepTools = GetStepTools<typeof inngest>;
+ * ```
+ *
+ * @example Get step tools with a trigger, ensuring tools like `waitForEvent` are typed.
+ * ```ts
+ * type StepTools = GetStepTools<typeof Inngest, "github/pull_request">;
+ * ```
+ *
+ * @public
+ */
+export type GetStepTools<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  TInngest extends Inngest<any>,
+  TTrigger extends keyof GetEvents<TInngest> & string = string
+> = ReturnType<
+  typeof createStepTools<
+    ClientOptionsFromInngest<TInngest>,
+    GetEvents<TInngest>,
+    TTrigger
+  >
+>;
 
 export const failureEventErrorSchema = z.object({
   name: z.string(),

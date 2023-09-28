@@ -34,6 +34,7 @@ export type {
   FailureEventPayload,
   FunctionOptions,
   GetEvents,
+  GetStepTools,
   LogLevel,
   RegisterOptions,
   TimeStr,

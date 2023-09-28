@@ -112,8 +112,15 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
 }
 
+// Warning: (ae-forgotten-export) The symbol "ClientOptionsFromInngest" needs to be exported by the entry point index.d.ts
+//
 // @public
-export type GetEvents<T extends Inngest<any>> = T extends Inngest<infer U> ? EventsFromOpts<U> : never;
+export type GetEvents<TInngest extends Inngest<any>> = EventsFromOpts<ClientOptionsFromInngest<TInngest>>;
+
+// Warning: (ae-forgotten-export) The symbol "createStepTools" needs to be exported by the entry point index.d.ts
+//
+// @public
+export type GetStepTools<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = string> = ReturnType<typeof createStepTools<ClientOptionsFromInngest<TInngest>, GetEvents<TInngest>, TTrigger>>;
 
 // @public
 export enum headerKeys {
@@ -398,8 +405,8 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:313:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:332:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:342:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
-// src/types.ts:51:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:717:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:103:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:769:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
