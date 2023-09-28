@@ -8,6 +8,7 @@ import {
 } from "../helpers/errors";
 import { timeStr } from "../helpers/strings";
 import {
+  type ExclusiveKeys,
   type ObjectPaths,
   type PartialK,
   type SendEventPayload,
@@ -251,33 +252,14 @@ export const createStepTools = <
      * returning `null` instead of any event data.
      */
     waitForEvent: createTool<
-      <IncomingEvent extends keyof Events | EventPayload>(
-        event: IncomingEvent extends keyof Events
-          ? IncomingEvent
-          : IncomingEvent extends EventPayload
-          ? IncomingEvent["name"]
-          : never,
-        opts:
-          | string
-          | ((IncomingEvent extends keyof Events
-              ? WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>
-              : IncomingEvent extends EventPayload
-              ? WaitForEventOpts<Events[TriggeringEvent], IncomingEvent>
-              : never) & {
-              if?: never;
-            })
-          | ((IncomingEvent extends keyof Events
-              ? WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>
-              : IncomingEvent extends EventPayload
-              ? WaitForEventOpts<Events[TriggeringEvent], IncomingEvent>
-              : never) & {
-              match?: never;
-            })
-      ) => Promise<
-        IncomingEvent extends keyof Events
-          ? Events[IncomingEvent] | null
-          : IncomingEvent | null
-      >
+      <IncomingEvent extends keyof Events>(
+        event: IncomingEvent,
+        opts: ExclusiveKeys<
+          WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>,
+          "if",
+          "match"
+        >
+      ) => Promise<Events[IncomingEvent] | null>
     >(
       (
         /**
