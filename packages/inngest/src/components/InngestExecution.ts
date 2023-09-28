@@ -3,6 +3,7 @@ import { sha1 } from "hash.js";
 import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { type ServerTiming } from "../helpers/ServerTiming";
+import { debugPrefix } from "../helpers/consts";
 import {
   deserializeError,
   prettyError,
@@ -77,7 +78,7 @@ export class InngestExecution {
   checkpointHandlers: CheckpointHandlers;
   timeoutDuration = 1000 * 10;
   #execution: Promise<ExecutionResult> | undefined;
-  #debug: Debugger = Debug("inngest");
+  #debug: Debugger = Debug(debugPrefix);
   #userFnToRun: AnyHandler;
 
   /**
