@@ -24,6 +24,9 @@ export interface ClientOptions {
     schemas?: EventSchemas<Record<string, EventPayload>>;
 }
 
+// @public
+export type ClientOptionsFromInngest<TInngest extends Inngest<any>> = TInngest extends Inngest<infer U> ? U : ClientOptions;
+
 // Warning: (ae-incompatible-release-tags) The symbol "Combine" is marked as @public, but its signature references "IsStringLiteral" which is marked as @internal
 //
 // @public
@@ -112,15 +115,23 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
 }
 
-// Warning: (ae-forgotten-export) The symbol "ClientOptionsFromInngest" needs to be exported by the entry point index.d.ts
-//
 // @public
 export type GetEvents<TInngest extends Inngest<any>> = EventsFromOpts<ClientOptionsFromInngest<TInngest>>;
 
-// Warning: (ae-forgotten-export) The symbol "createStepTools" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "ExtendWithMiddleware" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "builtInMiddleware" needs to be exported by the entry point index.d.ts
 //
 // @public
-export type GetStepTools<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = string> = ReturnType<typeof createStepTools<ClientOptionsFromInngest<TInngest>, GetEvents<TInngest>, TTrigger>>;
+export type GetFunctionInput<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = string> = Parameters<Handler<ClientOptionsFromInngest<TInngest>, GetEvents<TInngest>, TTrigger, Record<never, never>, ExtendWithMiddleware<[
+typeof builtInMiddleware,
+NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>
+]>>>[0];
+
+// @public
+export type GetStepTools<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = string> = GetFunctionInput<TInngest, TTrigger> extends {
+    step: infer TStep;
+} ? TStep : never;
 
 // @public
 export enum headerKeys {
@@ -143,9 +154,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     constructor({ name, eventKey, inngestBaseUrl, fetch, env, logger, middleware, }: TOpts);
     // Warning: (ae-forgotten-export) The symbol "ShimmedFns" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "ExclusiveKeys" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "ExtendWithMiddleware" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "builtInMiddleware" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "FunctionTrigger" needs to be exported by the entry point index.d.ts
     //
@@ -405,8 +413,8 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:313:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:332:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:342:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
-// src/types.ts:103:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:769:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:41:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:707:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

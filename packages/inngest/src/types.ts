@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
-import { type EventsFromOpts, type Inngest } from "./components/Inngest";
+import { type EventsFromOpts } from "./components/Inngest";
 import {
   type InngestMiddleware,
   type MiddlewareOptions,
@@ -14,68 +14,6 @@ import {
   type StrictUnion,
 } from "./helpers/types";
 import { type Logger } from "./middleware/logger";
-
-/**
- * A helper type to extract the inferred event schemas from a given Inngest
- * instance.
- *
- * It's recommended to use this type instead of directly passing
- * schemas around, as it will ensure that extra properties such as `ts` and
- * `user` are always added.
- *
- * @example
- * ```ts
- * type Events = GetEvents<typeof inngest>;
- * ```
- *
- * @public
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type GetEvents<TInngest extends Inngest<any>> = EventsFromOpts<
-  ClientOptionsFromInngest<TInngest>
->;
-
-/**
- * A helper type to extract the inferred options from a given Inngest instance.
- *
- * @example
- * ```ts
- * type Options = ClientOptionsFromInngest<typeof inngest>;
- * ```
- *
- * @public
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ClientOptionsFromInngest<TInngest extends Inngest<any>> =
-  TInngest extends Inngest<infer U> ? U : ClientOptions;
-
-/**
- * A helper type to extract the type of a set of event tooling from a given
- * Inngest instance and optionally a trigger.
- *
- * @example Get generic step tools for an Inngest instance.
- * ```ts
- * type StepTools = GetStepTools<typeof inngest>;
- * ```
- *
- * @example Get step tools with a trigger, ensuring tools like `waitForEvent` are typed.
- * ```ts
- * type StepTools = GetStepTools<typeof Inngest, "github/pull_request">;
- * ```
- *
- * @public
- */
-export type GetStepTools<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TInngest extends Inngest<any>,
-  TTrigger extends keyof GetEvents<TInngest> & string = string
-> = ReturnType<
-  typeof createStepTools<
-    ClientOptionsFromInngest<TInngest>,
-    GetEvents<TInngest>,
-    TTrigger
-  >
->;
 
 export const failureEventErrorSchema = z.object({
   name: z.string(),
