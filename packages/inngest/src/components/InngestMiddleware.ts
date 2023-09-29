@@ -6,6 +6,7 @@ import {
   type ObjectAssign,
   type PartialK,
 } from "../helpers/types";
+import { ProxyLogger, type Logger } from "../middleware/logger";
 import {
   type BaseContext,
   type ClientOptions,
@@ -384,10 +385,13 @@ type MiddlewareRunArgs = Readonly<{
    */
   ctx: Record<string, unknown> &
     Readonly<
-      BaseContext<
-        ClientOptions,
-        string,
-        Record<string, (...args: unknown[]) => unknown>
+      ExtendWithMiddleware<
+        [],
+        BaseContext<
+          ClientOptions,
+          string,
+          Record<string, (...args: unknown[]) => unknown>
+        >
       >
     >;
 
@@ -504,13 +508,17 @@ type GetMiddlewareRunInputMutation<
 export type ExtendWithMiddleware<
   TMiddlewareStacks extends MiddlewareStack[],
   // eslint-disable-next-line @typescript-eslint/ban-types
-  TContext = {}
+  TContext = {},
+  TAllMiddlewareStacks extends MiddlewareStack[] = [
+    typeof builtInMiddleware,
+    ...TMiddlewareStacks
+  ]
 > = ObjectAssign<
   {
-    [K in keyof TMiddlewareStacks]: MiddlewareStackRunInputMutation<
+    [K in keyof TAllMiddlewareStacks]: MiddlewareStackRunInputMutation<
       // eslint-disable-next-line @typescript-eslint/ban-types
       {},
-      TMiddlewareStacks[K]
+      TAllMiddlewareStacks[K]
     >;
   },
   TContext
@@ -528,3 +536,74 @@ export type MiddlewareStackRunInputMutation<
   },
   TContext
 >;
+
+/**
+ * Default middleware that is included in every client, placed after the user's
+ * middleware on the client but before function-level middleware.
+ *
+ * It is defined here to ensure that comments are included in the generated TS
+ * definitions. Without this, we infer the stack of built-in middleware without
+ * comments, losing a lot of value.
+ *
+ * If this is moved, please ensure that using this package in another project
+ * can correctly access comments on mutated input and output.
+ */
+export const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
+  new InngestMiddleware({
+    name: "Inngest: Logger",
+    init({ client }) {
+      return {
+        onFunctionRun(arg) {
+          const { ctx } = arg;
+          const metadata = {
+            runID: ctx.runId,
+            eventName: ctx.event.name,
+            functionName: arg.fn.name,
+          };
+
+          let providedLogger: Logger = client["logger"];
+          // create a child logger if the provided logger has child logger implementation
+          try {
+            if ("child" in providedLogger) {
+              type ChildLoggerFn = (
+                metadata: Record<string, unknown>
+              ) => Logger;
+              providedLogger = (providedLogger.child as ChildLoggerFn)(
+                metadata
+              );
+            }
+          } catch (err) {
+            console.error('failed to create "childLogger" with error: ', err);
+            // no-op
+          }
+          const logger = new ProxyLogger(providedLogger);
+
+          return {
+            transformInput() {
+              return {
+                ctx: {
+                  /**
+                   * The passed in logger from the user.
+                   * Defaults to a console logger if not provided.
+                   */
+                  logger: logger as Logger,
+                },
+              };
+            },
+            beforeExecution() {
+              logger.enable();
+            },
+            transformOutput({ result: { error } }) {
+              if (error) {
+                logger.error(error);
+              }
+            },
+            async beforeResponse() {
+              await logger.flush();
+            },
+          };
+        },
+      };
+    },
+  }),
+]);
