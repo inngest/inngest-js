@@ -1,7 +1,7 @@
 import { EventSchemas } from "@local/components/EventSchemas";
-import { Inngest } from "@local/components/Inngest";
+import { Inngest, type GetEvents } from "@local/components/Inngest";
 import { type IsAny } from "@local/helpers/types";
-import { type EventPayload, type GetEvents } from "@local/types";
+import { type EventPayload } from "@local/types";
 import { assertType, type IsEqual } from "type-plus";
 import { z } from "zod";
 
