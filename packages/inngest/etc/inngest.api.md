@@ -123,13 +123,13 @@ export type GetEvents<TInngest extends Inngest<any>> = EventsFromOpts<ClientOpti
 // Warning: (ae-forgotten-export) The symbol "builtInMiddleware" needs to be exported by the entry point index.d.ts
 //
 // @public
-export type GetFunctionInput<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = string> = Parameters<Handler<ClientOptionsFromInngest<TInngest>, GetEvents<TInngest>, TTrigger, Record<never, never>, ExtendWithMiddleware<[
+export type GetFunctionInput<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = keyof GetEvents<TInngest> & string> = Parameters<Handler<ClientOptionsFromInngest<TInngest>, GetEvents<TInngest>, TTrigger, Record<never, never>, ExtendWithMiddleware<[
 typeof builtInMiddleware,
 NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>
 ]>>>[0];
 
 // @public
-export type GetStepTools<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = string> = GetFunctionInput<TInngest, TTrigger> extends {
+export type GetStepTools<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = keyof GetEvents<TInngest> & string> = GetFunctionInput<TInngest, TTrigger> extends {
     step: infer TStep;
 } ? TStep : never;
 
