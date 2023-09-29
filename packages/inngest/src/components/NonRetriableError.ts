@@ -29,5 +29,7 @@ export class NonRetriableError extends Error {
     super(message);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     this.cause = options?.cause;
+
+    this.name = "NonRetriableError";
   }
 }
