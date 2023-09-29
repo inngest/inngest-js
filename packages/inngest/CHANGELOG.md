@@ -1,5 +1,11 @@
 # inngest
 
+## 2.7.2
+
+### Patch Changes
+
+- [#323](https://github.com/inngest/inngest-js/pull/323) [`3b2efa6`](https://github.com/inngest/inngest-js/commit/3b2efa6e3e12eca45f05d5187c7978bf2e9da23f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Better error handling for `.sendEvent()` errors from Inngest API, ensuring easier debugging when failing to send events - partial of #256
+
 ## 2.7.1
 
 ### Patch Changes
