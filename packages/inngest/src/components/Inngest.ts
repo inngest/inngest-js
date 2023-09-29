@@ -636,7 +636,8 @@ const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
 export type GetStepTools<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TInngest extends Inngest<any>,
-  TTrigger extends keyof GetEvents<TInngest> & string = string
+  TTrigger extends keyof GetEvents<TInngest> &
+    string = keyof GetEvents<TInngest> & string
 > = GetFunctionInput<TInngest, TTrigger> extends { step: infer TStep }
   ? TStep
   : never;
@@ -660,7 +661,8 @@ export type GetStepTools<
 export type GetFunctionInput<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TInngest extends Inngest<any>,
-  TTrigger extends keyof GetEvents<TInngest> & string = string
+  TTrigger extends keyof GetEvents<TInngest> &
+    string = keyof GetEvents<TInngest> & string
 > = Parameters<
   Handler<
     ClientOptionsFromInngest<TInngest>,
