@@ -11,7 +11,7 @@ import {
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
 import { stringify } from "../helpers/strings";
 import { type ExclusiveKeys, type SendEventPayload } from "../helpers/types";
-import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
+import { DefaultLogger, type Logger } from "../middleware/logger";
 import {
   sendEventResponseSchema,
   type ClientOptions,
@@ -29,9 +29,10 @@ import {
 import { type EventSchemas } from "./EventSchemas";
 import { InngestFunction } from "./InngestFunction";
 import {
-  InngestMiddleware,
+  builtInMiddleware,
   getHookStack,
   type ExtendWithMiddleware,
+  type InngestMiddleware,
   type MiddlewareOptions,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
@@ -479,11 +480,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
               TTriggerName,
               TShimmedFns,
               ExtendWithMiddleware<
-                [
-                  typeof builtInMiddleware,
-                  NonNullable<TOpts["middleware"]>,
-                  TMiddleware
-                ],
+                [NonNullable<TOpts["middleware"]>, TMiddleware],
                 FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
               >
             >;
@@ -502,13 +499,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       EventsFromOpts<TOpts>,
       TTriggerName,
       TShimmedFns,
-      ExtendWithMiddleware<
-        [
-          typeof builtInMiddleware,
-          NonNullable<TOpts["middleware"]>,
-          TMiddleware
-        ]
-      >
+      ExtendWithMiddleware<[NonNullable<TOpts["middleware"]>, TMiddleware]>
     >
   ): InngestFunction<
     TOpts,
@@ -545,74 +536,3 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     );
   }
 }
-
-/**
- * Default middleware that is included in every client, placed after the user's
- * middleware on the client but before function-level middleware.
- *
- * It is defined here to ensure that comments are included in the generated TS
- * definitions. Without this, we infer the stack of built-in middleware without
- * comments, losing a lot of value.
- *
- * If this is moved, please ensure that using this package in another project
- * can correctly access comments on mutated input and output.
- */
-const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
-  new InngestMiddleware({
-    name: "Inngest: Logger",
-    init({ client }) {
-      return {
-        onFunctionRun(arg) {
-          const { ctx } = arg;
-          const metadata = {
-            runID: ctx.runId,
-            eventName: ctx.event.name,
-            functionName: arg.fn.name,
-          };
-
-          let providedLogger: Logger = client["logger"];
-          // create a child logger if the provided logger has child logger implementation
-          try {
-            if ("child" in providedLogger) {
-              type ChildLoggerFn = (
-                metadata: Record<string, unknown>
-              ) => Logger;
-              providedLogger = (providedLogger.child as ChildLoggerFn)(
-                metadata
-              );
-            }
-          } catch (err) {
-            console.error('failed to create "childLogger" with error: ', err);
-            // no-op
-          }
-          const logger = new ProxyLogger(providedLogger);
-
-          return {
-            transformInput() {
-              return {
-                ctx: {
-                  /**
-                   * The passed in logger from the user.
-                   * Defaults to a console logger if not provided.
-                   */
-                  logger: logger as Logger,
-                },
-              };
-            },
-            beforeExecution() {
-              logger.enable();
-            },
-            transformOutput({ result: { error } }) {
-              if (error) {
-                logger.error(error);
-              }
-            },
-            async beforeResponse() {
-              await logger.flush();
-            },
-          };
-        },
-      };
-    },
-  }),
-]);
