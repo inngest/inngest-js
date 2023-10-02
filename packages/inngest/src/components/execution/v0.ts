@@ -185,7 +185,9 @@ export class V0InngestExecution
             return await this.#transformOutput({ data }, outgoingUserFnOp);
           });
 
-        return { type: "step-ran", step: { ...outgoingUserFnOp, ...result } };
+        const { type: _type, ...rest } = result;
+
+        return { type: "step-ran", step: { ...outgoingUserFnOp, ...rest } };
       }
 
       if (!discoveredOps.length) {
