@@ -10,6 +10,16 @@ import { envKeys, headerKeys, prodEnvKeys } from "./consts";
 import { stringifyUnknown } from "./strings";
 
 /**
+ * @public
+ */
+export type Env = Record<string, EnvValue>;
+
+/**
+ * @public
+ */
+export type EnvValue = string | undefined;
+
+/**
  * devServerHost returns the dev server host by searching for the INNGEST_DEVSERVER_URL
  * environment variable (plus project prefixces for eg. react, such as REACT_APP_INNGEST_DEVSERVER_URL).
  *
@@ -17,9 +27,7 @@ import { stringifyUnknown } from "./strings";
  *
  * @example devServerHost()
  */
-export const devServerHost = (
-  env: Record<string, string | undefined> = allProcessEnv()
-): string | undefined => {
+export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
   // devServerKeys are the env keys we search for to discover the dev server
   // URL.  This includes the standard key first, then includes prefixed keys
   // for use within common frameworks (eg. CRA, next).
@@ -38,10 +46,7 @@ export const devServerHost = (
 };
 
 const checkFns = (<
-  T extends Record<
-    string,
-    (actual: string | undefined, expected: string | undefined) => boolean
-  >
+  T extends Record<string, (actual: EnvValue, expected: EnvValue) => boolean>
 >(
   checks: T
 ): T => checks)({
@@ -122,9 +127,7 @@ export const isProd = (
  * This could be used to determine if we're on a branch deploy or not, though it
  * should be noted that we don't know if this is the default branch or not.
  */
-export const getEnvironmentName = (
-  env: Record<string, string | undefined> = allProcessEnv()
-): string | undefined => {
+export const getEnvironmentName = (env: Env = allProcessEnv()): EnvValue => {
   /**
    * Order is important; more than one of these env vars may be set, so ensure
    * that we check the most specific, most reliable env vars first.
@@ -140,12 +143,12 @@ export const getEnvironmentName = (
   );
 };
 
-export const processEnv = (key: string): string | undefined => {
+export const processEnv = (key: string): EnvValue => {
   return allProcessEnv()[key];
 };
 
 declare const Deno: {
-  env: { toObject: () => Record<string, string | undefined> };
+  env: { toObject: () => Env };
 };
 
 /**
@@ -156,7 +159,7 @@ declare const Deno: {
  * Using this ensures we don't dangerously access `process.env` in environments
  * where it may not be defined, such as Deno or the browser.
  */
-export const allProcessEnv = (): Record<string, string | undefined> => {
+export const allProcessEnv = (): Env => {
   try {
     // eslint-disable-next-line @inngest/internal/process-warn
     if (process.env) {
@@ -192,7 +195,7 @@ export const inngestHeaders = (opts?: {
    * default source. Useful for platforms where environment variables are passed
    * in alongside requests.
    */
-  env?: Record<string, string | undefined>;
+  env?: Env;
 
   /**
    * The framework name to use in the `X-Inngest-Framework` header. This is not
@@ -268,10 +271,7 @@ const platformChecks = {
   "cloudflare-pages": (env) => env[envKeys.IsCloudflarePages] === "1",
   render: (env) => env[envKeys.IsRender] === "true",
   railway: (env) => Boolean(env[envKeys.RailwayEnvironment]),
-} satisfies Record<
-  string,
-  (env: Record<string, string | undefined>) => boolean
->;
+} satisfies Record<string, (env: Env) => boolean>;
 
 declare const EdgeRuntime: string | undefined;
 
@@ -288,10 +288,7 @@ declare const EdgeRuntime: string | undefined;
 const streamingChecks: Partial<
   Record<
     keyof typeof platformChecks,
-    (
-      framework: SupportedFrameworkName,
-      env: Record<string, string | undefined>
-    ) => boolean
+    (framework: SupportedFrameworkName, env: Env) => boolean
   >
 > = {
   /**
@@ -307,7 +304,7 @@ const streamingChecks: Partial<
   vercel: (_framework, _env) => typeof EdgeRuntime === "string",
 };
 
-const getPlatformName = (env: Record<string, string | undefined>) => {
+const getPlatformName = (env: Env) => {
   return (Object.keys(platformChecks) as (keyof typeof platformChecks)[]).find(
     (key) => {
       return platformChecks[key](env);
@@ -324,7 +321,7 @@ const getPlatformName = (env: Record<string, string | undefined>) => {
  */
 export const platformSupportsStreaming = (
   framework: SupportedFrameworkName,
-  env: Record<string, string | undefined> = allProcessEnv()
+  env: Env = allProcessEnv()
 ): boolean => {
   return (
     streamingChecks[getPlatformName(env) as keyof typeof streamingChecks]?.(

@@ -5,6 +5,7 @@
 import { Inngest } from "@local";
 import { type ServeHandlerOptions } from "@local/components/InngestCommHandler";
 import { envKeys, headerKeys, queryKeys } from "@local/helpers/consts";
+import { type Env } from "@local/helpers/env";
 import { slugify } from "@local/helpers/strings";
 import { type FunctionTrigger } from "@local/types";
 import fetch from "cross-fetch";
@@ -83,11 +84,7 @@ export const testFramework = (
      * Returning void is useful if you need to make environment changes but
      * are still fine with the default behaviour past that point.
      */
-    transformReq?: (
-      req: Request,
-      res: Response,
-      env: Record<string, string | undefined>
-    ) => unknown[] | void;
+    transformReq?: (req: Request, res: Response, env: Env) => unknown[] | void;
 
     /**
      * Specify a transformer for a given response, which will be used to
@@ -129,7 +126,7 @@ export const testFramework = (
   const run = async (
     handlerOpts: Parameters<(typeof handler)["serve"]>,
     reqOpts: Parameters<typeof httpMocks.createRequest>,
-    env: Record<string, string | undefined> = {}
+    env: Env = {}
   ): Promise<HandlerStandardReturn> => {
     const serveHandler = handler.serve({
       ...handlerOpts[0],
