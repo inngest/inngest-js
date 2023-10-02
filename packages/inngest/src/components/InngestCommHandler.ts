@@ -20,6 +20,7 @@ import {
   isProd,
   platformSupportsStreaming,
   skipDevServer,
+  type Env,
 } from "../helpers/env";
 import { rethrowError, serializeError } from "../helpers/errors";
 import { fetchAllFnData, parseFnData } from "../helpers/functions";
@@ -52,10 +53,15 @@ import {
   type InngestExecutionOptions,
 } from "./execution/InngestExecution";
 
+/**
+ * A set of options that can be passed to a serve handler, intended to be used
+ * by internal and custom serve handlers to provide a consistent interface.
+ *
+ * @public
+ */
 export interface ServeHandlerOptions extends RegisterOptions {
   /**
-   * The name of this app, used to scope and group Inngest functions, or
-   * the `Inngest` instance used to declare all functions.
+   * The `Inngest` instance used to declare all functions.
    */
   client: AnyInngest;
 
@@ -307,7 +313,7 @@ export class InngestCommHandler<
     { fn: InngestFunction; onFailure: boolean }
   > = {};
 
-  private env: Record<string, string | undefined> = allProcessEnv();
+  private env: Env = allProcessEnv();
 
   private allowExpiredSignatures: boolean;
 
@@ -1158,7 +1164,7 @@ export type Handler<
 export type HandlerResponse<Output = any, StreamOutput = any> = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   body: () => MaybePromise<any>;
-  env?: () => MaybePromise<Record<string, string | undefined>>;
+  env?: () => MaybePromise<Env>;
   headers: (key: string) => MaybePromise<string | null | undefined>;
 
   /**
@@ -1261,6 +1267,8 @@ type HandlerResponseWithErrors = {
   [K in keyof HandlerResponse]: NonNullable<HandlerResponse[K]> extends (
     ...args: infer Args
   ) => infer R
-    ? (errMessage: string, ...args: Args) => Promise<R>
+    ? R extends MaybePromise<infer PR>
+      ? (errMessage: string, ...args: Args) => Promise<PR>
+      : (errMessage: string, ...args: Args) => Promise<R>
     : HandlerResponse[K];
 };
