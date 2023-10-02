@@ -345,13 +345,13 @@ export class V0InngestExecution
       op: PartialK<HashedOp, "id">
     ): HashedOp => {
       /**
-       * If the op already has an ID, we don't need to generate one. This allows
-       * users to specify their own IDs.
+       * It's difficult for v0 to understand whether or not an op has
+       * historically contained a custom ID, as all step usage now require them.
+       *
+       * For this reason, we make the assumption that steps in v0 do not have a
+       * custom ID and generate one for them as we would in all recommendations
+       * and examples.
        */
-      if (op.id) {
-        return op as HashedOp;
-      }
-
       const obj = {
         parent: this.#state.currentOp?.id ?? null,
         op: op.op,
