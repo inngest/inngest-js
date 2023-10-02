@@ -182,6 +182,31 @@ export const deserializeError = (subject: Partial<SerializedError>): Error => {
 
 export enum ErrCode {
   NESTING_STEPS = "NESTING_STEPS",
+
+  /**
+   * Legacy v0 execution error code for when a function has changed and no
+   * longer matches its in-progress state.
+   *
+   * @deprecated Not for use in latest execution method.
+   */
+  NON_DETERMINISTIC_FUNCTION = "NON_DETERMINISTIC_FUNCTION",
+
+  /**
+   * Legacy v0 execution error code for when a function is found to be using
+   * async actions after memoziation has occurred, which v0 doesn't support.
+   *
+   * @deprecated Not for use in latest execution method.
+   */
+  ASYNC_DETECTED_AFTER_MEMOIZATION = "ASYNC_DETECTED_AFTER_MEMOIZATION",
+
+  /**
+   * Legacy v0 execution error code for when a function is found to be using
+   * steps after a non-step async action has occurred.
+   *
+   * @deprecated Not for use in latest execution method.
+   */
+  STEP_USED_AFTER_ASYNC = "STEP_USED_AFTER_ASYNC",
+
   AUTOMATIC_PARALLEL_INDEXING = "AUTOMATIC_PARALLEL_INDEXING",
 }
 
@@ -371,4 +396,23 @@ export const rethrowError = (prefix: string): ((err: any) => never) => {
       throw err;
     }
   };
+};
+
+/**
+ * Legacy v0 execution error for functions that don't support mixing steps and
+ * regular async actions.
+ */
+export const functionStoppedRunningErr = (code: ErrCode) => {
+  return prettyError({
+    whatHappened: "Your function was stopped from running",
+    why: "We detected a mix of asynchronous logic, some using step tooling and some not.",
+    consequences:
+      "This can cause unexpected behaviour when a function is paused and resumed and is therefore strongly discouraged; we stopped your function to ensure nothing unexpected happened!",
+    stack: true,
+    toFixNow:
+      "Ensure that your function is either entirely step-based or entirely non-step-based, by either wrapping all asynchronous logic in `step.run()` calls or by removing all `step.*()` calls.",
+    otherwise:
+      "For more information on why step functions work in this manner, see https://www.inngest.com/docs/functions/multi-step#gotchas",
+    code,
+  });
 };

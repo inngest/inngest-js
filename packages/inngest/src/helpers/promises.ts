@@ -168,3 +168,10 @@ export const runAsPromise = <T extends (() => any) | undefined>(
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return Promise.resolve().then(fn);
 };
+
+/**
+ * Returns a Promise that resolve after the current event loop tick.
+ */
+export const resolveNextTick = (): Promise<void> => {
+  return new Promise((resolve) => setTimeout(resolve));
+};

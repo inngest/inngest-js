@@ -1,6 +1,10 @@
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
 import { type InngestApi } from "../api/api";
-import { err, fnDataSchema, ok, type FnData, type Result } from "../types";
+import {
+  ExecutionVersion,
+  PREFERRED_EXECUTION_VERSION,
+} from "../components/execution/InngestExecution";
+import { err, ok, type Result } from "../types";
 import { prettyError } from "./errors";
 import { type Await } from "./types";
 
@@ -61,15 +65,129 @@ export const waterfall = <TFns extends ((arg?: any) => any)[]>(
   };
 };
 
+const fnDataVersionSchema = z.object({
+  version: z
+    .literal(-1)
+    .or(z.literal(0))
+    .or(z.literal(1))
+    .optional()
+    .transform<ExecutionVersion>((v) => {
+      if (typeof v === "undefined") {
+        console.warn(
+          `No request version specified by executor; defaulting to v${PREFERRED_EXECUTION_VERSION}`
+        );
+
+        return PREFERRED_EXECUTION_VERSION;
+      }
+
+      return v === -1 ? PREFERRED_EXECUTION_VERSION : v;
+    }),
+});
+
+export const parseFnData = (data: unknown) => {
+  let version: ExecutionVersion;
+
+  try {
+    ({ version } = fnDataVersionSchema.parse(data));
+
+    const versionHandlers = {
+      [ExecutionVersion.V0]: () =>
+        ({
+          version: 0,
+          ...z
+            .object({
+              event: z.object({}).passthrough(),
+              events: z.array(z.object({}).passthrough()).default([]),
+              steps: z
+                .record(
+                  z.any().refine((v) => typeof v !== "undefined", {
+                    message: "Values in steps must be defined",
+                  })
+                )
+                .optional()
+                .nullable(),
+              ctx: z
+                .object({
+                  run_id: z.string(),
+                  attempt: z.number().default(0),
+                  stack: z
+                    .object({
+                      stack: z
+                        .array(z.string())
+                        .nullable()
+                        .transform((v) => (Array.isArray(v) ? v : [])),
+                      current: z.number(),
+                    })
+                    .passthrough()
+                    .optional()
+                    .nullable(),
+                })
+                .optional()
+                .nullable(),
+              use_api: z.boolean().default(false),
+            })
+            .parse(data),
+        } as const),
+
+      [ExecutionVersion.V1]: () =>
+        ({
+          version: 1,
+          ...z
+            .object({
+              event: z.record(z.any()),
+              events: z.array(z.record(z.any())).default([]),
+              steps: z
+                .record(
+                  z.any().refine((v) => typeof v !== "undefined", {
+                    message: "Values in steps must be defined",
+                  })
+                )
+                .optional()
+                .nullable(),
+              ctx: z
+                .object({
+                  run_id: z.string(),
+                  attempt: z.number().default(0),
+                  disable_immediate_execution: z.boolean().default(false),
+                  use_api: z.boolean().default(false),
+                  stack: z
+                    .object({
+                      stack: z
+                        .array(z.string())
+                        .nullable()
+                        .transform((v) => (Array.isArray(v) ? v : [])),
+                      current: z.number(),
+                    })
+                    .passthrough()
+                    .optional()
+                    .nullable(),
+                })
+                .optional()
+                .nullable(),
+            })
+            .parse(data),
+        } as const),
+    } satisfies Record<ExecutionVersion, () => unknown>;
+
+    return versionHandlers[version]();
+  } catch (err) {
+    throw new Error(parseFailureErr(err));
+  }
+};
+export type FnData = ReturnType<typeof parseFnData>;
+
 type ParseErr = string;
-export const parseFnData = async (
-  data: unknown,
+export const fetchAllFnData = async (
+  data: FnData,
   api: InngestApi
 ): Promise<Result<FnData, ParseErr>> => {
-  try {
-    const result = fnDataSchema.parse(data);
+  const result = { ...data };
 
-    if (result.ctx?.use_api) {
+  try {
+    if (
+      (result.version === 0 && result.use_api) ||
+      (result.version === 1 && result.ctx?.use_api)
+    ) {
       if (!result.ctx?.run_id) {
         return err(
           prettyError({
@@ -119,20 +237,22 @@ export const parseFnData = async (
     // move to something like protobuf so we don't have to deal with this
     console.error(error);
 
-    let why: string | undefined;
-    if (error instanceof ZodError) {
-      why = error.toString();
-    }
-
-    return err(
-      prettyError({
-        whatHappened: "Failed to parse data from executor.",
-        consequences: "Function execution can't continue.",
-        toFixNow:
-          "Make sure that your API is set up to parse incoming request bodies as JSON, like body-parser for Express (https://expressjs.com/en/resources/middleware/body-parser.html).",
-        stack: true,
-        why,
-      })
-    );
+    return err(parseFailureErr(error));
   }
+};
+
+const parseFailureErr = (err: unknown) => {
+  let why: string | undefined;
+  if (err instanceof ZodError) {
+    why = err.toString();
+  }
+
+  return prettyError({
+    whatHappened: "Failed to parse data from executor.",
+    consequences: "Function execution can't continue.",
+    toFixNow:
+      "Make sure that your API is set up to parse incoming request bodies as JSON, like body-parser for Express (https://expressjs.com/en/resources/middleware/body-parser.html).",
+    stack: true,
+    why,
+  });
 };
