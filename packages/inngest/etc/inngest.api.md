@@ -334,6 +334,12 @@ export class RetryAfterError extends Error {
 }
 
 // @public
+export interface ServeHandlerOptions extends RegisterOptions {
+    client: AnyInngest;
+    functions: readonly AnyInngestFunction[];
+}
+
+// @public
 export type StandardEventSchemas = Record<string, StandardEventSchema>;
 
 // @public

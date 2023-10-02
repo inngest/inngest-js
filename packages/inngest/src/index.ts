@@ -9,6 +9,7 @@ export {
 export { Inngest } from "./components/Inngest";
 export type { EventsFromOpts } from "./components/Inngest";
 export { InngestCommHandler } from "./components/InngestCommHandler";
+export type { ServeHandlerOptions } from "./components/InngestCommHandler";
 export { InngestMiddleware } from "./components/InngestMiddleware";
 export type {
   MiddlewareOptions,
