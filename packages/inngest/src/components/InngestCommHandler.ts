@@ -1,8 +1,10 @@
 import canonicalize from "canonicalize";
+import debug from "debug";
 import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import {
+  debugPrefix,
   defaultInngestBaseUrl,
   envKeys,
   headerKeys,
@@ -399,6 +401,10 @@ export class InngestCommHandler<
         return defaultLogLevel;
       })
       .parse(options.logLevel || this.env[envKeys.InngestLogLevel]);
+
+    if (this.logLevel === "debug") {
+      debug.enable(`${debugPrefix}:*`);
+    }
 
     const defaultStreamingOption: typeof this.streaming = false;
     this.streaming = z

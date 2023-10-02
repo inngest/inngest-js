@@ -2,6 +2,7 @@ import Debug, { type Debugger } from "debug";
 import { type Simplify } from "type-fest";
 import { type MaybePromise } from "type-plus";
 import { type ServerTiming } from "../../helpers/ServerTiming";
+import { debugPrefix } from "../../helpers/consts";
 import { type AnyContext, type IncomingOp, type OutgoingOp } from "../../types";
 import { type AnyInngest } from "../Inngest";
 import { type ActionResponse } from "../InngestCommHandler";
@@ -67,7 +68,7 @@ export class InngestExecution {
 
   constructor(protected options: InngestExecutionOptions) {
     this.options = options;
-    this.debug = Debug("inngest").extend(this.options.runId);
+    this.debug = Debug(debugPrefix).extend(this.options.runId);
   }
 }
 
