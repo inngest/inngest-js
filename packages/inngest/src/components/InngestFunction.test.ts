@@ -151,17 +151,17 @@ describe("runFn", () => {
               flowFn
             );
 
-            const execution = fn["createExecution"](
-              PREFERRED_EXECUTION_VERSION,
-              {
+            const execution = fn["createExecution"]({
+              version: PREFERRED_EXECUTION_VERSION,
+              partialOptions: {
                 data: fromPartial({
                   event: { name: "foo", data: { foo: "foo" } },
                 }),
                 runId: "run",
                 stepState: {},
                 stepCompletionOrder: [],
-              }
-            );
+              },
+            });
 
             ret = await execution.start();
           });
@@ -195,17 +195,17 @@ describe("runFn", () => {
           });
 
           test("wrap thrown error", async () => {
-            const execution = fn["createExecution"](
-              PREFERRED_EXECUTION_VERSION,
-              {
+            const execution = fn["createExecution"]({
+              version: PREFERRED_EXECUTION_VERSION,
+              partialOptions: {
                 data: fromPartial({
                   event: { name: "foo", data: { foo: "foo" } },
                 }),
                 stepState: {},
                 runId: "run",
                 stepCompletionOrder: [],
-              }
-            );
+              },
+            });
 
             const ret = await execution.start();
 
@@ -234,9 +234,9 @@ describe("runFn", () => {
         disableImmediateExecution?: boolean;
       }
     ) => {
-      const execution = fn["createExecution"](
-        opts?.executionVersion ?? PREFERRED_EXECUTION_VERSION,
-        {
+      const execution = fn["createExecution"]({
+        version: opts?.executionVersion ?? PREFERRED_EXECUTION_VERSION,
+        partialOptions: {
           data: fromPartial({
             event: opts?.event || { name: "foo", data: {} },
           }),
@@ -247,8 +247,8 @@ describe("runFn", () => {
           requestedRunStep: opts?.runStep,
           timer,
           disableImmediateExecution: opts?.disableImmediateExecution,
-        }
-      );
+        },
+      });
 
       return execution.start();
     };

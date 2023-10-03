@@ -42,6 +42,7 @@ import { version } from "../version";
 import { type AnyInngest } from "./Inngest";
 import {
   type AnyInngestFunction,
+  type CreateExecutionOptions,
   type InngestFunction,
 } from "./InngestFunction";
 import {
@@ -824,7 +825,7 @@ export class InngestCommHandler<
         fnData: V extends ExecutionVersion
           ? Extract<FnData, { version: V }>
           : FnData
-      ) => Promise<ExecutionResult>;
+      ) => MaybePromise<CreateExecutionOptions>;
 
       type GenericExecutionStarters = Record<
         ExecutionVersion,
@@ -848,23 +849,24 @@ export class InngestCommHandler<
             };
           }, {});
 
-          const execution = fn.fn["createExecution"](version, {
-            runId: ctx?.run_id || "",
-            data: {
-              event: event as EventPayload,
-              events: events as [EventPayload, ...EventPayload[]],
+          return {
+            version,
+            partialOptions: {
               runId: ctx?.run_id || "",
-              attempt: ctx?.attempt ?? 0,
+              data: {
+                event: event as EventPayload,
+                events: events as [EventPayload, ...EventPayload[]],
+                runId: ctx?.run_id || "",
+                attempt: ctx?.attempt ?? 0,
+              },
+              stepState,
+              requestedRunStep:
+                stepId === "step" ? undefined : stepId || undefined,
+              timer,
+              isFailureHandler: fn.onFailure,
+              stepCompletionOrder: ctx?.stack?.stack ?? [],
             },
-            stepState,
-            requestedRunStep:
-              stepId === "step" ? undefined : stepId || undefined,
-            timer,
-            isFailureHandler: fn.onFailure,
-            stepCompletionOrder: ctx?.stack?.stack ?? [],
-          });
-
-          return execution.start();
+          };
         },
         [ExecutionVersion.V1]: ({ event, events, steps, ctx, version }) => {
           const stepState = Object.entries(steps ?? {}).reduce<
@@ -880,28 +882,33 @@ export class InngestCommHandler<
             };
           }, {});
 
-          const execution = fn.fn["createExecution"](version, {
-            runId: ctx?.run_id || "",
-            data: {
-              event: event as EventPayload,
-              events: events as [EventPayload, ...EventPayload[]],
+          return {
+            version,
+            partialOptions: {
               runId: ctx?.run_id || "",
-              attempt: ctx?.attempt ?? 0,
+              data: {
+                event: event as EventPayload,
+                events: events as [EventPayload, ...EventPayload[]],
+                runId: ctx?.run_id || "",
+                attempt: ctx?.attempt ?? 0,
+              },
+              stepState,
+              requestedRunStep:
+                stepId === "step" ? undefined : stepId || undefined,
+              timer,
+              isFailureHandler: fn.onFailure,
+              disableImmediateExecution: ctx?.disable_immediate_execution,
+              stepCompletionOrder: ctx?.stack?.stack ?? [],
             },
-            stepState,
-            requestedRunStep:
-              stepId === "step" ? undefined : stepId || undefined,
-            timer,
-            isFailureHandler: fn.onFailure,
-            disableImmediateExecution: ctx?.disable_immediate_execution,
-            stepCompletionOrder: ctx?.stack?.stack ?? [],
-          });
-
-          return execution.start();
+          };
         },
       });
 
-      return executionStarters[anyFnData.value.version](anyFnData.value);
+      const executionOptions = await executionStarters[anyFnData.value.version](
+        anyFnData.value
+      );
+
+      return fn.fn["createExecution"](executionOptions).start();
     });
 
     return { version, result };

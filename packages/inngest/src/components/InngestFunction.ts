@@ -194,14 +194,11 @@ export class InngestFunction<
     return config;
   }
 
-  private createExecution(
-    version: ExecutionVersion,
-    partialOptions: Omit<InngestExecutionOptions, "client" | "fn">
-  ): IInngestExecution {
+  private createExecution(opts: CreateExecutionOptions): IInngestExecution {
     const options: InngestExecutionOptions = {
       client: this.#client,
       fn: this,
-      ...partialOptions,
+      ...opts.partialOptions,
     };
 
     const versionHandlers = {
@@ -209,6 +206,11 @@ export class InngestFunction<
       [ExecutionVersion.V0]: () => createV0InngestExecution(options),
     } satisfies Record<ExecutionVersion, () => IInngestExecution>;
 
-    return versionHandlers[version]();
+    return versionHandlers[opts.version]();
   }
 }
+
+export type CreateExecutionOptions = {
+  version: ExecutionVersion;
+  partialOptions: Omit<InngestExecutionOptions, "client" | "fn">;
+};
