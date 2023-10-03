@@ -691,15 +691,16 @@ export class InngestCommHandler<
               version,
             };
           },
-          "step-not-found": (_result) => {
-            /**
-             * TODO Status decision. I think we should use a unique op code for
-             * this situation and keep the 206 status.
-             */
+          "step-not-found": (result) => {
             return {
-              status: 999,
-              headers: { "Content-Type": "application/json" },
-              body: "",
+              status: 500,
+              headers: {
+                "Content-Type": "application/json",
+                [headerKeys.NoRetry]: "false",
+              },
+              body: stringify({
+                error: `Could not find step "${result.step.id}" to run; timed out`,
+              }),
               version,
             };
           },
