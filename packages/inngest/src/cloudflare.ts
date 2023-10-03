@@ -15,6 +15,13 @@ export const frameworkName: SupportedFrameworkName = "cloudflare-pages";
 export const serve = (options: ServeHandlerOptions) => {
   const handler = new InngestCommHandler({
     frameworkName,
+
+    /**
+     * Assume that we want to override the `fetch` implementation with the one
+     * globally available in the Cloudflare env. Specifying it here will
+     * ensure we avoid trying to load a Node-compatible version later.
+     */
+    fetch: fetch.bind(globalThis),
     ...options,
     handler: ({
       request: req,

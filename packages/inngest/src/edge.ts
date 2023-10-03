@@ -25,6 +25,7 @@ export const frameworkName: SupportedFrameworkName = "edge";
 export const serve = (options: ServeHandlerOptions) => {
   const handler = new InngestCommHandler({
     frameworkName,
+    fetch: fetch.bind(globalThis),
     ...options,
     handler: (req: Request) => {
       return {
