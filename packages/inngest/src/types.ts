@@ -571,21 +571,6 @@ export interface RegisterOptions {
   fetch?: typeof fetch;
 
   /**
-   * Controls whether a landing page with introspection capabilities is shown
-   * when a `GET` request is performed to this handler.
-   *
-   * Defaults to using the boolean value of `process.env.INNGEST_LANDING_PAGE`
-   * (e.g. `"true"`), and `true` if that env var is not defined.
-   *
-   * This page is highly recommended when getting started in development,
-   * testing, or staging environments.
-   *
-   * @deprecated This page is no longer available. Please use the Inngest Dev
-   * Server instead via `npx inngest-cli@latest dev`.
-   */
-  landingPage?: boolean;
-
-  /**
    * The path to the Inngest serve endpoint. e.g.:
    *
    *     "/some/long/path/to/inngest/endpoint"

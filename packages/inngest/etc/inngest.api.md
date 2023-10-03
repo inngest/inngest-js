@@ -316,8 +316,6 @@ export interface RegisterOptions {
     baseUrl?: string;
     fetch?: typeof fetch;
     id?: string;
-    // @deprecated
-    landingPage?: boolean;
     logLevel?: LogLevel;
     serveHost?: string;
     servePath?: string;
@@ -402,7 +400,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:342:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:359:3 - (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
 // src/types.ts:76:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:723:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:708:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

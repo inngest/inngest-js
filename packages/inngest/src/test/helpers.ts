@@ -236,7 +236,7 @@ export const testFramework = (
       describe("Serve return", opts.handlerTests);
     }
 
-    describe("GET (landing page)", () => {
+    describe("GET", () => {
       test("shows introspection data", async () => {
         const ret = await run(
           [{ client: inngest, functions: [] }],
