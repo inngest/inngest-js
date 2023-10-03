@@ -1,5 +1,6 @@
 import { ZodError, z } from "zod";
 import { type InngestApi } from "../api/api";
+import { stepsSchema } from "../api/schema";
 import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
@@ -93,11 +94,11 @@ export const parseFnData = (data: unknown) => {
     const versionHandlers = {
       [ExecutionVersion.V0]: () =>
         ({
-          version: 0,
+          version: ExecutionVersion.V0,
           ...z
             .object({
-              event: z.object({}).passthrough(),
-              events: z.array(z.object({}).passthrough()).default([]),
+              event: z.record(z.any()),
+              events: z.array(z.record(z.any())).default([]),
               steps: z
                 .record(
                   z.any().refine((v) => typeof v !== "undefined", {
@@ -131,19 +132,12 @@ export const parseFnData = (data: unknown) => {
 
       [ExecutionVersion.V1]: () =>
         ({
-          version: 1,
+          version: ExecutionVersion.V1,
           ...z
             .object({
               event: z.record(z.any()),
               events: z.array(z.record(z.any())).default([]),
-              steps: z
-                .record(
-                  z.any().refine((v) => typeof v !== "undefined", {
-                    message: "Values in steps must be defined",
-                  })
-                )
-                .optional()
-                .nullable(),
+              steps: stepsSchema,
               ctx: z
                 .object({
                   run_id: z.string(),

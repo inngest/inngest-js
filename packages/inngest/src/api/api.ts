@@ -3,9 +3,9 @@ import { getFetch } from "../helpers/env";
 import { hashSigningKey } from "../helpers/strings";
 import { err, ok, type Result } from "../types";
 import {
-  BatchSchema,
-  ErrorSchema,
-  StepsSchema,
+  batchSchema,
+  errorSchema,
+  stepsSchema,
   type BatchResponse,
   type ErrorResponse,
   type StepsResponse,
@@ -57,9 +57,9 @@ export class InngestApi {
         const data: unknown = await resp.json();
 
         if (resp.ok) {
-          return ok(StepsSchema.parse(data));
+          return ok(stepsSchema.parse(data));
         } else {
-          return err(ErrorSchema.parse(data));
+          return err(errorSchema.parse(data));
         }
       })
       .catch((error) => {
@@ -79,9 +79,9 @@ export class InngestApi {
         const data: unknown = await resp.json();
 
         if (resp.ok) {
-          return ok(BatchSchema.parse(data));
+          return ok(batchSchema.parse(data));
         } else {
-          return err(ErrorSchema.parse(data));
+          return err(errorSchema.parse(data));
         }
       })
       .catch((error) => {

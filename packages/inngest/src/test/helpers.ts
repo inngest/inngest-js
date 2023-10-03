@@ -644,7 +644,7 @@ export const testFramework = (
           );
           expect(ret).toMatchObject({
             status: 200,
-            body: '"fn"',
+            body: JSON.stringify({ data: "fn" }),
           });
         });
       });

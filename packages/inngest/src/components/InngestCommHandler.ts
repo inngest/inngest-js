@@ -23,7 +23,7 @@ import {
   type Env,
 } from "../helpers/env";
 import { rethrowError, serializeError } from "../helpers/errors";
-import { fetchAllFnData, parseFnData } from "../helpers/functions";
+import { fetchAllFnData, parseFnData, type FnData } from "../helpers/functions";
 import { runAsPromise } from "../helpers/promises";
 import { createStream } from "../helpers/stream";
 import { hashSigningKey, stringify } from "../helpers/strings";
@@ -45,11 +45,11 @@ import {
   type InngestFunction,
 } from "./InngestFunction";
 import {
+  ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
   type ExecutionResult,
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
-  type ExecutionVersion,
   type InngestExecutionOptions,
 } from "./execution/InngestExecution";
 
@@ -677,7 +677,7 @@ export class InngestCommHandler<
                   ? { [headerKeys.RetryAfter]: result.retriable }
                   : {}),
               },
-              body: stringify(result.error),
+              body: stringify({ error: result.error }),
               version,
             };
           },
@@ -687,7 +687,7 @@ export class InngestCommHandler<
               headers: {
                 "Content-Type": "application/json",
               },
-              body: stringify(result.data),
+              body: stringify({ data: result.data }),
               version,
             };
           },
@@ -811,45 +811,96 @@ export class InngestCommHandler<
     const { version } = immediateFnData;
 
     const result = runAsPromise(async () => {
-      const fnData = await fetchAllFnData(
+      const anyFnData = await fetchAllFnData(
         immediateFnData,
         this.client["inngestApi"]
       );
-      if (!fnData.ok) {
-        throw new Error(fnData.error);
+      if (!anyFnData.ok) {
+        throw new Error(anyFnData.error);
       }
-      const { event, events, steps, ctx, version } = fnData.value;
 
-      const stepState = Object.entries(steps ?? {}).reduce<
-        InngestExecutionOptions["stepState"]
-      >((acc, [id, data]) => {
-        return {
-          ...acc,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          [id]: { id, data },
-        };
-      }, {});
+      type ExecutionStarter<V> = (
+        fnData: V extends ExecutionVersion
+          ? Extract<FnData, { version: V }>
+          : FnData
+      ) => Promise<ExecutionResult>;
 
-      const execution = fn.fn["createExecution"](version, {
-        runId: ctx?.run_id || "",
-        data: {
-          event: event as EventPayload,
-          events: events as [EventPayload, ...EventPayload[]],
-          runId: ctx?.run_id || "",
-          attempt: ctx?.attempt ?? 0,
+      type GenericExecutionStarters = Record<
+        ExecutionVersion,
+        ExecutionStarter<unknown>
+      >;
+
+      type ExecutionStarters = {
+        [V in ExecutionVersion]: ExecutionStarter<V>;
+      };
+
+      const executionStarters = ((s: ExecutionStarters) =>
+        s as GenericExecutionStarters)({
+        [ExecutionVersion.V0]: ({ event, events, steps, ctx, version }) => {
+          const stepState = Object.entries(steps ?? {}).reduce<
+            InngestExecutionOptions["stepState"]
+          >((acc, [id, data]) => {
+            return {
+              ...acc,
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+              [id]: { id, data },
+            };
+          }, {});
+
+          const execution = fn.fn["createExecution"](version, {
+            runId: ctx?.run_id || "",
+            data: {
+              event: event as EventPayload,
+              events: events as [EventPayload, ...EventPayload[]],
+              runId: ctx?.run_id || "",
+              attempt: ctx?.attempt ?? 0,
+            },
+            stepState,
+            requestedRunStep:
+              stepId === "step" ? undefined : stepId || undefined,
+            timer,
+            isFailureHandler: fn.onFailure,
+            stepCompletionOrder: ctx?.stack?.stack ?? [],
+          });
+
+          return execution.start();
         },
-        stepState,
-        requestedRunStep: stepId === "step" ? undefined : stepId || undefined,
-        timer,
-        isFailureHandler: fn.onFailure,
-        disableImmediateExecution:
-          fnData.value.version === 1
-            ? fnData.value.ctx?.disable_immediate_execution
-            : undefined,
-        stepCompletionOrder: ctx?.stack?.stack ?? [],
+        [ExecutionVersion.V1]: ({ event, events, steps, ctx, version }) => {
+          const stepState = Object.entries(steps ?? {}).reduce<
+            InngestExecutionOptions["stepState"]
+          >((acc, [id, result]) => {
+            return {
+              ...acc,
+              [id]:
+                result.type === "data"
+                  ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    { id, data: result.data }
+                  : { id, error: result.error },
+            };
+          }, {});
+
+          const execution = fn.fn["createExecution"](version, {
+            runId: ctx?.run_id || "",
+            data: {
+              event: event as EventPayload,
+              events: events as [EventPayload, ...EventPayload[]],
+              runId: ctx?.run_id || "",
+              attempt: ctx?.attempt ?? 0,
+            },
+            stepState,
+            requestedRunStep:
+              stepId === "step" ? undefined : stepId || undefined,
+            timer,
+            isFailureHandler: fn.onFailure,
+            disableImmediateExecution: ctx?.disable_immediate_execution,
+            stepCompletionOrder: ctx?.stack?.stack ?? [],
+          });
+
+          return execution.start();
+        },
       });
 
-      return execution.start();
+      return executionStarters[anyFnData.value.version](anyFnData.value);
     });
 
     return { version, result };
