@@ -519,7 +519,7 @@ describe("runFn", () => {
               stackOrder: [A, B],
               expectedReturn: {
                 type: "function-resolved",
-                data: undefined,
+                data: null,
               },
             },
           }),
@@ -573,7 +573,7 @@ describe("runFn", () => {
               },
               expectedReturn: {
                 type: "function-resolved",
-                data: undefined,
+                data: null,
               },
             },
           }),
@@ -671,7 +671,7 @@ describe("runFn", () => {
               stackOrder: [foo, B],
               expectedReturn: {
                 type: "function-resolved",
-                data: undefined,
+                data: null,
               },
             },
           }),
@@ -734,7 +734,7 @@ describe("runFn", () => {
               },
               expectedReturn: {
                 type: "function-resolved",
-                data: undefined,
+                data: null,
               },
             },
           }),
@@ -869,7 +869,7 @@ describe("runFn", () => {
               stackOrder: [B, A, C],
               expectedReturn: {
                 type: "function-resolved",
-                data: undefined,
+                data: null,
               },
             },
           }),
@@ -1016,7 +1016,7 @@ describe("runFn", () => {
               },
               expectedReturn: {
                 type: "function-resolved",
-                data: undefined,
+                data: null,
               },
             },
           }),
@@ -1232,7 +1232,7 @@ describe("runFn", () => {
                 [BWins]: { id: BWins, data: "B wins" },
               },
               stackOrder: [B, BWins, A],
-              expectedReturn: { type: "function-resolved", data: undefined },
+              expectedReturn: { type: "function-resolved", data: null },
               disableImmediateExecution: true,
             },
 
@@ -2189,7 +2189,7 @@ describe("runFn", () => {
               stackOrder: [A, B],
               expectedReturn: {
                 type: "function-resolved",
-                data: undefined,
+                data: null,
               },
             },
           }),
@@ -2243,7 +2243,7 @@ describe("runFn", () => {
               },
               expectedReturn: {
                 type: "function-resolved",
-                data: undefined,
+                data: null,
               },
             },
           }),
@@ -2351,7 +2351,7 @@ describe("runFn", () => {
               },
               expectedReturn: {
                 type: "function-resolved",
-                data: undefined,
+                data: null,
               },
               customTests() {
                 let loggerInfoSpy: jest.SpiedFunction<() => void>;
@@ -2438,7 +2438,7 @@ describe("runFn", () => {
               },
               expectedReturn: {
                 type: "function-resolved",
-                data: undefined,
+                data: null,
               },
               customTests() {
                 let loggerInfoSpy: jest.SpiedFunction<() => void>;

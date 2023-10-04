@@ -8,6 +8,7 @@ import {
   prettyError,
   serializeError,
 } from "../../helpers/errors";
+import { undefinedToNull } from "../../helpers/functions";
 import {
   resolveAfterPending,
   resolveNextTick,
@@ -504,7 +505,7 @@ export class V0InngestExecution
       return { type: "function-rejected", error: serializedError, retriable };
     }
 
-    return { type: "function-resolved", data };
+    return { type: "function-resolved", data: undefinedToNull(data) };
   }
 }
 

@@ -1,5 +1,4 @@
 import { sha1 } from "hash.js";
-import { undefinedToNull } from "inngest/helpers/functions";
 import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { logPrefix } from "../../helpers/consts";
@@ -9,6 +8,7 @@ import {
   prettyError,
   serializeError,
 } from "../../helpers/errors";
+import { undefinedToNull } from "../../helpers/functions";
 import {
   createDeferredPromise,
   createTimeoutPromise,
