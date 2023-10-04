@@ -30,7 +30,7 @@ describe("run", () => {
         __typename: "StepEvent",
         stepType: "COMPLETED",
         name: "Step 1",
-        output: "1",
+        output: JSON.stringify({ data: 1 }),
       })
     ).resolves.toBeDefined();
   }, 60000);
@@ -41,7 +41,7 @@ describe("run", () => {
         __typename: "StepEvent",
         stepType: "COMPLETED",
         name: "Step 2",
-        output: "2",
+        output: JSON.stringify({ data: 2 }),
       })
     ).resolves.toBeDefined();
   }, 60000);
@@ -52,7 +52,7 @@ describe("run", () => {
         __typename: "StepEvent",
         stepType: "COMPLETED",
         name: "Step 3",
-        output: "3",
+        output: JSON.stringify({ data: 3 }),
       })
     ).resolves.toBeDefined();
   }, 60000);
