@@ -34,6 +34,7 @@ import {
   type FunctionConfig,
   type IntrospectRequest,
   type LogLevel,
+  type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
   type SupportedFrameworkName,
@@ -667,6 +668,27 @@ export class InngestCommHandler<
         const { version, result } = this.runStep(fnId, stepId, body, timer);
         const stepOutput = await result;
 
+        /**
+         * Functions can return `undefined`, but we'll always convert this to
+         * `null`, as this is appropriately serializable by JSON.
+         */
+        const undefinedToNull = (v: unknown) => {
+          const isUndefined = typeof v === "undefined";
+          return isUndefined ? null : v;
+        };
+
+        const opDataUndefinedToNull = (op: OutgoingOp) => {
+          const opData = z.object({ data: z.any() }).safeParse(op.data);
+
+          if (opData.success) {
+            (op.data as { data: unknown }).data = undefinedToNull(
+              opData.data.data
+            );
+          }
+
+          return op;
+        };
+
         const resultHandlers: ExecutionResultHandlers<ActionResponse> = {
           "function-rejected": (result) => {
             return {
@@ -678,7 +700,7 @@ export class InngestCommHandler<
                   ? { [headerKeys.RetryAfter]: result.retriable }
                   : {}),
               },
-              body: stringify({ error: result.error }),
+              body: stringify({ error: undefinedToNull(result.error) }),
               version,
             };
           },
@@ -688,7 +710,7 @@ export class InngestCommHandler<
               headers: {
                 "Content-Type": "application/json",
               },
-              body: stringify({ data: result.data }),
+              body: stringify({ data: undefinedToNull(result.data) }),
               version,
             };
           },
@@ -706,18 +728,22 @@ export class InngestCommHandler<
             };
           },
           "step-ran": (result) => {
+            const step = opDataUndefinedToNull(result.step);
+
             return {
               status: 206,
               headers: { "Content-Type": "application/json" },
-              body: stringify([result.step]),
+              body: stringify([step]),
               version,
             };
           },
           "steps-found": (result) => {
+            const steps = result.steps.map(opDataUndefinedToNull);
+
             return {
               status: 206,
               headers: { "Content-Type": "application/json" },
-              body: stringify(result.steps),
+              body: stringify(steps),
               version,
             };
           },
