@@ -1,66 +1,31 @@
 import { slugify, timeStr } from "@local/helpers/strings";
-import { assertType } from "type-plus";
 
 describe("slugify", () => {
-  describe("Generates a slug using hyphens", () => {
-    test("generic", () => {
-      const expected = "yes-ok-this-looks-good";
-      const actual = slugify("Yes Ok THIS looks*good!!");
-      expect(actual).toEqual(expected);
-      assertType<typeof expected>(actual);
-    });
+  it("Generates a slug using hyphens", () => {
+    const specs = [
+      { input: "Yes Ok THIS looks*good!!", expected: "yes-ok-this-looks-good" },
+      { input: "LOWER CASE", expected: "lower-case" },
+      { input: "Remove 🌝 emojis", expected: "remove-emojis" },
+      { input: "multi--dashes---", expected: "multi-dashes" },
+      {
+        input: "-leading and trailing dash-",
+        expected: "leading-and-trailing-dash",
+      },
+      { input: "extra   spac es", expected: "extra-spac-es" },
+      { input: "Num6er5", expected: "num6er5" },
+      {
+        input: `special !@#$%^&*()+ chars ={}[]|\\<>,._ removed '";:`,
+        expected: "special-chars-removed",
+      },
+      {
+        input: `öther Δ bītš añd ✓ bops`,
+        expected: "ther-b-t-a-d-bops",
+      },
+    ];
 
-    test("lowercase", () => {
-      const expected = "lower-case";
-      const actual = slugify("LOWER CASE");
-      expect(actual).toEqual(expected);
-      assertType<typeof expected>(actual);
-    });
-
-    test("emoji", () => {
-      const expected = "remove-emojis";
-      const actual = slugify("Remove 🌝 emojis");
-      expect(actual).toEqual(expected);
-      assertType<typeof expected>(actual);
-    });
-
-    test("multi-dashes", () => {
-      const expected = "multi-dashes";
-      const actual = slugify("multi--dashes---");
-      expect(actual).toEqual(expected);
-      assertType<typeof expected>(actual);
-    });
-
-    test("leading and trailing dash", () => {
-      const expected = "leading-and-trailing-dash";
-      const actual = slugify("-leading and trailing dash-");
-      expect(actual).toEqual(expected);
-      assertType<typeof expected>(actual);
-    });
-
-    test("extra spaces", () => {
-      const expected = "extra-spac-es";
-      const actual = slugify("extra   spac es");
-      expect(actual).toEqual(expected);
-      assertType<typeof expected>(actual);
-    });
-
-    test("special chars", () => {
-      const expected = "special-chars-removed";
-      const actual = slugify(
-        //   ^?
-        `special !@#$%^&*()+ chars ={}[]|\\<>,._ removed '";:`
-      );
-      expect(actual).toEqual(expected);
-      assertType<typeof expected>(actual);
-    });
-
-    test("unicode", () => {
-      const expected = "ther-b-t-a-d-bops";
-      const actual = slugify(`öther Δ bītš añd ✓ bops`);
-      expect(actual).toEqual(expected);
-      assertType<typeof expected>(actual);
-    });
+    for (const spec of specs) {
+      expect(slugify(spec.input)).toEqual(spec.expected);
+    }
   });
 });
 

@@ -14,12 +14,8 @@ import {
   skipDevServer,
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
-import { stringify, type Slugify } from "../helpers/strings";
-import {
-  type ExclusiveKeys,
-  type SendEventPayload,
-  type StringWithAutocomplete,
-} from "../helpers/types";
+import { stringify } from "../helpers/strings";
+import { type ExclusiveKeys, type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
   sendEventResponseSchema,
@@ -453,30 +449,14 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   public createFunction<
     TMiddleware extends MiddlewareStack,
     TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>,
-    TName extends string,
     TTriggerName extends keyof EventsFromOpts<TOpts> &
       string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
   >(
     options: ExclusiveKeys<
       Omit<
         FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>,
-        "onFailure" | "middleware" | "id" | "name"
+        "onFailure" | "middleware"
       > & {
-        /**
-         * An unique ID used to identify the function. This is used internally for
-         * versioning and referring to your function, so should not change between
-         * deployments.
-         *
-         * If you'd like to set a prettier name for your function, use the `name`
-         * option.
-         */
-        id: StringWithAutocomplete<Slugify<TName>>;
-
-        /**
-         * A name for the function as it will appear in the Inngest Cloud UI.
-         */
-        name?: TName;
-
         /**
          * Provide a function to be called if your function fails, meaning
          * that it ran out of retries and was unable to complete successfully.

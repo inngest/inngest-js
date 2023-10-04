@@ -340,6 +340,9 @@ export interface ServeHandlerOptions extends RegisterOptions {
 }
 
 // @public
+export const slugify: (str: string) => string;
+
+// @public
 export type StandardEventSchemas = Record<string, StandardEventSchema>;
 
 // @public
