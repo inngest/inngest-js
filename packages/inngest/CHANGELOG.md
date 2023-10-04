@@ -1,5 +1,51 @@
 # inngest
 
+## 3.0.0
+
+### Major Changes
+
+- [#294](https://github.com/inngest/inngest-js/pull/294) [`f2f4856`](https://github.com/inngest/inngest-js/commit/f2f4856ab97d4191587ea1f41e9fe18b5ef45c95) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Clients and functions now require IDs
+
+  When instantiating a client using `new Inngest()` or creating a function via `inngest.createFunction()`, it's now required to pass an `id` instead of a `name`.
+
+  Previously only `name` was required, but this implied that the value was safe to change. Internally, we used this name to _produce_ an ID which was used during deployments and executions.
+
+  See the [v3 migration guide](https://www.inngest.com/docs/sdk/migration).
+
+- [#294](https://github.com/inngest/inngest-js/pull/294) [`f2f4856`](https://github.com/inngest/inngest-js/commit/f2f4856ab97d4191587ea1f41e9fe18b5ef45c95) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Refactored available environment variables and configuration
+
+  The arrangement of environment variables available has shifted a lot over the course of v2, so in v3 we've streamlined what's available and how they're used.
+
+  See the [v3 migration guide](https://www.inngest.com/docs/sdk/migration).
+
+- [#294](https://github.com/inngest/inngest-js/pull/294) [`f2f4856`](https://github.com/inngest/inngest-js/commit/f2f4856ab97d4191587ea1f41e9fe18b5ef45c95) Thanks [@jpwilliams](https://github.com/jpwilliams)! - In v2, providing a `fns` option when creating a function -- an object of functions -- would wrap those passed functions in `step.run()`, meaning you can run code inside your function without the `step.run()` boilerplate.
+
+  This wasn't a very well advertised feature and had some drawbacks, so we're instead replacing it with some optional middleware.
+
+  See the [v3 migration guide](https://www.inngest.com/docs/sdk/migration).
+
+- [#294](https://github.com/inngest/inngest-js/pull/294) [`f2f4856`](https://github.com/inngest/inngest-js/commit/f2f4856ab97d4191587ea1f41e9fe18b5ef45c95) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Serving functions could become a bit unwieldy with the format we had, so we've slightly altered how you serve your functions to ensure proper discoverability of options and aid in readability when revisiting the code.
+
+  See the [v3 migration guide](https://www.inngest.com/docs/sdk/migration).
+
+- [#294](https://github.com/inngest/inngest-js/pull/294) [`f2f4856`](https://github.com/inngest/inngest-js/commit/f2f4856ab97d4191587ea1f41e9fe18b5ef45c95) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Shorthand function creation removed
+
+  `inngest.createFunction()` can no longer take a string as the first or second arguments; an object is now required to aid in the discoverability of options and configuration.
+
+  See the [v3 migration guide](https://www.inngest.com/docs/sdk/migration).
+
+- [#294](https://github.com/inngest/inngest-js/pull/294) [`f2f4856`](https://github.com/inngest/inngest-js/commit/f2f4856ab97d4191587ea1f41e9fe18b5ef45c95) Thanks [@jpwilliams](https://github.com/jpwilliams)! - All steps require IDs
+
+  When using any step.\* tool, an ID is now required to ensure that determinism across changes to a function is easier to reason about for the user and the underlying engine.
+
+  The addition of these IDs allows you to deploy hotfixes and logic changes to long-running functions without fear of errors, failures, or panics. Beforehand, any changes to a function resulted in an irrecoverable error if step definitions changed. With this, changes to a function are smartly applied by default.
+
+  See the [v3 migration guide](https://www.inngest.com/docs/sdk/migration).
+
+### Patch Changes
+
+- [#333](https://github.com/inngest/inngest-js/pull/333) [`67bda66`](https://github.com/inngest/inngest-js/commit/67bda668fa53afeeb3708e3f245843e9612ccd22) Thanks [@goodoldneon](https://github.com/goodoldneon)! - (Internal) Fix missing name on `NonRetriableError`, ensuring it's correctly (de)serialized
+
 ## 2.7.2
 
 ### Patch Changes
