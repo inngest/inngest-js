@@ -1,4 +1,5 @@
 import { sha1 } from "hash.js";
+import { undefinedToNull } from "inngest/helpers/functions";
 import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { logPrefix } from "../../helpers/consts";
@@ -450,7 +451,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       return { type: "function-rejected", error: serializedError, retriable };
     }
 
-    return { type: "function-resolved", data };
+    return { type: "function-resolved", data: undefinedToNull(data) };
   }
 
   #createExecutionState(): V1ExecutionState {

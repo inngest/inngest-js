@@ -66,6 +66,14 @@ export const waterfall = <TFns extends ((arg?: any) => any)[]>(
   };
 };
 
+/**
+ * Given a value `v`, return `v` if it's not undefined, otherwise return `null`.
+ */
+export const undefinedToNull = (v: unknown) => {
+  const isUndefined = typeof v === "undefined";
+  return isUndefined ? null : v;
+};
+
 const fnDataVersionSchema = z.object({
   version: z
     .literal(-1)

@@ -23,7 +23,12 @@ import {
   type Env,
 } from "../helpers/env";
 import { rethrowError, serializeError } from "../helpers/errors";
-import { fetchAllFnData, parseFnData, type FnData } from "../helpers/functions";
+import {
+  fetchAllFnData,
+  parseFnData,
+  undefinedToNull,
+  type FnData,
+} from "../helpers/functions";
 import { runAsPromise } from "../helpers/promises";
 import { createStream } from "../helpers/stream";
 import { hashSigningKey, stringify } from "../helpers/strings";
@@ -672,11 +677,6 @@ export class InngestCommHandler<
          * Functions can return `undefined`, but we'll always convert this to
          * `null`, as this is appropriately serializable by JSON.
          */
-        const undefinedToNull = (v: unknown) => {
-          const isUndefined = typeof v === "undefined";
-          return isUndefined ? null : v;
-        };
-
         const opDataUndefinedToNull = (op: OutgoingOp) => {
           const opData = z.object({ data: z.any() }).safeParse(op.data);
 
@@ -700,7 +700,7 @@ export class InngestCommHandler<
                   ? { [headerKeys.RetryAfter]: result.retriable }
                   : {}),
               },
-              body: stringify({ error: undefinedToNull(result.error) }),
+              body: stringify(undefinedToNull(result.error)),
               version,
             };
           },
@@ -710,7 +710,7 @@ export class InngestCommHandler<
               headers: {
                 "Content-Type": "application/json",
               },
-              body: stringify({ data: undefinedToNull(result.data) }),
+              body: stringify(undefinedToNull(result.data)),
               version,
             };
           },
