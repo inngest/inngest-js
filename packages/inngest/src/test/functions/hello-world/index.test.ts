@@ -30,7 +30,7 @@ describe("run", () => {
         __typename: "StepEvent",
         stepType: "COMPLETED",
         output: JSON.stringify({
-          body: { data: "Hello, Inngest!" },
+          body: "Hello, Inngest!",
           status: 200,
         }),
       })

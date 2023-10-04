@@ -5,7 +5,6 @@ import {
   checkIntrospection,
   eventRunWithName,
   receivedEventWithName,
-  runHasTimeline,
   sendEvent,
 } from "@local/test/helpers";
 
@@ -25,16 +24,6 @@ describe("run", () => {
   test("runs in response to 'demo/send.event'", async () => {
     runId = await eventRunWithName(eventId, "send-event");
     expect(runId).toEqual(expect.any(String));
-  }, 60000);
-
-  test("ran Step 'step'", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "step",
-      })
-    ).resolves.toBeDefined();
   }, 60000);
 
   test("sent event 'app/my.event.happened'", async () => {

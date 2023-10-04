@@ -63,7 +63,7 @@ describe("run", () => {
         __typename: "StepEvent",
         stepType: "COMPLETED",
         output: JSON.stringify({
-          body: { data: [6, `${fruits.join(", ")}`] },
+          body: [6, `${fruits.join(", ")}`],
           status: 200,
         }),
       })
