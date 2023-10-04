@@ -1,21 +1,39 @@
-import ms from "ms";
 import { sha256 } from "hash.js";
+import ms from "ms";
+import { type DelimiterCase, type Join, type Words } from "string-ts";
 import { type TimeStr } from "../types";
+import { type FilterLetterOrNumber } from "./types";
 export { default as stringify } from "json-stringify-safe";
 
+const slugifyJoiner = "-" as const;
+
 /**
- * Returns a slugified string used ot generate consistent IDs.
+ * Returns a slugified string used to generate consistent IDs.
+ *
+ * This can be used to generate a consistent ID for a function when migrating
+ * from v2 to v3 of the SDK.
+ *
+ * @public
  */
-export const slugify = (str: string): string => {
-  const join = "-";
+export const slugify = <T extends string>(str: T): Slugify<T> => {
   return str
     .toLowerCase()
-    .replace(/[^a-z0-9-]+/g, join)
-    .replace(/-+/g, join)
-    .split(join)
+    .replace(/[^a-z0-9-]+/g, slugifyJoiner)
+    .replace(/-+/g, slugifyJoiner)
+    .split(slugifyJoiner)
     .filter(Boolean)
-    .join(join);
+    .join(slugifyJoiner) as Slugify<T>;
 };
+
+/**
+ * Slugify the given string `T`.
+ */
+export type Slugify<T extends string> = Lowercase<
+  Join<
+    FilterLetterOrNumber<Words<DelimiterCase<T, typeof slugifyJoiner>>>,
+    typeof slugifyJoiner
+  >
+>;
 
 const millisecond = 1;
 const second = millisecond * 1000;

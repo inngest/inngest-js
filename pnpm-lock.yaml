@@ -168,6 +168,9 @@ importers:
       shx:
         specifier: ^0.3.4
         version: 0.3.4
+      string-ts:
+        specifier: ^1.0.0
+        version: 1.0.0
       ts-jest:
         specifier: ^29.1.0
         version: 29.1.0(@babel/core@7.21.3)(jest@29.5.0)(typescript@5.2.2)
@@ -6287,6 +6290,10 @@ packages:
     dependencies:
       char-regex: 1.0.2
       strip-ansi: 6.0.1
+    dev: true
+
+  /string-ts@1.0.0:
+    resolution: {integrity: sha512-eb4Pfocg74WuvAc0GIgyk3wtS4vFR+EfE54qimaqsdXqjzTz5D6iWyW86EWMUPd4YC3t6BJ2YJE3Js7lkVkxxA==}
     dev: true
 
   /string-width@4.2.3:

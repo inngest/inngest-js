@@ -187,3 +187,90 @@ export type ParametersExceptFirst<T> = T extends (
 any
   ? U
   : never;
+
+/**
+ * A union of all possible alphanumeric characters.
+ */
+export type LetterOrNumber =
+  | "a"
+  | "b"
+  | "c"
+  | "d"
+  | "e"
+  | "f"
+  | "g"
+  | "h"
+  | "i"
+  | "j"
+  | "k"
+  | "l"
+  | "m"
+  | "n"
+  | "o"
+  | "p"
+  | "q"
+  | "r"
+  | "s"
+  | "t"
+  | "u"
+  | "v"
+  | "w"
+  | "x"
+  | "y"
+  | "z"
+  | "A"
+  | "B"
+  | "C"
+  | "D"
+  | "E"
+  | "F"
+  | "G"
+  | "H"
+  | "I"
+  | "J"
+  | "K"
+  | "L"
+  | "M"
+  | "N"
+  | "O"
+  | "P"
+  | "Q"
+  | "R"
+  | "S"
+  | "T"
+  | "U"
+  | "V"
+  | "W"
+  | "X"
+  | "Y"
+  | "Z"
+  | "0"
+  | "1"
+  | "2"
+  | "3"
+  | "4"
+  | "5"
+  | "6"
+  | "7"
+  | "8"
+  | "9";
+
+/**
+ * Given an array of strings, filter out any characters that are not
+ * alphanumeric.
+ */
+export type FilterLetterOrNumber<
+  T extends string[],
+  R extends string[] = []
+> = T extends []
+  ? []
+  : T extends [infer First extends string, ...infer Rest extends string[]]
+  ? First extends `${infer _}${LetterOrNumber}${infer _}`
+    ? [First, ...FilterLetterOrNumber<Rest, R>]
+    : FilterLetterOrNumber<Rest, R>
+  : R;
+
+/**
+ * A string that suggests values, but accepts any string.
+ */
+export type StringWithAutocomplete<T> = T | (string & Record<never, never>);
