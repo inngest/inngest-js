@@ -57,8 +57,8 @@ importers:
         specifier: ^3.5.1
         version: 3.5.1
       zod:
-        specifier: ~3.21.4
-        version: 3.21.4
+        specifier: ~3.22.0
+        version: 3.22.0
     devDependencies:
       '@actions/core':
         specifier: ^1.10.0
@@ -7005,6 +7005,6 @@ packages:
       commander: 9.5.0
     dev: true
 
-  /zod@3.21.4:
-    resolution: {integrity: sha512-m46AKbrzKVzOzs/DZgVnG5H55N1sv1M8qZU3A8RIKbs3mrACDNeIOeilDymVb2HdmP8uwshOCF4uJ8uM9rCqJw==}
+  /zod@3.22.0:
+    resolution: {integrity: sha512-y5KZY/ssf5n7hCGDGGtcJO/EBJEm5Pa+QQvFBeyMOtnFYOSflalxIFFvdaYevPhePcmcKC4aTbFkCcXN7D0O8Q==}
     dev: false
