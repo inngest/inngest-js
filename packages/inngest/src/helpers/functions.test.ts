@@ -1,3 +1,4 @@
+import { ExecutionVersion } from "@local/components/execution/InngestExecution";
 import { parseFnData, type FnData } from "@local/helpers/functions";
 import { type EventPayload } from "@local/types";
 
@@ -17,7 +18,7 @@ const generateEvent = (): EventPayload => {
 describe("#parseFnData", () => {
   const specs: {
     name: string;
-    data: Extract<FnData, { version: 1 }>;
+    data: Extract<FnData, { version: ExecutionVersion.V1 }>;
     isOk: boolean;
   }[] = [
     {
@@ -44,7 +45,7 @@ describe("#parseFnData", () => {
       name: "should return an error for missing event",
       // @ts-expect-error No `event`
       data: {
-        version: 1,
+        version: ExecutionVersion.V1,
         events: [...Array(5).keys()].map(() => generateEvent()),
         steps: {},
         ctx: {
