@@ -1,5 +1,5 @@
-import { InngestApi } from "@local/api/api";
-import { parseFnData } from "@local/helpers/functions";
+import { ExecutionVersion } from "@local/components/execution/InngestExecution";
+import { parseFnData, type FnData } from "@local/helpers/functions";
 import { type EventPayload } from "@local/types";
 
 const randomstr = (): string => {
@@ -16,17 +16,23 @@ const generateEvent = (): EventPayload => {
 };
 
 describe("#parseFnData", () => {
-  const API = new InngestApi({ signingKey: "something" });
-
-  [
+  const specs: {
+    name: string;
+    data: Extract<FnData, { version: ExecutionVersion.V1 }>;
+    isOk: boolean;
+  }[] = [
     {
       name: "should parse successfully for valid data",
       data: {
+        version: 1,
         event: generateEvent(),
         events: [...Array(5).keys()].map(() => generateEvent()),
         steps: {},
         ctx: {
           run_id: randomstr(),
+          attempt: 0,
+          disable_immediate_execution: false,
+          use_api: false,
           stack: {
             stack: [randomstr()],
             current: 0,
@@ -37,13 +43,18 @@ describe("#parseFnData", () => {
     },
     {
       name: "should return an error for missing event",
+      // @ts-expect-error No `event`
       data: {
+        version: ExecutionVersion.V1,
         events: [...Array(5).keys()].map(() => generateEvent()),
         steps: {},
         ctx: {
           run_id: randomstr(),
+          attempt: 0,
+          disable_immediate_execution: false,
+          use_api: false,
           stack: {
-            stack: [],
+            stack: [randomstr()],
             current: 0,
           },
         },
@@ -52,13 +63,19 @@ describe("#parseFnData", () => {
     },
     {
       name: "should return an error with empty object",
+      // @ts-expect-error No data at all
       data: {},
       isOk: false,
     },
-  ].forEach((test) => {
-    it(test.name, async () => {
-      const result = await parseFnData(test.data, API);
-      expect(result.ok).toEqual(test.isOk);
+  ];
+
+  specs.forEach((test) => {
+    it(test.name, () => {
+      if (test.isOk) {
+        return expect(() => parseFnData(test.data)).not.toThrow();
+      } else {
+        return expect(() => parseFnData(test.data)).toThrow();
+      }
     });
   });
 });

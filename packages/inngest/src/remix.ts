@@ -1,12 +1,11 @@
 import {
   InngestCommHandler,
   type ActionResponse,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
-import { headerKeys, queryKeys } from "./helpers/consts";
 import { type SupportedFrameworkName } from "./types";
 
-export const name: SupportedFrameworkName = "remix";
+export const frameworkName: SupportedFrameworkName = "remix";
 
 const createNewResponse = ({
   body,
@@ -47,55 +46,30 @@ const createNewResponse = ({
  * @example
  * ```ts
  * import { serve } from "inngest/remix";
- * import fns from "~/inngest";
+ * import functions from "~/inngest";
  *
- * const handler = serve("My Remix App", fns);
+ * const handler = serve({ id: "my-remix-app", functions });
  *
  * export { handler as loader, handler as action };
  * ```
  *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    opts,
-    ({ request: req }: { request: Request }) => {
-      const url = new URL(req.url, `https://${req.headers.get("host") || ""}`);
-
+export const serve = (options: ServeHandlerOptions) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: ({ request: req }: { request: Request }) => {
       return {
-        url,
-        register: () => {
-          if (req.method === "PUT") {
-            return {
-              deployId: url.searchParams.get(queryKeys.DeployId),
-            };
-          }
-        },
-        run: async () => {
-          if (req.method === "POST") {
-            return {
-              data: (await req.json()) as Record<string, unknown>,
-              fnId: url.searchParams.get(queryKeys.FnId) as string,
-              stepId: url.searchParams.get(queryKeys.StepId) as string,
-              signature: req.headers.get(headerKeys.Signature) || undefined,
-            };
-          }
-        },
-        view: () => {
-          if (req.method === "GET") {
-            return {
-              isIntrospection: url.searchParams.has(queryKeys.Introspect),
-            };
-          }
-        },
+        body: () => req.json(),
+        headers: (key) => req.headers.get(key),
+        method: () => req.method,
+        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+        transformResponse: createNewResponse,
+        transformStreamingResponse: createNewResponse,
       };
     },
-    createNewResponse,
-    createNewResponse
-  );
+  });
 
   return handler.createHandler();
 };

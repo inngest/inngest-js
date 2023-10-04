@@ -7,7 +7,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Promise.all",
+  name: "promise-all",
   triggers: [{ event: "demo/promise.all" }],
 });
 
@@ -20,7 +20,7 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/promise.all'", async () => {
-    runId = await eventRunWithName(eventId, "Promise.all");
+    runId = await eventRunWithName(eventId, "promise-all");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 
@@ -30,7 +30,7 @@ describe("run", () => {
         __typename: "StepEvent",
         stepType: "COMPLETED",
         name: "Step 1",
-        output: "1",
+        output: JSON.stringify({ data: 1 }),
       })
     ).resolves.toBeDefined();
   }, 60000);
@@ -41,7 +41,7 @@ describe("run", () => {
         __typename: "StepEvent",
         stepType: "COMPLETED",
         name: "Step 2",
-        output: "2",
+        output: JSON.stringify({ data: 2 }),
       })
     ).resolves.toBeDefined();
   }, 60000);
@@ -52,7 +52,7 @@ describe("run", () => {
         __typename: "StepEvent",
         stepType: "COMPLETED",
         name: "Step 3",
-        output: "3",
+        output: JSON.stringify({ data: 3 }),
       })
     ).resolves.toBeDefined();
   }, 60000);

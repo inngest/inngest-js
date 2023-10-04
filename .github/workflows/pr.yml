@@ -52,6 +52,7 @@ jobs:
          - 'latest'
          - 'next'
          - 'beta'
+         - '~5.2.0'
          - '~5.1.0'
          - '~5.0.0'
          - '~4.9.0'
@@ -141,11 +142,7 @@ jobs:
       # Install dependencies in the example repo
       # Don't use "npm ci", "--immutable" etc., as example repos won't be
       # shipped with lock files.
-      - name: Install example dependencies
-        run: npm install
-        working-directory: examples/${{ matrix.example }}
-
-      - name: Add local SDK to example
+      - name: Add local SDK to example with dependencies
         working-directory: examples/${{ matrix.example }}
         run: npm install ./inngest.tgz
 

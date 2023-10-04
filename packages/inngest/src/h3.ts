@@ -8,13 +8,12 @@ import {
 } from "h3";
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
-import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
 import { type SupportedFrameworkName } from "./types";
 
-export const name: SupportedFrameworkName = "h3";
+export const frameworkName: SupportedFrameworkName = "h3";
 
 /**
  * In h3, serve and register any declared functions with Inngest, making
@@ -22,55 +21,32 @@ export const name: SupportedFrameworkName = "h3";
  *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    opts,
-    (event: H3Event) => {
-      const host = String(getHeader(event, "host"));
-      const protocol =
-        processEnv("NODE_ENV") === "development" ? "http" : "https";
-      const url = new URL(String(event.path), `${protocol}://${host}`);
-      const method = event.method;
-      const query = getQuery(event);
-
+export const serve = (options: ServeHandlerOptions) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: (event: H3Event) => {
       return {
-        url,
-        run: async () => {
-          if (method === "POST") {
-            return {
-              fnId: query[queryKeys.FnId]?.toString() ?? "",
-              stepId: query[queryKeys.StepId]?.toString() ?? "",
-              signature: getHeader(event, headerKeys.Signature),
-              data: await readBody(event),
-            };
-          }
-        },
-        register: () => {
-          if (method === "PUT") {
-            return {
-              deployId: query[queryKeys.DeployId]?.toString(),
-            };
-          }
-        },
-        view: () => {
-          if (method === "GET") {
-            return {
-              isIntrospection: query && queryKeys.Introspect in query,
-            };
-          }
+        body: () => readBody(event),
+        headers: (key) => getHeader(event, key),
+        method: () => event.method,
+        url: () =>
+          new URL(
+            String(event.path),
+            `${
+              processEnv("NODE_ENV") === "development" ? "http" : "https"
+            }://${String(getHeader(event, "host"))}`
+          ),
+        queryString: (key) => String(getQuery(event)[key]),
+        transformResponse: (actionRes) => {
+          const { res } = event.node;
+          res.statusCode = actionRes.status;
+          setHeaders(event, actionRes.headers);
+          return send(event, actionRes.body);
         },
       };
     },
-    (actionRes, event: H3Event) => {
-      const { res } = event.node;
-      res.statusCode = actionRes.status;
-      setHeaders(event, actionRes.headers);
-      return send(event, actionRes.body);
-    }
-  );
+  });
 
   return handler.createHandler();
 };

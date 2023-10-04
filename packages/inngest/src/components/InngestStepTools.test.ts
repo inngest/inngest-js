@@ -1,136 +1,179 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { EventSchemas, type EventsFromOpts } from "@local";
-import {
-  createExecutionState,
-  type ExecutionState,
-} from "@local/components/InngestFunction";
+import { EventSchemas } from "@local/components/EventSchemas";
+import { type EventsFromOpts } from "@local/components/Inngest";
 import {
   createStepTools,
-  type TickOp,
+  getStepOptions,
 } from "@local/components/InngestStepTools";
-import {
-  StepOpCode,
-  type ClientOptions,
-  type SendEventResponse,
-} from "@local/types";
+import { StepOpCode, type ClientOptions } from "@local/types";
 import ms from "ms";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
 
+const getStepTools = () => {
+  const step = createStepTools(
+    createClient({ id: "test" }),
+    ({ args, matchOp }) => {
+      const stepOptions = getStepOptions(args[0]);
+      return Promise.resolve(matchOp(stepOptions, ...args.slice(1)));
+    }
+  );
+
+  return step;
+};
+
+type StepTools = ReturnType<typeof getStepTools>;
+
 describe("waitForEvent", () => {
-  const client = createClient({ name: "test" });
-  let waitForEvent: ReturnType<typeof createStepTools>["waitForEvent"];
-  let state: ExecutionState;
-  let getOp: () => TickOp | undefined;
+  let step: StepTools;
 
   beforeEach(() => {
-    state = createExecutionState();
-    ({ waitForEvent } = createStepTools(client, state));
-    getOp = () => Object.values(state.tickOps)[0];
+    step = getStepTools();
   });
 
-  test("return WaitForEvent step op code", () => {
-    void waitForEvent("event", { timeout: "2h" });
-    expect(getOp()).toMatchObject({
+  test("return WaitForEvent step op code", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "2h" })
+    ).resolves.toMatchObject({
       op: StepOpCode.WaitForEvent,
     });
   });
 
-  test("returns `event` as ID", () => {
-    void waitForEvent("event", { timeout: "2h" });
-    expect(getOp()).toMatchObject({
+  test("returns `id` as ID", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "2h" })
+    ).resolves.toMatchObject({
+      id: "id",
+    });
+  });
+
+  test("returns ID by default", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "2h" })
+    ).resolves.toMatchObject({
+      displayName: "id",
+    });
+  });
+
+  test("returns specific name if given", async () => {
+    await expect(
+      step.waitForEvent(
+        { id: "id", name: "name" },
+        { event: "event", timeout: "2h" }
+      )
+    ).resolves.toMatchObject({
+      displayName: "name",
+    });
+  });
+
+  test("return event name as name", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "2h" })
+    ).resolves.toMatchObject({
       name: "event",
     });
   });
 
-  test("return blank opts if none given", () => {
-    void waitForEvent("event", { timeout: "2h" });
-    expect(getOp()).toMatchObject({
+  test("return blank opts if none given", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "2h" })
+    ).resolves.toMatchObject({
       opts: {},
     });
   });
 
-  test("return a hash of the op", () => {
-    void waitForEvent("event", { timeout: "2h" });
-    expect(getOp()).toMatchObject({
-      name: "event",
-      op: "WaitForEvent",
-      opts: {},
-    });
-  });
-
-  test("return TTL if string `timeout` given", () => {
-    void waitForEvent("event", { timeout: "1m" });
-    expect(getOp()).toMatchObject({
+  test("return TTL if string `timeout` given", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "1m" })
+    ).resolves.toMatchObject({
       opts: {
         timeout: "1m",
       },
     });
   });
 
-  test("return TTL if date `timeout` given", () => {
+  test("return TTL if date `timeout` given", async () => {
     const upcoming = new Date();
     upcoming.setDate(upcoming.getDate() + 6);
     upcoming.setHours(upcoming.getHours() + 1);
 
-    void waitForEvent("event", { timeout: upcoming });
-    expect(getOp()).toMatchObject({
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: upcoming })
+    ).resolves.toMatchObject({
       opts: {
         timeout: expect.stringMatching(upcoming.toISOString()),
       },
     });
   });
 
-  test("return simple field match if `match` string given", () => {
-    void waitForEvent("event", { match: "name", timeout: "2h" });
-    expect(getOp()).toMatchObject({
+  test("return simple field match if `match` string given", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", match: "name", timeout: "2h" })
+    ).resolves.toMatchObject({
       opts: {
         if: "event.name == async.name",
       },
     });
   });
 
-  test("return custom match statement if `if` given", () => {
-    void waitForEvent("event", { if: "name == 123", timeout: "2h" });
-    expect(getOp()).toMatchObject({
+  test("return custom match statement if `if` given", async () => {
+    await expect(
+      step.waitForEvent("id", {
+        event: "event",
+        if: "name == 123",
+        timeout: "2h",
+      })
+    ).resolves.toMatchObject({
       opts: {
         if: "name == 123",
       },
     });
   });
 
-  test("uses custom `id` if given", () => {
-    void waitForEvent("event", { id: "custom", timeout: "2h" });
-    expect(getOp()).toMatchObject({
-      id: "custom",
+  describe("type errors", () => {
+    test("does not allow both `match` and `if`", () => {
+      // @ts-expect-error `match` and `if` cannot be defined together
+      void step.waitForEvent("id", {
+        event: "event",
+        match: "name",
+        if: "name",
+        timeout: "2h",
+      });
     });
   });
 });
 
 describe("run", () => {
-  const client = createClient({ name: "test" });
-  let run: ReturnType<typeof createStepTools>["run"];
-  let state: ExecutionState;
-  let getOp: () => TickOp | undefined;
+  let step: StepTools;
 
   beforeEach(() => {
-    state = createExecutionState();
-    ({ run } = createStepTools(client, state));
-    getOp = () => Object.values(state.tickOps)[0];
+    step = getStepTools();
   });
 
-  test("return Step step op code", () => {
-    void run("step", () => undefined);
-    expect(getOp()).toMatchObject({
+  test("return Step step op code", async () => {
+    await expect(step.run("step", () => undefined)).resolves.toMatchObject({
       op: StepOpCode.StepPlanned,
     });
   });
 
-  test("return step name as name", () => {
-    void run("step", () => undefined);
-    expect(getOp()).toMatchObject({
-      name: "step",
+  test("returns `id` as ID", async () => {
+    await expect(step.run("id", () => undefined)).resolves.toMatchObject({
+      id: "id",
+    });
+  });
+
+  test("return ID by default", async () => {
+    await expect(step.run("id", () => undefined)).resolves.toMatchObject({
+      displayName: "id",
+    });
+  });
+
+  test("return specific name if given", async () => {
+    await expect(
+      step.run({ id: "id", name: "name" }, () => undefined)
+    ).resolves.toMatchObject({
+      displayName: "name",
     });
   });
 
@@ -155,7 +198,7 @@ describe("run", () => {
       set: new Set(),
     };
 
-    const output = run("step", () => input);
+    const output = step.run("step", () => input);
 
     assertType<
       Promise<{
@@ -176,174 +219,165 @@ describe("run", () => {
       }>
     >(output);
   });
-
-  test("uses custom `id` if given", () => {
-    void run("step", () => undefined, { id: "custom" });
-    expect(getOp()).toMatchObject({
-      id: "custom",
-    });
-  });
 });
 
 describe("sleep", () => {
-  const client = createClient({ name: "test" });
-  let sleep: ReturnType<typeof createStepTools>["sleep"];
-  let state: ExecutionState;
-  let getOp: () => TickOp | undefined;
+  let step: StepTools;
 
   beforeEach(() => {
-    state = createExecutionState();
-    ({ sleep } = createStepTools(client, state));
-    getOp = () => Object.values(state.tickOps)[0];
+    step = getStepTools();
   });
 
-  test("return Sleep step op code", () => {
-    void sleep("1m");
-    expect(getOp()).toMatchObject({
+  test("return id", async () => {
+    await expect(step.sleep("id", "1m")).resolves.toMatchObject({
+      id: "id",
+    });
+  });
+
+  test("return Sleep step op code", async () => {
+    await expect(step.sleep("id", "1m")).resolves.toMatchObject({
       op: StepOpCode.Sleep,
     });
   });
 
-  test("return time string as name", () => {
-    void sleep("1m");
-    expect(getOp()).toMatchObject({
-      name: "1m",
+  test("return ID by default", async () => {
+    await expect(step.sleep("id", "1m")).resolves.toMatchObject({
+      displayName: "id",
     });
   });
 
-  test("uses custom `id` if given", () => {
-    void sleep("1m", { id: "custom" });
-    expect(getOp()).toMatchObject({
-      id: "custom",
+  test("return specific name if given", async () => {
+    await expect(
+      step.sleep({ id: "id", name: "name" }, "1m")
+    ).resolves.toMatchObject({
+      displayName: "name",
     });
   });
 });
 
 describe("sleepUntil", () => {
-  const client = createClient({ name: "test" });
-  let sleepUntil: ReturnType<typeof createStepTools>["sleepUntil"];
-  let state: ExecutionState;
-  let getOp: () => TickOp | undefined;
+  let step: StepTools;
 
   beforeEach(() => {
-    state = createExecutionState();
-    ({ sleepUntil } = createStepTools(client, state));
-    getOp = () => Object.values(state.tickOps)[0];
+    step = getStepTools();
   });
 
-  test("return Sleep step op code", () => {
+  test("return id", async () => {
     const future = new Date();
     future.setDate(future.getDate() + 1);
 
-    void sleepUntil(future);
-    expect(getOp()).toMatchObject({
+    await expect(step.sleepUntil("id", future)).resolves.toMatchObject({
+      id: "id",
+    });
+  });
+
+  test("return ID by default", async () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 1);
+
+    await expect(step.sleepUntil("id", future)).resolves.toMatchObject({
+      displayName: "id",
+    });
+  });
+
+  test("return specific name if given", async () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 1);
+
+    await expect(
+      step.sleepUntil({ id: "id", name: "name" }, future)
+    ).resolves.toMatchObject({
+      displayName: "name",
+    });
+  });
+
+  test("return Sleep step op code", async () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 1);
+
+    await expect(step.sleepUntil("id", future)).resolves.toMatchObject({
       op: StepOpCode.Sleep,
     });
   });
 
-  test("parses dates", () => {
+  test("parses dates", async () => {
     const next = new Date();
 
-    void sleepUntil(next);
-    expect(getOp()).toMatchObject({
+    await expect(step.sleepUntil("id", next)).resolves.toMatchObject({
       name: next.toISOString(),
     });
   });
 
-  test("parses ISO strings", () => {
+  test("parses ISO strings", async () => {
     const next = new Date(new Date().valueOf() + ms("6d")).toISOString();
 
-    void sleepUntil(next);
-    expect(getOp()).toMatchObject({
+    await expect(step.sleepUntil("id", next)).resolves.toMatchObject({
       name: next,
     });
   });
 
-  test("throws if invalid date given", () => {
+  test("throws if invalid date given", async () => {
     const next = new Date("bad");
 
-    expect(() => sleepUntil(next)).toThrow(
+    await expect(() => step.sleepUntil("id", next)).rejects.toThrow(
       "Invalid date or date string passed"
     );
   });
 
-  test("throws if invalid time string given", () => {
+  test("throws if invalid time string given", async () => {
     const next = "bad";
 
-    expect(() => sleepUntil(next)).toThrow(
+    await expect(() => step.sleepUntil("id", next)).rejects.toThrow(
       "Invalid date or date string passed"
     );
-  });
-
-  test("uses custom `id` if given", () => {
-    void sleepUntil(new Date(), { id: "custom" });
-    expect(getOp()).toMatchObject({
-      id: "custom",
-    });
   });
 });
 
 describe("sendEvent", () => {
   describe("runtime", () => {
-    const fetchMock = jest.fn(() => {
-      const json: SendEventResponse = {
-        status: 200,
-        ids: [],
-      };
-
-      return Promise.resolve({
-        status: 200,
-        json: () => {
-          return Promise.resolve(json);
-        },
-      });
-    }) as unknown as typeof fetch;
-
-    const client = createClient({
-      name: "test",
-      fetch: fetchMock,
-      eventKey: "123",
-    });
-    const sendSpy = jest.spyOn(client, "send");
-
-    let sendEvent: ReturnType<typeof createStepTools>["sendEvent"];
-    let state: ExecutionState;
-    let getOp: () => TickOp | undefined;
-
+    let step: StepTools;
     beforeEach(() => {
-      state = createExecutionState();
-      ({ sendEvent } = createStepTools(client, state));
-      getOp = () => Object.values(state.tickOps)[0];
+      step = getStepTools();
     });
 
-    test("return Step step op code", () => {
-      void sendEvent({ name: "step", data: "foo" });
-
-      expect(getOp()).toMatchObject({ op: StepOpCode.StepPlanned });
-      expect(sendSpy).not.toHaveBeenCalled();
-    });
-
-    test('return "sendEvent" as name', () => {
-      void sendEvent({ name: "step", data: "foo" });
-
-      expect(getOp()).toMatchObject({ name: "sendEvent" });
-      expect(sendSpy).not.toHaveBeenCalled();
-    });
-
-    test("execute inline if non-step fn", () => {
-      state.nonStepFnDetected = true;
-      void sendEvent({ name: "step", data: "foo" });
-
-      expect(getOp()).toBeUndefined();
-      expect(sendSpy).toHaveBeenCalledWith({ name: "step", data: "foo" });
-    });
-
-    test("uses custom `id` if given", () => {
-      void sendEvent({ name: "step", data: "foo" }, { id: "custom" });
-
-      expect(getOp()).toMatchObject({
-        id: "custom",
+    test("return id", async () => {
+      await expect(
+        step.sendEvent("id", { name: "step", data: "foo" })
+      ).resolves.toMatchObject({
+        id: "id",
       });
+    });
+
+    test("return Step step op code", async () => {
+      await expect(
+        step.sendEvent("id", { name: "step", data: "foo" })
+      ).resolves.toMatchObject({
+        op: StepOpCode.StepPlanned,
+      });
+    });
+
+    test("return ID by default", async () => {
+      await expect(
+        step.sendEvent("id", { name: "step", data: "foo" })
+      ).resolves.toMatchObject({ displayName: "id" });
+    });
+
+    test("return specific name if given", async () => {
+      await expect(
+        step.sendEvent(
+          { id: "id", name: "name" },
+          { name: "step", data: "foo" }
+        )
+      ).resolves.toMatchObject({ displayName: "name" });
+    });
+
+    test("retain legacy `name` field for backwards compatibility with <=v2", async () => {
+      await expect(
+        step.sendEvent(
+          { id: "id", name: "name" },
+          { name: "step", data: "foo" }
+        )
+      ).resolves.toMatchObject({ name: "sendEvent" });
     });
   });
 
@@ -354,15 +388,15 @@ describe("sendEvent", () => {
         (() => undefined) as any;
 
       test("allows sending a single event with a string", () => {
-        void sendEvent({ name: "anything", data: "foo" });
+        void sendEvent("id", { name: "anything", data: "foo" });
       });
 
       test("allows sending a single event with an object", () => {
-        void sendEvent({ name: "anything", data: "foo" });
+        void sendEvent("id", { name: "anything", data: "foo" });
       });
 
       test("allows sending multiple events", () => {
-        void sendEvent([
+        void sendEvent("id", [
           { name: "anything", data: "foo" },
           { name: "anything", data: "foo" },
         ]);
@@ -382,7 +416,7 @@ describe("sendEvent", () => {
       }>();
 
       const opts = (<T extends ClientOptions>(x: T): T => x)({
-        name: "",
+        id: "",
         schemas,
       });
 
@@ -402,7 +436,7 @@ describe("sendEvent", () => {
       });
 
       test("disallows sending multiple unknown events", () => {
-        void sendEvent([
+        void sendEvent("id", [
           // @ts-expect-error Unknown event
           { name: "unknown", data: { foo: "" } },
           // @ts-expect-error Unknown event
@@ -411,7 +445,7 @@ describe("sendEvent", () => {
       });
 
       test("disallows sending one unknown event with multiple known events", () => {
-        void sendEvent([
+        void sendEvent("id", [
           { name: "foo", data: { foo: "" } },
           // @ts-expect-error Unknown event
           { name: "unknown", data: { foo: "" } },
@@ -429,7 +463,7 @@ describe("sendEvent", () => {
       });
 
       test("disallows sending multiple known events with invalid data", () => {
-        void sendEvent([
+        void sendEvent("id", [
           // @ts-expect-error Invalid data
           { name: "foo", data: { bar: "" } },
           // @ts-expect-error Invalid data
@@ -438,15 +472,15 @@ describe("sendEvent", () => {
       });
 
       test("allows sending a single known event with a string", () => {
-        void sendEvent({ name: "foo", data: { foo: "" } });
+        void sendEvent("id", { name: "foo", data: { foo: "" } });
       });
 
       test("allows sending a single known event with an object", () => {
-        void sendEvent({ name: "foo", data: { foo: "" } });
+        void sendEvent("id", { name: "foo", data: { foo: "" } });
       });
 
       test("allows sending multiple known events", () => {
-        void sendEvent([
+        void sendEvent("id", [
           { name: "foo", data: { foo: "" } },
           { name: "bar", data: { bar: "" } },
         ]);

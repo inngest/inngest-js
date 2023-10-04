@@ -1,5 +1,10 @@
 import { InngestApi } from "../api/api";
-import { envKeys } from "../helpers/consts";
+import {
+  defaultInngestBaseUrl,
+  defaultInngestEventBaseUrl,
+  envKeys,
+  logPrefix,
+} from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
   devServerHost,
@@ -14,6 +19,7 @@ import { type ExclusiveKeys, type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
   sendEventResponseSchema,
+  type AnyHandler,
   type ClientOptions,
   type EventNameFromTrigger,
   type EventPayload,
@@ -22,8 +28,8 @@ import {
   type FunctionTrigger,
   type Handler,
   type MiddlewareStack,
+  type SendEventOutput,
   type SendEventResponse,
-  type ShimmedFns,
   type TriggerOptions,
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
@@ -35,6 +41,7 @@ import {
   type MiddlewareOptions,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
+  type SendEventHookStack,
 } from "./InngestMiddleware";
 
 /**
@@ -52,6 +59,9 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
   TOpts["schemas"] extends EventSchemas<infer U>
     ? U
     : Record<string, EventPayload>;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyInngest = Inngest<any>;
 
 /**
  * A client used to interact with the Inngest API by sending or reacting to
@@ -77,27 +87,31 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
  */
 export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   /**
-   * The name of this instance, most commonly the name of the application it
+   * The ID of this instance, most commonly a reference to the application it
    * resides in.
+   *
+   * The ID of your client should remain the same for its lifetime; if you'd
+   * like to change the name of your client as it appears in the Inngest UI,
+   * change the `name` property instead.
    */
-  public readonly name: string;
+  public readonly id: string;
 
   /**
    * Inngest event key, used to send events to Inngest Cloud.
    */
   private eventKey = "";
 
-  /**
-   * Base URL for Inngest Cloud.
-   */
-  public readonly inngestBaseUrl: URL;
+  private readonly baseUrl: string | undefined;
 
   private readonly inngestApi: InngestApi;
 
   /**
    * The absolute URL of the Inngest Cloud API.
    */
-  private inngestApiUrl: URL = new URL(`e/${this.eventKey}`, "https://inn.gs/");
+  private sendEventUrl: URL = new URL(
+    `e/${this.eventKey}`,
+    defaultInngestEventBaseUrl
+  );
 
   private readonly headers: Record<string, string>;
 
@@ -132,22 +146,24 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    * ```
    */
   constructor({
-    name,
+    id,
     eventKey,
-    inngestBaseUrl = "https://inn.gs/",
+    baseUrl,
     fetch,
     env,
     logger = new DefaultLogger(),
     middleware,
   }: TOpts) {
-    if (!name) {
+    if (!id) {
       // TODO PrettyError
-      throw new Error("A name must be passed to create an Inngest instance.");
+      throw new Error("An `id` must be passed to create an Inngest instance.");
     }
 
-    this.name = name;
-    this.inngestBaseUrl = new URL(inngestBaseUrl);
-    this.setEventKey(eventKey || processEnv(envKeys.EventKey) || "");
+    this.id = id;
+
+    this.baseUrl = baseUrl || processEnv(envKeys.InngestBaseUrl);
+
+    this.setEventKey(eventKey || processEnv(envKeys.InngestEventKey) || "");
 
     if (!this.eventKey) {
       console.warn(
@@ -167,13 +183,12 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     this.headers = inngestHeaders({
       inngestEnv: env,
     });
+
     this.fetch = getFetch(fetch);
 
-    const signingKey = processEnv(envKeys.SigningKey) || "";
     this.inngestApi = new InngestApi({
-      baseUrl:
-        processEnv(envKeys.InngestApiBaseUrl) || "https://api.inngest.com",
-      signingKey: signingKey,
+      baseUrl: this.baseUrl || defaultInngestBaseUrl,
+      signingKey: processEnv(envKeys.InngestSigningKey) || "",
       fetch: this.fetch,
     });
 
@@ -275,7 +290,11 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     eventKey: string
   ): void {
     this.eventKey = eventKey;
-    this.inngestApiUrl = new URL(`e/${this.eventKey}`, this.inngestBaseUrl);
+
+    this.sendEventUrl = new URL(
+      `e/${this.eventKey}`,
+      this.baseUrl || defaultInngestEventBaseUrl
+    );
   }
 
   /**
@@ -307,7 +326,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    */
   public async send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
     payload: Payload
-  ): Promise<void> {
+  ): Promise<SendEventOutput<TOpts>> {
     const hooks = await getHookStack(
       this.middleware,
       "onSendEvent",
@@ -316,8 +335,10 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
         transformInput: (prev, output) => {
           return { ...prev, ...output };
         },
-        transformOutput: (prev, _output) => {
-          return prev;
+        transformOutput(prev, output) {
+          return {
+            result: { ...prev.result, ...output?.result },
+          };
         },
       }
     );
@@ -358,12 +379,23 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       };
     });
 
+    const applyHookToOutput = async (
+      arg: Parameters<NonNullable<SendEventHookStack["transformOutput"]>>[0]
+    ): Promise<SendEventOutput<TOpts>> => {
+      const hookOutput = await hooks.transformOutput?.(arg);
+      return {
+        ...arg.result,
+        ...hookOutput?.result,
+        // 🤮
+      } as unknown as SendEventOutput<TOpts>;
+    };
+
     /**
      * It can be valid for a user to send an empty list of events; if this
      * happens, show a warning that this may not be intended, but don't throw.
      */
     if (!payloads.length) {
-      return console.warn(
+      console.warn(
         prettyError({
           type: "warn",
           whatHappened: "`inngest.send()` called with no events",
@@ -374,11 +406,13 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
           stack: true,
         })
       );
+
+      return await applyHookToOutput({ result: { ids: [] } });
     }
 
     // When sending events, check if the dev server is available.  If so, use the
     // dev server.
-    let url = this.inngestApiUrl.href;
+    let url = this.sendEventUrl.href;
 
     if (!skipDevServer()) {
       const host = devServerHost();
@@ -409,99 +443,74 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       throw await this.#getResponseError(response, body.error);
     }
 
-    return void (await hooks.transformOutput?.({ payloads: [...payloads] }));
+    return await applyHookToOutput({ result: { ids: body.ids } });
   }
 
   public createFunction<
-    TFns extends Record<string, unknown>,
     TMiddleware extends MiddlewareStack,
     TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>,
-    TShimmedFns extends Record<
-      string,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (...args: any[]) => any
-    > = ShimmedFns<TFns>,
     TTriggerName extends keyof EventsFromOpts<TOpts> &
       string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
   >(
-    nameOrOpts:
-      | string
-      | ExclusiveKeys<
-          Omit<
-            FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>,
-            "fns" | "onFailure" | "middleware"
-          > & {
-            /**
-             * Pass in an object of functions that will be wrapped in Inngest
-             * tooling and passes to your handler. This wrapping ensures that each
-             * function is automatically separated and retried.
-             *
-             * @example
-             *
-             * Both examples behave the same; it's preference as to which you
-             * prefer.
-             *
-             * ```ts
-             * import { userDb } from "./db";
-             *
-             * // Specify `fns` and be able to use them in your Inngest function
-             * inngest.createFunction(
-             *   { name: "Create user from PR", fns: { ...userDb } },
-             *   { event: "github/pull_request" },
-             *   async ({ fns: { createUser } }) => {
-             *     await createUser("Alice");
-             *   }
-             * );
-             *
-             * // Or always use `run()` to run inline steps and use them directly
-             * inngest.createFunction(
-             *   { name: "Create user from PR" },
-             *   { event: "github/pull_request" },
-             *   async ({ step: { run } }) => {
-             *     await run("createUser", () => userDb.createUser("Alice"));
-             *   }
-             * );
-             * ```
-             */
-            fns?: TFns;
+    options: ExclusiveKeys<
+      Omit<
+        FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>,
+        "onFailure" | "middleware"
+      > & {
+        /**
+         * Provide a function to be called if your function fails, meaning
+         * that it ran out of retries and was unable to complete successfully.
+         *
+         * This is useful for sending warning notifications or cleaning up
+         * after a failure and supports all the same functionality as a
+         * regular handler.
+         */
+        onFailure?: Handler<
+          TOpts,
+          EventsFromOpts<TOpts>,
+          TTriggerName,
+          ExtendWithMiddleware<
+            [
+              typeof builtInMiddleware,
+              NonNullable<TOpts["middleware"]>,
+              TMiddleware
+            ],
+            FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
+          >
+        >;
 
-            /**
-             * Provide a function to be called if your function fails, meaning
-             * that it ran out of retries and was unable to complete successfully.
-             *
-             * This is useful for sending warning notifications or cleaning up
-             * after a failure and supports all the same functionality as a
-             * regular handler.
-             */
-            onFailure?: Handler<
-              TOpts,
-              EventsFromOpts<TOpts>,
-              TTriggerName,
-              TShimmedFns,
-              ExtendWithMiddleware<
-                [
-                  typeof builtInMiddleware,
-                  NonNullable<TOpts["middleware"]>,
-                  TMiddleware
-                ],
-                FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
-              >
-            >;
-
-            /**
-             * TODO
-             */
-            middleware?: TMiddleware;
-          },
-          "batchEvents",
-          "cancelOn" | "rateLimit"
-        >,
+        /**
+         * Define a set of middleware that can be registered to hook into
+         * various lifecycles of the SDK and affect input and output of
+         * Inngest functionality.
+         *
+         * See {@link https://innge.st/middleware}
+         *
+         * @example
+         *
+         * ```ts
+         * export const inngest = new Inngest({
+         *   middleware: [
+         *     new InngestMiddleware({
+         *       name: "My Middleware",
+         *       init: () => {
+         *         // ...
+         *       }
+         *     })
+         *   ]
+         * });
+         * ```
+         */
+        middleware?: TMiddleware;
+      },
+      "batchEvents",
+      "cancelOn" | "rateLimit"
+    >,
     trigger: TTrigger,
     handler: Handler<
       TOpts,
       EventsFromOpts<TOpts>,
       TTriggerName,
-      TShimmedFns,
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
@@ -516,17 +525,33 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     FunctionTrigger<keyof EventsFromOpts<TOpts> & string>,
     FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>
   > {
-    const sanitizedOpts = (
-      typeof nameOrOpts === "string" ? { name: nameOrOpts } : nameOrOpts
-    ) as FunctionOptions<
+    let sanitizedOpts: FunctionOptions<
       EventsFromOpts<TOpts>,
       keyof EventsFromOpts<TOpts> & string
     >;
 
+    if (typeof options === "string") {
+      // v2 -> v3 runtime migraton warning
+      console.warn(
+        `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
+      );
+
+      sanitizedOpts = { id: options };
+    } else {
+      sanitizedOpts = options as typeof sanitizedOpts;
+    }
+
     let sanitizedTrigger: FunctionTrigger<keyof EventsFromOpts<TOpts> & string>;
 
     if (typeof trigger === "string") {
-      sanitizedTrigger = { event: trigger };
+      // v2 -> v3 migration warning
+      console.warn(
+        `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
+      );
+
+      sanitizedTrigger = {
+        event: trigger,
+      };
     } else if (trigger.event) {
       sanitizedTrigger = {
         event: trigger.event,
@@ -536,12 +561,18 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       sanitizedTrigger = trigger;
     }
 
+    if (Object.prototype.hasOwnProperty.call(sanitizedOpts, "fns")) {
+      // v2 -> v3 migration warning
+      console.warn(
+        `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`
+      );
+    }
+
     return new InngestFunction(
       this,
       sanitizedOpts,
       sanitizedTrigger,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
-      handler as any
+      handler as AnyHandler
     );
   }
 }
@@ -557,7 +588,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
  * If this is moved, please ensure that using this package in another project
  * can correctly access comments on mutated input and output.
  */
-const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
+export const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
   new InngestMiddleware({
     name: "Inngest: Logger",
     init({ client }) {
