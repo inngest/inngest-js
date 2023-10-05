@@ -73,6 +73,17 @@ describe("EventSchemas", () => {
       assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
     });
 
+    test("can set 'any' type for data alongside populated events", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        "test.event": { data: any };
+        "test.event2": { data: { foo: string } };
+      }>();
+
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
+      assertType<Schemas<typeof schemas>["test.event2"]["data"]>({ foo: "" });
+    });
+
     test("can set 'any' type for user", () => {
       const schemas = new EventSchemas().fromRecord<{
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,11 +100,114 @@ describe("EventSchemas", () => {
       }>();
     });
 
+    test("can set event with matching 'name'", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        "test.event": { name: "test.event"; data: { foo: string } };
+      }>();
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<Schemas<typeof schemas>["test.event"]["data"]>({ foo: "" });
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["ts"], number | undefined>
+      >(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["v"], string | undefined>
+      >(true);
+    });
+
+    test("cannot set event with clashing 'name'", () => {
+      // @ts-expect-error - name must match
+      new EventSchemas().fromRecord<{
+        "test.event": { name: "test.event2"; data: { foo: string } };
+      }>();
+    });
+
+    test("cannot set event with clashing 'name' alongside valid event", () => {
+      // @ts-expect-error - name must match
+      new EventSchemas().fromRecord<{
+        "test.event": { name: "test.event2"; data: { foo: string } };
+        "test.event2": { name: "test.event2"; data: { foo: string } };
+        "test.event3": { data: { foo: string } };
+      }>();
+    });
+
     test("cannot set non-object type for user", () => {
       // @ts-expect-error User must be object type or any
       new EventSchemas().fromRecord<{
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         "test.event": { data: any; user: string };
+      }>();
+    });
+
+    test("can set empty event", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        // eslint-disable-next-line @typescript-eslint/ban-types
+        "test.event": {};
+      }>();
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["ts"], number | undefined>
+      >(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["v"], string | undefined>
+      >(true);
+    });
+
+    test("can set empty event alongside populated event", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        // eslint-disable-next-line @typescript-eslint/ban-types
+        "test.event": {};
+        "test.event2": { data: { foo: string } };
+      }>();
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["ts"], number | undefined>
+      >(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["v"], string | undefined>
+      >(true);
+
+      assertType<Schemas<typeof schemas>["test.event2"]["name"]>("test.event2");
+      assertType<Schemas<typeof schemas>["test.event2"]["data"]>({ foo: "" });
+      assertType<IsAny<Schemas<typeof schemas>["test.event2"]["user"]>>(true);
+      assertType<
+        IsEqual<
+          Schemas<typeof schemas>["test.event2"]["ts"],
+          number | undefined
+        >
+      >(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event2"]["v"], string | undefined>
+      >(true);
+    });
+
+    test("can set empty event with matching 'name'", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        "test.event": { name: "test.event" };
+      }>();
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["ts"], number | undefined>
+      >(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["v"], string | undefined>
+      >(true);
+    });
+
+    test("cannot set empty event with clashing 'name'", () => {
+      // @ts-expect-error - name must match
+      new EventSchemas().fromRecord<{
+        "test.event": { name: "test.event2" };
       }>();
     });
 

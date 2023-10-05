@@ -1,6 +1,6 @@
 import { type Simplify } from "type-fest";
 import { type z } from "zod";
-import { type IsStringLiteral } from "../helpers/types";
+import { type IsEmptyObject, type IsStringLiteral } from "../helpers/types";
 import { type EventPayload } from "../types";
 
 /**
@@ -11,6 +11,7 @@ import { type EventPayload } from "../types";
  * @internal
  */
 export type StandardEventSchema = {
+  name?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data?: Record<string, any>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -23,6 +24,35 @@ export type StandardEventSchema = {
  * @public
  */
 export type StandardEventSchemas = Record<string, StandardEventSchema>;
+
+/**
+ * A string error used to highlight to a user that they have a clashing name
+ * between the event name and the key of the event schema.
+ */
+type ClashingNameError =
+  "Error: Omit 'name' from event schemas or make sure it matches the key.";
+
+/**
+ * Given a type T, check if any of the keys in T are a clashing name. If they
+ * are, return the error type, otherwise return the original type.
+ */
+type CheckNever<T> = ClashingNameError extends T[keyof T]
+  ? IsEmptyObject<T[keyof T]> extends true
+    ? T
+    : ClashingNameError
+  : T;
+
+/**
+ * Given a type T, check if any of the keys in T are a clashing name. If they
+ * are, return the error type for that key, otherwise return the original type.
+ */
+type PreventClashingNames<T> = CheckNever<{
+  [K in keyof T]: T[K] extends { name: infer N }
+    ? N extends K
+      ? T[K]
+      : ClashingNameError
+    : T[K];
+}>;
 
 /**
  * A literal Zod schema, which is a Zod schema that has a literal string as the
@@ -207,7 +237,11 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
    * });
    * ```
    */
-  public fromRecord<T extends StandardEventSchemas>() {
+  public fromRecord<T extends StandardEventSchemas>(
+    ..._args: PreventClashingNames<T> extends ClashingNameError
+      ? [ClashingNameError]
+      : []
+  ) {
     return new EventSchemas<Combine<S, T>>();
   }
 
