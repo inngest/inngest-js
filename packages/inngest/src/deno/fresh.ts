@@ -1,11 +1,10 @@
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "../components/InngestCommHandler";
-import { headerKeys, queryKeys } from "../helpers/consts";
 import { type SupportedFrameworkName } from "../types";
 
-export const name: SupportedFrameworkName = "deno/fresh";
+export const frameworkName: SupportedFrameworkName = "deno/fresh";
 
 /**
  * With Deno's Fresh framework, serve and register any declared functions with
@@ -13,50 +12,27 @@ export const name: SupportedFrameworkName = "deno/fresh";
  *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-  const handler = new InngestCommHandler(
-    name as string,
-    nameOrInngest,
-    fns,
-    opts,
-    (req: Request, env: { [index: string]: string }) => {
-      const url = new URL(req.url, `https://${req.headers.get("host") || ""}`);
-
+export const serve = (options: ServeHandlerOptions) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: (req: Request, env: Record<string, string>) => {
       return {
-        url,
-        env,
-        register: () => {
-          if (req.method === "PUT") {
-            return {
-              deployId: url.searchParams.get(queryKeys.DeployId),
-            };
-          }
-        },
-        run: async () => {
-          if (req.method === "POST") {
-            return {
-              data: (await req.json()) as Record<string, unknown>,
-              fnId: url.searchParams.get(queryKeys.FnId) as string,
-              stepId: url.searchParams.get(queryKeys.StepId) as string,
-              signature: req.headers.get(headerKeys.Signature) || undefined,
-            };
-          }
-        },
-        view: () => {
-          if (req.method === "GET") {
-            return {
-              isIntrospection: url.searchParams.has(queryKeys.Introspect),
-            };
-          }
+        body: () => req.json(),
+        headers: (key) => req.headers.get(key),
+        method: () => req.method,
+        env: () => env,
+        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+        transformResponse: ({ body, status, headers }) => {
+          return new Response(body, { status, headers });
         },
       };
     },
-    ({ body, status, headers }): Response => {
-      return new Response(body, { status, headers });
-    }
-  ).createHandler();
+  });
 
-  return (req: Request) => handler(req, Deno.env.toObject());
+  const fn = handler.createHandler();
+
+  return (req: Request) => fn(req, Deno.env.toObject());
 };
 
 declare const Deno: { env: { toObject: () => { [index: string]: string } } };

@@ -2,15 +2,6 @@ import { type Simplify } from "type-fest";
 import { type EventPayload } from "../types";
 
 /**
- * Returns a union of all of the values in a given object, regardless of key.
- */
-export type ValueOf<T> = T extends Record<string, unknown>
-  ? {
-      [K in keyof T]: T[K];
-    }[keyof T]
-  : never;
-
-/**
  * Returns the given generic as either itself or an array of itself.
  */
 export type SingleOrArray<T> = T | T[];
@@ -39,13 +30,6 @@ export type SendEventPayload<Events extends Record<string, EventPayload>> =
       [K in keyof Events]: PartialK<Omit<Events[K], "v">, "ts">;
     }[keyof Events]
   >;
-
-/**
- * Retrieve an event's name based on the given payload. Defaults to `string`.
- */
-export type EventName<Event extends EventPayload> = Event extends EventPayload
-  ? Event["name"]
-  : string;
 
 /**
  * A list of simple, JSON-compatible, primitive types that contain no other
@@ -80,14 +64,6 @@ type Path<T> = T extends Array<infer V>
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ObjectPaths<T extends Record<string, any>> = Path<T>;
-
-/**
- * Filter out all keys from `T` where the associated value does not match type
- * `U`.
- */
-export type KeysNotOfType<T, U> = {
-  [P in keyof T]: T[P] extends U ? never : P;
-}[keyof T];
 
 /**
  * Returns all keys from objects in the union `T`.
@@ -198,3 +174,16 @@ export type ExclusiveKeys<T, Keys1 extends keyof T, Keys2 extends keyof T> =
  * types and unique properties are marked as optional.
  */
 export type Either<A, B> = Partial<A> & Partial<B> & (A | B);
+
+/**
+ * Given a function `T`, return the parameters of that function, except for the
+ * first one.
+ */
+export type ParametersExceptFirst<T> = T extends (
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  arg0: any,
+  ...rest: infer U
+) => // eslint-disable-next-line @typescript-eslint/no-explicit-any
+any
+  ? U
+  : never;

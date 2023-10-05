@@ -7,7 +7,7 @@ import { z } from "zod";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Schemas<T extends EventSchemas<any>> = GetEvents<
-  Inngest<{ name: "test"; schemas: T }>
+  Inngest<{ id: "test"; schemas: T }>
 >;
 
 describe("EventSchemas", () => {
@@ -382,18 +382,20 @@ describe("EventSchemas", () => {
 
       test("can overwrite types with multiple calls", () => {
         const schemas = new EventSchemas()
-          .fromZod({
-            "test.event": {
+          .fromZod([
+            z.object({
+              name: z.literal("test.event"),
               data: z.object({ a: z.string() }),
               user: z.object({ b: z.number() }),
-            },
-          })
-          .fromZod({
-            "test.event": {
+            }),
+          ])
+          .fromZod([
+            z.object({
+              name: z.literal("test.event"),
               data: z.object({ c: z.string() }),
               user: z.object({ d: z.number() }),
-            },
-          });
+            }),
+          ]);
 
         assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
         assertType<Schemas<typeof schemas>["test.event"]["data"]>({ c: "" });
@@ -544,13 +546,13 @@ describe("EventSchemas", () => {
       }>();
 
       const inngest = new Inngest({
-        name: "test",
+        id: "test",
         schemas,
         eventKey: "test-key-123",
       });
 
       inngest.createFunction(
-        { name: "test" },
+        { id: "test" },
         { event: "test.event" },
         ({ event }) => {
           assertType<"test.event">(event.name);
@@ -567,13 +569,13 @@ describe("EventSchemas", () => {
       }>();
 
       const inngest = new Inngest({
-        name: "test",
+        id: "test",
         schemas,
         eventKey: "test-key-123",
       });
 
       inngest.createFunction(
-        { name: "test" },
+        { id: "test" },
         { event: "test.event" },
         ({ event }) => {
           assertType<"test.event">(event.name);
@@ -592,19 +594,50 @@ describe("EventSchemas", () => {
       }>();
 
       const inngest = new Inngest({
-        name: "test",
+        id: "test",
         schemas,
         eventKey: "test-key-123",
       });
 
       inngest.createFunction(
         {
-          name: "test",
+          id: "test",
           cancelOn: [{ event: "test.event2", match: "data.foo" }],
         },
         { event: "test.event" },
         ({ step }) => {
-          void step.waitForEvent("test.event2", {
+          void step.waitForEvent("id", {
+            event: "test.event2",
+            match: "data.foo",
+            timeout: "1h",
+          });
+        }
+      );
+    });
+
+    test("cannot match between two events without shared properties", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        "test.event": { data: { foo: string } };
+        "test.event2": { data: { bar: boolean } };
+      }>();
+
+      const inngest = new Inngest({
+        id: "test",
+        schemas,
+        eventKey: "test-key-123",
+      });
+
+      inngest.createFunction(
+        {
+          id: "test",
+          // @ts-expect-error - `"data.foo"` is not assignable
+          cancelOn: [{ event: "test.event2", match: "data.foo" }],
+        },
+        { event: "test.event" },
+        ({ step }) => {
+          void step.waitForEvent("id", {
+            event: "test.event2",
+            // @ts-expect-error - `"data.foo"` is not assignable
             match: "data.foo",
             timeout: "1h",
           });
@@ -620,19 +653,20 @@ describe("EventSchemas", () => {
       }>();
 
       const inngest = new Inngest({
-        name: "test",
+        id: "test",
         schemas,
         eventKey: "test-key-123",
       });
 
       inngest.createFunction(
         {
-          name: "test",
+          id: "test",
           cancelOn: [{ event: "test.event2", match: "data.foo" }],
         },
         { event: "test.event" },
         ({ step }) => {
-          void step.waitForEvent("test.event2", {
+          void step.waitForEvent("id", {
+            event: "test.event2",
             match: "data.foo",
             timeout: "1h",
           });
@@ -648,19 +682,20 @@ describe("EventSchemas", () => {
       }>();
 
       const inngest = new Inngest({
-        name: "test",
+        id: "test",
         schemas,
         eventKey: "test-key-123",
       });
 
       inngest.createFunction(
         {
-          name: "test",
+          id: "test",
           cancelOn: [{ event: "test.event2", match: "data.foo" }],
         },
         { event: "test.event" },
         ({ step }) => {
-          void step.waitForEvent("test.event2", {
+          void step.waitForEvent("id", {
+            event: "test.event",
             match: "data.foo",
             timeout: "1h",
           });

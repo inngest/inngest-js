@@ -1,6 +1,6 @@
 import { serve } from "inngest/remix";
-import { inngest, functions } from "~/inngest";
+import { functions, inngest } from "~/inngest";
 
-const handler = serve(inngest, functions);
+const handler = serve({ client: inngest, functions });
 
-export { handler as loader, handler as action };
+export { handler as action, handler as loader };

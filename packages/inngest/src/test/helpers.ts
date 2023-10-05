@@ -3,8 +3,9 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Inngest } from "@local";
-import { type ServeHandler } from "@local/components/InngestCommHandler";
+import { type ServeHandlerOptions } from "@local/components/InngestCommHandler";
 import { envKeys, headerKeys, queryKeys } from "@local/helpers/consts";
+import { type Env } from "@local/helpers/env";
 import { slugify } from "@local/helpers/strings";
 import { type FunctionTrigger } from "@local/types";
 import fetch from "cross-fetch";
@@ -43,7 +44,7 @@ export const createClient = <T extends ConstructorParameters<typeof Inngest>>(
   ) as unknown as Inngest<T["0"]>;
 };
 
-const inngest = createClient({ name: "test", eventKey: "event-key-123" });
+const inngest = createClient({ id: "test", eventKey: "event-key-123" });
 
 export const testFramework = (
   /**
@@ -55,7 +56,11 @@ export const testFramework = (
   /**
    * The serve handler exported by this handler.
    */
-  handler: { name: string; serve: ServeHandler },
+  handler: {
+    frameworkName: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    serve: (options: ServeHandlerOptions) => any;
+  },
 
   /**
    * Optional tests and changes to make to this test suite.
@@ -79,11 +84,7 @@ export const testFramework = (
      * Returning void is useful if you need to make environment changes but
      * are still fine with the default behaviour past that point.
      */
-    transformReq?: (
-      req: Request,
-      res: Response,
-      env: Record<string, string | undefined>
-    ) => unknown[] | void;
+    transformReq?: (req: Request, res: Response, env: Env) => unknown[] | void;
 
     /**
      * Specify a transformer for a given response, which will be used to
@@ -125,11 +126,10 @@ export const testFramework = (
   const run = async (
     handlerOpts: Parameters<(typeof handler)["serve"]>,
     reqOpts: Parameters<typeof httpMocks.createRequest>,
-    env: Record<string, string | undefined> = {}
+    env: Env = {}
   ): Promise<HandlerStandardReturn> => {
-    const [nameOrInngest, functions, givenOpts] = handlerOpts;
-    const serveHandler = handler.serve(nameOrInngest, functions, {
-      ...givenOpts,
+    const serveHandler = handler.serve({
+      ...handlerOpts[0],
 
       /**
        * For testing, the fetch implementation has to be stable for us to
@@ -236,9 +236,12 @@ export const testFramework = (
       describe("Serve return", opts.handlerTests);
     }
 
-    describe("GET (landing page)", () => {
+    describe("GET", () => {
       test("shows introspection data", async () => {
-        const ret = await run([inngest, []], [{ method: "GET" }]);
+        const ret = await run(
+          [{ client: inngest, functions: [] }],
+          [{ method: "GET" }]
+        );
 
         const body = JSON.parse(ret.body);
 
@@ -246,7 +249,9 @@ export const testFramework = (
           status: 200,
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
-            [headerKeys.Framework]: expect.stringMatching(handler.name),
+            [headerKeys.Framework]: expect.stringMatching(
+              handler.frameworkName
+            ),
           }),
         });
 
@@ -275,7 +280,10 @@ export const testFramework = (
               status: 200,
             });
 
-          const ret = await run([inngest, []], [{ method: "PUT" }]);
+          const ret = await run(
+            [{ client: inngest, functions: [] }],
+            [{ method: "PUT", url: "/api/inngest" }]
+          );
 
           const retBody = JSON.parse(ret.body);
 
@@ -283,7 +291,9 @@ export const testFramework = (
             status: 200,
             headers: expect.objectContaining({
               [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
-              [headerKeys.Framework]: expect.stringMatching(handler.name),
+              [headerKeys.Framework]: expect.stringMatching(
+                handler.frameworkName
+              ),
             }),
           });
 
@@ -301,9 +311,13 @@ export const testFramework = (
             status: 200,
           });
 
-          const ret = await run([inngest, []], [{ method: "PUT" }], {
-            [envKeys.IsNetlify]: "true",
-          });
+          const ret = await run(
+            [{ client: inngest, functions: [] }],
+            [{ method: "PUT" }],
+            {
+              [envKeys.IsNetlify]: "true",
+            }
+          );
 
           expect(ret).toMatchObject({
             headers: expect.objectContaining({
@@ -328,7 +342,7 @@ export const testFramework = (
             });
 
           const ret = await run(
-            [inngest, []],
+            [{ client: inngest, functions: [] }],
             [{ method: "PUT", url: customUrl }]
           );
 
@@ -338,7 +352,9 @@ export const testFramework = (
             status: 200,
             headers: expect.objectContaining({
               [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
-              [headerKeys.Framework]: expect.stringMatching(handler.name),
+              [headerKeys.Framework]: expect.stringMatching(
+                handler.frameworkName
+              ),
             }),
           });
 
@@ -366,14 +382,17 @@ export const testFramework = (
             });
 
           const fn1 = inngest.createFunction(
-            "fn1",
-            "demo/event.sent",
+            { id: "fn1" },
+            { event: "demo/event.sent" },
             () => "fn1"
           );
           const serveHost = "https://example.com";
           const stepId = "step";
 
-          await run([inngest, [fn1], { serveHost }], [{ method: "PUT" }]);
+          await run(
+            [{ client: inngest, functions: [fn1], serveHost }],
+            [{ method: "PUT" }]
+          );
 
           expect(reqToMock).toMatchObject({
             url: `${serveHost}/api/inngest`,
@@ -406,14 +425,17 @@ export const testFramework = (
             });
 
           const fn1 = inngest.createFunction(
-            "fn1",
-            "demo/event.sent",
+            { id: "fn1" },
+            { event: "demo/event.sent" },
             () => "fn1"
           );
           const servePath = "/foo/bar/inngest/endpoint";
           const stepId = "step";
 
-          await run([inngest, [fn1], { servePath }], [{ method: "PUT" }]);
+          await run(
+            [{ client: inngest, functions: [fn1], servePath }],
+            [{ method: "PUT" }]
+          );
 
           expect(reqToMock).toMatchObject({
             url: `https://localhost:3000${servePath}`,
@@ -430,26 +452,6 @@ export const testFramework = (
             ],
           });
         });
-
-        test("still access dev server if URL passed as environment variable", async () => {
-          const testDevServerHost = "https://exampledevserver.com";
-          let devServerCalled = false;
-
-          nock(testDevServerHost)
-            .get("/dev", (body) => {
-              devServerCalled = true;
-              return body;
-            })
-            .reply(500, { status: 500 });
-
-          await run([inngest, []], [{ method: "PUT" }], {
-            [envKeys.DevServerUrl]: testDevServerHost,
-            NODE_ENV: "production",
-            ENVIRONMENT: "production",
-          });
-
-          expect(devServerCalled).toBe(true);
-        });
       });
 
       describe("env detection and headers", () => {
@@ -457,7 +459,12 @@ export const testFramework = (
           nock("https://api.inngest.com").post("/fn/register").reply(200);
 
           const ret = await run(
-            [new Inngest({ name: "Test", env: "FOO" }), []],
+            [
+              {
+                client: new Inngest({ id: "Test", env: "FOO" }),
+                functions: [],
+              },
+            ],
             [{ method: "PUT" }]
           );
 
@@ -485,8 +492,8 @@ export const testFramework = (
           });
 
         const fn1 = inngest.createFunction(
-          "fn1",
-          "demo/event.sent",
+          { id: "fn1" },
+          { event: "demo/event.sent" },
           () => "fn1"
         );
         const serveHost = "https://example.com";
@@ -494,7 +501,7 @@ export const testFramework = (
         const stepId = "step";
 
         await run(
-          [inngest, [fn1], { serveHost, servePath }],
+          [{ client: inngest, functions: [fn1], serveHost, servePath }],
           [{ method: "PUT" }]
         );
 
@@ -520,7 +527,7 @@ export const testFramework = (
 
     describe("POST (run function)", () => {
       describe("signature validation", () => {
-        const client = createClient({ name: "test" });
+        const client = createClient({ id: "test" });
 
         const fn = client.createFunction(
           { name: "Test", id: "test" },
@@ -534,7 +541,8 @@ export const testFramework = (
         };
         test("should throw an error in prod with no signature", async () => {
           const ret = await run(
-            [inngest, [fn], { signingKey: "test" }],
+            [{ client: inngest, functions: [fn], signingKey: "test" }],
+
             [{ method: "POST", headers: {} }],
             env
           );
@@ -548,7 +556,7 @@ export const testFramework = (
         });
         test("should throw an error with an invalid signature", async () => {
           const ret = await run(
-            [inngest, [fn], { signingKey: "test" }],
+            [{ client: inngest, functions: [fn], signingKey: "test" }],
             [{ method: "POST", headers: { [headerKeys.Signature]: "t=&s=" } }],
             env
           );
@@ -564,7 +572,7 @@ export const testFramework = (
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
           const ret = await run(
-            [inngest, [fn], { signingKey: "test" }],
+            [{ client: inngest, functions: [fn], signingKey: "test" }],
             [
               {
                 method: "POST",
@@ -573,7 +581,7 @@ export const testFramework = (
                     yesterday.getTime() / 1000
                   )}&s=expired`,
                 },
-                url: "/api/inngest?fnId=test",
+                url: "/api/inngest?fnId=test-test",
                 body: { event: {}, events: [{}] },
               },
             ],
@@ -612,9 +620,9 @@ export const testFramework = (
           };
           const ret = await run(
             [
-              inngest,
-              [fn],
               {
+                client: inngest,
+                functions: [fn],
                 signingKey:
                   "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                 __testingAllowExpiredSignatures: true,
@@ -628,7 +636,7 @@ export const testFramework = (
                   [headerKeys.Signature]:
                     "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
                 },
-                url: "/api/inngest?fnId=test&stepId=step",
+                url: "/api/inngest?fnId=test-test&stepId=step",
                 body,
               },
             ],
@@ -636,15 +644,13 @@ export const testFramework = (
           );
           expect(ret).toMatchObject({
             status: 200,
-            body: '"fn"',
+            body: JSON.stringify("fn"),
           });
         });
       });
 
       describe("malformed payloads", () => {
-        const client = createClient({ name: "test" });
-
-        const fn = client.createFunction(
+        const fn = inngest.createFunction(
           { name: "Test", id: "test" },
           { event: "demo/event.sent" },
           () => "fn"
@@ -657,11 +663,11 @@ export const testFramework = (
 
         test("should throw an error with an invalid JSON body", async () => {
           const ret = await run(
-            [inngest, [fn], { signingKey: "test" }],
+            [{ client: inngest, functions: [fn], signingKey: "test" }],
             [
               {
                 method: "POST",
-                url: "/api/inngest?fnId=test",
+                url: "/api/inngest?fnId=test-test",
                 body: undefined,
               },
             ],

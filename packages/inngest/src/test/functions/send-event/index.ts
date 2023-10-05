@@ -1,15 +1,18 @@
 import { inngest } from "../client";
 
 export default inngest.createFunction(
-  { name: "Send event" },
-  "demo/send.event",
+  { id: "send-event" },
+  { event: "demo/send.event" },
   async ({ step }) => {
     await Promise.all([
       // Send a single event
-      step.sendEvent({ name: "app/my.event.happened", data: { foo: "bar" } }),
+      step.sendEvent("single-event", {
+        name: "app/my.event.happened",
+        data: { foo: "bar" },
+      }),
 
       // Send multiple events
-      step.sendEvent([
+      step.sendEvent("multiple-events", [
         {
           name: "app/my.event.happened.multiple.1",
           data: { foo: "bar" },

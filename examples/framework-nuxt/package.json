@@ -12,7 +12,7 @@
     "nuxt": "^3.0.0"
   },
   "dependencies": {
-    "inngest": "^2.0.0"
+    "inngest": "^3.0.0"
   },
   "volta": {
     "node": "18.16.1",

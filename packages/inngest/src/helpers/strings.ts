@@ -1,10 +1,15 @@
-import ms from "ms";
 import { sha256 } from "hash.js";
+import ms from "ms";
 import { type TimeStr } from "../types";
 export { default as stringify } from "json-stringify-safe";
 
 /**
- * Returns a slugified string used ot generate consistent IDs.
+ * Returns a slugified string used to generate consistent IDs.
+ *
+ * This can be used to generate a consistent ID for a function when migrating
+ * from v2 to v3 of the SDK.
+ *
+ * @public
  */
 export const slugify = (str: string): string => {
   const join = "-";

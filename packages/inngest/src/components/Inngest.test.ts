@@ -25,7 +25,7 @@ const testEventKey = "foo-bar-baz-test";
 describe("instantiation", () => {
   describe("event key warnings", () => {
     let warnSpy: jest.SpyInstance;
-    const originalEnvEventKey = process.env[envKeys.EventKey];
+    const originalEnvEventKey = process.env[envKeys.InngestEventKey];
 
     beforeEach(() => {
       warnSpy = jest.spyOn(console, "warn");
@@ -36,27 +36,27 @@ describe("instantiation", () => {
       warnSpy.mockRestore();
 
       if (originalEnvEventKey) {
-        process.env[envKeys.EventKey] = originalEnvEventKey;
+        process.env[envKeys.InngestEventKey] = originalEnvEventKey;
       } else {
-        delete process.env[envKeys.EventKey];
+        delete process.env[envKeys.InngestEventKey];
       }
     });
 
     test("should log a warning if event key not specified", () => {
-      createClient({ name: "test" });
+      createClient({ id: "test" });
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining("Could not find event key")
       );
     });
 
     test("should not log a warning if event key is specified", () => {
-      createClient({ name: "test", eventKey: testEventKey });
+      createClient({ id: "test", eventKey: testEventKey });
       expect(warnSpy).not.toHaveBeenCalled();
     });
 
     test("should not log a warning if event key is specified in env", () => {
-      process.env[envKeys.EventKey] = testEventKey;
-      createClient({ name: "test" });
+      process.env[envKeys.InngestEventKey] = testEventKey;
+      createClient({ id: "test" });
       expect(warnSpy).not.toHaveBeenCalled();
     });
   });
@@ -108,7 +108,7 @@ describe("send", () => {
     });
 
     test("should fail to send if event key not specified at instantiation", async () => {
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
 
       await expect(() => inngest.send(testEvent)).rejects.toThrowError(
         "Failed to send event"
@@ -116,9 +116,11 @@ describe("send", () => {
     });
 
     test("should succeed if event key specified at instantiation", async () => {
-      const inngest = createClient({ name: "test", eventKey: testEventKey });
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
@@ -130,10 +132,12 @@ describe("send", () => {
     });
 
     test("should succeed if event key specified in env", async () => {
-      process.env[envKeys.EventKey] = testEventKey;
-      const inngest = createClient({ name: "test" });
+      process.env[envKeys.InngestEventKey] = testEventKey;
+      const inngest = createClient({ id: "test" });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
@@ -145,10 +149,12 @@ describe("send", () => {
     });
 
     test("should succeed if event key given at runtime", async () => {
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
       inngest.setEventKey(testEventKey);
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
@@ -160,21 +166,25 @@ describe("send", () => {
     });
 
     test("should succeed if an empty list of payloads is given", async () => {
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
       inngest.setEventKey(testEventKey);
 
-      await expect(inngest.send([])).resolves.toBeUndefined();
+      await expect(inngest.send([])).resolves.toMatchObject({
+        ids: Array(0).fill(expect.any(String)),
+      });
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
     test("should send env:foo if explicitly set", async () => {
       const inngest = createClient({
-        name: "test",
+        id: "test",
         eventKey: testEventKey,
         env: "foo",
       });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
@@ -188,14 +198,16 @@ describe("send", () => {
     });
 
     test("should send env:foo if set in INNGEST_ENV", async () => {
-      process.env[envKeys.Environment] = "foo";
+      process.env[envKeys.InngestEnvironment] = "foo";
 
       const inngest = createClient({
-        name: "test",
+        id: "test",
         eventKey: testEventKey,
       });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
@@ -209,15 +221,17 @@ describe("send", () => {
     });
 
     test("should send explicit env:foo over env var if set in both", async () => {
-      process.env[envKeys.Environment] = "bar";
+      process.env[envKeys.InngestEnvironment] = "bar";
 
       const inngest = createClient({
-        name: "test",
+        id: "test",
         eventKey: testEventKey,
         env: "foo",
       });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
@@ -234,11 +248,13 @@ describe("send", () => {
       process.env[envKeys.VercelBranch] = "foo";
 
       const inngest = createClient({
-        name: "test",
+        id: "test",
         eventKey: testEventKey,
       });
 
-      await expect(inngest.send(testEvent)).resolves.toBeUndefined();
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
@@ -252,7 +268,7 @@ describe("send", () => {
     });
 
     test("should insert `ts` timestamp ", async () => {
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
       inngest.setEventKey(testEventKey);
 
       const testEventWithoutTs = {
@@ -262,7 +278,9 @@ describe("send", () => {
 
       const mockedFetch = jest.mocked(global.fetch);
 
-      await expect(inngest.send(testEventWithoutTs)).resolves.toBeUndefined();
+      await expect(inngest.send(testEventWithoutTs)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
       expect(mockedFetch.mock.calls[1]).toHaveLength(2);
@@ -282,7 +300,7 @@ describe("send", () => {
     });
 
     test("should insert blank `data` if none given", async () => {
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
       inngest.setEventKey(testEventKey);
 
       const testEventWithoutData = {
@@ -291,7 +309,9 @@ describe("send", () => {
 
       const mockedFetch = jest.mocked(global.fetch);
 
-      await expect(inngest.send(testEventWithoutData)).resolves.toBeUndefined();
+      await expect(inngest.send(testEventWithoutData)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
       expect(mockedFetch.mock.calls[1]).toHaveLength(2);
@@ -311,7 +331,7 @@ describe("send", () => {
 
     test("should allow middleware to mutate input", async () => {
       const inngest = createClient({
-        name: "test",
+        id: "test",
         eventKey: testEventKey,
         middleware: [
           new InngestMiddleware({
@@ -342,7 +362,9 @@ describe("send", () => {
 
       await expect(
         inngest.send({ ...testEvent, data: { foo: true } })
-      ).resolves.toBeUndefined();
+      ).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
 
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining(`/e/${testEventKey}`),
@@ -355,23 +377,54 @@ describe("send", () => {
       );
     });
 
+    test("should allow middleware to mutate output", async () => {
+      const inngest = createClient({
+        id: "test",
+        eventKey: testEventKey,
+        middleware: [
+          new InngestMiddleware({
+            name: "Test",
+            init() {
+              return {
+                onSendEvent() {
+                  return {
+                    transformOutput({ result }) {
+                      return {
+                        result: {
+                          ids: result.ids.map((id) => `${id}-bar`),
+                        },
+                      };
+                    },
+                  };
+                },
+              };
+            },
+          }),
+        ],
+      });
+
+      await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.stringMatching(/-bar$/)),
+      });
+    });
+
     test("should return error from Inngest if parsed", () => {
       global.fetch = setFetch({ status: 400, error: "Test Error" });
-      const inngest = createClient({ name: "test", eventKey: testEventKey });
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       return expect(inngest.send(testEvent)).rejects.toThrowError("Test Error");
     });
 
     test("should return error from Inngest if parsed even for 200", () => {
       global.fetch = setFetch({ status: 200, error: "Test Error" });
-      const inngest = createClient({ name: "test", eventKey: testEventKey });
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       return expect(inngest.send(testEvent)).rejects.toThrowError("Test Error");
     });
 
     test("should return error if bad status code with no error string", () => {
       global.fetch = setFetch({ status: 400 });
-      const inngest = createClient({ name: "test", eventKey: testEventKey });
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       return expect(inngest.send(testEvent)).rejects.toThrowError(
         "Cannot process event payload"
@@ -380,7 +433,7 @@ describe("send", () => {
 
     test("should return unknown error from response text if very bad status code", () => {
       global.fetch = setFetch({ status: 600 });
-      const inngest = createClient({ name: "test", eventKey: testEventKey });
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       return expect(inngest.send(testEvent)).rejects.toThrowError("600");
     });
@@ -388,7 +441,7 @@ describe("send", () => {
 
   describe("types", () => {
     describe("no custom types", () => {
-      const inngest = createClient({ name: "test", eventKey: testEventKey });
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       test("allows sending a single event with an object", () => {
         const _fn = () => inngest.send({ name: "anything", data: "foo" });
@@ -406,7 +459,7 @@ describe("send", () => {
 
     describe("multiple custom types", () => {
       const inngest = createClient({
-        name: "test",
+        id: "test",
         eventKey: testEventKey,
         schemas: new EventSchemas().fromRecord<{
           foo: {
@@ -505,12 +558,12 @@ describe("send", () => {
 describe("createFunction", () => {
   describe("types", () => {
     describe("function input", () => {
-      const inngest = createClient({ name: "test" });
+      const inngest = createClient({ id: "test" });
 
       test("has attempt number", () => {
         inngest.createFunction(
           {
-            name: "test",
+            id: "test",
             onFailure: ({ attempt }) => {
               assertType<number>(attempt);
             },
@@ -524,18 +577,11 @@ describe("createFunction", () => {
     });
 
     describe("no custom types", () => {
-      const inngest = createClient({ name: "test" });
-
-      test("allows name to be a string", () => {
-        inngest.createFunction("test", { event: "test" }, ({ event }) => {
-          assertType<string>(event.name);
-          assertType<IsAny<typeof event.data>>(true);
-        });
-      });
+      const inngest = createClient({ id: "test" });
 
       test("allows name to be an object", () => {
         inngest.createFunction(
-          { name: "test" },
+          { id: "test" },
           { event: "test" },
           ({ event }) => {
             assertType<string>(event.name);
@@ -558,10 +604,10 @@ describe("createFunction", () => {
 
       test("disallows specifying cancellation with batching", () => {
         inngest.createFunction(
+          // @ts-expect-error Cannot specify cancellation with batching
           {
-            name: "test",
+            id: "test",
             batchEvents: { maxSize: 5, timeout: "5s" },
-            // @ts-expect-error Cannot specify cancellation with batching
             cancelOn: [{ event: "test2" }],
           },
           { event: "test" },
@@ -573,10 +619,10 @@ describe("createFunction", () => {
 
       test("disallows specifying rate limit with batching", () => {
         inngest.createFunction(
+          // @ts-expect-error Cannot specify rate limit with batching
           {
-            name: "test",
+            id: "test",
             batchEvents: { maxSize: 5, timeout: "5s" },
-            // @ts-expect-error Cannot specify rate limit with batching
             rateLimit: { limit: 5, period: "5s" },
           },
           { event: "test" },
@@ -586,30 +632,31 @@ describe("createFunction", () => {
         );
       });
 
-      test("allows trigger to be a string", () => {
-        inngest.createFunction("test", "test", ({ event }) => {
-          assertType<string>(event.name);
-          assertType<IsAny<typeof event.data>>(true);
-        });
-      });
-
       test("allows trigger to be an object with an event property", () => {
-        inngest.createFunction("test", { event: "test" }, ({ event }) => {
-          assertType<string>(event.name);
-          assertType<IsAny<typeof event.data>>(true);
-        });
+        inngest.createFunction(
+          { id: "test" },
+          { event: "test" },
+          ({ event }) => {
+            assertType<string>(event.name);
+            assertType<IsAny<typeof event.data>>(true);
+          }
+        );
       });
 
       test("allows trigger to be an object with a cron property", () => {
-        inngest.createFunction("test", { cron: "test" }, ({ event }) => {
-          assertType<string>(event.name);
-          assertType<IsAny<typeof event.data>>(true);
-        });
+        inngest.createFunction(
+          { id: "test" },
+          { cron: "test" },
+          ({ event }) => {
+            assertType<string>(event.name);
+            assertType<IsAny<typeof event.data>>(true);
+          }
+        );
       });
 
       test("disallows trigger with unknown properties", () => {
         // @ts-expect-error Unknown property
-        inngest.createFunction("test", { foo: "bar" }, ({ event }) => {
+        inngest.createFunction({ id: "test" }, { foo: "bar" }, ({ event }) => {
           assertType<string>(event.name);
           assertType<IsAny<typeof event.data>>(true);
         });
@@ -617,7 +664,7 @@ describe("createFunction", () => {
 
       test("disallows trigger with both event and cron properties", () => {
         inngest.createFunction(
-          "test",
+          { id: "test" },
           // @ts-expect-error Both event and cron
           { event: "test", cron: "test" },
           ({ event }) => {
@@ -630,7 +677,7 @@ describe("createFunction", () => {
 
     describe("multiple custom types", () => {
       const inngest = createClient({
-        name: "test",
+        id: "test",
         schemas: new EventSchemas().fromRecord<{
           foo: {
             name: "foo";
@@ -657,16 +704,9 @@ describe("createFunction", () => {
         });
       });
 
-      test("allows name to be a string", () => {
-        inngest.createFunction("test", { event: "foo" }, ({ event }) => {
-          assertType<"foo">(event.name);
-          assertType<{ title: string }>(event.data);
-        });
-      });
-
       test("allows name to be an object", () => {
         inngest.createFunction(
-          { name: "test" },
+          { id: "test" },
           { event: "bar" },
           ({ event }) => {
             assertType<"bar">(event.name);
@@ -687,24 +727,25 @@ describe("createFunction", () => {
         );
       });
 
-      test("allows trigger to be a string", () => {
-        inngest.createFunction("test", "bar", ({ event }) => {
-          assertType<"bar">(event.name);
-          assertType<{ message: string }>(event.data);
-        });
-      });
-
       test("allows trigger to be an object with an event property", () => {
-        inngest.createFunction("test", { event: "foo" }, ({ event }) => {
-          assertType<"foo">(event.name);
-          assertType<{ title: string }>(event.data);
-        });
+        inngest.createFunction(
+          { id: "test" },
+          { event: "foo" },
+          ({ event }) => {
+            assertType<"foo">(event.name);
+            assertType<{ title: string }>(event.data);
+          }
+        );
       });
 
       test("allows trigger to be an object with a cron property", () => {
-        inngest.createFunction("test", { cron: "test" }, ({ event }) => {
-          assertType<unknown>(event);
-        });
+        inngest.createFunction(
+          { id: "test" },
+          { cron: "test" },
+          ({ event }) => {
+            assertType<unknown>(event);
+          }
+        );
       });
 
       test("disallows trigger with unknown properties", () => {
@@ -716,7 +757,7 @@ describe("createFunction", () => {
 
       test("disallows trigger with both event and cron properties", () => {
         inngest.createFunction(
-          "test",
+          { id: "test" },
           // @ts-expect-error Both event and cron
           { event: "foo", cron: "test" },
           ({ event }) => {
@@ -730,7 +771,7 @@ describe("createFunction", () => {
 
 describe("helper types", () => {
   const inngest = new Inngest({
-    name: "test",
+    id: "test",
     schemas: new EventSchemas().fromRecord<{
       foo: { data: { foo: string } };
       bar: { data: { bar: string } };
@@ -786,7 +827,7 @@ describe("helper types", () => {
     test("returns step typing for sendEvent", () => {
       type Expected = "foo" | "bar";
       type Actual = GetUnionKeyValue<
-        Parameters<T0["step"]["sendEvent"]>[0],
+        Parameters<T0["step"]["sendEvent"]>[1],
         "name"
       >;
       assertType<IsEqual<Expected, Actual>>(true);
@@ -804,7 +845,7 @@ describe("helper types", () => {
 
     test("returns step typing for sendEvent", () => {
       type Expected = "foo" | "bar";
-      type Actual = GetUnionKeyValue<Parameters<T0["sendEvent"]>[0], "name">;
+      type Actual = GetUnionKeyValue<Parameters<T0["sendEvent"]>[1], "name">;
       assertType<IsEqual<Expected, Actual>>(true);
     });
   });
