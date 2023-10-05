@@ -736,6 +736,34 @@ export interface FunctionOptions<
     period: TimeStr;
   };
 
+  /**
+   * Debounce delays functions for the `period` specified. If an event is sent,
+   * the function will not run until at least `period` has elapsed.
+   *
+   * If any new events are received that match the same debounce `key`, the
+   * function is reshceduled for another `period` delay, and the triggering
+   * event is replaced with the latest event received.
+   *
+   * See [TODO](#SHORTLINK) for more information.
+   */
+  debounce?: {
+    /**
+     * An optional key to use for debouncing.
+     *
+     * See [TODO](#SHORTLINK) for more information on how to use `key`
+     * expressions.
+     */
+    key?: string;
+
+    /**
+     * The period of time to after receiving the last trigger to run the
+     * function.
+     *
+     * See [TODO](#SHORTLINK) for more information.
+     */
+    period: TimeStr;
+  };
+
   cancelOn?: Cancellation<Events, Event>[];
 
   /**
