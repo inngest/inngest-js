@@ -744,14 +744,15 @@ export interface FunctionOptions<
    * function is reshceduled for another `period` delay, and the triggering
    * event is replaced with the latest event received.
    *
-   * See [TODO](#SHORTLINK) for more information.
+   * See the [Debounce documentation](https://innge.st/debounce) for more
+   * information.
    */
   debounce?: {
     /**
      * An optional key to use for debouncing.
      *
-     * See [TODO](#SHORTLINK) for more information on how to use `key`
-     * expressions.
+     * See [Debounce documentation](https://innge.st/debounce) for more
+     * information on how to use `key` expressions.
      */
     key?: string;
 
@@ -759,7 +760,8 @@ export interface FunctionOptions<
      * The period of time to after receiving the last trigger to run the
      * function.
      *
-     * See [TODO](#SHORTLINK) for more information.
+     * See [Debounce documentation](https://innge.st/debounce) for more
+     * information.
      */
     period: TimeStr;
   };
