@@ -40,9 +40,11 @@ export const serve = (options: ServeHandlerOptions) => {
     ...options,
     handler: (
       reqMethod: "GET" | "POST" | "PUT" | undefined,
-      req: Either<NextApiRequest, NextRequest>,
+      expectedReq: NextRequest,
       res: NextApiResponse
     ) => {
+      const req = expectedReq as Either<NextApiRequest, NextRequest>;
+
       const isEdge = isNextEdgeRequest(req);
 
       return {
