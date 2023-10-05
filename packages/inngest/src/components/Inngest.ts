@@ -343,17 +343,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       }
     );
 
-    if (!this.eventKey) {
-      throw new Error(
-        prettyError({
-          whatHappened: "Failed to send event",
-          consequences: "Your event or events were not sent to Inngest.",
-          why: "We couldn't find an event key to use to send events to Inngest.",
-          toFixNow: fixEventKeyMissingSteps,
-        })
-      );
-    }
-
     let payloads: EventPayload[] = Array.isArray(payload)
       ? (payload as EventPayload[])
       : payload
@@ -421,6 +410,20 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       // it for non-prod services.
       if (host !== undefined || (await devServerAvailable(host, this.fetch))) {
         url = devServerUrl(host, `e/${this.eventKey}`).href;
+      } else if (!this.eventKey) {
+        /**
+         * If we're here, the dev server is not available so we're expecting to
+         * hit production. In this case, if we don't have an event key then we
+         * know we can fail early.
+         */
+        throw new Error(
+          prettyError({
+            whatHappened: "Failed to send event",
+            consequences: "Your event or events were not sent to Inngest.",
+            why: "We couldn't find an event key to use to send events to Inngest.",
+            toFixNow: fixEventKeyMissingSteps,
+          })
+        );
       }
     }
 
