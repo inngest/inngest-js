@@ -1,5 +1,13 @@
 # inngest
 
+## 3.0.1
+
+### Patch Changes
+
+- [#339](https://github.com/inngest/inngest-js/pull/339) [`bf8b004`](https://github.com/inngest/inngest-js/commit/bf8b0042787892a459e6fea24d31331cb58fd5f6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Bump `next` to `13`; keep up-to-date with their only supported major to support typing
+
+- [#343](https://github.com/inngest/inngest-js/pull/343) [`77c7f66`](https://github.com/inngest/inngest-js/commit/77c7f66c0617a0ad4acf6d07f22f13cafa337c87) Thanks [@tonyhb](https://github.com/tonyhb)! - Allow steps to execute with null data
+
 ## 3.0.0
 
 ### Major Changes
