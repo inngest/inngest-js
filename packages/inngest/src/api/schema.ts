@@ -23,7 +23,7 @@ export const stepsSchema = z
         })
       )
       .or(
-        z.null().transform(() => ({}))
+        z.null().transform(() => ({ type: "data" as const, data: null}))
       )
   )
   .default({});
