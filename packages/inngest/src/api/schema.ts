@@ -22,6 +22,9 @@ export const stepsSchema = z
           error: failureEventErrorSchema,
         })
       )
+      .or(
+        z.null().transform(() => ({}))
+      )
   )
   .default({});
 
