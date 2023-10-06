@@ -839,10 +839,11 @@ export class InngestCommHandler<
     const { version } = immediateFnData;
 
     const result = runAsPromise(async () => {
-      const anyFnData = await fetchAllFnData(
-        immediateFnData,
-        this.client["inngestApi"]
-      );
+      const anyFnData = await fetchAllFnData({
+        data: immediateFnData,
+        api: this.client["inngestApi"],
+        version,
+      });
       if (!anyFnData.ok) {
         throw new Error(anyFnData.error);
       }
