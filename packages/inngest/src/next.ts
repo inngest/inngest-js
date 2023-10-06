@@ -19,7 +19,7 @@ const isNextEdgeRequest = (
  * In Next.js, serve and register any declared functions with Inngest, making
  * them available to be triggered by events.
  *
- * @example Next.js <=12 can export the handler directly
+ * @example Next.js <=12 or the pages router can export the handler directly
  * ```ts
  * export default serve({ client: inngest, functions: [fn1, fn2] });
  * ```
@@ -40,9 +40,11 @@ export const serve = (options: ServeHandlerOptions) => {
     ...options,
     handler: (
       reqMethod: "GET" | "POST" | "PUT" | undefined,
-      req: Either<NextApiRequest, NextRequest>,
+      expectedReq: NextRequest,
       res: NextApiResponse
     ) => {
+      const req = expectedReq as Either<NextApiRequest, NextRequest>;
+
       const isEdge = isNextEdgeRequest(req);
 
       return {
@@ -151,11 +153,20 @@ export const serve = (options: ServeHandlerOptions) => {
    *
    * See {@link https://beta.nextjs.org/docs/routing/route-handlers}
    */
-  const fn = handler.createHandler();
+  const baseFn = handler.createHandler();
 
-  return Object.defineProperties(fn.bind(null, undefined), {
-    GET: { value: fn.bind(null, "GET") },
-    POST: { value: fn.bind(null, "POST") },
-    PUT: { value: fn.bind(null, "PUT") },
-  });
+  const fn = baseFn.bind(null, undefined);
+  type Fn = typeof fn;
+
+  const handlerFn = Object.defineProperties(fn, {
+    GET: { value: baseFn.bind(null, "GET") },
+    POST: { value: baseFn.bind(null, "POST") },
+    PUT: { value: baseFn.bind(null, "PUT") },
+  }) as Fn & {
+    GET: Fn;
+    POST: Fn;
+    PUT: Fn;
+  };
+
+  return handlerFn;
 };
