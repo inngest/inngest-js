@@ -46,7 +46,9 @@ export interface EventPayload {
 // @public
 export class EventSchemas<S extends Record<string, EventPayload>> {
     fromGenerated<T extends StandardEventSchemas>(): EventSchemas<Combine<S, T>>;
-    fromRecord<T extends StandardEventSchemas>(): EventSchemas<Combine<S, T>>;
+    // Warning: (ae-forgotten-export) The symbol "PreventClashingNames" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "ClashingNameError" needs to be exported by the entry point index.d.ts
+    fromRecord<T extends StandardEventSchemas>(..._args: PreventClashingNames<T> extends ClashingNameError ? [ClashingNameError] : []): EventSchemas<Combine<S, T>>;
     // Warning: (ae-forgotten-export) The symbol "StandardEventSchema" needs to be exported by the entry point index.d.ts
     fromUnion<T extends {
         name: string;

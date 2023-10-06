@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { EventSchemas } from "@local/components/EventSchemas";
 import { type EventsFromOpts } from "@local/components/Inngest";
@@ -410,9 +409,10 @@ describe("sendEvent", () => {
           data: { foo: string };
         };
         bar: {
-          name: "bar";
           data: { bar: string };
         };
+        // eslint-disable-next-line @typescript-eslint/ban-types
+        baz: {};
       }>();
 
       const opts = (<T extends ClientOptions>(x: T): T => x)({

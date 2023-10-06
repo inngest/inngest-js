@@ -187,3 +187,17 @@ export type ParametersExceptFirst<T> = T extends (
 any
   ? U
   : never;
+
+/**
+ * Given an object `T`, return `true` if it contains no keys, or `false` if it
+ * contains any keys.
+ *
+ * Useful for detecting the passing of a `{}` (any non-nullish) type.
+ */
+// eslint-disable-next-line @typescript-eslint/ban-types
+export type IsEmptyObject<T> = {} extends T
+  ? // eslint-disable-next-line @typescript-eslint/ban-types
+    T extends {}
+    ? true
+    : false
+  : false;
