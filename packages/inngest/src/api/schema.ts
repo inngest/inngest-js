@@ -16,15 +16,25 @@ export const stepsSchema = z
           message: "Data in steps must be defined",
         }),
       })
+      .strict()
       .or(
-        z.object({
-          type: z.literal("error").optional().default("error"),
-          error: failureEventErrorSchema,
-        })
+        z
+          .object({
+            type: z.literal("error").optional().default("error"),
+            error: failureEventErrorSchema,
+          })
+          .strict()
       )
-      .or(
-        z.null().transform(() => ({ type: "data" as const, data: null}))
-      )
+
+      /**
+       * If the result isn't a distcint `data` or `error` object, then it's
+       * likely that the executor has set this directly to a value, for example
+       * in the case of `sleep` or `waitForEvent`.
+       *
+       * In this case, pull the entire value through as data.
+       */
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      .or(z.any().transform((v) => ({ type: "data" as const, data: v })))
   )
   .default({});
 
