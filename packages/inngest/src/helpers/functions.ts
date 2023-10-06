@@ -1,6 +1,6 @@
 import { ZodError, z } from "zod";
 import { type InngestApi } from "../api/api";
-import { stepsSchema } from "../api/schema";
+import { stepsSchemas } from "../api/schema";
 import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
@@ -107,14 +107,7 @@ export const parseFnData = (data: unknown) => {
             .object({
               event: z.record(z.any()),
               events: z.array(z.record(z.any())).default([]),
-              steps: z
-                .record(
-                  z.any().refine((v) => typeof v !== "undefined", {
-                    message: "Values in steps must be defined",
-                  })
-                )
-                .optional()
-                .nullable(),
+              steps: stepsSchemas[ExecutionVersion.V0],
               ctx: z
                 .object({
                   run_id: z.string(),
@@ -145,7 +138,7 @@ export const parseFnData = (data: unknown) => {
             .object({
               event: z.record(z.any()),
               events: z.array(z.record(z.any())).default([]),
-              steps: stepsSchema,
+              steps: stepsSchemas[ExecutionVersion.V1],
               ctx: z
                 .object({
                   run_id: z.string(),
@@ -179,10 +172,15 @@ export const parseFnData = (data: unknown) => {
 export type FnData = ReturnType<typeof parseFnData>;
 
 type ParseErr = string;
-export const fetchAllFnData = async (
-  data: FnData,
-  api: InngestApi
-): Promise<Result<FnData, ParseErr>> => {
+export const fetchAllFnData = async ({
+  data,
+  api,
+  version,
+}: {
+  data: FnData;
+  api: InngestApi;
+  version: ExecutionVersion;
+}): Promise<Result<FnData, ParseErr>> => {
   const result = { ...data };
 
   try {
@@ -203,7 +201,7 @@ export const fetchAllFnData = async (
 
       const [evtResp, stepResp] = await Promise.all([
         api.getRunBatch(result.ctx.run_id),
-        api.getRunSteps(result.ctx.run_id),
+        api.getRunSteps(result.ctx.run_id, version),
       ]);
 
       if (evtResp.ok) {

@@ -1,11 +1,12 @@
 import { type fetch } from "cross-fetch";
+import { type ExecutionVersion } from "../components/execution/InngestExecution";
 import { getFetch } from "../helpers/env";
 import { hashSigningKey } from "../helpers/strings";
 import { err, ok, type Result } from "../types";
 import {
   batchSchema,
   errorSchema,
-  stepsSchema,
+  stepsSchemas,
   type BatchResponse,
   type ErrorResponse,
   type StepsResponse,
@@ -46,7 +47,8 @@ export class InngestApi {
   }
 
   async getRunSteps(
-    runId: string
+    runId: string,
+    version: ExecutionVersion
   ): Promise<Result<StepsResponse, ErrorResponse>> {
     const url = new URL(`/v0/runs/${runId}/actions`, this.baseUrl);
 
@@ -57,7 +59,7 @@ export class InngestApi {
         const data: unknown = await resp.json();
 
         if (resp.ok) {
-          return ok(stepsSchema.parse(data));
+          return ok(stepsSchemas[version].parse(data));
         } else {
           return err(errorSchema.parse(data));
         }
