@@ -1,5 +1,15 @@
 # inngest
 
+## 3.1.0
+
+### Minor Changes
+
+- [#338](https://github.com/inngest/inngest-js/pull/338) [`ef35fea`](https://github.com/inngest/inngest-js/commit/ef35feacd35d626b89aea4d35ddfd8c33318d6fc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `debounce` configuration option. See [Debounce documentation](https://innge.st/debounce) for more information.
+
+### Patch Changes
+
+- [#337](https://github.com/inngest/inngest-js/pull/337) [`672c428`](https://github.com/inngest/inngest-js/commit/672c428f7ad89b06947b5dc8e81eab1d20ba2039) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure `fromRecord<>()` doesn't accept clashing names
+
 ## 3.0.2
 
 ### Patch Changes
