@@ -43,7 +43,7 @@ describe("run", () => {
       runHasTimeline(runId, {
         __typename: "StepEvent",
         stepType: "COMPLETED",
-        output: JSON.stringify({ body: "150", status: 200 }),
+        output: JSON.stringify("150"),
       })
     ).resolves.toBeDefined();
   }, 60000);
