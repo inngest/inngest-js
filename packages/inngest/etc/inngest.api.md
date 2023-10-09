@@ -6,7 +6,7 @@
 
 import { Jsonify } from 'type-fest';
 import { Simplify } from 'type-fest';
-import { z } from 'zod';
+import { z as z_2 } from 'zod';
 
 // @public
 export interface ClientOptions {
@@ -78,7 +78,7 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     data: {
         function_id: string;
         run_id: string;
-        error: z.output<typeof failureEventErrorSchema>;
+        error: z_2.output<typeof failureEventErrorSchema>;
         event: P;
     };
 };
@@ -234,6 +234,8 @@ export enum internalEvents {
 // @internal
 export type IsStringLiteral<T extends string> = string extends T ? false : true;
 
+// Warning: (ae-forgotten-export) The symbol "z" needs to be exported by the entry point index.d.ts
+//
 // @public
 export type LiteralZodEventSchema = z.ZodObject<{
     name: z.ZodLiteral<string>;
