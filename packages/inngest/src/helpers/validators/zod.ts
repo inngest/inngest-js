@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Shim for Zod types to ensure hopeful compatibility between minor versions to
  * ensure that users can utilize the latest version of Zod without having to
