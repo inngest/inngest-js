@@ -454,6 +454,7 @@ describe("send", () => {
         eventKey: testEventKey,
         schemas: new EventSchemas().fromRecord<{
           foo: {
+            name: "foo";
             data: { foo: string };
           };
           bar: {
