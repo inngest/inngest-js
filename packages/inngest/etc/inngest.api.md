@@ -97,6 +97,10 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
         limit: number;
         key?: string;
     };
+    debounce?: {
+        key?: string;
+        period: TimeStr;
+    };
     id: string;
     idempotency?: string;
     middleware?: MiddlewareStack;
