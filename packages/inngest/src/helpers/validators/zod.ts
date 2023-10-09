@@ -1,8 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
- * Shim for Zod types to ensure hopeful compatibility between minor versions to
- * ensure that users can utilize the latest version of Zod without having to
- * wait for Inngest to update.
+ * Shim for Zod types to ensure hopeful compatibility between minor versions;
+ * let developers the latest version of Zod without having to have Inngest match
+ * the same version.
+ *
+ * Feels weird to be using internal properties like this, but types break across
+ * minors anyway, so at least with this we rely on fewer fields staying the
+ * same.
  */
 export type ZodLiteral<TValue = any> = {
   get value(): TValue;
