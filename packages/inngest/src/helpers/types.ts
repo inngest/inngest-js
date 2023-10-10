@@ -1,4 +1,4 @@
-import { type Simplify } from "type-fest";
+import { type IsEqual, type Simplify } from "type-fest";
 import { type EventPayload } from "../types";
 
 /**
@@ -43,16 +43,6 @@ export type Primitive =
   | boolean
   | symbol
   | bigint;
-
-/**
- * Given T1 and T2, use a distributive conditional to check whether they are
- * directly equal and not just extensions.
- */
-type IsEqual<T1, T2> = T1 extends T2
-  ? (<G>() => G extends T1 ? 1 : 2) extends <G>() => G extends T2 ? 1 : 2
-    ? true
-    : false
-  : false;
 
 /**
  * Returns `true` if `T` is a tuple, else `false`.
