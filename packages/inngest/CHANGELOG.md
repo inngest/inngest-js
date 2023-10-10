@@ -1,5 +1,13 @@
 # inngest
 
+## 3.1.1
+
+### Patch Changes
+
+- [#354](https://github.com/inngest/inngest-js/pull/354) [`e2f68d6`](https://github.com/inngest/inngest-js/commit/e2f68d6dba7cc3e6f821d76abdb660793eb6a42f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix path matching types getting lost in certain recursive event types
+
+- [#350](https://github.com/inngest/inngest-js/pull/350) [`933b998`](https://github.com/inngest/inngest-js/commit/933b99816a1b47a6e4d6ef66db9d557a85407c2e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Separate Zod typing from library, enabling minor-agnostic versioning support
+
 ## 3.1.0
 
 ### Minor Changes
