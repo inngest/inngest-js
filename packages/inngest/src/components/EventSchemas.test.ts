@@ -816,5 +816,47 @@ describe("EventSchemas", () => {
         }
       );
     });
+
+    test("does not infinitely recurse when matching events with recursive types", () => {
+      type JsonObject = { [Key in string]?: JsonValue };
+      type JsonArray = Array<JsonValue>;
+      type JsonValue =
+        | string
+        | number
+        | boolean
+        | JsonObject
+        | JsonArray
+        | null;
+
+      interface TestEvent extends EventPayload {
+        name: "test.event";
+        data: { id: string; other: JsonValue; yer: string[] };
+      }
+
+      interface TestEvent2 extends EventPayload {
+        name: "test.event2";
+        data: { id: string; somethingElse: JsonValue };
+      }
+
+      const schemas = new EventSchemas().fromUnion<TestEvent | TestEvent2>();
+
+      const inngest = new Inngest({
+        id: "test",
+        schemas,
+        eventKey: "test-key-123",
+      });
+
+      inngest.createFunction(
+        { id: "test", cancelOn: [{ event: "test.event2", match: "data.id" }] },
+        { event: "test.event" },
+        ({ step }) => {
+          void step.waitForEvent("id", {
+            event: "test.event2",
+            match: "data.id",
+            timeout: "1h",
+          });
+        }
+      );
+    });
   });
 });
