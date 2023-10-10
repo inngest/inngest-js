@@ -4,6 +4,7 @@
 
 ```ts
 
+import { IsEqual } from 'type-fest';
 import { Jsonify } from 'type-fest';
 import { Simplify } from 'type-fest';
 import { z as z_2 } from 'zod';
