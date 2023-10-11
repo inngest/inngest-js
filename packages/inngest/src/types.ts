@@ -173,7 +173,7 @@ export const incomingOpSchema = z.object({
 export type IncomingOp = z.output<typeof incomingOpSchema>;
 export type OutgoingOp = Pick<
   HashedOp,
-  "id" | "op" | "name" | "opts" | "data" | "error"
+  "id" | "op" | "name" | "opts" | "data" | "error" | "displayName"
 >;
 
 /**
