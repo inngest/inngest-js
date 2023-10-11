@@ -1,5 +1,6 @@
 import { InngestApi } from "../api/api";
 import {
+  defaultDevServerHost,
   defaultInngestBaseUrl,
   defaultInngestEventBaseUrl,
   envKeys,
@@ -7,7 +8,6 @@ import {
 } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
-  devServerHost,
   getFetch,
   inngestHeaders,
   processEnv,
@@ -343,17 +343,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       }
     );
 
-    if (!this.eventKey) {
-      throw new Error(
-        prettyError({
-          whatHappened: "Failed to send event",
-          consequences: "Your event or events were not sent to Inngest.",
-          why: "We couldn't find an event key to use to send events to Inngest.",
-          toFixNow: fixEventKeyMissingSteps,
-        })
-      );
-    }
-
     let payloads: EventPayload[] = Array.isArray(payload)
       ? (payload as EventPayload[])
       : payload
@@ -414,14 +403,30 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     // dev server.
     let url = this.sendEventUrl.href;
 
+    /**
+     * INNGEST_BASE_URL is used to set both dev server and prod URLs, so if a
+     * user has set this it means they have already chosen a URL to hit.
+     */
     if (!skipDevServer()) {
-      const host = devServerHost();
-      // If the dev server host env var has been set we always want to use
-      // the dev server - even if it's down.  Otherwise, optimistically use
-      // it for non-prod services.
-      if (host !== undefined || (await devServerAvailable(host, this.fetch))) {
-        url = devServerUrl(host, `e/${this.eventKey}`).href;
+      if (!this.baseUrl) {
+        const devAvailable = await devServerAvailable(
+          defaultDevServerHost,
+          this.fetch
+        );
+
+        if (devAvailable) {
+          url = devServerUrl(defaultDevServerHost, `e/${this.eventKey}`).href;
+        }
       }
+    } else if (!this.eventKey) {
+      throw new Error(
+        prettyError({
+          whatHappened: "Failed to send event",
+          consequences: "Your event or events were not sent to Inngest.",
+          why: "We couldn't find an event key to use to send events to Inngest.",
+          toFixNow: fixEventKeyMissingSteps,
+        })
+      );
     }
 
     const response = await this.fetch(url, {

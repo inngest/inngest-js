@@ -29,10 +29,7 @@ describe("run", () => {
       runHasTimeline(runId, {
         __typename: "StepEvent",
         stepType: "COMPLETED",
-        output: JSON.stringify({
-          body: "Hello, Inngest!",
-          status: 200,
-        }),
+        output: JSON.stringify("Hello, Inngest!"),
       })
     ).resolves.toBeDefined();
   }, 60000);

@@ -108,6 +108,9 @@ describe("send", () => {
     });
 
     test("should fail to send if event key not specified at instantiation", async () => {
+      // Will only throw this error in prod
+      process.env.CONTEXT = "production";
+
       const inngest = createClient({ id: "test" });
 
       await expect(() => inngest.send(testEvent)).rejects.toThrowError(
@@ -463,6 +466,7 @@ describe("send", () => {
         eventKey: testEventKey,
         schemas: new EventSchemas().fromRecord<{
           foo: {
+            name: "foo";
             data: { foo: string };
           };
           bar: {

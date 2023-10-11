@@ -1,4 +1,4 @@
-import { type Simplify } from "type-fest";
+import { type IsEqual, type Simplify } from "type-fest";
 import { type EventPayload } from "../types";
 
 /**
@@ -35,24 +35,67 @@ export type SendEventPayload<Events extends Record<string, EventPayload>> =
  * A list of simple, JSON-compatible, primitive types that contain no other
  * values.
  */
-export type Primitive = string | number | boolean | undefined | null;
+export type Primitive =
+  | null
+  | undefined
+  | string
+  | number
+  | boolean
+  | symbol
+  | bigint;
 
 /**
- * Given a key and a value, create a string that would be used to access that
- * property in code.
+ * Returns `true` if `T` is a tuple, else `false`.
  */
-type StringPath<K extends string | number, V> = V extends Primitive
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type IsTuple<T extends ReadonlyArray<any>> = number extends T["length"]
+  ? false
+  : true;
+
+/**
+ * Given a tuple `T`, return the keys of that tuple, excluding any shared or
+ * generic keys like `number` and standard array methods.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TupleKeys<T extends ReadonlyArray<any>> = Exclude<keyof T, keyof any[]>;
+
+/**
+ * Returns `true` if `T1` matches anything in the union `T2`, else` never`.
+ */
+type AnyIsEqual<T1, T2> = T1 extends T2
+  ? IsEqual<T1, T2> extends true
+    ? true
+    : never
+  : never;
+
+/**
+ * A helper for concatenating an existing path `K` with new paths from the
+ * value `V`, making sure to skip those we've already seen in
+ * `TraversedTypes`.
+ *
+ * Purposefully skips some primitive objects to avoid building unsupported or
+ * recursive paths.
+ */
+type PathImpl<K extends string | number, V, TraversedTypes> = V extends
+  | Primitive
+  | Date
   ? `${K}`
-  : `${K}` | `${K}.${Path<V>}`;
+  : true extends AnyIsEqual<TraversedTypes, V>
+  ? `${K}`
+  : `${K}` | `${K}.${PathInternal<V, TraversedTypes | V>}`;
 
 /**
- * Given an object or array, recursively return all string paths used to access
- * properties within those objects.
+ * Start iterating over a given object `T` and return all string paths used to
+ * access properties within that object as if you were in code.
  */
-type Path<T> = T extends Array<infer V>
-  ? StringPath<number, V>
+type PathInternal<T, TraversedTypes = T> = T extends ReadonlyArray<infer V>
+  ? IsTuple<T> extends true
+    ? {
+        [K in TupleKeys<T>]-?: PathImpl<K & string, T[K], TraversedTypes>;
+      }[TupleKeys<T>]
+    : PathImpl<number, V, TraversedTypes>
   : {
-      [K in keyof T]-?: StringPath<K & string, T[K]>;
+      [K in keyof T]-?: PathImpl<K & string, T[K], TraversedTypes>;
     }[keyof T];
 
 /**
@@ -63,7 +106,7 @@ type Path<T> = T extends Array<infer V>
  * paths of known objects.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ObjectPaths<T extends Record<string, any>> = Path<T>;
+export type ObjectPaths<T> = T extends any ? PathInternal<T> : never;
 
 /**
  * Returns all keys from objects in the union `T`.
@@ -187,3 +230,17 @@ export type ParametersExceptFirst<T> = T extends (
 any
   ? U
   : never;
+
+/**
+ * Given an object `T`, return `true` if it contains no keys, or `false` if it
+ * contains any keys.
+ *
+ * Useful for detecting the passing of a `{}` (any non-nullish) type.
+ */
+// eslint-disable-next-line @typescript-eslint/ban-types
+export type IsEmptyObject<T> = {} extends T
+  ? // eslint-disable-next-line @typescript-eslint/ban-types
+    T extends {}
+    ? true
+    : false
+  : false;

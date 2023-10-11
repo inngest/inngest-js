@@ -4,9 +4,10 @@
 
 ```ts
 
+import { IsEqual } from 'type-fest';
 import { Jsonify } from 'type-fest';
 import { Simplify } from 'type-fest';
-import { z } from 'zod';
+import { z as z_2 } from 'zod';
 
 // @public
 export interface ClientOptions {
@@ -49,7 +50,9 @@ export interface EventPayload {
 // @public
 export class EventSchemas<S extends Record<string, EventPayload>> {
     fromGenerated<T extends StandardEventSchemas>(): EventSchemas<Combine<S, T>>;
-    fromRecord<T extends StandardEventSchemas>(): EventSchemas<Combine<S, T>>;
+    // Warning: (ae-forgotten-export) The symbol "PreventClashingNames" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "ClashingNameError" needs to be exported by the entry point index.d.ts
+    fromRecord<T extends StandardEventSchemas>(..._args: PreventClashingNames<T> extends ClashingNameError ? [ClashingNameError] : []): EventSchemas<Combine<S, T>>;
     // Warning: (ae-forgotten-export) The symbol "StandardEventSchema" needs to be exported by the entry point index.d.ts
     fromUnion<T extends {
         name: string;
@@ -79,7 +82,7 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     data: {
         function_id: string;
         run_id: string;
-        error: z.output<typeof failureEventErrorSchema>;
+        error: z_2.output<typeof failureEventErrorSchema>;
         event: P;
     };
 };
@@ -97,6 +100,10 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     concurrency?: number | {
         limit: number;
         key?: string;
+    };
+    debounce?: {
+        key?: string;
+        period: TimeStr;
     };
     id: string;
     idempotency?: string;
@@ -241,6 +248,8 @@ export enum internalEvents {
 // @internal
 export type IsStringLiteral<T extends string> = string extends T ? false : true;
 
+// Warning: (ae-forgotten-export) The symbol "z" needs to be exported by the entry point index.d.ts
+//
 // @public
 export type LiteralZodEventSchema = z.ZodObject<{
     name: z.ZodLiteral<string>;
