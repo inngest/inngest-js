@@ -315,12 +315,24 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     })) as [OutgoingOp, ...OutgoingOp[]];
   }
 
-  async #executeStep({ id, name, opts, fn, displayName }: FoundStep): Promise<OutgoingOp> {
+  async #executeStep({
+    id,
+    name,
+    opts,
+    fn,
+    displayName,
+  }: FoundStep): Promise<OutgoingOp> {
     this.#timeout?.clear();
     await this.#state.hooks?.afterMemoization?.();
     await this.#state.hooks?.beforeExecution?.();
 
-    const outgoingOp: OutgoingOp = { id, op: StepOpCode.RunStep, name, opts, displayName };
+    const outgoingOp: OutgoingOp = {
+      id,
+      op: StepOpCode.RunStep,
+      name,
+      opts,
+      displayName,
+    };
     this.#state.executingStep = outgoingOp;
     this.debug(`executing step "${id}"`);
 
