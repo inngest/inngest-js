@@ -6,6 +6,7 @@ import {
   errorConstructors,
   type SerializedError as CjsSerializedError,
 } from "serialize-error-cjs";
+import stripAnsi from "strip-ansi";
 import { z } from "zod";
 import { type Inngest } from "../components/Inngest";
 import { NonRetriableError } from "../components/NonRetriableError";
@@ -274,6 +275,69 @@ export interface PrettyError {
   code?: ErrCode;
 }
 
+export const prettyErrorSplitter =
+  "=================================================";
+
+/**
+ * Given an unknown `err`, mutate it to minify any pretty errors that it
+ * contains.
+ */
+export const minifyPrettyError = <T>(err: T): T => {
+  try {
+    if (!isError(err)) {
+      return err;
+    }
+
+    const isPrettyError = err.message.includes(prettyErrorSplitter);
+    if (!isPrettyError) {
+      return err;
+    }
+
+    const sanitizedMessage = stripAnsi(err.message);
+
+    const message =
+      sanitizedMessage.split("  ")[1]?.split("\n")[0]?.trim() || err.message;
+    const code =
+      sanitizedMessage.split("\n\nCode: ")[1]?.split("\n\n")[0]?.trim() ||
+      undefined;
+
+    err.message = [code, message].filter(Boolean).join(" - ");
+
+    if (err.stack) {
+      const sanitizedStack = stripAnsi(err.stack);
+      const stackRest = sanitizedStack
+        .split(`${prettyErrorSplitter}\n`)
+        .slice(2)
+        .join("\n");
+
+      err.stack = `${err.name}: ${err.message}\n${stackRest}`;
+    }
+
+    return err;
+  } catch (noopErr) {
+    return err;
+  }
+};
+
+/**
+ * Given an `err`, return a boolean representing whether it is in the shape of
+ * an `Error` or not.
+ */
+const isError = (err: unknown): err is Error => {
+  try {
+    if (err instanceof Error) {
+      return true;
+    }
+
+    const hasName = Object.prototype.hasOwnProperty.call(err, "name");
+    const hasMessage = Object.prototype.hasOwnProperty.call(err, "message");
+
+    return hasName && hasMessage;
+  } catch (noopErr) {
+    return false;
+  }
+};
+
 /**
  * Given a {@link PrettyError}, return a nicely-formatted string ready to log
  * or throw.
@@ -302,7 +366,6 @@ export const prettyError = ({
     >
   )[type];
 
-  const splitter = "=================================================";
   let header = `${icon}  ${chalk.bold.underline(whatHappened.trim())}`;
   if (stack) {
     header +=
@@ -333,12 +396,12 @@ export const prettyError = ({
   const trailer = [otherwise?.trim()].filter(Boolean).join(" ");
 
   const message = [
-    splitter,
+    prettyErrorSplitter,
     header,
     body,
     trailer,
     code ? `Code: ${code}` : "",
-    splitter,
+    prettyErrorSplitter,
   ]
     .filter(Boolean)
     .join("\n\n");
