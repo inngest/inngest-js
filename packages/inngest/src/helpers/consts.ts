@@ -147,3 +147,5 @@ export enum internalEvents {
 export const logPrefix = chalk.magenta.bold("[Inngest]");
 
 export const debugPrefix = "inngest";
+
+export const dummyEventKey = "NO_EVENT_KEY_SET";
