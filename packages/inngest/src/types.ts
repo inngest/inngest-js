@@ -766,6 +766,16 @@ export interface FunctionOptions<
     period: TimeStr;
   };
 
+  /**
+   * TODO
+   */
+  priority?: {
+    /**
+     * TODO
+     */
+    run?: string;
+  };
+
   cancelOn?: Cancellation<Events, Event>[];
 
   /**
