@@ -5,6 +5,7 @@ import { logPrefix } from "../../helpers/consts";
 import {
   ErrCode,
   deserializeError,
+  minifyPrettyError,
   prettyError,
   serializeError,
 } from "../../helpers/errors";
@@ -459,7 +460,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         retriable = error.retryAfter;
       }
 
-      const serializedError = serializeError(error);
+      const serializedError = minifyPrettyError(serializeError(error));
 
       return { type: "function-rejected", error: serializedError, retriable };
     }
