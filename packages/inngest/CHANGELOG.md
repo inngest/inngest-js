@@ -1,5 +1,11 @@
 # inngest
 
+## 3.2.1
+
+### Patch Changes
+
+- [#360](https://github.com/inngest/inngest-js/pull/360) [`260dd75`](https://github.com/inngest/inngest-js/commit/260dd75461bf27188c21614f33d9b1c798fa96bf) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Inngest errors now appear more succintly in UIs, free of ANSI codes and verbose information
+
 ## 3.2.0
 
 ### Minor Changes
