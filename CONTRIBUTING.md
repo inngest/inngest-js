@@ -1,0 +1,1 @@
+./packages/inngest/CONTRIBUTING.md
