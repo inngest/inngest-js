@@ -657,3 +657,97 @@ export const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
     },
   }),
 ]);
+
+/**
+ * A helper type to extract the type of a set of event tooling from a given
+ * Inngest instance and optionally a trigger.
+ *
+ * @example Get generic step tools for an Inngest instance.
+ * ```ts
+ * type StepTools = GetStepTools<typeof inngest>;
+ * ```
+ *
+ * @example Get step tools with a trigger, ensuring tools like `waitForEvent` are typed.
+ * ```ts
+ * type StepTools = GetStepTools<typeof Inngest, "github/pull_request">;
+ * ```
+ *
+ * @public
+ */
+export type GetStepTools<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  TInngest extends Inngest<any>,
+  TTrigger extends keyof GetEvents<TInngest> &
+    string = keyof GetEvents<TInngest> & string
+> = GetFunctionInput<TInngest, TTrigger> extends { step: infer TStep }
+  ? TStep
+  : never;
+
+/**
+ * A helper type to extract the type of the input to a function from a given
+ * Inngest instance and optionally a trigger.
+ *
+ * @example Get generic function input for an Inngest instance.
+ * ```ts
+ * type Input = GetFunctionInput<typeof inngest>;
+ * ```
+ *
+ * @example Get function input with a trigger, ensuring tools like `waitForEvent` are typed.
+ * ```ts
+ * type Input = GetFunctionInput<typeof Inngest, "github/pull_request">;
+ * ```
+ *
+ * @public
+ */
+export type GetFunctionInput<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  TInngest extends Inngest<any>,
+  TTrigger extends keyof GetEvents<TInngest> &
+    string = keyof GetEvents<TInngest> & string
+> = Parameters<
+  Handler<
+    ClientOptionsFromInngest<TInngest>,
+    GetEvents<TInngest>,
+    TTrigger,
+    ExtendWithMiddleware<
+      [
+        typeof builtInMiddleware,
+        NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>
+      ]
+    >
+  >
+>[0];
+
+/**
+ * A helper type to extract the inferred event schemas from a given Inngest
+ * instance.
+ *
+ * It's recommended to use this type instead of directly passing
+ * schemas around, as it will ensure that extra properties such as `ts` and
+ * `user` are always added.
+ *
+ * @example
+ * ```ts
+ * type Events = GetEvents<typeof inngest>;
+ * ```
+ *
+ * @public
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type GetEvents<TInngest extends Inngest<any>> = EventsFromOpts<
+  ClientOptionsFromInngest<TInngest>
+>;
+
+/**
+ * A helper type to extract the inferred options from a given Inngest instance.
+ *
+ * @example
+ * ```ts
+ * type Options = ClientOptionsFromInngest<typeof inngest>;
+ * ```
+ *
+ * @public
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ClientOptionsFromInngest<TInngest extends Inngest<any>> =
+  TInngest extends Inngest<infer U> ? U : ClientOptions;

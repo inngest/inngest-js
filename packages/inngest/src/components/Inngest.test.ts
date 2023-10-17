@@ -1,8 +1,17 @@
-import { EventSchemas, InngestMiddleware, type EventPayload } from "@local";
+import {
+  EventSchemas,
+  Inngest,
+  InngestMiddleware,
+  type EventPayload,
+  type GetFunctionInput,
+  type GetStepTools,
+} from "@local";
+import { type createStepTools } from "@local/components/InngestStepTools";
 import { envKeys, headerKeys } from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
+import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
-import { assertType } from "type-plus";
+import { assertType, type IsEqual } from "type-plus";
 import { createClient } from "../test/helpers";
 
 const testEvent: EventPayload = {
@@ -760,6 +769,88 @@ describe("createFunction", () => {
           }
         );
       });
+    });
+  });
+});
+
+describe("helper types", () => {
+  const inngest = new Inngest({
+    id: "test",
+    schemas: new EventSchemas().fromRecord<{
+      foo: { data: { foo: string } };
+      bar: { data: { bar: string } };
+    }>(),
+    middleware: [
+      new InngestMiddleware({
+        name: "",
+        init: () => ({
+          onFunctionRun: () => ({
+            transformInput: () => ({
+              ctx: {
+                foo: "bar",
+              } as const,
+            }),
+          }),
+        }),
+      }),
+    ],
+  });
+
+  type GetUnionKeyValue<
+    T,
+    K extends string | number | symbol
+  > = T extends Record<K, infer U> ? U : never;
+
+  describe("type GetFunctionInput", () => {
+    type T0 = GetFunctionInput<typeof inngest>;
+
+    test("returns event typing", () => {
+      type Expected = "foo" | "bar";
+      type Actual = T0["event"]["name"];
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("returns built-in middleware typing", () => {
+      type Expected = Logger;
+      type Actual = T0["logger"];
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("returns custom middleware typing", () => {
+      type Expected = "bar";
+      type Actual = T0["foo"];
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("has all step tooling", () => {
+      type Expected = keyof ReturnType<typeof createStepTools>;
+      type Actual = keyof T0["step"];
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("returns step typing for sendEvent", () => {
+      type Expected = "foo" | "bar";
+      type Actual = GetUnionKeyValue<
+        Parameters<T0["step"]["sendEvent"]>[1],
+        "name"
+      >;
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+  });
+
+  describe("type GetStepTools", () => {
+    type T0 = GetStepTools<typeof inngest>;
+
+    test("has all tooling", () => {
+      type Expected = keyof ReturnType<typeof createStepTools>;
+      type Actual = keyof T0;
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("returns step typing for sendEvent", () => {
+      type Expected = "foo" | "bar";
+      type Actual = GetUnionKeyValue<Parameters<T0["sendEvent"]>[1], "name">;
+      assertType<IsEqual<Expected, Actual>>(true);
     });
   });
 });
