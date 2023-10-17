@@ -3,6 +3,7 @@ import {
   defaultDevServerHost,
   defaultInngestBaseUrl,
   defaultInngestEventBaseUrl,
+  dummyEventKey,
   envKeys,
   logPrefix,
 } from "../helpers/consts";
@@ -165,7 +166,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     this.setEventKey(eventKey || processEnv(envKeys.InngestEventKey) || "");
 
-    if (!this.eventKey) {
+    if (!this.eventKeySet()) {
       console.warn(
         prettyError({
           type: "warn",
@@ -289,12 +290,16 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
      */
     eventKey: string
   ): void {
-    this.eventKey = eventKey;
+    this.eventKey = eventKey || dummyEventKey;
 
     this.sendEventUrl = new URL(
       `e/${this.eventKey}`,
       this.baseUrl || defaultInngestEventBaseUrl
     );
+  }
+
+  private eventKeySet(): boolean {
+    return Boolean(this.eventKey) && this.eventKey !== dummyEventKey;
   }
 
   /**
@@ -418,7 +423,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
           url = devServerUrl(defaultDevServerHost, `e/${this.eventKey}`).href;
         }
       }
-    } else if (!this.eventKey) {
+    } else if (!this.eventKeySet()) {
       throw new Error(
         prettyError({
           whatHappened: "Failed to send event",

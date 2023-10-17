@@ -111,6 +111,9 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     name?: string;
     // (undocumented)
     onFailure?: (...args: unknown[]) => unknown;
+    priority?: {
+        run?: string;
+    };
     rateLimit?: {
         key?: string;
         limit: number;

@@ -766,6 +766,27 @@ export interface FunctionOptions<
     period: TimeStr;
   };
 
+  /**
+   * Configure how the priority of a function run is decided when multiple
+   * functions are triggered at the same time.
+   *
+   * See the [Priority documentation](https://innge.st/priority) for more
+   * information.
+   */
+  priority?: {
+    /**
+     * An expression to use to determine the priority of a function run. The
+     * expression can return a number between `-600` and `600`, where `600`
+     * declares that this run should be executed before any others enqueued in
+     * the last 600 seconds (10 minutes), and `-600` declares that this run
+     * should be executed after any others enqueued in the last 600 seconds.
+     *
+     * See the [Priority documentation](https://innge.st/priority) for more
+     * information.
+     */
+    run?: string;
+  };
+
   cancelOn?: Cancellation<Events, Event>[];
 
   /**
