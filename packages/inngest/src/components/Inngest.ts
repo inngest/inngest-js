@@ -1,3 +1,4 @@
+import { type Exact } from "type-fest";
 import { InngestApi } from "../api/api";
 import {
   defaultDevServerHost,
@@ -146,15 +147,17 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    * });
    * ```
    */
-  constructor({
-    id,
-    eventKey,
-    baseUrl,
-    fetch,
-    env,
-    logger = new DefaultLogger(),
-    middleware,
-  }: TOpts) {
+  constructor(options: Exact<ClientOptions, TOpts>) {
+    const {
+      id,
+      eventKey,
+      baseUrl,
+      fetch,
+      env,
+      logger = new DefaultLogger(),
+      middleware,
+    } = options as ClientOptions;
+
     if (!id) {
       // TODO PrettyError
       throw new Error("An `id` must be passed to create an Inngest instance.");

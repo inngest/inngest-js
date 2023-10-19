@@ -443,6 +443,18 @@ describe("send", () => {
   });
 
   describe("types", () => {
+    describe("instantiation", () => {
+      test("disallows setting unknown config property with object literal", () => {
+        // @ts-expect-error Unknown property
+        const _fn = () => new Inngest({ id: "test", baseURL: "bar" });
+      });
+
+      test("allows setting unknown config property with variable", () => {
+        const options = { id: "test", baseURL: "bar" };
+        const _fn = () => new Inngest(options);
+      });
+    });
+
     describe("no custom types", () => {
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
