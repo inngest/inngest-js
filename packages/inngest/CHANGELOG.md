@@ -1,5 +1,11 @@
 # inngest
 
+## 3.3.0
+
+### Minor Changes
+
+- [#329](https://github.com/inngest/inngest-js/pull/329) [`2837296`](https://github.com/inngest/inngest-js/commit/2837296fbb938816db7f4b18193ee834fdb13785) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added `GetStepTools<typeof inngest>` and `GetFunctionInput<typeof inngest>` helper types to aid in building function factories. See [TypeScript Helpers - Inngest Documentation](https://www.inngest.com/docs/typescript#helpers) for more information.
+
 ## 3.2.1
 
 ### Patch Changes
