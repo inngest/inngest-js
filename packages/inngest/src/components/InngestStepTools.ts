@@ -11,14 +11,17 @@ import {
   type ClientOptions,
   type EventPayload,
   type HashedOp,
-  type InngestFunctionReturn,
   type InvocationResult,
   type SendEventOutput,
   type StepOptions,
   type StepOptionsOrId,
   type TriggerEventFromFunction,
 } from "../types";
-import { type EventsFromOpts, type Inngest } from "./Inngest";
+import {
+  type EventsFromOpts,
+  type GetFunctionOutput,
+  type Inngest,
+} from "./Inngest";
 import { type AnyInngestFunction } from "./InngestFunction";
 
 export interface FoundStep extends HashedOp {
@@ -378,7 +381,7 @@ export const createStepTools = <
       <TFunction extends AnyInngestFunction>(
         idOrOptions: StepOptionsOrId,
         opts: InvocationOpts<TFunction>
-      ) => InvocationResult<InngestFunctionReturn<TFunction>>
+      ) => InvocationResult<GetFunctionOutput<TFunction>>
     >(({ id, name }, _opts) => {
       return {
         id,

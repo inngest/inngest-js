@@ -1,5 +1,3 @@
-import { type Jsonify } from "type-fest";
-import { type SimplifyDeep } from "type-fest/source/merge-deep";
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
@@ -1130,12 +1128,6 @@ export type TriggerEventFromFunction<
     ? never
     : never
   : never;
-
-export type InngestFunctionReturn<TFunction extends AnyInngestFunction> =
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TFunction extends InngestFunction<any, any, any, any, infer IHandler>
-    ? SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
-    : never;
 
 export type InvocationResult<TReturn> = Promise<TReturn> & {
   result: InvocationResult<TReturn>;

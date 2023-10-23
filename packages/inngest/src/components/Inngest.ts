@@ -1,3 +1,5 @@
+import { type Jsonify } from "type-fest";
+import { type SimplifyDeep } from "type-fest/source/merge-deep";
 import { InngestApi } from "../api/api";
 import {
   defaultDevServerHost,
@@ -34,7 +36,7 @@ import {
   type TriggerOptions,
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
-import { InngestFunction } from "./InngestFunction";
+import { InngestFunction, type AnyInngestFunction } from "./InngestFunction";
 import {
   InngestMiddleware,
   getHookStack,
@@ -739,6 +741,17 @@ export type GetFunctionInput<
     >
   >
 >[0];
+
+/**
+ * TODO
+ *
+ * @public
+ */
+export type GetFunctionOutput<TFunction extends AnyInngestFunction> =
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  TFunction extends InngestFunction<any, any, any, any, infer IHandler>
+    ? SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
+    : never;
 
 /**
  * A helper type to extract the inferred event schemas from a given Inngest
