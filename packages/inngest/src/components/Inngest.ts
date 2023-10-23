@@ -458,9 +458,21 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
   public createFunction<
     TMiddleware extends MiddlewareStack,
-    TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>,
+    TTrigger extends TriggerOptions<TTriggerName>,
     TTriggerName extends keyof EventsFromOpts<TOpts> &
-      string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
+      string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>,
+    THandler extends AnyHandler = Handler<
+      TOpts,
+      EventsFromOpts<TOpts>,
+      TTriggerName,
+      ExtendWithMiddleware<
+        [
+          typeof builtInMiddleware,
+          NonNullable<TOpts["middleware"]>,
+          TMiddleware
+        ]
+      >
+    >
   >(
     options: ExclusiveKeys<
       Omit<
@@ -517,27 +529,20 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       "cancelOn" | "rateLimit"
     >,
     trigger: TTrigger,
-    handler: Handler<
-      TOpts,
-      EventsFromOpts<TOpts>,
-      TTriggerName,
-      ExtendWithMiddleware<
-        [
-          typeof builtInMiddleware,
-          NonNullable<TOpts["middleware"]>,
-          TMiddleware
-        ]
-      >
-    >
+    handler: THandler
   ): InngestFunction<
     TOpts,
     EventsFromOpts<TOpts>,
-    FunctionTrigger<keyof EventsFromOpts<TOpts> & string>,
-    FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>
+    TTrigger,
+    FunctionOptions<
+      EventsFromOpts<TOpts>,
+      EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
+    >,
+    THandler
   > {
     let sanitizedOpts: FunctionOptions<
       EventsFromOpts<TOpts>,
-      keyof EventsFromOpts<TOpts> & string
+      EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
     >;
 
     if (typeof options === "string") {
@@ -551,7 +556,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       sanitizedOpts = options as typeof sanitizedOpts;
     }
 
-    let sanitizedTrigger: FunctionTrigger<keyof EventsFromOpts<TOpts> & string>;
+    let sanitizedTrigger: FunctionTrigger<TTriggerName>;
 
     if (typeof trigger === "string") {
       // v2 -> v3 migration warning
@@ -578,13 +583,30 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       );
     }
 
-    return new InngestFunction(
-      this,
-      sanitizedOpts,
-      sanitizedTrigger,
-      handler as AnyHandler
-    );
+    return new InngestFunction<
+      TOpts,
+      EventsFromOpts<TOpts>,
+      TTrigger,
+      FunctionOptions<
+        EventsFromOpts<TOpts>,
+        EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
+      >,
+      THandler
+    >(this, sanitizedOpts, sanitizedTrigger as TTrigger, handler);
   }
+
+  // public invoke<
+  //   TFunction extends AnyInngestFunction,
+  //   TEvents = EventsFromFunction<TFunction>,
+  //   TTriggerEvent extends keyof TEvents &
+  //     string = TriggerEventFromFunction<TFunction>
+  // >(options: {
+  //   function: TFunction;
+  //   trigger: TEvents[TTriggerEvent];
+  //   timeout?: TimeStr;
+  // }): InvocationResult<InngestFunctionReturn<TFunction>> {
+  //   return Promise.resolve(null);
+  // }
 }
 
 /**

@@ -11,11 +11,15 @@ import {
   type ClientOptions,
   type EventPayload,
   type HashedOp,
+  type InngestFunctionReturn,
+  type InvocationResult,
   type SendEventOutput,
   type StepOptions,
   type StepOptionsOrId,
+  type TriggerEventFromFunction,
 } from "../types";
 import { type EventsFromOpts, type Inngest } from "./Inngest";
+import { type AnyInngestFunction } from "./InngestFunction";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -366,10 +370,32 @@ export const createStepTools = <
         );
       }
     }),
+
+    /**
+     * TODO
+     */
+    invoke: createTool<
+      <TFunction extends AnyInngestFunction>(
+        idOrOptions: StepOptionsOrId,
+        opts: InvocationOpts<TFunction>
+      ) => InvocationResult<InngestFunctionReturn<TFunction>>
+    >(({ id, name }, _opts) => {
+      return {
+        id,
+        op: StepOpCode.InvokeFunction,
+        displayName: name ?? id,
+      };
+    }),
   };
 
   return tools;
 };
+
+type InvocationOpts<TFunction extends AnyInngestFunction> = [
+  TriggerEventFromFunction<TFunction>
+] extends [never]
+  ? { function: TFunction }
+  : { function: TFunction; payload: TriggerEventFromFunction<TFunction> };
 
 /**
  * A set of optional parameters given to a `waitForEvent` call to control how
