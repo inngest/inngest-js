@@ -786,7 +786,7 @@ describe("createFunction", () => {
 });
 
 describe("helper types", () => {
-  const inngest = new Inngest({
+  const inngest = createClient({
     id: "test",
     schemas: new EventSchemas().fromRecord<{
       foo: { data: { foo: string } };
