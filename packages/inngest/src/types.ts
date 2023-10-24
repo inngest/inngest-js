@@ -654,6 +654,37 @@ export type TriggerOptions<T extends string> = StrictUnion<
     }
 >;
 
+export interface ConcurrencyOption {
+  /**
+   * The concurrency limit for this option, adding a limit on how many concurrent
+   * steps can execute at once.
+   */
+  limit: number;
+
+  /**
+   * An optional concurrency key, as an expression using the common expression language
+   * (CEL).  The result of this expression is used to create new concurrency groups, or
+   * sub-queues, for each function run.
+   *
+   * The event is passed into this expression as "event".
+   *
+   * Examples:
+   * - `event.data.user_id`:  this evaluates to the user_id in the event.data object.
+   * - `event.data.user_id + "-" + event.data.account_id`: creates a new group per user/account
+   * - `"ai"`:  references a custom string
+   */
+  key?: string;
+
+  /**
+   * An optional scope for the concurrency group.  By default, concurrency limits are
+   * scoped to functions - one function's concurrency limits do not impact other functions.
+   *
+   * Changing this "scope" allows concurrency limits to work across environments (eg. production
+   * vs branch environments) or across your account (global).
+   */
+  scope?: "fn" | "env" | "account"
+}
+
 /**
  * A set of options for configuring an Inngest function.
  *
@@ -685,7 +716,7 @@ export interface FunctionOptions<
    *
    * Specifying just a number means specifying only the concurrency limit.
    */
-  concurrency?: number | { limit: number; key?: string };
+  concurrency?: number | ConcurrencyOption | [ConcurrencyOption, ConcurrencyOption];
 
   /**
    * batchEvents specifies the batch configuration on when this function
