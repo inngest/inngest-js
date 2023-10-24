@@ -1,5 +1,15 @@
 # inngest
 
+## 3.4.0
+
+### Minor Changes
+
+- [#370](https://github.com/inngest/inngest-js/pull/370) [`48b201a`](https://github.com/inngest/inngest-js/commit/48b201a90f343a1927f38118b732615f77f9ca7f) Thanks [@tonyhb](https://github.com/tonyhb)! - Update concurrency with new scopes and multiple keys
+
+### Patch Changes
+
+- [#369](https://github.com/inngest/inngest-js/pull/369) [`e1046cd`](https://github.com/inngest/inngest-js/commit/e1046cd62430b5599512eb697ebf5ac3fbfd6bb6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Change `No request version` log from warn to debug
+
 ## 3.3.0
 
 ### Minor Changes
