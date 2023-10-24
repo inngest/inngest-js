@@ -82,7 +82,7 @@ const fnDataVersionSchema = z.object({
     .optional()
     .transform<ExecutionVersion>((v) => {
       if (typeof v === "undefined") {
-        console.warn(
+        console.debug(
           `No request version specified by executor; defaulting to v${PREFERRED_EXECUTION_VERSION}`
         );
 
