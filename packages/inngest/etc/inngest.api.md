@@ -97,10 +97,8 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     //
     // (undocumented)
     cancelOn?: Cancellation<Events, Event>[];
-    concurrency?: number | {
-        limit: number;
-        key?: string;
-    };
+    // Warning: (ae-forgotten-export) The symbol "ConcurrencyOption" needs to be exported by the entry point index.d.ts
+    concurrency?: number | ConcurrencyOption | [ConcurrencyOption, ConcurrencyOption];
     debounce?: {
         key?: string;
         period: TimeStr;
@@ -429,7 +427,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:353:3 - (ae-forgotten-export) The symbol "AnyInngest" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:359:3 - (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
 // src/types.ts:76:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:708:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:739:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
