@@ -682,7 +682,7 @@ export interface ConcurrencyOption {
    * Changing this "scope" allows concurrency limits to work across environments (eg. production
    * vs branch environments) or across your account (global).
    */
-  scope?: "fn" | "env" | "account"
+  scope?: "fn" | "env" | "account";
 }
 
 /**
