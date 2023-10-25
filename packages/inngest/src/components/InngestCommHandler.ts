@@ -753,7 +753,12 @@ export class InngestCommHandler<
           stepOutput.type
         ] as ExecutionResultHandler<ActionResponse>;
 
-        return await handler(stepOutput);
+        try {
+          return await handler(stepOutput);
+        } catch (err) {
+          this.log("error", "Error handling execution result", err);
+          throw err;
+        }
       }
 
       if (method === "GET") {
