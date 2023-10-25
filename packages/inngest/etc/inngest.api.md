@@ -7,6 +7,7 @@
 import { IsEqual } from 'type-fest';
 import { Jsonify } from 'type-fest';
 import { Simplify } from 'type-fest';
+import { SimplifyDeep } from 'type-fest/source/merge-deep';
 import { z as z_2 } from 'zod';
 
 // @public
