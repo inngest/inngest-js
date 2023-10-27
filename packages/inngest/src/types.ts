@@ -1,3 +1,4 @@
+import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
@@ -722,7 +723,10 @@ export interface FunctionOptions<
    *
    * Specifying just a number means specifying only the concurrency limit.
    */
-  concurrency?: number | ConcurrencyOption | [ConcurrencyOption, ConcurrencyOption];
+  concurrency?:
+    | number
+    | ConcurrencyOption
+    | [ConcurrencyOption, ConcurrencyOption];
 
   /**
    * batchEvents specifies the batch configuration on when this function
@@ -1154,7 +1158,7 @@ export type TriggerEventFromFunction<
   ? ITrigger extends {
       event: infer IEventTrigger extends keyof TEvents & string;
     }
-    ? TEvents[IEventTrigger]
+    ? Simplify<Omit<TEvents[IEventTrigger], "name">>
     : ITrigger extends { cron: string }
     ? never
     : never

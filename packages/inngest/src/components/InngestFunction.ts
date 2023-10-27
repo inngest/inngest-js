@@ -211,6 +211,11 @@ export class InngestFunction<
     return versionHandlers[opts.version]();
   }
 
+  private getEventTriggerName(): string | undefined {
+    const { event } = this.trigger as { event?: string };
+    return event;
+  }
+
   // public invoke(options: {
   //   trigger: Parameters<THandler>[0]["event"];
   //   timeout?: TimeStr;

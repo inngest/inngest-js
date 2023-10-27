@@ -1,4 +1,4 @@
-import { type Jsonify } from "type-fest";
+import { type Jsonify, type Simplify } from "type-fest";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
@@ -382,11 +382,28 @@ export const createStepTools = <
         idOrOptions: StepOptionsOrId,
         opts: InvocationOpts<TFunction>
       ) => InvocationResult<GetFunctionOutput<TFunction>>
-    >(({ id, name }, _opts) => {
+    >(({ id, name }, opts) => {
+      const payload = {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        name: opts.name,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        data: opts.data,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        user: opts.user,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        ts: opts.ts,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        v: opts.v,
+      } satisfies Required<EventPayload> & Partial<Pick<EventPayload, "name">>;
+
       return {
         id,
         op: StepOpCode.InvokeFunction,
         displayName: name ?? id,
+        opts: {
+          function_id: opts.function.id(client.id),
+          payload,
+        },
       };
     }),
   };
@@ -397,8 +414,8 @@ export const createStepTools = <
 type InvocationOpts<TFunction extends AnyInngestFunction> = [
   TriggerEventFromFunction<TFunction>
 ] extends [never]
-  ? { function: TFunction }
-  : { function: TFunction; payload: TriggerEventFromFunction<TFunction> };
+  ? { function: TFunction } // TODO optional payload so we can provide `ts?`
+  : Simplify<{ function: TFunction } & TriggerEventFromFunction<TFunction>>;
 
 /**
  * A set of optional parameters given to a `waitForEvent` call to control how
