@@ -1,4 +1,4 @@
-import { slugify, timeStr } from "@local/helpers/strings";
+import { slugify, stringify, timeStr } from "@local/helpers/strings";
 
 describe("slugify", () => {
   it("Generates a slug using hyphens", () => {
@@ -40,5 +40,11 @@ describe("timeStr", () => {
 
   test("converts a date to an ISO string", () => {
     expect(timeStr(new Date(0))).toEqual("1970-01-01T00:00:00.000Z");
+  });
+});
+
+describe("stringify", () => {
+  test("removes BigInt", () => {
+    expect(stringify({ a: BigInt(1), b: 2 })).toEqual(JSON.stringify({ b: 2 }));
   });
 });

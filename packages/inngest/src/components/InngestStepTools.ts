@@ -1,4 +1,5 @@
 import { type Jsonify, type Simplify } from "type-fest";
+import { type SimplifyDeep } from "type-fest/source/merge-deep";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
@@ -278,12 +279,14 @@ export const createStepTools = <
          * TODO Middleware can affect this. If run input middleware has returned
          * new step data, do not Jsonify.
          */
-        Jsonify<
-          T extends () => Promise<infer U>
-            ? Awaited<U extends void ? null : U>
-            : ReturnType<T> extends void
-            ? null
-            : ReturnType<T>
+        SimplifyDeep<
+          Jsonify<
+            T extends () => Promise<infer U>
+              ? Awaited<U extends void ? null : U>
+              : ReturnType<T> extends void
+              ? null
+              : ReturnType<T>
+          >
         >
       >
     >(
