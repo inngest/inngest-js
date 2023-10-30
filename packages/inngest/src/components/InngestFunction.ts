@@ -215,13 +215,6 @@ export class InngestFunction<
     const { event } = this.trigger as { event?: string };
     return event;
   }
-
-  // public invoke(options: {
-  //   trigger: Parameters<THandler>[0]["event"];
-  //   timeout?: TimeStr;
-  // }): InvocationResult<InngestFunctionReturn<this>> {
-  //   return Promise.resolve(null);
-  // }
 }
 
 export type CreateExecutionOptions = {

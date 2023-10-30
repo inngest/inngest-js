@@ -1,4 +1,4 @@
-import { type Jsonify } from "type-fest";
+import { type IfNever, type Jsonify } from "type-fest";
 import { type SimplifyDeep } from "type-fest/source/merge-deep";
 import { InngestApi } from "../api/api";
 import {
@@ -596,19 +596,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       THandler
     >(this, sanitizedOpts, sanitizedTrigger as TTrigger, handler);
   }
-
-  // public invoke<
-  //   TFunction extends AnyInngestFunction,
-  //   TEvents = EventsFromFunction<TFunction>,
-  //   TTriggerEvent extends keyof TEvents &
-  //     string = TriggerEventFromFunction<TFunction>
-  // >(options: {
-  //   function: TFunction;
-  //   trigger: TEvents[TTriggerEvent];
-  //   timeout?: TimeStr;
-  // }): InvocationResult<InngestFunctionReturn<TFunction>> {
-  //   return Promise.resolve(null);
-  // }
 }
 
 /**
@@ -743,15 +730,24 @@ export type GetFunctionInput<
 >[0];
 
 /**
- * TODO
+ * A helper type to extract the type of the output of an Inngest function.
+ *
+ * @example Get a function's output
+ * ```ts
+ * type Output = GetFunctionOutput<typeof myFunction>;
+ * ```
  *
  * @public
  */
-export type GetFunctionOutput<TFunction extends AnyInngestFunction> =
+export type GetFunctionOutput<TFunction extends AnyInngestFunction | string> =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TFunction extends InngestFunction<any, any, any, any, infer IHandler>
-    ? SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
-    : never;
+    ? IfNever<
+        SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>,
+        null,
+        SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
+      >
+    : unknown;
 
 /**
  * A helper type to extract the inferred event schemas from a given Inngest

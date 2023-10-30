@@ -1,12 +1,18 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { EventSchemas } from "@local/components/EventSchemas";
 import { type EventsFromOpts } from "@local/components/Inngest";
+import { InngestFunction } from "@local/components/InngestFunction";
 import {
   createStepTools,
   getStepOptions,
 } from "@local/components/InngestStepTools";
-import { StepOpCode, type ClientOptions } from "@local/types";
+import {
+  StepOpCode,
+  type ClientOptions,
+  type InvocationResult,
+} from "@local/types";
 import ms from "ms";
+import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
 
@@ -401,6 +407,162 @@ describe("sendEvent", () => {
           { name: "step", data: "foo" }
         )
       ).resolves.toMatchObject({ name: "sendEvent" });
+    });
+  });
+
+  describe("invoke", () => {
+    let step: StepTools;
+    beforeEach(() => {
+      step = getStepTools();
+    });
+
+    describe("runtime", () => {
+      const fn = new InngestFunction(
+        createClient({ id: "test-client" }),
+        { id: "test-fn" },
+        { event: "test-event" },
+        () => "test-return"
+      );
+
+      test("return id", async () => {
+        await expect(
+          step.invoke("id", { function: fn, data: "foo" })
+        ).resolves.toMatchObject({
+          id: "id",
+        });
+      });
+
+      test("return Invoke step op code", async () => {
+        await expect(
+          step.invoke("id", { function: fn, data: "foo" })
+        ).resolves.toMatchObject({
+          op: StepOpCode.InvokeFunction,
+        });
+      });
+
+      test("return ID by default", async () => {
+        await expect(
+          step.invoke("id", { function: fn, data: "foo" })
+        ).resolves.toMatchObject({ displayName: "id" });
+      });
+
+      test("return specific name if given", async () => {
+        await expect(
+          step.invoke({ id: "id", name: "name" }, { function: fn, data: "foo" })
+        ).resolves.toMatchObject({ displayName: "name" });
+      });
+    });
+
+    describe("types", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        foo: {
+          name: "foo";
+          data: { foo: string };
+        };
+        bar: {
+          data: { bar: string };
+        };
+        // eslint-disable-next-line @typescript-eslint/ban-types
+        baz: {};
+      }>();
+
+      const opts = (<T extends ClientOptions>(x: T): T => x)({
+        id: "test-client",
+        schemas,
+      });
+
+      const client = createClient(opts);
+
+      const invoke = null as unknown as ReturnType<
+        typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
+      >["invoke"];
+
+      type GetTestReturn<T extends () => InvocationResult<any>> = Awaited<
+        ReturnType<T>
+      >;
+
+      test("allows specifying function as a string", () => {
+        const _test = () => invoke("id", { function: "test-fn", data: "foo" });
+      });
+
+      test("allows specifying function as a function", () => {
+        const fn = client.createFunction(
+          { id: "fn" },
+          { event: "foo" },
+          () => "return"
+        );
+
+        const _test = () => invoke("id", { function: fn, data: { foo: "" } });
+      });
+
+      test("requires no payload if a cron", () => {
+        const fn = client.createFunction(
+          { id: "fn" },
+          { cron: "* * * * *" },
+          () => "return"
+        );
+
+        const _test = () => invoke("id", { function: fn });
+      });
+
+      test("disallows no payload if an event", () => {
+        const fn = client.createFunction(
+          { id: "fn" },
+          { event: "foo" },
+          () => "return"
+        );
+
+        // @ts-expect-error No payload provided
+        const _test = () => invoke("id", { function: fn });
+      });
+
+      test("disallows incorrect payload with an event", () => {
+        const fn = client.createFunction(
+          { id: "fn" },
+          { event: "foo" },
+          () => "return"
+        );
+
+        // @ts-expect-error Invalid payload provided
+        const _test = () => invoke("id", { function: fn, data: { bar: "" } });
+      });
+
+      test("returns correct output type for function", () => {
+        const fn = client.createFunction(
+          { id: "fn" },
+          { event: "foo" },
+          () => "return"
+        );
+
+        const _test = () => invoke("id", { function: fn, data: { foo: "" } });
+
+        type Actual = GetTestReturn<typeof _test>;
+        assertType<IsEqual<Actual, string>>(true);
+      });
+
+      test("returns correct output const type for function", () => {
+        const fn = client.createFunction(
+          { id: "fn" },
+          { event: "foo" },
+          () => "return" as const
+        );
+
+        const _test = () => invoke("id", { function: fn, data: { foo: "" } });
+
+        type Actual = GetTestReturn<typeof _test>;
+        assertType<IsEqual<Actual, "return">>(true);
+      });
+
+      test("returns null if function returns undefined|void", () => {
+        const fn = client.createFunction({ id: "fn" }, { event: "foo" }, () => {
+          // no-op
+        });
+
+        const _test = () => invoke("id", { function: fn, data: { foo: "" } });
+
+        type Actual = GetTestReturn<typeof _test>;
+        assertType<IsEqual<Actual, null>>(true);
+      });
     });
   });
 

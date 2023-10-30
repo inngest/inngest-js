@@ -1151,17 +1151,21 @@ export type EventsFromFunction<T extends AnyInngestFunction> =
     : never;
 
 export type TriggerEventFromFunction<
-  TFunction extends AnyInngestFunction,
-  TEvents = EventsFromFunction<TFunction>
+  TFunction extends AnyInngestFunction | string,
+  TEvents = TFunction extends AnyInngestFunction
+    ? EventsFromFunction<TFunction>
+    : never
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 > = TFunction extends InngestFunction<any, any, infer ITrigger, any, any>
   ? ITrigger extends {
       event: infer IEventTrigger extends keyof TEvents & string;
     }
-    ? Simplify<Omit<TEvents[IEventTrigger], "name">>
+    ? Simplify<Omit<TEvents[IEventTrigger], "name" | "ts">>
     : ITrigger extends { cron: string }
     ? never
     : never
+  : TFunction extends string
+  ? Simplify<Omit<EventPayload, "name" | "ts">>
   : never;
 
 export type InvocationResult<TReturn> = Promise<TReturn> & {

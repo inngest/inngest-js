@@ -378,33 +378,33 @@ export const createStepTools = <
     }),
 
     /**
-     * TODO
+     * Invoke a passed Inngest function,
      */
     invoke: createTool<
-      <TFunction extends AnyInngestFunction>(
+      <TFunction extends AnyInngestFunction | string>(
         idOrOptions: StepOptionsOrId,
         opts: InvocationOpts<TFunction>
       ) => InvocationResult<GetFunctionOutput<TFunction>>
     >(({ id, name }, opts) => {
       const payload = {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        name: opts.name,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: opts.data,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         user: opts.user,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        ts: opts.ts,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         v: opts.v,
-      } satisfies Required<EventPayload> & Partial<Pick<EventPayload, "name">>;
+      } satisfies Omit<Required<EventPayload>, "name" | "ts"> &
+        Partial<Pick<EventPayload, "name" | "ts">>;
 
       return {
         id,
         op: StepOpCode.InvokeFunction,
         displayName: name ?? id,
         opts: {
-          function_id: opts.function.id(client.id),
+          function_id:
+            typeof opts.function === "string"
+              ? opts.function
+              : opts.function.id(client.id),
           payload,
         },
       };
@@ -414,10 +414,10 @@ export const createStepTools = <
   return tools;
 };
 
-type InvocationOpts<TFunction extends AnyInngestFunction> = [
+type InvocationOpts<TFunction extends AnyInngestFunction | string> = [
   TriggerEventFromFunction<TFunction>
 ] extends [never]
-  ? { function: TFunction } // TODO optional payload so we can provide `ts?`
+  ? { function: TFunction }
   : Simplify<{ function: TFunction } & TriggerEventFromFunction<TFunction>>;
 
 /**
