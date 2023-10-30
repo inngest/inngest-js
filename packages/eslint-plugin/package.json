@@ -1,0 +1,21 @@
+{
+  "name": "@inngest/eslint-plugin",
+  "version": "0.0.0",
+  "description": "",
+  "main": "index.js",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "release": "node ../../scripts/release/publish.js",
+    "log": "node ./test.js"
+  },
+  "keywords": [
+    "eslint",
+    "eslintplugin",
+    "inngest"
+  ],
+  "author": "Jack Williams <jack@inngest.com>",
+  "license": "ISC"
+}
