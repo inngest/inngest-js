@@ -741,6 +741,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
             if (typeof stepState.data !== "undefined") {
               resolve(stepState.data);
+            } else if (opId.op === StepOpCode.InvokeFunction) {
+              reject(
+                new NonRetriableError("Invoked function failed", {
+                  cause: stepState.error,
+                })
+              );
             } else {
               reject(stepState.error);
             }
