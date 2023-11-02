@@ -742,11 +742,23 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             if (typeof stepState.data !== "undefined") {
               resolve(stepState.data);
             } else if (opId.op === StepOpCode.InvokeFunction) {
-              reject(
-                new NonRetriableError("Invoked function failed", {
-                  cause: stepState.error,
-                })
-              );
+              const errCheck = z
+                .object({ message: z.string() })
+                .safeParse(stepState.error);
+
+              const errMessage = [
+                "Invoking function failed",
+                errCheck.success ? errCheck.data.message : "",
+              ]
+                .map((s) => s.trim())
+                .filter(Boolean)
+                .join("; ");
+
+              const err = new NonRetriableError(errMessage, {
+                cause: stepState.error,
+              });
+
+              reject(err);
             } else {
               reject(stepState.error);
             }
