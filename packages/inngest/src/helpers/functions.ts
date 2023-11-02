@@ -7,7 +7,6 @@ import {
   PREFERRED_EXECUTION_VERSION,
 } from "../components/execution/InngestExecution";
 import { err, ok, type Result } from "../types";
-import { internalEvents } from "./consts";
 import { prettyError } from "./errors";
 import { type Await } from "./types";
 
@@ -95,40 +94,7 @@ const fnDataVersionSchema = z.object({
     }),
 });
 
-const invocationEventSchema = z.object({
-  name: z.literal(internalEvents.FunctionInvoked),
-});
-
-const createEventSchema = (
-  fn: AnyInngestFunction
-): z.ZodRecord<z.ZodString, z.ZodAny> => {
-  const triggerEvent = fn["getEventTriggerName"]();
-  const baseSchema = z.record(z.any());
-
-  if (triggerEvent) {
-    /**
-     * Brute force a transformation, keeping the same type for typing downstream.
-     */
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return z.record(z.any()).transform((v) => {
-      // TODO const
-      if (invocationEventSchema.safeParse(v).success) {
-        return {
-          ...v,
-          name: triggerEvent,
-        };
-      }
-
-      return v;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    }) as any;
-  }
-
-  return baseSchema;
-};
-
 export const parseFnData = (fn: AnyInngestFunction, data: unknown) => {
-  const eventSchema = createEventSchema(fn);
   let version: ExecutionVersion;
 
   try {
@@ -140,8 +106,8 @@ export const parseFnData = (fn: AnyInngestFunction, data: unknown) => {
           version: ExecutionVersion.V0,
           ...z
             .object({
-              event: eventSchema,
-              events: z.array(eventSchema).default([]),
+              event: z.record(z.any()),
+              events: z.array(z.record(z.any())).default([]),
               steps: stepsSchemas[ExecutionVersion.V0],
               ctx: z
                 .object({
@@ -171,8 +137,8 @@ export const parseFnData = (fn: AnyInngestFunction, data: unknown) => {
           version: ExecutionVersion.V1,
           ...z
             .object({
-              event: eventSchema,
-              events: z.array(eventSchema).default([]),
+              event: z.record(z.any()),
+              events: z.array(z.record(z.any())).default([]),
               steps: stepsSchemas[ExecutionVersion.V1],
               ctx: z
                 .object({
