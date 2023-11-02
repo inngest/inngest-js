@@ -417,8 +417,8 @@ export type ZodEventSchemas = Record<string, {
 
 // Warnings were encountered during analysis:
 //
-// src/components/InngestCommHandler.ts:836:8 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
-// src/components/InngestCommHandler.ts:836:35 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
+// src/components/InngestCommHandler.ts:837:8 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
+// src/components/InngestCommHandler.ts:837:35 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:264:3 - (ae-forgotten-export) The symbol "InitialRunInfo" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:277:5 - (ae-forgotten-export) The symbol "MiddlewareRunInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:283:5 - (ae-forgotten-export) The symbol "BlankHook" needs to be exported by the entry point index.d.ts
@@ -428,7 +428,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:353:3 - (ae-forgotten-export) The symbol "AnyInngest" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:359:3 - (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
 // src/types.ts:76:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:739:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:742:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

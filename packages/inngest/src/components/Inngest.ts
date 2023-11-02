@@ -1,7 +1,7 @@
 import { InngestApi } from "../api/api";
 import {
   defaultDevServerHost,
-  defaultInngestBaseUrl,
+  defaultInngestApiBaseUrl,
   defaultInngestEventBaseUrl,
   dummyEventKey,
   envKeys,
@@ -102,7 +102,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    */
   private eventKey = "";
 
-  private readonly baseUrl: string | undefined;
+  private readonly apiBaseUrl: string | undefined;
+  private readonly eventBaseUrl: string | undefined;
 
   private readonly inngestApi: InngestApi;
 
@@ -162,7 +163,15 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     this.id = id;
 
-    this.baseUrl = baseUrl || processEnv(envKeys.InngestBaseUrl);
+    this.apiBaseUrl =
+      baseUrl ||
+      processEnv(envKeys.InngestApiBaseUrl) ||
+      processEnv(envKeys.InngestBaseUrl);
+
+    this.eventBaseUrl =
+      baseUrl ||
+      processEnv(envKeys.InngestEventBaseUrl) ||
+      processEnv(envKeys.InngestBaseUrl);
 
     this.setEventKey(eventKey || processEnv(envKeys.InngestEventKey) || "");
 
@@ -188,7 +197,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     this.fetch = getFetch(fetch);
 
     this.inngestApi = new InngestApi({
-      baseUrl: this.baseUrl || defaultInngestBaseUrl,
+      baseUrl: this.apiBaseUrl || defaultInngestApiBaseUrl,
       signingKey: processEnv(envKeys.InngestSigningKey) || "",
       fetch: this.fetch,
     });
@@ -294,7 +303,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     this.sendEventUrl = new URL(
       `e/${this.eventKey}`,
-      this.baseUrl || defaultInngestEventBaseUrl
+      this.eventBaseUrl || defaultInngestEventBaseUrl
     );
   }
 
@@ -413,7 +422,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
      * user has set this it means they have already chosen a URL to hit.
      */
     if (!skipDevServer()) {
-      if (!this.baseUrl) {
+      if (!this.eventBaseUrl) {
         const devAvailable = await devServerAvailable(
           defaultDevServerHost,
           this.fetch

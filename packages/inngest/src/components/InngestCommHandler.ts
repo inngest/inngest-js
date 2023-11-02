@@ -5,7 +5,7 @@ import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import {
   debugPrefix,
-  defaultInngestBaseUrl,
+  defaultInngestApiBaseUrl,
   envKeys,
   headerKeys,
   logPrefix,
@@ -390,9 +390,10 @@ export class InngestCommHandler<
     this.inngestRegisterUrl = new URL(
       "/fn/register",
       options.baseUrl ||
+        this.env[envKeys.InngestApiBaseUrl] ||
         this.env[envKeys.InngestBaseUrl] ||
-        this.client["baseUrl"] ||
-        defaultInngestBaseUrl
+        this.client["apiBaseUrl"] ||
+        defaultInngestApiBaseUrl
     );
 
     this.signingKey = options.signingKey;
