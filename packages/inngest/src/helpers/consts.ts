@@ -25,7 +25,7 @@ export enum envKeys {
   InngestDevServerUrl = "INNGEST_DEVSERVER_URL",
   InngestEnvironment = "INNGEST_ENV",
   InngestBaseUrl = "INNGEST_BASE_URL",
-  InngestEventBaseUrl = "INNGEST_EVENT_BASE_URL",
+  InngestEventApiBaseUrl = "INNGEST_EVENT_API_BASE_URL",
   InngestApiBaseUrl = "INNGEST_API_BASE_URL",
   InngestServeHost = "INNGEST_SERVE_HOST",
   InngestServePath = "INNGEST_SERVE_PATH",

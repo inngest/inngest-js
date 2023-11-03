@@ -170,7 +170,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     this.eventBaseUrl =
       baseUrl ||
-      processEnv(envKeys.InngestEventBaseUrl) ||
+      processEnv(envKeys.InngestEventApiBaseUrl) ||
       processEnv(envKeys.InngestBaseUrl);
 
     this.setEventKey(eventKey || processEnv(envKeys.InngestEventKey) || "");
