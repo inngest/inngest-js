@@ -1098,13 +1098,6 @@ export class InngestCommHandler<
         `Use of ${envKeys.InngestDevServerUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`
       );
     }
-
-    if (this.env[envKeys.InngestApiBaseUrl]) {
-      this.log(
-        "warn",
-        `Use of ${envKeys.InngestApiBaseUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`
-      );
-    }
   }
 
   protected validateSignature(sig: string | undefined, body: unknown) {
