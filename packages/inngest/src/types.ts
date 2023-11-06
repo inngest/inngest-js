@@ -716,7 +716,10 @@ export interface FunctionOptions<
    *
    * Specifying just a number means specifying only the concurrency limit.
    */
-  concurrency?: number | ConcurrencyOption | [ConcurrencyOption, ConcurrencyOption];
+  concurrency?:
+    | number
+    | ConcurrencyOption
+    | [ConcurrencyOption, ConcurrencyOption];
 
   /**
    * batchEvents specifies the batch configuration on when this function
