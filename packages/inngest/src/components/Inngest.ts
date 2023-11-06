@@ -175,21 +175,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     this.setEventKey(eventKey || processEnv(envKeys.InngestEventKey) || "");
 
-    if (!this.eventKeySet()) {
-      console.warn(
-        prettyError({
-          type: "warn",
-          whatHappened: "Could not find event key",
-          consequences:
-            "Sending events will throw in production unless an event key is added.",
-          toFixNow: fixEventKeyMissingSteps,
-          why: "We couldn't find an event key to use to send events to Inngest.",
-          otherwise:
-            "Create a new production event key at https://app.inngest.com/env/production/manage/keys.",
-        })
-      );
-    }
-
     this.headers = inngestHeaders({
       inngestEnv: env,
     });

@@ -22,46 +22,6 @@ const testEvent: EventPayload = {
 
 const testEventKey = "foo-bar-baz-test";
 
-describe("instantiation", () => {
-  describe("event key warnings", () => {
-    let warnSpy: jest.SpyInstance;
-    const originalEnvEventKey = process.env[envKeys.InngestEventKey];
-
-    beforeEach(() => {
-      warnSpy = jest.spyOn(console, "warn");
-    });
-
-    afterEach(() => {
-      warnSpy.mockReset();
-      warnSpy.mockRestore();
-
-      if (originalEnvEventKey) {
-        process.env[envKeys.InngestEventKey] = originalEnvEventKey;
-      } else {
-        delete process.env[envKeys.InngestEventKey];
-      }
-    });
-
-    test("should log a warning if event key not specified", () => {
-      createClient({ id: "test" });
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Could not find event key")
-      );
-    });
-
-    test("should not log a warning if event key is specified", () => {
-      createClient({ id: "test", eventKey: testEventKey });
-      expect(warnSpy).not.toHaveBeenCalled();
-    });
-
-    test("should not log a warning if event key is specified in env", () => {
-      process.env[envKeys.InngestEventKey] = testEventKey;
-      createClient({ id: "test" });
-      expect(warnSpy).not.toHaveBeenCalled();
-    });
-  });
-});
-
 describe("send", () => {
   describe("runtime", () => {
     const originalProcessEnv = process.env;
