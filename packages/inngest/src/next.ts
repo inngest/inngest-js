@@ -2,12 +2,12 @@ import { type NextApiRequest, type NextApiResponse } from "next";
 import { type NextRequest } from "next/server";
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
-import { headerKeys, queryKeys } from "./helpers/consts";
+import { type Either } from "./helpers/types";
 import { type SupportedFrameworkName } from "./types";
 
-export const name: SupportedFrameworkName = "nextjs";
+export const frameworkName: SupportedFrameworkName = "nextjs";
 
 const isNextEdgeRequest = (
   req: NextApiRequest | NextRequest
@@ -19,144 +19,118 @@ const isNextEdgeRequest = (
  * In Next.js, serve and register any declared functions with Inngest, making
  * them available to be triggered by events.
  *
- * @example Next.js <=12 can export the handler directly
+ * @example Next.js <=12 or the pages router can export the handler directly
  * ```ts
- * export default serve(inngest, [fn1, fn2]);
+ * export default serve({ client: inngest, functions: [fn1, fn2] });
  * ```
  *
  * @example Next.js >=13 with the `app` dir must export individual methods
  * ```ts
- * export const { GET, POST, PUT } = serve(inngest, [fn1, fn2]);
+ * export const { GET, POST, PUT } = serve({
+ *            client: inngest,
+ *            functions: [fn1, fn2],
+ * });
  * ```
  *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    opts,
-    (
+export const serve = (options: ServeHandlerOptions) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: (
       reqMethod: "GET" | "POST" | "PUT" | undefined,
-      req: NextApiRequest | NextRequest,
-      _res: NextApiResponse
+      expectedReq: NextRequest,
+      res: NextApiResponse
     ) => {
-      /**
-       * `req.method`, though types say otherwise, is not available in Next.js
-       * 13 {@link https://beta.nextjs.org/docs/routing/route-handlers Route Handlers}.
-       *
-       * Therefore, we must try to set the method ourselves where we know it.
-       */
-      const method = reqMethod || req.method;
-      if (!method) {
-        // TODO PrettyError
-        throw new Error(
-          "No method found on request; check that your exports are correct."
-        );
-      }
+      const req = expectedReq as Either<NextApiRequest, NextRequest>;
 
       const isEdge = isNextEdgeRequest(req);
 
-      let scheme: "http" | "https" = "https";
-
-      try {
-        // eslint-disable-next-line @inngest/internal/process-warn
-        if (process.env.NODE_ENV === "development") {
-          scheme = "http";
-        }
-      } catch (err) {
-        // no-op
-      }
-
-      const url = isEdge
-        ? new URL(req.url)
-        : new URL(req.url as string, `${scheme}://${req.headers.host || ""}`);
-
-      const getQueryParam = (key: string): string | undefined => {
-        return (
-          (isEdge ? url.searchParams.get(key) : req.query[key]?.toString()) ??
-          undefined
-        );
-      };
-
-      const hasQueryParam = (key: string): boolean => {
-        return (
-          (isEdge
-            ? url.searchParams.has(key)
-            : Object.hasOwnProperty.call(req.query, key)) ?? false
-        );
-      };
-
-      const getHeader = (key: string): string | undefined => {
-        return (
-          (isEdge ? req.headers.get(key) : req.headers[key]?.toString()) ??
-          undefined
-        );
-      };
-
-      /**
-       * Vercel Edge Functions do not allow dynamic access to environment
-       * variables, so we'll manage `isProd` directly here.
-       *
-       * We try/catch to avoid situations where Next.js is being used in
-       * environments where `process.env` is not accessible or polyfilled.
-       */
-      let isProduction: boolean | undefined;
-
-      try {
-        // eslint-disable-next-line @inngest/internal/process-warn
-        isProduction = process.env.NODE_ENV === "production";
-      } catch (err) {
-        // no-op
-      }
-
       return {
-        isProduction,
-        url,
-        register: () => {
-          if (method === "PUT") {
-            return {
-              deployId: getQueryParam(queryKeys.DeployId)?.toString(),
-            };
+        body: () => {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+          return isEdge ? req.json() : req.body;
+        },
+        headers: (key) => {
+          if (isEdge) {
+            return req.headers.get(key);
+          }
+
+          const header = req.headers[key];
+          return Array.isArray(header) ? header[0] : header;
+        },
+        method: () => {
+          /**
+           * `req.method`, though types say otherwise, is not available in Next.js
+           * 13 {@link https://beta.nextjs.org/docs/routing/route-handlers Route Handlers}.
+           *
+           * Therefore, we must try to set the method ourselves where we know it.
+           */
+          return reqMethod || req.method || "";
+        },
+        isProduction: () => {
+          /**
+           * Vercel Edge Functions do not allow dynamic access to environment
+           * variables, so we'll manage production checks directly here.
+           *
+           * We try/catch to avoid situations where Next.js is being used in
+           * environments where `process.env` is not accessible or polyfilled.
+           */
+          try {
+            // eslint-disable-next-line @inngest/internal/process-warn
+            return process.env.NODE_ENV === "production";
+          } catch (err) {
+            // no-op
           }
         },
-        run: async () => {
-          if (method === "POST") {
-            return {
-              data: isEdge
-                ? ((await req.json()) as Record<string, unknown>)
-                : (req.body as Record<string, unknown>),
-              fnId: getQueryParam(queryKeys.FnId) as string,
-              stepId: getQueryParam(queryKeys.StepId) as string,
-              signature: getHeader(headerKeys.Signature) as string,
-            };
+        queryString: (key, url) => {
+          if (isEdge) {
+            return url.searchParams.get(key);
           }
+
+          const qs = req.query[key];
+          return Array.isArray(qs) ? qs[0] : qs;
         },
-        view: () => {
-          if (method === "GET") {
-            return {
-              isIntrospection: hasQueryParam(queryKeys.Introspect),
-            };
+
+        url: () => {
+          if (isEdge) {
+            return new URL(req.url);
           }
+
+          let scheme: "http" | "https" = "https";
+
+          try {
+            // eslint-disable-next-line @inngest/internal/process-warn
+            if (process.env.NODE_ENV === "development") {
+              scheme = "http";
+            }
+          } catch (err) {
+            // no-op
+          }
+
+          return new URL(
+            req.url as string,
+            `${scheme}://${req.headers.host || ""}`
+          );
+        },
+        transformResponse: ({ body, headers, status }) => {
+          if (isNextEdgeRequest(req)) {
+            return new Response(body, { status, headers });
+          }
+
+          for (const [key, value] of Object.entries(headers)) {
+            res.setHeader(key, value);
+          }
+
+          res.status(status).send(body);
+        },
+        transformStreamingResponse: ({ body, headers, status }) => {
+          return new Response(body, { status, headers });
         },
       };
     },
-    ({ body, headers, status }, _method, req, res) => {
-      if (isNextEdgeRequest(req)) {
-        return new Response(body, { status, headers });
-      }
-
-      for (const [key, value] of Object.entries(headers)) {
-        res.setHeader(key, value);
-      }
-
-      res.status(status).send(body);
-    },
-    ({ body, headers, status }) => {
-      return new Response(body, { status, headers });
-    }
-  );
+  });
 
   /**
    * Next.js 13 uses
@@ -179,11 +153,20 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
    *
    * See {@link https://beta.nextjs.org/docs/routing/route-handlers}
    */
-  const fn = handler.createHandler();
+  const baseFn = handler.createHandler();
 
-  return Object.defineProperties(fn.bind(null, undefined), {
-    GET: { value: fn.bind(null, "GET") },
-    POST: { value: fn.bind(null, "POST") },
-    PUT: { value: fn.bind(null, "PUT") },
-  });
+  const fn = baseFn.bind(null, undefined);
+  type Fn = typeof fn;
+
+  const handlerFn = Object.defineProperties(fn, {
+    GET: { value: baseFn.bind(null, "GET") },
+    POST: { value: baseFn.bind(null, "POST") },
+    PUT: { value: baseFn.bind(null, "PUT") },
+  }) as Fn & {
+    GET: Fn;
+    POST: Fn;
+    PUT: Fn;
+  };
+
+  return handlerFn;
 };

@@ -1,4 +1,4 @@
 import { serve } from "inngest/next";
-import { inngest, functions } from "../../inngest";
+import { functions, inngest } from "../../inngest";
 
-export default serve(inngest, functions);
+export default serve({ client: inngest, functions });

@@ -13,15 +13,14 @@ import {
   type IncomingOp,
   type MiddlewareStack,
   type OutgoingOp,
+  type SendEventBaseOutput,
 } from "../types";
-import { type Inngest } from "./Inngest";
-import { type InngestFunction } from "./InngestFunction";
+import { type AnyInngest } from "./Inngest";
+import { type AnyInngestFunction } from "./InngestFunction";
 
 /**
  * A middleware that can be registered with Inngest to hook into various
  * lifecycles of the SDK and affect input and output of Inngest functionality.
- *
- * TODO Add docs and shortlink.
  *
  * See {@link https://innge.st/middleware}
  *
@@ -32,7 +31,7 @@ import { type InngestFunction } from "./InngestFunction";
  *   middleware: [
  *     new InngestMiddleware({
  *       name: "My Middleware",
- *       register: () => {
+ *       init: () => {
  *         // ...
  *       }
  *     })
@@ -107,6 +106,10 @@ type PromisifiedFunctionRecord<
 
 export type RunHookStack = PromisifiedFunctionRecord<
   Await<MiddlewareRegisterReturn["onFunctionRun"]>
+>;
+
+export type SendEventHookStack = PromisifiedFunctionRecord<
+  Await<MiddlewareRegisterReturn["onSendEvent"]>
 >;
 
 /**
@@ -335,9 +338,6 @@ export type MiddlewareRegisterReturn = {
      * The `output` hook is called after the event has been sent to Inngest.
      * This is where you can perform any final actions after the event has
      * been sent to Inngest and can modify the output the SDK sees.
-     *
-     * TODO This needs to be a result object that we spread into, not just some
-     * unknown value.
      */
     transformOutput?: MiddlewareSendEventOutput;
   }>;
@@ -349,20 +349,14 @@ export type MiddlewareRegisterReturn = {
 export type MiddlewareRegisterFn = (ctx: {
   /**
    * The client this middleware is being registered on.
-   *
-   * TODO This should not use `any`, but the generic type expected.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: Inngest<any>;
+  client: AnyInngest;
 
   /**
    * If defined, this middleware has been applied directly to an Inngest
    * function rather than on the client.
-   *
-   * TODO This should not use `any`, but the generic type expected.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fn?: InngestFunction<any, any, any, any>;
+  fn?: AnyInngestFunction;
 }) => MaybePromise<MiddlewareRegisterReturn>;
 
 /**
@@ -382,27 +376,17 @@ type MiddlewareRunArgs = Readonly<{
    * The context object that will be passed to the function. This contains
    * event data, some contextual data such as the run's ID, and step tooling.
    */
-  ctx: Record<string, unknown> &
-    Readonly<
-      BaseContext<
-        ClientOptions,
-        string,
-        Record<string, (...args: unknown[]) => unknown>
-      >
-    >;
+  ctx: Record<string, unknown> & Readonly<BaseContext<ClientOptions, string>>;
 
   /**
    * The step data that will be passed to the function.
    */
-  steps: Readonly<Omit<IncomingOp, "id">>[];
+  steps: Readonly<IncomingOp>[];
 
   /**
    * The function that is being executed.
-   *
-   * TODO This should not use `any`, but the generic type expected.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fn: InngestFunction<any, any, any, any>;
+  fn: AnyInngestFunction;
 }>;
 
 /**
@@ -442,11 +426,11 @@ type MiddlewareRunInput = (ctx: MiddlewareRunArgs) => MaybePromise<{
 } | void>;
 
 /**
- * Arguments sent to some `sendEvent` lifecycle hooks of a middleware.
+ * Arguments for the SendEventInput hook
  *
  * @internal
  */
-type MiddlewareSendEventArgs = Readonly<{
+type MiddlewareSendEventInputArgs = Readonly<{
   payloads: ReadonlyArray<EventPayload>;
 }>;
 
@@ -456,17 +440,26 @@ type MiddlewareSendEventArgs = Readonly<{
  *
  * @internal
  */
-type MiddlewareSendEventInput = (ctx: MiddlewareSendEventArgs) => MaybePromise<{
+type MiddlewareSendEventInput = (
+  ctx: MiddlewareSendEventInputArgs
+) => MaybePromise<{
   payloads?: EventPayload[];
 } | void>;
+
+/**
+ * Arguments for the SendEventOutput hook
+ *
+ * @internal
+ */
+type MiddlewareSendEventOutputArgs = { result: Readonly<SendEventBaseOutput> };
 
 /**
  * The shape of an `output` hook within a `sendEvent`, optionally returning a
  * change to the result value.
  */
 type MiddlewareSendEventOutput = (
-  ctx: MiddlewareSendEventArgs
-) => MaybePromise<void>;
+  ctx: MiddlewareSendEventOutputArgs
+) => MaybePromise<{ result?: Record<string, unknown> } | void>;
 
 /**
  * @internal
@@ -474,7 +467,7 @@ type MiddlewareSendEventOutput = (
 type MiddlewareRunOutput = (ctx: {
   result: Readonly<Pick<OutgoingOp, "error" | "data">>;
   step?: Readonly<Omit<OutgoingOp, "id">>;
-}) => { result?: Partial<Pick<OutgoingOp, "data">> } | void;
+}) => MaybePromise<{ result?: Partial<Pick<OutgoingOp, "data">> } | void>;
 
 /**
  * @internal
@@ -501,6 +494,40 @@ type GetMiddlewareRunInputMutation<
 /**
  * @internal
  */
+type GetMiddlewareSendEventOutputMutation<
+  TMiddleware extends InngestMiddleware<MiddlewareOptions>
+> = TMiddleware extends InngestMiddleware<infer TOpts>
+  ? TOpts["init"] extends MiddlewareRegisterFn
+    ? Await<
+        Await<Await<TOpts["init"]>["onSendEvent"]>["transformOutput"]
+      > extends {
+        result: infer TResult;
+      }
+      ? {
+          [K in keyof TResult]: TResult[K];
+        }
+      : // eslint-disable-next-line @typescript-eslint/ban-types
+        {}
+    : // eslint-disable-next-line @typescript-eslint/ban-types
+      {}
+  : // eslint-disable-next-line @typescript-eslint/ban-types
+    {};
+
+/**
+ * @internal
+ */
+export type MiddlewareStackSendEventOutputMutation<
+  TContext,
+  TMiddleware extends MiddlewareStack
+> = ObjectAssign<
+  {
+    [K in keyof TMiddleware]: GetMiddlewareSendEventOutputMutation<
+      TMiddleware[K]
+    >;
+  },
+  TContext
+>;
+
 export type ExtendWithMiddleware<
   TMiddlewareStacks extends MiddlewareStack[],
   // eslint-disable-next-line @typescript-eslint/ban-types

@@ -1,7 +1,7 @@
 import { inngest } from "../client";
 
 export default inngest.createFunction(
-  { name: "Parallel Work" },
+  { id: "parallel-work" },
   { event: "demo/parallel.work" },
   async ({ step }) => {
     // Run some steps in sequence to add up scores

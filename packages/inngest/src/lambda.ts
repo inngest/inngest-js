@@ -6,12 +6,12 @@ import {
 } from "aws-lambda";
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
-import { headerKeys, queryKeys } from "./helpers/consts";
+import { type Either } from "./helpers/types";
 import { type SupportedFrameworkName } from "./types";
 
-export const name: SupportedFrameworkName = "aws-lambda";
+export const frameworkName: SupportedFrameworkName = "aws-lambda";
 
 /**
  * With AWS Lambda, serve and register any declared functions with Inngest,
@@ -23,28 +23,29 @@ export const name: SupportedFrameworkName = "aws-lambda";
  * import { Inngest } from "inngest";
  * import { serve } from "inngest/lambda";
  *
- * const inngest = new Inngest({ name: "My Lambda App" });
+ * const inngest = new Inngest({ id: "my-lambda-app" });
  *
  * const fn = inngest.createFunction(
- *   { name: "Hello World" },
+ *   { id: "hello-world" },
  *   { event: "test/hello.world" },
  *   async ({ event }) => {
- *     return "Hello World";
- *   }
+ *    return "Hello World";
+ *  }
  * );
  *
- * export const handler = serve(inngest, [fn]);
+ * export const handler = serve({ client: inngest, functions: [fn] });
  * ```
  *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    { ...opts },
-    (event: APIGatewayEvent | APIGatewayProxyEventV2, _context: Context) => {
+export const serve = (options: ServeHandlerOptions) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: (
+      event: Either<APIGatewayEvent, APIGatewayProxyEventV2>,
+      _context: Context
+    ) => {
       /**
        * Try to handle multiple incoming event types, as Lambda can have many
        * triggers.
@@ -57,71 +58,43 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
         return (ev as APIGatewayProxyEventV2).version === "2.0";
       })(event);
 
-      const method = eventIsV2
-        ? event.requestContext.http.method
-        : event.httpMethod;
-      const path = eventIsV2 ? event.requestContext.http.path : event.path;
-
-      let url: URL;
-
-      try {
-        const proto = event.headers["x-forwarded-proto"] || "https";
-        url = new URL(path, `${proto}://${event.headers.host || ""}`);
-      } catch (err) {
-        // TODO PrettyError
-        throw new Error("Could not parse URL from `event.headers.host`");
-      }
-
       return {
-        url,
-        register: () => {
-          if (method === "PUT") {
-            return {
-              deployId: event.queryStringParameters?.[
-                queryKeys.DeployId
-              ] as string,
-            };
-          }
+        body: () => {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+          return JSON.parse(
+            event.body
+              ? event.isBase64Encoded
+                ? Buffer.from(event.body, "base64").toString()
+                : event.body
+              : "{}"
+          );
         },
-
-        run: () => {
-          if (method === "POST") {
-            return {
-              data: JSON.parse(
-                event.body
-                  ? event.isBase64Encoded
-                    ? Buffer.from(event.body, "base64").toString()
-                    : event.body
-                  : "{}"
-              ) as Record<string, unknown>,
-              fnId: event.queryStringParameters?.[queryKeys.FnId] as string,
-              stepId: event.queryStringParameters?.[queryKeys.StepId] as string,
-              signature: event.headers[headerKeys.Signature] as string,
-            };
-          }
+        headers: (key) => event.headers[key],
+        method: () => {
+          return eventIsV2
+            ? event.requestContext.http.method
+            : event.httpMethod;
         },
+        url: () => {
+          const path = eventIsV2 ? event.requestContext.http.path : event.path;
+          const proto = event.headers["x-forwarded-proto"] || "https";
+          const url = new URL(path, `${proto}://${event.headers.host || ""}`);
 
-        view: () => {
-          if (method === "GET") {
-            return {
-              isIntrospection: Object.hasOwnProperty.call(
-                event.queryStringParameters || {},
-                queryKeys.Introspect
-              ),
-            };
-          }
+          return url;
+        },
+        queryString: (key) => {
+          return event.queryStringParameters?.[key];
+        },
+        transformResponse: ({
+          body,
+          status: statusCode,
+          headers,
+        }): Promise<APIGatewayProxyResult> => {
+          return Promise.resolve({ body, statusCode, headers });
         },
       };
     },
-
-    ({ body, status, headers }): Promise<APIGatewayProxyResult> => {
-      return Promise.resolve({
-        body,
-        statusCode: status,
-        headers,
-      });
-    }
-  );
+  });
 
   return handler.createHandler();
 };

@@ -1,3 +1,5 @@
+import chalk from "chalk";
+
 /**
  * Keys for accessing query parameters included in requests from Inngest to run
  * functions.
@@ -10,17 +12,27 @@
 export enum queryKeys {
   FnId = "fnId",
   StepId = "stepId",
-  Introspect = "introspect",
   DeployId = "deployId",
 }
 
 export enum envKeys {
-  SigningKey = "INNGEST_SIGNING_KEY",
-  EventKey = "INNGEST_EVENT_KEY",
-  DevServerUrl = "INNGEST_DEVSERVER_URL",
-  Environment = "INNGEST_ENV",
-  BranchName = "BRANCH_NAME",
+  InngestSigningKey = "INNGEST_SIGNING_KEY",
+  InngestEventKey = "INNGEST_EVENT_KEY",
+
+  /**
+   * @deprecated Removed in v3. Use {@link InngestBaseUrl} instead.
+   */
+  InngestDevServerUrl = "INNGEST_DEVSERVER_URL",
+  InngestEnvironment = "INNGEST_ENV",
+  InngestBaseUrl = "INNGEST_BASE_URL",
+  InngestEventApiBaseUrl = "INNGEST_EVENT_API_BASE_URL",
   InngestApiBaseUrl = "INNGEST_API_BASE_URL",
+  InngestServeHost = "INNGEST_SERVE_HOST",
+  InngestServePath = "INNGEST_SERVE_PATH",
+  InngestLogLevel = "INNGEST_LOG_LEVEL",
+  InngestStreaming = "INNGEST_STREAMING",
+
+  BranchName = "BRANCH_NAME",
 
   /**
    * The git branch of the commit the deployment was triggered by. Example:
@@ -88,9 +100,7 @@ export enum envKeys {
 }
 
 export enum prodEnvKeys {
-  NodeEnvKey = "NODE_ENV",
   VercelEnvKey = "VERCEL_ENV",
-  NetlifyEnvKey = "CONTEXT",
 }
 
 /**
@@ -109,8 +119,12 @@ export enum headerKeys {
   Platform = "x-inngest-platform",
   Framework = "x-inngest-framework",
   NoRetry = "x-inngest-no-retry",
+  RequestVersion = "x-inngest-req-version",
+  RetryAfter = "retry-after",
 }
 
+export const defaultInngestApiBaseUrl = "https://api.inngest.com/";
+export const defaultInngestEventBaseUrl = "https://inn.gs/";
 export const defaultDevServerHost = "http://127.0.0.1:8288/";
 
 /**
@@ -126,3 +140,9 @@ export enum internalEvents {
    */
   FunctionFailed = "inngest/function.failed",
 }
+
+export const logPrefix = chalk.magenta.bold("[Inngest]");
+
+export const debugPrefix = "inngest";
+
+export const dummyEventKey = "NO_EVENT_KEY_SET";

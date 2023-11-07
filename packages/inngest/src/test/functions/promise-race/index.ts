@@ -1,7 +1,7 @@
 import { inngest } from "../client";
 
 export default inngest.createFunction(
-  { name: "Promise.race" },
+  { id: "promise-race" },
   { event: "demo/promise.race" },
   async ({ step }) => {
     const winner = await Promise.race([

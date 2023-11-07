@@ -5,12 +5,11 @@ import {
   checkIntrospection,
   eventRunWithName,
   receivedEventWithName,
-  runHasTimeline,
   sendEvent,
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Send event",
+  name: "send-event",
   triggers: [{ event: "demo/send.event" }],
 });
 
@@ -23,24 +22,14 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/send.event'", async () => {
-    runId = await eventRunWithName(eventId, "Send event");
+    runId = await eventRunWithName(eventId, "send-event");
     expect(runId).toEqual(expect.any(String));
-  }, 60000);
-
-  test("ran Step 'sendEvent'", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "sendEvent",
-      })
-    ).resolves.toBeDefined();
   }, 60000);
 
   test("sent event 'app/my.event.happened'", async () => {
     const event = await receivedEventWithName("app/my.event.happened");
     expect(event).toBeDefined();
-    expect(JSON.parse(event?.payload ?? {})).toMatchObject({ foo: "bar" });
+    expect(JSON.parse(event?.payload ?? "{}")).toMatchObject({ foo: "bar" });
   }, 60000);
 
   test("sent event 'app/my.event.happened.multiple.1'", async () => {
@@ -48,7 +37,7 @@ describe("run", () => {
       "app/my.event.happened.multiple.1"
     );
     expect(event).toBeDefined();
-    expect(JSON.parse(event?.payload ?? {})).toMatchObject({ foo: "bar" });
+    expect(JSON.parse(event?.payload ?? "{}")).toMatchObject({ foo: "bar" });
   }, 60000);
 
   test("sent event 'app/my.event.happened.multiple.2'", async () => {
@@ -56,6 +45,6 @@ describe("run", () => {
       "app/my.event.happened.multiple.2"
     );
     expect(event).toBeDefined();
-    expect(JSON.parse(event?.payload ?? {})).toMatchObject({ foo: "bar" });
+    expect(JSON.parse(event?.payload ?? "{}")).toMatchObject({ foo: "bar" });
   }, 60000);
 });

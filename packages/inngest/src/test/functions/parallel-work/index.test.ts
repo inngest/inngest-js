@@ -7,7 +7,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Parallel Work",
+  name: "parallel-work",
   triggers: [{ event: "demo/parallel.work" }],
 });
 
@@ -20,7 +20,7 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/parallel.work'", async () => {
-    runId = await eventRunWithName(eventId, "Parallel Work");
+    runId = await eventRunWithName(eventId, "parallel-work");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 
@@ -51,7 +51,7 @@ describe("run", () => {
           __typename: "StepEvent",
           stepType: "COMPLETED",
           name,
-          output: `"${fruit}"`,
+          output: JSON.stringify({ data: fruit }),
         })
       ).resolves.toBeDefined();
     }, 60000);
@@ -62,10 +62,7 @@ describe("run", () => {
       runHasTimeline(runId, {
         __typename: "StepEvent",
         stepType: "COMPLETED",
-        output: JSON.stringify({
-          body: [6, `${fruits.join(", ")}`],
-          status: 200,
-        }),
+        output: JSON.stringify([6, `${fruits.join(", ")}`]),
       })
     ).resolves.toBeDefined();
   }, 60000);

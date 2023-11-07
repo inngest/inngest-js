@@ -7,7 +7,7 @@ const scoresDb: Record<string, number> = {
 };
 
 export default inngest.createFunction(
-  { name: "Parallel Reduce" },
+  { id: "parallel-reduce" },
   { event: "demo/parallel.reduce" },
   async ({ step }) => {
     const teams = Object.keys(scoresDb);

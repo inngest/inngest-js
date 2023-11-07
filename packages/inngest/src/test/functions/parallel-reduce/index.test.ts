@@ -7,7 +7,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Parallel Reduce",
+  name: "parallel-reduce",
   triggers: [{ event: "demo/parallel.reduce" }],
 });
 
@@ -20,7 +20,7 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/parallel.reduce'", async () => {
-    runId = await eventRunWithName(eventId, "Parallel Reduce");
+    runId = await eventRunWithName(eventId, "parallel-reduce");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 
@@ -43,7 +43,7 @@ describe("run", () => {
       runHasTimeline(runId, {
         __typename: "StepEvent",
         stepType: "COMPLETED",
-        output: JSON.stringify({ body: "150", status: 200 }),
+        output: JSON.stringify("150"),
       })
     ).resolves.toBeDefined();
   }, 60000);

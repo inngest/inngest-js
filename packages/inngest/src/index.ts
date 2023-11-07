@@ -1,14 +1,21 @@
 export {
-  Combine,
   EventSchemas,
-  StandardEventSchemaToPayload,
-  StandardEventSchemas,
-  ZodEventSchemas,
+  type Combine,
+  type LiteralZodEventSchema,
+  type StandardEventSchemaToPayload,
+  type StandardEventSchemas,
+  type ZodEventSchemas,
 } from "./components/EventSchemas";
 export { Inngest } from "./components/Inngest";
-export type { EventsFromOpts } from "./components/Inngest";
+export type {
+  ClientOptionsFromInngest,
+  EventsFromOpts,
+  GetEvents,
+  GetFunctionInput,
+  GetStepTools,
+} from "./components/Inngest";
 export { InngestCommHandler } from "./components/InngestCommHandler";
-export type { ServeHandler } from "./components/InngestCommHandler";
+export type { ServeHandlerOptions } from "./components/InngestCommHandler";
 export { InngestMiddleware } from "./components/InngestMiddleware";
 export type {
   MiddlewareOptions,
@@ -16,8 +23,17 @@ export type {
   MiddlewareRegisterReturn,
 } from "./components/InngestMiddleware";
 export { NonRetriableError } from "./components/NonRetriableError";
+export { RetryAfterError } from "./components/RetryAfterError";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts";
-export type { IsStringLiteral } from "./helpers/types";
+export { slugify } from "./helpers/strings";
+export type {
+  IsStringLiteral,
+  StrictUnion,
+  StrictUnionHelper,
+  UnionKeys,
+} from "./helpers/types";
+export { ProxyLogger } from "./middleware/logger";
+export type { LogArg } from "./middleware/logger";
 export type {
   ClientOptions,
   EventNameFromTrigger,
@@ -25,8 +41,10 @@ export type {
   FailureEventArgs,
   FailureEventPayload,
   FunctionOptions,
-  GetEvents,
   LogLevel,
   RegisterOptions,
+  StepOptions,
+  StepOptionsOrId,
   TimeStr,
+  TriggerOptions,
 } from "./types";

@@ -1,5 +1,264 @@
 # inngest
 
+## 3.4.2
+
+### Patch Changes
+
+- [#378](https://github.com/inngest/inngest-js/pull/378) [`b83f925`](https://github.com/inngest/inngest-js/commit/b83f925099f6c2ecd43fd80a7e4ed9af1ec314a6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `INNGEST_API_BASE_URL` and `INNGEST_EVENT_API_BASE_URL`, used for internal testing
+
+- [#382](https://github.com/inngest/inngest-js/pull/382) [`0002afa`](https://github.com/inngest/inngest-js/commit/0002afa7c23ca9c1507fbb40cbc1c806de84fc6f) Thanks [@tonyhb](https://github.com/tonyhb)! - Remove verbose event keys warning
+
+## 3.4.1
+
+### Patch Changes
+
+- [#371](https://github.com/inngest/inngest-js/pull/371) [`d45bfbd`](https://github.com/inngest/inngest-js/commit/d45bfbd42b16170a44c65a09ac650a9d16211de7) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove `JsonifyObject<>` wrapper from step output - it's now clearer to see the actual type of a step's result
+
+- [#375](https://github.com/inngest/inngest-js/pull/375) [`e19f9b4`](https://github.com/inngest/inngest-js/commit/e19f9b463add0fbafc6368af7d4b82621d4a03c0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix failing to parse `BigInt` during step/function result serialization; it is now correctly typed and returned as `never`
+
+- [#374](https://github.com/inngest/inngest-js/pull/374) [`dcafc2b`](https://github.com/inngest/inngest-js/commit/dcafc2b202b2bd2c3a7dfe5d917d635c48f24260) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fixed an issue where an error log wasn't shown if execution result parsing failed, such as in the case of serialization failures
+
+## 3.4.0
+
+### Minor Changes
+
+- [#370](https://github.com/inngest/inngest-js/pull/370) [`48b201a`](https://github.com/inngest/inngest-js/commit/48b201a90f343a1927f38118b732615f77f9ca7f) Thanks [@tonyhb](https://github.com/tonyhb)! - Update concurrency with new scopes and multiple keys
+
+### Patch Changes
+
+- [#369](https://github.com/inngest/inngest-js/pull/369) [`e1046cd`](https://github.com/inngest/inngest-js/commit/e1046cd62430b5599512eb697ebf5ac3fbfd6bb6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Change `No request version` log from warn to debug
+
+## 3.3.0
+
+### Minor Changes
+
+- [#329](https://github.com/inngest/inngest-js/pull/329) [`2837296`](https://github.com/inngest/inngest-js/commit/2837296fbb938816db7f4b18193ee834fdb13785) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added `GetStepTools<typeof inngest>` and `GetFunctionInput<typeof inngest>` helper types to aid in building function factories. See [TypeScript Helpers - Inngest Documentation](https://www.inngest.com/docs/typescript#helpers) for more information.
+
+## 3.2.1
+
+### Patch Changes
+
+- [#360](https://github.com/inngest/inngest-js/pull/360) [`260dd75`](https://github.com/inngest/inngest-js/commit/260dd75461bf27188c21614f33d9b1c798fa96bf) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Inngest errors now appear more succintly in UIs, free of ANSI codes and verbose information
+
+## 3.2.0
+
+### Minor Changes
+
+- [#362](https://github.com/inngest/inngest-js/pull/362) [`6bc91d0`](https://github.com/inngest/inngest-js/commit/6bc91d0c60c02ef59dbe18a3f88e31db7854af3c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add ability to manage function run priorities using a new `priority.run` config option - see the [Priority documentation](https://innge.st/priority) for more information.
+
+### Patch Changes
+
+- [#357](https://github.com/inngest/inngest-js/pull/357) [`9140b66`](https://github.com/inngest/inngest-js/commit/9140b66fb841ea527ca388182b175cb3d86e3493) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Stop "_Failed to send event_" errors occuring in local development when missing an event key
+
+- [#359](https://github.com/inngest/inngest-js/pull/359) [`7f70546`](https://github.com/inngest/inngest-js/commit/7f705464cf18ce44efe0042d05dac9d632b4a010) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Internally, steps now return a `displayName` to be used within Inngest's UIs
+
+## 3.1.1
+
+### Patch Changes
+
+- [#354](https://github.com/inngest/inngest-js/pull/354) [`e2f68d6`](https://github.com/inngest/inngest-js/commit/e2f68d6dba7cc3e6f821d76abdb660793eb6a42f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix path matching types getting lost in certain recursive event types
+
+- [#350](https://github.com/inngest/inngest-js/pull/350) [`933b998`](https://github.com/inngest/inngest-js/commit/933b99816a1b47a6e4d6ef66db9d557a85407c2e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Separate Zod typing from library, enabling minor-agnostic versioning support
+
+## 3.1.0
+
+### Minor Changes
+
+- [#338](https://github.com/inngest/inngest-js/pull/338) [`ef35fea`](https://github.com/inngest/inngest-js/commit/ef35feacd35d626b89aea4d35ddfd8c33318d6fc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `debounce` configuration option. See [Debounce documentation](https://innge.st/debounce) for more information.
+
+### Patch Changes
+
+- [#337](https://github.com/inngest/inngest-js/pull/337) [`672c428`](https://github.com/inngest/inngest-js/commit/672c428f7ad89b06947b5dc8e81eab1d20ba2039) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure `fromRecord<>()` doesn't accept clashing names
+
+## 3.0.2
+
+### Patch Changes
+
+- [#348](https://github.com/inngest/inngest-js/pull/348) [`ebb245f`](https://github.com/inngest/inngest-js/commit/ebb245f9a6ae40a07173e2645f7614b54cd69c53) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `"inngest/next"` types not inferring from `defineProperties`
+
+- [#346](https://github.com/inngest/inngest-js/pull/346) [`c14bbb3`](https://github.com/inngest/inngest-js/commit/c14bbb3b0c078ec372b93dfcd39bfd5382d46e93) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `waitForEvent` potentially dropping some fields when being parsed
+
+## 3.0.1
+
+### Patch Changes
+
+- [#339](https://github.com/inngest/inngest-js/pull/339) [`bf8b004`](https://github.com/inngest/inngest-js/commit/bf8b0042787892a459e6fea24d31331cb58fd5f6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Bump `next` to `13`; keep up-to-date with their only supported major to support typing
+
+- [#343](https://github.com/inngest/inngest-js/pull/343) [`77c7f66`](https://github.com/inngest/inngest-js/commit/77c7f66c0617a0ad4acf6d07f22f13cafa337c87) Thanks [@tonyhb](https://github.com/tonyhb)! - Allow steps to execute with null data
+
+## 3.0.0
+
+### Major Changes
+
+- [#294](https://github.com/inngest/inngest-js/pull/294) [`f2f4856`](https://github.com/inngest/inngest-js/commit/f2f4856ab97d4191587ea1f41e9fe18b5ef45c95) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Clients and functions now require IDs
+
+  When instantiating a client using `new Inngest()` or creating a function via `inngest.createFunction()`, it's now required to pass an `id` instead of a `name`.
+
+  Previously only `name` was required, but this implied that the value was safe to change. Internally, we used this name to _produce_ an ID which was used during deployments and executions.
+
+  See the [v3 migration guide](https://www.inngest.com/docs/sdk/migration).
+
+- [#294](https://github.com/inngest/inngest-js/pull/294) [`f2f4856`](https://github.com/inngest/inngest-js/commit/f2f4856ab97d4191587ea1f41e9fe18b5ef45c95) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Refactored available environment variables and configuration
+
+  The arrangement of environment variables available has shifted a lot over the course of v2, so in v3 we've streamlined what's available and how they're used.
+
+  See the [v3 migration guide](https://www.inngest.com/docs/sdk/migration).
+
+- [#294](https://github.com/inngest/inngest-js/pull/294) [`f2f4856`](https://github.com/inngest/inngest-js/commit/f2f4856ab97d4191587ea1f41e9fe18b5ef45c95) Thanks [@jpwilliams](https://github.com/jpwilliams)! - In v2, providing a `fns` option when creating a function -- an object of functions -- would wrap those passed functions in `step.run()`, meaning you can run code inside your function without the `step.run()` boilerplate.
+
+  This wasn't a very well advertised feature and had some drawbacks, so we're instead replacing it with some optional middleware.
+
+  See the [v3 migration guide](https://www.inngest.com/docs/sdk/migration).
+
+- [#294](https://github.com/inngest/inngest-js/pull/294) [`f2f4856`](https://github.com/inngest/inngest-js/commit/f2f4856ab97d4191587ea1f41e9fe18b5ef45c95) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Serving functions could become a bit unwieldy with the format we had, so we've slightly altered how you serve your functions to ensure proper discoverability of options and aid in readability when revisiting the code.
+
+  See the [v3 migration guide](https://www.inngest.com/docs/sdk/migration).
+
+- [#294](https://github.com/inngest/inngest-js/pull/294) [`f2f4856`](https://github.com/inngest/inngest-js/commit/f2f4856ab97d4191587ea1f41e9fe18b5ef45c95) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Shorthand function creation removed
+
+  `inngest.createFunction()` can no longer take a string as the first or second arguments; an object is now required to aid in the discoverability of options and configuration.
+
+  See the [v3 migration guide](https://www.inngest.com/docs/sdk/migration).
+
+- [#294](https://github.com/inngest/inngest-js/pull/294) [`f2f4856`](https://github.com/inngest/inngest-js/commit/f2f4856ab97d4191587ea1f41e9fe18b5ef45c95) Thanks [@jpwilliams](https://github.com/jpwilliams)! - All steps require IDs
+
+  When using any step.\* tool, an ID is now required to ensure that determinism across changes to a function is easier to reason about for the user and the underlying engine.
+
+  The addition of these IDs allows you to deploy hotfixes and logic changes to long-running functions without fear of errors, failures, or panics. Beforehand, any changes to a function resulted in an irrecoverable error if step definitions changed. With this, changes to a function are smartly applied by default.
+
+  See the [v3 migration guide](https://www.inngest.com/docs/sdk/migration).
+
+### Patch Changes
+
+- [#333](https://github.com/inngest/inngest-js/pull/333) [`67bda66`](https://github.com/inngest/inngest-js/commit/67bda668fa53afeeb3708e3f245843e9612ccd22) Thanks [@goodoldneon](https://github.com/goodoldneon)! - (Internal) Fix missing name on `NonRetriableError`, ensuring it's correctly (de)serialized
+
+## 2.7.2
+
+### Patch Changes
+
+- [#323](https://github.com/inngest/inngest-js/pull/323) [`3b2efa6`](https://github.com/inngest/inngest-js/commit/3b2efa6e3e12eca45f05d5187c7978bf2e9da23f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Better error handling for `.sendEvent()` errors from Inngest API, ensuring easier debugging when failing to send events - partial of #256
+
+## 2.7.1
+
+### Patch Changes
+
+- [#325](https://github.com/inngest/inngest-js/pull/325) [`b8858c9`](https://github.com/inngest/inngest-js/commit/b8858c9be1cab32d4e781cf3588047181bfed6a7) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Hotfix: Ensure `ProxyLogger` (and some other used classes/types) is correctly exported from `"inngest"`
+
+## 2.7.0
+
+### Minor Changes
+
+- [#313](https://github.com/inngest/inngest-js/pull/313) [`32c34b3`](https://github.com/inngest/inngest-js/commit/32c34b3a006fe4ea3d482588f6101c969254532e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add ability to declare and send events without payloads, e.g. `inngest.send({ name: "my.event" });`
+
+- [#310](https://github.com/inngest/inngest-js/pull/310) [`696c411`](https://github.com/inngest/inngest-js/commit/696c411c46dc8255cdfa5480073a417a93b58e63) Thanks [@michealroberts](https://github.com/michealroberts)! - Added h3 framework server handler
+
+### Patch Changes
+
+- [#319](https://github.com/inngest/inngest-js/pull/319) [`71b7d26`](https://github.com/inngest/inngest-js/commit/71b7d268a815cfc3133b0a4cd1cf1a1a599b5d05) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add ESM exports to `inngest` package to avoid extension imports
+
+## 2.6.1
+
+### Patch Changes
+
+- [#312](https://github.com/inngest/inngest-js/pull/312) [`ca6d6aa`](https://github.com/inngest/inngest-js/commit/ca6d6aa31512468de0d662e770d622a069adb65e) Thanks [@mmachatschek](https://github.com/mmachatschek)! - chore: update cross-fetch to ^4.0.0 package
+
+## 2.6.0
+
+### Minor Changes
+
+- [#202](https://github.com/inngest/inngest-js/pull/202) [`21053ed`](https://github.com/inngest/inngest-js/commit/21053edeb5a11f2eaa0242d56d36b0aee6ae994f) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Add support for Fastify, either via a custom `.route()` or using a Fastify plugin
+
+  ```ts
+  import Fastify from "fastify";
+  import inngestFastify, { serve } from "inngest/fastify";
+  import { functions, inngest } from "./inngest";
+
+  const fastify = Fastify({
+    logger: true,
+  });
+
+  // The lead maintainer of Fastify recommends using this as a plugin:
+  fastify.register(inngestFastify, {
+    client: inngest,
+    functions,
+    options: {},
+  });
+
+  // We do also export `serve()` if you want to use it directly, though.
+  fastify.route({
+    method: ["GET", "POST", "PUT"],
+    handler: serve(inngest, functions),
+    url: "/api/inngest",
+  });
+
+  fastify.listen({ port: 3000 }, function (err, address) {
+    if (err) {
+      fastify.log.error(err);
+      process.exit(1);
+    }
+  });
+  ```
+
+- [#298](https://github.com/inngest/inngest-js/pull/298) [`4984aa8`](https://github.com/inngest/inngest-js/commit/4984aa85b97fd7b3d38d4fdcb5559c0ecb4307a3) Thanks [@z.object({](https://github.com/z.object({), [@z.object({](https://github.com/z.object({)! - Add the ability to provide Zod schemas using `z.object()` instead of requiring a record format
+
+  ```ts
+  // Previously we supported this
+  new EventSchemas().fromZod({
+    "test.event": {
+      data: z.object({ a: z.string() }),
+   b: z.number() }),
+    },
+  });
+
+  // Now we ALSO support this
+  new EventSchemas().fromZod([
+    z.object({
+      name: z.literal("test.event"),
+      data: z.object({ a: z.string() }),
+   b: z.number() }),
+    }),
+  ]);
+  ```
+
+  This should help if you wish to declare your events piece-by-piece instead of in a single object.
+
+  ```ts
+  const firstEvent = z.object({
+    name: z.literal("app/user.created"),
+    data: z.object({ id: z.string() }),
+  });
+
+  const secondEvent = z.object({
+    name: z.literal("shop/product.deleted"),
+    data: z.object({ id: z.string() }),
+  });
+
+  new EventSchemas().fromZod([firstEvent, secondEvent]);
+  ```
+
+  You can use the exported `LiteralZodEventSchema` type to provide some autocomplete when writing your events, too.
+
+  ```ts
+  const ShopProductOrdered = z.object({
+    name: z.literal("shop/product.ordered"),
+    data: z.object({ productId: z.string() }),
+  }) satisfies LiteralZodEventSchema;
+  ```
+
+## 2.5.2
+
+### Patch Changes
+
+- [#305](https://github.com/inngest/inngest-js/pull/305) [`10220af`](https://github.com/inngest/inngest-js/commit/10220af5b666eb1f09cbb47d252edde8c78b5a48) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Always attempt accessing the dev server if the `INNGEST_DEVSERVER_URL` environment variable is specified
+
+  This helps some situations where a user may want to run integration tests against a deployed or otherwise production build, using the Inngest Dev Server to do so.
+
+## 2.5.1
+
+### Patch Changes
+
+- [#302](https://github.com/inngest/inngest-js/pull/302) [`5b2bfac`](https://github.com/inngest/inngest-js/commit/5b2bfac61f3b3f4ecbfdedca3e3c18be1393eb88) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove `preinstall` script from `inngest` package causing errors when consuming the package
+
 ## 2.5.0
 
 ### Minor Changes

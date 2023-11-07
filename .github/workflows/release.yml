@@ -6,8 +6,6 @@ on:
       - main
       - 'v*.x'
 
-concurrency: ${{ github.workflow }}
-
 env:
   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -21,6 +19,15 @@ jobs:
       - uses: actions/checkout@v3
         with:
           persist-credentials: false
+          # Used to fetch all history so that changesets doesn't attempt to
+          # publish duplicate tags.
+          fetch-depth: 0
+      # Replaces `concurrency` - never cancels any jobs
+      - uses: softprops/turnstyle@v1
+        with:
+          poll-interval-seconds: 30
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-and-build
       - run: node scripts/generateReleaseConfig.js
         env:

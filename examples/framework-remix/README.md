@@ -6,9 +6,18 @@ This is a [Remix](https://remix.run/) v1 project bootstrapped with [`create-remi
 
 ## Getting Started
 
+Use [`create-next-app`](https://www.npmjs.com/package/create-next-app) with [npm](https://docs.npmjs.com/cli/init), [Yarn](https://yarnpkg.com/lang/en/docs/cli/create/), or [pnpm](https://pnpm.io) to bootstrap the example:
+
 ```bash
-npm install
-npm run dev
+npx create-next-app --example https://github.com/inngest/inngest-js/tree/main/examples/framework-remix inngest-remix
+```
+
+```bash
+yarn create next-app --example https://github.com/inngest/inngest-js/tree/main/examples/framework-remix inngest-remix
+```
+
+```bash
+pnpm create next-app --example https://github.com/inngest/inngest-js/tree/main/examples/framework-remix inngest-remix
 ```
 
 Open [http://localhost:3000](http://localhost:3000/api/inngest) with your browser to see the result.

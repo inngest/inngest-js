@@ -1,3 +1,5 @@
+import { runAsPromise } from "./promises";
+
 interface Timing {
   description: string;
   timers: {
@@ -78,7 +80,7 @@ export class ServerTiming {
     const stop = this.start(name, description);
 
     try {
-      return (await Promise.resolve(fn())) as Awaited<ReturnType<T>>;
+      return (await runAsPromise(fn)) as Awaited<ReturnType<T>>;
     } finally {
       stop();
     }

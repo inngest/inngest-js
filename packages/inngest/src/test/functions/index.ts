@@ -6,6 +6,7 @@ import promiseAll from "./promise-all";
 import promiseRace from "./promise-race";
 import sendEvent from "./send-event";
 import sequentialReduce from "./sequential-reduce";
+import undefinedData from "./undefined-data";
 
 export const functions = [
   helloWorld,
@@ -16,6 +17,7 @@ export const functions = [
   sequentialReduce,
   polling,
   sendEvent,
+  undefinedData,
 ];
 
 export { inngest } from "./client";

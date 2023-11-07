@@ -5,13 +5,14 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "start": "node .output/server/index.mjs"
   },
   "devDependencies": {
     "nuxt": "^3.0.0"
   },
   "dependencies": {
-    "inngest": "^2.1.0"
+    "inngest": "^3.0.0"
   },
   "volta": {
     "node": "18.16.1",

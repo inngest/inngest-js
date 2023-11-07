@@ -9,7 +9,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Promise.race",
+  name: "promise-race",
   triggers: [{ event: "demo/promise.race" }],
 });
 
@@ -22,7 +22,7 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/promise.race'", async () => {
-    runId = await eventRunWithName(eventId, "Promise.race");
+    runId = await eventRunWithName(eventId, "promise-race");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 
@@ -32,7 +32,7 @@ describe("run", () => {
         __typename: "StepEvent",
         stepType: "COMPLETED",
         name: "Step A",
-        output: '"A"',
+        output: JSON.stringify({ data: "A" }),
       })
     ).resolves.toBeDefined();
   }, 60000);
@@ -43,7 +43,7 @@ describe("run", () => {
         __typename: "StepEvent",
         stepType: "COMPLETED",
         name: "Step B",
-        output: '"B"',
+        output: JSON.stringify({ data: "B" }),
       })
     ).resolves.toBeDefined();
   }, 60000);
@@ -60,9 +60,9 @@ describe("run", () => {
     expect(timelineItem).toBeDefined();
     const output = JSON.parse(timelineItem.output);
     winner =
-      output === "A is the winner!"
+      output.data === "A is the winner!"
         ? "A"
-        : output === "B is the winner!"
+        : output.data === "B is the winner!"
         ? "B"
         : undefined;
     expect(["A", "B"]).toContain(winner);
