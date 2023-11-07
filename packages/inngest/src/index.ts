@@ -16,6 +16,7 @@ export type {
 } from "./components/Inngest";
 export { InngestCommHandler } from "./components/InngestCommHandler";
 export type { ServeHandlerOptions } from "./components/InngestCommHandler";
+export type { InngestFunction } from "./components/InngestFunction";
 export { InngestMiddleware } from "./components/InngestMiddleware";
 export type {
   MiddlewareOptions,
@@ -47,4 +48,6 @@ export type {
   StepOptionsOrId,
   TimeStr,
   TriggerOptions,
+  FunctionTrigger,
+  Handler,
 } from "./types";
