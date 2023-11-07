@@ -1,13 +1,14 @@
 import { InngestApi } from "../api/api";
 import {
-  defaultInngestBaseUrl,
+  defaultDevServerHost,
+  defaultInngestApiBaseUrl,
   defaultInngestEventBaseUrl,
+  dummyEventKey,
   envKeys,
   logPrefix,
 } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
-  devServerHost,
   getFetch,
   inngestHeaders,
   processEnv,
@@ -101,7 +102,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    */
   private eventKey = "";
 
-  private readonly baseUrl: string | undefined;
+  private readonly apiBaseUrl: string | undefined;
+  private readonly eventBaseUrl: string | undefined;
 
   private readonly inngestApi: InngestApi;
 
@@ -161,24 +163,17 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     this.id = id;
 
-    this.baseUrl = baseUrl || processEnv(envKeys.InngestBaseUrl);
+    this.apiBaseUrl =
+      baseUrl ||
+      processEnv(envKeys.InngestApiBaseUrl) ||
+      processEnv(envKeys.InngestBaseUrl);
+
+    this.eventBaseUrl =
+      baseUrl ||
+      processEnv(envKeys.InngestEventApiBaseUrl) ||
+      processEnv(envKeys.InngestBaseUrl);
 
     this.setEventKey(eventKey || processEnv(envKeys.InngestEventKey) || "");
-
-    if (!this.eventKey) {
-      console.warn(
-        prettyError({
-          type: "warn",
-          whatHappened: "Could not find event key",
-          consequences:
-            "Sending events will throw in production unless an event key is added.",
-          toFixNow: fixEventKeyMissingSteps,
-          why: "We couldn't find an event key to use to send events to Inngest.",
-          otherwise:
-            "Create a new production event key at https://app.inngest.com/env/production/manage/keys.",
-        })
-      );
-    }
 
     this.headers = inngestHeaders({
       inngestEnv: env,
@@ -187,7 +182,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     this.fetch = getFetch(fetch);
 
     this.inngestApi = new InngestApi({
-      baseUrl: this.baseUrl || defaultInngestBaseUrl,
+      baseUrl: this.apiBaseUrl || defaultInngestApiBaseUrl,
       signingKey: processEnv(envKeys.InngestSigningKey) || "",
       fetch: this.fetch,
     });
@@ -289,12 +284,16 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
      */
     eventKey: string
   ): void {
-    this.eventKey = eventKey;
+    this.eventKey = eventKey || dummyEventKey;
 
     this.sendEventUrl = new URL(
       `e/${this.eventKey}`,
-      this.baseUrl || defaultInngestEventBaseUrl
+      this.eventBaseUrl || defaultInngestEventBaseUrl
     );
+  }
+
+  private eventKeySet(): boolean {
+    return Boolean(this.eventKey) && this.eventKey !== dummyEventKey;
   }
 
   /**
@@ -403,28 +402,30 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     // dev server.
     let url = this.sendEventUrl.href;
 
+    /**
+     * INNGEST_BASE_URL is used to set both dev server and prod URLs, so if a
+     * user has set this it means they have already chosen a URL to hit.
+     */
     if (!skipDevServer()) {
-      const host = devServerHost();
-      // If the dev server host env var has been set we always want to use
-      // the dev server - even if it's down.  Otherwise, optimistically use
-      // it for non-prod services.
-      if (host !== undefined || (await devServerAvailable(host, this.fetch))) {
-        url = devServerUrl(host, `e/${this.eventKey}`).href;
-      } else if (!this.eventKey) {
-        /**
-         * If we're here, the dev server is not available so we're expecting to
-         * hit production. In this case, if we don't have an event key then we
-         * know we can fail early.
-         */
-        throw new Error(
-          prettyError({
-            whatHappened: "Failed to send event",
-            consequences: "Your event or events were not sent to Inngest.",
-            why: "We couldn't find an event key to use to send events to Inngest.",
-            toFixNow: fixEventKeyMissingSteps,
-          })
+      if (!this.eventBaseUrl) {
+        const devAvailable = await devServerAvailable(
+          defaultDevServerHost,
+          this.fetch
         );
+
+        if (devAvailable) {
+          url = devServerUrl(defaultDevServerHost, `e/${this.eventKey}`).href;
+        }
       }
+    } else if (!this.eventKeySet()) {
+      throw new Error(
+        prettyError({
+          whatHappened: "Failed to send event",
+          consequences: "Your event or events were not sent to Inngest.",
+          why: "We couldn't find an event key to use to send events to Inngest.",
+          toFixNow: fixEventKeyMissingSteps,
+        })
+      );
     }
 
     const response = await this.fetch(url, {
@@ -650,3 +651,97 @@ export const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
     },
   }),
 ]);
+
+/**
+ * A helper type to extract the type of a set of event tooling from a given
+ * Inngest instance and optionally a trigger.
+ *
+ * @example Get generic step tools for an Inngest instance.
+ * ```ts
+ * type StepTools = GetStepTools<typeof inngest>;
+ * ```
+ *
+ * @example Get step tools with a trigger, ensuring tools like `waitForEvent` are typed.
+ * ```ts
+ * type StepTools = GetStepTools<typeof Inngest, "github/pull_request">;
+ * ```
+ *
+ * @public
+ */
+export type GetStepTools<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  TInngest extends Inngest<any>,
+  TTrigger extends keyof GetEvents<TInngest> &
+    string = keyof GetEvents<TInngest> & string
+> = GetFunctionInput<TInngest, TTrigger> extends { step: infer TStep }
+  ? TStep
+  : never;
+
+/**
+ * A helper type to extract the type of the input to a function from a given
+ * Inngest instance and optionally a trigger.
+ *
+ * @example Get generic function input for an Inngest instance.
+ * ```ts
+ * type Input = GetFunctionInput<typeof inngest>;
+ * ```
+ *
+ * @example Get function input with a trigger, ensuring tools like `waitForEvent` are typed.
+ * ```ts
+ * type Input = GetFunctionInput<typeof Inngest, "github/pull_request">;
+ * ```
+ *
+ * @public
+ */
+export type GetFunctionInput<
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  TInngest extends Inngest<any>,
+  TTrigger extends keyof GetEvents<TInngest> &
+    string = keyof GetEvents<TInngest> & string
+> = Parameters<
+  Handler<
+    ClientOptionsFromInngest<TInngest>,
+    GetEvents<TInngest>,
+    TTrigger,
+    ExtendWithMiddleware<
+      [
+        typeof builtInMiddleware,
+        NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>
+      ]
+    >
+  >
+>[0];
+
+/**
+ * A helper type to extract the inferred event schemas from a given Inngest
+ * instance.
+ *
+ * It's recommended to use this type instead of directly passing
+ * schemas around, as it will ensure that extra properties such as `ts` and
+ * `user` are always added.
+ *
+ * @example
+ * ```ts
+ * type Events = GetEvents<typeof inngest>;
+ * ```
+ *
+ * @public
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type GetEvents<TInngest extends Inngest<any>> = EventsFromOpts<
+  ClientOptionsFromInngest<TInngest>
+>;
+
+/**
+ * A helper type to extract the inferred options from a given Inngest instance.
+ *
+ * @example
+ * ```ts
+ * type Options = ClientOptionsFromInngest<typeof inngest>;
+ * ```
+ *
+ * @public
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ClientOptionsFromInngest<TInngest extends Inngest<any>> =
+  TInngest extends Inngest<infer U> ? U : ClientOptions;

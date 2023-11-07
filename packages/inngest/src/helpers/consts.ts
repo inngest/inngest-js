@@ -25,17 +25,14 @@ export enum envKeys {
   InngestDevServerUrl = "INNGEST_DEVSERVER_URL",
   InngestEnvironment = "INNGEST_ENV",
   InngestBaseUrl = "INNGEST_BASE_URL",
+  InngestEventApiBaseUrl = "INNGEST_EVENT_API_BASE_URL",
+  InngestApiBaseUrl = "INNGEST_API_BASE_URL",
   InngestServeHost = "INNGEST_SERVE_HOST",
   InngestServePath = "INNGEST_SERVE_PATH",
   InngestLogLevel = "INNGEST_LOG_LEVEL",
   InngestStreaming = "INNGEST_STREAMING",
 
   BranchName = "BRANCH_NAME",
-
-  /**
-   * @deprecated Removed in v3. Use {@link InngestBaseUrl} instead.
-   */
-  InngestApiBaseUrl = "INNGEST_API_BASE_URL",
 
   /**
    * The git branch of the commit the deployment was triggered by. Example:
@@ -126,7 +123,7 @@ export enum headerKeys {
   RetryAfter = "retry-after",
 }
 
-export const defaultInngestBaseUrl = "https://api.inngest.com/";
+export const defaultInngestApiBaseUrl = "https://api.inngest.com/";
 export const defaultInngestEventBaseUrl = "https://inn.gs/";
 export const defaultDevServerHost = "http://127.0.0.1:8288/";
 
@@ -147,3 +144,5 @@ export enum internalEvents {
 export const logPrefix = chalk.magenta.bold("[Inngest]");
 
 export const debugPrefix = "inngest";
+
+export const dummyEventKey = "NO_EVENT_KEY_SET";

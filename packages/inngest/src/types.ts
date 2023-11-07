@@ -173,7 +173,7 @@ export const incomingOpSchema = z.object({
 export type IncomingOp = z.output<typeof incomingOpSchema>;
 export type OutgoingOp = Pick<
   HashedOp,
-  "id" | "op" | "name" | "opts" | "data" | "error"
+  "id" | "op" | "name" | "opts" | "data" | "error" | "displayName"
 >;
 
 /**
@@ -654,6 +654,37 @@ export type TriggerOptions<T extends string> = StrictUnion<
     }
 >;
 
+export interface ConcurrencyOption {
+  /**
+   * The concurrency limit for this option, adding a limit on how many concurrent
+   * steps can execute at once.
+   */
+  limit: number;
+
+  /**
+   * An optional concurrency key, as an expression using the common expression language
+   * (CEL).  The result of this expression is used to create new concurrency groups, or
+   * sub-queues, for each function run.
+   *
+   * The event is passed into this expression as "event".
+   *
+   * Examples:
+   * - `event.data.user_id`:  this evaluates to the user_id in the event.data object.
+   * - `event.data.user_id + "-" + event.data.account_id`: creates a new group per user/account
+   * - `"ai"`:  references a custom string
+   */
+  key?: string;
+
+  /**
+   * An optional scope for the concurrency group.  By default, concurrency limits are
+   * scoped to functions - one function's concurrency limits do not impact other functions.
+   *
+   * Changing this "scope" allows concurrency limits to work across environments (eg. production
+   * vs branch environments) or across your account (global).
+   */
+  scope?: "fn" | "env" | "account";
+}
+
 /**
  * A set of options for configuring an Inngest function.
  *
@@ -685,7 +716,10 @@ export interface FunctionOptions<
    *
    * Specifying just a number means specifying only the concurrency limit.
    */
-  concurrency?: number | { limit: number; key?: string };
+  concurrency?:
+    | number
+    | ConcurrencyOption
+    | [ConcurrencyOption, ConcurrencyOption];
 
   /**
    * batchEvents specifies the batch configuration on when this function
@@ -734,6 +768,57 @@ export interface FunctionOptions<
      * The period of time to allow the function to run `limit` times.
      */
     period: TimeStr;
+  };
+
+  /**
+   * Debounce delays functions for the `period` specified. If an event is sent,
+   * the function will not run until at least `period` has elapsed.
+   *
+   * If any new events are received that match the same debounce `key`, the
+   * function is reshceduled for another `period` delay, and the triggering
+   * event is replaced with the latest event received.
+   *
+   * See the [Debounce documentation](https://innge.st/debounce) for more
+   * information.
+   */
+  debounce?: {
+    /**
+     * An optional key to use for debouncing.
+     *
+     * See [Debounce documentation](https://innge.st/debounce) for more
+     * information on how to use `key` expressions.
+     */
+    key?: string;
+
+    /**
+     * The period of time to after receiving the last trigger to run the
+     * function.
+     *
+     * See [Debounce documentation](https://innge.st/debounce) for more
+     * information.
+     */
+    period: TimeStr;
+  };
+
+  /**
+   * Configure how the priority of a function run is decided when multiple
+   * functions are triggered at the same time.
+   *
+   * See the [Priority documentation](https://innge.st/priority) for more
+   * information.
+   */
+  priority?: {
+    /**
+     * An expression to use to determine the priority of a function run. The
+     * expression can return a number between `-600` and `600`, where `600`
+     * declares that this run should be executed before any others enqueued in
+     * the last 600 seconds (10 minutes), and `-600` declares that this run
+     * should be executed after any others enqueued in the last 600 seconds.
+     *
+     * See the [Priority documentation](https://innge.st/priority) for more
+     * information.
+     */
+    run?: string;
   };
 
   cancelOn?: Cancellation<Events, Event>[];

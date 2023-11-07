@@ -1,8 +1,17 @@
-import { EventSchemas, InngestMiddleware, type EventPayload } from "@local";
+import {
+  EventSchemas,
+  Inngest,
+  InngestMiddleware,
+  type EventPayload,
+  type GetFunctionInput,
+  type GetStepTools,
+} from "@local";
+import { type createStepTools } from "@local/components/InngestStepTools";
 import { envKeys, headerKeys } from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
+import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
-import { assertType } from "type-plus";
+import { assertType, type IsEqual } from "type-plus";
 import { createClient } from "../test/helpers";
 
 const testEvent: EventPayload = {
@@ -12,46 +21,6 @@ const testEvent: EventPayload = {
 };
 
 const testEventKey = "foo-bar-baz-test";
-
-describe("instantiation", () => {
-  describe("event key warnings", () => {
-    let warnSpy: jest.SpyInstance;
-    const originalEnvEventKey = process.env[envKeys.InngestEventKey];
-
-    beforeEach(() => {
-      warnSpy = jest.spyOn(console, "warn");
-    });
-
-    afterEach(() => {
-      warnSpy.mockReset();
-      warnSpy.mockRestore();
-
-      if (originalEnvEventKey) {
-        process.env[envKeys.InngestEventKey] = originalEnvEventKey;
-      } else {
-        delete process.env[envKeys.InngestEventKey];
-      }
-    });
-
-    test("should log a warning if event key not specified", () => {
-      createClient({ id: "test" });
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Could not find event key")
-      );
-    });
-
-    test("should not log a warning if event key is specified", () => {
-      createClient({ id: "test", eventKey: testEventKey });
-      expect(warnSpy).not.toHaveBeenCalled();
-    });
-
-    test("should not log a warning if event key is specified in env", () => {
-      process.env[envKeys.InngestEventKey] = testEventKey;
-      createClient({ id: "test" });
-      expect(warnSpy).not.toHaveBeenCalled();
-    });
-  });
-});
 
 describe("send", () => {
   describe("runtime", () => {
@@ -99,6 +68,9 @@ describe("send", () => {
     });
 
     test("should fail to send if event key not specified at instantiation", async () => {
+      // Will only throw this error in prod
+      process.env.CONTEXT = "production";
+
       const inngest = createClient({ id: "test" });
 
       await expect(() => inngest.send(testEvent)).rejects.toThrowError(
@@ -757,6 +729,88 @@ describe("createFunction", () => {
           }
         );
       });
+    });
+  });
+});
+
+describe("helper types", () => {
+  const inngest = new Inngest({
+    id: "test",
+    schemas: new EventSchemas().fromRecord<{
+      foo: { data: { foo: string } };
+      bar: { data: { bar: string } };
+    }>(),
+    middleware: [
+      new InngestMiddleware({
+        name: "",
+        init: () => ({
+          onFunctionRun: () => ({
+            transformInput: () => ({
+              ctx: {
+                foo: "bar",
+              } as const,
+            }),
+          }),
+        }),
+      }),
+    ],
+  });
+
+  type GetUnionKeyValue<
+    T,
+    K extends string | number | symbol
+  > = T extends Record<K, infer U> ? U : never;
+
+  describe("type GetFunctionInput", () => {
+    type T0 = GetFunctionInput<typeof inngest>;
+
+    test("returns event typing", () => {
+      type Expected = "foo" | "bar";
+      type Actual = T0["event"]["name"];
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("returns built-in middleware typing", () => {
+      type Expected = Logger;
+      type Actual = T0["logger"];
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("returns custom middleware typing", () => {
+      type Expected = "bar";
+      type Actual = T0["foo"];
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("has all step tooling", () => {
+      type Expected = keyof ReturnType<typeof createStepTools>;
+      type Actual = keyof T0["step"];
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("returns step typing for sendEvent", () => {
+      type Expected = "foo" | "bar";
+      type Actual = GetUnionKeyValue<
+        Parameters<T0["step"]["sendEvent"]>[1],
+        "name"
+      >;
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+  });
+
+  describe("type GetStepTools", () => {
+    type T0 = GetStepTools<typeof inngest>;
+
+    test("has all tooling", () => {
+      type Expected = keyof ReturnType<typeof createStepTools>;
+      type Actual = keyof T0;
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("returns step typing for sendEvent", () => {
+      type Expected = "foo" | "bar";
+      type Actual = GetUnionKeyValue<Parameters<T0["sendEvent"]>[1], "name">;
+      assertType<IsEqual<Expected, Actual>>(true);
     });
   });
 });

@@ -1,6 +1,6 @@
 import { type Simplify } from "type-fest";
-import { type z } from "zod";
 import { type IsEmptyObject, type IsStringLiteral } from "../helpers/types";
+import type * as z from "../helpers/validators/zod";
 import { type EventPayload } from "../types";
 
 /**
@@ -104,7 +104,7 @@ export type PickLiterals<T> = {
  *
  * @public
  */
-export type GetName<T> = T extends z.ZodObject<infer U extends z.ZodRawShape>
+export type GetName<T> = T extends z.ZodObject<infer U>
   ? U extends { name: z.ZodLiteral<infer S extends string> }
     ? S
     : never

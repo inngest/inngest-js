@@ -1,7 +1,21 @@
 import { sha256 } from "hash.js";
+import { default as safeStringify } from "json-stringify-safe";
 import ms from "ms";
 import { type TimeStr } from "../types";
-export { default as stringify } from "json-stringify-safe";
+
+/**
+ * Safely `JSON.stringify()` an `input`, handling circular refernences and
+ * removing `BigInt` values.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const stringify = (input: any): string => {
+  return safeStringify(input, (key, value) => {
+    if (typeof value !== "bigint") {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      return value;
+    }
+  });
+};
 
 /**
  * Returns a slugified string used to generate consistent IDs.

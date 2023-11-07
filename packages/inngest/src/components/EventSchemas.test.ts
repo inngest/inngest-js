@@ -1,7 +1,7 @@
 import { EventSchemas } from "@local/components/EventSchemas";
-import { Inngest } from "@local/components/Inngest";
+import { Inngest, type GetEvents } from "@local/components/Inngest";
 import { type IsAny } from "@local/helpers/types";
-import { type EventPayload, type GetEvents } from "@local/types";
+import { type EventPayload } from "@local/types";
 import { assertType, type IsEqual } from "type-plus";
 import { z } from "zod";
 
@@ -811,6 +811,48 @@ describe("EventSchemas", () => {
           void step.waitForEvent("id", {
             event: "test.event",
             match: "data.foo",
+            timeout: "1h",
+          });
+        }
+      );
+    });
+
+    test("does not infinitely recurse when matching events with recursive types", () => {
+      type JsonObject = { [Key in string]?: JsonValue };
+      type JsonArray = Array<JsonValue>;
+      type JsonValue =
+        | string
+        | number
+        | boolean
+        | JsonObject
+        | JsonArray
+        | null;
+
+      interface TestEvent extends EventPayload {
+        name: "test.event";
+        data: { id: string; other: JsonValue; yer: string[] };
+      }
+
+      interface TestEvent2 extends EventPayload {
+        name: "test.event2";
+        data: { id: string; somethingElse: JsonValue };
+      }
+
+      const schemas = new EventSchemas().fromUnion<TestEvent | TestEvent2>();
+
+      const inngest = new Inngest({
+        id: "test",
+        schemas,
+        eventKey: "test-key-123",
+      });
+
+      inngest.createFunction(
+        { id: "test", cancelOn: [{ event: "test.event2", match: "data.id" }] },
+        { event: "test.event" },
+        ({ step }) => {
+          void step.waitForEvent("id", {
+            event: "test.event2",
+            match: "data.id",
             timeout: "1h",
           });
         }
