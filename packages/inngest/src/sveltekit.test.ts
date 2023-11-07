@@ -4,7 +4,33 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import { Headers } from "cross-fetch";
 import { testFramework } from "./test/helpers";
 
+const originalFetch = globalThis.fetch;
+const originalResponse = globalThis.Response;
+const originalHeaders = globalThis.Headers;
+
 testFramework("SvelteKit", SvelteKitHandler, {
+  lifecycleChanges: () => {
+    beforeEach(() => {
+      jest.resetModules();
+
+      Object.defineProperties(globalThis, {
+        fetch: { value: fetch, configurable: true },
+        Response: { value: Response, configurable: true },
+        Headers: { value: Headers, configurable: true },
+      });
+    });
+
+    afterEach(() => {
+      /**
+       * Reset all changes made to the global scope
+       */
+      Object.defineProperties(globalThis, {
+        fetch: { value: originalFetch, configurable: true },
+        Response: { value: originalResponse, configurable: true },
+        Headers: { value: originalHeaders, configurable: true },
+      });
+    });
+  },
   transformReq: (req, _res, _env) => {
     const headers = new Headers();
     Object.entries(req.headers).forEach(([k, v]) => {
