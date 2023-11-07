@@ -89,6 +89,11 @@
       "import": "./remix.js",
       "types": "./remix.d.ts"
     },
+    "./sveltekit": {
+      "require": "./sveltekit.js",
+      "import": "./sveltekit.js",
+      "types": "./sveltekit.d.ts"
+    },
     "./deno/fresh": {
       "require": "./deno/fresh.js",
       "import": "./deno/fresh.js",
