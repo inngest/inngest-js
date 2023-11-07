@@ -43,7 +43,22 @@ export const serve = (options: ServeHandlerOptions) => {
           );
         },
         transformResponse: ({ body, headers, status }) => {
-          return new Response(body, { status, headers });
+          /**
+           * If `Response` isn't included in this environment, it's probably a Node
+           * env that isn't already polyfilling. In this case, we can polyfill it
+           * here to be safe.
+           */
+          let Res: typeof Response;
+
+          if (typeof Response === "undefined") {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
+            Res = require("cross-fetch").Response;
+          } else {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            Res = Response;
+          }
+
+          return new Res(body, { status, headers });
         },
       };
     },
