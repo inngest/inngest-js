@@ -1,10 +1,10 @@
-import { EventSchemas } from "inngest";
+import { EventSchemas } from 'inngest';
 
 type DemoEventSent = {
-  name: "demo/event.sent";
-  data: {
-    message: string;
-  };
+	name: 'demo/event.sent';
+	data: {
+		message: string;
+	};
 };
 
 export const schemas = new EventSchemas().fromUnion<DemoEventSent>();

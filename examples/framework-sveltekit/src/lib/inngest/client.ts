@@ -1,4 +1,4 @@
-import { Inngest } from "inngest";
-import { schemas } from "./types";
+import { Inngest } from 'inngest';
+import { schemas } from './types';
 
-export const inngest = new Inngest({ name: "My Next.js app", schemas });
+export const inngest = new Inngest({ id: 'my-sveltekit-app', schemas });

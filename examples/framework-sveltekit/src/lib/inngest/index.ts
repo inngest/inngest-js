@@ -1,5 +1,5 @@
-import helloWorld from "./helloWorld";
+import helloWorld from './helloWorld';
 
 export const functions = [helloWorld];
 
-export { inngest } from "./client";
+export { inngest } from './client';
