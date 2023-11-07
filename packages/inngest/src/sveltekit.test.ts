@@ -1,6 +1,7 @@
 import * as SvelteKitHandler from "@local/sveltekit";
 import { type RequestEvent } from "@sveltejs/kit";
 import { fromPartial } from "@total-typescript/shoehorn";
+import { Headers } from "cross-fetch";
 import { testFramework } from "./test/helpers";
 
 testFramework("SvelteKit", SvelteKitHandler, {
