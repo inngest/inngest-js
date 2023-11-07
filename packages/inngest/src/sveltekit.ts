@@ -23,9 +23,12 @@ export const serve = (options: ServeHandlerOptions) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
-    handler: (method: string, event: RequestEvent) => {
+    handler: (
+      reqMethod: "GET" | "POST" | "PUT" | undefined,
+      event: RequestEvent
+    ) => {
       return {
-        method: () => method,
+        method: () => reqMethod || event.request.method || "",
         body: () => event.request.json(),
         headers: (key) => event.request.headers.get(key),
         url: () => {
@@ -48,9 +51,18 @@ export const serve = (options: ServeHandlerOptions) => {
 
   const baseFn = handler.createHandler();
 
-  return {
-    GET: baseFn.bind(null, "GET"),
-    POST: baseFn.bind(null, "POST"),
-    PUT: baseFn.bind(null, "PUT"),
+  const fn = baseFn.bind(null, undefined);
+  type Fn = typeof fn;
+
+  const handlerFn = Object.defineProperties(fn, {
+    GET: { value: baseFn.bind(null, "GET") },
+    POST: { value: baseFn.bind(null, "POST") },
+    PUT: { value: baseFn.bind(null, "PUT") },
+  }) as Fn & {
+    GET: Fn;
+    POST: Fn;
+    PUT: Fn;
   };
+
+  return handlerFn;
 };
