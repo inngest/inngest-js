@@ -12,13 +12,14 @@ testFramework("SvelteKit", SvelteKitHandler, {
 
     const svelteKitReq: Partial<RequestEvent> = {
       request: fromPartial({
+        method: req.method,
         url: req.url,
         headers,
         json: () => Promise.resolve(req.body),
       }),
     };
 
-    return [req.method, svelteKitReq];
+    return [svelteKitReq];
   },
   transformRes: async (res, ret: Response) => {
     const headers: Record<string, string> = {};
