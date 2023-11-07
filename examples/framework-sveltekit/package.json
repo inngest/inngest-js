@@ -28,6 +28,6 @@
 	"type": "module",
 	"dependencies": {
 		"h3": "^1.7.1",
-		"inngest": "latest"
+		"inngest": "^3.0.0"
 	}
 }
