@@ -222,6 +222,13 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
 
 export type TimeStrBatch = `${`${number}s`}`;
 
+/**
+ * Mutates an {@link EventPayload} `T` to include invocation events.
+ */
+export type WithInvocation<T extends EventPayload> = Simplify<
+  { name: T["name"] | `${internalEvents.FunctionInvoked}` } & Omit<T, "name">
+>;
+
 export type BaseContext<
   TOpts extends ClientOptions,
   TTrigger extends keyof EventsFromOpts<TOpts> & string
@@ -229,7 +236,7 @@ export type BaseContext<
   /**
    * The event data present in the payload.
    */
-  event: EventsFromOpts<TOpts>[TTrigger];
+  event: WithInvocation<EventsFromOpts<TOpts>[TTrigger]>;
 
   events: [
     EventsFromOpts<TOpts>[TTrigger],
