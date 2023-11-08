@@ -1,17 +1,17 @@
-import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { serve } from "inngest/express";
+import { serve } from 'inngest/express';
 
-import { getInngestFunctions } from "@modules/common/inngest/functions";
-import { inngest } from "@modules/common/inngest/client";
+import { inngest } from '@modules/common/inngest/client';
+import { getInngestFunctions } from '@modules/common/inngest/functions';
 
 import { AppModule } from './app.module';
 import { AppService } from './app.service';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
-    bodyParser: true
+    bodyParser: true,
   });
 
   // Setup inngest
@@ -20,24 +20,25 @@ async function bootstrap() {
   // Inject Dependencies into inngest functions
 
   const logger = app.get(Logger);
-  const appService = app.get(AppService)
+  const appService = app.get(AppService);
 
   // Pass dependencies into this function
   const inngestFunctions = getInngestFunctions({
     appService,
-    logger
+    logger,
   });
 
   // Register inngest endpoint
   app.use(
-    "/api/inngest",
+    '/api/inngest',
     serve({
       client: inngest,
-      functions: inngestFunctions
-    })
+      functions: inngestFunctions,
+    }),
   );
 
   // Start listening for http requests
   await app.listen(3000);
 }
+
 bootstrap();

@@ -1,5 +1,3 @@
-
 export type Hello = {
-    data: {
-    }
-}
+  data: {};
+};

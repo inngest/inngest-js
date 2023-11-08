@@ -9,7 +9,7 @@
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
-    "dev": "INNGEST_EVENT_KEY='' INNGEST_SIGNING_KEY='' nest start --watch",
+    "dev": "nest start --watch",
     "prod": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
@@ -25,7 +25,7 @@
     "@nestjs/platform-express": "^9.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.0",
-    "inngest": "^3.4.1",
+    "inngest": "^3.0.0",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.2.0"
   },
