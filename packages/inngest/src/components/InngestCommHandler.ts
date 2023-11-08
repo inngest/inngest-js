@@ -1103,14 +1103,6 @@ export class InngestCommHandler<
   protected validateSignature(sig: string | undefined, body: unknown) {
     // Never validate signatures in development.
     if (!this.isProd) {
-      // In dev, warning users about signing keys ensures that it's considered
-      if (!this.signingKey) {
-        // TODO PrettyError
-        console.warn(
-          "No signing key provided to validate signature. Find your dev keys at https://app.inngest.com/test/secrets"
-        );
-      }
-
       return;
     }
 
