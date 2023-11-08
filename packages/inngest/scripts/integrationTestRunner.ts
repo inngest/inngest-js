@@ -49,9 +49,12 @@ function execAsync(command: string, options: { cwd: string }): Promise<void> {
 }
 
 async function setupExample(examplePath: string): Promise<void> {
-  await execAsync("npm install ../../packages/inngest/inngest.tgz", {
-    cwd: examplePath,
-  });
+  await execAsync(
+    "npm install --no-save --no-package-lock ../../packages/inngest/inngest.tgz",
+    {
+      cwd: examplePath,
+    }
+  );
 
   const exampleFunctionsTarget = await new Promise<string>(
     (resolve, reject) => {
@@ -222,15 +225,15 @@ async function runIntegrationTest(
   await Promise.all([startExamplePromise, startDevServerPromise]);
 
   // Wait for 5 seconds for registration.
-  console.log("Waitng for 10 seconds for registration...");
-  await new Promise((resolve) => setTimeout(resolve, 10000));
+  console.log("Waitng for 5 seconds for registration...");
+  await new Promise((resolve) => setTimeout(resolve, 5000));
 
   runTests(sdkPath);
 }
 
 const example = process.argv[2];
-const devServerPort = parseInt(process.argv[3] ?? "?", 10);
-const exampleServerPort = parseInt(process.argv[4] ?? "?", 10);
+const devServerPort = parseInt(process.argv[3] ?? "8288", 10);
+const exampleServerPort = parseInt(process.argv[4] ?? "3000", 10);
 
 // Validate input arguments.
 if (!example || isNaN(devServerPort) || isNaN(exampleServerPort)) {
@@ -239,6 +242,10 @@ if (!example || isNaN(devServerPort) || isNaN(exampleServerPort)) {
   );
   process.exit(1);
 }
+
+console.log(
+  `Running integration test for ${example} using port ${exampleServerPort} and dev server port ${devServerPort}`
+);
 
 runIntegrationTest(example, devServerPort, exampleServerPort).catch((error) => {
   console.error(error);
