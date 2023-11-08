@@ -1,5 +1,11 @@
 # inngest
 
+## 3.4.4
+
+### Patch Changes
+
+- [#388](https://github.com/inngest/inngest-js/pull/388) [`b4432d8`](https://github.com/inngest/inngest-js/commit/b4432d8d98a2e1970dec5a4737cf718fbf184ee1) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Removed "No signing key provided" warning during local development
+
 ## 3.4.3
 
 ### Patch Changes
