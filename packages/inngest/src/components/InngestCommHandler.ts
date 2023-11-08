@@ -76,6 +76,14 @@ export interface ServeHandlerOptions extends RegisterOptions {
    * An array of the functions to serve and register with Inngest.
    */
   functions: readonly AnyInngestFunction[];
+
+  /**
+   * UNSAFE
+   *
+   * If `true`, will display debug information when reaching the serve handler
+   * using a `GET` request.
+   */
+  _unsafe_debug?: boolean;
 }
 
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
@@ -119,6 +127,14 @@ interface InngestCommHandlerOptions<
    * An array of the functions to serve and register with Inngest.
    */
   functions: readonly AnyInngestFunction[];
+
+  /**
+   * UNSAFE
+   *
+   * If `true`, will display debug information when reaching the serve handler
+   * using a `GET` request.
+   */
+  _unsafe_debug?: boolean;
 
   /**
    * The `handler` is the function your framework requires to handle a
@@ -320,6 +336,8 @@ export class InngestCommHandler<
     { fn: InngestFunction; onFailure: boolean }
   > = {};
 
+  private readonly _unsafe_debug: boolean;
+
   private env: Env = allProcessEnv();
 
   private allowExpiredSignatures: boolean;
@@ -341,6 +359,7 @@ export class InngestCommHandler<
     this.frameworkName = options.frameworkName;
     this.client = options.client;
     this.id = options.id || this.client.id;
+    this._unsafe_debug = Boolean(options._unsafe_debug);
 
     this.handler = options.handler as Handler;
 
@@ -765,12 +784,25 @@ export class InngestCommHandler<
       if (method === "GET") {
         const registerBody = this.registerBody(this.reqUrl(url));
 
-        const introspection: IntrospectRequest = {
+        let introspection: IntrospectRequest = {
           message: "Inngest endpoint configured correctly.",
           hasEventKey: Boolean(this.client["eventKey"]),
           hasSigningKey: Boolean(this.signingKey),
           functionsFound: registerBody.functions.length,
         };
+
+        if (this._unsafe_debug) {
+          introspection = {
+            ...introspection,
+            _unsafe_debug: {
+              url,
+              method,
+              isProd: this._isProd,
+              skipDevServer: this._skipDevServer,
+              "host-header": await actions.headers("_unsafe_debug", "host"),
+            },
+          };
+        }
 
         return {
           status: 200,

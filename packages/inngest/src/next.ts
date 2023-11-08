@@ -47,19 +47,31 @@ export const serve = (options: ServeHandlerOptions) => {
 
       const isEdge = isNextEdgeRequest(req);
 
+      const getHeader = (key: string): string | null | undefined => {
+        if (isEdge) {
+          const header = req.headers.get(key);
+          debug(`isEdge; returning header:`, { [key]: header });
+          return header;
+        }
+
+        const header = req.headers[key];
+        debug(`isNotEdge; returning header:`, { [key]: header });
+        return Array.isArray(header) ? header[0] : header;
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const debug = (...args: any[]) =>
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        options._unsafe_debug ? console.log("_unsafe_debug:", ...args) : null;
+
+      debug("_unsafe_debug:", { isEdge });
+
       return {
         body: () => {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return
           return isEdge ? req.json() : req.body;
         },
-        headers: (key) => {
-          if (isEdge) {
-            return req.headers.get(key);
-          }
-
-          const header = req.headers[key];
-          return Array.isArray(header) ? header[0] : header;
-        },
+        headers: getHeader,
         method: () => {
           /**
            * `req.method`, though types say otherwise, is not available in Next.js
@@ -67,7 +79,9 @@ export const serve = (options: ServeHandlerOptions) => {
            *
            * Therefore, we must try to set the method ourselves where we know it.
            */
-          return reqMethod || req.method || "";
+          const method = reqMethod || req.method || "";
+          debug(`Returning method:`, { method });
+          return method;
         },
         isProduction: () => {
           /**
@@ -79,23 +93,33 @@ export const serve = (options: ServeHandlerOptions) => {
            */
           try {
             // eslint-disable-next-line @inngest/internal/process-warn
-            return process.env.NODE_ENV === "production";
+            const isProd = process.env.NODE_ENV === "production";
+            debug(`Returning isProduction:`, { isProd });
+            return isProd;
           } catch (err) {
             // no-op
           }
         },
         queryString: (key, url) => {
           if (isEdge) {
-            return url.searchParams.get(key);
+            const value = url.searchParams.get(key);
+            debug(`isEdge; returning query string:`, { [key]: value });
+            return value;
           }
 
           const qs = req.query[key];
+          debug(`isNotEdge; returning query string:`, { [key]: qs });
           return Array.isArray(qs) ? qs[0] : qs;
         },
 
         url: () => {
           if (isEdge) {
-            return new URL(req.url);
+            const ret = new URL(req.url);
+            debug(`isEdge; returning URL:`, {
+              "req.url": req.url,
+              ret: ret.href,
+            });
+            return ret;
           }
 
           let scheme: "http" | "https" = "https";
@@ -103,16 +127,27 @@ export const serve = (options: ServeHandlerOptions) => {
           try {
             // eslint-disable-next-line @inngest/internal/process-warn
             if (process.env.NODE_ENV === "development") {
+              debug(
+                `isNotEdge; NODE_ENV is development; setting scheme to http`
+              );
               scheme = "http";
             }
           } catch (err) {
             // no-op
           }
 
-          return new URL(
-            req.url as string,
-            `${scheme}://${req.headers.host || ""}`
-          );
+          const hostHeader = getHeader("host") ?? "";
+          if (!hostHeader) {
+            debug("host header is empty...");
+          }
+
+          debug(`isNotEdge; returning URL:`, {
+            "req.url": req.url,
+            scheme: scheme,
+            "req.headers.host": hostHeader,
+          });
+
+          return new URL(req.url as string, `${scheme}://${hostHeader}`);
         },
         transformResponse: ({ body, headers, status }) => {
           if (isNextEdgeRequest(req)) {

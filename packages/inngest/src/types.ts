@@ -1009,6 +1009,8 @@ export interface IntrospectRequest {
    * The number of Inngest functions found at this handler.
    */
   functionsFound: number;
+
+  _unsafe_debug?: Record<string, unknown>;
 }
 
 /**
