@@ -23,8 +23,9 @@ async function checkServerReady(
         console.log(`Server is ready at ${apiUrl}`);
         return;
       }
-      throw new Error("Server not ready");
+      throw new Error(`Server not ready: ${response.status}`);
     } catch (error) {
+      console.log("Server not ready:", error);
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
     }
   }
@@ -166,7 +167,7 @@ async function startDevServer(
 
   serverProcess.unref();
 
-  return checkServerReady(`http://127.0.0.1:${port}`, 60000);
+  return checkServerReady(`http://localhost:${port}`, 60000);
 }
 
 async function startExampleServer(
@@ -181,7 +182,7 @@ async function startExampleServer(
       PORT: "3000",
       NODE_ENV: "development",
       INNGEST_LOG_LEVEL: "debug",
-      INNGEST_BASE_URL: `http://127.0.0.1:${devServerPort}`,
+      INNGEST_BASE_URL: `http://localhost:${devServerPort}`,
     },
     cwd: examplePath,
     detached: true,
@@ -191,7 +192,7 @@ async function startExampleServer(
   devServerProcess.unref();
 
   return checkServerReady(
-    `http://127.0.0.1:${exampleServerPort}/api/inngest`,
+    `http://localhost:${exampleServerPort}/api/inngest`,
     60000
   );
 }
