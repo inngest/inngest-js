@@ -1,5 +1,11 @@
 # inngest
 
+## 3.5.0
+
+### Minor Changes
+
+- [#299](https://github.com/inngest/inngest-js/pull/299) [`ac61617`](https://github.com/inngest/inngest-js/commit/ac61617e77f9f3373cc1c9e32adbe1eace0e8504) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added a new `"inngest/sveltekit"` serve handler. See the [Framework: Sveltekit](https://www.inngest.com/docs/sdk/serve#framework-sveltekit) docs and the [`framework-sveltekit`](/examples/framework-sveltekit) example to get started.
+
 ## 3.4.4
 
 ### Patch Changes
