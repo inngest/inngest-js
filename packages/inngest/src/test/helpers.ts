@@ -921,7 +921,7 @@ interface CheckIntrospection {
 export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
   describe("introspection", () => {
     it("should be registered in SDK UI", async () => {
-      const res = await fetch("http://127.0.0.1:3000/api/inngest");
+      const res = await fetch("http://localhost:3000/api/inngest");
 
       const { success } = z
         .object({

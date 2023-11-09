@@ -139,4 +139,4 @@ jobs:
           path: packages/inngest
 
       - name: Run integration tests
-        run: npx tsx scripts/integrationTestRunner.ts ${{ matrix.example }} 8288 3000
+        run: pnpm run itest ${{ matrix.example }}

@@ -12,6 +12,7 @@
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
     "build": "pnpm run clean && tsc --project tsconfig.build.json",
     "test": "jest --silent --logHeapUsage --maxWorkers=8 --coverage --ci",
+    "itest": "tsx scripts/integrationTestRunner.ts",
     "test:examples": "jest --logHeapUsage --maxWorkers=8 --testMatch \"**/test/functions/**/*.test.ts\" --ci --verbose",
     "test:types": "tsc --noEmit --project tsconfig.types.json --listFiles",
     "clean": "rm -rf ./dist",
@@ -89,6 +90,11 @@
       "import": "./remix.js",
       "types": "./remix.d.ts"
     },
+    "./sveltekit": {
+      "require": "./sveltekit.js",
+      "import": "./sveltekit.js",
+      "types": "./sveltekit.d.ts"
+    },
     "./deno/fresh": {
       "require": "./deno/fresh.js",
       "import": "./deno/fresh.js",
@@ -135,6 +141,7 @@
     "@inngest/eslint-plugin-internal": "workspace:^",
     "@jest/globals": "^29.5.0",
     "@microsoft/api-extractor": "^7.33.7",
+    "@sveltejs/kit": "^1.27.3",
     "@total-typescript/shoehorn": "^0.1.1",
     "@types/aws-lambda": "^8.10.108",
     "@types/debug": "^4.1.8",
