@@ -151,12 +151,22 @@ function startProcess(
 }
 
 async function startDevServer(
-  port: number,
+  devServerPort: number,
+  exampleServerPort: number,
   examplePath: string
 ): Promise<void> {
   const serverProcess = startProcess(
     "npx",
-    ["inngest-cli@latest", "dev", "--port", port.toString()],
+    [
+      "inngest-cli@latest",
+      "dev",
+      "--port",
+      devServerPort.toString(),
+      "--no-discovery",
+      "--no-poll",
+      "--sdk-url",
+      `http://localhost:${exampleServerPort}/api/inngest`,
+    ],
     {
       env: { ...process.env, DO_NOT_TRACK: "1" },
       cwd: examplePath,
@@ -167,7 +177,7 @@ async function startDevServer(
 
   serverProcess.unref();
 
-  return checkServerReady(`http://localhost:${port}`, 60000);
+  return checkServerReady(`http://localhost:${devServerPort}`, 60000);
 }
 
 async function startExampleServer(
@@ -197,6 +207,27 @@ async function startExampleServer(
   );
 }
 
+async function registerExample(exampleServerPort: number): Promise<void> {
+  console.log("Registering...");
+  try {
+    const registerRes = await fetch(
+      `http://localhost:${exampleServerPort}/api/inngest`,
+      {
+        method: "PUT",
+      }
+    );
+
+    console.log(
+      "Register response:",
+      registerRes.status,
+      registerRes.statusText
+    );
+  } catch (err) {
+    console.error("Failed to register example", err);
+    throw err;
+  }
+}
+
 function runTests(sdkPath: string): void {
   try {
     execSync("pnpm run test:examples", { cwd: sdkPath, stdio: "inherit" });
@@ -216,18 +247,19 @@ async function runIntegrationTest(
   const sdkPath = path.join(rootPath, "packages", "inngest");
   const examplePath = path.join(rootPath, "examples", example);
 
-  // Start all the asynchronous operations.
-  const startExamplePromise = setupExample(examplePath).then(() => {
-    return startExampleServer(examplePath, exampleServerPort, devServerPort);
-  });
-  const startDevServerPromise = startDevServer(devServerPort, examplePath);
+  const startExamplePromise = (async () => {
+    await setupExample(examplePath);
+    await startExampleServer(examplePath, exampleServerPort, devServerPort);
+  })();
 
-  // Use Promise.all to wait for all promises to resolve.
+  const startDevServerPromise = startDevServer(
+    devServerPort,
+    exampleServerPort,
+    examplePath
+  );
+
   await Promise.all([startExamplePromise, startDevServerPromise]);
-
-  // Wait for 5 seconds for registration.
-  console.log("Waitng for 5 seconds for registration...");
-  await new Promise((resolve) => setTimeout(resolve, 5000));
+  await registerExample(exampleServerPort);
 
   runTests(sdkPath);
 }
