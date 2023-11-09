@@ -243,6 +243,12 @@ async function runIntegrationTest(
   devServerPort: number,
   exampleServerPort: number
 ): Promise<void> {
+  // Start a 10 minute timeout. If we don't finish within 10 minutes, something is wrong.
+  setTimeout(() => {
+    console.error("Integration test timed out");
+    process.exit(1);
+  }, 10 * 60 * 1000);
+
   const rootPath = path.join(__dirname, "..", "..", "..");
   const sdkPath = path.join(rootPath, "packages", "inngest");
   const examplePath = path.join(rootPath, "examples", example);
@@ -280,7 +286,12 @@ console.log(
   `Running integration test for ${example} using port ${exampleServerPort} and dev server port ${devServerPort}`
 );
 
-runIntegrationTest(example, devServerPort, exampleServerPort).catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+runIntegrationTest(example, devServerPort, exampleServerPort)
+  .then(() => {
+    console.log("itest successful");
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error("itest failed:", error);
+    process.exit(1);
+  });
