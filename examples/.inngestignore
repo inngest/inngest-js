@@ -1,0 +1,3 @@
+# Used to ignore some directories when running integration tests.
+# These tests will change anyway to be less reliant on GH Actions.
+framework-nestjs

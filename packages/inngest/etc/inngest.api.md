@@ -122,10 +122,19 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     retries?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
 }
 
+// Warning: (ae-internal-missing-underscore) The name "FunctionTrigger" should be prefixed with an underscore because the declaration is marked as @internal
+//
+// @internal
+export type FunctionTrigger<T = string> = {
+    event: T;
+    expression?: string;
+} | {
+    cron: string;
+};
+
 // @public
 export type GetEvents<TInngest extends Inngest<any>> = EventsFromOpts<ClientOptionsFromInngest<TInngest>>;
 
-// Warning: (ae-forgotten-export) The symbol "Handler" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "ExtendWithMiddleware" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "builtInMiddleware" needs to be exported by the entry point index.d.ts
 //
@@ -136,7 +145,6 @@ NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>
 ]>>>[0];
 
 // Warning: (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "InngestFunction" needs to be exported by the entry point index.d.ts
 //
 // @public
 export type GetFunctionOutput<TFunction extends AnyInngestFunction | string> = TFunction extends InngestFunction<any, any, any, any, infer IHandler> ? IfNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>, null, SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> : unknown;
@@ -145,6 +153,12 @@ export type GetFunctionOutput<TFunction extends AnyInngestFunction | string> = T
 export type GetStepTools<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = keyof GetEvents<TInngest> & string> = GetFunctionInput<TInngest, TTrigger> extends {
     step: infer TStep;
 } ? TStep : never;
+
+// Warning: (ae-forgotten-export) The symbol "Context" needs to be exported by the entry point index.d.ts
+//
+// @public
+export type Handler<TOpts extends ClientOptions, TEvents extends EventsFromOpts<TOpts>, TTrigger extends keyof TEvents & string, TOverrides extends Record<string, unknown> = Record<never, never>> = (
+ctx: Context<TOpts, TEvents, TTrigger, TOverrides>) => unknown;
 
 // @public
 export enum headerKeys {
@@ -237,6 +251,24 @@ export class InngestCommHandler<Input extends any[] = any[], Output = any, Strea
     protected readonly streaming: RegisterOptions["streaming"];
     // (undocumented)
     protected validateSignature(sig: string | undefined, body: unknown): void;
+}
+
+// Warning: (ae-incompatible-release-tags) The symbol "InngestFunction" is marked as @public, but its signature references "FunctionTrigger" which is marked as @internal
+//
+// @public
+export class InngestFunction<TOpts extends ClientOptions = ClientOptions, Events extends EventsFromOpts<TOpts> = EventsFromOpts<TOpts>, Trigger extends FunctionTrigger<keyof Events & string> = FunctionTrigger<keyof Events & string>, Opts extends FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>> = FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>, THandler extends AnyHandler = Handler<TOpts, Events, keyof Events & string>> {
+    constructor(client: Inngest<TOpts>,
+    opts: Opts, trigger: Trigger, fn: THandler);
+    // (undocumented)
+    static failureSuffix: string;
+    id(prefix?: string): string;
+    get name(): string;
+    // (undocumented)
+    readonly opts: Opts;
+    // (undocumented)
+    static stepId: string;
+    // (undocumented)
+    readonly trigger: Trigger;
 }
 
 // @public
