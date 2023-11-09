@@ -64,6 +64,10 @@ void inquirer
 
     await exec("npm", ["run", "dev"], {
       cwd: examplePath,
-      env: { ...process.env, DEBUG: "inngest:*" },
+      env: {
+        ...process.env,
+        DEBUG: "inngest:*",
+        INNGEST_BASE_URL: "http://127.0.0.1:8288",
+      },
     });
   });

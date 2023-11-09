@@ -1,5 +1,17 @@
 # inngest
 
+## 3.4.4
+
+### Patch Changes
+
+- [#388](https://github.com/inngest/inngest-js/pull/388) [`b4432d8`](https://github.com/inngest/inngest-js/commit/b4432d8d98a2e1970dec5a4737cf718fbf184ee1) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Removed "No signing key provided" warning during local development
+
+## 3.4.3
+
+### Patch Changes
+
+- [#385](https://github.com/inngest/inngest-js/pull/385) [`cdf02a3`](https://github.com/inngest/inngest-js/commit/cdf02a310bcf9ef0bb64103f050323c6590bda2b) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Add exports for `InngestFunction`, `FunctionTrigger`, and `Handler` types to fix a TypeScript error when using Inngest in projects with `composite` setting in `tsconfig`.
+
 ## 3.4.2
 
 ### Patch Changes
