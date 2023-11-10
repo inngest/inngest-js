@@ -1,5 +1,11 @@
 # inngest
 
+## 3.6.0
+
+### Minor Changes
+
+- [#393](https://github.com/inngest/inngest-js/pull/393) [`f9fca66`](https://github.com/inngest/inngest-js/commit/f9fca668b84a37c831f77949d7f1a714d5cd9040) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added a new `"inngest/koa"` serve handler. See the [Framework: Koa](https://www.inngest.com/docs/sdk/serve#framework-koa) docs and the [`framework-koa`](/examples/framework-koa) example to get started.
+
 ## 3.5.0
 
 ### Minor Changes
