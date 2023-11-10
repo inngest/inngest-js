@@ -1109,7 +1109,8 @@ export type SupportedFrameworkName =
   | "remix"
   | "deno/fresh"
   | "sveltekit"
-  | "fastify";
+  | "fastify"
+  | "koa";
 
 /**
  * A set of options that can be passed to any step to configure it.

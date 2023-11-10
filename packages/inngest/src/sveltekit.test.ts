@@ -48,7 +48,7 @@ testFramework("SvelteKit", SvelteKitHandler, {
 
     return [svelteKitReq];
   },
-  transformRes: async (res, ret: Response) => {
+  transformRes: async (_args, ret: Response) => {
     const headers: Record<string, string> = {};
 
     ret.headers.forEach((v, k) => {
