@@ -127,15 +127,19 @@ export const serve = (options: ServeHandlerOptions) => {
              * To avoid this, we'll try to parse the URL from `req.url`, but
              * also use the `host` header if it's available.
              */
-            let url = new URL(req.url);
+            const url = new URL(req.url);
 
             const host = options.serveHost || getHeader("host");
             if (host) {
-              const hostWithProtocol = host.includes("://")
-                ? host
-                : `${url.protocol}//${host}`;
+              const hostWithProtocol = new URL(
+                host.includes("://") ? host : `${url.protocol}//${host}`
+              );
 
-              url = new URL(url, hostWithProtocol);
+              url.protocol = hostWithProtocol.protocol;
+              url.host = hostWithProtocol.host;
+              url.port = hostWithProtocol.port;
+              url.username = hostWithProtocol.username;
+              url.password = hostWithProtocol.password;
             }
 
             debug(`is12EdgeOr13; returning URL:`, {
