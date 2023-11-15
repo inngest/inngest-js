@@ -182,6 +182,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 data: { data: transformResult.data },
               }),
             };
+            // }
+          } else if (transformResult.type === "function-rejected") {
+            return {
+              type: "step-ran",
+              step: _internals.hashOp({
+                ...stepResult,
+                error: transformResult.error,
+              }),
+              retriable: transformResult.retriable,
+            };
           }
 
           return transformResult;
@@ -439,8 +449,20 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   ): Promise<ExecutionResult> {
     const output = { ...dataOrError };
 
+    /**
+     * If we've been given an error and it's one that we just threw from a step,
+     * we should return a `NonRetriableError` to stop execution.
+     */
     if (typeof output.error !== "undefined") {
-      output.data = serializeError(output.error);
+      const serializedError = serializeError(output.error);
+      output.data = serializedError;
+
+      if (output.error === this.#state.recentlyRejectedStepError) {
+        output.error = new NonRetriableError(serializedError.message, {
+          cause: output.error,
+        });
+        output.data = serializeError(output.error);
+      }
     }
 
     const transformedOutput = await this.#state.hooks?.transformOutput?.({
@@ -742,7 +764,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             if (typeof stepState.data !== "undefined") {
               resolve(stepState.data);
             } else {
-              reject(stepState.error);
+              this.#state.recentlyRejectedStepError = deserializeError(
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+                stepState.error
+              );
+              reject(this.#state.recentlyRejectedStepError);
             }
           }
 
@@ -927,6 +953,22 @@ export interface V1ExecutionState {
    * execution was completed.
    */
   stepCompletionOrder: string[];
+
+  /**
+   * If defined, this is the error that purposefully thrown when memoizing step
+   * state in order to support per-step errors.
+   *
+   * We use this so that if the function itself rejects with the same error, we
+   * know that it was entirely uncaught (or at the very least rethrown), so we
+   * should send a `NonRetriableError` to stop needless execution of a function
+   * that will continue to fail.
+   *
+   * TODO This is imperfect, as this state is currently kept around for longer
+   * than it needs to be. It should disappear as soon as we've seen that the
+   * error did not immediately throw. It may need to be refactored to work a
+   * little more smoothly with the core loop.
+   */
+  recentlyRejectedStepError?: unknown;
 }
 
 const hashId = (id: string): string => {

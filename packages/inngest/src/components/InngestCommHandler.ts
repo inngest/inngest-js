@@ -733,7 +733,17 @@ export class InngestCommHandler<
 
             return {
               status: 206,
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                ...(typeof result.retriable !== "undefined"
+                  ? {
+                      [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+                      ...(typeof result.retriable === "string"
+                        ? { [headerKeys.RetryAfter]: result.retriable }
+                        : {}),
+                    }
+                  : {}),
+              },
               body: stringify([step]),
               version,
             };
