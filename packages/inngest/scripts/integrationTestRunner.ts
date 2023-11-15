@@ -23,8 +23,9 @@ async function checkServerReady(
         console.log(`Server is ready at ${apiUrl}`);
         return;
       }
-      throw new Error("Server not ready");
+      throw new Error(`Server not ready: ${response.status}`);
     } catch (error) {
+      console.log("Server not ready:", error);
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
     }
   }
@@ -150,12 +151,22 @@ function startProcess(
 }
 
 async function startDevServer(
-  port: number,
+  devServerPort: number,
+  exampleServerPort: number,
   examplePath: string
 ): Promise<void> {
   const serverProcess = startProcess(
     "npx",
-    ["inngest-cli@latest", "dev", "--port", port.toString()],
+    [
+      "inngest-cli@latest",
+      "dev",
+      "--port",
+      devServerPort.toString(),
+      "--no-discovery",
+      "--no-poll",
+      "--sdk-url",
+      `http://localhost:${exampleServerPort}/api/inngest`,
+    ],
     {
       env: { ...process.env, DO_NOT_TRACK: "1" },
       cwd: examplePath,
@@ -166,7 +177,7 @@ async function startDevServer(
 
   serverProcess.unref();
 
-  return checkServerReady(`http://127.0.0.1:${port}`, 60000);
+  return checkServerReady(`http://localhost:${devServerPort}`, 60000);
 }
 
 async function startExampleServer(
@@ -181,7 +192,7 @@ async function startExampleServer(
       PORT: "3000",
       NODE_ENV: "development",
       INNGEST_LOG_LEVEL: "debug",
-      INNGEST_BASE_URL: `http://127.0.0.1:${devServerPort}`,
+      INNGEST_BASE_URL: `http://localhost:${devServerPort}`,
     },
     cwd: examplePath,
     detached: true,
@@ -191,9 +202,30 @@ async function startExampleServer(
   devServerProcess.unref();
 
   return checkServerReady(
-    `http://127.0.0.1:${exampleServerPort}/api/inngest`,
+    `http://localhost:${exampleServerPort}/api/inngest`,
     60000
   );
+}
+
+async function registerExample(exampleServerPort: number): Promise<void> {
+  console.log("Registering...");
+  try {
+    const registerRes = await fetch(
+      `http://localhost:${exampleServerPort}/api/inngest`,
+      {
+        method: "PUT",
+      }
+    );
+
+    console.log(
+      "Register response:",
+      registerRes.status,
+      registerRes.statusText
+    );
+  } catch (err) {
+    console.error("Failed to register example", err);
+    throw err;
+  }
 }
 
 function runTests(sdkPath: string): void {
@@ -211,22 +243,29 @@ async function runIntegrationTest(
   devServerPort: number,
   exampleServerPort: number
 ): Promise<void> {
+  // Start a 10 minute timeout. If we don't finish within 10 minutes, something is wrong.
+  setTimeout(() => {
+    console.error("Integration test timed out");
+    process.exit(1);
+  }, 10 * 60 * 1000);
+
   const rootPath = path.join(__dirname, "..", "..", "..");
   const sdkPath = path.join(rootPath, "packages", "inngest");
   const examplePath = path.join(rootPath, "examples", example);
 
-  // Start all the asynchronous operations.
-  const startExamplePromise = setupExample(examplePath).then(() => {
-    return startExampleServer(examplePath, exampleServerPort, devServerPort);
-  });
-  const startDevServerPromise = startDevServer(devServerPort, examplePath);
+  const startExamplePromise = (async () => {
+    await setupExample(examplePath);
+    await startExampleServer(examplePath, exampleServerPort, devServerPort);
+  })();
 
-  // Use Promise.all to wait for all promises to resolve.
+  const startDevServerPromise = startDevServer(
+    devServerPort,
+    exampleServerPort,
+    examplePath
+  );
+
   await Promise.all([startExamplePromise, startDevServerPromise]);
-
-  // Wait for 5 seconds for registration.
-  console.log("Waitng for 5 seconds for registration...");
-  await new Promise((resolve) => setTimeout(resolve, 5000));
+  await registerExample(exampleServerPort);
 
   runTests(sdkPath);
 }
@@ -247,7 +286,12 @@ console.log(
   `Running integration test for ${example} using port ${exampleServerPort} and dev server port ${devServerPort}`
 );
 
-runIntegrationTest(example, devServerPort, exampleServerPort).catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+runIntegrationTest(example, devServerPort, exampleServerPort)
+  .then(() => {
+    console.log("itest successful");
+    process.exit(0);
+  })
+  .catch((error) => {
+    console.error("itest failed:", error);
+    process.exit(1);
+  });

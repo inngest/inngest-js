@@ -1110,7 +1110,9 @@ export type SupportedFrameworkName =
   | "redwoodjs"
   | "remix"
   | "deno/fresh"
-  | "fastify";
+  | "sveltekit"
+  | "fastify"
+  | "koa";
 
 /**
  * A set of options that can be passed to any step to configure it.

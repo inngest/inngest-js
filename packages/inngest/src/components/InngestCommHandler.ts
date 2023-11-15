@@ -786,7 +786,7 @@ export class InngestCommHandler<
 
         let introspection: IntrospectRequest = {
           message: "Inngest endpoint configured correctly.",
-          hasEventKey: Boolean(this.client["eventKey"]),
+          hasEventKey: this.client["eventKeySet"](),
           hasSigningKey: Boolean(this.signingKey),
           functionsFound: registerBody.functions.length,
         };

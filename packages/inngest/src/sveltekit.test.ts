@@ -1,27 +1,17 @@
-import * as CloudflareHandler from "@local/cloudflare";
+import * as SvelteKitHandler from "@local/sveltekit";
+import { type RequestEvent } from "@sveltejs/kit";
+import { fromPartial } from "@total-typescript/shoehorn";
 import fetch, { Headers, Response } from "cross-fetch";
 import { testFramework } from "./test/helpers";
 
-const originalProcess = process;
 const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;
 const originalHeaders = globalThis.Headers;
 
-testFramework("Cloudflare", CloudflareHandler, {
+testFramework("SvelteKit", SvelteKitHandler, {
   lifecycleChanges: () => {
     beforeEach(() => {
       jest.resetModules();
-
-      /**
-       * Fake lack of any `process` global var; Cloudflare allows access to env
-       * vars by passing them in to the request handler.
-       *
-       * Because of some test components (mainly `debug`) that use
-       * `process.stderr`, we do need to provide some pieces of this, but we can
-       * still remove any env vars.
-       */
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-      process.env = undefined as any;
 
       Object.defineProperties(globalThis, {
         fetch: { value: fetch, configurable: true },
@@ -34,7 +24,6 @@ testFramework("Cloudflare", CloudflareHandler, {
       /**
        * Reset all changes made to the global scope
        */
-      process.env = originalProcess.env;
       Object.defineProperties(globalThis, {
         fetch: { value: originalFetch, configurable: true },
         Response: { value: originalResponse, configurable: true },
@@ -42,23 +31,22 @@ testFramework("Cloudflare", CloudflareHandler, {
       });
     });
   },
-  transformReq: (req, res, env) => {
+  transformReq: (req, _res, _env) => {
     const headers = new Headers();
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-    (req as any).headers = headers;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-    (req as any).json = () => Promise.resolve(req.body);
+    const svelteKitReq: Partial<RequestEvent> = {
+      request: fromPartial({
+        method: req.method,
+        url: req.url,
+        headers,
+        json: () => Promise.resolve(req.body),
+      }),
+    };
 
-    return [
-      {
-        request: req,
-        env,
-      },
-    ];
+    return [svelteKitReq];
   },
   transformRes: async (_args, ret: Response) => {
     const headers: Record<string, string> = {};
@@ -72,13 +60,5 @@ testFramework("Cloudflare", CloudflareHandler, {
       body: await ret.text(),
       headers,
     };
-  },
-  envTests: () => {
-    test("process should be undefined", () => {
-      expect(process.env).toBeUndefined();
-    });
-  },
-  handlerTests: () => {
-    test.todo("should return a function");
   },
 });
