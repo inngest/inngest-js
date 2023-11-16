@@ -9,7 +9,11 @@ import { type SupportedFrameworkName } from "./types";
 
 export const frameworkName: SupportedFrameworkName = "nextjs";
 
-const isNextEdgeRequest = (
+/**
+ * Next.js 12 Edge and Next.js 13 requests appear the same, though we
+ * still differentiate for Next.js 12 support.
+ */
+const isNextEdgeOr13Request = (
   req: NextApiRequest | NextRequest
 ): req is NextRequest => {
   return typeof req?.headers?.get === "function";
@@ -45,21 +49,24 @@ export const serve = (options: ServeHandlerOptions) => {
     ) => {
       const req = expectedReq as Either<NextApiRequest, NextRequest>;
 
-      const isEdge = isNextEdgeRequest(req);
+      const is12EdgeOr13 = isNextEdgeOr13Request(req);
+
+      const getHeader = (key: string): string | null | undefined => {
+        if (is12EdgeOr13) {
+          const header = req.headers.get(key);
+          return header;
+        }
+
+        const header = req.headers[key];
+        return Array.isArray(header) ? header[0] : header;
+      };
 
       return {
         body: () => {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          return isEdge ? req.json() : req.body;
+          return is12EdgeOr13 ? req.json() : req.body;
         },
-        headers: (key) => {
-          if (isEdge) {
-            return req.headers.get(key);
-          }
-
-          const header = req.headers[key];
-          return Array.isArray(header) ? header[0] : header;
-        },
+        headers: getHeader,
         method: () => {
           /**
            * `req.method`, though types say otherwise, is not available in Next.js
@@ -67,7 +74,8 @@ export const serve = (options: ServeHandlerOptions) => {
            *
            * Therefore, we must try to set the method ourselves where we know it.
            */
-          return reqMethod || req.method || "";
+          const method = reqMethod || req.method || "";
+          return method;
         },
         isProduction: () => {
           /**
@@ -79,14 +87,16 @@ export const serve = (options: ServeHandlerOptions) => {
            */
           try {
             // eslint-disable-next-line @inngest/internal/process-warn
-            return process.env.NODE_ENV === "production";
+            const isProd = process.env.NODE_ENV === "production";
+            return isProd;
           } catch (err) {
             // no-op
           }
         },
         queryString: (key, url) => {
-          if (isEdge) {
-            return url.searchParams.get(key);
+          if (is12EdgeOr13) {
+            const value = url.searchParams.get(key);
+            return value;
           }
 
           const qs = req.query[key];
@@ -94,11 +104,36 @@ export const serve = (options: ServeHandlerOptions) => {
         },
 
         url: () => {
-          if (isEdge) {
-            return new URL(req.url);
+          if (is12EdgeOr13) {
+            /**
+             * `req.url` here should be the full URL, including query string.
+             * There are some caveats, however, where Next.js will obfuscate
+             * the host. For example, in the case of `host.docker.internal`,
+             * Next.js will instead set the host here to `localhost`.
+             *
+             * To avoid this, we'll try to parse the URL from `req.url`, but
+             * also use the `host` header if it's available.
+             */
+            const url = new URL(req.url);
+
+            const host = options.serveHost || getHeader("host");
+            if (host) {
+              const hostWithProtocol = new URL(
+                host.includes("://") ? host : `${url.protocol}//${host}`
+              );
+
+              url.protocol = hostWithProtocol.protocol;
+              url.host = hostWithProtocol.host;
+              url.port = hostWithProtocol.port;
+              url.username = hostWithProtocol.username;
+              url.password = hostWithProtocol.password;
+            }
+
+            return url;
           }
 
           let scheme: "http" | "https" = "https";
+          const host = options.serveHost || getHeader("host") || "";
 
           try {
             // eslint-disable-next-line @inngest/internal/process-warn
@@ -109,13 +144,12 @@ export const serve = (options: ServeHandlerOptions) => {
             // no-op
           }
 
-          return new URL(
-            req.url as string,
-            `${scheme}://${req.headers.host || ""}`
-          );
+          const url = new URL(req.url as string, `${scheme}://${host}`);
+
+          return url;
         },
-        transformResponse: ({ body, headers, status }) => {
-          if (isNextEdgeRequest(req)) {
+        transformResponse: ({ body, headers, status }): Response => {
+          if (isNextEdgeOr13Request(req)) {
             return new Response(body, { status, headers });
           }
 
@@ -124,6 +158,16 @@ export const serve = (options: ServeHandlerOptions) => {
           }
 
           res.status(status).send(body);
+
+          /**
+           * Next.js 13 requires that the return value is always `Response`,
+           * though this serve handler can't understand if we're using 12 or 13.
+           *
+           * 12 doesn't seem to care if we also return a response from the
+           * handler, so we'll just return `undefined` here, which will be safe
+           * at runtime and enforce types for use with Next.js 13.
+           */
+          return undefined as unknown as Response;
         },
         transformStreamingResponse: ({ body, headers, status }) => {
           return new Response(body, { status, headers });
