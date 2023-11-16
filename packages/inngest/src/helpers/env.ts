@@ -363,3 +363,17 @@ export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   return require("cross-fetch") as typeof fetch;
 };
+
+/**
+ * If `Response` isn't included in this environment, it's probably an earlier
+ * Node env that isn't already polyfilling. This function returns either the
+ * native `Response` or a polyfilled one.
+ */
+export const getResponse = (): typeof Response => {
+  if (typeof Response !== "undefined") {
+    return Response;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
+  return require("cross-fetch").Response;
+};
