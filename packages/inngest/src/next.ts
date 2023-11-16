@@ -4,20 +4,11 @@ import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
+import { getResponse } from "./helpers/env";
 import { type Either } from "./helpers/types";
 import { type SupportedFrameworkName } from "./types";
 
 export const frameworkName: SupportedFrameworkName = "nextjs";
-
-/**
- * Next.js 12 Edge and Next.js 13 requests appear the same, though we
- * still differentiate for Next.js 12 support.
- */
-const isNextEdgeOr13Request = (
-  req: NextApiRequest | NextRequest
-): req is NextRequest => {
-  return typeof req?.headers?.get === "function";
-};
 
 /**
  * In Next.js, serve and register any declared functions with Inngest, making
@@ -49,23 +40,18 @@ export const serve = (options: ServeHandlerOptions) => {
     ) => {
       const req = expectedReq as Either<NextApiRequest, NextRequest>;
 
-      const is12EdgeOr13 = isNextEdgeOr13Request(req);
-
       const getHeader = (key: string): string | null | undefined => {
-        if (is12EdgeOr13) {
-          const header = req.headers.get(key);
-          return header;
-        }
+        const header =
+          typeof req.headers.get === "function"
+            ? req.headers.get(key)
+            : req.headers[key];
 
-        const header = req.headers[key];
         return Array.isArray(header) ? header[0] : header;
       };
 
       return {
-        body: () => {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          return is12EdgeOr13 ? req.json() : req.body;
-        },
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        body: () => (typeof req.json === "function" ? req.json() : req.body),
         headers: getHeader,
         method: () => {
           /**
@@ -94,19 +80,21 @@ export const serve = (options: ServeHandlerOptions) => {
           }
         },
         queryString: (key, url) => {
-          if (is12EdgeOr13) {
-            const value = url.searchParams.get(key);
-            return value;
-          }
-
-          const qs = req.query[key];
+          const qs = req.query?.[key] || url.searchParams.get(key);
           return Array.isArray(qs) ? qs[0] : qs;
         },
 
         url: () => {
-          if (is12EdgeOr13) {
+          let absoluteUrl: URL | undefined;
+          try {
+            absoluteUrl = new URL(req.url as string);
+          } catch {
+            // no-op
+          }
+
+          if (absoluteUrl) {
             /**
-             * `req.url` here should be the full URL, including query string.
+             * `req.url` here should may be the full URL, including query string.
              * There are some caveats, however, where Next.js will obfuscate
              * the host. For example, in the case of `host.docker.internal`,
              * Next.js will instead set the host here to `localhost`.
@@ -114,22 +102,20 @@ export const serve = (options: ServeHandlerOptions) => {
              * To avoid this, we'll try to parse the URL from `req.url`, but
              * also use the `host` header if it's available.
              */
-            const url = new URL(req.url);
-
             const host = options.serveHost || getHeader("host");
             if (host) {
               const hostWithProtocol = new URL(
-                host.includes("://") ? host : `${url.protocol}//${host}`
+                host.includes("://") ? host : `${absoluteUrl.protocol}//${host}`
               );
 
-              url.protocol = hostWithProtocol.protocol;
-              url.host = hostWithProtocol.host;
-              url.port = hostWithProtocol.port;
-              url.username = hostWithProtocol.username;
-              url.password = hostWithProtocol.password;
+              absoluteUrl.protocol = hostWithProtocol.protocol;
+              absoluteUrl.host = hostWithProtocol.host;
+              absoluteUrl.port = hostWithProtocol.port;
+              absoluteUrl.username = hostWithProtocol.username;
+              absoluteUrl.password = hostWithProtocol.password;
             }
 
-            return url;
+            return absoluteUrl;
           }
 
           let scheme: "http" | "https" = "https";
@@ -149,15 +135,22 @@ export const serve = (options: ServeHandlerOptions) => {
           return url;
         },
         transformResponse: ({ body, headers, status }): Response => {
-          if (isNextEdgeOr13Request(req)) {
-            return new Response(body, { status, headers });
+          /**
+           * Carefully attempt to set headers and data on the response object
+           * for Next.js 12 support.
+           */
+          if (typeof res?.setHeader === "function") {
+            for (const [key, value] of Object.entries(headers)) {
+              res.setHeader(key, value);
+            }
           }
 
-          for (const [key, value] of Object.entries(headers)) {
-            res.setHeader(key, value);
+          if (
+            typeof res?.status === "function" &&
+            typeof res?.send === "function"
+          ) {
+            res.status(status).send(body);
           }
-
-          res.status(status).send(body);
 
           /**
            * Next.js 13 requires that the return value is always `Response`,
@@ -166,8 +159,12 @@ export const serve = (options: ServeHandlerOptions) => {
            * 12 doesn't seem to care if we also return a response from the
            * handler, so we'll just return `undefined` here, which will be safe
            * at runtime and enforce types for use with Next.js 13.
+           *
+           * We also don't know if the current environment has a native
+           * `Response` object, so we'll grab that first.
            */
-          return undefined as unknown as Response;
+          const Res = getResponse();
+          return new Res(body, { status, headers });
         },
         transformStreamingResponse: ({ body, headers, status }) => {
           return new Response(body, { status, headers });
