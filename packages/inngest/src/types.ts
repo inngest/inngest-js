@@ -716,7 +716,10 @@ export interface FunctionOptions<
    *
    * Specifying just a number means specifying only the concurrency limit.
    */
-  concurrency?: number | ConcurrencyOption | [ConcurrencyOption, ConcurrencyOption];
+  concurrency?:
+    | number
+    | ConcurrencyOption
+    | [ConcurrencyOption, ConcurrencyOption];
 
   /**
    * batchEvents specifies the batch configuration on when this function
@@ -1105,7 +1108,9 @@ export type SupportedFrameworkName =
   | "redwoodjs"
   | "remix"
   | "deno/fresh"
-  | "fastify";
+  | "sveltekit"
+  | "fastify"
+  | "koa";
 
 /**
  * A set of options that can be passed to any step to configure it.

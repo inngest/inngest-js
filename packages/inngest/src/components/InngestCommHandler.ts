@@ -5,7 +5,7 @@ import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import {
   debugPrefix,
-  defaultInngestBaseUrl,
+  defaultInngestApiBaseUrl,
   envKeys,
   headerKeys,
   logPrefix,
@@ -390,9 +390,10 @@ export class InngestCommHandler<
     this.inngestRegisterUrl = new URL(
       "/fn/register",
       options.baseUrl ||
+        this.env[envKeys.InngestApiBaseUrl] ||
         this.env[envKeys.InngestBaseUrl] ||
-        this.client["baseUrl"] ||
-        defaultInngestBaseUrl
+        this.client["apiBaseUrl"] ||
+        defaultInngestApiBaseUrl
     );
 
     this.signingKey = options.signingKey;
@@ -766,7 +767,7 @@ export class InngestCommHandler<
 
         const introspection: IntrospectRequest = {
           message: "Inngest endpoint configured correctly.",
-          hasEventKey: Boolean(this.client["eventKey"]),
+          hasEventKey: this.client["eventKeySet"](),
           hasSigningKey: Boolean(this.signingKey),
           functionsFound: registerBody.functions.length,
         };
@@ -1097,26 +1098,11 @@ export class InngestCommHandler<
         `Use of ${envKeys.InngestDevServerUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`
       );
     }
-
-    if (this.env[envKeys.InngestApiBaseUrl]) {
-      this.log(
-        "warn",
-        `Use of ${envKeys.InngestApiBaseUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`
-      );
-    }
   }
 
   protected validateSignature(sig: string | undefined, body: unknown) {
     // Never validate signatures in development.
     if (!this.isProd) {
-      // In dev, warning users about signing keys ensures that it's considered
-      if (!this.signingKey) {
-        // TODO PrettyError
-        console.warn(
-          "No signing key provided to validate signature. Find your dev keys at https://app.inngest.com/test/secrets"
-        );
-      }
-
       return;
     }
 

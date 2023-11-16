@@ -6,7 +6,6 @@
     "release:tag": "node scripts/release/tag.js",
     "log": "pnpm run --if-present --recursive log"
   },
-  "packageManager": "pnpm@8.6.2",
   "devDependencies": {
     "@actions/core": "^1.10.0",
     "@actions/exec": "^1.1.1",
