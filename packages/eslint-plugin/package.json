@@ -21,10 +21,11 @@
     "eslintplugin",
     "inngest"
   ],
-  "homepage": "https://github.com/inngest/inngest-js#readme",
+  "homepage": "https://github.com/inngest/inngest-js/tree/main/packages/eslint-plugin#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/inngest/inngest-js.git"
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/eslint-plugin"
   },
   "author": "Jack Williams <jack@inngest.com>",
   "license": "ISC",
