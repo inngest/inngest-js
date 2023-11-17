@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "3.3.0",
+  "version": "3.6.1",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -12,12 +12,13 @@
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
     "build": "pnpm run clean && tsc --project tsconfig.build.json",
     "test": "jest --silent --logHeapUsage --maxWorkers=8 --coverage --ci",
+    "itest": "tsx scripts/integrationTestRunner.ts",
     "test:examples": "jest --logHeapUsage --maxWorkers=8 --testMatch \"**/test/functions/**/*.test.ts\" --ci --verbose",
     "test:types": "tsc --noEmit --project tsconfig.types.json --listFiles",
     "clean": "rm -rf ./dist",
     "lint": "eslint .",
     "postversion": "pnpm run build && pnpm run build:copy",
-    "release": "pnpm run test && pnpm run build && pnpm run build:copy && node scripts/release.js",
+    "release": "pnpm run test && pnpm run build && pnpm run build:copy && cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
     "api-extractor": "api-extractor",
     "dev": "pnpm install && concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"pnpm run dev:build\" \"pnpm run dev:lint\"",
     "dev:build": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run build && pnpm run build:check --local'",
@@ -64,6 +65,11 @@
       "import": "./h3.js",
       "types": "./h3.d.ts"
     },
+    "./koa": {
+      "require": "./koa.js",
+      "import": "./koa.js",
+      "types": "./koa.d.ts"
+    },
     "./lambda": {
       "require": "./lambda.js",
       "import": "./lambda.js",
@@ -89,6 +95,11 @@
       "import": "./remix.js",
       "types": "./remix.d.ts"
     },
+    "./sveltekit": {
+      "require": "./sveltekit.js",
+      "import": "./sveltekit.js",
+      "types": "./sveltekit.d.ts"
+    },
     "./deno/fresh": {
       "require": "./deno/fresh.js",
       "import": "./deno/fresh.js",
@@ -103,7 +114,8 @@
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/inngest/inngest-js.git"
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/inngest"
   },
   "author": "Dan Farrelly <dan@inngest.com>",
   "license": "GPL-3.0",
@@ -135,6 +147,8 @@
     "@inngest/eslint-plugin-internal": "workspace:^",
     "@jest/globals": "^29.5.0",
     "@microsoft/api-extractor": "^7.33.7",
+    "@shopify/jest-koa-mocks": "^5.1.1",
+    "@sveltejs/kit": "^1.27.3",
     "@total-typescript/shoehorn": "^0.1.1",
     "@types/aws-lambda": "^8.10.108",
     "@types/debug": "^4.1.8",
@@ -142,6 +156,7 @@
     "@types/inquirer": "^9.0.3",
     "@types/jest": "^27.4.1",
     "@types/json-stringify-safe": "^5.0.0",
+    "@types/koa": "^2.13.11",
     "@types/minimist": "^1.2.2",
     "@types/ms": "^0.7.31",
     "@types/node": "^18.16.16",
@@ -159,6 +174,7 @@
     "genversion": "^3.1.1",
     "inquirer": "^9.2.10",
     "jest": "^29.3.1",
+    "koa": "^2.14.2",
     "minimist": "^1.2.8",
     "next": "^13.5.4",
     "nock": "^13.2.9",

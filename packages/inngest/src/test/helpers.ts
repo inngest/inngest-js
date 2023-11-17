@@ -93,11 +93,11 @@ export const testFramework = (
      */
     transformRes?: (
       /**
-       * The Response object that was passed in to the handler. Depending on the
+       * The arguments that were passed in to the handler. Depending on the
        * handler, this may not be exposed to the handler, so you may need the
        * next option, which is the returned value from the handler.
        */
-      res: Response,
+      args: unknown[],
 
       /**
        * The returned value from the handler.
@@ -185,7 +185,7 @@ export const testFramework = (
     const ret = await (serveHandler as (...args: any[]) => any)(...args);
 
     return (
-      opts?.transformRes?.(res, ret) ?? {
+      opts?.transformRes?.(args, ret) ?? {
         status: res.statusCode,
         body: res._getData(),
         headers: res.getHeaders() as Record<string, string>,
@@ -921,7 +921,7 @@ interface CheckIntrospection {
 export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
   describe("introspection", () => {
     it("should be registered in SDK UI", async () => {
-      const res = await fetch("http://127.0.0.1:3000/api/inngest");
+      const res = await fetch("http://localhost:3000/api/inngest");
 
       const { success } = z
         .object({

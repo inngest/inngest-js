@@ -1,10 +1,17 @@
 {
   "scripts": {
-    "preinstall": "npx only-allow pnpm"
+    "preinstall": "npx only-allow pnpm",
+    "release:all": "pnpm run release:publish && pnpm run release:tag",
+    "release:publish": "pnpm run --if-present --recursive release",
+    "release:tag": "node scripts/release/tag.js",
+    "log": "pnpm run --if-present --recursive log"
   },
-  "packageManager": "pnpm@8.6.2",
   "devDependencies": {
+    "@actions/core": "^1.10.0",
+    "@actions/exec": "^1.1.1",
+    "@actions/github": "^6.0.0",
     "@changesets/changelog-github": "^0.4.8",
-    "@changesets/cli": "^2.26.2"
+    "@changesets/cli": "^2.26.2",
+    "cross-env": "^7.0.3"
   }
 }

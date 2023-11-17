@@ -1,5 +1,65 @@
 # inngest
 
+## 3.6.1
+
+### Patch Changes
+
+- [#401](https://github.com/inngest/inngest-js/pull/401) [`c77f6d7`](https://github.com/inngest/inngest-js/commit/c77f6d7ec90442221cf9fe2d155b5aa9e540795e) Thanks [@tonyhb](https://github.com/tonyhb)! - Remove "Step already exists; automatically indexing" log
+
+- [#395](https://github.com/inngest/inngest-js/pull/395) [`aebc2c4`](https://github.com/inngest/inngest-js/commit/aebc2c4ba4ca50975437fbbcaed324ac0f34db0b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `hasEventKey` in `GET` request always returning `true`
+
+## 3.6.0
+
+### Minor Changes
+
+- [#393](https://github.com/inngest/inngest-js/pull/393) [`f9fca66`](https://github.com/inngest/inngest-js/commit/f9fca668b84a37c831f77949d7f1a714d5cd9040) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added a new `"inngest/koa"` serve handler. See the [Framework: Koa](https://www.inngest.com/docs/sdk/serve#framework-koa) docs and the [`framework-koa`](/examples/framework-koa) example to get started.
+
+## 3.5.0
+
+### Minor Changes
+
+- [#299](https://github.com/inngest/inngest-js/pull/299) [`ac61617`](https://github.com/inngest/inngest-js/commit/ac61617e77f9f3373cc1c9e32adbe1eace0e8504) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added a new `"inngest/sveltekit"` serve handler. See the [Framework: Sveltekit](https://www.inngest.com/docs/sdk/serve#framework-sveltekit) docs and the [`framework-sveltekit`](/examples/framework-sveltekit) example to get started.
+
+## 3.4.4
+
+### Patch Changes
+
+- [#388](https://github.com/inngest/inngest-js/pull/388) [`b4432d8`](https://github.com/inngest/inngest-js/commit/b4432d8d98a2e1970dec5a4737cf718fbf184ee1) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Removed "No signing key provided" warning during local development
+
+## 3.4.3
+
+### Patch Changes
+
+- [#385](https://github.com/inngest/inngest-js/pull/385) [`cdf02a3`](https://github.com/inngest/inngest-js/commit/cdf02a310bcf9ef0bb64103f050323c6590bda2b) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Add exports for `InngestFunction`, `FunctionTrigger`, and `Handler` types to fix a TypeScript error when using Inngest in projects with `composite` setting in `tsconfig`.
+
+## 3.4.2
+
+### Patch Changes
+
+- [#378](https://github.com/inngest/inngest-js/pull/378) [`b83f925`](https://github.com/inngest/inngest-js/commit/b83f925099f6c2ecd43fd80a7e4ed9af1ec314a6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `INNGEST_API_BASE_URL` and `INNGEST_EVENT_API_BASE_URL`, used for internal testing
+
+- [#382](https://github.com/inngest/inngest-js/pull/382) [`0002afa`](https://github.com/inngest/inngest-js/commit/0002afa7c23ca9c1507fbb40cbc1c806de84fc6f) Thanks [@tonyhb](https://github.com/tonyhb)! - Remove verbose event keys warning
+
+## 3.4.1
+
+### Patch Changes
+
+- [#371](https://github.com/inngest/inngest-js/pull/371) [`d45bfbd`](https://github.com/inngest/inngest-js/commit/d45bfbd42b16170a44c65a09ac650a9d16211de7) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove `JsonifyObject<>` wrapper from step output - it's now clearer to see the actual type of a step's result
+
+- [#375](https://github.com/inngest/inngest-js/pull/375) [`e19f9b4`](https://github.com/inngest/inngest-js/commit/e19f9b463add0fbafc6368af7d4b82621d4a03c0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix failing to parse `BigInt` during step/function result serialization; it is now correctly typed and returned as `never`
+
+- [#374](https://github.com/inngest/inngest-js/pull/374) [`dcafc2b`](https://github.com/inngest/inngest-js/commit/dcafc2b202b2bd2c3a7dfe5d917d635c48f24260) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fixed an issue where an error log wasn't shown if execution result parsing failed, such as in the case of serialization failures
+
+## 3.4.0
+
+### Minor Changes
+
+- [#370](https://github.com/inngest/inngest-js/pull/370) [`48b201a`](https://github.com/inngest/inngest-js/commit/48b201a90f343a1927f38118b732615f77f9ca7f) Thanks [@tonyhb](https://github.com/tonyhb)! - Update concurrency with new scopes and multiple keys
+
+### Patch Changes
+
+- [#369](https://github.com/inngest/inngest-js/pull/369) [`e1046cd`](https://github.com/inngest/inngest-js/commit/e1046cd62430b5599512eb697ebf5ac3fbfd6bb6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Change `No request version` log from warn to debug
+
 ## 3.3.0
 
 ### Minor Changes

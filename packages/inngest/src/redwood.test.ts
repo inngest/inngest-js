@@ -17,7 +17,7 @@ testFramework("Redwood.js", RedwoodHandler, {
   },
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  transformRes: async (res, ret: RedwoodHandler.RedwoodResponse) => {
+  transformRes: async (_args, ret: RedwoodHandler.RedwoodResponse) => {
     return {
       status: ret.statusCode,
       body: ret.body || "",

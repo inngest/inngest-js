@@ -44,6 +44,13 @@ pnpm local:pack # creates inngest.tgz
 yarn add ~/path/to/packages/inngest/inngest.tgz
 ```
 
+After running `local:pack`, you can then also run integration tests, which will use the dev server and the collection of tests in `packages/inngest/src/test/functions/`.
+
+```sh
+# Usage: pnpm run itest <example> [devServerPort] [exampleServerPort]
+pnpm run itest framework-nextjs-app-router
+```
+
 You can also use this method to ship a snapshot of the library with an application. This is a nice way to generate and ship snapshot versions without requiring a release to npm.
 
 ## Releasing
@@ -76,9 +83,10 @@ We can create new examples using the following formula:
 1. Clone or create a new example in [examples/](../../examples/) using one of the following naming conventions:
    - `framework-<name>` - bare-bones framework example
    - `with-<external-tool>` - using another library or service
+   - `middleware-<name>` - a single-file example of middleware
    - `<generic-use-case>-<concrete-implementation>` - e.g. `email-drip-campaign`
    - `<pattern>-<concrete-use-case>` - e.g. `fan-out-weekly-digest`, `parallel-<xyz>`
-2. Run the example using `pnpm dev:example` and confirm it works
+2. If it's a runnable example, run the example using `pnpm dev:example` and confirm it works
 3. Ensure the `inngest` version in `package.json` is set to the latest major version, e.g. `^3.0.0`
 4. Remove all lock files, e.g. `package-lock.json`
 5. Adapt a `README.md` from an existing example, which should include:

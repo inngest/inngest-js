@@ -25,7 +25,7 @@ const examplesPath = path.join(__dirname, "..", "..", "..", "examples");
 
 const examples: string[] = fs
   .readdirSync(examplesPath, { withFileTypes: true })
-  .filter((file) => file.isDirectory())
+  .filter((file) => file.isDirectory() && file.name.startsWith("framework-"))
   .map((file) => file.name);
 
 const exampleFromFlag: string = (argv.example as string) ?? "";
@@ -64,6 +64,10 @@ void inquirer
 
     await exec("npm", ["run", "dev"], {
       cwd: examplePath,
-      env: { ...process.env, DEBUG: "inngest:*" },
+      env: {
+        ...process.env,
+        DEBUG: "inngest:*",
+        INNGEST_BASE_URL: "http://127.0.0.1:8288",
+      },
     });
   });
