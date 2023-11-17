@@ -708,10 +708,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             break;
           }
         }
-
-        console.debug(
-          `${logPrefix} debug - Step "${originalId}" already exists; automatically indexing to "${opId.id}"`
-        );
       }
 
       const { promise, resolve, reject } = createDeferredPromise();
