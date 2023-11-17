@@ -1,5 +1,13 @@
 # inngest
 
+## 3.6.1
+
+### Patch Changes
+
+- [#401](https://github.com/inngest/inngest-js/pull/401) [`c77f6d7`](https://github.com/inngest/inngest-js/commit/c77f6d7ec90442221cf9fe2d155b5aa9e540795e) Thanks [@tonyhb](https://github.com/tonyhb)! - Remove "Step already exists; automatically indexing" log
+
+- [#395](https://github.com/inngest/inngest-js/pull/395) [`aebc2c4`](https://github.com/inngest/inngest-js/commit/aebc2c4ba4ca50975437fbbcaed324ac0f34db0b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `hasEventKey` in `GET` request always returning `true`
+
 ## 3.6.0
 
 ### Minor Changes

@@ -83,9 +83,10 @@ We can create new examples using the following formula:
 1. Clone or create a new example in [examples/](../../examples/) using one of the following naming conventions:
    - `framework-<name>` - bare-bones framework example
    - `with-<external-tool>` - using another library or service
+   - `middleware-<name>` - a single-file example of middleware
    - `<generic-use-case>-<concrete-implementation>` - e.g. `email-drip-campaign`
    - `<pattern>-<concrete-use-case>` - e.g. `fan-out-weekly-digest`, `parallel-<xyz>`
-2. Run the example using `pnpm dev:example` and confirm it works
+2. If it's a runnable example, run the example using `pnpm dev:example` and confirm it works
 3. Ensure the `inngest` version in `package.json` is set to the latest major version, e.g. `^3.0.0`
 4. Remove all lock files, e.g. `package-lock.json`
 5. Adapt a `README.md` from an existing example, which should include:
