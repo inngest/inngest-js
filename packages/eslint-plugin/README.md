@@ -1,5 +1,8 @@
 # `@inngest/eslint-plugin`
 
+> [!WARNING]
+> This package is currently in alpha and is undocumented. Use with caution.
+
 An ESLint plugin and config for [`inngest`](/packages/inngest/).
 
 ## Getting started
