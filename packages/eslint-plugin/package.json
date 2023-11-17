@@ -1,12 +1,13 @@
 {
   "name": "@inngest/eslint-plugin",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "",
-  "main": "index.js",
+  "main": "dist/index.js",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
+    "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1",
     "release": "node ../../scripts/release/publish.js",
     "log": "node ./test.js"
@@ -17,5 +18,9 @@
     "inngest"
   ],
   "author": "Jack Williams <jack@inngest.com>",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "@typescript-eslint/utils": "^6.11.0",
+    "typescript": "^5.2.2"
+  }
 }
