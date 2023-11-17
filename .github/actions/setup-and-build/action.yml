@@ -5,6 +5,10 @@ inputs:
     description: 'The directory to run the action in.'
     required: false
     default: '.'
+  install-dependencies:
+    description: 'Whether dependencies should be installed.'
+    required: false
+    default: true
   build:
     description: 'Whether the build step should be run.'
     required: false
@@ -27,6 +31,7 @@ runs:
       shell: bash
 
     - name: Install dependencies
+      if: ${{ inputs.install-dependencies == 'true' }}
       run: pnpm install
       shell: bash
       working-directory: ${{ inputs.working-directory }}/packages/inngest
