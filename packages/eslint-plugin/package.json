@@ -8,10 +8,14 @@
   },
   "scripts": {
     "build": "tsc",
+    "postversion": "pnpm run build",
     "test": "jest --silent --ci",
     "release": "node ../../scripts/release/publish.js",
     "log": "node ./test.js"
   },
+  "files": [
+    "dist"
+  ],
   "keywords": [
     "eslint",
     "eslintplugin",
