@@ -10,10 +10,10 @@ if (branch !== "main" && !branch.endsWith(".x")) {
 console.log("branch:", branch);
 
 const exec = async (...args) => {
-  // const exitCode = await rawExec(...args);
-  // if (exitCode !== 0) {
-  //   throw new Error(`Command exited with ${exitCode}`);
-  // }
+  const exitCode = await rawExec(...args);
+  if (exitCode !== 0) {
+    throw new Error(`Command exited with ${exitCode}`);
+  }
 };
 
 const repoRootDir = path.join(__dirname, "..", "..");

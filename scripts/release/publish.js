@@ -33,10 +33,10 @@ console.log("dist dir:", distDir);
 process.chdir(packageRootDir);
 
 const exec = async (...args) => {
-  // const exitCode = await rawExec(...args);
-  // if (exitCode !== 0) {
-  //   throw new Error(`Command exited with ${exitCode}`);
-  // }
+  const exitCode = await rawExec(...args);
+  if (exitCode !== 0) {
+    throw new Error(`Command exited with ${exitCode}`);
+  }
 };
 
 (async () => {
