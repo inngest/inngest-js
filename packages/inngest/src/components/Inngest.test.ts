@@ -758,7 +758,7 @@ describe("helper types", () => {
 
   type GetUnionKeyValue<
     T,
-    K extends string | number | symbol
+    K extends string | number | symbol,
   > = T extends Record<K, infer U> ? U : never;
 
   describe("type GetFunctionInput", () => {
