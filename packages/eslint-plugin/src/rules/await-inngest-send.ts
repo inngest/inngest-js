@@ -5,13 +5,14 @@ export const awaitInngestSend: TSESLint.RuleModule<"await-inngest-send"> = {
   meta: {
     type: "suggestion",
     docs: {
-      description: "enforce `await` or `return` before `inngest.send()`",
+      description:
+        "enforce `await`, `return`, or `void` before `inngest.send()`",
       recommended: "recommended",
     },
     schema: [], // no options
     messages: {
       "await-inngest-send":
-        "You should use `await` or `return` before `inngest.send()",
+        "You should use `await`, `return`, or `void` before `inngest.send().",
     },
   },
   defaultOptions: [],
@@ -28,7 +29,9 @@ export const awaitInngestSend: TSESLint.RuleModule<"await-inngest-send"> = {
           const parent = node.parent;
           if (
             parent.type !== AST_NODE_TYPES.AwaitExpression &&
-            parent.type !== AST_NODE_TYPES.ReturnStatement
+            parent.type !== AST_NODE_TYPES.ReturnStatement &&
+            (parent.type !== AST_NODE_TYPES.UnaryExpression ||
+              parent.operator !== "void")
           ) {
             context.report({
               node,

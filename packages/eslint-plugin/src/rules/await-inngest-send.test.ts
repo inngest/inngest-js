@@ -1,4 +1,3 @@
-// myRule.test.ts
 import { RuleTester } from "@typescript-eslint/rule-tester";
 import { awaitInngestSend } from "./await-inngest-send";
 
@@ -7,14 +6,14 @@ const ruleTester = new RuleTester({
 });
 
 ruleTester.run("my-rule", awaitInngestSend, {
-  valid: ["notFooBar()", "const foo = 2", "const bar = 2"],
+  valid: [
+    'await inngest.send({ name: "some.event" });',
+    'return inngest.send({ name: "some.event" });',
+    'void inngest.send({ name: "some.event" });',
+  ],
   invalid: [
     {
-      code: "foo()",
-      errors: [{ messageId: "await-inngest-send" }],
-    },
-    {
-      code: "bar()",
+      code: 'inngest.send({ name: "some.event" });',
       errors: [{ messageId: "await-inngest-send" }],
     },
   ],

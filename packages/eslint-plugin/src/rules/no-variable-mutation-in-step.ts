@@ -41,6 +41,18 @@ export const noVariableMutationInStep: TSESLint.RuleModule<"no-variable-mutation
             });
           }
         },
+        UpdateExpression(node) {
+          if (
+            inStepRun &&
+            node.argument.type === AST_NODE_TYPES.Identifier &&
+            declaredVariables.has(node.argument.name)
+          ) {
+            context.report({
+              node,
+              messageId: "no-variable-mutation-in-step",
+            });
+          }
+        },
         CallExpression(node) {
           if (
             node.callee.type === AST_NODE_TYPES.MemberExpression &&
