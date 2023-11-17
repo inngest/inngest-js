@@ -63,8 +63,8 @@ describe("run", () => {
       output.data === "A is the winner!"
         ? "A"
         : output.data === "B is the winner!"
-        ? "B"
-        : undefined;
+          ? "B"
+          : undefined;
     expect(["A", "B"]).toContain(winner);
   }, 60000);
 });

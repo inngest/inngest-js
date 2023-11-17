@@ -34,7 +34,7 @@ export interface FoundStep extends HashedOp {
 export type MatchOpFn<
   T extends (...args: unknown[]) => Promise<unknown> = (
     ...args: unknown[]
-  ) => Promise<unknown>
+  ) => Promise<unknown>,
 > = (
   stepOptions: StepOptions,
   /**
@@ -52,7 +52,7 @@ export type StepHandler = (info: {
 export interface StepToolOptions<
   T extends (...args: unknown[]) => Promise<unknown> = (
     ...args: unknown[]
-  ) => Promise<unknown>
+  ) => Promise<unknown>,
 > {
   /**
    * Optionally, we can also provide a function that will be called when
@@ -108,7 +108,7 @@ export const STEP_INDEXING_SUFFIX = ":";
 export const createStepTools = <
   TOpts extends ClientOptions,
   Events extends EventsFromOpts<TOpts>,
-  TriggeringEvent extends keyof Events & string
+  TriggeringEvent extends keyof Events & string,
 >(
   client: Inngest<TOpts>,
   stepHandler: StepHandler
@@ -277,8 +277,8 @@ export const createStepTools = <
             T extends () => Promise<infer U>
               ? Awaited<U extends void ? null : U>
               : ReturnType<T> extends void
-              ? null
-              : ReturnType<T>
+                ? null
+                : ReturnType<T>
           >
         >
       >
@@ -381,7 +381,7 @@ export const createStepTools = <
 type WaitForEventOpts<
   Events extends Record<string, EventPayload>,
   TriggeringEvent extends keyof Events,
-  IncomingEvent extends keyof Events
+  IncomingEvent extends keyof Events,
 > = {
   event: IncomingEvent;
 

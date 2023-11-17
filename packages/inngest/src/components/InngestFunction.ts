@@ -39,7 +39,7 @@ export class InngestFunction<
   Opts extends FunctionOptions<
     Events,
     EventNameFromTrigger<Events, Trigger>
-  > = FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>
+  > = FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>,
 > {
   static stepId = "step";
   static failureSuffix = "-failure";

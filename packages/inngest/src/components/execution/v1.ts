@@ -1,7 +1,6 @@
 import { sha1 } from "hash.js";
 import { type Simplify } from "type-fest";
 import { z } from "zod";
-import { logPrefix } from "../../helpers/consts";
 import {
   ErrCode,
   deserializeError,
