@@ -18,7 +18,7 @@
     "clean": "rm -rf ./dist",
     "lint": "eslint .",
     "postversion": "pnpm run build && pnpm run build:copy",
-    "release": "pnpm run test && pnpm run build && pnpm run build:copy && node scripts/release.js",
+    "release": "pnpm run test && pnpm run build && pnpm run build:copy && cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
     "api-extractor": "api-extractor",
     "dev": "pnpm install && concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"pnpm run dev:build\" \"pnpm run dev:lint\"",
     "dev:build": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run build && pnpm run build:check --local'",
