@@ -73,20 +73,20 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
 
 type FnsWithSameInputAsOutput<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TRecord extends Record<string, (arg: any) => any>
+  TRecord extends Record<string, (arg: any) => any>,
 > = {
   [K in keyof TRecord as Await<TRecord[K]> extends Parameters<TRecord[K]>[0]
     ? K
     : Await<TRecord[K]> extends void | undefined
-    ? Parameters<TRecord[K]>[0] extends void | undefined
-      ? K
-      : never
-    : never]: TRecord[K];
+      ? Parameters<TRecord[K]>[0] extends void | undefined
+        ? K
+        : never
+      : never]: TRecord[K];
 };
 
 type PromisifiedFunctionRecord<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TRecord extends Record<string, (arg: any) => any>
+  TRecord extends Record<string, (arg: any) => any>,
 > = Pick<
   Partial<{
     [K in keyof TRecord]: (
@@ -124,7 +124,8 @@ export const getHookStack = async <
   TMiddleware extends Record<string, (arg: any) => any>,
   TKey extends keyof TMiddleware,
   TResult extends Await<TMiddleware[TKey]>,
-  TRet extends PromisifiedFunctionRecord<TResult> = PromisifiedFunctionRecord<TResult>
+  TRet extends
+    PromisifiedFunctionRecord<TResult> = PromisifiedFunctionRecord<TResult>,
 >(
   /**
    * The stack of middleware that will be used to run hooks.
@@ -152,10 +153,10 @@ export const getHookStack = async <
       [K in keyof TResult as Await<TResult[K]> extends Parameters<TResult[K]>[0]
         ? K
         : Await<TResult[K]> extends void | undefined
-        ? Parameters<TResult[K]>[0] extends void | undefined
-          ? K
-          : never
-        : never]: void;
+          ? Parameters<TResult[K]>[0] extends void | undefined
+            ? K
+            : never
+          : never]: void;
     }
   >
 ): Promise<TRet> => {
@@ -163,15 +164,18 @@ export const getHookStack = async <
   const mwStack = await middleware;
 
   // Step through each middleware and get the hook for the given key
-  const keyFns = mwStack.reduce((acc, mw) => {
-    const fn = mw[key];
+  const keyFns = mwStack.reduce(
+    (acc, mw) => {
+      const fn = mw[key];
 
-    if (fn) {
-      return [...acc, fn];
-    }
+      if (fn) {
+        return [...acc, fn];
+      }
 
-    return acc;
-  }, [] as NonNullable<TMiddleware[TKey]>[]);
+      return acc;
+    },
+    [] as NonNullable<TMiddleware[TKey]>[]
+  );
 
   // Run each hook found in sequence and collect the results
   const hooksRegistered = await keyFns.reduce<
@@ -473,7 +477,7 @@ type MiddlewareRunOutput = (ctx: {
  * @internal
  */
 type GetMiddlewareRunInputMutation<
-  TMiddleware extends InngestMiddleware<MiddlewareOptions>
+  TMiddleware extends InngestMiddleware<MiddlewareOptions>,
 > = TMiddleware extends InngestMiddleware<infer TOpts>
   ? TOpts["init"] extends MiddlewareRegisterFn
     ? Await<
@@ -495,7 +499,7 @@ type GetMiddlewareRunInputMutation<
  * @internal
  */
 type GetMiddlewareSendEventOutputMutation<
-  TMiddleware extends InngestMiddleware<MiddlewareOptions>
+  TMiddleware extends InngestMiddleware<MiddlewareOptions>,
 > = TMiddleware extends InngestMiddleware<infer TOpts>
   ? TOpts["init"] extends MiddlewareRegisterFn
     ? Await<
@@ -518,7 +522,7 @@ type GetMiddlewareSendEventOutputMutation<
  */
 export type MiddlewareStackSendEventOutputMutation<
   TContext,
-  TMiddleware extends MiddlewareStack
+  TMiddleware extends MiddlewareStack,
 > = ObjectAssign<
   {
     [K in keyof TMiddleware]: GetMiddlewareSendEventOutputMutation<
@@ -531,7 +535,7 @@ export type MiddlewareStackSendEventOutputMutation<
 export type ExtendWithMiddleware<
   TMiddlewareStacks extends MiddlewareStack[],
   // eslint-disable-next-line @typescript-eslint/ban-types
-  TContext = {}
+  TContext = {},
 > = ObjectAssign<
   {
     [K in keyof TMiddlewareStacks]: MiddlewareStackRunInputMutation<
@@ -548,7 +552,7 @@ export type ExtendWithMiddleware<
  */
 export type MiddlewareStackRunInputMutation<
   TContext,
-  TMiddleware extends MiddlewareStack
+  TMiddleware extends MiddlewareStack,
 > = ObjectAssign<
   {
     [K in keyof TMiddleware]: GetMiddlewareRunInputMutation<TMiddleware[K]>;

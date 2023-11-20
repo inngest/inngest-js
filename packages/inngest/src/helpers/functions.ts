@@ -130,7 +130,7 @@ export const parseFnData = (fn: AnyInngestFunction, data: unknown) => {
               use_api: z.boolean().default(false),
             })
             .parse(data),
-        } as const),
+        }) as const,
 
       [ExecutionVersion.V1]: () =>
         ({
@@ -162,7 +162,7 @@ export const parseFnData = (fn: AnyInngestFunction, data: unknown) => {
                 .nullable(),
             })
             .parse(data),
-        } as const),
+        }) as const,
     } satisfies Record<ExecutionVersion, () => unknown>;
 
     return versionHandlers[version]();
@@ -186,8 +186,8 @@ export const fetchAllFnData = async ({
 
   try {
     if (
-      (result.version === 0 && result.use_api) ||
-      (result.version === 1 && result.ctx?.use_api)
+      (result.version === ExecutionVersion.V0 && result.use_api) ||
+      (result.version === ExecutionVersion.V1 && result.ctx?.use_api)
     ) {
       if (!result.ctx?.run_id) {
         return err(

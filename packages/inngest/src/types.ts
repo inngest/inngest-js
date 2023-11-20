@@ -65,7 +65,7 @@ export const failureEventErrorSchema = z.object({
 
 export type MiddlewareStack = [
   InngestMiddleware<MiddlewareOptions>,
-  ...InngestMiddleware<MiddlewareOptions>[]
+  ...InngestMiddleware<MiddlewareOptions>[],
 ];
 
 /**
@@ -231,7 +231,7 @@ export type WithInvocation<T extends EventPayload> = Simplify<
 
 export type BaseContext<
   TOpts extends ClientOptions,
-  TTrigger extends keyof EventsFromOpts<TOpts> & string
+  TTrigger extends keyof EventsFromOpts<TOpts> & string,
 > = {
   /**
    * The event data present in the payload.
@@ -240,7 +240,7 @@ export type BaseContext<
 
   events: [
     EventsFromOpts<TOpts>[TTrigger],
-    ...EventsFromOpts<TOpts>[TTrigger][]
+    ...EventsFromOpts<TOpts>[TTrigger][],
   ];
 
   /**
@@ -268,7 +268,7 @@ export type Context<
   TOpts extends ClientOptions,
   TEvents extends Record<string, EventPayload>,
   TTrigger extends keyof TEvents & string,
-  TOverrides extends Record<string, unknown> = Record<never, never>
+  TOverrides extends Record<string, unknown> = Record<never, never>,
 > = Omit<BaseContext<TOpts, TTrigger>, keyof TOverrides> & TOverrides;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -284,7 +284,7 @@ export type Handler<
   TOpts extends ClientOptions,
   TEvents extends EventsFromOpts<TOpts>,
   TTrigger extends keyof TEvents & string,
-  TOverrides extends Record<string, unknown> = Record<never, never>
+  TOverrides extends Record<string, unknown> = Record<never, never>,
 > = (
   /**
    * The context argument provides access to all data and tooling available to
@@ -375,7 +375,7 @@ export type SendEventOutput<TOpts extends ClientOptions> = ObjectAssign<
       // eslint-disable-next-line @typescript-eslint/ban-types
       {},
       NonNullable<TOpts["middleware"]>
-    >
+    >,
   ],
   SendEventBaseOutput
 >;
@@ -706,7 +706,7 @@ export interface ConcurrencyOption {
  */
 export interface FunctionOptions<
   Events extends Record<string, EventPayload>,
-  Event extends keyof Events & string
+  Event extends keyof Events & string,
 > {
   /**
    * An unique ID used to identify the function. This is used internally for
@@ -883,7 +883,7 @@ export interface FunctionOptions<
  */
 export type Cancellation<
   Events extends Record<string, EventPayload>,
-  TriggeringEvent extends keyof Events & string
+  TriggeringEvent extends keyof Events & string,
 > = {
   [K in keyof Events & string]: {
     /**
@@ -1103,7 +1103,7 @@ export interface DevServerInfo {
  */
 export type EventNameFromTrigger<
   Events extends Record<string, EventPayload>,
-  T extends TriggerOptions<keyof Events & string>
+  T extends TriggerOptions<keyof Events & string>,
 > = T extends string ? T : T extends { event: string } ? T["event"] : string;
 
 /**
@@ -1163,7 +1163,7 @@ export type TriggerEventFromFunction<
   TFunction extends AnyInngestFunction | string,
   TEvents = TFunction extends AnyInngestFunction
     ? EventsFromFunction<TFunction>
-    : never
+    : never,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 > = TFunction extends InngestFunction<any, any, infer ITrigger, any, any>
   ? ITrigger extends {
@@ -1171,11 +1171,11 @@ export type TriggerEventFromFunction<
     }
     ? Simplify<Omit<TEvents[IEventTrigger], "name" | "ts">>
     : ITrigger extends { cron: string }
-    ? never
-    : never
+      ? never
+      : never
   : TFunction extends string
-  ? Simplify<Omit<EventPayload, "name" | "ts">>
-  : never;
+    ? Simplify<Omit<EventPayload, "name" | "ts">>
+    : never;
 
 export type InvocationResult<TReturn> = Promise<TReturn> & {
   result: InvocationResult<TReturn>;

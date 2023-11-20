@@ -1,5 +1,6 @@
 import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
+import { type MaybePromise } from "type-plus";
 import { z } from "zod";
 import {
   ErrCode,
@@ -193,8 +194,8 @@ export class V0InngestExecution
 
       if (!discoveredOps.length) {
         const fnRet = await Promise.race([
-          userFnPromise.then((data) => ({ type: "complete", data } as const)),
-          resolveNextTick().then(() => ({ type: "incomplete" } as const)),
+          userFnPromise.then((data) => ({ type: "complete", data }) as const),
+          resolveNextTick().then(() => ({ type: "incomplete" }) as const),
         ]);
 
         if (fnRet.type === "complete") {
@@ -513,7 +514,7 @@ export class V0InngestExecution
 interface TickOp extends HashedOp {
   fn?: (...args: unknown[]) => unknown;
   fulfilled: boolean;
-  resolve: (value: unknown | PromiseLike<unknown>) => void;
+  resolve: (value: MaybePromise<unknown>) => void;
   reject: (reason?: unknown) => void;
 }
 

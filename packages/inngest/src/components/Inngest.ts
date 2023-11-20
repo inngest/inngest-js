@@ -347,8 +347,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     let payloads: EventPayload[] = Array.isArray(payload)
       ? (payload as EventPayload[])
       : payload
-      ? ([payload] as [EventPayload])
-      : [];
+        ? ([payload] as [EventPayload])
+        : [];
 
     const inputChanges = await hooks.transformInput?.({
       payloads: [...payloads],
@@ -465,10 +465,10 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
         [
           typeof builtInMiddleware,
           NonNullable<TOpts["middleware"]>,
-          TMiddleware
+          TMiddleware,
         ]
       >
-    >
+    >,
   >(
     options: ExclusiveKeys<
       Omit<
@@ -491,7 +491,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
             [
               typeof builtInMiddleware,
               NonNullable<TOpts["middleware"]>,
-              TMiddleware
+              TMiddleware,
             ],
             FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
           >
@@ -683,7 +683,7 @@ export type GetStepTools<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TInngest extends Inngest<any>,
   TTrigger extends keyof GetEvents<TInngest> &
-    string = keyof GetEvents<TInngest> & string
+    string = keyof GetEvents<TInngest> & string,
 > = GetFunctionInput<TInngest, TTrigger> extends { step: infer TStep }
   ? TStep
   : never;
@@ -708,7 +708,7 @@ export type GetFunctionInput<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TInngest extends Inngest<any>,
   TTrigger extends keyof GetEvents<TInngest> &
-    string = keyof GetEvents<TInngest> & string
+    string = keyof GetEvents<TInngest> & string,
 > = Parameters<
   Handler<
     ClientOptionsFromInngest<TInngest>,
@@ -717,7 +717,7 @@ export type GetFunctionInput<
     ExtendWithMiddleware<
       [
         typeof builtInMiddleware,
-        NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>
+        NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>,
       ]
     >
   >

@@ -41,7 +41,7 @@ export class InngestFunction<
     Events,
     EventNameFromTrigger<Events, Trigger>
   > = FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>,
-  THandler extends AnyHandler = Handler<TOpts, Events, keyof Events & string>
+  THandler extends AnyHandler = Handler<TOpts, Events, keyof Events & string>,
 > {
   static stepId = "step";
   static failureSuffix = "-failure";

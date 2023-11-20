@@ -477,6 +477,7 @@ describe("sendEvent", () => {
         typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
       >["invoke"];
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type GetTestReturn<T extends () => InvocationResult<any>> = Awaited<
         ReturnType<T>
       >;

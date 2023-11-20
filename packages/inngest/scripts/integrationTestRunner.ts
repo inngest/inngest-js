@@ -244,10 +244,13 @@ async function runIntegrationTest(
   exampleServerPort: number
 ): Promise<void> {
   // Start a 10 minute timeout. If we don't finish within 10 minutes, something is wrong.
-  setTimeout(() => {
-    console.error("Integration test timed out");
-    process.exit(1);
-  }, 10 * 60 * 1000);
+  setTimeout(
+    () => {
+      console.error("Integration test timed out");
+      process.exit(1);
+    },
+    10 * 60 * 1000
+  );
 
   const rootPath = path.join(__dirname, "..", "..", "..");
   const sdkPath = path.join(rootPath, "packages", "inngest");
