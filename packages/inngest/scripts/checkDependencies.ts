@@ -1,3 +1,21 @@
+/**
+ * Checks for missing, misplaced, or unused dependencies within the project.
+ *
+ * Missing dependencies are mostly caught by a TypeScript build anyway, so this
+ * is less of an issue. However, unused dependencies are harder to catch.
+ *
+ * The key value of this script is that it can catch when a package is defined
+ * within `devDependencies` but we are using it in exported code. For the most
+ * part this will have no impact, but it can cause issues if the consumer uses
+ * `skipLibCheck: false` in their TS configuration.
+ *
+ * We highlight those `devDependencies` that should be moved to `dependencies`.
+ *
+ * Not that there are some exceptions to this rule, for instance when using
+ * `@types/*` packages. We should perform further checks against generated
+ * `.d.ts` files to ensure that we are not exporting types that are not
+ * available to the consumer.
+ */
 /* eslint-disable @inngest/internal/process-warn */
 import chalk from "chalk";
 import fs from "fs";
