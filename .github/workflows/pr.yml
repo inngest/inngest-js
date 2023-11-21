@@ -85,6 +85,28 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - run: pnpm run lint
 
+  inngest_test_dist:
+    name: "inngest: Dist tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:dist
+
+  inngest_test_deps:
+    name: "inngest: Dependency tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:deps
+
   "eslint-plugin_test":
     name: "eslint-plugin: Test"
     runs-on: ubuntu-latest
