@@ -17,7 +17,7 @@ export class RetryAfterError extends Error {
    *
    * This will be serialized and sent to Inngest.
    */
-  public readonly cause?: unknown;
+  public override readonly cause?: unknown;
 
   /**
    * The time after which the function should be retried. Represents either a

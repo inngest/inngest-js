@@ -52,40 +52,40 @@ export class DefaultLogger implements Logger {
  * @public
  */
 export class ProxyLogger implements Logger {
-  readonly #logger: Logger;
-  #enabled = false;
+  private readonly logger: Logger;
+  private enabled = false;
 
   constructor(logger: Logger) {
-    this.#logger = logger;
+    this.logger = logger;
   }
 
   info(...args: LogArg[]) {
-    if (!this.#enabled) return;
-    this.#logger.info(...args);
+    if (!this.enabled) return;
+    this.logger.info(...args);
   }
 
   warn(...args: LogArg[]) {
-    if (!this.#enabled) return;
-    this.#logger.warn(...args);
+    if (!this.enabled) return;
+    this.logger.warn(...args);
   }
 
   error(...args: LogArg[]) {
-    if (!this.#enabled) return;
-    this.#logger.error(...args);
+    if (!this.enabled) return;
+    this.logger.error(...args);
   }
 
   debug(...args: LogArg[]) {
     // there are loggers that don't implement "debug" by default
-    if (!this.#enabled || !(typeof this.#logger.debug === "function")) return;
-    this.#logger.debug(...args);
+    if (!this.enabled || !(typeof this.logger.debug === "function")) return;
+    this.logger.debug(...args);
   }
 
   enable() {
-    this.#enabled = true;
+    this.enabled = true;
   }
 
   disable() {
-    this.#enabled = false;
+    this.enabled = false;
   }
 
   async flush() {
@@ -98,7 +98,7 @@ export class ProxyLogger implements Logger {
     // server runtimes should just let the logger do their thing since most of them
     // should have already figured what to do in those environments, be it threading or
     // something else.
-    if (this.#logger.constructor.name !== DefaultLogger.name) {
+    if (this.logger.constructor.name !== DefaultLogger.name) {
       await new Promise((resolve) => {
         setTimeout(() => resolve(null), 1000);
       });
