@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "target": "ES5",
-    "lib": ["ESNext", "DOM"],
-    "module": "ES2015",
+    "target": "es2017",
+    "lib": ["ES2021", "DOM"],
+    "module": "commonjs",
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

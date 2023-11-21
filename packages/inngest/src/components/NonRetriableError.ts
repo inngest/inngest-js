@@ -13,7 +13,7 @@ export class NonRetriableError extends Error {
    *
    * This will be serialized and sent to Inngest.
    */
-  public override readonly cause?: unknown;
+  public readonly cause?: unknown;
 
   constructor(
     message: string,
