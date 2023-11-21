@@ -547,6 +547,21 @@ export type ExtendWithMiddleware<
   TContext
 >;
 
+export type ExtendSendEventWithMiddleware<
+  TMiddlewareStacks extends MiddlewareStack[],
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  TContext = {},
+> = ObjectAssign<
+  {
+    [K in keyof TMiddlewareStacks]: MiddlewareStackSendEventOutputMutation<
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      {},
+      TMiddlewareStacks[K]
+    >;
+  },
+  TContext
+>;
+
 /**
  * @internal
  */

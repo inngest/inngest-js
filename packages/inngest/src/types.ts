@@ -7,15 +7,14 @@ import {
   type builtInMiddleware,
 } from "./components/Inngest";
 import {
+  type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
   type MiddlewareOptions,
-  type MiddlewareStackSendEventOutputMutation,
 } from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
 import {
   type IsStringLiteral,
-  type ObjectAssign,
   type ObjectPaths,
   type StrictUnion,
 } from "./helpers/types";
@@ -353,18 +352,17 @@ export type SendEventBaseOutput = {
   ids: SendEventResponse["ids"];
 };
 
-export type SendEventOutput<TOpts extends ClientOptions> = ObjectAssign<
-  [
-    // eslint-disable-next-line @typescript-eslint/ban-types
-    MiddlewareStackSendEventOutputMutation<{}, typeof builtInMiddleware>,
-    MiddlewareStackSendEventOutputMutation<
-      // eslint-disable-next-line @typescript-eslint/ban-types
-      {},
-      NonNullable<TOpts["middleware"]>
-    >,
-  ],
-  SendEventBaseOutput
->;
+export type SendEventOutput<TOpts extends ClientOptions> = Omit<
+  SendEventBaseOutput,
+  keyof SendEventOutputWithMiddleware<TOpts>
+> &
+  SendEventOutputWithMiddleware<TOpts>;
+
+export type SendEventOutputWithMiddleware<TOpts extends ClientOptions> =
+  ExtendSendEventWithMiddleware<
+    [typeof builtInMiddleware, NonNullable<TOpts["middleware"]>],
+    SendEventBaseOutput
+  >;
 
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
