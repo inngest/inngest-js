@@ -135,6 +135,7 @@ function checkDependencies(
   const { fileNames, paths } = parseTsConfig(tsConfigPath);
   const issues: Record<string, { files: string[]; type: string }> = {};
   const importedModules = new Set<string>();
+  const importedTypeModules = new Set<string>();
 
   // Convert ignoreFiles to absolute paths for easy comparison
   const ignoreAbsolutePaths = ignoreFiles.map((file) =>
@@ -158,7 +159,13 @@ function checkDependencies(
       ) {
         const fullImportName = node.moduleSpecifier.text;
         const importedModule = getBasePackageName(fullImportName);
-        importedModules.add(importedModule);
+
+        if (isTypeOnlyImport(node)) {
+          importedTypeModules.add(importedModule);
+        } else {
+          importedModules.add(importedModule);
+        }
+
         const typesPackageName = `@types/${importedModule}`;
 
         if (isTypeOnlyImport(node)) {
@@ -227,6 +234,21 @@ function checkDependencies(
         }
         issues[dependency]?.files.push(`Package '${dependency}' is not used.`);
       }
+    }
+  });
+
+  // Check for @types packages that should be moved to dependencies
+  importedTypeModules.forEach((typeModule) => {
+    if (
+      importedModules.has(typeModule) &&
+      devDependencies[`@types/${typeModule}`]
+    ) {
+      if (!issues[typeModule]) {
+        issues[typeModule] = { files: [], type: "MoveToDependencies" };
+      }
+      issues[typeModule]?.files.push(
+        `@types/${typeModule} should be in dependencies.`
+      );
     }
   });
 
