@@ -62,6 +62,7 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - run: pnpm add -D typescript@${{ matrix.tsVersion }}
       - run: pnpm run test:types
+      - run: pnpm run test:dist
 
   inngest_api_diff:
     name: "inngest: Local API diff"
