@@ -378,7 +378,15 @@ export const createStepTools = <
     }),
 
     /**
-     * Invoke a passed Inngest function,
+     * Invoke a passed Inngest `function` with the given `data`. Returns the
+     * result of the returned value of the function or `null` if the function
+     * does not return a value.
+     *
+     * A string ID can also be passed to reference functions outside of the
+     * current app.
+     *
+     * If a function isn't found or otherwise errors, the step will fail and
+     * throw a `NonRetriableError`.
      */
     invoke: createTool<
       <TFunction extends AnyInngestFunction | string>(
