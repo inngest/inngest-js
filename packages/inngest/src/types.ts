@@ -1177,11 +1177,13 @@ export type TriggerEventFromFunction<
     ? Simplify<Omit<EventPayload, "name" | "ts">>
     : never;
 
-export type InvocationResult<TReturn> = Promise<TReturn> & {
-  result: InvocationResult<TReturn>;
-  cancel: (reason: string) => Promise<void>; // TODO Need to be a Promise? 🤔
-  queued: Promise<{ runId: string }>;
-};
+export type InvocationResult<TReturn> = Promise<TReturn>;
+// TODO Types ready for when we expand this.
+// & {
+//   result: InvocationResult<TReturn>;
+//   cancel: (reason: string) => Promise<void>; // TODO Need to be a Promise? 🤔
+//   queued: Promise<{ runId: string }>;
+// };
 
 /**
  * Simplified version of Rust style `Result`
