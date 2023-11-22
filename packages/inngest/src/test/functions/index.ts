@@ -6,6 +6,7 @@ import promiseAll from "./promise-all";
 import promiseRace from "./promise-race";
 import sendEvent from "./send-event";
 import sequentialReduce from "./sequential-reduce";
+import stepInvokeFunctions from "./step-invoke";
 import undefinedData from "./undefined-data";
 
 export const functions = [
@@ -18,6 +19,7 @@ export const functions = [
   polling,
   sendEvent,
   undefinedData,
+  ...stepInvokeFunctions,
 ];
 
 export { inngest } from "./client";
