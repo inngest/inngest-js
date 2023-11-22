@@ -50,7 +50,7 @@ export class InngestFunction<
   public readonly trigger: Trigger;
   private readonly fn: THandler;
   private readonly onFailureFn?: Handler<TOpts, Events, keyof Events & string>;
-  readonly #client: Inngest<TOpts>;
+  private readonly client: Inngest<TOpts>;
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
   /**
@@ -70,15 +70,15 @@ export class InngestFunction<
     trigger: Trigger,
     fn: THandler
   ) {
-    this.#client = client;
+    this.client = client;
     this.opts = opts;
     this.trigger = trigger;
     this.fn = fn;
     this.onFailureFn = this.opts.onFailure;
 
-    this.middleware = this.#client["initializeMiddleware"](
+    this.middleware = this.client["initializeMiddleware"](
       this.opts.middleware,
-      { registerInput: { fn: this }, prefixStack: this.#client["middleware"] }
+      { registerInput: { fn: this }, prefixStack: this.client["middleware"] }
     );
   }
 
@@ -198,7 +198,7 @@ export class InngestFunction<
 
   private createExecution(opts: CreateExecutionOptions): IInngestExecution {
     const options: InngestExecutionOptions = {
-      client: this.#client,
+      client: this.client,
       fn: this,
       ...opts.partialOptions,
     };

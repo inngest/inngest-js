@@ -231,7 +231,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   /**
    * Given a response from Inngest, relay the error to the caller.
    */
-  async #getResponseError(
+  private async getResponseError(
     response: globalThis.Response,
     foundErr = "Unknown error"
   ): Promise<Error> {
@@ -442,11 +442,11 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       const rawBody: unknown = await response.json();
       body = await sendEventResponseSchema.parseAsync(rawBody);
     } catch (err) {
-      throw await this.#getResponseError(response);
+      throw await this.getResponseError(response);
     }
 
     if (body.status / 100 !== 2 || body.error) {
-      throw await this.#getResponseError(response, body.error);
+      throw await this.getResponseError(response, body.error);
     }
 
     return await applyHookToOutput({ result: { ids: body.ids } });
