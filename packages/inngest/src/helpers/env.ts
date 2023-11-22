@@ -46,7 +46,7 @@ export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
 };
 
 const checkFns = (<
-  T extends Record<string, (actual: EnvValue, expected: EnvValue) => boolean>
+  T extends Record<string, (actual: EnvValue, expected: EnvValue) => boolean>,
 >(
   checks: T
 ): T => checks)({
@@ -61,7 +61,7 @@ const checkFns = (<
 const prodChecks: [
   key: string,
   customCheck: keyof typeof checkFns,
-  value?: string
+  value?: string,
 ][] = [
   ["CF_PAGES", "equals", "1"],
   ["CONTEXT", "starts with", "prod"],
@@ -78,7 +78,7 @@ const prodChecks: [
 const platformDeployChecks: [
   key: string,
   customCheck: keyof typeof checkFns,
-  value?: string
+  value?: string,
 ][] = [
   // Extend prod checks, then check if we're deployed to a platform.
   [prodEnvKeys.VercelEnvKey, "is truthy but not", "development"],

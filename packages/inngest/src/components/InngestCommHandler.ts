@@ -92,7 +92,7 @@ interface InngestCommHandlerOptions<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Output = any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  StreamOutput = any
+  StreamOutput = any,
 > extends RegisterOptions {
   /**
    * The name of the framework this handler is designed for. Should be
@@ -210,7 +210,7 @@ export class InngestCommHandler<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Output = any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  StreamOutput = any
+  StreamOutput = any,
 > {
   /**
    * The ID of this serve handler, e.g. `"my-app"`. It's recommended that this
@@ -1234,7 +1234,7 @@ export type Handler<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Output = any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  StreamOutput = any
+  StreamOutput = any,
 > = (...args: Input) => HandlerResponse<Output, StreamOutput>;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1304,7 +1304,7 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
  * framework-compatible response by an {@link InngestCommHandler} instance.
  */
 export interface ActionResponse<
-  TBody extends string | ReadableStream = string
+  TBody extends string | ReadableStream = string,
 > {
   /**
    * The HTTP status code to return.
