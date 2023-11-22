@@ -459,8 +459,8 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:346:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:357:3 - (ae-forgotten-export) The symbol "AnyInngest" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:363:3 - (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
-// src/types.ts:76:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:742:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:75:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:740:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

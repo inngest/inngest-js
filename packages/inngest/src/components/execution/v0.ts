@@ -54,41 +54,41 @@ export class V0InngestExecution
   extends InngestExecution
   implements IInngestExecution
 {
-  #state: V0ExecutionState;
-  #execution: Promise<ExecutionResult> | undefined;
-  #userFnToRun: AnyHandler;
-  #fnArg: AnyContext;
+  private state: V0ExecutionState;
+  private execution: Promise<ExecutionResult> | undefined;
+  private userFnToRun: AnyHandler;
+  private fnArg: AnyContext;
 
   constructor(options: InngestExecutionOptions) {
     super(options);
 
-    this.#userFnToRun = this.#getUserFnToRun();
-    this.#state = this.#createExecutionState();
-    this.#fnArg = this.#createFnArg();
+    this.userFnToRun = this.getUserFnToRun();
+    this.state = this.createExecutionState();
+    this.fnArg = this.createFnArg();
   }
 
   public start() {
     this.debug("starting V0 execution");
 
-    return (this.#execution ??= this.#start().then((result) => {
+    return (this.execution ??= this._start().then((result) => {
       this.debug("result:", result);
       return result;
     }));
   }
 
-  async #start(): Promise<ExecutionResult> {
-    this.#state.hooks = await this.#initializeMiddleware();
+  private async _start(): Promise<ExecutionResult> {
+    this.state.hooks = await this.initializeMiddleware();
 
     try {
-      await this.#transformInput();
-      await this.#state.hooks.beforeMemoization?.();
+      await this.transformInput();
+      await this.state.hooks.beforeMemoization?.();
 
-      if (this.#state.opStack.length === 0 && !this.options.requestedRunStep) {
-        await this.#state.hooks.afterMemoization?.();
-        await this.#state.hooks.beforeExecution?.();
+      if (this.state.opStack.length === 0 && !this.options.requestedRunStep) {
+        await this.state.hooks.afterMemoization?.();
+        await this.state.hooks.beforeExecution?.();
       }
 
-      const userFnPromise = runAsPromise(() => this.#userFnToRun(this.#fnArg));
+      const userFnPromise = runAsPromise(() => this.userFnToRun(this.fnArg));
 
       let pos = -1;
 
@@ -96,17 +96,17 @@ export class V0InngestExecution
         if (pos >= 0) {
           if (
             !this.options.requestedRunStep &&
-            pos === this.#state.opStack.length - 1
+            pos === this.state.opStack.length - 1
           ) {
-            await this.#state.hooks.afterMemoization?.();
-            await this.#state.hooks.beforeExecution?.();
+            await this.state.hooks.afterMemoization?.();
+            await this.state.hooks.beforeExecution?.();
           }
 
-          this.#state.tickOps = {};
-          const incomingOp = this.#state.opStack[pos] as IncomingOp;
-          this.#state.currentOp = this.#state.allFoundOps[incomingOp.id];
+          this.state.tickOps = {};
+          const incomingOp = this.state.opStack[pos] as IncomingOp;
+          this.state.currentOp = this.state.allFoundOps[incomingOp.id];
 
-          if (!this.#state.currentOp) {
+          if (!this.state.currentOp) {
             /**
              * We're trying to resume the function, but we can't find where to go.
              *
@@ -133,32 +133,32 @@ export class V0InngestExecution
             );
           }
 
-          this.#state.currentOp.fulfilled = true;
+          this.state.currentOp.fulfilled = true;
 
           if (typeof incomingOp.data !== "undefined") {
-            this.#state.currentOp.resolve(incomingOp.data);
+            this.state.currentOp.resolve(incomingOp.data);
           } else {
-            this.#state.currentOp.reject(incomingOp.error);
+            this.state.currentOp.reject(incomingOp.error);
           }
         }
 
         await resolveAfterPending();
-        this.#state.reset();
+        this.state.reset();
         pos++;
-      } while (pos < this.#state.opStack.length);
+      } while (pos < this.state.opStack.length);
 
-      await this.#state.hooks.afterMemoization?.();
+      await this.state.hooks.afterMemoization?.();
 
-      const discoveredOps = Object.values(this.#state.tickOps).map<OutgoingOp>(
+      const discoveredOps = Object.values(this.state.tickOps).map<OutgoingOp>(
         tickOpToOutgoing
       );
 
       const runStep =
         this.options.requestedRunStep ||
-        this.#getEarlyExecRunStep(discoveredOps);
+        this.getEarlyExecRunStep(discoveredOps);
 
       if (runStep) {
-        const userFnOp = this.#state.allFoundOps[runStep];
+        const userFnOp = this.state.allFoundOps[runStep];
         const stepToRun = userFnOp?.fn;
 
         if (!stepToRun) {
@@ -172,19 +172,19 @@ export class V0InngestExecution
           op: StepOpCode.RunStep,
         };
 
-        await this.#state.hooks.beforeExecution?.();
-        this.#state.executingStep = true;
+        await this.state.hooks.beforeExecution?.();
+        this.state.executingStep = true;
 
         const result = await runAsPromise(stepToRun)
           .finally(() => {
-            this.#state.executingStep = false;
+            this.state.executingStep = false;
           })
           .catch(async (error: Error) => {
-            return await this.#transformOutput({ error }, outgoingUserFnOp);
+            return await this.transformOutput({ error }, outgoingUserFnOp);
           })
           .then(async (data) => {
-            await this.#state.hooks?.afterExecution?.();
-            return await this.#transformOutput({ data }, outgoingUserFnOp);
+            await this.state.hooks?.afterExecution?.();
+            return await this.transformOutput({ data }, outgoingUserFnOp);
           });
 
         const { type: _type, ...rest } = result;
@@ -199,24 +199,24 @@ export class V0InngestExecution
         ]);
 
         if (fnRet.type === "complete") {
-          await this.#state.hooks.afterExecution?.();
+          await this.state.hooks.afterExecution?.();
 
-          const allOpsFulfilled = Object.values(this.#state.allFoundOps).every(
+          const allOpsFulfilled = Object.values(this.state.allFoundOps).every(
             (op) => {
               return op.fulfilled;
             }
           );
 
           if (allOpsFulfilled) {
-            return await this.#transformOutput({ data: fnRet.data });
+            return await this.transformOutput({ data: fnRet.data });
           }
-        } else if (!this.#state.hasUsedTools) {
-          this.#state.nonStepFnDetected = true;
+        } else if (!this.state.hasUsedTools) {
+          this.state.nonStepFnDetected = true;
           const data = await userFnPromise;
-          await this.#state.hooks.afterExecution?.();
-          return await this.#transformOutput({ data });
+          await this.state.hooks.afterExecution?.();
+          return await this.transformOutput({ data });
         } else {
-          const hasOpsPending = Object.values(this.#state.allFoundOps).some(
+          const hasOpsPending = Object.values(this.state.allFoundOps).some(
             (op) => {
               return op.fulfilled === false;
             }
@@ -232,20 +232,20 @@ export class V0InngestExecution
         }
       }
 
-      await this.#state.hooks.afterExecution?.();
+      await this.state.hooks.afterExecution?.();
 
       return {
         type: "steps-found",
         steps: discoveredOps as [OutgoingOp, ...OutgoingOp[]],
       };
     } catch (error) {
-      return await this.#transformOutput({ error });
+      return await this.transformOutput({ error });
     } finally {
-      await this.#state.hooks.beforeResponse?.();
+      await this.state.hooks.beforeResponse?.();
     }
   }
 
-  async #initializeMiddleware(): Promise<RunHookStack> {
+  private async initializeMiddleware(): Promise<RunHookStack> {
     const ctx = this.options.data as Pick<
       Readonly<BaseContext<ClientOptions, string>>,
       "event" | "events" | "runId"
@@ -282,7 +282,7 @@ export class V0InngestExecution
     return hooks;
   }
 
-  #createExecutionState(): V0ExecutionState {
+  private createExecutionState(): V0ExecutionState {
     const state: V0ExecutionState = {
       allFoundOps: {},
       tickOps: {},
@@ -311,7 +311,7 @@ export class V0InngestExecution
     return state;
   }
 
-  #getUserFnToRun(): AnyHandler {
+  private getUserFnToRun(): AnyHandler {
     if (!this.options.isFailureHandler) {
       return this.options.fn["fn"];
     }
@@ -327,9 +327,9 @@ export class V0InngestExecution
     return this.options.fn["onFailureFn"];
   }
 
-  #createFnArg(): AnyContext {
+  private createFnArg(): AnyContext {
     // Start referencing everything
-    this.#state.tickOps = this.#state.allFoundOps;
+    this.state.tickOps = this.state.allFoundOps;
 
     /**
      * Create a unique hash of an operation using only a subset of the operation's
@@ -355,7 +355,7 @@ export class V0InngestExecution
        * and examples.
        */
       const obj = {
-        parent: this.#state.currentOp?.id ?? null,
+        parent: this.state.currentOp?.id ?? null,
         op: op.op,
         name: op.name as string,
         opts: op.opts ?? null,
@@ -363,8 +363,8 @@ export class V0InngestExecution
 
       const collisionHash = _internals.hashData(obj);
 
-      const pos = (this.#state.tickOpHashes[collisionHash] =
-        (this.#state.tickOpHashes[collisionHash] ?? -1) + 1);
+      const pos = (this.state.tickOpHashes[collisionHash] =
+        (this.state.tickOpHashes[collisionHash] ?? -1) + 1);
 
       return {
         ...op,
@@ -373,7 +373,7 @@ export class V0InngestExecution
     };
 
     const stepHandler: StepHandler = ({ args, matchOp, opts }) => {
-      if (this.#state.nonStepFnDetected) {
+      if (this.state.nonStepFnDetected) {
         if (opts?.nonStepExecuteInline && opts.fn) {
           return Promise.resolve(opts.fn(...args));
         }
@@ -383,7 +383,7 @@ export class V0InngestExecution
         );
       }
 
-      if (this.#state.executingStep) {
+      if (this.state.executingStep) {
         throw new NonRetriableError(
           prettyError({
             whatHappened: "Your function was stopped from running",
@@ -399,13 +399,13 @@ export class V0InngestExecution
         );
       }
 
-      this.#state.hasUsedTools = true;
+      this.state.hasUsedTools = true;
 
       const stepOptions = getStepOptions(args[0]);
       const opId = hashOp(matchOp(stepOptions, ...args.slice(1)));
 
       return new Promise<unknown>((resolve, reject) => {
-        this.#state.tickOps[opId.id] = {
+        this.state.tickOps[opId.id] = {
           ...opId,
           ...(opts?.fn ? { fn: () => opts.fn?.(...args) } : {}),
           resolve,
@@ -439,23 +439,23 @@ export class V0InngestExecution
   /**
    * Using middleware, transform input before running.
    */
-  async #transformInput() {
-    const inputMutations = await this.#state.hooks?.transformInput?.({
-      ctx: { ...this.#fnArg },
+  private async transformInput() {
+    const inputMutations = await this.state.hooks?.transformInput?.({
+      ctx: { ...this.fnArg },
       steps: Object.values(this.options.stepState),
       fn: this.options.fn,
     });
 
     if (inputMutations?.ctx) {
-      this.#fnArg = inputMutations.ctx;
+      this.fnArg = inputMutations.ctx;
     }
 
     if (inputMutations?.steps) {
-      this.#state.opStack = [...inputMutations.steps];
+      this.state.opStack = [...inputMutations.steps];
     }
   }
 
-  #getEarlyExecRunStep(ops: OutgoingOp[]): string | undefined {
+  private getEarlyExecRunStep(ops: OutgoingOp[]): string | undefined {
     if (ops.length !== 1) return;
 
     const op = ops[0];
@@ -472,7 +472,7 @@ export class V0InngestExecution
   /**
    * Using middleware, transform output before returning.
    */
-  async #transformOutput(
+  private async transformOutput(
     dataOrError: Parameters<
       NonNullable<RunHookStack["transformOutput"]>
     >[0]["result"],
@@ -484,7 +484,7 @@ export class V0InngestExecution
       output.data = serializeError(output.error);
     }
 
-    const transformedOutput = await this.#state.hooks?.transformOutput?.({
+    const transformedOutput = await this.state.hooks?.transformOutput?.({
       result: { ...output },
       step,
     });
