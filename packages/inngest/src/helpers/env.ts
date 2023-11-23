@@ -217,6 +217,13 @@ export const inngestHeaders = (opts?: {
   client?: Inngest;
 
   /**
+   * The Inngest server we expect to be communicating with, used to ensure that
+   * various parts of a handshake are all happening the same type of
+   * participant.
+   */
+  expectedServerKind?: string;
+
+  /**
    * Any additional headers to include in the returned headers.
    */
   extras?: Record<string, string>;
@@ -230,6 +237,10 @@ export const inngestHeaders = (opts?: {
 
   if (opts?.framework) {
     headers[headerKeys.Framework] = opts.framework;
+  }
+
+  if (opts?.expectedServerKind) {
+    headers[headerKeys.InngestExpectedServerKind] = opts.expectedServerKind;
   }
 
   const env = {
