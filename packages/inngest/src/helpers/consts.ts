@@ -148,3 +148,8 @@ export const logPrefix = chalk.magenta.bold("[Inngest]");
 export const debugPrefix = "inngest";
 
 export const dummyEventKey = "NO_EVENT_KEY_SET";
+
+export enum serverKind {
+  Dev = "dev",
+  Cloud = "cloud",
+}
