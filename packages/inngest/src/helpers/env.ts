@@ -218,7 +218,7 @@ export const inngestHeaders = (opts?: {
 
   /**
    * The Inngest server we expect to be communicating with, used to ensure that
-   * various parts of a handshake are all happening the same type of
+   * various parts of a handshake are all happening with the same type of
    * participant.
    */
   expectedServerKind?: string;
