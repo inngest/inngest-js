@@ -121,6 +121,8 @@ export enum headerKeys {
   NoRetry = "x-inngest-no-retry",
   RequestVersion = "x-inngest-req-version",
   RetryAfter = "retry-after",
+  InngestServerKind = "x-inngest-server-kind",
+  InngestExpectedServerKind = "x-inngest-expected-server-kind",
 }
 
 export const defaultInngestApiBaseUrl = "https://api.inngest.com/";
@@ -146,3 +148,8 @@ export const logPrefix = chalk.magenta.bold("[Inngest]");
 export const debugPrefix = "inngest";
 
 export const dummyEventKey = "NO_EVENT_KEY_SET";
+
+export enum serverKind {
+  Dev = "dev",
+  Cloud = "cloud",
+}

@@ -4,7 +4,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Inngest } from "@local";
 import { type ServeHandlerOptions } from "@local/components/InngestCommHandler";
-import { envKeys, headerKeys, queryKeys } from "@local/helpers/consts";
+import {
+  envKeys,
+  headerKeys,
+  queryKeys,
+  serverKind,
+} from "@local/helpers/consts";
 import { type Env } from "@local/helpers/env";
 import { slugify } from "@local/helpers/strings";
 import { type FunctionTrigger } from "@local/types";
@@ -240,7 +245,12 @@ export const testFramework = (
       test("shows introspection data", async () => {
         const ret = await run(
           [{ client: inngest, functions: [] }],
-          [{ method: "GET" }]
+          [
+            {
+              method: "GET",
+              headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
+            },
+          ]
         );
 
         const body = JSON.parse(ret.body);
@@ -249,6 +259,7 @@ export const testFramework = (
           status: 200,
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
+            [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
             [headerKeys.Framework]: expect.stringMatching(
               handler.frameworkName
             ),
@@ -282,7 +293,13 @@ export const testFramework = (
 
           const ret = await run(
             [{ client: inngest, functions: [] }],
-            [{ method: "PUT", url: "/api/inngest" }]
+            [
+              {
+                method: "PUT",
+                url: "/api/inngest",
+                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
+              },
+            ]
           );
 
           const retBody = JSON.parse(ret.body);
@@ -291,6 +308,7 @@ export const testFramework = (
             status: 200,
             headers: expect.objectContaining({
               [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
+              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
               [headerKeys.Framework]: expect.stringMatching(
                 handler.frameworkName
               ),
@@ -313,7 +331,12 @@ export const testFramework = (
 
           const ret = await run(
             [{ client: inngest, functions: [] }],
-            [{ method: "PUT" }],
+            [
+              {
+                method: "PUT",
+                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
+              },
+            ],
             {
               [envKeys.IsNetlify]: "true",
             }
@@ -322,6 +345,7 @@ export const testFramework = (
           expect(ret).toMatchObject({
             headers: expect.objectContaining({
               [headerKeys.Platform]: "netlify",
+              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
             }),
           });
         });
@@ -343,7 +367,13 @@ export const testFramework = (
 
           const ret = await run(
             [{ client: inngest, functions: [] }],
-            [{ method: "PUT", url: customUrl }]
+            [
+              {
+                method: "PUT",
+                url: customUrl,
+                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
+              },
+            ]
           );
 
           const retBody = JSON.parse(ret.body);
@@ -352,6 +382,7 @@ export const testFramework = (
             status: 200,
             headers: expect.objectContaining({
               [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
+              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
               [headerKeys.Framework]: expect.stringMatching(
                 handler.frameworkName
               ),
@@ -465,13 +496,19 @@ export const testFramework = (
                 functions: [],
               },
             ],
-            [{ method: "PUT" }]
+            [
+              {
+                method: "PUT",
+                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
+              },
+            ]
           );
 
           expect(ret).toMatchObject({
             status: 200,
             headers: expect.objectContaining({
               [headerKeys.Environment]: expect.stringMatching("FOO"),
+              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
             }),
           });
         });

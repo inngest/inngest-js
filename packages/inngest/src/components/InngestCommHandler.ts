@@ -518,14 +518,22 @@ export class InngestCommHandler<
         };
       }, {} as HandlerResponseWithErrors);
 
-      this.env =
-        (await actions.env?.("starting to handle request")) ?? allProcessEnv();
+      const [env, expectedServerKind] = await Promise.all([
+        actions.env?.("starting to handle request"),
+        actions.headers(
+          "checking expected server kind",
+          headerKeys.InngestServerKind
+        ),
+      ]);
+
+      this.env = env ?? allProcessEnv();
 
       const getInngestHeaders = (): Record<string, string> =>
         inngestHeaders({
           env: this.env,
           framework: this.frameworkName,
           client: this.client,
+          expectedServerKind: expectedServerKind || undefined,
           extras: {
             "Server-Timing": timer.getHeader(),
           },
