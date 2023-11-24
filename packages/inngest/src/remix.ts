@@ -1,8 +1,10 @@
+import { z } from "zod";
 import {
   InngestCommHandler,
   type ActionResponse,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
+import { type Env } from "./helpers/env";
 import { type SupportedFrameworkName } from "./types";
 
 export const frameworkName: SupportedFrameworkName = "remix";
@@ -56,11 +58,28 @@ const createNewResponse = ({
  * @public
  */
 export const serve = (options: ServeHandlerOptions) => {
+  const contextSchema = z.object({
+    env: z.record(z.string(), z.any()),
+  });
+
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
-    handler: ({ request: req }: { request: Request }) => {
+    handler: ({
+      request: req,
+      context,
+    }: {
+      request: Request;
+      context?: unknown;
+    }) => {
       return {
+        env: () => {
+          const ctxParse = contextSchema.safeParse(context);
+
+          if (ctxParse.success && Object.keys(ctxParse.data.env).length) {
+            return ctxParse.data.env as Env;
+          }
+        },
         body: () => req.json(),
         headers: (key) => req.headers.get(key),
         method: () => req.method,
