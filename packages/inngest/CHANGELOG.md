@@ -1,5 +1,17 @@
 # inngest
 
+## 3.6.2
+
+### Patch Changes
+
+- [#409](https://github.com/inngest/inngest-js/pull/409) [`b56a33e`](https://github.com/inngest/inngest-js/commit/b56a33e17c67d97f838dd557f1412a8f6f9582bb) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Support Remix env vars on Cloudflare Pages via `context.env`
+
+- [#400](https://github.com/inngest/inngest-js/pull/400) [`428a591`](https://github.com/inngest/inngest-js/commit/428a591fd390538f2202868aa6c6a0810e525191) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix Next.js 13 host being stubborn when relying on `req.url` for hosts such as `host.docker.internal`
+
+- [#408](https://github.com/inngest/inngest-js/pull/408) [`4066217`](https://github.com/inngest/inngest-js/commit/4066217b279b7baddc70819ce53233f0fc90d929) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Forward `X-Inngest-Server-Kind` headers to assist in preventing some issues with registration handshakes
+
+- [#406](https://github.com/inngest/inngest-js/pull/406) [`be5544b`](https://github.com/inngest/inngest-js/commit/be5544bf58286dbb7dbf01eb11605f10d612eb4a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix correctness issues in generated `*.d.ts` files, causing errors for some versions/configurations of TypeScript with `skipLibCheck: false`
+
 ## 3.6.1
 
 ### Patch Changes
@@ -303,7 +315,7 @@
     { event: "app/user.created" },
     async ({ attempt }) => {
       // ...
-    }
+    },
   );
   ```
 
@@ -380,7 +392,7 @@
       });
 
       return { success: true, result };
-    }
+    },
   );
   ```
 
