@@ -1871,9 +1871,15 @@ describe("runFn", () => {
               disableImmediateExecution: true,
               runStep: B,
               expectedReturn: {
-                type: "function-rejected",
-                error: matchError("B failed message"),
+                type: "step-ran",
                 retriable: true,
+                step: expect.objectContaining({
+                  id: B,
+                  name: "B",
+                  displayName: "B",
+                  op: StepOpCode.RunStep,
+                  error: matchError("B failed message"),
+                }),
               },
               expectedStepsRun: ["B"],
               expectedErrors: ["B failed message"],
@@ -1965,7 +1971,6 @@ describe("runFn", () => {
                   id: A,
                   name: "A",
                   op: StepOpCode.RunStep,
-                  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                   error: matchError(new NonRetriableError("A error message")),
                 }),
               },
@@ -1978,12 +1983,18 @@ describe("runFn", () => {
           hashes: {
             A: "A",
           },
-          tests: () => ({
+          tests: ({ A }) => ({
             "first run executes A, which throws a NonRetriable error": {
               expectedReturn: {
-                type: "function-rejected",
+                type: "step-ran",
                 retriable: false,
-                error: matchError(new NonRetriableError("A error message")),
+                step: expect.objectContaining({
+                  id: A,
+                  name: "A",
+                  displayName: "A",
+                  op: StepOpCode.RunStep,
+                  error: matchError(new NonRetriableError("A error message")),
+                }),
               },
               expectedStepsRun: ["A"],
               expectedErrors: ["A error message"],
