@@ -456,7 +456,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       const serializedError = serializeError(output.error);
       output.data = serializedError;
 
-      if (output.error === this.#state.recentlyRejectedStepError) {
+      if (output.error === this.state.recentlyRejectedStepError) {
         output.error = new NonRetriableError(serializedError.message, {
           cause: output.error,
         });
@@ -759,11 +759,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             if (typeof stepState.data !== "undefined") {
               resolve(stepState.data);
             } else {
-              this.#state.recentlyRejectedStepError = deserializeError(
+              this.state.recentlyRejectedStepError = deserializeError(
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 stepState.error
               );
-              reject(this.#state.recentlyRejectedStepError);
+              reject(this.state.recentlyRejectedStepError);
             }
           }
 
