@@ -119,7 +119,10 @@ export const isSerializedError = (
       const parsed = z
         .object({
           [SERIALIZED_KEY]: z.literal(SERIALIZED_VALUE),
-          name: z.enum([...errorConstructors.keys()] as [string, ...string[]]),
+          name: z.enum([...Array.from(errorConstructors.keys())] as [
+            string,
+            ...string[],
+          ]),
           message: z.string(),
           stack: z.string(),
         })

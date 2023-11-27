@@ -277,7 +277,7 @@ describe("runFn", () => {
         event?: EventPayload;
         onFailure?: boolean;
       },
-      U extends Record<keyof T["steps"], string>
+      U extends Record<keyof T["steps"], string>,
     >(
       fnName: string,
       createTools: () => T,
@@ -446,8 +446,8 @@ describe("runFn", () => {
                     ret!.type === "step-ran"
                       ? [ret!.step]
                       : ret!.type === "steps-found"
-                      ? ret!.steps
-                      : [];
+                        ? ret!.steps
+                        : [];
 
                   outgoingOps.forEach((op) => {
                     expect(op.id).toMatch(/^[a-f0-9]{40}$/i);

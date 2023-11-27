@@ -9,10 +9,13 @@ if (!tag || !tag.startsWith("pr-")) {
 }
 
 console.log("tag:", tag);
-
-const rootDir = path.join(__dirname, "..");
-const distDir = path.join(rootDir, "dist");
-process.chdir(rootDir);
+const packageRootDir = process.cwd();
+console.log("package root:", packageRootDir);
+const distDir = process.env.DIST_DIR
+  ? path.join(packageRootDir, process.env.DIST_DIR)
+  : packageRootDir;
+console.log("dist dir:", distDir);
+process.chdir(packageRootDir);
 
 const exec = async (...args) => {
   const exitCode = await rawExec(...args);

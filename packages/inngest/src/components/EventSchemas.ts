@@ -130,8 +130,8 @@ export type LiteralToRecordZodSchemas<T> = PickLiterals<
         [I in keyof T as GetName<T[I]>]: InferZodShape<T[I]>;
       }
     : T extends ZodEventSchemas
-    ? T
-    : never
+      ? T
+      : never
 >;
 
 /**
@@ -177,7 +177,7 @@ export type StandardEventSchemaToPayload<T> = Simplify<{
  */
 export type Combine<
   TCurr extends Record<string, EventPayload>,
-  TInc extends StandardEventSchemas
+  TInc extends StandardEventSchemas,
 > = IsStringLiteral<keyof TCurr & string> extends true
   ? Simplify<
       Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> &

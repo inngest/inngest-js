@@ -27,6 +27,31 @@ module.exports = {
     ],
     "import/consistent-type-specifier-style": ["error", "prefer-inline"],
     "import/no-duplicates": ["error", { "prefer-inline": true }],
+    "import/no-extraneous-dependencies": [
+      "error",
+      {
+        devDependencies: [
+          "**/*.test.ts",
+          "**/test/**",
+          "**/scripts/**",
+          "src/cloudflare.ts",
+          "src/digitalocean.ts",
+          "src/edge.ts",
+          "src/express.ts",
+          "src/fastify.ts",
+          "src/h3.ts",
+          "src/koa.ts",
+          "src/lambda.ts",
+          "src/next.ts",
+          "src/nuxt.ts",
+          "src/redwood.ts",
+          "src/remix.ts",
+          "src/sveltekit.ts",
+        ],
+        includeInternal: true,
+        includeTypes: true,
+      },
+    ],
   },
   overrides: [
     {

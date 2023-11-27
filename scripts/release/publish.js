@@ -7,32 +7,33 @@ if (branch !== "main" && !branch.endsWith(".x")) {
     `Stopping release from branch ${branch}; only "main" and "v*.x" branches are allowed to release`
   );
 }
-
 console.log("branch:", branch);
 
-const {
-  version,
-  publishConfig: { registry },
-} = require("../package.json");
+const name = process.env.npm_package_name;
+const version = process.env.npm_package_version;
+const registry = process.env.npm_package_publishConfig_registry;
 console.log("version:", version);
-const tag = `inngest@${version}`;
+const tag = `${name}@${version}`;
 console.log("tag:", tag);
 
 const [, tagEnd = ""] = version.split("-");
 const distTag = tagEnd.split(".")[0] || "latest";
 console.log("distTag:", distTag);
 
-const packageRootDir = path.join(__dirname, "..");
+console.log("process.cwd()", process.cwd());
+
+const packageRootDir = process.cwd();
 console.log("package root:", packageRootDir);
 const repoRootDir = path.join(packageRootDir, "..", "..");
 console.log("repo root:", repoRootDir);
-const distDir = path.join(packageRootDir, "dist");
+const distDir = process.env.DIST_DIR
+  ? path.join(packageRootDir, process.env.DIST_DIR)
+  : packageRootDir;
 console.log("dist dir:", distDir);
 process.chdir(packageRootDir);
 
 const exec = async (...args) => {
   const exitCode = await rawExec(...args);
-
   if (exitCode !== 0) {
     throw new Error(`Command exited with ${exitCode}`);
   }
@@ -114,11 +115,4 @@ const exec = async (...args) => {
       registry,
     ]);
   }
-
-  // Tag and push the release commit
-  console.log('running "changeset tag" to tag the release commit');
-  await exec("changeset", ["tag"], { cwd: repoRootDir });
-
-  console.log(`pushing git tags to origin/${branch}`);
-  await exec("git", ["push", "--follow-tags", "origin", branch]);
 })();

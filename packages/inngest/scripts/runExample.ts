@@ -25,7 +25,7 @@ const examplesPath = path.join(__dirname, "..", "..", "..", "examples");
 
 const examples: string[] = fs
   .readdirSync(examplesPath, { withFileTypes: true })
-  .filter((file) => file.isDirectory())
+  .filter((file) => file.isDirectory() && file.name.startsWith("framework-"))
   .map((file) => file.name);
 
 const exampleFromFlag: string = (argv.example as string) ?? "";

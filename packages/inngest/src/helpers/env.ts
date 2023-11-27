@@ -46,7 +46,7 @@ export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
 };
 
 const checkFns = (<
-  T extends Record<string, (actual: EnvValue, expected: EnvValue) => boolean>
+  T extends Record<string, (actual: EnvValue, expected: EnvValue) => boolean>,
 >(
   checks: T
 ): T => checks)({
@@ -61,7 +61,7 @@ const checkFns = (<
 const prodChecks: [
   key: string,
   customCheck: keyof typeof checkFns,
-  value?: string
+  value?: string,
 ][] = [
   ["CF_PAGES", "equals", "1"],
   ["CONTEXT", "starts with", "prod"],
@@ -78,7 +78,7 @@ const prodChecks: [
 const platformDeployChecks: [
   key: string,
   customCheck: keyof typeof checkFns,
-  value?: string
+  value?: string,
 ][] = [
   // Extend prod checks, then check if we're deployed to a platform.
   [prodEnvKeys.VercelEnvKey, "is truthy but not", "development"],
@@ -217,6 +217,13 @@ export const inngestHeaders = (opts?: {
   client?: Inngest;
 
   /**
+   * The Inngest server we expect to be communicating with, used to ensure that
+   * various parts of a handshake are all happening with the same type of
+   * participant.
+   */
+  expectedServerKind?: string;
+
+  /**
    * Any additional headers to include in the returned headers.
    */
   extras?: Record<string, string>;
@@ -230,6 +237,10 @@ export const inngestHeaders = (opts?: {
 
   if (opts?.framework) {
     headers[headerKeys.Framework] = opts.framework;
+  }
+
+  if (opts?.expectedServerKind) {
+    headers[headerKeys.InngestExpectedServerKind] = opts.expectedServerKind;
   }
 
   const env = {
@@ -362,4 +373,18 @@ export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
    */
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   return require("cross-fetch") as typeof fetch;
+};
+
+/**
+ * If `Response` isn't included in this environment, it's probably an earlier
+ * Node env that isn't already polyfilling. This function returns either the
+ * native `Response` or a polyfilled one.
+ */
+export const getResponse = (): typeof Response => {
+  if (typeof Response !== "undefined") {
+    return Response;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
+  return require("cross-fetch").Response;
 };

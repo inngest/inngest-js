@@ -16,8 +16,8 @@ env:
   NODE_AUTH_TOKEN: nothing
 
 jobs:
-  test:
-    name: Runtime
+  inngest_test:
+    name: "inngest: Runtime tests"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -39,8 +39,8 @@ jobs:
       # Uses npm as pnpm doesn't support Node < 16
       - run: node --version && npm --version && npm run test
 
-  types:
-    name: Types
+  inngest_types:
+    name: "inngest: Type tests"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -50,6 +50,7 @@ jobs:
       matrix:
         tsVersion:
          - 'latest'
+         - '~5.3.0'
          - '~5.2.0'
          - '~5.1.0'
          - '~5.0.0'
@@ -61,9 +62,10 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - run: pnpm add -D typescript@${{ matrix.tsVersion }}
       - run: pnpm run test:types
+      - run: pnpm run test:dist
 
-  api_diff:
-    name: Local API diff
+  inngest_api_diff:
+    name: "inngest: Local API diff"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -73,8 +75,8 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - run: pnpm run api-extractor run
 
-  lint:
-    name: Lint
+  inngest_lint:
+    name: "inngest: Lint"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -84,8 +86,45 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - run: pnpm run lint
 
-  package:
-    name: Package
+  inngest_test_dist:
+    name: "inngest: Dist tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:dist
+
+  inngest_test_deps:
+    name: "inngest: Dependency tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:deps
+
+  "eslint-plugin_test":
+    name: "eslint-plugin: Test"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/eslint-plugin
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+      - run: pnpm install
+      - run: pnpm test
+
+  package_inngest:
+    name: "inngest: Package"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -112,7 +151,7 @@ jobs:
       - id: matrix
         run: |
           blocklist=$(grep -v '^#' examples/.inngestignore | jq -R . | jq -s .)
-          echo "matrix=$(find examples -mindepth 1 -maxdepth 1 -type d | grep -v -f <(echo $blocklist | jq -r '.[]') | xargs -n 1 basename | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+          echo "matrix=$(find examples -mindepth 1 -maxdepth 1 -type d -name 'framework-*' | grep -v -f <(echo $blocklist | jq -r '.[]') | xargs -n 1 basename | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
 
   examples:
     name: Test examples
@@ -120,7 +159,7 @@ jobs:
     defaults:
       run:
         working-directory: packages/inngest
-    needs: [examples-matrix, package]
+    needs: [examples-matrix, package_inngest]
     strategy:
       fail-fast: false
       matrix:

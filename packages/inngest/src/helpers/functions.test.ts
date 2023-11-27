@@ -26,7 +26,7 @@ describe("#parseFnData", () => {
       data: {
         version: 1,
         event: generateEvent(),
-        events: [...Array(5).keys()].map(() => generateEvent()),
+        events: [...Array.from(Array(5).keys())].map(() => generateEvent()),
         steps: {},
         ctx: {
           run_id: randomstr(),
@@ -46,7 +46,7 @@ describe("#parseFnData", () => {
       // @ts-expect-error No `event`
       data: {
         version: ExecutionVersion.V1,
-        events: [...Array(5).keys()].map(() => generateEvent()),
+        events: [...Array.from(Array(5).keys())].map(() => generateEvent()),
         steps: {},
         ctx: {
           run_id: randomstr(),

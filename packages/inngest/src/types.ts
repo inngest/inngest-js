@@ -7,15 +7,14 @@ import {
   type builtInMiddleware,
 } from "./components/Inngest";
 import {
+  type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
   type MiddlewareOptions,
-  type MiddlewareStackSendEventOutputMutation,
 } from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
 import {
   type IsStringLiteral,
-  type ObjectAssign,
   type ObjectPaths,
   type StrictUnion,
 } from "./helpers/types";
@@ -60,7 +59,7 @@ export const failureEventErrorSchema = z.object({
 
 export type MiddlewareStack = [
   InngestMiddleware<MiddlewareOptions>,
-  ...InngestMiddleware<MiddlewareOptions>[]
+  ...InngestMiddleware<MiddlewareOptions>[],
 ];
 
 /**
@@ -217,7 +216,7 @@ export type TimeStrBatch = `${`${number}s`}`;
 
 export type BaseContext<
   TOpts extends ClientOptions,
-  TTrigger extends keyof EventsFromOpts<TOpts> & string
+  TTrigger extends keyof EventsFromOpts<TOpts> & string,
 > = {
   /**
    * The event data present in the payload.
@@ -226,7 +225,7 @@ export type BaseContext<
 
   events: [
     EventsFromOpts<TOpts>[TTrigger],
-    ...EventsFromOpts<TOpts>[TTrigger][]
+    ...EventsFromOpts<TOpts>[TTrigger][],
   ];
 
   /**
@@ -254,7 +253,7 @@ export type Context<
   TOpts extends ClientOptions,
   TEvents extends Record<string, EventPayload>,
   TTrigger extends keyof TEvents & string,
-  TOverrides extends Record<string, unknown> = Record<never, never>
+  TOverrides extends Record<string, unknown> = Record<never, never>,
 > = Omit<BaseContext<TOpts, TTrigger>, keyof TOverrides> & TOverrides;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -270,7 +269,7 @@ export type Handler<
   TOpts extends ClientOptions,
   TEvents extends EventsFromOpts<TOpts>,
   TTrigger extends keyof TEvents & string,
-  TOverrides extends Record<string, unknown> = Record<never, never>
+  TOverrides extends Record<string, unknown> = Record<never, never>,
 > = (
   /**
    * The context argument provides access to all data and tooling available to
@@ -353,18 +352,17 @@ export type SendEventBaseOutput = {
   ids: SendEventResponse["ids"];
 };
 
-export type SendEventOutput<TOpts extends ClientOptions> = ObjectAssign<
-  [
-    // eslint-disable-next-line @typescript-eslint/ban-types
-    MiddlewareStackSendEventOutputMutation<{}, typeof builtInMiddleware>,
-    MiddlewareStackSendEventOutputMutation<
-      // eslint-disable-next-line @typescript-eslint/ban-types
-      {},
-      NonNullable<TOpts["middleware"]>
-    >
-  ],
-  SendEventBaseOutput
->;
+export type SendEventOutput<TOpts extends ClientOptions> = Omit<
+  SendEventBaseOutput,
+  keyof SendEventOutputWithMiddleware<TOpts>
+> &
+  SendEventOutputWithMiddleware<TOpts>;
+
+export type SendEventOutputWithMiddleware<TOpts extends ClientOptions> =
+  ExtendSendEventWithMiddleware<
+    [typeof builtInMiddleware, NonNullable<TOpts["middleware"]>],
+    SendEventBaseOutput
+  >;
 
 /**
  * An HTTP-like, standardised response format that allows Inngest to help
@@ -692,7 +690,7 @@ export interface ConcurrencyOption {
  */
 export interface FunctionOptions<
   Events extends Record<string, EventPayload>,
-  Event extends keyof Events & string
+  Event extends keyof Events & string,
 > {
   /**
    * An unique ID used to identify the function. This is used internally for
@@ -869,7 +867,7 @@ export interface FunctionOptions<
  */
 export type Cancellation<
   Events extends Record<string, EventPayload>,
-  TriggeringEvent extends keyof Events & string
+  TriggeringEvent extends keyof Events & string,
 > = {
   [K in keyof Events & string]: {
     /**
@@ -1089,7 +1087,7 @@ export interface DevServerInfo {
  */
 export type EventNameFromTrigger<
   Events extends Record<string, EventPayload>,
-  T extends TriggerOptions<keyof Events & string>
+  T extends TriggerOptions<keyof Events & string>,
 > = T extends string ? T : T extends { event: string } ? T["event"] : string;
 
 /**

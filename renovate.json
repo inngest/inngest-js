@@ -7,7 +7,8 @@
       "excludePackagePatterns": [
         "^typescript$",
         "^eslint*",
-        "^@typescript-eslint/*"
+        "^@typescript-eslint/*",
+        "^prettier$"
       ],
       "dependencyDashboardApproval": true
     },
@@ -25,7 +26,7 @@
     {
       "groupName": "Linting",
       "groupSlug": "linting",
-      "matchPackagePrefixes": ["eslint", "@typescript-eslint"],
+      "matchPackagePrefixes": ["eslint", "@typescript-eslint", "prettier"],
       "matchUpdateTypes": ["major", "minor", "patch"],
       "dependencyDashboardApproval": false,
       "automerge": true,
