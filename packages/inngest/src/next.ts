@@ -4,16 +4,11 @@ import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
+import { getResponse } from "./helpers/env";
 import { type Either } from "./helpers/types";
 import { type SupportedFrameworkName } from "./types";
 
 export const frameworkName: SupportedFrameworkName = "nextjs";
-
-const isNextEdgeRequest = (
-  req: NextApiRequest | NextRequest
-): req is NextRequest => {
-  return typeof req?.headers?.get === "function";
-};
 
 /**
  * In Next.js, serve and register any declared functions with Inngest, making
@@ -45,21 +40,19 @@ export const serve = (options: ServeHandlerOptions) => {
     ) => {
       const req = expectedReq as Either<NextApiRequest, NextRequest>;
 
-      const isEdge = isNextEdgeRequest(req);
+      const getHeader = (key: string): string | null | undefined => {
+        const header =
+          typeof req.headers.get === "function"
+            ? req.headers.get(key)
+            : req.headers[key];
+
+        return Array.isArray(header) ? header[0] : header;
+      };
 
       return {
-        body: () => {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-          return isEdge ? req.json() : req.body;
-        },
-        headers: (key) => {
-          if (isEdge) {
-            return req.headers.get(key);
-          }
-
-          const header = req.headers[key];
-          return Array.isArray(header) ? header[0] : header;
-        },
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        body: () => (typeof req.json === "function" ? req.json() : req.body),
+        headers: getHeader,
         method: () => {
           /**
            * `req.method`, though types say otherwise, is not available in Next.js
@@ -67,7 +60,8 @@ export const serve = (options: ServeHandlerOptions) => {
            *
            * Therefore, we must try to set the method ourselves where we know it.
            */
-          return reqMethod || req.method || "";
+          const method = reqMethod || req.method || "";
+          return method;
         },
         isProduction: () => {
           /**
@@ -79,26 +73,53 @@ export const serve = (options: ServeHandlerOptions) => {
            */
           try {
             // eslint-disable-next-line @inngest/internal/process-warn
-            return process.env.NODE_ENV === "production";
+            const isProd = process.env.NODE_ENV === "production";
+            return isProd;
           } catch (err) {
             // no-op
           }
         },
         queryString: (key, url) => {
-          if (isEdge) {
-            return url.searchParams.get(key);
-          }
-
-          const qs = req.query[key];
+          const qs = req.query?.[key] || url.searchParams.get(key);
           return Array.isArray(qs) ? qs[0] : qs;
         },
 
         url: () => {
-          if (isEdge) {
-            return new URL(req.url);
+          let absoluteUrl: URL | undefined;
+          try {
+            absoluteUrl = new URL(req.url as string);
+          } catch {
+            // no-op
+          }
+
+          if (absoluteUrl) {
+            /**
+             * `req.url` here should may be the full URL, including query string.
+             * There are some caveats, however, where Next.js will obfuscate
+             * the host. For example, in the case of `host.docker.internal`,
+             * Next.js will instead set the host here to `localhost`.
+             *
+             * To avoid this, we'll try to parse the URL from `req.url`, but
+             * also use the `host` header if it's available.
+             */
+            const host = options.serveHost || getHeader("host");
+            if (host) {
+              const hostWithProtocol = new URL(
+                host.includes("://") ? host : `${absoluteUrl.protocol}//${host}`
+              );
+
+              absoluteUrl.protocol = hostWithProtocol.protocol;
+              absoluteUrl.host = hostWithProtocol.host;
+              absoluteUrl.port = hostWithProtocol.port;
+              absoluteUrl.username = hostWithProtocol.username;
+              absoluteUrl.password = hostWithProtocol.password;
+            }
+
+            return absoluteUrl;
           }
 
           let scheme: "http" | "https" = "https";
+          const host = options.serveHost || getHeader("host") || "";
 
           try {
             // eslint-disable-next-line @inngest/internal/process-warn
@@ -109,21 +130,41 @@ export const serve = (options: ServeHandlerOptions) => {
             // no-op
           }
 
-          return new URL(
-            req.url as string,
-            `${scheme}://${req.headers.host || ""}`
-          );
+          const url = new URL(req.url as string, `${scheme}://${host}`);
+
+          return url;
         },
-        transformResponse: ({ body, headers, status }) => {
-          if (isNextEdgeRequest(req)) {
-            return new Response(body, { status, headers });
+        transformResponse: ({ body, headers, status }): Response => {
+          /**
+           * Carefully attempt to set headers and data on the response object
+           * for Next.js 12 support.
+           */
+          if (typeof res?.setHeader === "function") {
+            for (const [key, value] of Object.entries(headers)) {
+              res.setHeader(key, value);
+            }
           }
 
-          for (const [key, value] of Object.entries(headers)) {
-            res.setHeader(key, value);
+          if (
+            typeof res?.status === "function" &&
+            typeof res?.send === "function"
+          ) {
+            res.status(status).send(body);
           }
 
-          res.status(status).send(body);
+          /**
+           * Next.js 13 requires that the return value is always `Response`,
+           * though this serve handler can't understand if we're using 12 or 13.
+           *
+           * 12 doesn't seem to care if we also return a response from the
+           * handler, so we'll just return `undefined` here, which will be safe
+           * at runtime and enforce types for use with Next.js 13.
+           *
+           * We also don't know if the current environment has a native
+           * `Response` object, so we'll grab that first.
+           */
+          const Res = getResponse();
+          return new Res(body, { status, headers });
         },
         transformStreamingResponse: ({ body, headers, status }) => {
           return new Response(body, { status, headers });
