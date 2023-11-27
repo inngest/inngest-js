@@ -1249,7 +1249,7 @@ export type Handler<
 export type HandlerResponse<Output = any, StreamOutput = any> = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   body: () => MaybePromise<any>;
-  env?: () => MaybePromise<Env>;
+  env?: () => MaybePromise<Env | undefined>;
   headers: (key: string) => MaybePromise<string | null | undefined>;
 
   /**
