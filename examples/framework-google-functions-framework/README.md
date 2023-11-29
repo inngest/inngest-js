@@ -18,6 +18,15 @@ yarn create next-app --example https://github.com/inngest/inngest-js/tree/main/e
 pnpm create next-app --example https://github.com/inngest/inngest-js/tree/main/examples/framework-google-functions-framework inngest-google-functions
 ```
 
+Enter the directory and run:
+
+```bash
+# Transpile TypeScript to JavaScript
+npm run build
+# Run the service
+npm start
+```
+
 Open http://localhost:8080 with your browser to see the result.
 
 - [Inngest functions](https://www.inngest.com/docs/functions) are available at `inngest/`.
