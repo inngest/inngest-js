@@ -1,0 +1,19 @@
+{
+  "name": "framework-google-functions-framework",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "functions-framework --target=inngest"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.3.0",
+    "inngest": "^3.6.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.2"
+  }
+}
