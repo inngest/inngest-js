@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc",
-    "start": "functions-framework --target=inngest"
+    "start": "functions-framework --target=inngest --port=3000"
   },
   "author": "",
   "license": "ISC",

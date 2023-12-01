@@ -27,7 +27,7 @@ npm run build
 npm start
 ```
 
-Open http://localhost:8080 with your browser to see the result.
+Open http://localhost:3000 with your browser to see the result.
 
 - [Inngest functions](https://www.inngest.com/docs/functions) are available at `inngest/`.
 - The [Inngest handler](https://www.inngest.com/docs/sdk/serve#framework-google-cloud-functions) is available at `index.ts`.
