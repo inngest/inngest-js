@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
-import { Inngest } from "@local";
+import { Inngest } from "@local/components/Inngest";
 import { type ServeHandlerOptions } from "@local/components/InngestCommHandler";
 import {
   envKeys,
@@ -492,7 +492,7 @@ export const testFramework = (
           const ret = await run(
             [
               {
-                client: new Inngest({ id: "Test", env: "FOO" }),
+                client: createClient({ id: "Test", env: "FOO" }),
                 functions: [],
               },
             ],

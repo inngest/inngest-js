@@ -1,9 +1,10 @@
 import { EventSchemas } from "@local/components/EventSchemas";
-import { Inngest, type GetEvents } from "@local/components/Inngest";
+import { type GetEvents, type Inngest } from "@local/components/Inngest";
 import { type IsAny } from "@local/helpers/types";
 import { type EventPayload } from "@local/types";
 import { assertType, type IsEqual } from "type-plus";
 import { z } from "zod";
+import { createClient } from "../test/helpers";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Schemas<T extends EventSchemas<any>> = GetEvents<
@@ -659,7 +660,7 @@ describe("EventSchemas", () => {
         "test.event": { data: { a: string } };
       }>();
 
-      const inngest = new Inngest({
+      const inngest = createClient({
         id: "test",
         schemas,
         eventKey: "test-key-123",
@@ -682,7 +683,7 @@ describe("EventSchemas", () => {
         "test.event": { data: any };
       }>();
 
-      const inngest = new Inngest({
+      const inngest = createClient({
         id: "test",
         schemas,
         eventKey: "test-key-123",
@@ -707,7 +708,7 @@ describe("EventSchemas", () => {
         "test.event2": { data: { foo: string } };
       }>();
 
-      const inngest = new Inngest({
+      const inngest = createClient({
         id: "test",
         schemas,
         eventKey: "test-key-123",
@@ -735,7 +736,7 @@ describe("EventSchemas", () => {
         "test.event2": { data: { bar: boolean } };
       }>();
 
-      const inngest = new Inngest({
+      const inngest = createClient({
         id: "test",
         schemas,
         eventKey: "test-key-123",
@@ -766,7 +767,7 @@ describe("EventSchemas", () => {
         "test.event2": { data: any };
       }>();
 
-      const inngest = new Inngest({
+      const inngest = createClient({
         id: "test",
         schemas,
         eventKey: "test-key-123",
@@ -795,7 +796,7 @@ describe("EventSchemas", () => {
         "test.event2": { data: { foo: string } };
       }>();
 
-      const inngest = new Inngest({
+      const inngest = createClient({
         id: "test",
         schemas,
         eventKey: "test-key-123",
@@ -840,7 +841,7 @@ describe("EventSchemas", () => {
 
       const schemas = new EventSchemas().fromUnion<TestEvent | TestEvent2>();
 
-      const inngest = new Inngest({
+      const inngest = createClient({
         id: "test",
         schemas,
         eventKey: "test-key-123",

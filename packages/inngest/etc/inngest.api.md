@@ -4,6 +4,7 @@
 
 ```ts
 
+import { Exact } from 'type-fest';
 import { IsEqual } from 'type-fest';
 import { Jsonify } from 'type-fest';
 import { Simplify } from 'type-fest';
@@ -180,7 +181,7 @@ export enum headerKeys {
 
 // @public
 export class Inngest<TOpts extends ClientOptions = ClientOptions> {
-    constructor({ id, eventKey, baseUrl, fetch, env, logger, middleware, }: TOpts);
+    constructor(options: Exact<ClientOptions, TOpts>);
     // Warning: (ae-forgotten-export) The symbol "ExclusiveKeys" needs to be exported by the entry point index.d.ts
     // Warning: (ae-incompatible-release-tags) The symbol "createFunction" is marked as @public, but its signature references "FunctionTrigger" which is marked as @internal
     //
