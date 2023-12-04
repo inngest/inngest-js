@@ -25,68 +25,68 @@ describe("run", () => {
   }, 60000);
 
   test("ran step1", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "step1",
-        output: JSON.stringify({ data: null }),
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "step1",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: null });
   }, 60000);
 
   test("ran step2res", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "step2res",
-        output: JSON.stringify({ data: "step2res" }),
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "step2res",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: "step2res" });
   }, 60000);
 
   test("ran step2nores", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "step2nores",
-        output: JSON.stringify({ data: null }),
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "step2nores",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: null });
   }, 60000);
 
   test("ran step2res2", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "step2res2",
-        output: JSON.stringify({ data: "step2res2" }),
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "step2res2",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: "step2res2" });
   }, 60000);
 
   test("ran step2", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "step2",
-        output: JSON.stringify({ data: null }),
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "step2",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: null });
   }, 60000);
 
   test("ran step3", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "step3",
-        output: JSON.stringify({ data: null }),
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "step3",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: null });
   }, 60000);
 });

@@ -27,38 +27,38 @@ describe("run", () => {
   }, 60000);
 
   test("ran Step A", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "Step A",
-        output: JSON.stringify({ data: "A" }),
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "Step A",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: "A" });
   }, 60000);
 
   test("ran Step B", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "Step B",
-        output: JSON.stringify({ data: "B" }),
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "Step B",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: "B" });
   }, 60000);
 
   let winner: "A" | "B" | undefined;
 
   test("ran Step C", async () => {
-    const timelineItem = await runHasTimeline(runId, {
-      __typename: "StepEvent",
-      stepType: "COMPLETED",
-      name: "Step C",
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "Step C",
     });
 
-    expect(timelineItem).toBeDefined();
-    const output = JSON.parse(timelineItem.output);
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
     winner =
       output.data === "A is the winner!"
         ? "A"
