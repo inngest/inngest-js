@@ -1,0 +1,21 @@
+{
+  "name": "framework-google-functions-framework",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "functions-framework --target=inngest --port=3000",
+    "dev": "nodemon -e ts -x \"npm run build && npm run start\" -i node_modules"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google-cloud/functions-framework": "^3.3.0",
+    "inngest": "^3.6.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "typescript": "^5.3.2"
+  }
+}
