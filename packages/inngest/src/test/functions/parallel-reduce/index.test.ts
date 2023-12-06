@@ -26,25 +26,24 @@ describe("run", () => {
 
   ["blue", "red", "green"].forEach((team) => {
     test(`ran "Get ${team} team score" step`, async () => {
-      const step = await runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: `Get ${team} team score`,
+      const item = await runHasTimeline(runId, {
+        type: "StepCompleted",
+        stepName: `Get ${team} team score`,
       });
+      expect(item).toBeDefined();
 
-      expect(step).toBeDefined();
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      expect(step.output).toEqual(expect.any(String));
+      const output = await item?.getOutput();
+      expect(output).toEqual({ data: expect.any(Number) });
     }, 60000);
   });
 
   test("Returned total score", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        output: JSON.stringify("150"),
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "FunctionCompleted",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual(150);
   }, 60000);
 });
