@@ -25,37 +25,34 @@ describe("run", () => {
   }, 60000);
 
   test("ran 'event-fn' step", async () => {
-    const step = await runHasTimeline(runId, {
-      __typename: "StepEvent",
-      stepType: "COMPLETED",
-      name: "event-fn",
-      output: JSON.stringify({ data: { eventInvokeDone: true } }),
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "event-fn",
     });
+    expect(item).toBeDefined();
 
-    expect(step).toBeDefined();
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: { eventInvokeDone: true } });
   }, 60000);
 
   test("ran 'cron-fn' step", async () => {
-    const step = await runHasTimeline(runId, {
-      __typename: "StepEvent",
-      stepType: "COMPLETED",
-      name: "cron-fn",
-      output: JSON.stringify({ data: { cronInvokeDone: true } }),
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "cron-fn",
     });
+    expect(item).toBeDefined();
 
-    expect(step).toBeDefined();
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: { cronInvokeDone: true } });
   }, 60000);
 
   test("returns array of both results", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        output: JSON.stringify([
-          { eventInvokeDone: true },
-          { cronInvokeDone: true },
-        ]),
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "FunctionCompleted",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual([{ eventInvokeDone: true, cronInvokeDone: true }]);
   }, 60000);
 });
