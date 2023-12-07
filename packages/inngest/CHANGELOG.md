@@ -1,5 +1,15 @@
 # inngest
 
+## 3.7.0
+
+### Minor Changes
+
+- [#368](https://github.com/inngest/inngest-js/pull/368) [`e7e845e`](https://github.com/inngest/inngest-js/commit/e7e845e82d426b7017afeb0021f003f78edfaa5a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `step.invoke()`, providing the ability to directly invoke a function as a step
+
+### Patch Changes
+
+- [#415](https://github.com/inngest/inngest-js/pull/415) [`ea8dc6f`](https://github.com/inngest/inngest-js/commit/ea8dc6f539942d713bafd4e85aec367e4e23f21d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Move to Apache License 2.0
+
 ## 3.6.2
 
 ### Patch Changes
