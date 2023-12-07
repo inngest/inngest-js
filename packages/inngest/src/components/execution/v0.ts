@@ -313,7 +313,8 @@ export class V0InngestExecution
 
   private getUserFnToRun(): AnyHandler {
     if (!this.options.isFailureHandler) {
-      return this.options.fn["fn"];
+      // TODO: Review; inferred types results in an `any` here!
+      return this.options.fn["fn"] as AnyHandler;
     }
 
     if (!this.options.fn["onFailureFn"]) {

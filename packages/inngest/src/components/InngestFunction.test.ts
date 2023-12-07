@@ -12,7 +12,10 @@ import {
   NonRetriableError,
   type EventPayload,
 } from "@local";
-import { InngestFunction } from "@local/components/InngestFunction";
+import {
+  InngestFunction,
+  type AnyInngestFunction,
+} from "@local/components/InngestFunction";
 import { STEP_INDEXING_SUFFIX } from "@local/components/InngestStepTools";
 import {
   ExecutionVersion,
@@ -223,7 +226,7 @@ describe("runFn", () => {
   describe("step functions", () => {
     const runFnWithStack = (
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      fn: InngestFunction<any, any, any, any>,
+      fn: AnyInngestFunction,
       stepState: InngestExecutionOptions["stepState"],
       opts?: {
         executionVersion?: ExecutionVersion;
@@ -266,7 +269,7 @@ describe("runFn", () => {
     const testFn = <
       T extends {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        fn: InngestFunction<any, any, any, any>;
+        fn: AnyInngestFunction;
         steps: Record<
           string,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any

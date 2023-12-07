@@ -1,3 +1,4 @@
+import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
@@ -6,6 +7,10 @@ import {
   type Inngest,
   type builtInMiddleware,
 } from "./components/Inngest";
+import {
+  type AnyInngestFunction,
+  type InngestFunction,
+} from "./components/InngestFunction";
 import {
   type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
@@ -112,6 +117,8 @@ export enum StepOpCode {
    * function.
    */
   StepNotFound = "StepNotFound",
+
+  InvokeFunction = "InvokeFunction",
 }
 
 /**
@@ -214,6 +221,13 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
 
 export type TimeStrBatch = `${`${number}s`}`;
 
+/**
+ * Mutates an {@link EventPayload} `T` to include invocation events.
+ */
+export type WithInvocation<T extends EventPayload> = Simplify<
+  { name: T["name"] | `${internalEvents.FunctionInvoked}` } & Omit<T, "name">
+>;
+
 export type BaseContext<
   TOpts extends ClientOptions,
   TTrigger extends keyof EventsFromOpts<TOpts> & string,
@@ -221,7 +235,7 @@ export type BaseContext<
   /**
    * The event data present in the payload.
    */
-  event: EventsFromOpts<TOpts>[TTrigger];
+  event: WithInvocation<EventsFromOpts<TOpts>[TTrigger]>;
 
   events: [
     EventsFromOpts<TOpts>[TTrigger],
@@ -1136,6 +1150,38 @@ export interface StepOptions {
  * @public
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
+
+export type EventsFromFunction<T extends AnyInngestFunction> =
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  T extends InngestFunction<any, infer TEvents, any, any, any>
+    ? TEvents
+    : never;
+
+export type TriggerEventFromFunction<
+  TFunction extends AnyInngestFunction | string,
+  TEvents = TFunction extends AnyInngestFunction
+    ? EventsFromFunction<TFunction>
+    : never,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+> = TFunction extends InngestFunction<any, any, infer ITrigger, any, any>
+  ? ITrigger extends {
+      event: infer IEventTrigger extends keyof TEvents & string;
+    }
+    ? Simplify<Omit<TEvents[IEventTrigger], "name" | "ts">>
+    : ITrigger extends { cron: string }
+      ? never
+      : never
+  : TFunction extends string
+    ? Simplify<Omit<EventPayload, "name" | "ts">>
+    : never;
+
+export type InvocationResult<TReturn> = Promise<TReturn>;
+// TODO Types ready for when we expand this.
+// & {
+//   result: InvocationResult<TReturn>;
+//   cancel: (reason: string) => Promise<void>; // TODO Need to be a Promise? 🤔
+//   queued: Promise<{ runId: string }>;
+// };
 
 /**
  * Simplified version of Rust style `Result`

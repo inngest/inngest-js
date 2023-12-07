@@ -1,6 +1,7 @@
 import { internalEvents, queryKeys } from "../helpers/consts";
 import { timeStr } from "../helpers/strings";
 import {
+  type AnyHandler,
   type ClientOptions,
   type EventNameFromTrigger,
   type FunctionConfig,
@@ -19,7 +20,7 @@ import { createV0InngestExecution } from "./execution/v0";
 import { createV1InngestExecution } from "./execution/v1";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyInngestFunction = InngestFunction<any, any, any, any>;
+export type AnyInngestFunction = InngestFunction<any, any, any, any, any>;
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -40,13 +41,14 @@ export class InngestFunction<
     Events,
     EventNameFromTrigger<Events, Trigger>
   > = FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>,
+  THandler extends AnyHandler = Handler<TOpts, Events, keyof Events & string>,
 > {
   static stepId = "step";
   static failureSuffix = "-failure";
 
   public readonly opts: Opts;
   public readonly trigger: Trigger;
-  private readonly fn: Handler<TOpts, Events, keyof Events & string>;
+  private readonly fn: THandler;
   private readonly onFailureFn?: Handler<TOpts, Events, keyof Events & string>;
   private readonly client: Inngest<TOpts>;
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
@@ -66,7 +68,7 @@ export class InngestFunction<
      */
     opts: Opts,
     trigger: Trigger,
-    fn: Handler<TOpts, Events, keyof Events & string>
+    fn: THandler
   ) {
     this.client = client;
     this.opts = opts;
@@ -207,6 +209,11 @@ export class InngestFunction<
     } satisfies Record<ExecutionVersion, () => IInngestExecution>;
 
     return versionHandlers[opts.version]();
+  }
+
+  private getEventTriggerName(): string | undefined {
+    const { event } = this.trigger as { event?: string };
+    return event;
   }
 }
 

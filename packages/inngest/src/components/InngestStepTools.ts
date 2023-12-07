@@ -1,4 +1,4 @@
-import { type Jsonify } from "type-fest";
+import { type Jsonify, type Simplify } from "type-fest";
 import { type SimplifyDeep } from "type-fest/source/merge-deep";
 import { timeStr } from "../helpers/strings";
 import {
@@ -12,11 +12,18 @@ import {
   type ClientOptions,
   type EventPayload,
   type HashedOp,
+  type InvocationResult,
   type SendEventOutput,
   type StepOptions,
   type StepOptionsOrId,
+  type TriggerEventFromFunction,
 } from "../types";
-import { type EventsFromOpts, type Inngest } from "./Inngest";
+import {
+  type EventsFromOpts,
+  type GetFunctionOutput,
+  type Inngest,
+} from "./Inngest";
+import { type AnyInngestFunction } from "./InngestFunction";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -369,10 +376,57 @@ export const createStepTools = <
         );
       }
     }),
+
+    /**
+     * Invoke a passed Inngest `function` with the given `data`. Returns the
+     * result of the returned value of the function or `null` if the function
+     * does not return a value.
+     *
+     * A string ID can also be passed to reference functions outside of the
+     * current app.
+     *
+     * If a function isn't found or otherwise errors, the step will fail and
+     * throw a `NonRetriableError`.
+     */
+    invoke: createTool<
+      <TFunction extends AnyInngestFunction | string>(
+        idOrOptions: StepOptionsOrId,
+        opts: InvocationOpts<TFunction>
+      ) => InvocationResult<GetFunctionOutput<TFunction>>
+    >(({ id, name }, opts) => {
+      const payload = {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        data: opts.data,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        user: opts.user,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        v: opts.v,
+      } satisfies Omit<Required<EventPayload>, "name" | "ts"> &
+        Partial<Pick<EventPayload, "name" | "ts">>;
+
+      return {
+        id,
+        op: StepOpCode.InvokeFunction,
+        displayName: name ?? id,
+        opts: {
+          function_id:
+            typeof opts.function === "string"
+              ? opts.function
+              : opts.function.id(client.id),
+          payload,
+        },
+      };
+    }),
   };
 
   return tools;
 };
+
+type InvocationOpts<TFunction extends AnyInngestFunction | string> = [
+  TriggerEventFromFunction<TFunction>,
+] extends [never]
+  ? { function: TFunction }
+  : Simplify<{ function: TFunction } & TriggerEventFromFunction<TFunction>>;
 
 /**
  * A set of optional parameters given to a `waitForEvent` call to control how

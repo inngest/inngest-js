@@ -7,7 +7,11 @@ import {
   type GetStepTools,
 } from "@local";
 import { type createStepTools } from "@local/components/InngestStepTools";
-import { envKeys, headerKeys } from "@local/helpers/consts";
+import {
+  envKeys,
+  headerKeys,
+  type internalEvents,
+} from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
 import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
@@ -673,7 +677,7 @@ describe("createFunction", () => {
           { id: "test" },
           { event: "bar" },
           ({ event }) => {
-            assertType<"bar">(event.name);
+            assertType<`${internalEvents.FunctionInvoked}` | "bar">(event.name);
             assertType<{ message: string }>(event.data);
           }
         );
@@ -685,7 +689,7 @@ describe("createFunction", () => {
           { foo: "bar" },
           { event: "foo" },
           ({ event }) => {
-            assertType<"foo">(event.name);
+            assertType<`${internalEvents.FunctionInvoked}` | "foo">(event.name);
             assertType<{ title: string }>(event.data);
           }
         );
@@ -696,7 +700,7 @@ describe("createFunction", () => {
           { id: "test" },
           { event: "foo" },
           ({ event }) => {
-            assertType<"foo">(event.name);
+            assertType<`${internalEvents.FunctionInvoked}` | "foo">(event.name);
             assertType<{ title: string }>(event.data);
           }
         );
@@ -765,7 +769,7 @@ describe("helper types", () => {
     type T0 = GetFunctionInput<typeof inngest>;
 
     test("returns event typing", () => {
-      type Expected = "foo" | "bar";
+      type Expected = `${internalEvents.FunctionInvoked}` | "foo" | "bar";
       type Actual = T0["event"]["name"];
       assertType<IsEqual<Expected, Actual>>(true);
     });

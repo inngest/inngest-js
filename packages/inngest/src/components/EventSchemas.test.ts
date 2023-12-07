@@ -1,5 +1,6 @@
 import { EventSchemas } from "@local/components/EventSchemas";
 import { Inngest, type GetEvents } from "@local/components/Inngest";
+import { type internalEvents } from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
 import { type EventPayload } from "@local/types";
 import { assertType, type IsEqual } from "type-plus";
@@ -669,7 +670,9 @@ describe("EventSchemas", () => {
         { id: "test" },
         { event: "test.event" },
         ({ event }) => {
-          assertType<"test.event">(event.name);
+          assertType<`${internalEvents.FunctionInvoked}` | "test.event">(
+            event.name
+          );
           assertType<{ a: string }>(event.data);
           assertType<IsAny<typeof event.user>>(true);
         }
@@ -692,7 +695,9 @@ describe("EventSchemas", () => {
         { id: "test" },
         { event: "test.event" },
         ({ event }) => {
-          assertType<"test.event">(event.name);
+          assertType<`${internalEvents.FunctionInvoked}` | "test.event">(
+            event.name
+          );
           assertType<IsAny<typeof event.data>>(true);
           assertType<IsAny<typeof event.user>>(true);
         }

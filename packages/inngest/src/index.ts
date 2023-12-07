@@ -12,6 +12,7 @@ export type {
   EventsFromOpts,
   GetEvents,
   GetFunctionInput,
+  GetFunctionOutput,
   GetStepTools,
 } from "./components/Inngest";
 export { InngestCommHandler } from "./components/InngestCommHandler";
