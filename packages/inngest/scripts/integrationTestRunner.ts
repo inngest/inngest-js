@@ -238,6 +238,43 @@ function runTests(sdkPath: string): void {
   }
 }
 
+// If an example has no current changes, return a function that resets it back
+// to that state after integration tests have run. If it has changes, return
+// undefined.
+async function getExampleResetter(
+  examplePath: string
+): Promise<(() => Promise<void>) | undefined> {
+  const exampleGitStatus = await new Promise<string>((resolve, reject) => {
+    exec("git status --porcelain .", { cwd: examplePath }, (error, stdout) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve(stdout.toString().trim());
+      }
+    });
+  });
+
+  if (exampleGitStatus) {
+    console.log("Example has changes, not resetting", exampleGitStatus);
+    return undefined;
+  }
+
+  console.log("Example has no changes, will reset after tests");
+
+  let hasReset = false;
+
+  const resetter = async () => {
+    if (hasReset) return;
+    hasReset = true;
+
+    console.log("Resetting example");
+    await execAsync("git checkout -- .", { cwd: examplePath });
+    await execAsync("git clean -fd .", { cwd: examplePath });
+  };
+
+  return resetter;
+}
+
 async function runIntegrationTest(
   example: string,
   devServerPort: number,
@@ -256,6 +293,8 @@ async function runIntegrationTest(
   const sdkPath = path.join(rootPath, "packages", "inngest");
   const examplePath = path.join(rootPath, "examples", example);
 
+  const reset = await getExampleResetter(examplePath);
+
   const startExamplePromise = (async () => {
     await setupExample(examplePath);
     await startExampleServer(examplePath, exampleServerPort, devServerPort);
@@ -271,6 +310,10 @@ async function runIntegrationTest(
   await registerExample(exampleServerPort);
 
   runTests(sdkPath);
+
+  await reset?.().catch((err) => {
+    console.warn("Failed to reset example", err);
+  });
 }
 
 const example = process.argv[2];
