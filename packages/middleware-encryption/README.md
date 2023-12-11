@@ -3,9 +3,9 @@
 This package provides an encryption middleware for Inngest, enabling secure handling of sensitive data. It encrypts data being sent to and from Inngest, ensuring plaintext data never leaves your server.
 
 ## Features
+
 - **Data Encryption:** Encrypts step and event data, with support for multiple encryption keys.
 - **Customizable Encryption Service:** Allows use of a custom encryption service or the default AES-based service.
-- **Event Data Encryption Option:** Option to encrypt events sent to Inngest, though this may impact certain Inngest dashboard features.
 
 ## Installation
 
@@ -19,6 +19,11 @@ npm install @inngest/middleware-encryption
 ## Usage
 
 To use the encryption middleware, import and initialize it with your encryption key(s). You can optionally provide a custom encryption service.
+
+By default, the following will be encrypted:
+
+- All step data
+- Event data placed inside `data.encrypted`
 
 ```ts
 import { encryptionMiddleware } from "@inngest/middleware-encryption";
@@ -34,6 +39,25 @@ const inngest = new Inngest({
   middleware: [mw],
 });
 ```
+
+
+
+## Customizing event encryption
+
+Only select pieces of event data are encrypted. By default, only the `data.encrypted` field.
+
+This can be customized using the `eventEncryptionField` setting
+
+- `string` - Encrypt fields matching this name
+- `string[]` - Encrypt fields matching these names
+- `(field: string) => boolean` - Provide a function to decide whether to encrypt a field
+- `false` - Disable all event encryption
+
+## Rotating encryption keys
+
+Provide an `Array<string>` when providing your `key` to support rotating encryption keys.
+
+The first key is always used to encrypt, but decryption will be attempted with all keys.
 
 ## Implementing your own encryption
 

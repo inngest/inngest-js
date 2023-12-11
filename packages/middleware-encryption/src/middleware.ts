@@ -6,6 +6,13 @@ import { InngestMiddleware, type MiddlewareRegisterReturn } from "inngest";
  * A marker used to identify encrypted values without having to guess.
  */
 const ENCRYPTION_MARKER = "__ENCRYPTED__";
+export const DEFAULT_ENCRYPTION_FIELD = "encrypted";
+
+export type EventEncryptionFieldInput =
+  | string
+  | string[]
+  | ((field: string) => boolean)
+  | false;
 
 /**
  * Options used to configure the encryption middleware.
@@ -25,14 +32,13 @@ export interface EncryptionMiddlewareOptions {
   encryptionService?: EncryptionService;
 
   /**
-   * Whether to encrypt events sent to Inngest. Defaults to `false`.
+   * The top-level fields of the event that will be encrypted. Can be a single
+   * field name, an array of field names, a function that returns `true` if
+   * a field should be encrypted, or `false` to disable all event encryption.
    *
-   * Encrypting event data can impact the features available to you in terms
-   * of querying and filtering events in the Inngest dashboard, or using
-   * composability tooling such as `step.waitForEvent()`. Only enable this
-   * feature if you are absolutely sure that you need it.
+   * By default, the top-level field named `"encrypted"` will be encrypted (exported as `DEFAULT_ENCRYPTION_FIELD`).
    */
-  encryptEvents?: boolean;
+  eventEncryptionField?: EventEncryptionFieldInput;
 }
 
 /**
@@ -47,20 +53,63 @@ export const encryptionMiddleware = (
 ) => {
   const service =
     opts.encryptionService || new DefaultEncryptionService(opts.key);
+  const shouldEncryptEvents = Boolean(
+    opts.eventEncryptionField ?? DEFAULT_ENCRYPTION_FIELD
+  );
 
-  const encrypt = (value: unknown): EncryptedValue => {
+  const encryptValue = (value: unknown): EncryptedValue => {
     return {
       [ENCRYPTION_MARKER]: true,
       data: service.encrypt(value),
     };
   };
 
-  const decrypt = (value: unknown): unknown => {
+  const decryptValue = (value: unknown): unknown => {
     if (isEncryptedValue(value)) {
       return service.decrypt(value.data);
     }
 
     return value;
+  };
+
+  const fieldShouldBeEncrypted = (field: string): boolean => {
+    if (typeof opts.eventEncryptionField === "undefined") {
+      return field === DEFAULT_ENCRYPTION_FIELD;
+    }
+
+    if (typeof opts.eventEncryptionField === "function") {
+      return opts.eventEncryptionField(field);
+    }
+
+    if (Array.isArray(opts.eventEncryptionField)) {
+      return opts.eventEncryptionField.includes(field);
+    }
+
+    return opts.eventEncryptionField === field;
+  };
+
+  const encryptEventData = (data: Record<string, unknown>): unknown => {
+    const encryptedData = Object.keys(data).reduce((acc, key) => {
+      if (fieldShouldBeEncrypted(key)) {
+        return { ...acc, [key]: encryptValue(data[key]) };
+      }
+
+      return { ...acc, [key]: data[key] };
+    }, {});
+
+    return encryptedData;
+  };
+
+  const decryptEventData = (data: Record<string, unknown>): unknown => {
+    const decryptedData = Object.keys(data).reduce((acc, key) => {
+      if (isEncryptedValue(data[key])) {
+        return { ...acc, [key]: decryptValue(data[key]) };
+      }
+
+      return { ...acc, [key]: data[key] };
+    }, {});
+
+    return decryptedData;
   };
 
   return new InngestMiddleware({
@@ -73,21 +122,21 @@ export const encryptionMiddleware = (
               const inputTransformer: InputTransformer = {
                 steps: steps.map((step) => ({
                   ...step,
-                  data: step.data && decrypt(step.data),
+                  data: step.data && decryptValue(step.data),
                 })),
               };
 
-              if (opts.encryptEvents) {
+              if (shouldEncryptEvents) {
                 inputTransformer.ctx = {
                   event: ctx.event && {
                     ...ctx.event,
-                    data: ctx.event.data && decrypt(ctx.event.data),
+                    data: ctx.event.data && decryptEventData(ctx.event.data),
                   },
                   events:
                     ctx.events &&
                     ctx.events?.map((event) => ({
                       ...event,
-                      data: event.data && decrypt(event.data),
+                      data: event.data && decryptEventData(event.data),
                     })),
                 } as {};
               }
@@ -101,7 +150,7 @@ export const encryptionMiddleware = (
 
               return {
                 result: {
-                  data: ctx.result.data && encrypt(ctx.result.data),
+                  data: ctx.result.data && encryptValue(ctx.result.data),
                 },
               };
             },
@@ -109,14 +158,14 @@ export const encryptionMiddleware = (
         },
       };
 
-      if (opts.encryptEvents) {
+      if (shouldEncryptEvents) {
         registration.onSendEvent = () => {
           return {
             transformInput: ({ payloads }) => {
               return {
                 payloads: payloads.map((payload) => ({
                   ...payload,
-                  data: payload.data && encrypt(payload.data),
+                  data: payload.data && encryptEventData(payload.data),
                 })),
               };
             },
