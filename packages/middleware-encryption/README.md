@@ -8,7 +8,7 @@ This package provides an encryption middleware for Inngest, enabling secure hand
 ## Features
 
 - **Data Encryption:** Encrypts step and event data, with support for multiple encryption keys.
-- **Customizable Encryption Service:** Allows use of a custom encryption service or the default AES-based service.
+- **Customizable Encryption Service:** Allows use of a custom encryption service or defaults to using `AES-256-CBC`.
 
 ## Installation
 
