@@ -1101,31 +1101,41 @@ export class InngestCommHandler<
   }
 
   protected validateSignature(sig: string | undefined, body: unknown) {
-    // Never validate signatures in development.
-    if (!this.isProd) {
+    const isSigned = !!sig;
+    const hasSigningKey = !!this.signingKey;
+
+    // If the request is signed, and we have a signing key, verify the signature
+    if (isSigned && this.signingKey) {
+      new RequestSignature(sig).verifySignature({
+        body,
+        allowExpiredSignatures: this.allowExpiredSignatures,
+        signingKey: this.signingKey,
+      });
       return;
     }
 
-    // If we're here, we're in production; lack of a signing key is an error.
-    if (!this.signingKey) {
-      // TODO PrettyError
+    // If the request is not signed, and we don't have a signing key ignore this
+    if (!isSigned && !hasSigningKey) {
+      return;
+    }
+
+    // If the request is signed, but we don't have a signing key, we deem it insecure
+    if (isSigned && !hasSigningKey) {
       throw new Error(
-        `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`
+        `Failed to verify request signature. Please provide a signing key via options or ${envKeys.InngestSigningKey} env var.`
       );
     }
 
-    // If we're here, we're in production; lack of a req signature is an error.
-    if (!sig) {
-      // TODO PrettyError
-      throw new Error(`No ${headerKeys.Signature} provided`);
+    // If we have a signing key and the request is not signed, we deem it insecure
+    if (!isSigned && hasSigningKey) {
+      if (this.isProd) {
+        throw new Error(`Unsigned request received.`);
+      } else {
+        throw new Error(
+          `Unsigned request received. In development, a signing key is not required.`
+        );
+      }
     }
-
-    // Validate the signature
-    new RequestSignature(sig).verifySignature({
-      body,
-      allowExpiredSignatures: this.allowExpiredSignatures,
-      signingKey: this.signingKey,
-    });
   }
 
   protected signResponse(): string {
