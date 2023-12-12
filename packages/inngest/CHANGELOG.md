@@ -1,5 +1,11 @@
 # inngest
 
+## 3.7.1
+
+### Patch Changes
+
+- [#421](https://github.com/inngest/inngest-js/pull/421) [`471d11f`](https://github.com/inngest/inngest-js/commit/471d11fce1cee246c017bc6c089f0f5fb5f85d1c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix serverless use of `inngest/next` with `next@>=13.0.0 <13.5.0` failing to return a response, as well as `next@>=13.5.0` logging the same error
+
 ## 3.7.0
 
 ### Minor Changes
