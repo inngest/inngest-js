@@ -14,6 +14,8 @@ export const frameworkName: SupportedFrameworkName = "nextjs";
  * In Next.js, serve and register any declared functions with Inngest, making
  * them available to be triggered by events.
  *
+ * Supports Next.js 12+, both serverless and edge.
+ *
  * @example Next.js <=12 or the pages router can export the handler directly
  * ```ts
  * export default serve({ client: inngest, functions: [fn1, fn2] });
@@ -150,15 +152,21 @@ export const serve = (options: ServeHandlerOptions) => {
             typeof res?.send === "function"
           ) {
             res.status(status).send(body);
+
+            /**
+             * If we're here, we're in a serverless endpoint (not edge), so
+             * we've correctly sent the response and can return `undefined`.
+             *
+             * Next.js 13 edge requires that the return value is typed as
+             * `Response`, so we still enforce that as we cannot dynamically
+             * adjust typing based on the environment.
+             */
+            return undefined as unknown as Response;
           }
 
           /**
-           * Next.js 13 requires that the return value is always `Response`,
-           * though this serve handler can't understand if we're using 12 or 13.
-           *
-           * 12 doesn't seem to care if we also return a response from the
-           * handler, so we'll just return `undefined` here, which will be safe
-           * at runtime and enforce types for use with Next.js 13.
+           * If we're here, we're in an edge environment and need to return a
+           * `Response` object.
            *
            * We also don't know if the current environment has a native
            * `Response` object, so we'll grab that first.
