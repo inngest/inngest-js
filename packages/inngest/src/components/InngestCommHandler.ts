@@ -24,6 +24,7 @@ import {
 } from "../helpers/env";
 import { rethrowError, serializeError } from "../helpers/errors";
 import {
+  createGetter,
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
@@ -43,6 +44,7 @@ import {
   type RegisterOptions,
   type RegisterRequest,
   type SupportedFrameworkName,
+  type ValueOrGetter,
 } from "../types";
 import { version } from "../version";
 import { type AnyInngest } from "./Inngest";
@@ -76,6 +78,20 @@ export interface ServeHandlerOptions extends RegisterOptions {
    * An array of the functions to serve and register with Inngest.
    */
   functions: readonly AnyInngestFunction[];
+
+  /**
+   * Whether the current environment is production. This is used to determine
+   * some functionality like whether to connect to the dev server, whether to
+   * show debug logging, and if we should verify request signatures.
+   *
+   * If provided, overrides any `isProduction` checks made by the serve handler
+   * or internally by the SDK.
+   *
+   * If this is not provided--or is provided and returns `undefined`--we'll try
+   * to automatically detect whether we're in production using your serve
+   * handler's methods or by checking various environment variables.
+   */
+  isProduction?: ValueOrGetter<boolean | undefined>;
 }
 
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
@@ -119,6 +135,20 @@ interface InngestCommHandlerOptions<
    * An array of the functions to serve and register with Inngest.
    */
   functions: readonly AnyInngestFunction[];
+
+  /**
+   * Whether the current environment is production. This is used to determine
+   * some functionality like whether to connect to the dev server, whether to
+   * show debug logging, and if we should verify request signatures.
+   *
+   * If provided, overrides any `isProduction` checks made by the serve handler
+   * or internally by the SDK.
+   *
+   * If this is not provided--or is provided and returns `undefined`--we'll try
+   * to automatically detect whether we're in production using your serve
+   * handler's methods or by checking various environment variables.
+   */
+  isProduction?: ValueOrGetter<boolean | undefined>;
 
   /**
    * The `handler` is the function your framework requires to handle a
@@ -223,6 +253,10 @@ export class InngestCommHandler<
    * The handler specified during instantiation of the class.
    */
   public readonly handler: Handler;
+
+  private readonly overrideIsProduction:
+    | (() => Promise<boolean | undefined>)
+    | undefined;
 
   /**
    * The URL of the Inngest function registration endpoint.
@@ -343,6 +377,10 @@ export class InngestCommHandler<
     this.id = options.id || this.client.id;
 
     this.handler = options.handler as Handler;
+
+    if (options.isProduction) {
+      this.overrideIsProduction = createGetter(options.isProduction);
+    }
 
     /**
      * Provide a hidden option to allow expired signatures to be accepted during
@@ -627,6 +665,7 @@ export class InngestCommHandler<
     getInngestHeaders: () => Record<string, string>
   ): Promise<ActionResponse> {
     this._isProd =
+      (await this.overrideIsProduction?.()) ??
       (await actions.isProduction?.("starting to handle request")) ??
       isProd(this.env);
 

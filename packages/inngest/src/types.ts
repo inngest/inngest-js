@@ -20,6 +20,7 @@ import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
 import {
   type IsStringLiteral,
+  type MaybePromise,
   type ObjectPaths,
   type StrictUnion,
 } from "./helpers/types";
@@ -1200,3 +1201,24 @@ export const ok = <T>(data: T): Result<T, never> => {
 export const err = <E>(error?: E): Result<never, E> => {
   return { ok: false, error };
 };
+
+/**
+ * A type that represents either a fixed value or a function that returns a
+ * value, including promises.
+ *
+ * This is useful for setting options where the value may be dynamic, but you
+ * don't want to have to wrap it in a function every time.
+ */
+export type ValueOrGetter<T> = T | (() => MaybePromise<T>);
+
+/**
+ * A helper type to represent any {@link ValueOrGetter}.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyValueOrGetter = ValueOrGetter<any>;
+
+/**
+ * Extracts the value type from a {@link ValueOrGetter}.
+ */
+export type ValueFromValueOrGetter<T extends AnyValueOrGetter> =
+  T extends ValueOrGetter<infer U> ? U : never;

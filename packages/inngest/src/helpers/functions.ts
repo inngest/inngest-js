@@ -6,7 +6,13 @@ import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
 } from "../components/execution/InngestExecution";
-import { err, ok, type Result } from "../types";
+import {
+  err,
+  ok,
+  type AnyValueOrGetter,
+  type Result,
+  type ValueFromValueOrGetter,
+} from "../types";
 import { prettyError } from "./errors";
 import { type Await } from "./types";
 
@@ -256,4 +262,24 @@ const parseFailureErr = (err: unknown) => {
     stack: true,
     why,
   });
+};
+
+/**
+ * A helper function that will create a getter function from a value or a
+ * function that returns a value.
+ *
+ * This is useful for creating getters from values that may be dynamic and/or
+ * asynchronous.
+ */
+export const createGetter = <T extends AnyValueOrGetter>(
+  valueOrGetter: T
+): (() => Promise<ValueFromValueOrGetter<T>>) => {
+  // eslint-disable-next-line @typescript-eslint/require-await
+  return async () => {
+    if (typeof valueOrGetter === "function") {
+      return valueOrGetter() as ValueFromValueOrGetter<T>;
+    }
+
+    return valueOrGetter as ValueFromValueOrGetter<T>;
+  };
 };
