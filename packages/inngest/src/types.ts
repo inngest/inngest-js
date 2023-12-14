@@ -99,6 +99,22 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
   error: Error;
 };
 
+export type FinishedEventPayload = {
+  name: `${internalEvents.FunctionFinished}`;
+  data: {
+    function_id: string;
+    run_id: string;
+    correlation_id?: string;
+  } & (
+    | {
+        error: z.output<typeof failureEventErrorSchema>;
+      }
+    | {
+        result: unknown;
+      }
+  );
+};
+
 /**
  * Unique codes for the different types of operation that can be sent to Inngest
  * from SDK step functions.

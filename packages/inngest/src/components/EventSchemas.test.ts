@@ -12,12 +12,18 @@ type Schemas<T extends EventSchemas<any>> = GetEvents<
 >;
 
 describe("EventSchemas", () => {
-  test("creates generic types by default", () => {
+  test("adds internal types by default", () => {
     const schemas = new EventSchemas();
 
-    assertType<IsEqual<Schemas<typeof schemas>, Record<string, EventPayload>>>(
-      true
-    );
+    type Expected =
+      | `${internalEvents.FunctionFailed}`
+      | `${internalEvents.FunctionFinished}`;
+
+    type Actual = Schemas<typeof schemas>[keyof Schemas<
+      typeof schemas
+    >]["name"];
+
+    assertType<IsEqual<Expected, Actual>>(true);
   });
 
   describe("fromRecord", () => {

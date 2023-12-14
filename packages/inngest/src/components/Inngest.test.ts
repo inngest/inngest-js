@@ -7,11 +7,7 @@ import {
   type GetStepTools,
 } from "@local";
 import { type createStepTools } from "@local/components/InngestStepTools";
-import {
-  envKeys,
-  headerKeys,
-  type internalEvents,
-} from "@local/helpers/consts";
+import { envKeys, headerKeys, internalEvents } from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
 import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
@@ -537,6 +533,12 @@ describe("send", () => {
         const _fn = () =>
           inngest.send({ name: "foo", data: { foo: "" }, id: "test" });
       });
+
+      test("disallows sending an internal event", () => {
+        const _fn = () =>
+          // @ts-expect-error Internal event
+          inngest.send({ name: internalEvents.FunctionFinished });
+      });
     });
   });
 });
@@ -787,7 +789,12 @@ describe("helper types", () => {
     type T0 = GetFunctionInput<typeof inngest>;
 
     test("returns event typing", () => {
-      type Expected = `${internalEvents.FunctionInvoked}` | "foo" | "bar";
+      type Expected =
+        | `${internalEvents.FunctionFailed}`
+        | `${internalEvents.FunctionFinished}`
+        | `${internalEvents.FunctionInvoked}`
+        | "foo"
+        | "bar";
       type Actual = T0["event"]["name"];
       assertType<IsEqual<Expected, Actual>>(true);
     });
