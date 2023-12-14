@@ -410,6 +410,12 @@ describe("send", () => {
     describe("no custom types", () => {
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
+      test.todo("disallows sending invalid fields");
+
+      test.todo(
+        "disallows sending invalid fields when sending multiple events"
+      );
+
       test("allows sending a single event with an object", () => {
         const _fn = () => inngest.send({ name: "anything", data: "foo" });
       });
@@ -504,6 +510,8 @@ describe("send", () => {
         // @ts-expect-error Empty data
         const _fn = () => inngest.send({ name: "foo", data: {} });
       });
+
+      test.todo("disallows sending invalid fields for a known event");
 
       test("allows sending known data-empty event with no data", () => {
         const _fn = () => inngest.send({ name: "baz" });
