@@ -1,5 +1,13 @@
 # inngest
 
+## 3.7.2
+
+### Patch Changes
+
+- [#426](https://github.com/inngest/inngest-js/pull/426) [`49a58d1`](https://github.com/inngest/inngest-js/commit/49a58d1d5fe407202774dfbbd29bbb40f29504ed) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix internal `inngest/*` events not being present when using `new EventSchemas()`
+
+- [#427](https://github.com/inngest/inngest-js/pull/427) [`5cf349c`](https://github.com/inngest/inngest-js/commit/5cf349ccece147f4c6f69ad5389b483e2b7c5d91) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `EventPayload.id` missing from typing when attempting to send events with `inngest.send()` or `step.sendEvent()`
+
 ## 3.7.1
 
 ### Patch Changes
