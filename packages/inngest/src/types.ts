@@ -304,11 +304,11 @@ export type AnyHandler = Handler<any, any, any, any>;
  */
 export interface EventPayload {
   /**
-   * A unique id used to idempotently ingest a given event payload once (i.e.
-   * deduplication).
+   * A unique id used to idempotently process a given event payload.
    *
    * Set this when sending events to ensure that the event is only processed
-   * once; if an event with the same ID is sent again, it will be ignored.
+   * once; if an event with the same ID is sent again, it will not invoke
+   * functions.
    */
   id?: string;
 
