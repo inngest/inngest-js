@@ -51,8 +51,8 @@ export interface EventPayload {
 
 // @public
 export class EventSchemas<S extends Record<string, EventPayload> = {
-    [internalEvents_2.FunctionFailed]: FailureEventPayload;
-    [internalEvents_2.FunctionFinished]: FinishedEventPayload;
+    [internalEvents.FunctionFailed]: FailureEventPayload;
+    [internalEvents.FunctionFinished]: FinishedEventPayload;
 }> {
     fromGenerated<T extends StandardEventSchemas>(): EventSchemas<Combine<S, T>>;
     // Warning: (ae-forgotten-export) The symbol "PreventClashingNames" needs to be exported by the entry point index.d.ts
@@ -466,7 +466,6 @@ export type ZodEventSchemas = Record<string, {
 
 // Warnings were encountered during analysis:
 //
-// src/components/EventSchemas.ts:220:5 - (ae-forgotten-export) The symbol "internalEvents_2" needs to be exported by the entry point index.d.ts
 // src/components/EventSchemas.ts:221:5 - (ae-forgotten-export) The symbol "FinishedEventPayload" needs to be exported by the entry point index.d.ts
 // src/components/InngestCommHandler.ts:845:8 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
 // src/components/InngestCommHandler.ts:845:35 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
