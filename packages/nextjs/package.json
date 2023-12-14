@@ -1,0 +1,41 @@
+{
+  "name": "@inngest/nextjs",
+  "version": "0.0.0",
+  "description": "Write Inngest functions as Next.js handlers.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "postversion": "pnpm run build",
+    "release": "node ../../scripts/release/publish.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "inngest",
+    "next"
+  ],
+  "homepage": "https://github.com/inngest/inngest-js/tree/main/packages/nextjs#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/nextjs"
+  },
+  "author": "Jack Williams <jack@inngest.com>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^18.16.16",
+    "typescript": "~5.3.0"
+  },
+  "dependencies": {
+    "glob": "^10.3.10"
+  },
+  "peerDependencies": {
+    "next": ">=12.0.0 < 15.0.0"
+  }
+}
