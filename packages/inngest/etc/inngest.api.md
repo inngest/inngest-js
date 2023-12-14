@@ -9,7 +9,7 @@ import { IsEqual } from 'type-fest';
 import { Jsonify } from 'type-fest';
 import { Simplify } from 'type-fest';
 import { SimplifyDeep } from 'type-fest/source/merge-deep';
-import { z as z_2 } from 'zod';
+import { z } from 'zod';
 
 // @public
 export interface ClientOptions {
@@ -50,7 +50,10 @@ export interface EventPayload {
 }
 
 // @public
-export class EventSchemas<S extends Record<string, EventPayload>> {
+export class EventSchemas<S extends Record<string, EventPayload> = {
+    [internalEvents.FunctionFailed]: FailureEventPayload;
+    [internalEvents.FunctionFinished]: FinishedEventPayload;
+}> {
     fromGenerated<T extends StandardEventSchemas>(): EventSchemas<Combine<S, T>>;
     // Warning: (ae-forgotten-export) The symbol "PreventClashingNames" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "ClashingNameError" needs to be exported by the entry point index.d.ts
@@ -84,7 +87,7 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     data: {
         function_id: string;
         run_id: string;
-        error: z_2.output<typeof failureEventErrorSchema>;
+        error: z.output<typeof failureEventErrorSchema>;
         event: P;
     };
 };
@@ -286,6 +289,8 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
 export enum internalEvents {
     FunctionFailed = "inngest/function.failed",
     // (undocumented)
+    FunctionFinished = "inngest/function.finished",
+    // (undocumented)
     FunctionInvoked = "inngest/function.invoked"
 }
 
@@ -294,13 +299,13 @@ export enum internalEvents {
 // @internal
 export type IsStringLiteral<T extends string> = string extends T ? false : true;
 
-// Warning: (ae-forgotten-export) The symbol "z" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "z_2" needs to be exported by the entry point index.d.ts
 //
 // @public
-export type LiteralZodEventSchema = z.ZodObject<{
-    name: z.ZodLiteral<string>;
-    data?: z.AnyZodObject | z.ZodAny;
-    user?: z.AnyZodObject | z.ZodAny;
+export type LiteralZodEventSchema = z_2.ZodObject<{
+    name: z_2.ZodLiteral<string>;
+    data?: z_2.AnyZodObject | z_2.ZodAny;
+    user?: z_2.AnyZodObject | z_2.ZodAny;
 }>;
 
 // @public
@@ -455,12 +460,13 @@ export type UnionKeys<T> = T extends T ? keyof T : never;
 
 // @public
 export type ZodEventSchemas = Record<string, {
-    data?: z.AnyZodObject | z.ZodAny;
-    user?: z.AnyZodObject | z.ZodAny;
+    data?: z_2.AnyZodObject | z_2.ZodAny;
+    user?: z_2.AnyZodObject | z_2.ZodAny;
 }>;
 
 // Warnings were encountered during analysis:
 //
+// src/components/EventSchemas.ts:221:5 - (ae-forgotten-export) The symbol "FinishedEventPayload" needs to be exported by the entry point index.d.ts
 // src/components/InngestCommHandler.ts:845:8 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
 // src/components/InngestCommHandler.ts:845:35 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:268:3 - (ae-forgotten-export) The symbol "InitialRunInfo" needs to be exported by the entry point index.d.ts
@@ -471,7 +477,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:346:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:357:3 - (ae-forgotten-export) The symbol "AnyInngest" needs to be exported by the entry point index.d.ts
 // src/types.ts:80:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:754:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:770:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

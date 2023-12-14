@@ -27,9 +27,16 @@ export type PartialK<T, K extends PropertyKey = PropertyKey> = Partial<
 export type SendEventPayload<Events extends Record<string, EventPayload>> =
   SingleOrArray<
     {
-      [K in keyof Events]: PartialK<Omit<Events[K], "v">, "ts">;
-    }[keyof Events]
+      [K in keyof WithoutInternal<Events>]: PartialK<
+        Omit<WithoutInternal<Events>[K], "v">,
+        "ts"
+      >;
+    }[keyof WithoutInternal<Events>]
   >;
+
+export type WithoutInternal<T extends Record<string, EventPayload>> = {
+  [K in keyof T as K extends `inngest/${string}` ? never : K]: T[K];
+};
 
 /**
  * A list of simple, JSON-compatible, primitive types that contain no other

@@ -142,6 +142,7 @@ export enum internalEvents {
    */
   FunctionFailed = "inngest/function.failed",
   FunctionInvoked = "inngest/function.invoked",
+  FunctionFinished = "inngest/function.finished",
 }
 
 export const logPrefix = chalk.magenta.bold("[Inngest]");
