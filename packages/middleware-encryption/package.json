@@ -3,6 +3,7 @@
   "version": "0.1.1",
   "description": "Inngest",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
