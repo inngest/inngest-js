@@ -304,7 +304,10 @@ export type AnyHandler = Handler<any, any, any, any>;
  */
 export interface EventPayload {
   /**
-   * A unique identifier for the event
+   * A unique identifier for the type of event. We recommend using lowercase dot
+   * notation for names, prepending `prefixes/` with a slash for organization.
+   *
+   * e.g. `cloudwatch/alarms/triggered`, `cart/session.created`
    */
   name: string;
 
