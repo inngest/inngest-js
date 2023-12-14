@@ -422,6 +422,11 @@ describe("send", () => {
             { name: "anythingelse" },
           ]);
       });
+
+      test("allows setting an ID for an event", () => {
+        const _fn = () =>
+          inngest.send({ name: "anything", data: "foo", id: "test" });
+      });
     });
 
     describe("multiple custom types", () => {
@@ -518,6 +523,11 @@ describe("send", () => {
             { name: "foo", data: { foo: "" } },
             { name: "bar", data: { bar: "" } },
           ]);
+      });
+
+      test("allows setting an ID for a known event", () => {
+        const _fn = () =>
+          inngest.send({ name: "foo", data: { foo: "" }, id: "test" });
       });
     });
   });

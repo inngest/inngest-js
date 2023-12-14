@@ -304,6 +304,15 @@ export type AnyHandler = Handler<any, any, any, any>;
  */
 export interface EventPayload {
   /**
+   * A unique id used to idempotently ingest a given event payload once (i.e.
+   * deduplication).
+   *
+   * Set this when sending events to ensure that the event is only processed
+   * once; if an event with the same ID is sent again, it will be ignored.
+   */
+  id?: string;
+
+  /**
    * A unique identifier for the type of event. We recommend using lowercase dot
    * notation for names, prepending `prefixes/` with a slash for organization.
    *

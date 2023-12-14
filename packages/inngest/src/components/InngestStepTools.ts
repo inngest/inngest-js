@@ -401,7 +401,7 @@ export const createStepTools = <
         user: opts.user,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         v: opts.v,
-      } satisfies Omit<Required<EventPayload>, "name" | "ts"> &
+      } satisfies Omit<Required<EventPayload>, "name" | "ts" | "id"> &
         Partial<Pick<EventPayload, "name" | "ts">>;
 
       return {

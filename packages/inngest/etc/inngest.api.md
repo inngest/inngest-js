@@ -43,6 +43,7 @@ export type EventNameFromTrigger<Events extends Record<string, EventPayload>, T 
 // @public
 export interface EventPayload {
     data?: any;
+    id?: string;
     name: string;
     ts?: number;
     user?: any;
@@ -471,7 +472,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:346:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:357:3 - (ae-forgotten-export) The symbol "AnyInngest" needs to be exported by the entry point index.d.ts
 // src/types.ts:80:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:754:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:766:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
