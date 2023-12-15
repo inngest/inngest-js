@@ -68,8 +68,8 @@ type PreventClashingNames<T> = CheckNever<{
  */
 export type LiteralZodEventSchema = z.ZodObject<{
   name: z.ZodLiteral<string>;
-  data?: z.AnyZodObject | z.ZodAny;
-  user?: z.AnyZodObject | z.ZodAny;
+  data?: z.ValidZodValue;
+  user?: z.ValidZodValue;
 }>;
 
 /**
@@ -88,8 +88,8 @@ export type LiteralZodEventSchemas = LiteralZodEventSchema[];
 export type ZodEventSchemas = Record<
   string,
   {
-    data?: z.AnyZodObject | z.ZodAny;
-    user?: z.AnyZodObject | z.ZodAny;
+    data?: z.ValidZodValue;
+    user?: z.ValidZodValue;
   }
 >;
 

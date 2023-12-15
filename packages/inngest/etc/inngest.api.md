@@ -305,8 +305,8 @@ export type IsStringLiteral<T extends string> = string extends T ? false : true;
 // @public
 export type LiteralZodEventSchema = z_2.ZodObject<{
     name: z_2.ZodLiteral<string>;
-    data?: z_2.AnyZodObject | z_2.ZodAny;
-    user?: z_2.AnyZodObject | z_2.ZodAny;
+    data?: z_2.ValidZodValue;
+    user?: z_2.ValidZodValue;
 }>;
 
 // @public
@@ -461,8 +461,8 @@ export type UnionKeys<T> = T extends T ? keyof T : never;
 
 // @public
 export type ZodEventSchemas = Record<string, {
-    data?: z_2.AnyZodObject | z_2.ZodAny;
-    user?: z_2.AnyZodObject | z_2.ZodAny;
+    data?: z_2.ValidZodValue;
+    user?: z_2.ValidZodValue;
 }>;
 
 // Warnings were encountered during analysis:
