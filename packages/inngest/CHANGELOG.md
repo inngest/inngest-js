@@ -1,5 +1,11 @@
 # inngest
 
+## 3.7.3
+
+### Patch Changes
+
+- [#432](https://github.com/inngest/inngest-js/pull/432) [`ce354f3`](https://github.com/inngest/inngest-js/commit/ce354f33f46c97e37ed3794996058cd64a84b678) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add ability to use `z.discriminatedUnion` and `z.union` in schemas
+
 ## 3.7.2
 
 ### Patch Changes
