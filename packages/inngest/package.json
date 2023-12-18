@@ -108,7 +108,7 @@
       "types": "./deno/fresh.d.ts"
     },
     "./api/*": "./api/*.js",
-    "./components": "./components/*.js",
+    "./components/*": "./components/*.js",
     "./deno/*": "./deno/*.js",
     "./helpers/*": "./helpers/*.js",
     "./middleware/*": "./middleware/*.js"
