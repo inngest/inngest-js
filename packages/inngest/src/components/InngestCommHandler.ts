@@ -469,7 +469,7 @@ export class InngestCommHandler<
    * ```
    */
   public createHandler(): (...args: Input) => Promise<Awaited<Output>> {
-    return async (...args: Input) => {
+    const handler = async (...args: Input) => {
       const timer = new ServerTiming();
 
       /**
@@ -608,6 +608,30 @@ export class InngestCommHandler<
         });
       });
     };
+
+    /**
+     * Some platforms check (at runtime) the length of the function being used
+     * to handle an endpoint. If this is a variadic function, it will fail
+     * that check.
+     *
+     * Therefore, we expect the arguments accepted to be the same length as
+     * the `handler` function passed internally.
+     *
+     * We also set a name to avoid a common useless name in tracing such as
+     * `"anonymous"` or `"bound function"`.
+     *
+     * https://github.com/getsentry/sentry-javascript/issues/3284
+     */
+    Object.defineProperties(handler, {
+      name: {
+        value: "InngestHandler",
+      },
+      length: {
+        value: this.handler.length,
+      },
+    });
+
+    return handler;
   }
 
   /**
