@@ -235,6 +235,27 @@ export const testFramework = (
       test("serve should be a function", () => {
         expect(handler.serve).toEqual(expect.any(Function));
       });
+
+      test("serve should return a function with a name", () => {
+        const actual = handler.serve({ client: inngest, functions: [] });
+
+        expect(actual.name).toEqual(expect.any(String));
+        expect(actual.name).toBeTruthy();
+      });
+
+      /**
+       * Some platforms check (at runtime) the length of the function being used
+       * to handle an endpoint. If this is a variadic function, it will fail
+       * that check.
+       *
+       * Therefore, we expect the arguments accepted to be the same length as
+       * the `handler` function passed internally.
+       */
+      test("serve should return a function with a non-variadic length", () => {
+        const actual = handler.serve({ client: inngest, functions: [] });
+
+        expect(actual.length).toBeGreaterThan(0);
+      });
     });
 
     if (opts?.handlerTests) {
