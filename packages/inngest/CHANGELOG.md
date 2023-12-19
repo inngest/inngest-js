@@ -1,5 +1,13 @@
 # inngest
 
+## 3.7.4
+
+### Patch Changes
+
+- [#434](https://github.com/inngest/inngest-js/pull/434) [`cb953ee`](https://github.com/inngest/inngest-js/commit/cb953eed62230f6dbf6a689ca24fc9440fc09855) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix bad wildcard export `inngest/components/*` for ESM/CJS compatibility
+
+- [#440](https://github.com/inngest/inngest-js/pull/440) [`0fc642d`](https://github.com/inngest/inngest-js/commit/0fc642de152b7abc19633537ae742cea8a41d958) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix an issue where Sentry's wrapping of `inngest/express` caused Sentry to throw a runtime error during instantiation
+
 ## 3.7.3
 
 ### Patch Changes
