@@ -37,6 +37,11 @@
       "import": "./index.js",
       "types": "./index.d.ts"
     },
+    "./astro": {
+      "require": "./astro.js",
+      "import": "./astro.js",
+      "types": "./astro.d.ts"
+    },
     "./cloudflare": {
       "require": "./cloudflare.js",
       "import": "./cloudflare.js",
@@ -166,6 +171,7 @@
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "@vercel/node": "^2.15.9",
+    "astro": "^4.0.7",
     "concurrently": "^7.4.0",
     "eslint": "^8.30.0",
     "eslint-config-prettier": "^9.0.0",
