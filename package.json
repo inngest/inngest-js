@@ -1,7 +1,8 @@
 {
   "scripts": {
     "preinstall": "npx only-allow pnpm",
-    "release:all": "pnpm run release:publish && pnpm run release:tag",
+    "release:all": "pnpm run release:build && pnpm run release:publish && pnpm run release:tag",
+    "build": "pnpm run --if-present --recursive build",
     "release:publish": "pnpm run --if-present --recursive release",
     "release:tag": "node scripts/release/tag.js",
     "log": "pnpm run --if-present --recursive log"
