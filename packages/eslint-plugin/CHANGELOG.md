@@ -1,5 +1,11 @@
 # @inngest/eslint-plugin
 
+## 0.0.4
+
+### Patch Changes
+
+- [#446](https://github.com/inngest/inngest-js/pull/446) [`e1479e0`](https://github.com/inngest/inngest-js/commit/e1479e05525192ab62e410becff9f68027324897) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Version bump to resolve release issues
+
 ## 0.0.3
 
 ### Patch Changes
