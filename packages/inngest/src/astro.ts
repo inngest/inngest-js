@@ -1,9 +1,9 @@
+import { type APIContext } from "astro";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
 import { type SupportedFrameworkName } from "./types";
-import { type APIContext } from "astro";
 
 export const frameworkName: SupportedFrameworkName = "astro";
 
@@ -51,9 +51,15 @@ export const serve = (options: ServeHandlerOptions) => {
   });
 
   const requestHandler = commHandler.createHandler();
-  return {
-    GET: requestHandler,
-    POST: requestHandler,
-    PUT: requestHandler,
+  type RequestHandler = typeof requestHandler;
+
+  return Object.defineProperties(requestHandler, {
+    GET: { value: requestHandler },
+    POST: { value: requestHandler },
+    PUT: { value: requestHandler },
+  }) as RequestHandler & {
+    GET: RequestHandler;
+    POST: RequestHandler;
+    PUT: RequestHandler;
   };
 };
