@@ -16,9 +16,11 @@ import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
 import { createClient } from "../test/helpers";
 
+const clientId = "test-client";
+
 const getStepTools = () => {
   const step = createStepTools(
-    createClient({ id: "test" }),
+    createClient({ id: clientId }),
     ({ args, matchOp }) => {
       const stepOptions = getStepOptions(args[0]);
       return Promise.resolve(matchOp(stepOptions, ...args.slice(1)));
@@ -418,7 +420,7 @@ describe("sendEvent", () => {
 
     describe("runtime", () => {
       const fn = new InngestFunction(
-        createClient({ id: "test-client" }),
+        createClient({ id: clientId }),
         { id: "test-fn" },
         { event: "test-event" },
         () => "test-return"
@@ -450,6 +452,42 @@ describe("sendEvent", () => {
         await expect(
           step.invoke({ id: "id", name: "name" }, { function: fn, data: "foo" })
         ).resolves.toMatchObject({ displayName: "name" });
+      });
+
+      describe("return function ID to run", () => {
+        test("with `function` object", async () => {
+          await expect(
+            step.invoke("id", { function: fn, data: "foo" })
+          ).resolves.toMatchObject({
+            opts: {
+              function_id: fn.id(clientId),
+            },
+          });
+        });
+
+        test("with `function` string", async () => {
+          await expect(
+            step.invoke("id", { function: "some-fn", data: "foo" })
+          ).resolves.toMatchObject({
+            opts: {
+              function_id: `${clientId}-some-fn`,
+            },
+          });
+        });
+
+        test("with `function` string and `appId`", async () => {
+          await expect(
+            step.invoke("id", {
+              function: "some-fn",
+              appId: "some-client",
+              data: "foo",
+            })
+          ).resolves.toMatchObject({
+            opts: {
+              function_id: "some-client-some-fn",
+            },
+          });
+        });
       });
     });
 
@@ -496,6 +534,19 @@ describe("sendEvent", () => {
         const _test = () => invoke("id", { function: fn, data: { foo: "" } });
       });
 
+      test("allows specifying function as a string", () => {
+        const _test = () => invoke("id", { function: "fn", data: { foo: "" } });
+      });
+
+      test("allows specifying function as a string with an `appId`", () => {
+        const _test = () =>
+          invoke("id", {
+            function: "fn",
+            appId: "test-client",
+            data: { foo: "" },
+          });
+      });
+
       test("requires no payload if a cron", () => {
         const fn = client.createFunction(
           { id: "fn" },
@@ -504,6 +555,16 @@ describe("sendEvent", () => {
         );
 
         const _test = () => invoke("id", { function: fn });
+      });
+
+      test("disallows no `function` given", () => {
+        // @ts-expect-error No function provided
+        const _test = () => invoke("id", { data: { foo: "" } });
+      });
+
+      test("disallows specifying only an `appId`", () => {
+        // @ts-expect-error Only appId provided
+        const _test = () => invoke("id", { appId: "id" });
       });
 
       test("disallows no payload if an event", () => {

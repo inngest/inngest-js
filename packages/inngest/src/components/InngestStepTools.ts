@@ -404,15 +404,27 @@ export const createStepTools = <
       } satisfies Omit<Required<EventPayload>, "name" | "ts" | "id"> &
         Partial<Pick<EventPayload, "name" | "ts">>;
 
+      let functionId: string;
+      if (opts.function) {
+        if (typeof opts.function === "string") {
+          functionId = [opts.appId || client.id, opts.function]
+            .filter(Boolean)
+            .join("-");
+        } else {
+          functionId = opts.function.id(client.id);
+        }
+      } else {
+        throw new Error(
+          "Invalid invocation options passed to invoke; must include either a function or functionId."
+        );
+      }
+
       return {
         id,
         op: StepOpCode.InvokeFunction,
         displayName: name ?? id,
         opts: {
-          function_id:
-            typeof opts.function === "string"
-              ? opts.function
-              : opts.function.id(client.id),
+          function_id: functionId,
           payload,
         },
       };
@@ -422,11 +434,18 @@ export const createStepTools = <
   return tools;
 };
 
+type InvocationTargetOpts<TFunction extends AnyInngestFunction | string> = {
+  function: TFunction;
+  appId?: string;
+};
+
 type InvocationOpts<TFunction extends AnyInngestFunction | string> = [
   TriggerEventFromFunction<TFunction>,
 ] extends [never]
-  ? { function: TFunction }
-  : Simplify<{ function: TFunction } & TriggerEventFromFunction<TFunction>>;
+  ? InvocationTargetOpts<TFunction>
+  : Simplify<
+      InvocationTargetOpts<TFunction> & TriggerEventFromFunction<TFunction>
+    >;
 
 /**
  * A set of optional parameters given to a `waitForEvent` call to control how
