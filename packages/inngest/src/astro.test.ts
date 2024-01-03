@@ -1,4 +1,5 @@
 import * as EdgeHandler from "@local/edge";
+import fetch, { Headers, Response } from "cross-fetch";
 import { testFramework } from "./test/helpers";
 
 const originalFetch = globalThis.fetch;
