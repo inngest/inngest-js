@@ -1,5 +1,17 @@
 # @inngest/eslint-plugin
 
+## 0.0.4
+
+### Patch Changes
+
+- [#446](https://github.com/inngest/inngest-js/pull/446) [`e1479e0`](https://github.com/inngest/inngest-js/commit/e1479e05525192ab62e410becff9f68027324897) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Version bump to resolve release issues
+
+## 0.0.3
+
+### Patch Changes
+
+- [#444](https://github.com/inngest/inngest-js/pull/444) [`6597215`](https://github.com/inngest/inngest-js/commit/6597215ed012555b5698fe37dac0ea485b058ce0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix packages sometimes not shipping dist files if released with multiple packages
+
 ## 0.0.2
 
 ### Patch Changes
