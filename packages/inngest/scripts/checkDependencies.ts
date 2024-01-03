@@ -269,6 +269,7 @@ function checkDependencies(
 }
 
 checkDependencies("tsconfig.build.json", [
+  "src/astro.ts",
   "src/cloudflare.ts",
   "src/digitalocean.ts",
   "src/edge.ts",

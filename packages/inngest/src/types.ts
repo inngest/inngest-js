@@ -1137,6 +1137,7 @@ export type EventNameFromTrigger<
  * internally to assess functionality based on a mix of framework and platform.
  */
 export type SupportedFrameworkName =
+  | "astro"
   | "cloudflare-pages"
   | "digitalocean"
   | "edge"
