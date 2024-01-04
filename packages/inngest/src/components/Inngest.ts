@@ -30,6 +30,7 @@ import {
   type FunctionOptions,
   type FunctionTrigger,
   type Handler,
+  type InvokeTargetFunctionDefinition,
   type MiddlewareStack,
   type SendEventOutput,
   type SendEventResponse,
@@ -46,6 +47,10 @@ import {
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
 } from "./InngestMiddleware";
+import {
+  type AnyReferenceInngestFunction,
+  type ReferenceInngestFunction,
+} from "./ReferenceInngestFunction";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -733,15 +738,53 @@ export type GetFunctionInput<
  *
  * @public
  */
-export type GetFunctionOutput<TFunction extends AnyInngestFunction | string> =
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TFunction extends InngestFunction<any, any, any, any, infer IHandler>
-    ? IfNever<
-        SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>,
-        null,
-        SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
-      >
+export type GetFunctionOutput<
+  TFunction extends InvokeTargetFunctionDefinition,
+> = TFunction extends AnyInngestFunction
+  ? GetFunctionOutputFromInngestFunction<TFunction>
+  : TFunction extends AnyReferenceInngestFunction
+    ? GetFunctionOutputFromReferenceInngestFunction<TFunction>
     : unknown;
+
+/**
+ * A helper type to extract the type of the output of an Inngest function.
+ *
+ * Used internally for {@link GetFunctionOutput}. Code outside of this package
+ * should use {@link GetFunctionOutput} instead.
+ *
+ * @internal
+ */
+export type GetFunctionOutputFromInngestFunction<
+  TFunction extends AnyInngestFunction,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+> = TFunction extends InngestFunction<any, any, any, any, infer IHandler>
+  ? IfNever<
+      SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>,
+      null,
+      SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
+    >
+  : unknown;
+
+/**
+ * A helper type to extract the type of the output of a referenced Inngest
+ * function.
+ *
+ * Used internally for {@link GetFunctionOutput}. Code outside of this package
+ * should use {@link GetFunctionOutput} instead.
+ *
+ * @internal
+ */
+export type GetFunctionOutputFromReferenceInngestFunction<
+  TFunction extends AnyReferenceInngestFunction,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+> = TFunction extends ReferenceInngestFunction<any, infer IOutput>
+  ? // TODO Test `undefined|void` case here
+    IfNever<
+      SimplifyDeep<Jsonify<IOutput>>,
+      null,
+      SimplifyDeep<Jsonify<IOutput>>
+    >
+  : unknown;
 
 /**
  * A helper type to extract the inferred event schemas from a given Inngest

@@ -1,5 +1,6 @@
 import { type Jsonify, type Simplify } from "type-fest";
 import { type SimplifyDeep } from "type-fest/source/merge-deep";
+import { z } from "zod";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
@@ -13,6 +14,7 @@ import {
   type EventPayload,
   type HashedOp,
   type InvocationResult,
+  type InvokeTargetFunctionDefinition,
   type SendEventOutput,
   type StepOptions,
   type StepOptionsOrId,
@@ -23,7 +25,8 @@ import {
   type GetFunctionOutput,
   type Inngest,
 } from "./Inngest";
-import { type AnyInngestFunction } from "./InngestFunction";
+import { InngestFunction } from "./InngestFunction";
+import { ReferenceInngestFunction } from "./ReferenceInngestFunction";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -389,7 +392,7 @@ export const createStepTools = <
      * throw a `NonRetriableError`.
      */
     invoke: createTool<
-      <TFunction extends AnyInngestFunction | string>(
+      <TFunction extends InvokeTargetFunctionDefinition>(
         idOrOptions: StepOptionsOrId,
         opts: InvocationOpts<TFunction>
       ) => InvocationResult<GetFunctionOutput<TFunction>>
@@ -404,19 +407,56 @@ export const createStepTools = <
       } satisfies Omit<Required<EventPayload>, "name" | "ts" | "id"> &
         Partial<Pick<EventPayload, "name" | "ts">>;
 
+      // Create a discriminated union to operate on based on the input types
+      // available for this tool.
+      const parsedFnOpts = z
+        .object({
+          type: z.literal("fullId").optional().default("fullId"),
+          function: z.string().min(1),
+        })
+        .or(
+          z.object({
+            type: z.literal("fnInstance").optional().default("fnInstance"),
+            function: z.instanceof(InngestFunction),
+          })
+        )
+        .or(
+          z.object({
+            type: z.literal("refInstance").optional().default("refInstance"),
+            function: z.instanceof(ReferenceInngestFunction),
+          })
+        )
+        .safeParse(opts);
+
+      if (!parsedFnOpts.success) {
+        throw new Error(
+          `Invalid invocation options passed to invoke; must include either a function or functionId.`
+        );
+      }
+
       let functionId: string;
-      if (opts.function) {
-        if (typeof opts.function === "string") {
-          functionId = [opts.appId || client.id, opts.function]
+      switch (parsedFnOpts.data.type) {
+        case "fnInstance":
+          functionId = parsedFnOpts.data.function.id(client.id);
+          break;
+
+        case "fullId":
+          functionId = parsedFnOpts.data.function;
+          break;
+
+        case "refInstance":
+          functionId = [
+            parsedFnOpts.data.function.opts.appId || client.id,
+            parsedFnOpts.data.function.opts.functionId,
+          ]
             .filter(Boolean)
             .join("-");
-        } else {
-          functionId = opts.function.id(client.id);
-        }
-      } else {
-        throw new Error(
-          "Invalid invocation options passed to invoke; must include either a function or functionId."
-        );
+          break;
+
+        default:
+          throw new Error(
+            `Invalid invocation options passed to invoke; must include either a function or functionId.`
+          );
       }
 
       return {
@@ -434,12 +474,11 @@ export const createStepTools = <
   return tools;
 };
 
-type InvocationTargetOpts<TFunction extends AnyInngestFunction | string> = {
+type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
   function: TFunction;
-  appId?: string;
 };
 
-type InvocationOpts<TFunction extends AnyInngestFunction | string> = [
+type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> = [
   TriggerEventFromFunction<TFunction>,
 ] extends [never]
   ? InvocationTargetOpts<TFunction>
