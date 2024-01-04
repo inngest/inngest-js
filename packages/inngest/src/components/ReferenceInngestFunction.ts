@@ -94,12 +94,14 @@ export type ReferenceFunctionReturn<TArgs> = TArgs extends AnyInngestFunction
 
 type ResolveInputType<TInput> = IsUnknown<TInput> extends true
   ? MinimalEventPayload
-  : TInput extends ZodTypeAny
+  : // TODO Shim this via a custom validator type to support many libs
+    TInput extends ZodTypeAny
     ? MinimalEventPayload<TInput["_output"]>
     : MinimalEventPayload<TInput>;
 
 type ResolveOutputType<TOutput> = IsUnknown<TOutput> extends true
   ? unknown
-  : TOutput extends ZodTypeAny
+  : // TODO Shim this via a custom validator type to support many libs
+    TOutput extends ZodTypeAny
     ? TOutput["_output"]
     : TOutput;
