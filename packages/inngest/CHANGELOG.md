@@ -1,5 +1,11 @@
 # inngest
 
+## 3.8.0
+
+### Minor Changes
+
+- [#441](https://github.com/inngest/inngest-js/pull/441) [`cb0496a`](https://github.com/inngest/inngest-js/commit/cb0496a830662a2f90002feb705f5976a15ab4d3) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Add new `"inngest/astro"` serve handler
+
 ## 3.7.4
 
 ### Patch Changes
