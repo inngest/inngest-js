@@ -40,14 +40,12 @@ export type EventNameFromTrigger<Events extends Record<string, EventPayload>, T 
     event: string;
 } ? T["event"] : string;
 
+// Warning: (ae-forgotten-export) The symbol "MinimalEventPayload" needs to be exported by the entry point index.d.ts
+//
 // @public
-export interface EventPayload {
-    data?: any;
-    id?: string;
+export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
     name: string;
     ts?: number;
-    user?: any;
-    v?: string;
 }
 
 // @public
@@ -148,10 +146,14 @@ typeof builtInMiddleware,
 NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>
 ]>>>[0];
 
+// Warning: (ae-forgotten-export) The symbol "InvokeTargetFunctionDefinition" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "GetFunctionOutputFromInngestFunction" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "AnyReferenceInngestFunction" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "GetFunctionOutputFromReferenceInngestFunction" needs to be exported by the entry point index.d.ts
 //
 // @public
-export type GetFunctionOutput<TFunction extends AnyInngestFunction | string> = TFunction extends InngestFunction<any, any, any, any, infer IHandler> ? IfNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>, null, SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> : unknown;
+export type GetFunctionOutput<TFunction extends InvokeTargetFunctionDefinition> = TFunction extends AnyInngestFunction ? GetFunctionOutputFromInngestFunction<TFunction> : TFunction extends AnyReferenceInngestFunction ? GetFunctionOutputFromReferenceInngestFunction<TFunction> : unknown;
 
 // @public
 export type GetStepTools<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = keyof GetEvents<TInngest> & string> = GetFunctionInput<TInngest, TTrigger> extends {
@@ -477,8 +479,8 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:339:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:346:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:357:3 - (ae-forgotten-export) The symbol "AnyInngest" needs to be exported by the entry point index.d.ts
-// src/types.ts:80:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:782:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:84:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:797:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

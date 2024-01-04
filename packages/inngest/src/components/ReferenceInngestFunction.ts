@@ -77,10 +77,7 @@ export const referenceFunction = <
  *
  * @public
  */
-export type ReferenceFunctionReturn<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TArgs extends ReferenceInngestFunctionOptions<any, any> | AnyInngestFunction,
-> = TArgs extends AnyInngestFunction
+export type ReferenceFunctionReturn<TArgs> = TArgs extends AnyInngestFunction
   ? ReferenceInngestFunction<
       PayloadFromAnyInngestFunction<TArgs>,
       GetFunctionOutput<TArgs>
@@ -90,15 +87,19 @@ export type ReferenceFunctionReturn<
         infer TFnOutput
       >
     ? ReferenceInngestFunction<
-        IsUnknown<TFnInput> extends true
-          ? MinimalEventPayload
-          : TFnInput extends ZodTypeAny
-            ? MinimalEventPayload<TFnInput["_output"]>
-            : MinimalEventPayload<TFnInput>,
-        IsUnknown<TFnOutput> extends true
-          ? unknown
-          : TFnOutput extends ZodTypeAny
-            ? TFnOutput["_output"]
-            : TFnOutput
+        ResolveInputType<TFnInput>,
+        ResolveOutputType<TFnOutput>
       >
     : never;
+
+type ResolveInputType<TInput> = IsUnknown<TInput> extends true
+  ? MinimalEventPayload
+  : TInput extends ZodTypeAny
+    ? MinimalEventPayload<TInput["_output"]>
+    : MinimalEventPayload<TInput>;
+
+type ResolveOutputType<TOutput> = IsUnknown<TOutput> extends true
+  ? unknown
+  : TOutput extends ZodTypeAny
+    ? TOutput["_output"]
+    : TOutput;
