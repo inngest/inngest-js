@@ -570,7 +570,12 @@ describe("sendEvent", () => {
           () => "return"
         );
 
+        // Allowed
         const _test = () => invoke("id", { function: fn });
+
+        // Disallowed
+        // @ts-expect-error No payload should be provided for a cron
+        const _test2 = () => invoke("id", { function: fn, data: { foo: "" } });
       });
 
       test("disallows no `function` given", () => {
