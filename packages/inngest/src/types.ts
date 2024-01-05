@@ -336,7 +336,6 @@ export interface MinimalEventPayload<TData = any> {
   /**
    * Any data pertinent to the event
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data?: TData;
 
   /**
