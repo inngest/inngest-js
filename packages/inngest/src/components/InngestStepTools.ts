@@ -27,7 +27,7 @@ import {
   type Inngest,
 } from "./Inngest";
 import { InngestFunction } from "./InngestFunction";
-import { ReferenceInngestFunction } from "./ReferenceInngestFunction";
+import { InngestFunctionReference } from "./InngestFunctionReference";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -420,7 +420,7 @@ export const createStepTools = <
         .or(
           payloadSchema.extend({
             _type: z.literal("refInstance").optional().default("refInstance"),
-            function: z.instanceof(ReferenceInngestFunction),
+            function: z.instanceof(InngestFunctionReference),
           })
         )
         .safeParse(opts);

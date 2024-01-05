@@ -11,16 +11,13 @@ import {
   type AnyInngestFunction,
   type InngestFunction,
 } from "./components/InngestFunction";
+import { type InngestFunctionReference } from "./components/InngestFunctionReference";
 import {
   type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
   type MiddlewareOptions,
 } from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
-import {
-  type AnyReferenceInngestFunction,
-  type ReferenceInngestFunction,
-} from "./components/ReferenceInngestFunction";
 import { type internalEvents } from "./helpers/consts";
 import {
   type IsStringLiteral,
@@ -1206,7 +1203,7 @@ export type EventsFromFunction<T extends AnyInngestFunction> =
  * @public
  */
 export type InvokeTargetFunctionDefinition =
-  | AnyReferenceInngestFunction
+  | InngestFunctionReference.Any
   | AnyInngestFunction
   | string;
 
@@ -1220,7 +1217,7 @@ export type TriggerEventFromFunction<
   TFunction extends InvokeTargetFunctionDefinition,
 > = TFunction extends AnyInngestFunction
   ? PayloadFromAnyInngestFunction<TFunction>
-  : TFunction extends ReferenceInngestFunction<
+  : TFunction extends InngestFunctionReference<
         infer IInput extends MinimalEventPayload,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         any

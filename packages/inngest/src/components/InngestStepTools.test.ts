@@ -2,11 +2,11 @@
 import { EventSchemas } from "@local/components/EventSchemas";
 import { type EventsFromOpts } from "@local/components/Inngest";
 import { InngestFunction } from "@local/components/InngestFunction";
+import { referenceFunction } from "@local/components/InngestFunctionReference";
 import {
   createStepTools,
   getStepOptions,
 } from "@local/components/InngestStepTools";
-import { referenceFunction } from "@local/components/ReferenceInngestFunction";
 import {
   StepOpCode,
   type ClientOptions,

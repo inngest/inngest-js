@@ -6,6 +6,7 @@
 
 import { IfNever } from 'type-fest';
 import { IsEqual } from 'type-fest';
+import { IsUnknown } from 'type-fest';
 import { Jsonify } from 'type-fest';
 import { Simplify } from 'type-fest';
 import { SimplifyDeep } from 'type-fest/source/merge-deep';
@@ -149,11 +150,11 @@ NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>
 // Warning: (ae-forgotten-export) The symbol "InvokeTargetFunctionDefinition" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "GetFunctionOutputFromInngestFunction" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "AnyReferenceInngestFunction" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "InngestFunctionReference" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "GetFunctionOutputFromReferenceInngestFunction" needs to be exported by the entry point index.d.ts
 //
 // @public
-export type GetFunctionOutput<TFunction extends InvokeTargetFunctionDefinition> = TFunction extends AnyInngestFunction ? GetFunctionOutputFromInngestFunction<TFunction> : TFunction extends AnyReferenceInngestFunction ? GetFunctionOutputFromReferenceInngestFunction<TFunction> : unknown;
+export type GetFunctionOutput<TFunction extends InvokeTargetFunctionDefinition> = TFunction extends AnyInngestFunction ? GetFunctionOutputFromInngestFunction<TFunction> : TFunction extends InngestFunctionReference.Any ? GetFunctionOutputFromReferenceInngestFunction<TFunction> : unknown;
 
 // @public
 export type GetStepTools<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = keyof GetEvents<TInngest> & string> = GetFunctionInput<TInngest, TTrigger> extends {
@@ -479,8 +480,8 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:339:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:346:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:357:3 - (ae-forgotten-export) The symbol "AnyInngest" needs to be exported by the entry point index.d.ts
-// src/types.ts:84:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:796:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:81:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:793:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

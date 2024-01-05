@@ -38,6 +38,7 @@ import {
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
 import { InngestFunction, type AnyInngestFunction } from "./InngestFunction";
+import { type InngestFunctionReference } from "./InngestFunctionReference";
 import {
   InngestMiddleware,
   getHookStack,
@@ -47,10 +48,6 @@ import {
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
 } from "./InngestMiddleware";
-import {
-  type AnyReferenceInngestFunction,
-  type ReferenceInngestFunction,
-} from "./ReferenceInngestFunction";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -742,7 +739,7 @@ export type GetFunctionOutput<
   TFunction extends InvokeTargetFunctionDefinition,
 > = TFunction extends AnyInngestFunction
   ? GetFunctionOutputFromInngestFunction<TFunction>
-  : TFunction extends AnyReferenceInngestFunction
+  : TFunction extends InngestFunctionReference.Any
     ? GetFunctionOutputFromReferenceInngestFunction<TFunction>
     : unknown;
 
@@ -775,9 +772,9 @@ export type GetFunctionOutputFromInngestFunction<
  * @internal
  */
 export type GetFunctionOutputFromReferenceInngestFunction<
-  TFunction extends AnyReferenceInngestFunction,
+  TFunction extends InngestFunctionReference.Any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-> = TFunction extends ReferenceInngestFunction<any, infer IOutput>
+> = TFunction extends InngestFunctionReference<any, infer IOutput>
   ? IfNever<
       SimplifyDeep<Jsonify<IOutput>>,
       null,
