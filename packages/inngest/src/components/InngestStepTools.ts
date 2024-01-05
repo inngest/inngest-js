@@ -15,6 +15,7 @@ import {
   type HashedOp,
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
+  type MinimalEventPayload,
   type SendEventOutput,
   type StepOptions,
   type StepOptionsOrId,
@@ -431,12 +432,7 @@ export const createStepTools = <
       }
 
       const { _type, function: fn, data, user, v } = parsedFnOpts.data;
-
-      const payload = { data, user, v } satisfies Omit<
-        Required<EventPayload>,
-        "name" | "ts" | "id" | "v"
-      > &
-        Partial<Pick<EventPayload, "name" | "ts" | "v">>;
+      const payload = { data, user, v } satisfies MinimalEventPayload;
 
       let functionId: string;
       switch (_type) {
@@ -453,11 +449,6 @@ export const createStepTools = <
             .filter(Boolean)
             .join("-");
           break;
-
-        default:
-          throw new Error(
-            `Invalid invocation options passed to invoke; must include either a function or functionId.`
-          );
       }
 
       return {
