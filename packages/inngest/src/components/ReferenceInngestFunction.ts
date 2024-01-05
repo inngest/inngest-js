@@ -1,5 +1,8 @@
-import { type IsUnknown } from "type-fest";
-import { type ValidZodValue, type ZodTypeAny } from "../helpers/validators/zod";
+import {
+  type ResolveSchema,
+  type ValidSchemaInput,
+  type ValidSchemaOutput,
+} from "../helpers/validators";
 import {
   type MinimalEventPayload,
   type PayloadFromAnyInngestFunction,
@@ -60,8 +63,8 @@ export type ReferenceArgs<TFnInput, TFnOutput> =
  */
 export const referenceFunction = <
   TArgs extends ReferenceArgs<TFnInput, TFnOutput>,
-  TFnInput extends ValidZodValue = ValidZodValue,
-  TFnOutput extends ZodTypeAny = ZodTypeAny,
+  TFnInput extends ValidSchemaInput = ValidSchemaInput,
+  TFnOutput extends ValidSchemaOutput = ValidSchemaOutput,
 >({
   functionId,
   appId,
@@ -90,21 +93,8 @@ export type ReferenceFunctionReturn<TArgs> = TArgs extends AnyInngestFunction
         infer TFnOutput
       >
     ? ReferenceInngestFunction<
-        ResolveInputType<TFnInput>,
-        ResolveOutputType<TFnOutput>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>>,
+        ResolveSchema<TFnOutput, TFnOutput, unknown>
       >
     : never;
-
-type ResolveInputType<TInput> = IsUnknown<TInput> extends true
-  ? MinimalEventPayload
-  : // TODO Shim this via a custom validator type to support many libs
-    TInput extends ZodTypeAny
-    ? MinimalEventPayload<TInput["_output"]>
-    : MinimalEventPayload<TInput>;
-
-type ResolveOutputType<TOutput> = IsUnknown<TOutput> extends true
-  ? unknown
-  : // TODO Shim this via a custom validator type to support many libs
-    TOutput extends ZodTypeAny
-    ? TOutput["_output"]
-    : TOutput;
