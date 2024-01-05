@@ -414,9 +414,118 @@ describe("sendEvent", () => {
     });
   });
 
-  describe("invoke", () => {
-    let step: StepTools;
-    beforeEach(() => {
+  describe("types", () => {
+    describe("no custom types", () => {
+      const sendEvent: ReturnType<typeof createStepTools>["sendEvent"] =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (() => undefined) as any;
+
+      test("allows sending a single event with a string", () => {
+        void sendEvent("id", { name: "anything", data: "foo" });
+      });
+
+      test("allows sending a single event with an object", () => {
+        void sendEvent("id", { name: "anything", data: "foo" });
+      });
+
+      test("allows sending multiple events", () => {
+        void sendEvent("id", [
+          { name: "anything", data: "foo" },
+          { name: "anything", data: "foo" },
+        ]);
+      });
+    });
+
+    describe("multiple custom types", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        foo: {
+          name: "foo";
+          data: { foo: string };
+        };
+        bar: {
+          data: { bar: string };
+        };
+        // eslint-disable-next-line @typescript-eslint/ban-types
+        baz: {};
+      }>();
+
+      const opts = (<T extends ClientOptions>(x: T): T => x)({
+        id: "",
+        schemas,
+      });
+
+      const sendEvent: ReturnType<
+        typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      >["sendEvent"] = (() => undefined) as any;
+
+      test("disallows sending a single unknown event with a string", () => {
+        // @ts-expect-error Unknown event
+        void sendEvent({ name: "unknown", data: { foo: "" } });
+      });
+
+      test("disallows sending a single unknown event with an object", () => {
+        // @ts-expect-error Unknown event
+        void sendEvent({ name: "unknown", data: { foo: "" } });
+      });
+
+      test("disallows sending multiple unknown events", () => {
+        void sendEvent("id", [
+          // @ts-expect-error Unknown event
+          { name: "unknown", data: { foo: "" } },
+          // @ts-expect-error Unknown event
+          { name: "unknown2", data: { foo: "" } },
+        ]);
+      });
+
+      test("disallows sending one unknown event with multiple known events", () => {
+        void sendEvent("id", [
+          { name: "foo", data: { foo: "" } },
+          // @ts-expect-error Unknown event
+          { name: "unknown", data: { foo: "" } },
+        ]);
+      });
+
+      test("disallows sending a single known event with a string and invalid data", () => {
+        // @ts-expect-error Invalid data
+        void sendEvent({ name: "foo", data: { foo: 1 } });
+      });
+
+      test("disallows sending a single known event with an object and invalid data", () => {
+        // @ts-expect-error Invalid data
+        void sendEvent({ name: "foo", data: { foo: 1 } });
+      });
+
+      test("disallows sending multiple known events with invalid data", () => {
+        void sendEvent("id", [
+          // @ts-expect-error Invalid data
+          { name: "foo", data: { bar: "" } },
+          // @ts-expect-error Invalid data
+          { name: "bar", data: { foo: "" } },
+        ]);
+      });
+
+      test("allows sending a single known event with a string", () => {
+        void sendEvent("id", { name: "foo", data: { foo: "" } });
+      });
+
+      test("allows sending a single known event with an object", () => {
+        void sendEvent("id", { name: "foo", data: { foo: "" } });
+      });
+
+      test("allows sending multiple known events", () => {
+        void sendEvent("id", [
+          { name: "foo", data: { foo: "" } },
+          { name: "bar", data: { bar: "" } },
+        ]);
+      });
+    });
+  });
+});
+
+describe("invoke", () => {
+  let step: StepTools;
+  beforeEach(() => {
       step = getStepTools();
     });
 
@@ -733,115 +842,6 @@ describe("sendEvent", () => {
 
         type Actual = GetTestReturn<typeof _test>;
         assertType<IsEqual<Actual, null>>(true);
-      });
-    });
-  });
-
-  describe("types", () => {
-    describe("no custom types", () => {
-      const sendEvent: ReturnType<typeof createStepTools>["sendEvent"] =
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (() => undefined) as any;
-
-      test("allows sending a single event with a string", () => {
-        void sendEvent("id", { name: "anything", data: "foo" });
-      });
-
-      test("allows sending a single event with an object", () => {
-        void sendEvent("id", { name: "anything", data: "foo" });
-      });
-
-      test("allows sending multiple events", () => {
-        void sendEvent("id", [
-          { name: "anything", data: "foo" },
-          { name: "anything", data: "foo" },
-        ]);
-      });
-    });
-
-    describe("multiple custom types", () => {
-      const schemas = new EventSchemas().fromRecord<{
-        foo: {
-          name: "foo";
-          data: { foo: string };
-        };
-        bar: {
-          data: { bar: string };
-        };
-        // eslint-disable-next-line @typescript-eslint/ban-types
-        baz: {};
-      }>();
-
-      const opts = (<T extends ClientOptions>(x: T): T => x)({
-        id: "",
-        schemas,
-      });
-
-      const sendEvent: ReturnType<
-        typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      >["sendEvent"] = (() => undefined) as any;
-
-      test("disallows sending a single unknown event with a string", () => {
-        // @ts-expect-error Unknown event
-        void sendEvent({ name: "unknown", data: { foo: "" } });
-      });
-
-      test("disallows sending a single unknown event with an object", () => {
-        // @ts-expect-error Unknown event
-        void sendEvent({ name: "unknown", data: { foo: "" } });
-      });
-
-      test("disallows sending multiple unknown events", () => {
-        void sendEvent("id", [
-          // @ts-expect-error Unknown event
-          { name: "unknown", data: { foo: "" } },
-          // @ts-expect-error Unknown event
-          { name: "unknown2", data: { foo: "" } },
-        ]);
-      });
-
-      test("disallows sending one unknown event with multiple known events", () => {
-        void sendEvent("id", [
-          { name: "foo", data: { foo: "" } },
-          // @ts-expect-error Unknown event
-          { name: "unknown", data: { foo: "" } },
-        ]);
-      });
-
-      test("disallows sending a single known event with a string and invalid data", () => {
-        // @ts-expect-error Invalid data
-        void sendEvent({ name: "foo", data: { foo: 1 } });
-      });
-
-      test("disallows sending a single known event with an object and invalid data", () => {
-        // @ts-expect-error Invalid data
-        void sendEvent({ name: "foo", data: { foo: 1 } });
-      });
-
-      test("disallows sending multiple known events with invalid data", () => {
-        void sendEvent("id", [
-          // @ts-expect-error Invalid data
-          { name: "foo", data: { bar: "" } },
-          // @ts-expect-error Invalid data
-          { name: "bar", data: { foo: "" } },
-        ]);
-      });
-
-      test("allows sending a single known event with a string", () => {
-        void sendEvent("id", { name: "foo", data: { foo: "" } });
-      });
-
-      test("allows sending a single known event with an object", () => {
-        void sendEvent("id", { name: "foo", data: { foo: "" } });
-      });
-
-      test("allows sending multiple known events", () => {
-        void sendEvent("id", [
-          { name: "foo", data: { foo: "" } },
-          { name: "bar", data: { bar: "" } },
-        ]);
-      });
     });
   });
 });
