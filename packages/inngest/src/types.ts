@@ -1214,6 +1214,8 @@ export type InvokeTargetFunctionDefinition =
 /**
  * Given an invocation target, extract the payload that will be used to trigger
  * it.
+ *
+ * If we could not find a payload, will return `never`.
  */
 export type TriggerEventFromFunction<
   TFunction extends InvokeTargetFunctionDefinition,
@@ -1228,6 +1230,13 @@ export type TriggerEventFromFunction<
     : MinimalEventPayload;
 
 /**
+ * Given an {@link InngestFunction} instance, extract the {@link MinimalPayload}
+ * that will be used to trigger it.
+ *
+ * If we could not find a payload or the function does not require a payload
+ * (e.g. a cron), then will return `{}`, as this is intended to be used to
+ * spread into other arguments.
+ *
  * @internal
  */
 export type PayloadFromAnyInngestFunction<
