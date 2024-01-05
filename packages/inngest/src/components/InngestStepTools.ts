@@ -397,32 +397,28 @@ export const createStepTools = <
         opts: InvocationOpts<TFunction>
       ) => InvocationResult<GetFunctionOutput<TFunction>>
     >(({ id, name }, opts) => {
-      const payload = {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        data: opts.data,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        user: opts.user,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        v: opts.v,
-      } satisfies Omit<Required<EventPayload>, "name" | "ts" | "id"> &
-        Partial<Pick<EventPayload, "name" | "ts">>;
-
       // Create a discriminated union to operate on based on the input types
       // available for this tool.
-      const parsedFnOpts = z
-        .object({
-          type: z.literal("fullId").optional().default("fullId"),
+      const payloadSchema = z.object({
+        data: z.record(z.any()).optional(),
+        user: z.record(z.any()).optional(),
+        v: z.string().optional(),
+      });
+
+      const parsedFnOpts = payloadSchema
+        .extend({
+          _type: z.literal("fullId").optional().default("fullId"),
           function: z.string().min(1),
         })
         .or(
-          z.object({
-            type: z.literal("fnInstance").optional().default("fnInstance"),
+          payloadSchema.extend({
+            _type: z.literal("fnInstance").optional().default("fnInstance"),
             function: z.instanceof(InngestFunction),
           })
         )
         .or(
-          z.object({
-            type: z.literal("refInstance").optional().default("refInstance"),
+          payloadSchema.extend({
+            _type: z.literal("refInstance").optional().default("refInstance"),
             function: z.instanceof(ReferenceInngestFunction),
           })
         )
@@ -434,21 +430,26 @@ export const createStepTools = <
         );
       }
 
+      const { _type, function: fn, data, user, v } = parsedFnOpts.data;
+
+      const payload = { data, user, v } satisfies Omit<
+        Required<EventPayload>,
+        "name" | "ts" | "id" | "v"
+      > &
+        Partial<Pick<EventPayload, "name" | "ts" | "v">>;
+
       let functionId: string;
-      switch (parsedFnOpts.data.type) {
+      switch (_type) {
         case "fnInstance":
-          functionId = parsedFnOpts.data.function.id(client.id);
+          functionId = fn.id(client.id);
           break;
 
         case "fullId":
-          functionId = parsedFnOpts.data.function;
+          functionId = fn;
           break;
 
         case "refInstance":
-          functionId = [
-            parsedFnOpts.data.function.opts.appId || client.id,
-            parsedFnOpts.data.function.opts.functionId,
-          ]
+          functionId = [fn.opts.appId || client.id, fn.opts.functionId]
             .filter(Boolean)
             .join("-");
           break;
