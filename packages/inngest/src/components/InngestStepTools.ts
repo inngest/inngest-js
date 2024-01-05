@@ -478,13 +478,8 @@ type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
   function: TFunction;
 };
 
-type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> = [
-  TriggerEventFromFunction<TFunction>,
-] extends [never]
-  ? InvocationTargetOpts<TFunction>
-  : Simplify<
-      InvocationTargetOpts<TFunction> & TriggerEventFromFunction<TFunction>
-    >;
+type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
+  InvocationTargetOpts<TFunction> & TriggerEventFromFunction<TFunction>;
 
 /**
  * A set of optional parameters given to a `waitForEvent` call to control how

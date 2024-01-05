@@ -1242,9 +1242,9 @@ export type PayloadFromAnyInngestFunction<
     }
     ? Simplify<Omit<TEvents[IEventTrigger], "name" | "ts">>
     : ITrigger extends { cron: string }
-      ? never
-      : never
-  : never;
+      ? object
+      : object
+  : object;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;
 // TODO Types ready for when we expand this.

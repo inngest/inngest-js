@@ -12,8 +12,11 @@ import { type AnyInngestFunction } from "./InngestFunction";
  *
  * @public
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyReferenceInngestFunction = ReferenceInngestFunction<any, any>;
+export type AnyReferenceInngestFunction = ReferenceInngestFunction<
+  MinimalEventPayload,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any
+>;
 
 /**
  * TODO
