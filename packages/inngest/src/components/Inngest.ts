@@ -778,8 +778,7 @@ export type GetFunctionOutputFromReferenceInngestFunction<
   TFunction extends AnyReferenceInngestFunction,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 > = TFunction extends ReferenceInngestFunction<any, infer IOutput>
-  ? // TODO Test `undefined|void` case here
-    IfNever<
+  ? IfNever<
       SimplifyDeep<Jsonify<IOutput>>,
       null,
       SimplifyDeep<Jsonify<IOutput>>

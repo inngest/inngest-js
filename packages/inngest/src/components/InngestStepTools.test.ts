@@ -734,6 +734,20 @@ describe("invoke", () => {
         });
     });
 
+    test("disallows incorrect payload with a reference function and schema", () => {
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              input: z.object({ wowza: z.string() }),
+            },
+          }),
+          // @ts-expect-error Invalid payload provided
+          data: { bar: "" },
+        });
+    });
+
     test("returns correct output type for function", () => {
       const fn = client.createFunction(
         { id: "fn" },
@@ -843,6 +857,21 @@ describe("invoke", () => {
         invoke("id", {
           function: referenceFunction<typeof fn>({ functionId: "fn" }),
           data: { foo: "" },
+        });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, null>>(true);
+    });
+
+    test("returns null if function returns undefined|void with reference and schema", () => {
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              output: z.void(),
+            },
+          }),
         });
 
       type Actual = GetTestReturn<typeof _test>;
