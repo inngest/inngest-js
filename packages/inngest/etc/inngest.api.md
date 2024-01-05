@@ -150,7 +150,6 @@ NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>
 // Warning: (ae-forgotten-export) The symbol "InvokeTargetFunctionDefinition" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "GetFunctionOutputFromInngestFunction" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "InngestFunctionReference" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "GetFunctionOutputFromReferenceInngestFunction" needs to be exported by the entry point index.d.ts
 //
 // @public
@@ -283,6 +282,46 @@ export class InngestFunction<TOpts extends ClientOptions = ClientOptions, Events
 }
 
 // @public
+export class InngestFunctionReference<
+/**
+* The payload expected by the referenced function.
+*
+* Must be in the shape of an event payload.
+*/
+_TInput extends MinimalEventPayload,
+/**
+* The output of the referenced function.
+*/
+_TOutput> {
+    constructor(opts: {
+        functionId: string;
+        appId?: string;
+    });
+    // (undocumented)
+    readonly opts: {
+        functionId: string;
+        appId?: string;
+    };
+}
+
+// @public
+export namespace InngestFunctionReference {
+    export type Any = InngestFunctionReference<MinimalEventPayload, any>;
+    export type HelperArgs<TFnInput, TFnOutput> = {
+        functionId: string;
+        appId?: string;
+        schemas?: {
+            input?: TFnInput;
+            output?: TFnOutput;
+        };
+    };
+    export type HelperGenericArgs<TFnInput, TFnOutput> = HelperArgs<TFnInput, TFnOutput> | AnyInngestFunction;
+    // Warning: (ae-forgotten-export) The symbol "PayloadFromAnyInngestFunction" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "ResolveSchema" needs to be exported by the entry point index.d.ts
+    export type HelperReturn<TArgs> = TArgs extends AnyInngestFunction ? InngestFunctionReference<PayloadFromAnyInngestFunction<TArgs>, GetFunctionOutput<TArgs>> : TArgs extends HelperArgs<infer TFnInput, infer TFnOutput> ? InngestFunctionReference<MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>>, ResolveSchema<TFnOutput, TFnOutput, unknown>> : never;
+}
+
+// @public
 export class InngestMiddleware<TOpts extends MiddlewareOptions> {
     constructor({ name, init }: TOpts);
     readonly init: TOpts["init"];
@@ -387,6 +426,12 @@ export enum queryKeys {
     // (undocumented)
     StepId = "stepId"
 }
+
+// Warning: (ae-forgotten-export) The symbol "ValidZodValue" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "ZodTypeAny" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const referenceFunction: <TArgs extends InngestFunctionReference.HelperGenericArgs<TFnInput, TFnOutput>, TFnInput extends ValidZodValue = ValidZodValue, TFnOutput extends ZodTypeAny = ZodTypeAny>({ functionId, appId, }: TArgs extends AnyInngestFunction ? Omit<InngestFunctionReference.HelperArgs<any, any>, "schemas"> : TArgs) => InngestFunctionReference.HelperReturn<TArgs>;
 
 // @public
 export interface RegisterOptions {
