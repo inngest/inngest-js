@@ -1,4 +1,4 @@
-import { type Jsonify, type Simplify } from "type-fest";
+import { type Jsonify } from "type-fest";
 import { type SimplifyDeep } from "type-fest/source/merge-deep";
 import { z } from "zod";
 import { timeStr } from "../helpers/strings";
