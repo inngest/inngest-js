@@ -258,6 +258,7 @@ export class V0InngestExecution
         ctx,
         fn: this.options.fn,
         steps: Object.values(this.options.stepState),
+        reqArgs: this.options.reqArgs,
       },
       {
         transformInput: (prev, output) => {
@@ -268,6 +269,7 @@ export class V0InngestExecution
               ...step,
               ...output?.steps?.[i],
             })),
+            reqArgs: prev.reqArgs,
           };
         },
         transformOutput: (prev, output) => {
@@ -445,6 +447,7 @@ export class V0InngestExecution
       ctx: { ...this.fnArg },
       steps: Object.values(this.options.stepState),
       fn: this.options.fn,
+      reqArgs: this.options.reqArgs,
     });
 
     if (inputMutations?.ctx) {
