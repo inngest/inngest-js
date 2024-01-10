@@ -7,7 +7,7 @@ import { assertType, type IsEqual } from "type-plus";
 describe("stacking and inference", () => {
   describe("onFunctionRun", () => {
     test("has `reqArgs`", () => {
-      const mw = new InngestMiddleware({
+      new InngestMiddleware({
         name: "mw",
         init() {
           return {
@@ -25,10 +25,6 @@ describe("stacking and inference", () => {
           };
         },
       });
-
-      const inngest = new Inngest({ id: "test", middleware: [mw] });
-
-      inngest.createFunction({ id: "" }, { event: "" }, () => {});
     });
 
     describe("transformInput", () => {
