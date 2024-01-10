@@ -37,7 +37,6 @@ import {
   logLevels,
   type EventPayload,
   type FunctionConfig,
-  type IntrospectRequest,
   type LogLevel,
   type OutgoingOp,
   type RegisterOptions,
@@ -797,11 +796,12 @@ export class InngestCommHandler<
       if (method === "GET") {
         const registerBody = this.registerBody(this.reqUrl(url));
 
-        const introspection: IntrospectRequest = {
+        const introspection = {
           message: "Inngest endpoint configured correctly.",
           hasEventKey: this.client["eventKeySet"](),
           hasSigningKey: Boolean(this.signingKey),
           functionsFound: registerBody.functions.length,
+          registerBody,
         };
 
         return {
