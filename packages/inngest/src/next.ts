@@ -87,14 +87,24 @@ export const serve = (options: ServeHandlerOptions) => {
         },
 
         url: () => {
+          const log = console.log.bind(console, "inngest:next:serve:url");
           let absoluteUrl: URL | undefined;
           try {
+            log("trying to parse req.url as absoluteUrl", {
+              "req.url": req.url,
+            });
             absoluteUrl = new URL(req.url as string);
+            log("parsed `req.url` as absoluteUrl", {
+              absoluteUrl: absoluteUrl.href,
+            });
           } catch {
             // no-op
+            log("failed to parse `req.url` as absoluteUrl");
           }
 
           if (absoluteUrl) {
+            log("absoluteUrl was truthy");
+
             /**
              * `req.url` here should may be the full URL, including query string.
              * There are some caveats, however, where Next.js will obfuscate
@@ -105,34 +115,64 @@ export const serve = (options: ServeHandlerOptions) => {
              * also use the `host` header if it's available.
              */
             const host = options.serveHost || getHeader("host");
+            log("host found", {
+              host,
+              "options.serveHost": options.serveHost,
+              "getHeader('host')": getHeader("host"),
+            });
             if (host) {
+              log("host was truthy");
               const hostWithProtocol = new URL(
                 host.includes("://") ? host : `${absoluteUrl.protocol}//${host}`
               );
+              log("hostWithProtocol", {
+                hostWithProtocol: hostWithProtocol.href,
+              });
 
               absoluteUrl.protocol = hostWithProtocol.protocol;
               absoluteUrl.host = hostWithProtocol.host;
               absoluteUrl.port = hostWithProtocol.port;
               absoluteUrl.username = hostWithProtocol.username;
               absoluteUrl.password = hostWithProtocol.password;
+
+              log("absoluteUrl updated with hostWithProtocol", {
+                absoluteUrl: absoluteUrl.href,
+              });
             }
+
+            log("returning absoluteUrl", { absoluteUrl: absoluteUrl.href });
 
             return absoluteUrl;
           }
 
+          log("absoluteUrl was falsy");
+
           let scheme: "http" | "https" = "https";
           const host = options.serveHost || getHeader("host") || "";
+          log("host found", {
+            host,
+            "options.serveHost": options.serveHost,
+            "getHeader('host')": getHeader("host"),
+          });
 
           try {
             // eslint-disable-next-line @inngest/internal/process-warn
             if (process.env.NODE_ENV === "development") {
+              log("NODE_ENV was development; setting scheme to 'http'");
               scheme = "http";
             }
           } catch (err) {
             // no-op
+            log("failed to check `process.env.NODE_ENV`");
           }
 
           const url = new URL(req.url as string, `${scheme}://${host}`);
+          log("returning url", {
+            url: url.href,
+            "req.url": req.url,
+            scheme,
+            host,
+          });
 
           return url;
         },
