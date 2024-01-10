@@ -1,10 +1,36 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Inngest } from "@local/components/Inngest";
 import { InngestMiddleware } from "@local/components/InngestMiddleware";
+import { type IsUnknown } from "type-fest";
 import { assertType, type IsEqual } from "type-plus";
 
 describe("stacking and inference", () => {
   describe("onFunctionRun", () => {
+    test("has `reqArgs`", () => {
+      const mw = new InngestMiddleware({
+        name: "mw",
+        init() {
+          return {
+            onFunctionRun({ reqArgs }) {
+              assertType<IsEqual<typeof reqArgs, readonly unknown[]>>(true);
+              assertType<IsUnknown<(typeof reqArgs)[number]>>(true);
+
+              return {
+                transformInput({ reqArgs }) {
+                  assertType<IsEqual<typeof reqArgs, readonly unknown[]>>(true);
+                  assertType<IsUnknown<(typeof reqArgs)[number]>>(true);
+                },
+              };
+            },
+          };
+        },
+      });
+
+      const inngest = new Inngest({ id: "test", middleware: [mw] });
+
+      inngest.createFunction({ id: "" }, { event: "" }, () => {});
+    });
+
     describe("transformInput", () => {
       describe("can add a value to input context", () => {
         const mw = new InngestMiddleware({
