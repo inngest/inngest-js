@@ -50,6 +50,7 @@ export const PREFERRED_EXECUTION_VERSION =
 export interface InngestExecutionOptions {
   client: AnyInngest;
   fn: AnyInngestFunction;
+  reqArgs: unknown[];
   runId: string;
   data: Omit<AnyContext, "step">;
   stepState: Record<string, MemoizedOp>;

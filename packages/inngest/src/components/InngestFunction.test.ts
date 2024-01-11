@@ -163,6 +163,7 @@ describe("runFn", () => {
                 runId: "run",
                 stepState: {},
                 stepCompletionOrder: [],
+                reqArgs: [],
               },
             });
 
@@ -207,6 +208,7 @@ describe("runFn", () => {
                 stepState: {},
                 runId: "run",
                 stepCompletionOrder: [],
+                reqArgs: [],
               },
             });
 
@@ -250,6 +252,7 @@ describe("runFn", () => {
           requestedRunStep: opts?.runStep,
           timer,
           disableImmediateExecution: opts?.disableImmediateExecution,
+          reqArgs: [],
         },
       });
 

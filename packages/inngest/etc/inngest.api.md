@@ -242,10 +242,14 @@ export class InngestCommHandler<Input extends any[] = any[], Output = any, Strea
     // (undocumented)
     protected registerBody(url: URL): RegisterRequest;
     protected reqUrl(url: URL): URL;
-    // Warning: (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
-    //
     // (undocumented)
-    protected runStep(functionId: string, stepId: string | null, data: unknown, timer: ServerTiming): {
+    protected runStep({ functionId, stepId, data, timer, reqArgs, }: {
+        functionId: string;
+        stepId: string | null;
+        data: unknown;
+        timer: ServerTiming;
+        reqArgs: unknown[];
+    }): {
         version: ExecutionVersion;
         result: Promise<ExecutionResult>;
     };
@@ -468,8 +472,9 @@ export type ZodEventSchemas = Record<string, {
 // Warnings were encountered during analysis:
 //
 // src/components/EventSchemas.ts:221:5 - (ae-forgotten-export) The symbol "FinishedEventPayload" needs to be exported by the entry point index.d.ts
-// src/components/InngestCommHandler.ts:869:8 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
-// src/components/InngestCommHandler.ts:869:35 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
+// src/components/InngestCommHandler.ts:886:5 - (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
+// src/components/InngestCommHandler.ts:888:9 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
+// src/components/InngestCommHandler.ts:888:36 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:268:3 - (ae-forgotten-export) The symbol "InitialRunInfo" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:281:5 - (ae-forgotten-export) The symbol "MiddlewareRunInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:287:5 - (ae-forgotten-export) The symbol "BlankHook" needs to be exported by the entry point index.d.ts

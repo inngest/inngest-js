@@ -540,7 +540,7 @@ export class InngestCommHandler<
         });
 
       const actionRes = timer.wrap("action", () =>
-        this.handleAction(actions, timer, getInngestHeaders)
+        this.handleAction({ actions, timer, getInngestHeaders, reqArgs: args })
       );
 
       /**
@@ -645,11 +645,17 @@ export class InngestCommHandler<
    * will decide whether the UI should be visible based on the payload it has
    * found (e.g. env vars, options, etc).
    */
-  private async handleAction(
-    actions: HandlerResponseWithErrors,
-    timer: ServerTiming,
-    getInngestHeaders: () => Record<string, string>
-  ): Promise<ActionResponse> {
+  private async handleAction({
+    actions,
+    timer,
+    getInngestHeaders,
+    reqArgs,
+  }: {
+    actions: HandlerResponseWithErrors;
+    timer: ServerTiming;
+    getInngestHeaders: () => Record<string, string>;
+    reqArgs: unknown[];
+  }): Promise<ActionResponse> {
     this._isProd =
       (await actions.isProduction?.("starting to handle request")) ??
       isProd(this.env);
@@ -703,7 +709,13 @@ export class InngestCommHandler<
           (await getQuerystring("processing run request", queryKeys.StepId)) ||
           null;
 
-        const { version, result } = this.runStep(fnId, stepId, body, timer);
+        const { version, result } = this.runStep({
+          functionId: fnId,
+          data: body,
+          stepId,
+          timer,
+          reqArgs,
+        });
         const stepOutput = await result;
 
         /**
@@ -861,12 +873,19 @@ export class InngestCommHandler<
     };
   }
 
-  protected runStep(
-    functionId: string,
-    stepId: string | null,
-    data: unknown,
-    timer: ServerTiming
-  ): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
+  protected runStep({
+    functionId,
+    stepId,
+    data,
+    timer,
+    reqArgs,
+  }: {
+    functionId: string;
+    stepId: string | null;
+    data: unknown;
+    timer: ServerTiming;
+    reqArgs: unknown[];
+  }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
     const fn = this.fns[functionId];
     if (!fn) {
       // TODO PrettyError
@@ -930,6 +949,7 @@ export class InngestCommHandler<
               timer,
               isFailureHandler: fn.onFailure,
               stepCompletionOrder: ctx?.stack?.stack ?? [],
+              reqArgs,
             },
           };
         },
@@ -964,6 +984,7 @@ export class InngestCommHandler<
               isFailureHandler: fn.onFailure,
               disableImmediateExecution: ctx?.disable_immediate_execution,
               stepCompletionOrder: ctx?.stack?.stack ?? [],
+              reqArgs,
             },
           };
         },

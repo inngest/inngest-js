@@ -391,6 +391,12 @@ type MiddlewareRunArgs = Readonly<{
    * The function that is being executed.
    */
   fn: AnyInngestFunction;
+
+  /**
+   * The raw arguments given to serve handler being used to execute the
+   * function.
+   */
+  reqArgs: Readonly<unknown[]>;
 }>;
 
 /**
