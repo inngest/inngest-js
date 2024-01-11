@@ -411,6 +411,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       ctx: { ...this.fnArg },
       steps: Object.values(this.state.stepState),
       fn: this.options.fn,
+      reqArgs: this.options.reqArgs,
     });
 
     if (inputMutations?.ctx) {
@@ -836,6 +837,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         ctx,
         fn: this.options.fn,
         steps: Object.values(this.options.stepState),
+        reqArgs: this.options.reqArgs,
       },
       {
         transformInput: (prev, output) => {
@@ -846,6 +848,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               ...step,
               ...output?.steps?.[i],
             })),
+            reqArgs: prev.reqArgs,
           };
         },
         transformOutput: (prev, output) => {
