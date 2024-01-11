@@ -1,5 +1,11 @@
 # inngest
 
+## 3.9.0
+
+### Minor Changes
+
+- [#453](https://github.com/inngest/inngest-js/pull/453) [`be6eb2a`](https://github.com/inngest/inngest-js/commit/be6eb2a6abb83578f96fbb17591c7549fbc343e9) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Pass `reqArgs` to `onFunctionRun` middleware hook to be able to use request values within an Inngest function
+
 ## 3.8.0
 
 ### Minor Changes
