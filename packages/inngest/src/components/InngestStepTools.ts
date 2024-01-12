@@ -23,7 +23,7 @@ import {
   type GetFunctionOutput,
   type Inngest,
 } from "./Inngest";
-import { type AnyInngestFunction } from "./InngestFunction";
+import { type InngestFunction } from "./InngestFunction";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -389,7 +389,7 @@ export const createStepTools = <
      * throw a `NonRetriableError`.
      */
     invoke: createTool<
-      <TFunction extends AnyInngestFunction | string>(
+      <TFunction extends InngestFunction.Any | string>(
         idOrOptions: StepOptionsOrId,
         opts: InvocationOpts<TFunction>
       ) => InvocationResult<GetFunctionOutput<TFunction>>
@@ -422,7 +422,7 @@ export const createStepTools = <
   return tools;
 };
 
-type InvocationOpts<TFunction extends AnyInngestFunction | string> = [
+type InvocationOpts<TFunction extends InngestFunction.Any | string> = [
   TriggerEventFromFunction<TFunction>,
 ] extends [never]
   ? { function: TFunction }

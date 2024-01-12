@@ -22,7 +22,6 @@ import { type ExclusiveKeys, type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
   sendEventResponseSchema,
-  type AnyHandler,
   type ClientOptions,
   type EventNameFromTrigger,
   type EventPayload,
@@ -36,7 +35,7 @@ import {
   type TriggerOptions,
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
-import { InngestFunction, type AnyInngestFunction } from "./InngestFunction";
+import { InngestFunction } from "./InngestFunction";
 import {
   InngestMiddleware,
   getHookStack,
@@ -62,9 +61,6 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
   TOpts["schemas"] extends EventSchemas<infer U>
     ? U
     : Record<string, EventPayload>;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyInngest = Inngest<any>;
 
 /**
  * A client used to interact with the Inngest API by sending or reacting to
@@ -457,7 +453,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     TTrigger extends TriggerOptions<TTriggerName>,
     TTriggerName extends keyof EventsFromOpts<TOpts> &
       string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>,
-    THandler extends AnyHandler = Handler<
+    THandler extends Handler.Any = Handler<
       TOpts,
       EventsFromOpts<TOpts>,
       TTriggerName,
@@ -663,6 +659,11 @@ export const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
   }),
 ]);
 
+export namespace Inngest {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = Inngest<any>;
+}
+
 /**
  * A helper type to extract the type of a set of event tooling from a given
  * Inngest instance and optionally a trigger.
@@ -733,7 +734,7 @@ export type GetFunctionInput<
  *
  * @public
  */
-export type GetFunctionOutput<TFunction extends AnyInngestFunction | string> =
+export type GetFunctionOutput<TFunction extends InngestFunction.Any | string> =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TFunction extends InngestFunction<any, any, any, any, infer IHandler>
     ? IfNever<

@@ -1,7 +1,7 @@
+import { type InngestFunction } from "inngest/components/InngestFunction";
 import { ZodError, z } from "zod";
 import { type InngestApi } from "../api/api";
 import { stepsSchemas } from "../api/schema";
-import { type AnyInngestFunction } from "../components/InngestFunction";
 import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
@@ -94,7 +94,7 @@ const fnDataVersionSchema = z.object({
     }),
 });
 
-export const parseFnData = (fn: AnyInngestFunction, data: unknown) => {
+export const parseFnData = (fn: InngestFunction.Any, data: unknown) => {
   let version: ExecutionVersion;
 
   try {

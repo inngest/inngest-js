@@ -1,7 +1,6 @@
 import { internalEvents, queryKeys } from "../helpers/consts";
 import { timeStr } from "../helpers/strings";
 import {
-  type AnyHandler,
   type ClientOptions,
   type EventNameFromTrigger,
   type FunctionConfig,
@@ -18,9 +17,6 @@ import {
 } from "./execution/InngestExecution";
 import { createV0InngestExecution } from "./execution/v0";
 import { createV1InngestExecution } from "./execution/v1";
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyInngestFunction = InngestFunction<any, any, any, any, any>;
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -41,7 +37,7 @@ export class InngestFunction<
     Events,
     EventNameFromTrigger<Events, Trigger>
   > = FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>,
-  THandler extends AnyHandler = Handler<TOpts, Events, keyof Events & string>,
+  THandler extends Handler.Any = Handler<TOpts, Events, keyof Events & string>,
 > {
   static stepId = "step";
   static failureSuffix = "-failure";
@@ -215,6 +211,11 @@ export class InngestFunction<
     const { event } = this.trigger as { event?: string };
     return event;
   }
+}
+
+export namespace InngestFunction {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = InngestFunction<any, any, any, any, any>;
 }
 
 export type CreateExecutionOptions = {

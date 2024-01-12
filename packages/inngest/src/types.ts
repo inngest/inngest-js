@@ -2,15 +2,11 @@ import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
-  type AnyInngest,
   type EventsFromOpts,
   type Inngest,
   type builtInMiddleware,
 } from "./components/Inngest";
-import {
-  type AnyInngestFunction,
-  type InngestFunction,
-} from "./components/InngestFunction";
+import { type InngestFunction } from "./components/InngestFunction";
 import {
   type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
@@ -50,7 +46,7 @@ import { type Logger } from "./middleware/logger";
  *
  * @public
  */
-export type GetEvents<T extends AnyInngest> = T extends Inngest<infer U>
+export type GetEvents<T extends Inngest.Any> = T extends Inngest<infer U>
   ? EventsFromOpts<U>
   : never;
 
@@ -286,8 +282,10 @@ export type Context<
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = Omit<BaseContext<TOpts, TTrigger>, keyof TOverrides> & TOverrides;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyContext = Context<any, any, any>;
+export namespace Context {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = Context<any, any, any>;
+}
 
 /**
  * The shape of a Inngest function, taking in event, step, ctx, and step
@@ -308,8 +306,10 @@ export type Handler<
   ctx: Context<TOpts, TEvents, TTrigger, TOverrides>
 ) => unknown;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyHandler = Handler<any, any, any, any>;
+export namespace Handler {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = Handler<any, any, any, any>;
+}
 
 /**
  * The shape of a single event's payload. It should be extended to enforce
@@ -1180,15 +1180,15 @@ export interface StepOptions {
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
-export type EventsFromFunction<T extends AnyInngestFunction> =
+export type EventsFromFunction<T extends InngestFunction.Any> =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   T extends InngestFunction<any, infer TEvents, any, any, any>
     ? TEvents
     : never;
 
 export type TriggerEventFromFunction<
-  TFunction extends AnyInngestFunction | string,
-  TEvents = TFunction extends AnyInngestFunction
+  TFunction extends InngestFunction.Any | string,
+  TEvents = TFunction extends InngestFunction.Any
     ? EventsFromFunction<TFunction>
     : never,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

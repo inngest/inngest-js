@@ -45,9 +45,8 @@ import {
   type SupportedFrameworkName,
 } from "../types";
 import { version } from "../version";
-import { type AnyInngest } from "./Inngest";
+import { type Inngest } from "./Inngest";
 import {
-  type AnyInngestFunction,
   type CreateExecutionOptions,
   type InngestFunction,
 } from "./InngestFunction";
@@ -70,12 +69,12 @@ export interface ServeHandlerOptions extends RegisterOptions {
   /**
    * The `Inngest` instance used to declare all functions.
    */
-  client: AnyInngest;
+  client: Inngest.Any;
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly AnyInngestFunction[];
+  functions: readonly InngestFunction.Any[];
 }
 
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
@@ -113,12 +112,12 @@ interface InngestCommHandlerOptions<
    * receiving events from the same service, as you can reuse a single
    * definition of Inngest.
    */
-  client: AnyInngest;
+  client: Inngest.Any;
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly AnyInngestFunction[];
+  functions: readonly InngestFunction.Any[];
 
   /**
    * The `handler` is the function your framework requires to handle a
@@ -307,9 +306,9 @@ export class InngestCommHandler<
    * A private collection of just Inngest functions, as they have been passed
    * when instantiating the class.
    */
-  private readonly rawFns: AnyInngestFunction[];
+  private readonly rawFns: InngestFunction.Any[];
 
-  private readonly client: AnyInngest;
+  private readonly client: Inngest.Any;
 
   /**
    * A private collection of functions that are being served. This map is used
