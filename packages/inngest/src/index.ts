@@ -51,4 +51,5 @@ export type {
   StepOptionsOrId,
   TimeStr,
   TriggerOptions,
+  FinishedEventPayload,
 } from "./types";
