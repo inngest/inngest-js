@@ -7,15 +7,15 @@ This is an [Astro](https://astro.build/) project bootstrapped with [`create astr
 Use [`create astro`](https://docs.astro.build/en/install/auto/) with [npm](https://docs.npmjs.com/cli/init), [Yarn](https://yarnpkg.com/lang/en/docs/cli/create/), or [pnpm](https://pnpm.io) to bootstrap the example:
 
 ```bash
-npm create astro@latest --template https://github.com/inngest/inngest-js/tree/main/examples/framework-astro inngest-astro
+npm create astro@latest -- --template inngest/inngest-js/examples/framework-astro inngest-astro
 ```
 
 ```bash
-yarn create astro@latest --template https://github.com/inngest/inngest-js/tree/main/examples/framework-astro inngest-astro
+yarn create astro --template inngest/inngest-js/examples/framework-astro inngest-astro
 ```
 
 ```bash
-pnpm create astro@latest --template https://github.com/inngest/inngest-js/tree/main/examples/framework-astro inngest-astro
+pnpm create astro@latest --template inngest/inngest-js/examples/framework-astro inngest-astro
 ```
 
 Open [http://localhost:3000](http://localhost:3000/api/inngest) with your browser to see the result.
