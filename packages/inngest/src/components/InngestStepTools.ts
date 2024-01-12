@@ -1,6 +1,7 @@
 import { type Jsonify } from "type-fest";
 import { type SimplifyDeep } from "type-fest/source/merge-deep";
 import { z } from "zod";
+import { logPrefix } from "../helpers/consts";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
@@ -441,6 +442,9 @@ export const createStepTools = <
           break;
 
         case "fullId":
+          console.warn(
+            `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`
+          );
           functionId = fn;
           break;
 
