@@ -1,5 +1,17 @@
 # inngest
 
+## 3.10.0
+
+### Minor Changes
+
+- [#449](https://github.com/inngest/inngest-js/pull/449) [`a452cf1`](https://github.com/inngest/inngest-js/commit/a452cf1b80e9e2346c21cffdd046d558b0cf4d8b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `referenceFunction()`, allowing easier, typed invocation of functions across apps and languages
+
+- [#459](https://github.com/inngest/inngest-js/pull/459) [`eec41d2`](https://github.com/inngest/inngest-js/commit/eec41d23de01f4c977cbcc8bfd986660e0ccbb96) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add new `Inngest.Any` and `InngestFunction.Any` type helpers
+
+### Patch Changes
+
+- [#460](https://github.com/inngest/inngest-js/pull/460) [`a225206`](https://github.com/inngest/inngest-js/commit/a225206e3040463c3f4fd558ec71f3ae21e2f56d) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Add exports for `FinishedEventPayload` and `Context` types to fix a TypeScript error when using Inngest in projects with `composite` setting in `tsconfig`.
+
 ## 3.9.0
 
 ### Minor Changes
