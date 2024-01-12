@@ -659,7 +659,33 @@ export const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
   }),
 ]);
 
+/**
+ * A client used to interact with the Inngest API by sending or reacting to
+ * events.
+ *
+ * To provide event typing, see {@link EventSchemas}.
+ *
+ * ```ts
+ * const inngest = new Inngest({ name: "My App" });
+ *
+ * // or to provide event typing too
+ * const inngest = new Inngest({
+ *   name: "My App",
+ *   schemas: new EventSchemas().fromRecord<{
+ *     "app/user.created": {
+ *       data: { userId: string };
+ *     };
+ *   }>(),
+ * });
+ * ```
+ *
+ * @public
+ */
 export namespace Inngest {
+  /**
+   * Represents any `Inngest` instance, regardless of generics and
+   * inference.
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export type Any = Inngest<any>;
 }

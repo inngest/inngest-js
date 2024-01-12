@@ -282,7 +282,15 @@ export type Context<
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = Omit<BaseContext<TOpts, TTrigger>, keyof TOverrides> & TOverrides;
 
+/**
+ * Builds a context object for an Inngest handler, optionally overriding some
+ * keys.
+ */
 export namespace Context {
+  /**
+   * Represents any {@link Context} object, regardless of generics and
+   * inference.
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export type Any = Context<any, any, any>;
 }
@@ -306,7 +314,16 @@ export type Handler<
   ctx: Context<TOpts, TEvents, TTrigger, TOverrides>
 ) => unknown;
 
+/**
+ * The shape of a Inngest function, taking in event, step, ctx, and step
+ * tooling.
+ *
+ * @public
+ */
 export namespace Handler {
+  /**
+   * Represents any `Handler`, regardless of generics and inference.
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export type Any = Handler<any, any, any, any>;
 }

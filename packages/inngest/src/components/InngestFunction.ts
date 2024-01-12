@@ -213,7 +213,20 @@ export class InngestFunction<
   }
 }
 
+/**
+ * A stateless Inngest function, wrapping up function configuration and any
+ * in-memory steps to run when triggered.
+ *
+ * This function can be "registered" to create a handler that Inngest can
+ * trigger remotely.
+ *
+ * @public
+ */
 export namespace InngestFunction {
+  /**
+   * Represents any `InngestFunction` instance, regardless of generics and
+   * inference.
+   */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export type Any = InngestFunction<any, any, any, any, any>;
 }
