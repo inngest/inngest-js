@@ -40,10 +40,12 @@ export { ProxyLogger } from "./middleware/logger";
 export type { LogArg } from "./middleware/logger";
 export type {
   ClientOptions,
+  Context,
   EventNameFromTrigger,
   EventPayload,
   FailureEventArgs,
   FailureEventPayload,
+  FinishedEventPayload,
   FunctionOptions,
   FunctionTrigger,
   Handler,

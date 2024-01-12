@@ -100,6 +100,12 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
   error: Error;
 };
 
+/**
+ * The payload for an internal Inngest event that is sent when a function
+ * finishes, either by completing successfully or failing.
+ *
+ * @public
+ */
 export type FinishedEventPayload = {
   name: `${internalEvents.FunctionFinished}`;
   data: {
@@ -279,6 +285,8 @@ export type BaseContext<
 /**
  * Builds a context object for an Inngest handler, optionally overriding some
  * keys.
+ *
+ * @internal
  */
 export type Context<
   TOpts extends ClientOptions,
