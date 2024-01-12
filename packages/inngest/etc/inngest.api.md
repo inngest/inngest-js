@@ -315,8 +315,8 @@ export namespace InngestFunctionReference {
         functionId: string;
         appId?: string;
         schemas?: {
-            input?: TFnInput;
-            output?: TFnOutput;
+            data?: TFnInput;
+            return?: TFnOutput;
         };
     };
     export type HelperGenericArgs<TFnInput, TFnOutput> = HelperArgs<TFnInput, TFnOutput> | AnyInngestFunction;
