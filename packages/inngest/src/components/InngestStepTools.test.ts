@@ -740,7 +740,7 @@ describe("invoke", () => {
           function: referenceFunction({
             functionId: "fn",
             schemas: {
-              input: z.object({ wowza: z.string() }),
+              data: z.object({ wowza: z.string() }),
             },
           }),
           // @ts-expect-error Invalid payload provided
@@ -800,7 +800,7 @@ describe("invoke", () => {
           function: referenceFunction({
             functionId: "fn",
             schemas: {
-              input: z.object({ wowza: z.string() }),
+              data: z.object({ wowza: z.string() }),
             },
           }),
           data: { wowza: "" },
