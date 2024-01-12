@@ -35,6 +35,12 @@ export type ClientOptionsFromInngest<TInngest extends Inngest<any>> = TInngest e
 // @public
 export type Combine<TCurr extends Record<string, EventPayload>, TInc extends StandardEventSchemas> = IsStringLiteral<keyof TCurr & string> extends true ? Simplify<Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> & StandardEventSchemaToPayload<TInc>> : StandardEventSchemaToPayload<TInc>;
 
+// Warning: (ae-forgotten-export) The symbol "BaseContext" needs to be exported by the entry point index.d.ts
+// Warning: (ae-internal-missing-underscore) The name "Context" should be prefixed with an underscore because the declaration is marked as @internal
+//
+// @internal
+export type Context<TOpts extends ClientOptions, TEvents extends Record<string, EventPayload>, TTrigger extends keyof TEvents & string, TOverrides extends Record<string, unknown> = Record<never, never>> = Omit<BaseContext<TOpts, TTrigger>, keyof TOverrides> & TOverrides;
+
 // @public
 export type EventNameFromTrigger<Events extends Record<string, EventPayload>, T extends TriggerOptions<keyof Events & string>> = T extends string ? T : T extends {
     event: string;
@@ -91,6 +97,20 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
         error: z.output<typeof failureEventErrorSchema>;
         event: P;
     };
+};
+
+// @public
+export type FinishedEventPayload = {
+    name: `${internalEvents.FunctionFinished}`;
+    data: {
+        function_id: string;
+        run_id: string;
+        correlation_id?: string;
+    } & ({
+        error: z.output<typeof failureEventErrorSchema>;
+    } | {
+        result: unknown;
+    });
 };
 
 // @public
@@ -158,7 +178,7 @@ export type GetStepTools<TInngest extends Inngest<any>, TTrigger extends keyof G
     step: infer TStep;
 } ? TStep : never;
 
-// Warning: (ae-forgotten-export) The symbol "Context" needs to be exported by the entry point index.d.ts
+// Warning: (ae-incompatible-release-tags) The symbol "Handler" is marked as @public, but its signature references "Context" which is marked as @internal
 //
 // @public
 export type Handler<TOpts extends ClientOptions, TEvents extends EventsFromOpts<TOpts>, TTrigger extends keyof TEvents & string, TOverrides extends Record<string, unknown> = Record<never, never>> = (
@@ -471,7 +491,6 @@ export type ZodEventSchemas = Record<string, {
 
 // Warnings were encountered during analysis:
 //
-// src/components/EventSchemas.ts:221:5 - (ae-forgotten-export) The symbol "FinishedEventPayload" needs to be exported by the entry point index.d.ts
 // src/components/InngestCommHandler.ts:886:5 - (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
 // src/components/InngestCommHandler.ts:888:9 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
 // src/components/InngestCommHandler.ts:888:36 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
@@ -483,7 +502,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:346:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:357:3 - (ae-forgotten-export) The symbol "AnyInngest" needs to be exported by the entry point index.d.ts
 // src/types.ts:80:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:782:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:790:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
