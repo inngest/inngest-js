@@ -436,11 +436,9 @@ export const createStepTools = <
       const payload = { data, user, v } satisfies MinimalEventPayload;
 
       let functionId: string;
-      let appId: string | undefined; // Can be undefined if `fullId` is given
       switch (_type) {
         case "fnInstance":
-          appId = fn["client"].id;
-          functionId = fn.id(appId);
+          functionId = fn.id(fn["client"].id);
           break;
 
         case "fullId":
@@ -451,8 +449,9 @@ export const createStepTools = <
           break;
 
         case "refInstance":
-          appId = fn.opts.appId || client.id;
-          functionId = [appId, fn.opts.functionId].filter(Boolean).join("-");
+          functionId = [fn.opts.appId || client.id, fn.opts.functionId]
+            .filter(Boolean)
+            .join("-");
           break;
       }
 
@@ -462,7 +461,6 @@ export const createStepTools = <
         displayName: name ?? id,
         opts: {
           function_id: functionId,
-          app_id: appId,
           payload,
         },
       };
