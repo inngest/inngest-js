@@ -25,6 +25,7 @@ module.exports = {
       "error",
       { fixStyle: "inline-type-imports" },
     ],
+    "@typescript-eslint/no-namespace": "off",
     "import/consistent-type-specifier-style": ["error", "prefer-inline"],
     "import/no-duplicates": ["error", { "prefer-inline": true }],
     "import/no-extraneous-dependencies": [

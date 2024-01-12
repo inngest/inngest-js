@@ -11,6 +11,7 @@ import {
   type AnyInngestFunction,
   type InngestFunction,
 } from "./components/InngestFunction";
+import { type InngestFunctionReference } from "./components/InngestFunctionReference";
 import {
   type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
@@ -320,13 +321,14 @@ export type Handler<
 export type AnyHandler = Handler<any, any, any, any>;
 
 /**
- * The shape of a single event's payload. It should be extended to enforce
- * adherence to given events and not used as a method of creating them (i.e. as
- * a generic).
+ * The shape of a single event's payload without any fields used to identify the
+ * actual event being sent.
  *
- * @public
+ * This is used to represent an event payload when invoking a function, as the
+ * event name is not known or needed.
  */
-export interface EventPayload {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface MinimalEventPayload<TData = any> {
   /**
    * A unique id used to idempotently process a given event payload.
    *
@@ -337,18 +339,9 @@ export interface EventPayload {
   id?: string;
 
   /**
-   * A unique identifier for the type of event. We recommend using lowercase dot
-   * notation for names, prepending `prefixes/` with a slash for organization.
-   *
-   * e.g. `cloudwatch/alarms/triggered`, `cart/session.created`
-   */
-  name: string;
-
-  /**
    * Any data pertinent to the event
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data?: any;
+  data?: TData;
 
   /**
    * Any user data associated with the event
@@ -362,6 +355,24 @@ export interface EventPayload {
    * (optional)
    */
   v?: string;
+}
+
+/**
+ * The shape of a single event's payload. It should be extended to enforce
+ * adherence to given events and not used as a method of creating them (i.e. as
+ * a generic).
+ *
+ * @public
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
+  /**
+   * A unique identifier for the type of event. We recommend using lowercase dot
+   * notation for names, prepending `prefixes/` with a slash for organization.
+   *
+   * e.g. `cloudwatch/alarms/triggered`, `cart/session.created`
+   */
+  name: string;
 
   /**
    * An integer representing the milliseconds since the unix epoch at which this
@@ -1194,8 +1205,46 @@ export type EventsFromFunction<T extends AnyInngestFunction> =
     ? TEvents
     : never;
 
+/**
+ * A function that can be invoked by Inngest.
+ *
+ * @public
+ */
+export type InvokeTargetFunctionDefinition =
+  | InngestFunctionReference.Any
+  | AnyInngestFunction
+  | string;
+
+/**
+ * Given an invocation target, extract the payload that will be used to trigger
+ * it.
+ *
+ * If we could not find a payload, will return `never`.
+ */
 export type TriggerEventFromFunction<
-  TFunction extends AnyInngestFunction | string,
+  TFunction extends InvokeTargetFunctionDefinition,
+> = TFunction extends AnyInngestFunction
+  ? PayloadFromAnyInngestFunction<TFunction>
+  : TFunction extends InngestFunctionReference<
+        infer IInput extends MinimalEventPayload,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        any
+      >
+    ? IInput
+    : MinimalEventPayload;
+
+/**
+ * Given an {@link InngestFunction} instance, extract the {@link MinimalPayload}
+ * that will be used to trigger it.
+ *
+ * If we could not find a payload or the function does not require a payload
+ * (e.g. a cron), then will return `{}`, as this is intended to be used to
+ * spread into other arguments.
+ *
+ * @internal
+ */
+export type PayloadFromAnyInngestFunction<
+  TFunction extends AnyInngestFunction,
   TEvents = TFunction extends AnyInngestFunction
     ? EventsFromFunction<TFunction>
     : never,
@@ -1206,11 +1255,9 @@ export type TriggerEventFromFunction<
     }
     ? Simplify<Omit<TEvents[IEventTrigger], "name" | "ts">>
     : ITrigger extends { cron: string }
-      ? never
-      : never
-  : TFunction extends string
-    ? Simplify<Omit<EventPayload, "name" | "ts">>
-    : never;
+      ? object
+      : object
+  : object;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;
 // TODO Types ready for when we expand this.

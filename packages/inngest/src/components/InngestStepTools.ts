@@ -1,5 +1,7 @@
-import { type Jsonify, type Simplify } from "type-fest";
+import { type Jsonify } from "type-fest";
 import { type SimplifyDeep } from "type-fest/source/merge-deep";
+import { z } from "zod";
+import { logPrefix } from "../helpers/consts";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
@@ -13,6 +15,8 @@ import {
   type EventPayload,
   type HashedOp,
   type InvocationResult,
+  type InvokeTargetFunctionDefinition,
+  type MinimalEventPayload,
   type SendEventOutput,
   type StepOptions,
   type StepOptionsOrId,
@@ -23,7 +27,8 @@ import {
   type GetFunctionOutput,
   type Inngest,
 } from "./Inngest";
-import { type AnyInngestFunction } from "./InngestFunction";
+import { InngestFunction } from "./InngestFunction";
+import { InngestFunctionReference } from "./InngestFunctionReference";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -389,30 +394,73 @@ export const createStepTools = <
      * throw a `NonRetriableError`.
      */
     invoke: createTool<
-      <TFunction extends AnyInngestFunction | string>(
+      <TFunction extends InvokeTargetFunctionDefinition>(
         idOrOptions: StepOptionsOrId,
         opts: InvocationOpts<TFunction>
       ) => InvocationResult<GetFunctionOutput<TFunction>>
     >(({ id, name }, opts) => {
-      const payload = {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        data: opts.data,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        user: opts.user,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        v: opts.v,
-      } satisfies Omit<Required<EventPayload>, "name" | "ts" | "id"> &
-        Partial<Pick<EventPayload, "name" | "ts">>;
+      // Create a discriminated union to operate on based on the input types
+      // available for this tool.
+      const payloadSchema = z.object({
+        data: z.record(z.any()).optional(),
+        user: z.record(z.any()).optional(),
+        v: z.string().optional(),
+      });
+
+      const parsedFnOpts = payloadSchema
+        .extend({
+          _type: z.literal("fullId").optional().default("fullId"),
+          function: z.string().min(1),
+        })
+        .or(
+          payloadSchema.extend({
+            _type: z.literal("fnInstance").optional().default("fnInstance"),
+            function: z.instanceof(InngestFunction),
+          })
+        )
+        .or(
+          payloadSchema.extend({
+            _type: z.literal("refInstance").optional().default("refInstance"),
+            function: z.instanceof(InngestFunctionReference),
+          })
+        )
+        .safeParse(opts);
+
+      if (!parsedFnOpts.success) {
+        throw new Error(
+          `Invalid invocation options passed to invoke; must include either a function or functionId.`
+        );
+      }
+
+      const { _type, function: fn, data, user, v } = parsedFnOpts.data;
+      const payload = { data, user, v } satisfies MinimalEventPayload;
+
+      let functionId: string;
+      switch (_type) {
+        case "fnInstance":
+          functionId = fn.id(fn["client"].id);
+          break;
+
+        case "fullId":
+          console.warn(
+            `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`
+          );
+          functionId = fn;
+          break;
+
+        case "refInstance":
+          functionId = [fn.opts.appId || client.id, fn.opts.functionId]
+            .filter(Boolean)
+            .join("-");
+          break;
+      }
 
       return {
         id,
         op: StepOpCode.InvokeFunction,
         displayName: name ?? id,
         opts: {
-          function_id:
-            typeof opts.function === "string"
-              ? opts.function
-              : opts.function.id(client.id),
+          function_id: functionId,
           payload,
         },
       };
@@ -422,11 +470,12 @@ export const createStepTools = <
   return tools;
 };
 
-type InvocationOpts<TFunction extends AnyInngestFunction | string> = [
-  TriggerEventFromFunction<TFunction>,
-] extends [never]
-  ? { function: TFunction }
-  : Simplify<{ function: TFunction } & TriggerEventFromFunction<TFunction>>;
+type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
+  function: TFunction;
+};
+
+type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
+  InvocationTargetOpts<TFunction> & TriggerEventFromFunction<TFunction>;
 
 /**
  * A set of optional parameters given to a `waitForEvent` call to control how
