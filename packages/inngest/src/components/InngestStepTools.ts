@@ -439,7 +439,7 @@ export const createStepTools = <
       let appId: string | undefined; // Can be undefined if `fullId` is given
       switch (_type) {
         case "fnInstance":
-          appId = client.id;
+          appId = fn["client"].id;
           functionId = fn.id(appId);
           break;
 
