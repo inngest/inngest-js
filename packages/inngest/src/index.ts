@@ -52,4 +52,5 @@ export type {
   TimeStr,
   TriggerOptions,
   FinishedEventPayload,
+  Context,
 } from "./types";
