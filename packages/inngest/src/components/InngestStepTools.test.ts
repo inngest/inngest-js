@@ -784,7 +784,7 @@ describe("invoke", () => {
           function: referenceFunction({
             functionId: "fn",
             schemas: {
-              output: z.string(),
+              return: z.string(),
             },
           }),
           data: { foo: "" },
@@ -869,7 +869,7 @@ describe("invoke", () => {
           function: referenceFunction({
             functionId: "fn",
             schemas: {
-              output: z.void(),
+              return: z.void(),
             },
           }),
         });

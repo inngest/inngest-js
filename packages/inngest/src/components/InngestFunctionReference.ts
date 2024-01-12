@@ -121,7 +121,7 @@ export namespace InngestFunctionReference {
      */
     schemas?: {
       data?: TFnInput;
-      output?: TFnOutput;
+      return?: TFnOutput;
     };
   };
 
