@@ -95,8 +95,30 @@ export namespace InngestFunctionReference {
    * @public
    */
   export type HelperArgs<TFnInput, TFnOutput> = {
+    /**
+     * The ID of the function to reference. This can be either a local function
+     * ID or the ID of a function that exists in another app.
+     *
+     * If the latter, `appId` must also be provided. If `appId` is not provided,
+     * the function ID will be assumed to be a local function ID (the app ID of
+     * the calling app will be used).
+     */
     functionId: string;
+
+    /**
+     * The ID of the app that the function belongs to. This is only required if
+     * the function being referenced exists in another app.
+     */
     appId?: string;
+
+    /**
+     * The schemas of the referenced function, providing typing to the input
+     * `data` and `return` of invoking the referenced function.
+     *
+     * If not provided and a local function type is not being passed as a
+     * generic into {@link referenceFunction}, the schemas will be inferred as
+     * `unknown`.
+     */
     schemas?: {
       input?: TFnInput;
       output?: TFnOutput;
