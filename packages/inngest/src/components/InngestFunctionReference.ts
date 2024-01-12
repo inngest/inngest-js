@@ -8,7 +8,7 @@ import {
   type PayloadFromAnyInngestFunction,
 } from "../types";
 import { type GetFunctionOutput } from "./Inngest";
-import { type AnyInngestFunction } from "./InngestFunction";
+import { type InngestFunction } from "./InngestFunction";
 
 /**
  * A reference to an `InngestFunction` that can be used to represent both local
@@ -54,7 +54,7 @@ export const referenceFunction = <
 >({
   functionId,
   appId,
-}: TArgs extends AnyInngestFunction
+}: TArgs extends InngestFunction.Any
   ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
     Omit<InngestFunctionReference.HelperArgs<any, any>, "schemas">
   : TArgs) => {
@@ -127,7 +127,7 @@ export namespace InngestFunctionReference {
 
   /**
    * A helper type that allows the passing of either `HelperArgs` or
-   * `AnyInngestFunction` to the {@link referenceFunction} generic in place of
+   * `InngestFunction.Any` to the {@link referenceFunction} generic in place of
    * inferring options.
    *
    * This is used along with defaults to allow a generic to be passed by the
@@ -137,17 +137,17 @@ export namespace InngestFunctionReference {
    */
   export type HelperGenericArgs<TFnInput, TFnOutput> =
     | HelperArgs<TFnInput, TFnOutput>
-    | AnyInngestFunction;
+    | InngestFunction.Any;
 
   /**
    * Given a set of `InngestFunctionReference.ConstructorArgs`, return an
    * `InngestFunctionReference`. Also handles the manual passing of
-   * `AnyInngestFunction` to the {@link referenceFunction} generic in place
+   * `InngestFunction.Any` to the {@link referenceFunction} generic in place
    * of inferring options.
    *
    * @public
    */
-  export type HelperReturn<TArgs> = TArgs extends AnyInngestFunction
+  export type HelperReturn<TArgs> = TArgs extends InngestFunction.Any
     ? InngestFunctionReference<
         PayloadFromAnyInngestFunction<TArgs>,
         GetFunctionOutput<TArgs>

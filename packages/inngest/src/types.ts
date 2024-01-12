@@ -2,15 +2,11 @@ import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
-  type AnyInngest,
   type EventsFromOpts,
   type Inngest,
   type builtInMiddleware,
 } from "./components/Inngest";
-import {
-  type AnyInngestFunction,
-  type InngestFunction,
-} from "./components/InngestFunction";
+import { type InngestFunction } from "./components/InngestFunction";
 import { type InngestFunctionReference } from "./components/InngestFunctionReference";
 import {
   type ExtendSendEventWithMiddleware,
@@ -51,7 +47,7 @@ import { type Logger } from "./middleware/logger";
  *
  * @public
  */
-export type GetEvents<T extends AnyInngest> = T extends Inngest<infer U>
+export type GetEvents<T extends Inngest.Any> = T extends Inngest<infer U>
   ? EventsFromOpts<U>
   : never;
 
@@ -295,8 +291,19 @@ export type Context<
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = Omit<BaseContext<TOpts, TTrigger>, keyof TOverrides> & TOverrides;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyContext = Context<any, any, any>;
+/**
+ * Builds a context object for an Inngest handler, optionally overriding some
+ * keys.
+ *
+ * @internal
+ */
+export namespace Context {
+  /**
+   * Represents any `Context` object, regardless of generics and inference.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = Context<any, any, any>;
+}
 
 /**
  * The shape of a Inngest function, taking in event, step, ctx, and step
@@ -317,8 +324,19 @@ export type Handler<
   ctx: Context<TOpts, TEvents, TTrigger, TOverrides>
 ) => unknown;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyHandler = Handler<any, any, any, any>;
+/**
+ * The shape of a Inngest function, taking in event, step, ctx, and step
+ * tooling.
+ *
+ * @public
+ */
+export namespace Handler {
+  /**
+   * Represents any `Handler`, regardless of generics and inference.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = Handler<any, any, any, any>;
+}
 
 /**
  * The shape of a single event's payload without any fields used to identify the
@@ -1199,7 +1217,7 @@ export interface StepOptions {
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
-export type EventsFromFunction<T extends AnyInngestFunction> =
+export type EventsFromFunction<T extends InngestFunction.Any> =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   T extends InngestFunction<any, infer TEvents, any, any, any>
     ? TEvents
@@ -1212,7 +1230,7 @@ export type EventsFromFunction<T extends AnyInngestFunction> =
  */
 export type InvokeTargetFunctionDefinition =
   | InngestFunctionReference.Any
-  | AnyInngestFunction
+  | InngestFunction.Any
   | string;
 
 /**
@@ -1223,7 +1241,7 @@ export type InvokeTargetFunctionDefinition =
  */
 export type TriggerEventFromFunction<
   TFunction extends InvokeTargetFunctionDefinition,
-> = TFunction extends AnyInngestFunction
+> = TFunction extends InngestFunction.Any
   ? PayloadFromAnyInngestFunction<TFunction>
   : TFunction extends InngestFunctionReference<
         infer IInput extends MinimalEventPayload,
@@ -1244,8 +1262,8 @@ export type TriggerEventFromFunction<
  * @internal
  */
 export type PayloadFromAnyInngestFunction<
-  TFunction extends AnyInngestFunction,
-  TEvents = TFunction extends AnyInngestFunction
+  TFunction extends InngestFunction.Any,
+  TEvents = TFunction extends InngestFunction.Any
     ? EventsFromFunction<TFunction>
     : never,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

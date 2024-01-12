@@ -22,7 +22,6 @@ import { type ExclusiveKeys, type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
   sendEventResponseSchema,
-  type AnyHandler,
   type ClientOptions,
   type EventNameFromTrigger,
   type EventPayload,
@@ -37,7 +36,7 @@ import {
   type TriggerOptions,
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
-import { InngestFunction, type AnyInngestFunction } from "./InngestFunction";
+import { InngestFunction } from "./InngestFunction";
 import { type InngestFunctionReference } from "./InngestFunctionReference";
 import {
   InngestMiddleware,
@@ -64,9 +63,6 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
   TOpts["schemas"] extends EventSchemas<infer U>
     ? U
     : Record<string, EventPayload>;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyInngest = Inngest<any>;
 
 /**
  * A client used to interact with the Inngest API by sending or reacting to
@@ -459,7 +455,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     TTrigger extends TriggerOptions<TTriggerName>,
     TTriggerName extends keyof EventsFromOpts<TOpts> &
       string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>,
-    THandler extends AnyHandler = Handler<
+    THandler extends Handler.Any = Handler<
       TOpts,
       EventsFromOpts<TOpts>,
       TTriggerName,
@@ -666,6 +662,37 @@ export const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
 ]);
 
 /**
+ * A client used to interact with the Inngest API by sending or reacting to
+ * events.
+ *
+ * To provide event typing, see {@link EventSchemas}.
+ *
+ * ```ts
+ * const inngest = new Inngest({ name: "My App" });
+ *
+ * // or to provide event typing too
+ * const inngest = new Inngest({
+ *   name: "My App",
+ *   schemas: new EventSchemas().fromRecord<{
+ *     "app/user.created": {
+ *       data: { userId: string };
+ *     };
+ *   }>(),
+ * });
+ * ```
+ *
+ * @public
+ */
+export namespace Inngest {
+  /**
+   * Represents any `Inngest` instance, regardless of generics and
+   * inference.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = Inngest<any>;
+}
+
+/**
  * A helper type to extract the type of a set of event tooling from a given
  * Inngest instance and optionally a trigger.
  *
@@ -737,7 +764,7 @@ export type GetFunctionInput<
  */
 export type GetFunctionOutput<
   TFunction extends InvokeTargetFunctionDefinition,
-> = TFunction extends AnyInngestFunction
+> = TFunction extends InngestFunction.Any
   ? GetFunctionOutputFromInngestFunction<TFunction>
   : TFunction extends InngestFunctionReference.Any
     ? GetFunctionOutputFromReferenceInngestFunction<TFunction>
@@ -752,7 +779,7 @@ export type GetFunctionOutput<
  * @internal
  */
 export type GetFunctionOutputFromInngestFunction<
-  TFunction extends AnyInngestFunction,
+  TFunction extends InngestFunction.Any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 > = TFunction extends InngestFunction<any, any, any, any, infer IHandler>
   ? IfNever<
