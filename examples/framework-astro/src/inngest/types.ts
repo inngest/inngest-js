@@ -1,9 +1,10 @@
 import { EventSchemas } from "inngest";
 
 type DemoEventSent = {
-  name: "demo/event.sent";
+  name: "demo/hello.world";
   data: {
     message: string;
+    email?: string;
   };
 };
 
