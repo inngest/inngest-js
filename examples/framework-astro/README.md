@@ -18,13 +18,13 @@ yarn create astro --template inngest/inngest-js/examples/framework-astro inngest
 pnpm create astro@latest --template inngest/inngest-js/examples/framework-astro inngest-astro
 ```
 
-2. Open Astro development server at [http://localhost:3000](http://localhost:3000/) in your browser.
+2. Open the Astro development server at [http://localhost:3000](http://localhost:3000/) in your browser.
 
 3. In your terminal, run `npx inngest-cli@latest dev` to start the Inngest Dev Server.
 
 4. Trigger your Inngest function by pressing the button at [http://localhost:3000](http://localhost:3000/) or go to [http://localhost:3000](http://localhost:3000/api/helloAstro).
 
-5. Check Inngest Dev Server at [http://127.0.0.1:8288/](http://127.0.0.1:8288/) to see the function stream.
+5. Check the Inngest Dev Server at [http://127.0.0.1:8288/](http://127.0.0.1:8288/) to see the function stream.
 
 6. Explore the code: [Inngest functions](https://www.inngest.com/docs/functions) are available at `src/inngest/` and the [Inngest handler](https://www.inngest.com/docs/sdk/serve) is available a `src/pages/api/inngest.ts`.
 
