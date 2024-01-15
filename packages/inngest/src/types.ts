@@ -18,6 +18,7 @@ import { type internalEvents } from "./helpers/consts";
 import {
   type IsStringLiteral,
   type ObjectPaths,
+  type RecursiveTuple,
   type StrictUnion,
 } from "./helpers/types";
 import { type Logger } from "./middleware/logger";
@@ -791,12 +792,13 @@ export interface FunctionOptions<
    * can occur across all runs of the function.  A value of 0 (or undefined) means
    * use the maximum available concurrency.
    *
-   * Specifying just a number means specifying only the concurrency limit.
+   * Specifying just a number means specifying only the concurrency limit. A
+   * maximum of two concurrency options can be specified.
    */
   concurrency?:
     | number
     | ConcurrencyOption
-    | [ConcurrencyOption, ConcurrencyOption];
+    | RecursiveTuple<ConcurrencyOption, 2>;
 
   /**
    * batchEvents specifies the batch configuration on when this function
