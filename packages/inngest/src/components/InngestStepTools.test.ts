@@ -734,6 +734,19 @@ describe("invoke", () => {
         });
     });
 
+    test("disallows missing payload with a reference function and schema", () => {
+      const _test = () =>
+        // @ts-expect-error No `data` provided
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              data: z.object({ wowza: z.string() }),
+            },
+          }),
+        });
+    });
+
     test("disallows incorrect payload with a reference function and schema", () => {
       const _test = () =>
         invoke("id", {
