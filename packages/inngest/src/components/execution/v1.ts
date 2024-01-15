@@ -19,12 +19,12 @@ import { type MaybePromise } from "../../helpers/types";
 import {
   StepOpCode,
   failureEventErrorSchema,
-  type AnyContext,
-  type AnyHandler,
   type BaseContext,
   type ClientOptions,
+  type Context,
   type EventPayload,
   type FailureEventArgs,
+  type Handler,
   type OutgoingOp,
 } from "../../types";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware";
@@ -52,11 +52,11 @@ export const createV1InngestExecution: InngestExecutionFactory = (options) => {
 
 class V1InngestExecution extends InngestExecution implements IInngestExecution {
   private state: V1ExecutionState;
-  private fnArg: AnyContext;
+  private fnArg: Context.Any;
   private checkpointHandlers: CheckpointHandlers;
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
-  private userFnToRun: AnyHandler;
+  private userFnToRun: Handler.Any;
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -506,13 +506,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return state;
   }
 
-  private createFnArg(): AnyContext {
+  private createFnArg(): Context.Any {
     const step = this.createStepTools();
 
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
-    } as AnyContext;
+    } as Context.Any;
 
     /**
      * Handle use of the `onFailure` option by deserializing the error.
@@ -785,10 +785,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return createStepTools(this.options.client, stepHandler);
   }
 
-  private getUserFnToRun(): AnyHandler {
+  private getUserFnToRun(): Handler.Any {
     if (!this.options.isFailureHandler) {
       // TODO: Review; inferred types results in an `any` here!
-      return this.options.fn["fn"] as AnyHandler;
+      return this.options.fn["fn"] as Handler.Any;
     }
 
     if (!this.options.fn["onFailureFn"]) {

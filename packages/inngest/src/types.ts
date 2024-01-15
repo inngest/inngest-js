@@ -2,15 +2,12 @@ import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
-  type AnyInngest,
   type EventsFromOpts,
   type Inngest,
   type builtInMiddleware,
 } from "./components/Inngest";
-import {
-  type AnyInngestFunction,
-  type InngestFunction,
-} from "./components/InngestFunction";
+import { type InngestFunction } from "./components/InngestFunction";
+import { type InngestFunctionReference } from "./components/InngestFunctionReference";
 import {
   type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
@@ -50,7 +47,7 @@ import { type Logger } from "./middleware/logger";
  *
  * @public
  */
-export type GetEvents<T extends AnyInngest> = T extends Inngest<infer U>
+export type GetEvents<T extends Inngest.Any> = T extends Inngest<infer U>
   ? EventsFromOpts<U>
   : never;
 
@@ -99,6 +96,12 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
   error: Error;
 };
 
+/**
+ * The payload for an internal Inngest event that is sent when a function
+ * finishes, either by completing successfully or failing.
+ *
+ * @public
+ */
 export type FinishedEventPayload = {
   name: `${internalEvents.FunctionFinished}`;
   data: {
@@ -278,6 +281,8 @@ export type BaseContext<
 /**
  * Builds a context object for an Inngest handler, optionally overriding some
  * keys.
+ *
+ * @internal
  */
 export type Context<
   TOpts extends ClientOptions,
@@ -286,8 +291,19 @@ export type Context<
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = Omit<BaseContext<TOpts, TTrigger>, keyof TOverrides> & TOverrides;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyContext = Context<any, any, any>;
+/**
+ * Builds a context object for an Inngest handler, optionally overriding some
+ * keys.
+ *
+ * @internal
+ */
+export namespace Context {
+  /**
+   * Represents any `Context` object, regardless of generics and inference.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = Context<any, any, any>;
+}
 
 /**
  * The shape of a Inngest function, taking in event, step, ctx, and step
@@ -308,17 +324,29 @@ export type Handler<
   ctx: Context<TOpts, TEvents, TTrigger, TOverrides>
 ) => unknown;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyHandler = Handler<any, any, any, any>;
-
 /**
- * The shape of a single event's payload. It should be extended to enforce
- * adherence to given events and not used as a method of creating them (i.e. as
- * a generic).
+ * The shape of a Inngest function, taking in event, step, ctx, and step
+ * tooling.
  *
  * @public
  */
-export interface EventPayload {
+export namespace Handler {
+  /**
+   * Represents any `Handler`, regardless of generics and inference.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = Handler<any, any, any, any>;
+}
+
+/**
+ * The shape of a single event's payload without any fields used to identify the
+ * actual event being sent.
+ *
+ * This is used to represent an event payload when invoking a function, as the
+ * event name is not known or needed.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface MinimalEventPayload<TData = any> {
   /**
    * A unique id used to idempotently process a given event payload.
    *
@@ -329,18 +357,9 @@ export interface EventPayload {
   id?: string;
 
   /**
-   * A unique identifier for the type of event. We recommend using lowercase dot
-   * notation for names, prepending `prefixes/` with a slash for organization.
-   *
-   * e.g. `cloudwatch/alarms/triggered`, `cart/session.created`
-   */
-  name: string;
-
-  /**
    * Any data pertinent to the event
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data?: any;
+  data?: TData;
 
   /**
    * Any user data associated with the event
@@ -354,6 +373,24 @@ export interface EventPayload {
    * (optional)
    */
   v?: string;
+}
+
+/**
+ * The shape of a single event's payload. It should be extended to enforce
+ * adherence to given events and not used as a method of creating them (i.e. as
+ * a generic).
+ *
+ * @public
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
+  /**
+   * A unique identifier for the type of event. We recommend using lowercase dot
+   * notation for names, prepending `prefixes/` with a slash for organization.
+   *
+   * e.g. `cloudwatch/alarms/triggered`, `cart/session.created`
+   */
+  name: string;
 
   /**
    * An integer representing the milliseconds since the unix epoch at which this
@@ -1180,15 +1217,53 @@ export interface StepOptions {
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
-export type EventsFromFunction<T extends AnyInngestFunction> =
+export type EventsFromFunction<T extends InngestFunction.Any> =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   T extends InngestFunction<any, infer TEvents, any, any, any>
     ? TEvents
     : never;
 
+/**
+ * A function that can be invoked by Inngest.
+ *
+ * @public
+ */
+export type InvokeTargetFunctionDefinition =
+  | InngestFunctionReference.Any
+  | InngestFunction.Any
+  | string;
+
+/**
+ * Given an invocation target, extract the payload that will be used to trigger
+ * it.
+ *
+ * If we could not find a payload, will return `never`.
+ */
 export type TriggerEventFromFunction<
-  TFunction extends AnyInngestFunction | string,
-  TEvents = TFunction extends AnyInngestFunction
+  TFunction extends InvokeTargetFunctionDefinition,
+> = TFunction extends InngestFunction.Any
+  ? PayloadFromAnyInngestFunction<TFunction>
+  : TFunction extends InngestFunctionReference<
+        infer IInput extends MinimalEventPayload,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        any
+      >
+    ? IInput
+    : MinimalEventPayload;
+
+/**
+ * Given an {@link InngestFunction} instance, extract the {@link MinimalPayload}
+ * that will be used to trigger it.
+ *
+ * If we could not find a payload or the function does not require a payload
+ * (e.g. a cron), then will return `{}`, as this is intended to be used to
+ * spread into other arguments.
+ *
+ * @internal
+ */
+export type PayloadFromAnyInngestFunction<
+  TFunction extends InngestFunction.Any,
+  TEvents = TFunction extends InngestFunction.Any
     ? EventsFromFunction<TFunction>
     : never,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1198,11 +1273,9 @@ export type TriggerEventFromFunction<
     }
     ? Simplify<Omit<TEvents[IEventTrigger], "name" | "ts">>
     : ITrigger extends { cron: string }
-      ? never
-      : never
-  : TFunction extends string
-    ? Simplify<Omit<EventPayload, "name" | "ts">>
-    : never;
+      ? object
+      : object
+  : object;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;
 // TODO Types ready for when we expand this.
