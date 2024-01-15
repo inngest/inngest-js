@@ -1,3 +1,5 @@
+import { type Simplify } from "type-fest";
+import { type IsAny } from "../helpers/types";
 import {
   type ResolveSchema,
   type ValidSchemaInput,
@@ -155,7 +157,21 @@ export namespace InngestFunctionReference {
     : TArgs extends HelperArgs<infer TFnInput, infer TFnOutput>
       ? InngestFunctionReference<
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>>,
+          IsAny<ResolveSchema<TFnInput, TFnInput, any>> extends true
+            ? MinimalEventPayload
+            : Simplify<
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>> &
+                  Required<
+                    Pick<
+                      MinimalEventPayload<
+                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        ResolveSchema<TFnInput, TFnInput, any>
+                      >,
+                      "data"
+                    >
+                  >
+              >,
           ResolveSchema<TFnOutput, TFnOutput, unknown>
         >
       : never;
