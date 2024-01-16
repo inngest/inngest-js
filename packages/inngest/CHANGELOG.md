@@ -1,5 +1,19 @@
 # inngest
 
+## 3.11.0
+
+### Minor Changes
+
+- [#467](https://github.com/inngest/inngest-js/pull/467) [`ca93ef8`](https://github.com/inngest/inngest-js/commit/ca93ef87384146c5b852fd74c57b23fecd75685c) Thanks [@tonyhb](https://github.com/tonyhb)! - Add timeouts to debounce configuration
+
+### Patch Changes
+
+- [#463](https://github.com/inngest/inngest-js/pull/463) [`61562bd`](https://github.com/inngest/inngest-js/commit/61562bdaadb2f5a07b8c9e354a3c910e5bf586fe) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `data` not being required during invocation with a schema+reference
+
+- [#462](https://github.com/inngest/inngest-js/pull/462) [`c449efe`](https://github.com/inngest/inngest-js/commit/c449efef4709ab3aa8c76f4a078e1a793599f717) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix not allowing a single-element `concurrency` option in function definitions
+
+- [#466](https://github.com/inngest/inngest-js/pull/466) [`ecde5b6`](https://github.com/inngest/inngest-js/commit/ecde5b64d17cdc01d3416ca3a6b45b4d21dac234) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix some out-of-date comments and examples
+
 ## 3.10.0
 
 ### Minor Changes
