@@ -1,4 +1,5 @@
 import { Inngest } from "inngest";
 import { schemas } from "./types";
 
-export const inngest = new Inngest({ id: "my-fastify-app", schemas });
+// Create a client to send and receive events
+export const inngest = new Inngest({ id: "my-astro-app", schemas });

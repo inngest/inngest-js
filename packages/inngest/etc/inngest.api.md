@@ -360,8 +360,9 @@ export namespace InngestFunctionReference {
     };
     export type HelperGenericArgs<TFnInput, TFnOutput> = HelperArgs<TFnInput, TFnOutput> | InngestFunction.Any;
     // Warning: (ae-forgotten-export) The symbol "PayloadFromAnyInngestFunction" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "IsAny" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "ResolveSchema" needs to be exported by the entry point index.d.ts
-    export type HelperReturn<TArgs> = TArgs extends InngestFunction.Any ? InngestFunctionReference<PayloadFromAnyInngestFunction<TArgs>, GetFunctionOutput<TArgs>> : TArgs extends HelperArgs<infer TFnInput, infer TFnOutput> ? InngestFunctionReference<MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>>, ResolveSchema<TFnOutput, TFnOutput, unknown>> : never;
+    export type HelperReturn<TArgs> = TArgs extends InngestFunction.Any ? InngestFunctionReference<PayloadFromAnyInngestFunction<TArgs>, GetFunctionOutput<TArgs>> : TArgs extends HelperArgs<infer TFnInput, infer TFnOutput> ? InngestFunctionReference<IsAny<ResolveSchema<TFnInput, TFnInput, any>> extends true ? MinimalEventPayload : Simplify<MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>> & Required<Pick<MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>>, "data">>>, ResolveSchema<TFnOutput, TFnOutput, unknown>> : never;
 }
 
 // @public

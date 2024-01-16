@@ -2,10 +2,9 @@ import { inngest } from "./client";
 
 export default inngest.createFunction(
   { id: "hello-world" },
-  { event: "demo/event.sent" },
+  { event: "demo/hello.world" },
   async ({ event, step }) => {
-    return {
-      message: `Hello ${event.name}!`,
-    };
+    await step.sleep("wait-a-moment", "1s");
+    return { event, body: "Hello, World!" };
   }
 );
