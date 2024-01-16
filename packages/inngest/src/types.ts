@@ -877,6 +877,16 @@ export interface FunctionOptions<
      * information.
      */
     period: TimeStr;
+
+    /**
+     * The maximum time that a debounce can be extended before running.
+     * If events are continually received within the given period, a function
+     * will always run after the given timeout period.
+     *
+     * See [Debounce documentation](https://innge.st/debounce) for more
+     * information.
+     */
+    timeout?: TimeStr;
   };
 
   /**
