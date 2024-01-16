@@ -165,11 +165,12 @@ export const createStepTools = <
      *
      * @example
      * ```ts
-     * await step.sendEvent("app/user.created", { data: { id: 123 } });
+     * await step.sendEvent("emit-user-creation", {
+     *   name: "app/user.created",
+     *   data: { id: 123 },
+     * });
      *
-     * await step.sendEvent({ name: "app/user.created", data: { id: 123 } });
-     *
-     * await step.sendEvent([
+     * await step.sendEvent("emit-user-updates", [
      *   {
      *     name: "app/user.created",
      *     data: { id: 123 },

@@ -120,35 +120,31 @@ interface InngestCommHandlerOptions<
   functions: readonly InngestFunction.Any[];
 
   /**
-   * The `handler` is the function your framework requires to handle a
-   * request. For example, this is most commonly a function that is given a
-   * `Request` and must return a `Response`.
+   * The `handler` is the function that will be called with your framework's
+   * request arguments and returns a set of functions that the SDK will use to
+   * access various parts of the request, such as the body, headers, and query
+   * string parameters.
    *
-   * The handler must map out any incoming parameters, then return a
-   * strictly-typed object to assess what kind of request is being made,
-   * collecting any relevant data as we go.
+   * It also defines how to transform a response from the SDK into a response
+   * that your framework can understand, ensuring headers, status codes, and
+   * body are all set correctly.
    *
    * @example
-   * ```
-   * return {
-   *   register: () => { ... },
-   *   run: () => { ... },
-   *   view: () => { ... }
+   * ```ts
+   * function handler (req: Request, res: Response) {
+   *   return {
+   *     method: () => req.method,
+   *     body: () => req.json(),
+   *     headers: (key) => req.headers.get(key),
+   *     url: () => req.url,
+   *     transformResponse: ({ body, headers, status }) => {
+   *       return new Response(body, { status, headers });
+   *     },
+   *   };
    * };
    * ```
    *
-   * Every key must be specified and must be a function that either returns
-   * a strictly-typed payload or `undefined` if the request is not for that
-   * purpose.
-   *
-   * This gives handlers freedom to choose how their platform of choice will
-   * trigger differing actions, whilst also ensuring all required information
-   * is given for each request type.
-   *
    * See any existing handler for a full example.
-   *
-   * This should never be defined by the user; a {@link ServeHandler} should
-   * abstract this.
    */
   handler: Handler<Input, Output, StreamOutput>;
 }
@@ -177,25 +173,34 @@ const registerResSchema = z.object({
  * this class; the exposed `serve` function will - most commonly - create an
  * instance of `InngestCommHandler` and then return `instance.createHandler()`.
  *
- * Two critical parameters required are the `handler` and the `transformRes`
- * function. See individual parameter details for more information, or see the
+ * See individual parameter details for more information, or see the
  * source code for an existing handler, e.g.
  * {@link https://github.com/inngest/inngest-js/blob/main/src/next.ts}
  *
  * @example
  * ```
  * // my-custom-handler.ts
- * import { InngestCommHandler, ServeHandler } from "inngest";
+ * import {
+ *   InngestCommHandler,
+ *   type ServeHandlerOptions,
+ * } from "./components/InngestCommHandler";
  *
- * export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
- *   const handler = new InngestCommHandler(
- *     "my-custom-handler",
- *     nameOrInngest,
- *     fns,
- *     opts,
- *     () => { ... },
- *     () => { ... }
- *   );
+ * export const serve = (options: ServeHandlerOptions) => {
+ *   const handler = new InngestCommHandler({
+ *     frameworkName: "my-custom-handler",
+ *     ...options,
+ *     handler: (req: Request) => {
+ *       return {
+ *         body: () => req.json(),
+ *         headers: (key) => req.headers.get(key),
+ *         method: () => req.method,
+ *         url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+ *         transformResponse: ({ body, status, headers }) => {
+ *           return new Response(body, { status, headers });
+ *         },
+ *       };
+ *     },
+ *   });
  *
  *   return handler.createHandler();
  * };
@@ -451,17 +456,27 @@ export class InngestCommHandler<
    * @example
    * ```
    * // my-custom-handler.ts
-   * import { InngestCommHandler, ServeHandler } from "inngest";
+   * import {
+   *   InngestCommHandler,
+   *   type ServeHandlerOptions,
+   * } from "./components/InngestCommHandler";
    *
-   * export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-   *   const handler = new InngestCommHandler(
-   *     "my-custom-handler",
-   *     nameOrInngest,
-   *     fns,
-   *     opts,
-   *     () => { ... },
-   *     () => { ... }
-   *   );
+   * export const serve = (options: ServeHandlerOptions) => {
+   *   const handler = new InngestCommHandler({
+   *     frameworkName: "my-custom-handler",
+   *     ...options,
+   *     handler: (req: Request) => {
+   *       return {
+   *         body: () => req.json(),
+   *         headers: (key) => req.headers.get(key),
+   *         method: () => req.method,
+   *         url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+   *         transformResponse: ({ body, status, headers }) => {
+   *           return new Response(body, { status, headers });
+   *         },
+   *       };
+   *     },
+   *   });
    *
    *   return handler.createHandler();
    * };
