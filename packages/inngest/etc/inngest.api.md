@@ -128,7 +128,8 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     // (undocumented)
     cancelOn?: Cancellation<Events, Event>[];
     // Warning: (ae-forgotten-export) The symbol "ConcurrencyOption" needs to be exported by the entry point index.d.ts
-    concurrency?: number | ConcurrencyOption | [ConcurrencyOption, ConcurrencyOption];
+    // Warning: (ae-forgotten-export) The symbol "RecursiveTuple" needs to be exported by the entry point index.d.ts
+    concurrency?: number | ConcurrencyOption | RecursiveTuple<ConcurrencyOption, 2>;
     debounce?: {
         key?: string;
         period: TimeStr;
@@ -567,8 +568,8 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:320:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:339:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:346:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
-// src/types.ts:77:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:819:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:78:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:821:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

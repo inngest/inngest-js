@@ -251,3 +251,17 @@ export type IsEmptyObject<T> = {} extends T
     ? true
     : false
   : false;
+
+/**
+ * Create a tuple that can be of length 1 to `TLength`, where each element is
+ * of type `TElement`.
+ */
+export type RecursiveTuple<
+  TElement,
+  TLength extends number,
+  TAccumulator extends TElement[] = [TElement],
+> = TAccumulator["length"] extends TLength
+  ? TAccumulator
+  :
+      | RecursiveTuple<TElement, TLength, [TElement, ...TAccumulator]>
+      | TAccumulator;
