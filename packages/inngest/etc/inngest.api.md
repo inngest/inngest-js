@@ -133,6 +133,7 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     debounce?: {
         key?: string;
         period: TimeStr;
+        timeout?: TimeStr;
     };
     id: string;
     idempotency?: string;
