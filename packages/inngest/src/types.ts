@@ -35,7 +35,7 @@ import { type Logger } from "./middleware/logger";
  * import { EventSchemas, Inngest, type GetEvents } from "inngest";
  *
  * export const inngest = new Inngest({
- *   name: "Example App",
+ *   id: "example-app",
  *   schemas: new EventSchemas().fromRecord<{
  *     "app/user.created": { data: { userId: string } };
  *   }>(),
@@ -544,7 +544,7 @@ export interface ClientOptions {
    *
    * ```ts
    * export const inngest = new Inngest({
-   *   name: "My App",
+   *   id: "my-app",
    *   schemas: new EventSchemas().fromZod({
    *     "app/user.created": {
    *       data: z.object({
