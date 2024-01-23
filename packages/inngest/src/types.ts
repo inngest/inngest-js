@@ -125,7 +125,7 @@ export type FinishedEventPayload = {
  */
 export enum StepOpCode {
   WaitForEvent = "WaitForEvent",
-  RunStep = "Step",
+  StepRun = "StepRun",
   StepPlanned = "StepPlanned",
   Sleep = "Sleep",
 

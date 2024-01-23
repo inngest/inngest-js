@@ -338,7 +338,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     const outgoingOp: OutgoingOp = {
       id,
-      op: StepOpCode.RunStep,
+      op: StepOpCode.StepRun,
       name,
       opts,
       displayName,
