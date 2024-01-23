@@ -178,7 +178,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               type: "step-ran",
               step: _internals.hashOp({
                 ...stepResult,
-                data: { data: transformResult.data },
+                data: transformResult.data,
               }),
             };
             // }
