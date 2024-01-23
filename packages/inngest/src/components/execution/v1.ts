@@ -361,6 +361,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         .catch<OutgoingOp>((error) => {
           return {
             ...outgoingOp,
+            op: StepOpCode.StepError,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
           };
