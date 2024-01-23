@@ -3,10 +3,10 @@ import { type Simplify } from "type-fest";
 import { type MaybePromise } from "type-plus";
 import { type ServerTiming } from "../../helpers/ServerTiming";
 import { debugPrefix } from "../../helpers/consts";
-import { type AnyContext, type IncomingOp, type OutgoingOp } from "../../types";
-import { type AnyInngest } from "../Inngest";
+import { type Context, type IncomingOp, type OutgoingOp } from "../../types";
+import { type Inngest } from "../Inngest";
 import { type ActionResponse } from "../InngestCommHandler";
-import { type AnyInngestFunction } from "../InngestFunction";
+import { type InngestFunction } from "../InngestFunction";
 
 /**
  * The possible results of an execution.
@@ -48,10 +48,11 @@ export const PREFERRED_EXECUTION_VERSION =
  * Options for creating a new {@link InngestExecution} instance.
  */
 export interface InngestExecutionOptions {
-  client: AnyInngest;
-  fn: AnyInngestFunction;
+  client: Inngest.Any;
+  fn: InngestFunction.Any;
+  reqArgs: unknown[];
   runId: string;
-  data: Omit<AnyContext, "step">;
+  data: Omit<Context.Any, "step">;
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
   requestedRunStep?: string;

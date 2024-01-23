@@ -7,7 +7,7 @@ import {
   type GetStepTools,
 } from "@local";
 import { type createStepTools } from "@local/components/InngestStepTools";
-import { envKeys, headerKeys } from "@local/helpers/consts";
+import { envKeys, headerKeys, internalEvents } from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
 import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
@@ -406,6 +406,12 @@ describe("send", () => {
     describe("no custom types", () => {
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
+      test.todo("disallows sending invalid fields");
+
+      test.todo(
+        "disallows sending invalid fields when sending multiple events"
+      );
+
       test("allows sending a single event with an object", () => {
         const _fn = () => inngest.send({ name: "anything", data: "foo" });
       });
@@ -417,6 +423,11 @@ describe("send", () => {
             { name: "anything", data: "foo" },
             { name: "anythingelse" },
           ]);
+      });
+
+      test("allows setting an ID for an event", () => {
+        const _fn = () =>
+          inngest.send({ name: "anything", data: "foo", id: "test" });
       });
     });
 
@@ -496,6 +507,8 @@ describe("send", () => {
         const _fn = () => inngest.send({ name: "foo", data: {} });
       });
 
+      test.todo("disallows sending invalid fields for a known event");
+
       test("allows sending known data-empty event with no data", () => {
         const _fn = () => inngest.send({ name: "baz" });
       });
@@ -514,6 +527,17 @@ describe("send", () => {
             { name: "foo", data: { foo: "" } },
             { name: "bar", data: { bar: "" } },
           ]);
+      });
+
+      test("allows setting an ID for a known event", () => {
+        const _fn = () =>
+          inngest.send({ name: "foo", data: { foo: "" }, id: "test" });
+      });
+
+      test("disallows sending an internal event", () => {
+        const _fn = () =>
+          // @ts-expect-error Internal event
+          inngest.send({ name: internalEvents.FunctionFinished });
       });
     });
   });
@@ -673,7 +697,7 @@ describe("createFunction", () => {
           { id: "test" },
           { event: "bar" },
           ({ event }) => {
-            assertType<"bar">(event.name);
+            assertType<`${internalEvents.FunctionInvoked}` | "bar">(event.name);
             assertType<{ message: string }>(event.data);
           }
         );
@@ -685,7 +709,7 @@ describe("createFunction", () => {
           { foo: "bar" },
           { event: "foo" },
           ({ event }) => {
-            assertType<"foo">(event.name);
+            assertType<`${internalEvents.FunctionInvoked}` | "foo">(event.name);
             assertType<{ title: string }>(event.data);
           }
         );
@@ -696,7 +720,7 @@ describe("createFunction", () => {
           { id: "test" },
           { event: "foo" },
           ({ event }) => {
-            assertType<"foo">(event.name);
+            assertType<`${internalEvents.FunctionInvoked}` | "foo">(event.name);
             assertType<{ title: string }>(event.data);
           }
         );
@@ -765,7 +789,12 @@ describe("helper types", () => {
     type T0 = GetFunctionInput<typeof inngest>;
 
     test("returns event typing", () => {
-      type Expected = "foo" | "bar";
+      type Expected =
+        | `${internalEvents.FunctionFailed}`
+        | `${internalEvents.FunctionFinished}`
+        | `${internalEvents.FunctionInvoked}`
+        | "foo"
+        | "bar";
       type Actual = T0["event"]["name"];
       assertType<IsEqual<Expected, Actual>>(true);
     });

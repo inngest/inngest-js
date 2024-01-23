@@ -1,5 +1,7 @@
 import { type Jsonify } from "type-fest";
 import { type SimplifyDeep } from "type-fest/source/merge-deep";
+import { z } from "zod";
+import { logPrefix } from "../helpers/consts";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
@@ -12,11 +14,21 @@ import {
   type ClientOptions,
   type EventPayload,
   type HashedOp,
+  type InvocationResult,
+  type InvokeTargetFunctionDefinition,
+  type MinimalEventPayload,
   type SendEventOutput,
   type StepOptions,
   type StepOptionsOrId,
+  type TriggerEventFromFunction,
 } from "../types";
-import { type EventsFromOpts, type Inngest } from "./Inngest";
+import {
+  type EventsFromOpts,
+  type GetFunctionOutput,
+  type Inngest,
+} from "./Inngest";
+import { InngestFunction } from "./InngestFunction";
+import { InngestFunctionReference } from "./InngestFunctionReference";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -153,11 +165,12 @@ export const createStepTools = <
      *
      * @example
      * ```ts
-     * await step.sendEvent("app/user.created", { data: { id: 123 } });
+     * await step.sendEvent("emit-user-creation", {
+     *   name: "app/user.created",
+     *   data: { id: 123 },
+     * });
      *
-     * await step.sendEvent({ name: "app/user.created", data: { id: 123 } });
-     *
-     * await step.sendEvent([
+     * await step.sendEvent("emit-user-updates", [
      *   {
      *     name: "app/user.created",
      *     data: { id: 123 },
@@ -369,10 +382,101 @@ export const createStepTools = <
         );
       }
     }),
+
+    /**
+     * Invoke a passed Inngest `function` with the given `data`. Returns the
+     * result of the returned value of the function or `null` if the function
+     * does not return a value.
+     *
+     * A string ID can also be passed to reference functions outside of the
+     * current app.
+     *
+     * If a function isn't found or otherwise errors, the step will fail and
+     * throw a `NonRetriableError`.
+     */
+    invoke: createTool<
+      <TFunction extends InvokeTargetFunctionDefinition>(
+        idOrOptions: StepOptionsOrId,
+        opts: InvocationOpts<TFunction>
+      ) => InvocationResult<GetFunctionOutput<TFunction>>
+    >(({ id, name }, opts) => {
+      // Create a discriminated union to operate on based on the input types
+      // available for this tool.
+      const payloadSchema = z.object({
+        data: z.record(z.any()).optional(),
+        user: z.record(z.any()).optional(),
+        v: z.string().optional(),
+      });
+
+      const parsedFnOpts = payloadSchema
+        .extend({
+          _type: z.literal("fullId").optional().default("fullId"),
+          function: z.string().min(1),
+        })
+        .or(
+          payloadSchema.extend({
+            _type: z.literal("fnInstance").optional().default("fnInstance"),
+            function: z.instanceof(InngestFunction),
+          })
+        )
+        .or(
+          payloadSchema.extend({
+            _type: z.literal("refInstance").optional().default("refInstance"),
+            function: z.instanceof(InngestFunctionReference),
+          })
+        )
+        .safeParse(opts);
+
+      if (!parsedFnOpts.success) {
+        throw new Error(
+          `Invalid invocation options passed to invoke; must include either a function or functionId.`
+        );
+      }
+
+      const { _type, function: fn, data, user, v } = parsedFnOpts.data;
+      const payload = { data, user, v } satisfies MinimalEventPayload;
+
+      let functionId: string;
+      switch (_type) {
+        case "fnInstance":
+          functionId = fn.id(fn["client"].id);
+          break;
+
+        case "fullId":
+          console.warn(
+            `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`
+          );
+          functionId = fn;
+          break;
+
+        case "refInstance":
+          functionId = [fn.opts.appId || client.id, fn.opts.functionId]
+            .filter(Boolean)
+            .join("-");
+          break;
+      }
+
+      return {
+        id,
+        op: StepOpCode.InvokeFunction,
+        displayName: name ?? id,
+        opts: {
+          function_id: functionId,
+          payload,
+        },
+      };
+    }),
   };
 
   return tools;
 };
+
+type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
+  function: TFunction;
+};
+
+type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
+  InvocationTargetOpts<TFunction> & TriggerEventFromFunction<TFunction>;
 
 /**
  * A set of optional parameters given to a `waitForEvent` call to control how

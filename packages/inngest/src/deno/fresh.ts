@@ -32,7 +32,9 @@ export const serve = (options: ServeHandlerOptions) => {
 
   const fn = handler.createHandler();
 
-  return (req: Request) => fn(req, Deno.env.toObject());
+  return function handleRequest(req: Request) {
+    return fn(req, Deno.env.toObject());
+  };
 };
 
 declare const Deno: { env: { toObject: () => { [index: string]: string } } };

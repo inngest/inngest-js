@@ -19,12 +19,12 @@ import { type PartialK } from "../../helpers/types";
 import {
   StepOpCode,
   failureEventErrorSchema,
-  type AnyContext,
-  type AnyHandler,
   type BaseContext,
   type ClientOptions,
+  type Context,
   type EventPayload,
   type FailureEventArgs,
+  type Handler,
   type HashedOp,
   type IncomingOp,
   type OpStack,
@@ -56,8 +56,8 @@ export class V0InngestExecution
 {
   private state: V0ExecutionState;
   private execution: Promise<ExecutionResult> | undefined;
-  private userFnToRun: AnyHandler;
-  private fnArg: AnyContext;
+  private userFnToRun: Handler.Any;
+  private fnArg: Context.Any;
 
   constructor(options: InngestExecutionOptions) {
     super(options);
@@ -258,6 +258,7 @@ export class V0InngestExecution
         ctx,
         fn: this.options.fn,
         steps: Object.values(this.options.stepState),
+        reqArgs: this.options.reqArgs,
       },
       {
         transformInput: (prev, output) => {
@@ -268,6 +269,7 @@ export class V0InngestExecution
               ...step,
               ...output?.steps?.[i],
             })),
+            reqArgs: prev.reqArgs,
           };
         },
         transformOutput: (prev, output) => {
@@ -311,9 +313,10 @@ export class V0InngestExecution
     return state;
   }
 
-  private getUserFnToRun(): AnyHandler {
+  private getUserFnToRun(): Handler.Any {
     if (!this.options.isFailureHandler) {
-      return this.options.fn["fn"];
+      // TODO: Review; inferred types results in an `any` here!
+      return this.options.fn["fn"] as Handler.Any;
     }
 
     if (!this.options.fn["onFailureFn"]) {
@@ -327,7 +330,7 @@ export class V0InngestExecution
     return this.options.fn["onFailureFn"];
   }
 
-  private createFnArg(): AnyContext {
+  private createFnArg(): Context.Any {
     // Start referencing everything
     this.state.tickOps = this.state.allFoundOps;
 
@@ -420,7 +423,7 @@ export class V0InngestExecution
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
-    } as AnyContext;
+    } as Context.Any;
 
     if (this.options.isFailureHandler) {
       const eventData = z
@@ -444,6 +447,7 @@ export class V0InngestExecution
       ctx: { ...this.fnArg },
       steps: Object.values(this.options.stepState),
       fn: this.options.fn,
+      reqArgs: this.options.reqArgs,
     });
 
     if (inputMutations?.ctx) {

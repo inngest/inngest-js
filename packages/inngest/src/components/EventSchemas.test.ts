@@ -1,5 +1,6 @@
 import { EventSchemas } from "@local/components/EventSchemas";
 import { Inngest, type GetEvents } from "@local/components/Inngest";
+import { type internalEvents } from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
 import { type EventPayload } from "@local/types";
 import { assertType, type IsEqual } from "type-plus";
@@ -11,12 +12,18 @@ type Schemas<T extends EventSchemas<any>> = GetEvents<
 >;
 
 describe("EventSchemas", () => {
-  test("creates generic types by default", () => {
+  test("adds internal types by default", () => {
     const schemas = new EventSchemas();
 
-    assertType<IsEqual<Schemas<typeof schemas>, Record<string, EventPayload>>>(
-      true
-    );
+    type Expected =
+      | `${internalEvents.FunctionFailed}`
+      | `${internalEvents.FunctionFinished}`;
+
+    type Actual = Schemas<typeof schemas>[keyof Schemas<
+      typeof schemas
+    >]["name"];
+
+    assertType<IsEqual<Expected, Actual>>(true);
   });
 
   describe("fromRecord", () => {
@@ -452,6 +459,63 @@ describe("EventSchemas", () => {
           >
         >(true);
       });
+
+      test("can use a discriminated union", () => {
+        const schemas = new EventSchemas().fromZod({
+          "test.event": {
+            data: z.discriminatedUnion("shared", [
+              z.object({
+                shared: z.literal("foo"),
+                foo: z.string(),
+              }),
+              z.object({
+                shared: z.literal("bar"),
+                bar: z.number(),
+              }),
+            ]),
+          },
+        });
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "foo" as const,
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "bar" as const,
+          bar: 0,
+        });
+      });
+
+      test("can use a union with valid values", () => {
+        const schemas = new EventSchemas().fromZod({
+          "test.event": {
+            data: z.union([
+              z.object({
+                foo: z.string(),
+              }),
+              z.object({
+                bar: z.number(),
+              }),
+            ]),
+          },
+        });
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          bar: 0,
+        });
+      });
+
+      test("cannot use a union with invalid values", () => {
+        new EventSchemas().fromZod({
+          // @ts-expect-error - data must be object|any
+          "test.event": { data: z.union([z.string(), z.number()]) },
+        });
+      });
     });
 
     describe("literal array", () => {
@@ -586,6 +650,68 @@ describe("EventSchemas", () => {
           >
         >(true);
       });
+
+      test("can use a discriminated union", () => {
+        const schemas = new EventSchemas().fromZod([
+          z.object({
+            name: z.literal("test.event"),
+            data: z.discriminatedUnion("shared", [
+              z.object({
+                shared: z.literal("foo"),
+                foo: z.string(),
+              }),
+              z.object({
+                shared: z.literal("bar"),
+                bar: z.number(),
+              }),
+            ]),
+          }),
+        ]);
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "foo" as const,
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "bar" as const,
+          bar: 0,
+        });
+      });
+
+      test("can use a union with valid values", () => {
+        const schemas = new EventSchemas().fromZod([
+          z.object({
+            name: z.literal("test.event"),
+            data: z.union([
+              z.object({
+                foo: z.string(),
+              }),
+              z.object({
+                bar: z.number(),
+              }),
+            ]),
+          }),
+        ]);
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          bar: 0,
+        });
+      });
+
+      test("cannot use a union with invalid values", () => {
+        new EventSchemas().fromZod([
+          // @ts-expect-error - data must be object|any
+          z.object({
+            name: z.literal("test.event"),
+            data: z.union([z.string(), z.number()]),
+          }),
+        ]);
+      });
     });
   });
 
@@ -669,7 +795,9 @@ describe("EventSchemas", () => {
         { id: "test" },
         { event: "test.event" },
         ({ event }) => {
-          assertType<"test.event">(event.name);
+          assertType<`${internalEvents.FunctionInvoked}` | "test.event">(
+            event.name
+          );
           assertType<{ a: string }>(event.data);
           assertType<IsAny<typeof event.user>>(true);
         }
@@ -692,7 +820,9 @@ describe("EventSchemas", () => {
         { id: "test" },
         { event: "test.event" },
         ({ event }) => {
-          assertType<"test.event">(event.name);
+          assertType<`${internalEvents.FunctionInvoked}` | "test.event">(
+            event.name
+          );
           assertType<IsAny<typeof event.data>>(true);
           assertType<IsAny<typeof event.user>>(true);
         }

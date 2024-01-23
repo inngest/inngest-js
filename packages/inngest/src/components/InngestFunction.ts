@@ -18,9 +18,6 @@ import {
 import { createV0InngestExecution } from "./execution/v0";
 import { createV1InngestExecution } from "./execution/v1";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyInngestFunction = InngestFunction<any, any, any, any>;
-
 /**
  * A stateless Inngest function, wrapping up function configuration and any
  * in-memory steps to run when triggered.
@@ -40,13 +37,14 @@ export class InngestFunction<
     Events,
     EventNameFromTrigger<Events, Trigger>
   > = FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>,
+  THandler extends Handler.Any = Handler<TOpts, Events, keyof Events & string>,
 > {
   static stepId = "step";
   static failureSuffix = "-failure";
 
   public readonly opts: Opts;
   public readonly trigger: Trigger;
-  private readonly fn: Handler<TOpts, Events, keyof Events & string>;
+  private readonly fn: THandler;
   private readonly onFailureFn?: Handler<TOpts, Events, keyof Events & string>;
   private readonly client: Inngest<TOpts>;
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
@@ -66,7 +64,7 @@ export class InngestFunction<
      */
     opts: Opts,
     trigger: Trigger,
-    fn: Handler<TOpts, Events, keyof Events & string>
+    fn: THandler
   ) {
     this.client = client;
     this.opts = opts;
@@ -208,6 +206,29 @@ export class InngestFunction<
 
     return versionHandlers[opts.version]();
   }
+
+  private getEventTriggerName(): string | undefined {
+    const { event } = this.trigger as { event?: string };
+    return event;
+  }
+}
+
+/**
+ * A stateless Inngest function, wrapping up function configuration and any
+ * in-memory steps to run when triggered.
+ *
+ * This function can be "registered" to create a handler that Inngest can
+ * trigger remotely.
+ *
+ * @public
+ */
+export namespace InngestFunction {
+  /**
+   * Represents any `InngestFunction` instance, regardless of generics and
+   * inference.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = InngestFunction<any, any, any, any, any>;
 }
 
 export type CreateExecutionOptions = {

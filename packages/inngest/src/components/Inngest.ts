@@ -1,3 +1,5 @@
+import { type IfNever, type Jsonify } from "type-fest";
+import { type SimplifyDeep } from "type-fest/source/merge-deep";
 import { InngestApi } from "../api/api";
 import {
   defaultDevServerHost,
@@ -20,7 +22,6 @@ import { type ExclusiveKeys, type SendEventPayload } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
   sendEventResponseSchema,
-  type AnyHandler,
   type ClientOptions,
   type EventNameFromTrigger,
   type EventPayload,
@@ -28,6 +29,7 @@ import {
   type FunctionOptions,
   type FunctionTrigger,
   type Handler,
+  type InvokeTargetFunctionDefinition,
   type MiddlewareStack,
   type SendEventOutput,
   type SendEventResponse,
@@ -35,6 +37,7 @@ import {
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
 import { InngestFunction } from "./InngestFunction";
+import { type InngestFunctionReference } from "./InngestFunctionReference";
 import {
   InngestMiddleware,
   getHookStack,
@@ -60,9 +63,6 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
   TOpts["schemas"] extends EventSchemas<infer U>
     ? U
     : Record<string, EventPayload>;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyInngest = Inngest<any>;
 
 /**
  * A client used to interact with the Inngest API by sending or reacting to
@@ -452,9 +452,21 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
   public createFunction<
     TMiddleware extends MiddlewareStack,
-    TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>,
+    TTrigger extends TriggerOptions<TTriggerName>,
     TTriggerName extends keyof EventsFromOpts<TOpts> &
       string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>,
+    THandler extends Handler.Any = Handler<
+      TOpts,
+      EventsFromOpts<TOpts>,
+      TTriggerName,
+      ExtendWithMiddleware<
+        [
+          typeof builtInMiddleware,
+          NonNullable<TOpts["middleware"]>,
+          TMiddleware,
+        ]
+      >
+    >,
   >(
     options: ExclusiveKeys<
       Omit<
@@ -511,27 +523,20 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       "cancelOn" | "rateLimit"
     >,
     trigger: TTrigger,
-    handler: Handler<
-      TOpts,
-      EventsFromOpts<TOpts>,
-      TTriggerName,
-      ExtendWithMiddleware<
-        [
-          typeof builtInMiddleware,
-          NonNullable<TOpts["middleware"]>,
-          TMiddleware,
-        ]
-      >
-    >
+    handler: THandler
   ): InngestFunction<
     TOpts,
     EventsFromOpts<TOpts>,
-    FunctionTrigger<keyof EventsFromOpts<TOpts> & string>,
-    FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>
+    TTrigger,
+    FunctionOptions<
+      EventsFromOpts<TOpts>,
+      EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
+    >,
+    THandler
   > {
     let sanitizedOpts: FunctionOptions<
       EventsFromOpts<TOpts>,
-      keyof EventsFromOpts<TOpts> & string
+      EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
     >;
 
     if (typeof options === "string") {
@@ -545,7 +550,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       sanitizedOpts = options as typeof sanitizedOpts;
     }
 
-    let sanitizedTrigger: FunctionTrigger<keyof EventsFromOpts<TOpts> & string>;
+    let sanitizedTrigger: FunctionTrigger<TTriggerName>;
 
     if (typeof trigger === "string") {
       // v2 -> v3 migration warning
@@ -572,12 +577,16 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       );
     }
 
-    return new InngestFunction(
-      this,
-      sanitizedOpts,
-      sanitizedTrigger,
-      handler as AnyHandler
-    );
+    return new InngestFunction<
+      TOpts,
+      EventsFromOpts<TOpts>,
+      TTrigger,
+      FunctionOptions<
+        EventsFromOpts<TOpts>,
+        EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
+      >,
+      THandler
+    >(this, sanitizedOpts, sanitizedTrigger as TTrigger, handler);
   }
 }
 
@@ -653,6 +662,37 @@ export const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
 ]);
 
 /**
+ * A client used to interact with the Inngest API by sending or reacting to
+ * events.
+ *
+ * To provide event typing, see {@link EventSchemas}.
+ *
+ * ```ts
+ * const inngest = new Inngest({ name: "My App" });
+ *
+ * // or to provide event typing too
+ * const inngest = new Inngest({
+ *   name: "My App",
+ *   schemas: new EventSchemas().fromRecord<{
+ *     "app/user.created": {
+ *       data: { userId: string };
+ *     };
+ *   }>(),
+ * });
+ * ```
+ *
+ * @public
+ */
+export namespace Inngest {
+  /**
+   * Represents any `Inngest` instance, regardless of generics and
+   * inference.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = Inngest<any>;
+}
+
+/**
  * A helper type to extract the type of a set of event tooling from a given
  * Inngest instance and optionally a trigger.
  *
@@ -711,6 +751,63 @@ export type GetFunctionInput<
     >
   >
 >[0];
+
+/**
+ * A helper type to extract the type of the output of an Inngest function.
+ *
+ * @example Get a function's output
+ * ```ts
+ * type Output = GetFunctionOutput<typeof myFunction>;
+ * ```
+ *
+ * @public
+ */
+export type GetFunctionOutput<
+  TFunction extends InvokeTargetFunctionDefinition,
+> = TFunction extends InngestFunction.Any
+  ? GetFunctionOutputFromInngestFunction<TFunction>
+  : TFunction extends InngestFunctionReference.Any
+    ? GetFunctionOutputFromReferenceInngestFunction<TFunction>
+    : unknown;
+
+/**
+ * A helper type to extract the type of the output of an Inngest function.
+ *
+ * Used internally for {@link GetFunctionOutput}. Code outside of this package
+ * should use {@link GetFunctionOutput} instead.
+ *
+ * @internal
+ */
+export type GetFunctionOutputFromInngestFunction<
+  TFunction extends InngestFunction.Any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+> = TFunction extends InngestFunction<any, any, any, any, infer IHandler>
+  ? IfNever<
+      SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>,
+      null,
+      SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
+    >
+  : unknown;
+
+/**
+ * A helper type to extract the type of the output of a referenced Inngest
+ * function.
+ *
+ * Used internally for {@link GetFunctionOutput}. Code outside of this package
+ * should use {@link GetFunctionOutput} instead.
+ *
+ * @internal
+ */
+export type GetFunctionOutputFromReferenceInngestFunction<
+  TFunction extends InngestFunctionReference.Any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+> = TFunction extends InngestFunctionReference<any, infer IOutput>
+  ? IfNever<
+      SimplifyDeep<Jsonify<IOutput>>,
+      null,
+      SimplifyDeep<Jsonify<IOutput>>
+    >
+  : unknown;
 
 /**
  * A helper type to extract the inferred event schemas from a given Inngest

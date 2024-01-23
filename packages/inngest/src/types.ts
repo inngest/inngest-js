@@ -1,11 +1,13 @@
+import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
-  type AnyInngest,
   type EventsFromOpts,
   type Inngest,
   type builtInMiddleware,
 } from "./components/Inngest";
+import { type InngestFunction } from "./components/InngestFunction";
+import { type InngestFunctionReference } from "./components/InngestFunctionReference";
 import {
   type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
@@ -16,6 +18,7 @@ import { type internalEvents } from "./helpers/consts";
 import {
   type IsStringLiteral,
   type ObjectPaths,
+  type RecursiveTuple,
   type StrictUnion,
 } from "./helpers/types";
 import { type Logger } from "./middleware/logger";
@@ -32,7 +35,7 @@ import { type Logger } from "./middleware/logger";
  * import { EventSchemas, Inngest, type GetEvents } from "inngest";
  *
  * export const inngest = new Inngest({
- *   name: "Example App",
+ *   id: "example-app",
  *   schemas: new EventSchemas().fromRecord<{
  *     "app/user.created": { data: { userId: string } };
  *   }>(),
@@ -45,7 +48,7 @@ import { type Logger } from "./middleware/logger";
  *
  * @public
  */
-export type GetEvents<T extends AnyInngest> = T extends Inngest<infer U>
+export type GetEvents<T extends Inngest.Any> = T extends Inngest<infer U>
   ? EventsFromOpts<U>
   : never;
 
@@ -95,6 +98,28 @@ export type FailureEventArgs<P extends EventPayload = EventPayload> = {
 };
 
 /**
+ * The payload for an internal Inngest event that is sent when a function
+ * finishes, either by completing successfully or failing.
+ *
+ * @public
+ */
+export type FinishedEventPayload = {
+  name: `${internalEvents.FunctionFinished}`;
+  data: {
+    function_id: string;
+    run_id: string;
+    correlation_id?: string;
+  } & (
+    | {
+        error: z.output<typeof failureEventErrorSchema>;
+      }
+    | {
+        result: unknown;
+      }
+  );
+};
+
+/**
  * Unique codes for the different types of operation that can be sent to Inngest
  * from SDK step functions.
  */
@@ -112,6 +137,8 @@ export enum StepOpCode {
    * function.
    */
   StepNotFound = "StepNotFound",
+
+  InvokeFunction = "InvokeFunction",
 }
 
 /**
@@ -214,6 +241,13 @@ export type TimeStr = `${`${number}w` | ""}${`${number}d` | ""}${
 
 export type TimeStrBatch = `${`${number}s`}`;
 
+/**
+ * Mutates an {@link EventPayload} `T` to include invocation events.
+ */
+export type WithInvocation<T extends EventPayload> = Simplify<
+  { name: T["name"] | `${internalEvents.FunctionInvoked}` } & Omit<T, "name">
+>;
+
 export type BaseContext<
   TOpts extends ClientOptions,
   TTrigger extends keyof EventsFromOpts<TOpts> & string,
@@ -221,7 +255,7 @@ export type BaseContext<
   /**
    * The event data present in the payload.
    */
-  event: EventsFromOpts<TOpts>[TTrigger];
+  event: WithInvocation<EventsFromOpts<TOpts>[TTrigger]>;
 
   events: [
     EventsFromOpts<TOpts>[TTrigger],
@@ -248,6 +282,8 @@ export type BaseContext<
 /**
  * Builds a context object for an Inngest handler, optionally overriding some
  * keys.
+ *
+ * @internal
  */
 export type Context<
   TOpts extends ClientOptions,
@@ -256,8 +292,19 @@ export type Context<
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = Omit<BaseContext<TOpts, TTrigger>, keyof TOverrides> & TOverrides;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyContext = Context<any, any, any>;
+/**
+ * Builds a context object for an Inngest handler, optionally overriding some
+ * keys.
+ *
+ * @internal
+ */
+export namespace Context {
+  /**
+   * Represents any `Context` object, regardless of generics and inference.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = Context<any, any, any>;
+}
 
 /**
  * The shape of a Inngest function, taking in event, step, ctx, and step
@@ -278,27 +325,42 @@ export type Handler<
   ctx: Context<TOpts, TEvents, TTrigger, TOverrides>
 ) => unknown;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AnyHandler = Handler<any, any, any, any>;
-
 /**
- * The shape of a single event's payload. It should be extended to enforce
- * adherence to given events and not used as a method of creating them (i.e. as
- * a generic).
+ * The shape of a Inngest function, taking in event, step, ctx, and step
+ * tooling.
  *
  * @public
  */
-export interface EventPayload {
+export namespace Handler {
   /**
-   * A unique identifier for the event
+   * Represents any `Handler`, regardless of generics and inference.
    */
-  name: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = Handler<any, any, any, any>;
+}
+
+/**
+ * The shape of a single event's payload without any fields used to identify the
+ * actual event being sent.
+ *
+ * This is used to represent an event payload when invoking a function, as the
+ * event name is not known or needed.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface MinimalEventPayload<TData = any> {
+  /**
+   * A unique id used to idempotently process a given event payload.
+   *
+   * Set this when sending events to ensure that the event is only processed
+   * once; if an event with the same ID is sent again, it will not invoke
+   * functions.
+   */
+  id?: string;
 
   /**
    * Any data pertinent to the event
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data?: any;
+  data?: TData;
 
   /**
    * Any user data associated with the event
@@ -312,6 +374,24 @@ export interface EventPayload {
    * (optional)
    */
   v?: string;
+}
+
+/**
+ * The shape of a single event's payload. It should be extended to enforce
+ * adherence to given events and not used as a method of creating them (i.e. as
+ * a generic).
+ *
+ * @public
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
+  /**
+   * A unique identifier for the type of event. We recommend using lowercase dot
+   * notation for names, prepending `prefixes/` with a slash for organization.
+   *
+   * e.g. `cloudwatch/alarms/triggered`, `cart/session.created`
+   */
+  name: string;
 
   /**
    * An integer representing the milliseconds since the unix epoch at which this
@@ -464,7 +544,7 @@ export interface ClientOptions {
    *
    * ```ts
    * export const inngest = new Inngest({
-   *   name: "My App",
+   *   id: "my-app",
    *   schemas: new EventSchemas().fromZod({
    *     "app/user.created": {
    *       data: z.object({
@@ -712,12 +792,13 @@ export interface FunctionOptions<
    * can occur across all runs of the function.  A value of 0 (or undefined) means
    * use the maximum available concurrency.
    *
-   * Specifying just a number means specifying only the concurrency limit.
+   * Specifying just a number means specifying only the concurrency limit. A
+   * maximum of two concurrency options can be specified.
    */
   concurrency?:
     | number
     | ConcurrencyOption
-    | [ConcurrencyOption, ConcurrencyOption];
+    | RecursiveTuple<ConcurrencyOption, 2>;
 
   /**
    * batchEvents specifies the batch configuration on when this function
@@ -796,6 +877,16 @@ export interface FunctionOptions<
      * information.
      */
     period: TimeStr;
+
+    /**
+     * The maximum time that a debounce can be extended before running.
+     * If events are continually received within the given period, a function
+     * will always run after the given timeout period.
+     *
+     * See [Debounce documentation](https://innge.st/debounce) for more
+     * information.
+     */
+    timeout?: TimeStr;
   };
 
   /**
@@ -1095,6 +1186,7 @@ export type EventNameFromTrigger<
  * internally to assess functionality based on a mix of framework and platform.
  */
 export type SupportedFrameworkName =
+  | "astro"
   | "cloudflare-pages"
   | "digitalocean"
   | "edge"
@@ -1136,6 +1228,74 @@ export interface StepOptions {
  * @public
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
+
+export type EventsFromFunction<T extends InngestFunction.Any> =
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  T extends InngestFunction<any, infer TEvents, any, any, any>
+    ? TEvents
+    : never;
+
+/**
+ * A function that can be invoked by Inngest.
+ *
+ * @public
+ */
+export type InvokeTargetFunctionDefinition =
+  | InngestFunctionReference.Any
+  | InngestFunction.Any
+  | string;
+
+/**
+ * Given an invocation target, extract the payload that will be used to trigger
+ * it.
+ *
+ * If we could not find a payload, will return `never`.
+ */
+export type TriggerEventFromFunction<
+  TFunction extends InvokeTargetFunctionDefinition,
+> = TFunction extends InngestFunction.Any
+  ? PayloadFromAnyInngestFunction<TFunction>
+  : TFunction extends InngestFunctionReference<
+        infer IInput extends MinimalEventPayload,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        any
+      >
+    ? IInput
+    : MinimalEventPayload;
+
+/**
+ * Given an {@link InngestFunction} instance, extract the {@link MinimalPayload}
+ * that will be used to trigger it.
+ *
+ * If we could not find a payload or the function does not require a payload
+ * (e.g. a cron), then will return `{}`, as this is intended to be used to
+ * spread into other arguments.
+ *
+ * @internal
+ */
+export type PayloadFromAnyInngestFunction<
+  TFunction extends InngestFunction.Any,
+  TEvents = TFunction extends InngestFunction.Any
+    ? EventsFromFunction<TFunction>
+    : never,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+> = TFunction extends InngestFunction<any, any, infer ITrigger, any, any>
+  ? ITrigger extends {
+      event: infer IEventTrigger extends keyof TEvents & string;
+    }
+    ? Simplify<Omit<TEvents[IEventTrigger], "name" | "ts">>
+    : ITrigger extends { cron: string }
+      ? object
+      : object
+  : object;
+
+export type InvocationResult<TReturn> = Promise<TReturn>;
+// TODO Types ready for when we expand this.
+// & {
+//   result: InvocationResult<TReturn>;
+//   cancel: (reason: string) => Promise<void>; // TODO Need to be a Promise? 🤔
+//   queued: Promise<{ runId: string }>;
+// };
 
 /**
  * Simplified version of Rust style `Result`

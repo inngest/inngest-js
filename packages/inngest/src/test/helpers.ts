@@ -235,6 +235,27 @@ export const testFramework = (
       test("serve should be a function", () => {
         expect(handler.serve).toEqual(expect.any(Function));
       });
+
+      test("serve should return a function with a name", () => {
+        const actual = handler.serve({ client: inngest, functions: [] });
+
+        expect(actual.name).toEqual(expect.any(String));
+        expect(actual.name).toBeTruthy();
+      });
+
+      /**
+       * Some platforms check (at runtime) the length of the function being used
+       * to handle an endpoint. If this is a variadic function, it will fail
+       * that check.
+       *
+       * Therefore, we expect the arguments accepted to be the same length as
+       * the `handler` function passed internally.
+       */
+      test("serve should return a function with a non-variadic length", () => {
+        const actual = handler.serve({ client: inngest, functions: [] });
+
+        expect(actual.length).toBeGreaterThan(0);
+      });
     });
 
     if (opts?.handlerTests) {
@@ -875,6 +896,74 @@ export const eventRunWithName = async (
   throw new Error("Event run not found");
 };
 
+type HistoryItemType =
+  | "FunctionScheduled"
+  | "FunctionStarted"
+  | "FunctionCompleted"
+  | "FunctionFailed"
+  | "FunctionCancelled"
+  | "FunctionStatusUpdated"
+  | "StepScheduled"
+  | "StepStarted"
+  | "StepCompleted"
+  | "StepErrored"
+  | "StepFailed"
+  | "StepWaiting"
+  | "StepSleeping"
+  | "StepInvoking";
+
+class TimelineItem {
+  public runId: string;
+  public id: string;
+  public type: string;
+  public stepName: string | null;
+  public createdAt: string;
+
+  // Unsafe, but fine for testing.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(runId: string, item: any) {
+    this.runId = runId;
+    this.id = item.id;
+    this.type = item.type;
+    this.stepName = item.stepName;
+    this.createdAt = item.createdAt;
+  }
+
+  public async getOutput() {
+    const res = await fetch("http://localhost:8288/v0/gql", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: `query GetRunTimelineOutput($runId: ID!, $historyItemId: ULID!) {
+            functionRun(query: {functionRunId: $runId}) {
+              historyItemOutput(id: $historyItemId)
+            }
+          }`,
+        variables: {
+          runId: this.runId,
+          historyItemId: this.id,
+        },
+        operationName: "GetRunTimelineOutput",
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+
+    const data = await res.json();
+
+    const payload = data?.data?.functionRun?.historyItemOutput || "null";
+    if (typeof payload !== "string") {
+      throw new Error("Invalid payload");
+    }
+
+    return JSON.parse(payload);
+  }
+}
+
 /**
  * A test helper used to query a local, unsecured dev server to see if a given
  * run has a particular item in its timeline.
@@ -884,14 +973,10 @@ export const eventRunWithName = async (
 export const runHasTimeline = async (
   runId: string,
   timeline: {
-    __typename: "StepEvent" | "FunctionEvent";
-    name?: string;
-    stepType?: string;
-    functionType?: string;
-    output?: string;
+    stepName?: string;
+    type: HistoryItemType;
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<any> => {
+): Promise<TimelineItem | undefined> => {
   for (let i = 0; i < 140; i++) {
     const start = new Date();
 
@@ -903,19 +988,11 @@ export const runHasTimeline = async (
       body: JSON.stringify({
         query: `query GetRunTimeline($runId: ID!) {
           functionRun(query: {functionRunId: $runId}) {
-            timeline {
-              __typename
-              ... on StepEvent {
-                name
-                createdAt
-                stepType: type
-                output
-              }
-              ... on FunctionEvent {
-                createdAt
-                functionType: type
-                output
-              }
+            history {
+              id
+              type
+              stepName
+              createdAt
             }
           }
         }`,
@@ -933,7 +1010,7 @@ export const runHasTimeline = async (
     const data = await res.json();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const timelineItem = data?.data?.functionRun?.timeline?.find((entry: any) =>
+    const timelineItem = data?.data?.functionRun?.history?.find((entry: any) =>
       Object.keys(timeline).every(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (key) => entry[key] === (timeline as any)[key]
@@ -941,7 +1018,7 @@ export const runHasTimeline = async (
     );
 
     if (timelineItem) {
-      return timelineItem;
+      return new TimelineItem(runId, timelineItem);
     }
 
     await waitUpTo(400, start);

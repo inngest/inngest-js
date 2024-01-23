@@ -160,6 +160,7 @@ describe("runFn", () => {
                 runId: "run",
                 stepState: {},
                 stepCompletionOrder: [],
+                reqArgs: [],
               },
             });
 
@@ -204,6 +205,7 @@ describe("runFn", () => {
                 stepState: {},
                 runId: "run",
                 stepCompletionOrder: [],
+                reqArgs: [],
               },
             });
 
@@ -223,7 +225,7 @@ describe("runFn", () => {
   describe("step functions", () => {
     const runFnWithStack = (
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      fn: InngestFunction<any, any, any, any>,
+      fn: InngestFunction.Any,
       stepState: InngestExecutionOptions["stepState"],
       opts?: {
         executionVersion?: ExecutionVersion;
@@ -247,6 +249,7 @@ describe("runFn", () => {
           requestedRunStep: opts?.runStep,
           timer,
           disableImmediateExecution: opts?.disableImmediateExecution,
+          reqArgs: [],
         },
       });
 
@@ -266,7 +269,7 @@ describe("runFn", () => {
     const testFn = <
       T extends {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        fn: InngestFunction<any, any, any, any>;
+        fn: InngestFunction.Any;
         steps: Record<
           string,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -12,11 +12,14 @@ export type {
   EventsFromOpts,
   GetEvents,
   GetFunctionInput,
+  GetFunctionOutput,
   GetStepTools,
 } from "./components/Inngest";
 export { InngestCommHandler } from "./components/InngestCommHandler";
 export type { ServeHandlerOptions } from "./components/InngestCommHandler";
 export type { InngestFunction } from "./components/InngestFunction";
+export { referenceFunction } from "./components/InngestFunctionReference";
+export type { InngestFunctionReference } from "./components/InngestFunctionReference";
 export { InngestMiddleware } from "./components/InngestMiddleware";
 export type {
   MiddlewareOptions,
@@ -37,10 +40,12 @@ export { ProxyLogger } from "./middleware/logger";
 export type { LogArg } from "./middleware/logger";
 export type {
   ClientOptions,
+  Context,
   EventNameFromTrigger,
   EventPayload,
   FailureEventArgs,
   FailureEventPayload,
+  FinishedEventPayload,
   FunctionOptions,
   FunctionTrigger,
   Handler,

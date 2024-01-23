@@ -4,11 +4,13 @@
 
 ```ts
 
+import { IfNever } from 'type-fest';
 import { IsEqual } from 'type-fest';
+import { IsUnknown } from 'type-fest';
 import { Jsonify } from 'type-fest';
 import { Simplify } from 'type-fest';
 import { SimplifyDeep } from 'type-fest/source/merge-deep';
-import { z as z_2 } from 'zod';
+import { z } from 'zod';
 
 // @public
 export interface ClientOptions {
@@ -34,22 +36,35 @@ export type ClientOptionsFromInngest<TInngest extends Inngest<any>> = TInngest e
 // @public
 export type Combine<TCurr extends Record<string, EventPayload>, TInc extends StandardEventSchemas> = IsStringLiteral<keyof TCurr & string> extends true ? Simplify<Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> & StandardEventSchemaToPayload<TInc>> : StandardEventSchemaToPayload<TInc>;
 
+// Warning: (ae-forgotten-export) The symbol "BaseContext" needs to be exported by the entry point index.d.ts
+// Warning: (ae-internal-missing-underscore) The name "Context" should be prefixed with an underscore because the declaration is marked as @internal
+//
+// @internal
+export type Context<TOpts extends ClientOptions, TEvents extends Record<string, EventPayload>, TTrigger extends keyof TEvents & string, TOverrides extends Record<string, unknown> = Record<never, never>> = Omit<BaseContext<TOpts, TTrigger>, keyof TOverrides> & TOverrides;
+
+// @internal
+export namespace Context {
+    export type Any = Context<any, any, any>;
+}
+
 // @public
 export type EventNameFromTrigger<Events extends Record<string, EventPayload>, T extends TriggerOptions<keyof Events & string>> = T extends string ? T : T extends {
     event: string;
 } ? T["event"] : string;
 
+// Warning: (ae-forgotten-export) The symbol "MinimalEventPayload" needs to be exported by the entry point index.d.ts
+//
 // @public
-export interface EventPayload {
-    data?: any;
+export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
     name: string;
     ts?: number;
-    user?: any;
-    v?: string;
 }
 
 // @public
-export class EventSchemas<S extends Record<string, EventPayload>> {
+export class EventSchemas<S extends Record<string, EventPayload> = {
+    [internalEvents.FunctionFailed]: FailureEventPayload;
+    [internalEvents.FunctionFinished]: FinishedEventPayload;
+}> {
     fromGenerated<T extends StandardEventSchemas>(): EventSchemas<Combine<S, T>>;
     // Warning: (ae-forgotten-export) The symbol "PreventClashingNames" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "ClashingNameError" needs to be exported by the entry point index.d.ts
@@ -83,9 +98,23 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
     data: {
         function_id: string;
         run_id: string;
-        error: z_2.output<typeof failureEventErrorSchema>;
+        error: z.output<typeof failureEventErrorSchema>;
         event: P;
     };
+};
+
+// @public
+export type FinishedEventPayload = {
+    name: `${internalEvents.FunctionFinished}`;
+    data: {
+        function_id: string;
+        run_id: string;
+        correlation_id?: string;
+    } & ({
+        error: z.output<typeof failureEventErrorSchema>;
+    } | {
+        result: unknown;
+    });
 };
 
 // @public
@@ -99,10 +128,12 @@ export interface FunctionOptions<Events extends Record<string, EventPayload>, Ev
     // (undocumented)
     cancelOn?: Cancellation<Events, Event>[];
     // Warning: (ae-forgotten-export) The symbol "ConcurrencyOption" needs to be exported by the entry point index.d.ts
-    concurrency?: number | ConcurrencyOption | [ConcurrencyOption, ConcurrencyOption];
+    // Warning: (ae-forgotten-export) The symbol "RecursiveTuple" needs to be exported by the entry point index.d.ts
+    concurrency?: number | ConcurrencyOption | RecursiveTuple<ConcurrencyOption, 2>;
     debounce?: {
         key?: string;
         period: TimeStr;
+        timeout?: TimeStr;
     };
     id: string;
     idempotency?: string;
@@ -143,16 +174,28 @@ typeof builtInMiddleware,
 NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>
 ]>>>[0];
 
+// Warning: (ae-forgotten-export) The symbol "InvokeTargetFunctionDefinition" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "GetFunctionOutputFromInngestFunction" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "GetFunctionOutputFromReferenceInngestFunction" needs to be exported by the entry point index.d.ts
+//
+// @public
+export type GetFunctionOutput<TFunction extends InvokeTargetFunctionDefinition> = TFunction extends InngestFunction.Any ? GetFunctionOutputFromInngestFunction<TFunction> : TFunction extends InngestFunctionReference.Any ? GetFunctionOutputFromReferenceInngestFunction<TFunction> : unknown;
+
 // @public
 export type GetStepTools<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = keyof GetEvents<TInngest> & string> = GetFunctionInput<TInngest, TTrigger> extends {
     step: infer TStep;
 } ? TStep : never;
 
-// Warning: (ae-forgotten-export) The symbol "Context" needs to be exported by the entry point index.d.ts
+// Warning: (ae-incompatible-release-tags) The symbol "Handler" is marked as @public, but its signature references "Context" which is marked as @internal
 //
 // @public
 export type Handler<TOpts extends ClientOptions, TEvents extends EventsFromOpts<TOpts>, TTrigger extends keyof TEvents & string, TOverrides extends Record<string, unknown> = Record<never, never>> = (
 ctx: Context<TOpts, TEvents, TTrigger, TOverrides>) => unknown;
+
+// @public
+export namespace Handler {
+    export type Any = Handler<any, any, any, any>;
+}
 
 // @public
 export enum headerKeys {
@@ -182,27 +225,31 @@ export enum headerKeys {
 export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     constructor({ id, eventKey, baseUrl, fetch, env, logger, middleware, }: TOpts);
     // Warning: (ae-forgotten-export) The symbol "ExclusiveKeys" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-incompatible-release-tags) The symbol "createFunction" is marked as @public, but its signature references "FunctionTrigger" which is marked as @internal
     //
     // (undocumented)
-    createFunction<TMiddleware extends MiddlewareStack, TTrigger extends TriggerOptions<keyof EventsFromOpts<TOpts> & string>, TTriggerName extends keyof EventsFromOpts<TOpts> & string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>>(options: ExclusiveKeys<Omit<FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>, "onFailure" | "middleware"> & {
+    createFunction<TMiddleware extends MiddlewareStack, TTrigger extends TriggerOptions<TTriggerName>, TTriggerName extends keyof EventsFromOpts<TOpts> & string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>, THandler extends Handler.Any = Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, ExtendWithMiddleware<[
+    typeof builtInMiddleware,
+    NonNullable<TOpts["middleware"]>,
+    TMiddleware
+    ]>>>(options: ExclusiveKeys<Omit<FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>, "onFailure" | "middleware"> & {
         onFailure?: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, ExtendWithMiddleware<[
         typeof builtInMiddleware,
         NonNullable<TOpts["middleware"]>,
         TMiddleware
         ], FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>>>;
         middleware?: TMiddleware;
-    }, "batchEvents", "cancelOn" | "rateLimit">, trigger: TTrigger, handler: Handler<TOpts, EventsFromOpts<TOpts>, TTriggerName, ExtendWithMiddleware<[
-    typeof builtInMiddleware,
-    NonNullable<TOpts["middleware"]>,
-    TMiddleware
-    ]>>): InngestFunction<TOpts, EventsFromOpts<TOpts>, FunctionTrigger<keyof EventsFromOpts<TOpts> & string>, FunctionOptions<EventsFromOpts<TOpts>, keyof EventsFromOpts<TOpts> & string>>;
+    }, "batchEvents", "cancelOn" | "rateLimit">, trigger: TTrigger, handler: THandler): InngestFunction<TOpts, EventsFromOpts<TOpts>, TTrigger, FunctionOptions<EventsFromOpts<TOpts>, EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>>, THandler>;
     readonly id: string;
     // Warning: (ae-forgotten-export) The symbol "SendEventPayload" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "SendEventOutput" needs to be exported by the entry point index.d.ts
     send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(payload: Payload): Promise<SendEventOutput<TOpts>>;
     setEventKey(
     eventKey: string): void;
+}
+
+// @public
+export namespace Inngest {
+    export type Any = Inngest<any>;
 }
 
 // @public
@@ -232,10 +279,14 @@ export class InngestCommHandler<Input extends any[] = any[], Output = any, Strea
     // (undocumented)
     protected registerBody(url: URL): RegisterRequest;
     protected reqUrl(url: URL): URL;
-    // Warning: (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
-    //
     // (undocumented)
-    protected runStep(functionId: string, stepId: string | null, data: unknown, timer: ServerTiming): {
+    protected runStep({ functionId, stepId, data, timer, reqArgs, }: {
+        functionId: string;
+        stepId: string | null;
+        data: unknown;
+        timer: ServerTiming;
+        reqArgs: unknown[];
+    }): {
         version: ExecutionVersion;
         result: Promise<ExecutionResult>;
     };
@@ -254,9 +305,9 @@ export class InngestCommHandler<Input extends any[] = any[], Output = any, Strea
 // Warning: (ae-incompatible-release-tags) The symbol "InngestFunction" is marked as @public, but its signature references "FunctionTrigger" which is marked as @internal
 //
 // @public
-export class InngestFunction<TOpts extends ClientOptions = ClientOptions, Events extends EventsFromOpts<TOpts> = EventsFromOpts<TOpts>, Trigger extends FunctionTrigger<keyof Events & string> = FunctionTrigger<keyof Events & string>, Opts extends FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>> = FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>> {
+export class InngestFunction<TOpts extends ClientOptions = ClientOptions, Events extends EventsFromOpts<TOpts> = EventsFromOpts<TOpts>, Trigger extends FunctionTrigger<keyof Events & string> = FunctionTrigger<keyof Events & string>, Opts extends FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>> = FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>, THandler extends Handler.Any = Handler<TOpts, Events, keyof Events & string>> {
     constructor(client: Inngest<TOpts>,
-    opts: Opts, trigger: Trigger, fn: Handler<TOpts, Events, keyof Events & string>);
+    opts: Opts, trigger: Trigger, fn: THandler);
     // (undocumented)
     static failureSuffix: string;
     id(prefix?: string): string;
@@ -270,6 +321,52 @@ export class InngestFunction<TOpts extends ClientOptions = ClientOptions, Events
 }
 
 // @public
+export namespace InngestFunction {
+    export type Any = InngestFunction<any, any, any, any, any>;
+}
+
+// @public
+export class InngestFunctionReference<
+/**
+* The payload expected by the referenced function.
+*
+* Must be in the shape of an event payload.
+*/
+_TInput extends MinimalEventPayload,
+/**
+* The output of the referenced function.
+*/
+_TOutput> {
+    constructor(opts: {
+        functionId: string;
+        appId?: string;
+    });
+    // (undocumented)
+    readonly opts: {
+        functionId: string;
+        appId?: string;
+    };
+}
+
+// @public
+export namespace InngestFunctionReference {
+    export type Any = InngestFunctionReference<MinimalEventPayload, any>;
+    export type HelperArgs<TFnInput, TFnOutput> = {
+        functionId: string;
+        appId?: string;
+        schemas?: {
+            data?: TFnInput;
+            return?: TFnOutput;
+        };
+    };
+    export type HelperGenericArgs<TFnInput, TFnOutput> = HelperArgs<TFnInput, TFnOutput> | InngestFunction.Any;
+    // Warning: (ae-forgotten-export) The symbol "PayloadFromAnyInngestFunction" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "IsAny" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "ResolveSchema" needs to be exported by the entry point index.d.ts
+    export type HelperReturn<TArgs> = TArgs extends InngestFunction.Any ? InngestFunctionReference<PayloadFromAnyInngestFunction<TArgs>, GetFunctionOutput<TArgs>> : TArgs extends HelperArgs<infer TFnInput, infer TFnOutput> ? InngestFunctionReference<IsAny<ResolveSchema<TFnInput, TFnInput, any>> extends true ? MinimalEventPayload : Simplify<MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>> & Required<Pick<MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>>, "data">>>, ResolveSchema<TFnOutput, TFnOutput, unknown>> : never;
+}
+
+// @public
 export class InngestMiddleware<TOpts extends MiddlewareOptions> {
     constructor({ name, init }: TOpts);
     readonly init: TOpts["init"];
@@ -278,7 +375,11 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
 
 // @public
 export enum internalEvents {
-    FunctionFailed = "inngest/function.failed"
+    FunctionFailed = "inngest/function.failed",
+    // (undocumented)
+    FunctionFinished = "inngest/function.finished",
+    // (undocumented)
+    FunctionInvoked = "inngest/function.invoked"
 }
 
 // Warning: (ae-internal-missing-underscore) The name "IsStringLiteral" should be prefixed with an underscore because the declaration is marked as @internal
@@ -286,13 +387,13 @@ export enum internalEvents {
 // @internal
 export type IsStringLiteral<T extends string> = string extends T ? false : true;
 
-// Warning: (ae-forgotten-export) The symbol "z" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "z_2" needs to be exported by the entry point index.d.ts
 //
 // @public
-export type LiteralZodEventSchema = z.ZodObject<{
-    name: z.ZodLiteral<string>;
-    data?: z.AnyZodObject | z.ZodAny;
-    user?: z.AnyZodObject | z.ZodAny;
+export type LiteralZodEventSchema = z_2.ZodObject<{
+    name: z_2.ZodLiteral<string>;
+    data?: z_2.ValidZodValue;
+    user?: z_2.ValidZodValue;
 }>;
 
 // @public
@@ -313,8 +414,8 @@ export interface MiddlewareOptions {
 //
 // @public (undocumented)
 export type MiddlewareRegisterFn = (ctx: {
-    client: AnyInngest;
-    fn?: AnyInngestFunction;
+    client: Inngest.Any;
+    fn?: InngestFunction.Any;
 }) => MaybePromise<MiddlewareRegisterReturn>;
 
 // @public (undocumented)
@@ -371,6 +472,12 @@ export enum queryKeys {
     StepId = "stepId"
 }
 
+// Warning: (ae-forgotten-export) The symbol "ValidZodValue" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "ZodTypeAny" needs to be exported by the entry point index.d.ts
+//
+// @public
+export const referenceFunction: <TArgs extends InngestFunctionReference.HelperGenericArgs<TFnInput, TFnOutput>, TFnInput extends ValidZodValue = ValidZodValue, TFnOutput extends ZodTypeAny = ZodTypeAny>({ functionId, appId, }: TArgs extends InngestFunction.Any ? Omit<InngestFunctionReference.HelperArgs<any, any>, "schemas"> : TArgs) => InngestFunctionReference.HelperReturn<TArgs>;
+
 // @public
 export interface RegisterOptions {
     baseUrl?: string;
@@ -395,8 +502,8 @@ export class RetryAfterError extends Error {
 
 // @public
 export interface ServeHandlerOptions extends RegisterOptions {
-    client: AnyInngest;
-    functions: readonly AnyInngestFunction[];
+    client: Inngest.Any;
+    functions: readonly InngestFunction.Any[];
 }
 
 // @public
@@ -447,24 +554,23 @@ export type UnionKeys<T> = T extends T ? keyof T : never;
 
 // @public
 export type ZodEventSchemas = Record<string, {
-    data?: z.AnyZodObject | z.ZodAny;
-    user?: z.AnyZodObject | z.ZodAny;
+    data?: z_2.ValidZodValue;
+    user?: z_2.ValidZodValue;
 }>;
 
 // Warnings were encountered during analysis:
 //
-// src/components/InngestCommHandler.ts:855:8 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
-// src/components/InngestCommHandler.ts:855:35 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
+// src/components/InngestCommHandler.ts:910:5 - (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
+// src/components/InngestCommHandler.ts:912:9 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
+// src/components/InngestCommHandler.ts:912:36 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:268:3 - (ae-forgotten-export) The symbol "InitialRunInfo" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:281:5 - (ae-forgotten-export) The symbol "MiddlewareRunInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:287:5 - (ae-forgotten-export) The symbol "BlankHook" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:320:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:339:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:346:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:357:3 - (ae-forgotten-export) The symbol "AnyInngest" needs to be exported by the entry point index.d.ts
-// src/components/InngestMiddleware.ts:363:3 - (ae-forgotten-export) The symbol "AnyInngestFunction" needs to be exported by the entry point index.d.ts
-// src/types.ts:75:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:740:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:78:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:821:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
