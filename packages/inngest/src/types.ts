@@ -125,6 +125,17 @@ export type FinishedEventPayload = {
  */
 export enum StepOpCode {
   WaitForEvent = "WaitForEvent",
+
+  /**
+   * Legacy equivalent to `"StepRun"`. Has mixed data wrapping (e.g. `data` or
+   * `data.data` depending on SDK version), so this is phased out in favour of
+   * `"StepRun"`, which never wraps.
+   *
+   * Note that it is still used for v0 executions for backwards compatibility.
+   *
+   * @deprecated
+   */
+  Step = "Step",
   StepRun = "StepRun",
   StepError = "StepError",
   StepPlanned = "StepPlanned",

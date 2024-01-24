@@ -495,7 +495,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: A,
                   name: "A",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "A",
                 }),
               },
@@ -508,7 +508,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: B,
                   name: "B",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "B",
                 }),
               },
@@ -640,7 +640,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: A,
                   name: "A",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "A",
                 }),
               },
@@ -655,7 +655,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: B,
                   name: "B",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "B",
                 }),
               },
@@ -801,7 +801,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: B,
                   name: "B",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "B",
                 }),
               },
@@ -828,7 +828,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: A,
                   name: "A",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "A",
                 }),
               },
@@ -852,7 +852,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: C,
                   name: "C",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "C",
                 }),
               },
@@ -1097,7 +1097,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: B,
                   name: "B",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "B",
                 }),
               },
@@ -1111,7 +1111,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: BWins,
                   name: "B wins",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "B wins",
                 }),
               },
@@ -1125,7 +1125,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: A,
                   name: "A",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "A",
                 }),
               },
@@ -1333,7 +1333,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: BWins,
                   name: "B wins",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "B wins",
                 }),
               },
@@ -1748,7 +1748,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: A,
                   name: "A",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "A",
                 }),
               },
@@ -1770,7 +1770,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: B,
                   name: "B",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   error: matchError("B failed message"),
                   retriable: true,
                 }),
@@ -1790,7 +1790,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: BFailed,
                   name: "B failed",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "B failed",
                 }),
               },
@@ -1973,7 +1973,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: A,
                   name: "A",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   error: matchError(new NonRetriableError("A error message")),
                 }),
               },
@@ -2191,7 +2191,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: A,
                   name: "A",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "A",
                 }),
               },
@@ -2204,7 +2204,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: A,
                   name: "A",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "A",
                 }),
               },
@@ -2222,7 +2222,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: B,
                   name: "B",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "B",
                 }),
               },
@@ -2347,7 +2347,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: A,
                   name: "A",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "A",
                 }),
               },
@@ -2376,7 +2376,7 @@ describe("runFn", () => {
                 step: expect.objectContaining({
                   id: B,
                   name: "B",
-                  op: StepOpCode.StepRun,
+                  op: StepOpCode.Step,
                   data: "B",
                 }),
               },
