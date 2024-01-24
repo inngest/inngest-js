@@ -1,3 +1,4 @@
+import handlingStepErrors from "./handling-step-errors";
 import helloWorld from "./hello-world";
 import parallelReduce from "./parallel-reduce";
 import parallelWork from "./parallel-work";
@@ -22,6 +23,7 @@ export const functions = [
   undefinedData,
   ...stepInvokeFunctions,
   stepInvokeNotFound,
+  handlingStepErrors,
 ];
 
 export { inngest } from "./client";
