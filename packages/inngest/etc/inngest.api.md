@@ -524,6 +524,13 @@ export type StandardEventSchemaToPayload<T> = Simplify<{
 }>;
 
 // @public
+export class StepError extends Error {
+    constructor(
+    stepId: string, err: unknown);
+    readonly stepId: string;
+}
+
+// @public
 export interface StepOptions {
     id: string;
     name?: string;

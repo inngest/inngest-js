@@ -37,6 +37,7 @@ import {
 } from "../InngestStepTools";
 import { NonRetriableError } from "../NonRetriableError";
 import { RetryAfterError } from "../RetryAfterError";
+import { StepError } from "../StepError";
 import {
   InngestExecution,
   type ExecutionResult,
@@ -779,10 +780,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
               reject(err);
             } else {
-              this.state.recentlyRejectedStepError = deserializeError(
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+              this.state.recentlyRejectedStepError = new StepError(
+                opId.id,
                 stepState.error
               );
+
               reject(this.state.recentlyRejectedStepError);
             }
           }
@@ -986,7 +988,7 @@ export interface V1ExecutionState {
    * error did not immediately throw. It may need to be refactored to work a
    * little more smoothly with the core loop.
    */
-  recentlyRejectedStepError?: unknown;
+  recentlyRejectedStepError?: StepError;
 }
 
 const hashId = (id: string): string => {

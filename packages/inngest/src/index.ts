@@ -28,6 +28,7 @@ export type {
 } from "./components/InngestMiddleware";
 export { NonRetriableError } from "./components/NonRetriableError";
 export { RetryAfterError } from "./components/RetryAfterError";
+export { StepError } from "./components/StepError";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts";
 export { slugify } from "./helpers/strings";
 export type {
