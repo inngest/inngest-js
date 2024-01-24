@@ -10,6 +10,7 @@ import sequentialReduce from "./sequential-reduce";
 import stepInvokeFunctions from "./step-invoke";
 import stepInvokeNotFound from "./step-invoke-not-found";
 import undefinedData from "./undefined-data";
+import unhandledStepErrors from "./unhandled-step-errors";
 
 export const functions = [
   helloWorld,
@@ -24,6 +25,7 @@ export const functions = [
   ...stepInvokeFunctions,
   stepInvokeNotFound,
   handlingStepErrors,
+  unhandledStepErrors,
 ];
 
 export { inngest } from "./client";

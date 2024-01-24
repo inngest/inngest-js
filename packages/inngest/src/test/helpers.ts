@@ -994,9 +994,10 @@ export const runHasTimeline = async (
     stepName?: string;
     type: HistoryItemType;
     attempt?: number;
-  }
+  },
+  attempts = 140
 ): Promise<TimelineItem | undefined> => {
-  for (let i = 0; i < 140; i++) {
+  for (let i = 0; i < attempts; i++) {
     const start = new Date();
 
     const res = await fetch("http://localhost:8288/v0/gql", {
