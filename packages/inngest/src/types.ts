@@ -133,7 +133,7 @@ export enum StepOpCode {
    *
    * Note that it is still used for v0 executions for backwards compatibility.
    *
-   * @deprecated
+   * @deprecated Only used for v0 executions; use `"StepRun"` instead.
    */
   Step = "Step",
   StepRun = "StepRun",
