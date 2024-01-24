@@ -737,14 +737,7 @@ export class InngestCommHandler<
          * `null`, as this is appropriately serializable by JSON.
          */
         const opDataUndefinedToNull = (op: OutgoingOp) => {
-          const opData = z.object({ data: z.any() }).safeParse(op.data);
-
-          if (opData.success) {
-            (op.data as { data: unknown }).data = undefinedToNull(
-              opData.data.data
-            );
-          }
-
+          op.data = undefinedToNull(op.data);
           return op;
         };
 
