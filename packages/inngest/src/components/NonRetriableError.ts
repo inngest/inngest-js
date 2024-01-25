@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /**
  * An error that, when thrown, indicates to Inngest that the function should
  * cease all execution and not retry.
@@ -27,9 +29,29 @@ export class NonRetriableError extends Error {
     }
   ) {
     super(message);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    this.cause = options?.cause;
 
     this.name = "NonRetriableError";
+
+    /**
+     * If the cause we received is an error we can identify, assume all
+     * properties of that error.
+     */
+    if (options?.cause) {
+      this.cause = options.cause;
+
+      const causeError = z
+        .object({
+          name: z.string(),
+          message: z.string(),
+          stack: z.string().optional(),
+        })
+        .safeParse(options.cause);
+
+      if (causeError.success) {
+        this.name = causeError.data.name;
+        this.message = causeError.data.message;
+        this.stack = causeError.data.stack;
+      }
+    }
   }
 }
