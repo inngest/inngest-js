@@ -169,7 +169,7 @@ export class V0InngestExecution
 
         const outgoingUserFnOp = {
           ...tickOpToOutgoing(userFnOp),
-          op: StepOpCode.RunStep,
+          op: StepOpCode.Step,
         };
 
         await this.state.hooks.beforeExecution?.();
