@@ -1,5 +1,15 @@
 # inngest
 
+## 3.12.0
+
+### Minor Changes
+
+- [#411](https://github.com/inngest/inngest-js/pull/411) [`3b35c1c`](https://github.com/inngest/inngest-js/commit/3b35c1c9cfa9d96d88346e874089dc9d3aa9a5de) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add handling of per-step errors and returning step names during error cases to better display issues in the UI
+
+### Patch Changes
+
+- [#469](https://github.com/inngest/inngest-js/pull/469) [`2f01a27`](https://github.com/inngest/inngest-js/commit/2f01a27ab9af871af25349d9be899ae314949485) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump vite from 4.5.1 to 4.5.2 for a security fix
+
 ## 3.11.0
 
 ### Minor Changes
