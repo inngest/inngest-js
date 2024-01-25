@@ -567,9 +567,9 @@ export type ZodEventSchemas = Record<string, {
 
 // Warnings were encountered during analysis:
 //
-// src/components/InngestCommHandler.ts:905:5 - (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
-// src/components/InngestCommHandler.ts:907:9 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
-// src/components/InngestCommHandler.ts:907:36 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
+// src/components/InngestCommHandler.ts:903:5 - (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
+// src/components/InngestCommHandler.ts:905:9 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
+// src/components/InngestCommHandler.ts:905:36 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:268:3 - (ae-forgotten-export) The symbol "InitialRunInfo" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:281:5 - (ae-forgotten-export) The symbol "MiddlewareRunInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:287:5 - (ae-forgotten-export) The symbol "BlankHook" needs to be exported by the entry point index.d.ts
