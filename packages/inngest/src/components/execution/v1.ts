@@ -456,12 +456,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * we should return a `NonRetriableError` to stop execution.
      */
     if (typeof output.error !== "undefined") {
-      const serializedError = serializeError(output.error);
-      output.data = serializedError;
-
-      if (output.error === this.state.recentlyRejectedStepError) {
-        output.data = serializeError(output.error);
-      }
+      output.data = serializeError(output.error);
     }
 
     const transformedOutput = await this.state.hooks?.transformOutput?.({
