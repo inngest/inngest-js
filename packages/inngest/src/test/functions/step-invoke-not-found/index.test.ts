@@ -34,6 +34,6 @@ describe("run", () => {
 
     const output = await item?.getOutput();
     expect(output?.name).toEqual("Error");
-    expect(output?.message).toContain("Invoking function failed");
+    expect(output?.message).toContain("could not find function");
   }, 20000);
 });
