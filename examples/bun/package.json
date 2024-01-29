@@ -1,17 +1,17 @@
 {
-  "name": "framework-bun",
+  "name": "runtime-bun",
   "module": "index.ts",
   "type": "module",
   "scripts": {
-    "start": "bun ./index.ts"
+    "dev": "bun run --watch index.ts"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "inngest": "^3.7.3"
+    "inngest": "^3.0.0"
   }
 }

@@ -1,16 +1,16 @@
-import { serve } from 'inngest/edge';
-import { inngest, functions } from './inngest';
+import { serve } from "inngest/edge";
+import { functions, inngest } from "./inngest";
 
 const server = Bun.serve({
   port: 3000,
   fetch(request: Request) {
     const url = new URL(request.url);
 
-    if (url.pathname === '/api/inngest') {
+    if (url.pathname === "/api/inngest") {
       return serve({ client: inngest, functions })(request);
     }
 
-    return new Response('Server');
+    return new Response("Server");
   },
 });
 
