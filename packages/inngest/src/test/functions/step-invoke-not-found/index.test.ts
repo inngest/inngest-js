@@ -33,7 +33,7 @@ describe("run", () => {
     expect(item).toBeDefined();
 
     const output = await item?.getOutput();
-    expect(output?.name).toEqual("NonRetriableError");
+    expect(output?.name).toEqual("Error");
     expect(output?.message).toContain("Invoking function failed");
   }, 20000);
 });
