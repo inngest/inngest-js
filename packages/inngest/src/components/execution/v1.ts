@@ -460,9 +460,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       output.data = serializedError;
 
       if (output.error === this.state.recentlyRejectedStepError) {
-        output.error = new NonRetriableError(serializedError.message, {
-          cause: output.error,
-        });
         output.data = serializeError(output.error);
       }
     }
@@ -479,7 +476,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * Ensure we give middleware the chance to decide on retriable behaviour
        * by looking at the error returned from output transformation.
        */
-      let retriable: boolean | string = !(error instanceof NonRetriableError);
+      let retriable: boolean | string = !(
+        error instanceof NonRetriableError || error instanceof StepError
+      );
       if (retriable && error instanceof RetryAfterError) {
         retriable = error.retryAfter;
       }
