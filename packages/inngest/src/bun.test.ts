@@ -1,4 +1,4 @@
-import * as EdgeHandler from "@local/bun";
+import * as BunHandler from "@local/bun";
 import fetch, { Headers, Response } from "cross-fetch";
 import { testFramework } from "./test/helpers";
 
@@ -6,7 +6,7 @@ const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;
 const originalHeaders = globalThis.Headers;
 
-testFramework("Edge", EdgeHandler, {
+testFramework("Bun", BunHandler, {
   lifecycleChanges: () => {
     beforeEach(() => {
       jest.resetModules();
