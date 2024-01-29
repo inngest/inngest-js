@@ -235,6 +235,27 @@ export const testFramework = (
       test("serve should be a function", () => {
         expect(handler.serve).toEqual(expect.any(Function));
       });
+
+      test("serve should return a function with a name", () => {
+        const actual = handler.serve({ client: inngest, functions: [] });
+
+        expect(actual.name).toEqual(expect.any(String));
+        expect(actual.name).toBeTruthy();
+      });
+
+      /**
+       * Some platforms check (at runtime) the length of the function being used
+       * to handle an endpoint. If this is a variadic function, it will fail
+       * that check.
+       *
+       * Therefore, we expect the arguments accepted to be the same length as
+       * the `handler` function passed internally.
+       */
+      test("serve should return a function with a non-variadic length", () => {
+        const actual = handler.serve({ client: inngest, functions: [] });
+
+        expect(actual.length).toBeGreaterThan(0);
+      });
     });
 
     if (opts?.handlerTests) {
@@ -832,26 +853,29 @@ export const eventRunWithName = async (
   for (let i = 0; i < 140; i++) {
     const start = new Date();
 
+    const body = {
+      query: `query GetEventStream {
+        stream(query: {limit: 999, includeInternalEvents: false}) {
+          id
+          trigger
+          runs {
+            id
+            function {
+              name
+            }
+          }
+        }
+      }`,
+      variables: {},
+      operationName: "GetEventStream",
+    };
+
     const res = await fetch("http://localhost:8288/v0/gql", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        query: `query GetEventRuns($eventId: ID!) {
-        event(query: {eventId: $eventId}) {
-          id
-          functionRuns {
-            id
-            name
-          }
-        }
-      }`,
-        variables: {
-          eventId,
-        },
-        operationName: "GetEventRuns",
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
@@ -860,10 +884,25 @@ export const eventRunWithName = async (
 
     const data = await res.json();
 
-    const run = data?.data?.event?.functionRuns?.find(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let run: any;
+
+    for (let i = 0; i < data?.data?.stream?.length ?? 0; i++) {
+      const item = data?.data?.stream[i];
+
+      if (item?.id !== eventId) {
+        continue;
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (run: any) => run.name === name
-    );
+      run = item?.runs?.find((run: any) => {
+        return run?.function?.name === name;
+      });
+
+      if (run) {
+        break;
+      }
+    }
 
     if (run) {
       return run.id;
@@ -954,9 +993,11 @@ export const runHasTimeline = async (
   timeline: {
     stepName?: string;
     type: HistoryItemType;
-  }
+    attempt?: number;
+  },
+  attempts = 140
 ): Promise<TimelineItem | undefined> => {
-  for (let i = 0; i < 140; i++) {
+  for (let i = 0; i < attempts; i++) {
     const start = new Date();
 
     const res = await fetch("http://localhost:8288/v0/gql", {
@@ -972,6 +1013,7 @@ export const runHasTimeline = async (
               type
               stepName
               createdAt
+              attempt
             }
           }
         }`,

@@ -201,7 +201,7 @@ export type Combine<
  *
  * ```ts
  * export const inngest = new Inngest({
- *   name: "My App",
+ *   id: "my-app",
  *   schemas: new EventSchemas().fromZod({
  *     "app/user.created": {
  *       data: z.object({
@@ -235,7 +235,7 @@ export class EventSchemas<
    *
    * ```ts
    * export const inngest = new Inngest({
-   *   name: "My App",
+   *   id: "my-app",
    *   schemas: new EventSchemas().fromRecord<{
    *     "app/user.created": {
    *       data: {
@@ -276,7 +276,7 @@ export class EventSchemas<
    * type Events = AccountCreated | AccountDeleted;
    *
    * export const inngest = new Inngest({
-   *   name: "My App",
+   *   id: "my-app",
    *   schemas: new EventSchemas().fromUnion<Events>(),
    * });
    * ```
@@ -299,7 +299,7 @@ export class EventSchemas<
    *
    * ```ts
    * export const inngest = new Inngest({
-   *   name: "My App",
+   *   id: "my-app",
    *   schemas: new EventSchemas().fromZod({
    *     "app/user.created": {
    *       data: z.object({

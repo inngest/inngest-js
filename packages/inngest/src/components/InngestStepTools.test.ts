@@ -2,6 +2,7 @@
 import { EventSchemas } from "@local/components/EventSchemas";
 import { type EventsFromOpts } from "@local/components/Inngest";
 import { InngestFunction } from "@local/components/InngestFunction";
+import { referenceFunction } from "@local/components/InngestFunctionReference";
 import {
   createStepTools,
   getStepOptions,
@@ -14,11 +15,14 @@ import {
 import ms from "ms";
 import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
+import { z } from "zod";
 import { createClient } from "../test/helpers";
+
+const clientId = "test-client";
 
 const getStepTools = () => {
   const step = createStepTools(
-    createClient({ id: "test" }),
+    createClient({ id: clientId }),
     ({ args, matchOp }) => {
       const stepOptions = getStepOptions(args[0]);
       return Promise.resolve(matchOp(stepOptions, ...args.slice(1)));
@@ -410,163 +414,6 @@ describe("sendEvent", () => {
     });
   });
 
-  describe("invoke", () => {
-    let step: StepTools;
-    beforeEach(() => {
-      step = getStepTools();
-    });
-
-    describe("runtime", () => {
-      const fn = new InngestFunction(
-        createClient({ id: "test-client" }),
-        { id: "test-fn" },
-        { event: "test-event" },
-        () => "test-return"
-      );
-
-      test("return id", async () => {
-        await expect(
-          step.invoke("id", { function: fn, data: "foo" })
-        ).resolves.toMatchObject({
-          id: "id",
-        });
-      });
-
-      test("return Invoke step op code", async () => {
-        await expect(
-          step.invoke("id", { function: fn, data: "foo" })
-        ).resolves.toMatchObject({
-          op: StepOpCode.InvokeFunction,
-        });
-      });
-
-      test("return ID by default", async () => {
-        await expect(
-          step.invoke("id", { function: fn, data: "foo" })
-        ).resolves.toMatchObject({ displayName: "id" });
-      });
-
-      test("return specific name if given", async () => {
-        await expect(
-          step.invoke({ id: "id", name: "name" }, { function: fn, data: "foo" })
-        ).resolves.toMatchObject({ displayName: "name" });
-      });
-    });
-
-    describe("types", () => {
-      const schemas = new EventSchemas().fromRecord<{
-        foo: {
-          name: "foo";
-          data: { foo: string };
-        };
-        bar: {
-          data: { bar: string };
-        };
-        // eslint-disable-next-line @typescript-eslint/ban-types
-        baz: {};
-      }>();
-
-      const opts = (<T extends ClientOptions>(x: T): T => x)({
-        id: "test-client",
-        schemas,
-      });
-
-      const client = createClient(opts);
-
-      const invoke = null as unknown as ReturnType<
-        typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
-      >["invoke"];
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      type GetTestReturn<T extends () => InvocationResult<any>> = Awaited<
-        ReturnType<T>
-      >;
-
-      test("allows specifying function as a string", () => {
-        const _test = () => invoke("id", { function: "test-fn", data: "foo" });
-      });
-
-      test("allows specifying function as a function", () => {
-        const fn = client.createFunction(
-          { id: "fn" },
-          { event: "foo" },
-          () => "return"
-        );
-
-        const _test = () => invoke("id", { function: fn, data: { foo: "" } });
-      });
-
-      test("requires no payload if a cron", () => {
-        const fn = client.createFunction(
-          { id: "fn" },
-          { cron: "* * * * *" },
-          () => "return"
-        );
-
-        const _test = () => invoke("id", { function: fn });
-      });
-
-      test("disallows no payload if an event", () => {
-        const fn = client.createFunction(
-          { id: "fn" },
-          { event: "foo" },
-          () => "return"
-        );
-
-        // @ts-expect-error No payload provided
-        const _test = () => invoke("id", { function: fn });
-      });
-
-      test("disallows incorrect payload with an event", () => {
-        const fn = client.createFunction(
-          { id: "fn" },
-          { event: "foo" },
-          () => "return"
-        );
-
-        // @ts-expect-error Invalid payload provided
-        const _test = () => invoke("id", { function: fn, data: { bar: "" } });
-      });
-
-      test("returns correct output type for function", () => {
-        const fn = client.createFunction(
-          { id: "fn" },
-          { event: "foo" },
-          () => "return"
-        );
-
-        const _test = () => invoke("id", { function: fn, data: { foo: "" } });
-
-        type Actual = GetTestReturn<typeof _test>;
-        assertType<IsEqual<Actual, string>>(true);
-      });
-
-      test("returns correct output const type for function", () => {
-        const fn = client.createFunction(
-          { id: "fn" },
-          { event: "foo" },
-          () => "return" as const
-        );
-
-        const _test = () => invoke("id", { function: fn, data: { foo: "" } });
-
-        type Actual = GetTestReturn<typeof _test>;
-        assertType<IsEqual<Actual, "return">>(true);
-      });
-
-      test("returns null if function returns undefined|void", () => {
-        const fn = client.createFunction({ id: "fn" }, { event: "foo" }, () => {
-          // no-op
-        });
-
-        const _test = () => invoke("id", { function: fn, data: { foo: "" } });
-
-        type Actual = GetTestReturn<typeof _test>;
-        assertType<IsEqual<Actual, null>>(true);
-      });
-    });
-  });
-
   describe("types", () => {
     describe("no custom types", () => {
       const sendEvent: ReturnType<typeof createStepTools>["sendEvent"] =
@@ -672,6 +519,376 @@ describe("sendEvent", () => {
           { name: "bar", data: { bar: "" } },
         ]);
       });
+    });
+  });
+});
+
+describe("invoke", () => {
+  let step: StepTools;
+  beforeEach(() => {
+    step = getStepTools();
+  });
+
+  describe("runtime", () => {
+    const fn = new InngestFunction(
+      createClient({ id: clientId }),
+      { id: "test-fn" },
+      { event: "test-event" },
+      () => "test-return"
+    );
+
+    test("return id", async () => {
+      await expect(
+        step.invoke("id", { function: fn, data: { foo: "foo" } })
+      ).resolves.toMatchObject({
+        id: "id",
+      });
+    });
+
+    test("return Invoke step op code", async () => {
+      await expect(
+        step.invoke("id", { function: fn, data: { foo: "foo" } })
+      ).resolves.toMatchObject({
+        op: StepOpCode.InvokeFunction,
+      });
+    });
+
+    test("return ID by default", async () => {
+      await expect(
+        step.invoke("id", { function: fn, data: { foo: "foo" } })
+      ).resolves.toMatchObject({ displayName: "id" });
+    });
+
+    test("return specific name if given", async () => {
+      await expect(
+        step.invoke(
+          { id: "id", name: "name" },
+          { function: fn, data: { foo: "foo" } }
+        )
+      ).resolves.toMatchObject({ displayName: "name" });
+    });
+
+    describe("return function ID to run", () => {
+      test("with `function` instance", async () => {
+        await expect(
+          step.invoke("id", { function: fn, data: { foo: "foo" } })
+        ).resolves.toMatchObject({
+          opts: {
+            function_id: fn.id(clientId),
+          },
+        });
+      });
+
+      test("with `function` string", async () => {
+        await expect(
+          step.invoke("id", {
+            function: "some-client-some-fn",
+            data: { foo: "foo" },
+          })
+        ).resolves.toMatchObject({
+          opts: {
+            function_id: "some-client-some-fn",
+          },
+        });
+      });
+
+      test("with `function` ref instance", async () => {
+        await expect(
+          step.invoke("id", {
+            function: referenceFunction<typeof fn>({ functionId: "test-fn" }),
+          })
+        ).resolves.toMatchObject({
+          opts: {
+            function_id: `${clientId}-test-fn`,
+          },
+        });
+      });
+
+      test("with `function` ref instance with `appId`", async () => {
+        await expect(
+          step.invoke("id", {
+            function: referenceFunction({
+              functionId: "some-fn",
+              appId: "some-client",
+            }),
+            data: { foo: "foo" },
+          })
+        ).resolves.toMatchObject({
+          opts: {
+            function_id: "some-client-some-fn",
+          },
+        });
+      });
+    });
+  });
+
+  describe("types", () => {
+    const schemas = new EventSchemas().fromRecord<{
+      foo: {
+        name: "foo";
+        data: { foo: string };
+      };
+      bar: {
+        data: { bar: string };
+      };
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      baz: {};
+    }>();
+
+    const opts = (<T extends ClientOptions>(x: T): T => x)({
+      id: "test-client",
+      schemas,
+    });
+
+    const client = createClient(opts);
+
+    const invoke = null as unknown as ReturnType<
+      typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
+    >["invoke"];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    type GetTestReturn<T extends () => InvocationResult<any>> = Awaited<
+      ReturnType<T>
+    >;
+
+    test("allows specifying function as a string", () => {
+      const _test = () => invoke("id", { function: "test-fn", data: "foo" });
+    });
+
+    test("allows specifying function as an instance", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return"
+      );
+
+      const _test = () => invoke("id", { function: fn, data: { foo: "" } });
+    });
+
+    test("allows specifying function as a string", () => {
+      const _test = () => invoke("id", { function: "fn", data: { foo: "" } });
+    });
+
+    test("allows specifying function as a reference function", () => {
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction({ functionId: "fn" }),
+          data: { foo: "" },
+        });
+    });
+
+    test("requires no payload if a cron", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { cron: "* * * * *" },
+        () => "return"
+      );
+
+      // Allowed
+      const _test = () => invoke("id", { function: fn });
+
+      // Disallowed
+      // @ts-expect-error No payload should be provided for a cron
+      const _test2 = () => invoke("id", { function: fn, data: { foo: "" } });
+    });
+
+    test("disallows no `function` given", () => {
+      // @ts-expect-error No function provided
+      const _test = () => invoke("id", { data: { foo: "" } });
+    });
+
+    test("disallows no payload if an event", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return"
+      );
+
+      // @ts-expect-error No payload provided
+      const _test = () => invoke("id", { function: fn });
+    });
+
+    test("disallows incorrect payload with an event", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return"
+      );
+
+      // @ts-expect-error Invalid payload provided
+      const _test = () => invoke("id", { function: fn, data: { bar: "" } });
+    });
+
+    test("disallows incorrect payload with a reference function", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return"
+      );
+
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction<typeof fn>({ functionId: "fn" }),
+          // @ts-expect-error Invalid payload provided
+          data: { bar: "" },
+        });
+    });
+
+    test("disallows missing payload with a reference function and schema", () => {
+      const _test = () =>
+        // @ts-expect-error No `data` provided
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              data: z.object({ wowza: z.string() }),
+            },
+          }),
+        });
+    });
+
+    test("disallows incorrect payload with a reference function and schema", () => {
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              data: z.object({ wowza: z.string() }),
+            },
+          }),
+          // @ts-expect-error Invalid payload provided
+          data: { bar: "" },
+        });
+    });
+
+    test("returns correct output type for function", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return"
+      );
+
+      const _test = () => invoke("id", { function: fn, data: { foo: "" } });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, string>>(true);
+    });
+
+    test("returns correct output type for function with reference", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return"
+      );
+
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction<typeof fn>({ functionId: "fn" }),
+          data: { foo: "" },
+        });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, string>>(true);
+    });
+
+    test("returns correct output type for function with reference and schema", () => {
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              return: z.string(),
+            },
+          }),
+          data: { foo: "" },
+        });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, string>>(true);
+    });
+
+    test("returns correct input type for function with reference and schema", () => {
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              data: z.object({ wowza: z.string() }),
+            },
+          }),
+          data: { wowza: "" },
+        });
+    });
+
+    test("returns correct output const type for function", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return" as const
+      );
+
+      const _test = () => invoke("id", { function: fn, data: { foo: "" } });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, "return">>(true);
+    });
+
+    test("returns correct output const type for function with reference", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return" as const
+      );
+
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction<typeof fn>({ functionId: "fn" }),
+          data: { foo: "" },
+        });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, "return">>(true);
+    });
+
+    test("returns null if function returns undefined|void", () => {
+      const fn = client.createFunction({ id: "fn" }, { event: "foo" }, () => {
+        // no-op
+      });
+
+      const _test = () => invoke("id", { function: fn, data: { foo: "" } });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, null>>(true);
+    });
+
+    test("returns null if function returns undefined|void with reference", () => {
+      const fn = client.createFunction({ id: "fn" }, { event: "foo" }, () => {
+        // no-op
+      });
+
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction<typeof fn>({ functionId: "fn" }),
+          data: { foo: "" },
+        });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, null>>(true);
+    });
+
+    test("returns null if function returns undefined|void with reference and schema", () => {
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              return: z.void(),
+            },
+          }),
+        });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, null>>(true);
     });
   });
 });

@@ -10,9 +10,9 @@ import { InngestCommHandler, type ServeHandlerOptions } from "inngest";
  * @example
  * ```ts
  * import { serve } from "./my-handler";
- * import fns from "~/inngest";
+ * import { client, functions } from "~/inngest";
  *
- * export const handler = serve("My App", fns);
+ * export const handler = serve({ client, functions });
  * ```
  *
  * We export a `serve` function that uses the `ServeHandler` type to match the

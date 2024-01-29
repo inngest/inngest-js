@@ -1,5 +1,61 @@
 # inngest
 
+## 3.12.0
+
+### Minor Changes
+
+- [#411](https://github.com/inngest/inngest-js/pull/411) [`3b35c1c`](https://github.com/inngest/inngest-js/commit/3b35c1c9cfa9d96d88346e874089dc9d3aa9a5de) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add handling of per-step errors and returning step names during error cases to better display issues in the UI
+
+### Patch Changes
+
+- [#469](https://github.com/inngest/inngest-js/pull/469) [`2f01a27`](https://github.com/inngest/inngest-js/commit/2f01a27ab9af871af25349d9be899ae314949485) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump vite from 4.5.1 to 4.5.2 for a security fix
+
+## 3.11.0
+
+### Minor Changes
+
+- [#467](https://github.com/inngest/inngest-js/pull/467) [`ca93ef8`](https://github.com/inngest/inngest-js/commit/ca93ef87384146c5b852fd74c57b23fecd75685c) Thanks [@tonyhb](https://github.com/tonyhb)! - Add timeouts to debounce configuration
+
+### Patch Changes
+
+- [#463](https://github.com/inngest/inngest-js/pull/463) [`61562bd`](https://github.com/inngest/inngest-js/commit/61562bdaadb2f5a07b8c9e354a3c910e5bf586fe) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `data` not being required during invocation with a schema+reference
+
+- [#462](https://github.com/inngest/inngest-js/pull/462) [`c449efe`](https://github.com/inngest/inngest-js/commit/c449efef4709ab3aa8c76f4a078e1a793599f717) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix not allowing a single-element `concurrency` option in function definitions
+
+- [#466](https://github.com/inngest/inngest-js/pull/466) [`ecde5b6`](https://github.com/inngest/inngest-js/commit/ecde5b64d17cdc01d3416ca3a6b45b4d21dac234) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix some out-of-date comments and examples
+
+## 3.10.0
+
+### Minor Changes
+
+- [#449](https://github.com/inngest/inngest-js/pull/449) [`a452cf1`](https://github.com/inngest/inngest-js/commit/a452cf1b80e9e2346c21cffdd046d558b0cf4d8b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `referenceFunction()`, allowing easier, typed invocation of functions across apps and languages
+
+- [#459](https://github.com/inngest/inngest-js/pull/459) [`eec41d2`](https://github.com/inngest/inngest-js/commit/eec41d23de01f4c977cbcc8bfd986660e0ccbb96) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add new `Inngest.Any` and `InngestFunction.Any` type helpers
+
+### Patch Changes
+
+- [#460](https://github.com/inngest/inngest-js/pull/460) [`a225206`](https://github.com/inngest/inngest-js/commit/a225206e3040463c3f4fd558ec71f3ae21e2f56d) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Add exports for `FinishedEventPayload` and `Context` types to fix a TypeScript error when using Inngest in projects with `composite` setting in `tsconfig`.
+
+## 3.9.0
+
+### Minor Changes
+
+- [#453](https://github.com/inngest/inngest-js/pull/453) [`be6eb2a`](https://github.com/inngest/inngest-js/commit/be6eb2a6abb83578f96fbb17591c7549fbc343e9) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Pass `reqArgs` to `onFunctionRun` middleware hook to be able to use request values within an Inngest function
+
+## 3.8.0
+
+### Minor Changes
+
+- [#441](https://github.com/inngest/inngest-js/pull/441) [`cb0496a`](https://github.com/inngest/inngest-js/commit/cb0496a830662a2f90002feb705f5976a15ab4d3) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Add new `"inngest/astro"` serve handler
+
+## 3.7.4
+
+### Patch Changes
+
+- [#434](https://github.com/inngest/inngest-js/pull/434) [`cb953ee`](https://github.com/inngest/inngest-js/commit/cb953eed62230f6dbf6a689ca24fc9440fc09855) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix bad wildcard export `inngest/components/*` for ESM/CJS compatibility
+
+- [#440](https://github.com/inngest/inngest-js/pull/440) [`0fc642d`](https://github.com/inngest/inngest-js/commit/0fc642de152b7abc19633537ae742cea8a41d958) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix an issue where Sentry's wrapping of `inngest/express` caused Sentry to throw a runtime error during instantiation
+
 ## 3.7.3
 
 ### Patch Changes

@@ -18,6 +18,8 @@ export type {
 export { InngestCommHandler } from "./components/InngestCommHandler";
 export type { ServeHandlerOptions } from "./components/InngestCommHandler";
 export type { InngestFunction } from "./components/InngestFunction";
+export { referenceFunction } from "./components/InngestFunctionReference";
+export type { InngestFunctionReference } from "./components/InngestFunctionReference";
 export { InngestMiddleware } from "./components/InngestMiddleware";
 export type {
   MiddlewareOptions,
@@ -26,6 +28,7 @@ export type {
 } from "./components/InngestMiddleware";
 export { NonRetriableError } from "./components/NonRetriableError";
 export { RetryAfterError } from "./components/RetryAfterError";
+export { StepError } from "./components/StepError";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts";
 export { slugify } from "./helpers/strings";
 export type {
@@ -38,10 +41,12 @@ export { ProxyLogger } from "./middleware/logger";
 export type { LogArg } from "./middleware/logger";
 export type {
   ClientOptions,
+  Context,
   EventNameFromTrigger,
   EventPayload,
   FailureEventArgs,
   FailureEventPayload,
+  FinishedEventPayload,
   FunctionOptions,
   FunctionTrigger,
   Handler,
