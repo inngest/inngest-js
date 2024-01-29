@@ -1199,6 +1199,7 @@ export type EventNameFromTrigger<
  */
 export type SupportedFrameworkName =
   | "astro"
+  | "bun"
   | "cloudflare-pages"
   | "digitalocean"
   | "edge"
