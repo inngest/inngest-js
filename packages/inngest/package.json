@@ -42,6 +42,11 @@
       "import": "./astro.js",
       "types": "./astro.d.ts"
     },
+    "./bun": {
+      "require": "./bun.js",
+      "import": "./bun.js",
+      "types": "./bun.d.ts"
+    },
     "./cloudflare": {
       "require": "./cloudflare.js",
       "import": "./cloudflare.js",
