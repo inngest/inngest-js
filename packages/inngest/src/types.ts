@@ -54,15 +54,17 @@ export type GetEvents<T extends Inngest.Any> = T extends Inngest<infer U>
 
 export const failureEventErrorSchema = z
   .object({
-    name: z.string().trim().optional().default("Error"),
+    name: z.string().trim().optional(),
     error: z.string().trim().optional(),
     message: z.string().trim().optional(),
     stack: z.string().trim().optional(),
   })
-  .transform(({ error, ...val }) => {
+  .catch({})
+  .transform((val) => {
     return {
-      ...val,
-      message: error || val.message || "Unknown error",
+      name: val.name || "Error",
+      message: val.message || val.error || "Unknown error",
+      stack: val.stack,
     };
   });
 
