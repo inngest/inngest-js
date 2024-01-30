@@ -52,13 +52,21 @@ export type GetEvents<T extends Inngest.Any> = T extends Inngest<infer U>
   ? EventsFromOpts<U>
   : never;
 
-export const failureEventErrorSchema = z.object({
-  name: z.string(),
-  message: z.string(),
-  stack: z.string().optional(),
-  cause: z.string().optional(),
-  status: z.number().optional(),
-});
+export const failureEventErrorSchema = z
+  .object({
+    name: z.string().trim().optional(),
+    error: z.string().trim().optional(),
+    message: z.string().trim().optional(),
+    stack: z.string().trim().optional(),
+  })
+  .catch({})
+  .transform((val) => {
+    return {
+      name: val.name || "Error",
+      message: val.message || val.error || "Unknown error",
+      stack: val.stack,
+    };
+  });
 
 export type MiddlewareStack = [
   InngestMiddleware<MiddlewareOptions>,
