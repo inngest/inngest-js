@@ -456,15 +456,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * we should return a `NonRetriableError` to stop execution.
      */
     if (typeof output.error !== "undefined") {
-      const serializedError = serializeError(output.error);
-      output.data = serializedError;
-
-      if (output.error === this.state.recentlyRejectedStepError) {
-        output.error = new NonRetriableError(serializedError.message, {
-          cause: output.error,
-        });
-        output.data = serializeError(output.error);
-      }
+      output.data = serializeError(output.error);
     }
 
     const transformedOutput = await this.state.hooks?.transformOutput?.({
@@ -479,7 +471,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * Ensure we give middleware the chance to decide on retriable behaviour
        * by looking at the error returned from output transformation.
        */
-      let retriable: boolean | string = !(error instanceof NonRetriableError);
+      let retriable: boolean | string = !(
+        error instanceof NonRetriableError || error instanceof StepError
+      );
       if (retriable && error instanceof RetryAfterError) {
         retriable = error.retryAfter;
       }
@@ -761,24 +755,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
             if (typeof stepState.data !== "undefined") {
               resolve(stepState.data);
-            } else if (opId.op === StepOpCode.InvokeFunction) {
-              const errCheck = z
-                .object({ message: z.string() })
-                .safeParse(stepState.error);
-
-              const errMessage = [
-                "Invoking function failed",
-                errCheck.success ? errCheck.data.message : "",
-              ]
-                .map((s) => s.trim())
-                .filter(Boolean)
-                .join("; ");
-
-              const err = new NonRetriableError(errMessage, {
-                cause: stepState.error,
-              });
-
-              reject(err);
             } else {
               this.state.recentlyRejectedStepError = new StepError(
                 opId.id,

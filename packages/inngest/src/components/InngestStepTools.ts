@@ -390,9 +390,6 @@ export const createStepTools = <
      *
      * A string ID can also be passed to reference functions outside of the
      * current app.
-     *
-     * If a function isn't found or otherwise errors, the step will fail and
-     * throw a `NonRetriableError`.
      */
     invoke: createTool<
       <TFunction extends InvokeTargetFunctionDefinition>(
