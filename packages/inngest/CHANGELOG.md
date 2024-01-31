@@ -1,5 +1,19 @@
 # inngest
 
+## 3.13.0
+
+### Minor Changes
+
+- [#475](https://github.com/inngest/inngest-js/pull/475) [`16f02e9`](https://github.com/inngest/inngest-js/commit/16f02e9af43065bb37490c350f2c4040293e0dff) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `"inngest/bun"` serve handler for use with `Bun.serve()`
+
+### Patch Changes
+
+- [#476](https://github.com/inngest/inngest-js/pull/476) [`4d52f01`](https://github.com/inngest/inngest-js/commit/4d52f01897412db6113eda9d1ebe6bd929b57a79) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Make `data.error` parsing for `inngest/function.failed` more resilient
+
+- [#478](https://github.com/inngest/inngest-js/pull/478) [`9887ac4`](https://github.com/inngest/inngest-js/commit/9887ac474c993f4db9a570bea7986406d05de685) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove sending `hash` when syncing
+
+- [#474](https://github.com/inngest/inngest-js/pull/474) [`b3a7b39`](https://github.com/inngest/inngest-js/commit/b3a7b395066f86a7c6227d94b9b007b350f33a7c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Improve UI when showing an unhandled `StepError`
+
 ## 3.12.0
 
 ### Minor Changes
