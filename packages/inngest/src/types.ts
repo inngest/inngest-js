@@ -1088,11 +1088,6 @@ export interface RegisterRequest {
    * The functions available at this particular handler.
    */
   functions: FunctionConfig[];
-
-  /**
-   * The hash of the current commit used to track deploys
-   */
-  hash?: string;
 }
 
 /**

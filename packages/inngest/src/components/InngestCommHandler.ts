@@ -1058,8 +1058,6 @@ export class InngestCommHandler<
       v: "0.1",
     };
 
-    // Calculate the checksum of the body... without the checksum itself being included.
-    body.hash = sha256().update(canonicalize(body)).digest("hex");
     return body;
   }
 
