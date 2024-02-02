@@ -2,7 +2,7 @@ import { EventSchemas } from "@local/components/EventSchemas";
 import { Inngest, type GetEvents } from "@local/components/Inngest";
 import { type internalEvents } from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
-import { type EventPayload } from "@local/types";
+import { type EventPayload, type FailureEventPayload } from "@local/types";
 import { assertType, type IsEqual } from "type-plus";
 import { z } from "zod";
 
@@ -24,6 +24,40 @@ describe("EventSchemas", () => {
     >]["name"];
 
     assertType<IsEqual<Expected, Actual>>(true);
+  });
+
+  test("providing no schemas keeps all types generic", () => {
+    const inngest = new Inngest({
+      id: "test",
+      eventKey: "test-key-123",
+    });
+
+    inngest.createFunction({ id: "test" }, { event: "foo" }, ({ event }) => {
+      assertType<string>(event.name);
+      assertType<IsAny<typeof event.data>>(true);
+    });
+  });
+
+  test("can use internal string literal types as triggers if any event schemas are defined", () => {
+    const schemas = new EventSchemas();
+
+    const inngest = new Inngest({
+      id: "test",
+      schemas,
+      eventKey: "test-key-123",
+    });
+
+    inngest.createFunction(
+      { id: "test" },
+      { event: "inngest/function.failed" },
+      ({ event }) => {
+        assertType<
+          | `${internalEvents.FunctionInvoked}`
+          | `${internalEvents.FunctionFailed}`
+        >(event.name);
+        assertType<FailureEventPayload["data"]>(event.data);
+      }
+    );
   });
 
   describe("fromRecord", () => {
