@@ -3,7 +3,6 @@ import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
   type EventsFromOpts,
-  type Inngest,
   type builtInMiddleware,
 } from "./components/Inngest";
 import { type InngestFunction } from "./components/InngestFunction";
@@ -22,35 +21,6 @@ import {
   type StrictUnion,
 } from "./helpers/types";
 import { type Logger } from "./middleware/logger";
-
-/**
- * When passed an Inngest client, will return all event types for that client.
- *
- * It's recommended to use this instead of directly reusing your event types, as
- * Inngest will add extra properties and internal events such as `ts` and
- * `inngest/function.failed`.
- *
- * @example
- * ```ts
- * import { EventSchemas, Inngest, type GetEvents } from "inngest";
- *
- * export const inngest = new Inngest({
- *   id: "example-app",
- *   schemas: new EventSchemas().fromRecord<{
- *     "app/user.created": { data: { userId: string } };
- *   }>(),
- * });
- *
- * type Events = GetEvents<typeof inngest>;
- * type AppUserCreated = Events["app/user.created"];
- *
- * ```
- *
- * @public
- */
-export type GetEvents<T extends Inngest.Any> = T extends Inngest<infer U>
-  ? EventsFromOpts<U>
-  : never;
 
 export const failureEventErrorSchema = z
   .object({
