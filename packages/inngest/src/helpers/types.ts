@@ -34,6 +34,9 @@ export type SendEventPayload<Events extends Record<string, EventPayload>> =
     }[keyof WithoutInternal<Events>]
   >;
 
+/**
+ * @public
+ */
 export type WithoutInternal<T extends Record<string, EventPayload>> = {
   [K in keyof T as K extends `inngest/${string}` ? never : K]: T[K];
 };

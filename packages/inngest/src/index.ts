@@ -36,6 +36,7 @@ export type {
   StrictUnion,
   StrictUnionHelper,
   UnionKeys,
+  WithoutInternal,
 } from "./helpers/types";
 export { ProxyLogger } from "./middleware/logger";
 export type { LogArg } from "./middleware/logger";

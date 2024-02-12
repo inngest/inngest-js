@@ -163,13 +163,13 @@ export type FunctionTrigger<T = string> = {
 };
 
 // @public
-export type GetEvents<TInngest extends Inngest<any>> = EventsFromOpts<ClientOptionsFromInngest<TInngest>>;
+export type GetEvents<TInngest extends Inngest.Any, TWithInternal extends boolean = false> = TWithInternal extends true ? EventsFromOpts<ClientOptionsFromInngest<TInngest>> : WithoutInternal<EventsFromOpts<ClientOptionsFromInngest<TInngest>>>;
 
 // Warning: (ae-forgotten-export) The symbol "ExtendWithMiddleware" needs to be exported by the entry point index.d.ts
 // Warning: (ae-forgotten-export) The symbol "builtInMiddleware" needs to be exported by the entry point index.d.ts
 //
 // @public
-export type GetFunctionInput<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest> & string = keyof GetEvents<TInngest> & string> = Parameters<Handler<ClientOptionsFromInngest<TInngest>, GetEvents<TInngest>, TTrigger, ExtendWithMiddleware<[
+export type GetFunctionInput<TInngest extends Inngest<any>, TTrigger extends keyof GetEvents<TInngest, true> & string = keyof GetEvents<TInngest, true> & string> = Parameters<Handler<ClientOptionsFromInngest<TInngest>, GetEvents<TInngest, true>, TTrigger, ExtendWithMiddleware<[
 typeof builtInMiddleware,
 NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>
 ]>>>[0];
@@ -559,6 +559,11 @@ export type TriggerOptions<T extends string> = StrictUnion<{
 // @public
 export type UnionKeys<T> = T extends T ? keyof T : never;
 
+// @public (undocumented)
+export type WithoutInternal<T extends Record<string, EventPayload>> = {
+    [K in keyof T as K extends `inngest/${string}` ? never : K]: T[K];
+};
+
 // @public
 export type ZodEventSchemas = Record<string, {
     data?: z_2.ValidZodValue;
@@ -578,8 +583,8 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:320:5 - (ae-forgotten-export) The symbol "MiddlewareRunOutput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:339:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:346:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
-// src/types.ts:86:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:841:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:56:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
+// src/types.ts:811:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

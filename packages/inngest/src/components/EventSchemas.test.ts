@@ -8,7 +8,8 @@ import { z } from "zod";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Schemas<T extends EventSchemas<any>> = GetEvents<
-  Inngest<{ id: "test"; schemas: T }>
+  Inngest<{ id: "test"; schemas: T }>,
+  true
 >;
 
 describe("EventSchemas", () => {

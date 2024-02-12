@@ -3,6 +3,7 @@ import {
   Inngest,
   InngestMiddleware,
   type EventPayload,
+  type GetEvents,
   type GetFunctionInput,
   type GetStepTools,
 } from "@local";
@@ -784,6 +785,17 @@ describe("helper types", () => {
     T,
     K extends string | number | symbol,
   > = T extends Record<K, infer U> ? U : never;
+
+  describe("type GetEvents", () => {
+    test("can use GetEvents to send an event", () => {
+      type T0 = GetEvents<typeof inngest>;
+      type T1 = T0[keyof T0];
+
+      const _myEventSendingFn = (events: T1[]) => {
+        void inngest.send(events);
+      };
+    });
+  });
 
   describe("type GetFunctionInput", () => {
     type T0 = GetFunctionInput<typeof inngest>;

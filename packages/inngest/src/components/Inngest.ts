@@ -18,7 +18,11 @@ import {
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
 import { stringify } from "../helpers/strings";
-import { type ExclusiveKeys, type SendEventPayload } from "../helpers/types";
+import {
+  type ExclusiveKeys,
+  type SendEventPayload,
+  type WithoutInternal,
+} from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
   sendEventResponseSchema,
@@ -736,12 +740,15 @@ export type GetStepTools<
 export type GetFunctionInput<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TInngest extends Inngest<any>,
-  TTrigger extends keyof GetEvents<TInngest> &
-    string = keyof GetEvents<TInngest> & string,
+  TTrigger extends keyof GetEvents<TInngest, true> & string = keyof GetEvents<
+    TInngest,
+    true
+  > &
+    string,
 > = Parameters<
   Handler<
     ClientOptionsFromInngest<TInngest>,
-    GetEvents<TInngest>,
+    GetEvents<TInngest, true>,
     TTrigger,
     ExtendWithMiddleware<
       [
@@ -810,24 +817,36 @@ export type GetFunctionOutputFromReferenceInngestFunction<
   : unknown;
 
 /**
- * A helper type to extract the inferred event schemas from a given Inngest
- * instance.
+ * When passed an Inngest client, will return all event types for that client.
  *
- * It's recommended to use this type instead of directly passing
- * schemas around, as it will ensure that extra properties such as `ts` and
- * `user` are always added.
+ * It's recommended to use this instead of directly reusing your event types, as
+ * Inngest will add extra properties and internal events such as `ts` and
+ * `inngest/function.finished`.
  *
  * @example
  * ```ts
+ * import { EventSchemas, Inngest, type GetEvents } from "inngest";
+ *
+ * export const inngest = new Inngest({
+ *   id: "example-app",
+ *   schemas: new EventSchemas().fromRecord<{
+ *     "app/user.created": { data: { userId: string } };
+ *   }>(),
+ * });
+ *
  * type Events = GetEvents<typeof inngest>;
+ * type AppUserCreated = Events["app/user.created"];
+ *
  * ```
  *
  * @public
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type GetEvents<TInngest extends Inngest<any>> = EventsFromOpts<
-  ClientOptionsFromInngest<TInngest>
->;
+export type GetEvents<
+  TInngest extends Inngest.Any,
+  TWithInternal extends boolean = false,
+> = TWithInternal extends true
+  ? EventsFromOpts<ClientOptionsFromInngest<TInngest>>
+  : WithoutInternal<EventsFromOpts<ClientOptionsFromInngest<TInngest>>>;
 
 /**
  * A helper type to extract the inferred options from a given Inngest instance.
