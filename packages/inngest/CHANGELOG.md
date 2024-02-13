@@ -1,5 +1,19 @@
 # inngest
 
+## 3.14.0
+
+### Minor Changes
+
+- [#484](https://github.com/inngest/inngest-js/pull/484) [`c2b6ec5`](https://github.com/inngest/inngest-js/commit/c2b6ec5336081dc11f94dece0d3b7b54c2c3d419) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `timeout` to `step.invoke()` options
+
+### Patch Changes
+
+- [#480](https://github.com/inngest/inngest-js/pull/480) [`e1940e4`](https://github.com/inngest/inngest-js/commit/e1940e434192d33b9444106353775063d258a660) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `GetEvents<>` helper returning internal events by default
+
+- [#479](https://github.com/inngest/inngest-js/pull/479) [`1b2eaed`](https://github.com/inngest/inngest-js/commit/1b2eaed03300a841f6b7c02eaf7baa225d59a049) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix requiring enum value when using an internal event as a trigger
+
+- [#485](https://github.com/inngest/inngest-js/pull/485) [`16973c0`](https://github.com/inngest/inngest-js/commit/16973c05b7505b1368a370c402cde8c0b3b51a3f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix API failures being masked at runtime when fetching large step data or event batches fails
+
 ## 3.13.0
 
 ### Minor Changes
