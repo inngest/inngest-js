@@ -620,6 +620,54 @@ describe("invoke", () => {
         });
       });
     });
+
+    describe("timeouts", () => {
+      test("return correct timeout if string `timeout` given", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            timeout: "1m",
+          })
+        ).resolves.toMatchObject({
+          opts: {
+            timeout: "1m",
+          },
+        });
+      });
+
+      test("return correct timeout if date `timeout` given", async () => {
+        const upcoming = new Date();
+        upcoming.setDate(upcoming.getDate() + 6);
+        upcoming.setHours(upcoming.getHours() + 1);
+
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            timeout: upcoming,
+          })
+        ).resolves.toMatchObject({
+          opts: {
+            timeout: expect.stringMatching(upcoming.toISOString()),
+          },
+        });
+      });
+
+      test("return correct timeout if `number` `timeout` given", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            timeout: 60000,
+          })
+        ).resolves.toMatchObject({
+          opts: {
+            timeout: "1m",
+          },
+        });
+      });
+    });
   });
 
   describe("types", () => {

@@ -396,13 +396,14 @@ export const createStepTools = <
         idOrOptions: StepOptionsOrId,
         opts: InvocationOpts<TFunction>
       ) => InvocationResult<GetFunctionOutput<TFunction>>
-    >(({ id, name }, opts) => {
+    >(({ id, name }, invokeOpts) => {
       // Create a discriminated union to operate on based on the input types
       // available for this tool.
       const payloadSchema = z.object({
         data: z.record(z.any()).optional(),
         user: z.record(z.any()).optional(),
         v: z.string().optional(),
+        timeout: z.union([z.number(), z.string(), z.date()]).optional(),
       });
 
       const parsedFnOpts = payloadSchema
@@ -422,7 +423,7 @@ export const createStepTools = <
             function: z.instanceof(InngestFunctionReference),
           })
         )
-        .safeParse(opts);
+        .safeParse(invokeOpts);
 
       if (!parsedFnOpts.success) {
         throw new Error(
@@ -430,24 +431,32 @@ export const createStepTools = <
         );
       }
 
-      const { _type, function: fn, data, user, v } = parsedFnOpts.data;
+      const { _type, function: fn, data, user, v, timeout } = parsedFnOpts.data;
       const payload = { data, user, v } satisfies MinimalEventPayload;
+      const opts: {
+        payload: MinimalEventPayload;
+        function_id: string;
+        timeout?: string;
+      } = {
+        payload,
+        function_id: "",
+        timeout: typeof timeout === "undefined" ? undefined : timeStr(timeout),
+      };
 
-      let functionId: string;
       switch (_type) {
         case "fnInstance":
-          functionId = fn.id(fn["client"].id);
+          opts.function_id = fn.id(fn["client"].id);
           break;
 
         case "fullId":
           console.warn(
             `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`
           );
-          functionId = fn;
+          opts.function_id = fn;
           break;
 
         case "refInstance":
-          functionId = [fn.opts.appId || client.id, fn.opts.functionId]
+          opts.function_id = [fn.opts.appId || client.id, fn.opts.functionId]
             .filter(Boolean)
             .join("-");
           break;
@@ -457,10 +466,7 @@ export const createStepTools = <
         id,
         op: StepOpCode.InvokeFunction,
         displayName: name ?? id,
-        opts: {
-          function_id: functionId,
-          payload,
-        },
+        opts,
       };
     }),
   };
@@ -473,7 +479,24 @@ type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
 };
 
 type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
-  InvocationTargetOpts<TFunction> & TriggerEventFromFunction<TFunction>;
+  InvocationTargetOpts<TFunction> &
+    TriggerEventFromFunction<TFunction> & {
+      /**
+       * The step function will wait for the invocation to finish for a maximum
+       * of this time, at which point the retured promise will be rejected
+       * instead of resolved with the output of the invoked function.
+       *
+       * Note that the invoked function will continue to run even if this step
+       * times out.
+       *
+       * The time to wait can be specified using a `number` of milliseconds, an
+       * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`,
+       * or a `Date` object.
+       *
+       * {@link https://npm.im/ms}
+       */
+      timeout?: number | string | Date;
+    };
 
 /**
  * A set of optional parameters given to a `waitForEvent` call to control how
