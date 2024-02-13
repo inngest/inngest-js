@@ -486,6 +486,9 @@ type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
        * of this time, at which point the retured promise will be rejected
        * instead of resolved with the output of the invoked function.
        *
+       * Note that the invoked function will continue to run even if this step
+       * times out.
+       *
        * The time to wait can be specified using a `number` of milliseconds, an
        * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`,
        * or a `Date` object.
