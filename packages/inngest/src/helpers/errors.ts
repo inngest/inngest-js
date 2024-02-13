@@ -342,6 +342,19 @@ const isError = (err: unknown): err is Error => {
 };
 
 /**
+ * Given an `unknown` object, retrieve the `message` property from it, or fall
+ * back to the `fallback` string if it doesn't exist or is empty.
+ */
+export const getErrorMessage = (err: unknown, fallback: string): string => {
+  const { message } = z
+    .object({ message: z.string().min(1) })
+    .catch({ message: fallback })
+    .parse(err);
+
+  return message;
+};
+
+/**
  * Given a {@link PrettyError}, return a nicely-formatted string ready to log
  * or throw.
  *
