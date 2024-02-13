@@ -2,21 +2,62 @@ import { EventSchemas } from "@local/components/EventSchemas";
 import { Inngest, type GetEvents } from "@local/components/Inngest";
 import { type internalEvents } from "@local/helpers/consts";
 import { type IsAny } from "@local/helpers/types";
-import { type EventPayload } from "@local/types";
+import { type EventPayload, type FailureEventPayload } from "@local/types";
 import { assertType, type IsEqual } from "type-plus";
 import { z } from "zod";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Schemas<T extends EventSchemas<any>> = GetEvents<
-  Inngest<{ id: "test"; schemas: T }>
+  Inngest<{ id: "test"; schemas: T }>,
+  true
 >;
 
 describe("EventSchemas", () => {
-  test("creates generic types by default", () => {
+  test("adds internal types by default", () => {
     const schemas = new EventSchemas();
 
-    assertType<IsEqual<Schemas<typeof schemas>, Record<string, EventPayload>>>(
-      true
+    type Expected =
+      | `${internalEvents.FunctionFailed}`
+      | `${internalEvents.FunctionFinished}`;
+
+    type Actual = Schemas<typeof schemas>[keyof Schemas<
+      typeof schemas
+    >]["name"];
+
+    assertType<IsEqual<Expected, Actual>>(true);
+  });
+
+  test("providing no schemas keeps all types generic", () => {
+    const inngest = new Inngest({
+      id: "test",
+      eventKey: "test-key-123",
+    });
+
+    inngest.createFunction({ id: "test" }, { event: "foo" }, ({ event }) => {
+      assertType<string>(event.name);
+      assertType<IsAny<typeof event.data>>(true);
+    });
+  });
+
+  test("can use internal string literal types as triggers if any event schemas are defined", () => {
+    const schemas = new EventSchemas();
+
+    const inngest = new Inngest({
+      id: "test",
+      schemas,
+      eventKey: "test-key-123",
+    });
+
+    inngest.createFunction(
+      { id: "test" },
+      { event: "inngest/function.failed" },
+      ({ event }) => {
+        assertType<
+          | `${internalEvents.FunctionInvoked}`
+          | `${internalEvents.FunctionFailed}`
+        >(event.name);
+        assertType<FailureEventPayload["data"]>(event.data);
+      }
     );
   });
 
@@ -453,6 +494,63 @@ describe("EventSchemas", () => {
           >
         >(true);
       });
+
+      test("can use a discriminated union", () => {
+        const schemas = new EventSchemas().fromZod({
+          "test.event": {
+            data: z.discriminatedUnion("shared", [
+              z.object({
+                shared: z.literal("foo"),
+                foo: z.string(),
+              }),
+              z.object({
+                shared: z.literal("bar"),
+                bar: z.number(),
+              }),
+            ]),
+          },
+        });
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "foo" as const,
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "bar" as const,
+          bar: 0,
+        });
+      });
+
+      test("can use a union with valid values", () => {
+        const schemas = new EventSchemas().fromZod({
+          "test.event": {
+            data: z.union([
+              z.object({
+                foo: z.string(),
+              }),
+              z.object({
+                bar: z.number(),
+              }),
+            ]),
+          },
+        });
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          bar: 0,
+        });
+      });
+
+      test("cannot use a union with invalid values", () => {
+        new EventSchemas().fromZod({
+          // @ts-expect-error - data must be object|any
+          "test.event": { data: z.union([z.string(), z.number()]) },
+        });
+      });
     });
 
     describe("literal array", () => {
@@ -586,6 +684,68 @@ describe("EventSchemas", () => {
             string | undefined
           >
         >(true);
+      });
+
+      test("can use a discriminated union", () => {
+        const schemas = new EventSchemas().fromZod([
+          z.object({
+            name: z.literal("test.event"),
+            data: z.discriminatedUnion("shared", [
+              z.object({
+                shared: z.literal("foo"),
+                foo: z.string(),
+              }),
+              z.object({
+                shared: z.literal("bar"),
+                bar: z.number(),
+              }),
+            ]),
+          }),
+        ]);
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "foo" as const,
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "bar" as const,
+          bar: 0,
+        });
+      });
+
+      test("can use a union with valid values", () => {
+        const schemas = new EventSchemas().fromZod([
+          z.object({
+            name: z.literal("test.event"),
+            data: z.union([
+              z.object({
+                foo: z.string(),
+              }),
+              z.object({
+                bar: z.number(),
+              }),
+            ]),
+          }),
+        ]);
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          bar: 0,
+        });
+      });
+
+      test("cannot use a union with invalid values", () => {
+        new EventSchemas().fromZod([
+          // @ts-expect-error - data must be object|any
+          z.object({
+            name: z.literal("test.event"),
+            data: z.union([z.string(), z.number()]),
+          }),
+        ]);
       });
     });
   });

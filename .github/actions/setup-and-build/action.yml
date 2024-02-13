@@ -30,6 +30,8 @@ runs:
     - run: npm i -g @antfu/ni
       shell: bash
 
+    - uses: oven-sh/setup-bun@v1
+
     - name: Install dependencies
       if: ${{ inputs.install-dependencies == 'true' }}
       run: pnpm install

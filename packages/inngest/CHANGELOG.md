@@ -1,5 +1,103 @@
 # inngest
 
+## 3.14.0
+
+### Minor Changes
+
+- [#484](https://github.com/inngest/inngest-js/pull/484) [`c2b6ec5`](https://github.com/inngest/inngest-js/commit/c2b6ec5336081dc11f94dece0d3b7b54c2c3d419) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `timeout` to `step.invoke()` options
+
+### Patch Changes
+
+- [#480](https://github.com/inngest/inngest-js/pull/480) [`e1940e4`](https://github.com/inngest/inngest-js/commit/e1940e434192d33b9444106353775063d258a660) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `GetEvents<>` helper returning internal events by default
+
+- [#479](https://github.com/inngest/inngest-js/pull/479) [`1b2eaed`](https://github.com/inngest/inngest-js/commit/1b2eaed03300a841f6b7c02eaf7baa225d59a049) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix requiring enum value when using an internal event as a trigger
+
+- [#485](https://github.com/inngest/inngest-js/pull/485) [`16973c0`](https://github.com/inngest/inngest-js/commit/16973c05b7505b1368a370c402cde8c0b3b51a3f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix API failures being masked at runtime when fetching large step data or event batches fails
+
+## 3.13.0
+
+### Minor Changes
+
+- [#475](https://github.com/inngest/inngest-js/pull/475) [`16f02e9`](https://github.com/inngest/inngest-js/commit/16f02e9af43065bb37490c350f2c4040293e0dff) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `"inngest/bun"` serve handler for use with `Bun.serve()`
+
+### Patch Changes
+
+- [#476](https://github.com/inngest/inngest-js/pull/476) [`4d52f01`](https://github.com/inngest/inngest-js/commit/4d52f01897412db6113eda9d1ebe6bd929b57a79) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Make `data.error` parsing for `inngest/function.failed` more resilient
+
+- [#478](https://github.com/inngest/inngest-js/pull/478) [`9887ac4`](https://github.com/inngest/inngest-js/commit/9887ac474c993f4db9a570bea7986406d05de685) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove sending `hash` when syncing
+
+- [#474](https://github.com/inngest/inngest-js/pull/474) [`b3a7b39`](https://github.com/inngest/inngest-js/commit/b3a7b395066f86a7c6227d94b9b007b350f33a7c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Improve UI when showing an unhandled `StepError`
+
+## 3.12.0
+
+### Minor Changes
+
+- [#411](https://github.com/inngest/inngest-js/pull/411) [`3b35c1c`](https://github.com/inngest/inngest-js/commit/3b35c1c9cfa9d96d88346e874089dc9d3aa9a5de) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add handling of per-step errors and returning step names during error cases to better display issues in the UI
+
+### Patch Changes
+
+- [#469](https://github.com/inngest/inngest-js/pull/469) [`2f01a27`](https://github.com/inngest/inngest-js/commit/2f01a27ab9af871af25349d9be899ae314949485) Thanks [@dependabot](https://github.com/apps/dependabot)! - Bump vite from 4.5.1 to 4.5.2 for a security fix
+
+## 3.11.0
+
+### Minor Changes
+
+- [#467](https://github.com/inngest/inngest-js/pull/467) [`ca93ef8`](https://github.com/inngest/inngest-js/commit/ca93ef87384146c5b852fd74c57b23fecd75685c) Thanks [@tonyhb](https://github.com/tonyhb)! - Add timeouts to debounce configuration
+
+### Patch Changes
+
+- [#463](https://github.com/inngest/inngest-js/pull/463) [`61562bd`](https://github.com/inngest/inngest-js/commit/61562bdaadb2f5a07b8c9e354a3c910e5bf586fe) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `data` not being required during invocation with a schema+reference
+
+- [#462](https://github.com/inngest/inngest-js/pull/462) [`c449efe`](https://github.com/inngest/inngest-js/commit/c449efef4709ab3aa8c76f4a078e1a793599f717) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix not allowing a single-element `concurrency` option in function definitions
+
+- [#466](https://github.com/inngest/inngest-js/pull/466) [`ecde5b6`](https://github.com/inngest/inngest-js/commit/ecde5b64d17cdc01d3416ca3a6b45b4d21dac234) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix some out-of-date comments and examples
+
+## 3.10.0
+
+### Minor Changes
+
+- [#449](https://github.com/inngest/inngest-js/pull/449) [`a452cf1`](https://github.com/inngest/inngest-js/commit/a452cf1b80e9e2346c21cffdd046d558b0cf4d8b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `referenceFunction()`, allowing easier, typed invocation of functions across apps and languages
+
+- [#459](https://github.com/inngest/inngest-js/pull/459) [`eec41d2`](https://github.com/inngest/inngest-js/commit/eec41d23de01f4c977cbcc8bfd986660e0ccbb96) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add new `Inngest.Any` and `InngestFunction.Any` type helpers
+
+### Patch Changes
+
+- [#460](https://github.com/inngest/inngest-js/pull/460) [`a225206`](https://github.com/inngest/inngest-js/commit/a225206e3040463c3f4fd558ec71f3ae21e2f56d) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Add exports for `FinishedEventPayload` and `Context` types to fix a TypeScript error when using Inngest in projects with `composite` setting in `tsconfig`.
+
+## 3.9.0
+
+### Minor Changes
+
+- [#453](https://github.com/inngest/inngest-js/pull/453) [`be6eb2a`](https://github.com/inngest/inngest-js/commit/be6eb2a6abb83578f96fbb17591c7549fbc343e9) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Pass `reqArgs` to `onFunctionRun` middleware hook to be able to use request values within an Inngest function
+
+## 3.8.0
+
+### Minor Changes
+
+- [#441](https://github.com/inngest/inngest-js/pull/441) [`cb0496a`](https://github.com/inngest/inngest-js/commit/cb0496a830662a2f90002feb705f5976a15ab4d3) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Add new `"inngest/astro"` serve handler
+
+## 3.7.4
+
+### Patch Changes
+
+- [#434](https://github.com/inngest/inngest-js/pull/434) [`cb953ee`](https://github.com/inngest/inngest-js/commit/cb953eed62230f6dbf6a689ca24fc9440fc09855) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix bad wildcard export `inngest/components/*` for ESM/CJS compatibility
+
+- [#440](https://github.com/inngest/inngest-js/pull/440) [`0fc642d`](https://github.com/inngest/inngest-js/commit/0fc642de152b7abc19633537ae742cea8a41d958) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix an issue where Sentry's wrapping of `inngest/express` caused Sentry to throw a runtime error during instantiation
+
+## 3.7.3
+
+### Patch Changes
+
+- [#432](https://github.com/inngest/inngest-js/pull/432) [`ce354f3`](https://github.com/inngest/inngest-js/commit/ce354f33f46c97e37ed3794996058cd64a84b678) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add ability to use `z.discriminatedUnion` and `z.union` in schemas
+
+## 3.7.2
+
+### Patch Changes
+
+- [#426](https://github.com/inngest/inngest-js/pull/426) [`49a58d1`](https://github.com/inngest/inngest-js/commit/49a58d1d5fe407202774dfbbd29bbb40f29504ed) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix internal `inngest/*` events not being present when using `new EventSchemas()`
+
+- [#427](https://github.com/inngest/inngest-js/pull/427) [`5cf349c`](https://github.com/inngest/inngest-js/commit/5cf349ccece147f4c6f69ad5389b483e2b7c5d91) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `EventPayload.id` missing from typing when attempting to send events with `inngest.send()` or `step.sendEvent()`
+
 ## 3.7.1
 
 ### Patch Changes

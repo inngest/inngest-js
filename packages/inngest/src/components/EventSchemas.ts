@@ -1,7 +1,15 @@
 import { type Simplify } from "type-fest";
+import {
+  type FnFailedEventName,
+  type FnFinishedEventName,
+} from "../helpers/consts";
 import { type IsEmptyObject, type IsStringLiteral } from "../helpers/types";
 import type * as z from "../helpers/validators/zod";
-import { type EventPayload } from "../types";
+import {
+  type EventPayload,
+  type FailureEventPayload,
+  type FinishedEventPayload,
+} from "../types";
 
 /**
  * Declares the shape of an event schema we expect from the user. This may be
@@ -63,8 +71,8 @@ type PreventClashingNames<T> = CheckNever<{
  */
 export type LiteralZodEventSchema = z.ZodObject<{
   name: z.ZodLiteral<string>;
-  data?: z.AnyZodObject | z.ZodAny;
-  user?: z.AnyZodObject | z.ZodAny;
+  data?: z.ValidZodValue;
+  user?: z.ValidZodValue;
 }>;
 
 /**
@@ -83,8 +91,8 @@ export type LiteralZodEventSchemas = LiteralZodEventSchema[];
 export type ZodEventSchemas = Record<
   string,
   {
-    data?: z.AnyZodObject | z.ZodAny;
-    user?: z.AnyZodObject | z.ZodAny;
+    data?: z.ValidZodValue;
+    user?: z.ValidZodValue;
   }
 >;
 
@@ -196,7 +204,7 @@ export type Combine<
  *
  * ```ts
  * export const inngest = new Inngest({
- *   name: "My App",
+ *   id: "my-app",
  *   schemas: new EventSchemas().fromZod({
  *     "app/user.created": {
  *       data: z.object({
@@ -210,7 +218,12 @@ export type Combine<
  *
  * @public
  */
-export class EventSchemas<S extends Record<string, EventPayload>> {
+export class EventSchemas<
+  S extends Record<string, EventPayload> = {
+    [FnFailedEventName]: FailureEventPayload;
+    [FnFinishedEventName]: FinishedEventPayload;
+  },
+> {
   /**
    * Use generated Inngest types to type events.
    */
@@ -225,7 +238,7 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
    *
    * ```ts
    * export const inngest = new Inngest({
-   *   name: "My App",
+   *   id: "my-app",
    *   schemas: new EventSchemas().fromRecord<{
    *     "app/user.created": {
    *       data: {
@@ -266,7 +279,7 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
    * type Events = AccountCreated | AccountDeleted;
    *
    * export const inngest = new Inngest({
-   *   name: "My App",
+   *   id: "my-app",
    *   schemas: new EventSchemas().fromUnion<Events>(),
    * });
    * ```
@@ -289,7 +302,7 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
    *
    * ```ts
    * export const inngest = new Inngest({
-   *   name: "My App",
+   *   id: "my-app",
    *   schemas: new EventSchemas().fromZod({
    *     "app/user.created": {
    *       data: z.object({

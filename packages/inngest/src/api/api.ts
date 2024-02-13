@@ -1,6 +1,7 @@
 import { type fetch } from "cross-fetch";
 import { type ExecutionVersion } from "../components/execution/InngestExecution";
 import { getFetch } from "../helpers/env";
+import { getErrorMessage } from "../helpers/errors";
 import { hashSigningKey } from "../helpers/strings";
 import { err, ok, type Result } from "../types";
 import {
@@ -65,7 +66,10 @@ export class InngestApi {
         }
       })
       .catch((error) => {
-        return err({ error: error as string, status: 500 });
+        return err({
+          error: getErrorMessage(error, "Unknown error retrieving step data"),
+          status: 500,
+        });
       });
   }
 
@@ -87,7 +91,10 @@ export class InngestApi {
         }
       })
       .catch((error) => {
-        return err({ error: error as string, status: 500 });
+        return err({
+          error: getErrorMessage(error, "Unknown error retrieving event batch"),
+          status: 500,
+        });
       });
   }
 }

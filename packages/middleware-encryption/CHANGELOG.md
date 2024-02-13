@@ -1,5 +1,19 @@
 # @inngest/middleware-encryption
 
+## 0.1.3
+
+### Patch Changes
+
+- [#451](https://github.com/inngest/inngest-js/pull/451) [`5c1c3c6`](https://github.com/inngest/inngest-js/commit/5c1c3c68b07cb18531eb3397e45917fc6e58e590) Thanks [@jessethomson](https://github.com/jessethomson)! - Fix packages sometimes not shipping dist files if released with multiple packages
+
+## 0.1.2
+
+### Patch Changes
+
+- [#430](https://github.com/inngest/inngest-js/pull/430) [`7119cb0`](https://github.com/inngest/inngest-js/commit/7119cb01c3433abed066ec149de540b623e67c87) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add description for `@inngest/middleware-encryption` package
+
+- [#428](https://github.com/inngest/inngest-js/pull/428) [`816ff6c`](https://github.com/inngest/inngest-js/commit/816ff6cee8afd47e3ff012cd286408b09d6e9c49) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Publish declaration files in `@inngest/middleware-encryption`
+
 ## 0.1.1
 
 ### Patch Changes

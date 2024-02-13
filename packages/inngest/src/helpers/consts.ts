@@ -142,7 +142,16 @@ export enum internalEvents {
    */
   FunctionFailed = "inngest/function.failed",
   FunctionInvoked = "inngest/function.invoked",
+  FunctionFinished = "inngest/function.finished",
 }
+
+/**
+ * Accessing enum values as literals in some TypeScript types can be difficult,
+ * so we also manually create the string values here.
+ */
+export const FnFailedEventName = `${internalEvents.FunctionFailed}`;
+export const FnInvokedEventName = `${internalEvents.FunctionInvoked}`;
+export const FnFinishedEventName = `${internalEvents.FunctionFinished}`;
 
 export const logPrefix = chalk.magenta.bold("[Inngest]");
 

@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "3.7.1",
+  "version": "3.14.0",
   "description": "Official SDK for Inngest.com",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -36,6 +36,16 @@
       "require": "./index.js",
       "import": "./index.js",
       "types": "./index.d.ts"
+    },
+    "./astro": {
+      "require": "./astro.js",
+      "import": "./astro.js",
+      "types": "./astro.d.ts"
+    },
+    "./bun": {
+      "require": "./bun.js",
+      "import": "./bun.js",
+      "types": "./bun.d.ts"
     },
     "./cloudflare": {
       "require": "./cloudflare.js",
@@ -108,7 +118,7 @@
       "types": "./deno/fresh.d.ts"
     },
     "./api/*": "./api/*.js",
-    "./components": "./components/*.js",
+    "./components/*": "./components/*.js",
     "./deno/*": "./deno/*.js",
     "./helpers/*": "./helpers/*.js",
     "./middleware/*": "./middleware/*.js"
@@ -166,6 +176,7 @@
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "@vercel/node": "^2.15.9",
+    "astro": "^4.0.7",
     "concurrently": "^7.4.0",
     "eslint": "^8.30.0",
     "eslint-config-prettier": "^9.0.0",

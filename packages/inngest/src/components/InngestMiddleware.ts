@@ -15,8 +15,8 @@ import {
   type OutgoingOp,
   type SendEventBaseOutput,
 } from "../types";
-import { type AnyInngest } from "./Inngest";
-import { type AnyInngestFunction } from "./InngestFunction";
+import { type Inngest } from "./Inngest";
+import { type InngestFunction } from "./InngestFunction";
 
 /**
  * A middleware that can be registered with Inngest to hook into various
@@ -354,13 +354,13 @@ export type MiddlewareRegisterFn = (ctx: {
   /**
    * The client this middleware is being registered on.
    */
-  client: AnyInngest;
+  client: Inngest.Any;
 
   /**
    * If defined, this middleware has been applied directly to an Inngest
    * function rather than on the client.
    */
-  fn?: AnyInngestFunction;
+  fn?: InngestFunction.Any;
 }) => MaybePromise<MiddlewareRegisterReturn>;
 
 /**
@@ -390,7 +390,13 @@ type MiddlewareRunArgs = Readonly<{
   /**
    * The function that is being executed.
    */
-  fn: AnyInngestFunction;
+  fn: InngestFunction.Any;
+
+  /**
+   * The raw arguments given to serve handler being used to execute the
+   * function.
+   */
+  reqArgs: Readonly<unknown[]>;
 }>;
 
 /**

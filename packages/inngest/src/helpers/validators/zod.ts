@@ -29,10 +29,39 @@ export type ZodObject<TShape = { [k: string]: ZodTypeAny }> = {
   };
 };
 
+export type ZodDiscriminatedUnion = {
+  _def: {
+    typeName: "ZodDiscriminatedUnion";
+  };
+};
+
+export type ZodUnion<
+  TOptions extends (AnyZodObject | ZodDiscriminatedUnion | ZodAny)[] = (
+    | AnyZodObject
+    | ZodDiscriminatedUnion
+    | ZodAny
+  )[],
+> = {
+  options: TOptions;
+  _def: {
+    typeName: "ZodUnion";
+  };
+};
+
 export type AnyZodObject = ZodObject<any>;
 
 export type ZodAny = {
   _any: true;
 };
+
+export type ValidZodValue =
+  // Allow `z.object()`
+  | AnyZodObject
+  // Allow `z.discriminatedUnion()`, a union of objects with a common key
+  | ZodDiscriminatedUnion
+  // Allow `z.any()`
+  | ZodAny
+  // Allow `z.union()`, only in cases where it's a union of other valid zod values
+  | ZodUnion;
 
 export type infer<T extends ZodTypeAny> = T["_output"];

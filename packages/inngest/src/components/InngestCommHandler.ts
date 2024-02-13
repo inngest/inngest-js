@@ -47,9 +47,8 @@ import {
   type ValueOrGetter,
 } from "../types";
 import { version } from "../version";
-import { type AnyInngest } from "./Inngest";
+import { type Inngest } from "./Inngest";
 import {
-  type AnyInngestFunction,
   type CreateExecutionOptions,
   type InngestFunction,
 } from "./InngestFunction";
@@ -72,12 +71,12 @@ export interface ServeHandlerOptions extends RegisterOptions {
   /**
    * The `Inngest` instance used to declare all functions.
    */
-  client: AnyInngest;
+  client: Inngest.Any;
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly AnyInngestFunction[];
+  functions: readonly InngestFunction.Any[];
 
   /**
    * Whether the current environment is production. This is used to determine
@@ -129,12 +128,12 @@ interface InngestCommHandlerOptions<
    * receiving events from the same service, as you can reuse a single
    * definition of Inngest.
    */
-  client: AnyInngest;
+  client: Inngest.Any;
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly AnyInngestFunction[];
+  functions: readonly InngestFunction.Any[];
 
   /**
    * Whether the current environment is production. This is used to determine
@@ -154,32 +153,31 @@ interface InngestCommHandlerOptions<
    * The `handler` is the function your framework requires to handle a
    * request. For example, this is most commonly a function that is given a
    * `Request` and must return a `Response`.
+   * The `handler` is the function that will be called with your framework's
+   * request arguments and returns a set of functions that the SDK will use to
+   * access various parts of the request, such as the body, headers, and query
+   * string parameters.
    *
-   * The handler must map out any incoming parameters, then return a
-   * strictly-typed object to assess what kind of request is being made,
-   * collecting any relevant data as we go.
+   * It also defines how to transform a response from the SDK into a response
+   * that your framework can understand, ensuring headers, status codes, and
+   * body are all set correctly.
    *
    * @example
-   * ```
-   * return {
-   *   register: () => { ... },
-   *   run: () => { ... },
-   *   view: () => { ... }
+   * ```ts
+   * function handler (req: Request, res: Response) {
+   *   return {
+   *     method: () => req.method,
+   *     body: () => req.json(),
+   *     headers: (key) => req.headers.get(key),
+   *     url: () => req.url,
+   *     transformResponse: ({ body, headers, status }) => {
+   *       return new Response(body, { status, headers });
+   *     },
+   *   };
    * };
    * ```
    *
-   * Every key must be specified and must be a function that either returns
-   * a strictly-typed payload or `undefined` if the request is not for that
-   * purpose.
-   *
-   * This gives handlers freedom to choose how their platform of choice will
-   * trigger differing actions, whilst also ensuring all required information
-   * is given for each request type.
-   *
    * See any existing handler for a full example.
-   *
-   * This should never be defined by the user; a {@link ServeHandler} should
-   * abstract this.
    */
   handler: Handler<Input, Output, StreamOutput>;
 }
@@ -208,25 +206,34 @@ const registerResSchema = z.object({
  * this class; the exposed `serve` function will - most commonly - create an
  * instance of `InngestCommHandler` and then return `instance.createHandler()`.
  *
- * Two critical parameters required are the `handler` and the `transformRes`
- * function. See individual parameter details for more information, or see the
+ * See individual parameter details for more information, or see the
  * source code for an existing handler, e.g.
  * {@link https://github.com/inngest/inngest-js/blob/main/src/next.ts}
  *
  * @example
  * ```
  * // my-custom-handler.ts
- * import { InngestCommHandler, ServeHandler } from "inngest";
+ * import {
+ *   InngestCommHandler,
+ *   type ServeHandlerOptions,
+ * } from "./components/InngestCommHandler";
  *
- * export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
- *   const handler = new InngestCommHandler(
- *     "my-custom-handler",
- *     nameOrInngest,
- *     fns,
- *     opts,
- *     () => { ... },
- *     () => { ... }
- *   );
+ * export const serve = (options: ServeHandlerOptions) => {
+ *   const handler = new InngestCommHandler({
+ *     frameworkName: "my-custom-handler",
+ *     ...options,
+ *     handler: (req: Request) => {
+ *       return {
+ *         body: () => req.json(),
+ *         headers: (key) => req.headers.get(key),
+ *         method: () => req.method,
+ *         url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+ *         transformResponse: ({ body, status, headers }) => {
+ *           return new Response(body, { status, headers });
+ *         },
+ *       };
+ *     },
+ *   });
  *
  *   return handler.createHandler();
  * };
@@ -341,9 +348,9 @@ export class InngestCommHandler<
    * A private collection of just Inngest functions, as they have been passed
    * when instantiating the class.
    */
-  private readonly rawFns: AnyInngestFunction[];
+  private readonly rawFns: InngestFunction.Any[];
 
-  private readonly client: AnyInngest;
+  private readonly client: Inngest.Any;
 
   /**
    * A private collection of functions that are being served. This map is used
@@ -490,24 +497,34 @@ export class InngestCommHandler<
    * @example
    * ```
    * // my-custom-handler.ts
-   * import { InngestCommHandler, ServeHandler } from "inngest";
+   * import {
+   *   InngestCommHandler,
+   *   type ServeHandlerOptions,
+   * } from "./components/InngestCommHandler";
    *
-   * export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-   *   const handler = new InngestCommHandler(
-   *     "my-custom-handler",
-   *     nameOrInngest,
-   *     fns,
-   *     opts,
-   *     () => { ... },
-   *     () => { ... }
-   *   );
+   * export const serve = (options: ServeHandlerOptions) => {
+   *   const handler = new InngestCommHandler({
+   *     frameworkName: "my-custom-handler",
+   *     ...options,
+   *     handler: (req: Request) => {
+   *       return {
+   *         body: () => req.json(),
+   *         headers: (key) => req.headers.get(key),
+   *         method: () => req.method,
+   *         url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+   *         transformResponse: ({ body, status, headers }) => {
+   *           return new Response(body, { status, headers });
+   *         },
+   *       };
+   *     },
+   *   });
    *
    *   return handler.createHandler();
    * };
    * ```
    */
   public createHandler(): (...args: Input) => Promise<Awaited<Output>> {
-    return async (...args: Input) => {
+    const handler = async (...args: Input) => {
       const timer = new ServerTiming();
 
       /**
@@ -578,7 +595,7 @@ export class InngestCommHandler<
         });
 
       const actionRes = timer.wrap("action", () =>
-        this.handleAction(actions, timer, getInngestHeaders)
+        this.handleAction({ actions, timer, getInngestHeaders, reqArgs: args })
       );
 
       /**
@@ -646,6 +663,30 @@ export class InngestCommHandler<
         });
       });
     };
+
+    /**
+     * Some platforms check (at runtime) the length of the function being used
+     * to handle an endpoint. If this is a variadic function, it will fail
+     * that check.
+     *
+     * Therefore, we expect the arguments accepted to be the same length as
+     * the `handler` function passed internally.
+     *
+     * We also set a name to avoid a common useless name in tracing such as
+     * `"anonymous"` or `"bound function"`.
+     *
+     * https://github.com/getsentry/sentry-javascript/issues/3284
+     */
+    Object.defineProperties(handler, {
+      name: {
+        value: "InngestHandler",
+      },
+      length: {
+        value: this.handler.length,
+      },
+    });
+
+    return handler;
   }
 
   /**
@@ -659,11 +700,17 @@ export class InngestCommHandler<
    * will decide whether the UI should be visible based on the payload it has
    * found (e.g. env vars, options, etc).
    */
-  private async handleAction(
-    actions: HandlerResponseWithErrors,
-    timer: ServerTiming,
-    getInngestHeaders: () => Record<string, string>
-  ): Promise<ActionResponse> {
+  private async handleAction({
+    actions,
+    timer,
+    getInngestHeaders,
+    reqArgs,
+  }: {
+    actions: HandlerResponseWithErrors;
+    timer: ServerTiming;
+    getInngestHeaders: () => Record<string, string>;
+    reqArgs: unknown[];
+  }): Promise<ActionResponse> {
     this._isProd =
       (await this.overrideIsProduction?.()) ??
       (await actions.isProduction?.("starting to handle request")) ??
@@ -718,7 +765,13 @@ export class InngestCommHandler<
           (await getQuerystring("processing run request", queryKeys.StepId)) ||
           null;
 
-        const { version, result } = this.runStep(fnId, stepId, body, timer);
+        const { version, result } = this.runStep({
+          functionId: fnId,
+          data: body,
+          stepId,
+          timer,
+          reqArgs,
+        });
         const stepOutput = await result;
 
         /**
@@ -726,14 +779,7 @@ export class InngestCommHandler<
          * `null`, as this is appropriately serializable by JSON.
          */
         const opDataUndefinedToNull = (op: OutgoingOp) => {
-          const opData = z.object({ data: z.any() }).safeParse(op.data);
-
-          if (opData.success) {
-            (op.data as { data: unknown }).data = undefinedToNull(
-              opData.data.data
-            );
-          }
-
+          op.data = undefinedToNull(op.data);
           return op;
         };
 
@@ -780,7 +826,17 @@ export class InngestCommHandler<
 
             return {
               status: 206,
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                ...(typeof result.retriable !== "undefined"
+                  ? {
+                      [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+                      ...(typeof result.retriable === "string"
+                        ? { [headerKeys.RetryAfter]: result.retriable }
+                        : {}),
+                    }
+                  : {}),
+              },
               body: stringify([step]),
               version,
             };
@@ -876,12 +932,19 @@ export class InngestCommHandler<
     };
   }
 
-  protected runStep(
-    functionId: string,
-    stepId: string | null,
-    data: unknown,
-    timer: ServerTiming
-  ): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
+  protected runStep({
+    functionId,
+    stepId,
+    data,
+    timer,
+    reqArgs,
+  }: {
+    functionId: string;
+    stepId: string | null;
+    data: unknown;
+    timer: ServerTiming;
+    reqArgs: unknown[];
+  }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
     const fn = this.fns[functionId];
     if (!fn) {
       // TODO PrettyError
@@ -945,6 +1008,7 @@ export class InngestCommHandler<
               timer,
               isFailureHandler: fn.onFailure,
               stepCompletionOrder: ctx?.stack?.stack ?? [],
+              reqArgs,
             },
           };
         },
@@ -979,6 +1043,7 @@ export class InngestCommHandler<
               isFailureHandler: fn.onFailure,
               disableImmediateExecution: ctx?.disable_immediate_execution,
               stepCompletionOrder: ctx?.stack?.stack ?? [],
+              reqArgs,
             },
           };
         },
@@ -1035,8 +1100,6 @@ export class InngestCommHandler<
       v: "0.1",
     };
 
-    // Calculate the checksum of the body... without the checksum itself being included.
-    body.hash = sha256().update(canonicalize(body)).digest("hex");
     return body;
   }
 

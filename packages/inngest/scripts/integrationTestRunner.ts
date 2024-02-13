@@ -50,12 +50,25 @@ function execAsync(command: string, options: { cwd: string }): Promise<void> {
 }
 
 async function setupExample(examplePath: string): Promise<void> {
-  await execAsync(
-    "npm install --no-save --no-package-lock ../../packages/inngest/inngest.tgz",
-    {
-      cwd: examplePath,
-    }
-  );
+  const exampleName = path.basename(examplePath);
+
+  // If Bun is seen, use it. Otherwise, use npm. Hacky, but this doesn't need to
+  // be fancy.
+  if (exampleName.startsWith("bun")) {
+    await execAsync(
+      "bun add --no-save inngest@../../packages/inngest/inngest.tgz",
+      {
+        cwd: examplePath,
+      }
+    );
+  } else {
+    await execAsync(
+      "npm install --no-save --no-package-lock ../../packages/inngest/inngest.tgz",
+      {
+        cwd: examplePath,
+      }
+    );
+  }
 
   const exampleFunctionsTarget = await new Promise<string>(
     (resolve, reject) => {
@@ -164,6 +177,10 @@ async function startDevServer(
       devServerPort.toString(),
       "--no-discovery",
       "--no-poll",
+      "--retry-interval",
+      "1",
+      "--log-level",
+      "trace",
       "--sdk-url",
       `http://localhost:${exampleServerPort}/api/inngest`,
     ],
@@ -185,21 +202,23 @@ async function startExampleServer(
   exampleServerPort: number,
   devServerPort: number
 ): Promise<void> {
-  const devServerProcess = startProcess("npm", ["run", "dev"], {
-    env: {
-      ...process.env,
-      HOST: "0.0.0.0",
-      PORT: "3000",
-      NODE_ENV: "development",
-      INNGEST_LOG_LEVEL: "debug",
-      INNGEST_BASE_URL: `http://localhost:${devServerPort}`,
-    },
+  const exampleName = path.basename(examplePath);
+  const env = {
+    ...process.env,
+    HOST: "0.0.0.0",
+    PORT: "3000",
+    NODE_ENV: "development",
+    INNGEST_LOG_LEVEL: "debug",
+    INNGEST_BASE_URL: `http://localhost:${devServerPort}`,
+  } as const;
+  const command = exampleName.startsWith("bun") ? "bun" : "npm";
+
+  startProcess(command, ["run", "dev"], {
+    env,
     cwd: examplePath,
     detached: true,
     stdio: "inherit",
   });
-
-  devServerProcess.unref();
 
   return checkServerReady(
     `http://localhost:${exampleServerPort}/api/inngest`,
@@ -280,7 +299,8 @@ async function runIntegrationTest(
   devServerPort: number,
   exampleServerPort: number
 ): Promise<void> {
-  // Start a 10 minute timeout. If we don't finish within 10 minutes, something is wrong.
+  // Start a 10 minute timeout. If we don't finish within 10 minutes, something
+  // is wrong.
   setTimeout(
     () => {
       console.error("Integration test timed out");

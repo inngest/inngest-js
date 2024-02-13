@@ -19,12 +19,12 @@ import { type MaybePromise } from "../../helpers/types";
 import {
   StepOpCode,
   failureEventErrorSchema,
-  type AnyContext,
-  type AnyHandler,
   type BaseContext,
   type ClientOptions,
+  type Context,
   type EventPayload,
   type FailureEventArgs,
+  type Handler,
   type OutgoingOp,
 } from "../../types";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware";
@@ -37,6 +37,7 @@ import {
 } from "../InngestStepTools";
 import { NonRetriableError } from "../NonRetriableError";
 import { RetryAfterError } from "../RetryAfterError";
+import { StepError } from "../StepError";
 import {
   InngestExecution,
   type ExecutionResult,
@@ -52,11 +53,11 @@ export const createV1InngestExecution: InngestExecutionFactory = (options) => {
 
 class V1InngestExecution extends InngestExecution implements IInngestExecution {
   private state: V1ExecutionState;
-  private fnArg: AnyContext;
+  private fnArg: Context.Any;
   private checkpointHandlers: CheckpointHandlers;
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
-  private userFnToRun: AnyHandler;
+  private userFnToRun: Handler.Any;
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -178,8 +179,18 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               type: "step-ran",
               step: _internals.hashOp({
                 ...stepResult,
-                data: { data: transformResult.data },
+                data: transformResult.data,
               }),
+            };
+            // }
+          } else if (transformResult.type === "function-rejected") {
+            return {
+              type: "step-ran",
+              step: _internals.hashOp({
+                ...stepResult,
+                error: transformResult.error,
+              }),
+              retriable: transformResult.retriable,
             };
           }
 
@@ -328,7 +339,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     const outgoingOp: OutgoingOp = {
       id,
-      op: StepOpCode.RunStep,
+      op: StepOpCode.StepRun,
       name,
       opts,
       displayName,
@@ -351,6 +362,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         .catch<OutgoingOp>((error) => {
           return {
             ...outgoingOp,
+            op: StepOpCode.StepError,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
           };
@@ -411,6 +423,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       ctx: { ...this.fnArg },
       steps: Object.values(this.state.stepState),
       fn: this.options.fn,
+      reqArgs: this.options.reqArgs,
     });
 
     if (inputMutations?.ctx) {
@@ -438,6 +451,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   ): Promise<ExecutionResult> {
     const output = { ...dataOrError };
 
+    /**
+     * If we've been given an error and it's one that we just threw from a step,
+     * we should return a `NonRetriableError` to stop execution.
+     */
     if (typeof output.error !== "undefined") {
       output.data = serializeError(output.error);
     }
@@ -454,7 +471,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * Ensure we give middleware the chance to decide on retriable behaviour
        * by looking at the error returned from output transformation.
        */
-      let retriable: boolean | string = !(error instanceof NonRetriableError);
+      let retriable: boolean | string = !(
+        error instanceof NonRetriableError || error instanceof StepError
+      );
       if (retriable && error instanceof RetryAfterError) {
         retriable = error.retryAfter;
       }
@@ -505,13 +524,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return state;
   }
 
-  private createFnArg(): AnyContext {
+  private createFnArg(): Context.Any {
     const step = this.createStepTools();
 
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
       step,
-    } as AnyContext;
+    } as Context.Any;
 
     /**
      * Handle use of the `onFailure` option by deserializing the error.
@@ -736,26 +755,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
             if (typeof stepState.data !== "undefined") {
               resolve(stepState.data);
-            } else if (opId.op === StepOpCode.InvokeFunction) {
-              const errCheck = z
-                .object({ message: z.string() })
-                .safeParse(stepState.error);
-
-              const errMessage = [
-                "Invoking function failed",
-                errCheck.success ? errCheck.data.message : "",
-              ]
-                .map((s) => s.trim())
-                .filter(Boolean)
-                .join("; ");
-
-              const err = new NonRetriableError(errMessage, {
-                cause: stepState.error,
-              });
-
-              reject(err);
             } else {
-              reject(stepState.error);
+              this.state.recentlyRejectedStepError = new StepError(
+                opId.id,
+                stepState.error
+              );
+
+              reject(this.state.recentlyRejectedStepError);
             }
           }
 
@@ -784,10 +790,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return createStepTools(this.options.client, stepHandler);
   }
 
-  private getUserFnToRun(): AnyHandler {
+  private getUserFnToRun(): Handler.Any {
     if (!this.options.isFailureHandler) {
       // TODO: Review; inferred types results in an `any` here!
-      return this.options.fn["fn"] as AnyHandler;
+      return this.options.fn["fn"] as Handler.Any;
     }
 
     if (!this.options.fn["onFailureFn"]) {
@@ -836,6 +842,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         ctx,
         fn: this.options.fn,
         steps: Object.values(this.options.stepState),
+        reqArgs: this.options.reqArgs,
       },
       {
         transformInput: (prev, output) => {
@@ -846,6 +853,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               ...step,
               ...output?.steps?.[i],
             })),
+            reqArgs: prev.reqArgs,
           };
         },
         transformOutput: (prev, output) => {
@@ -941,6 +949,22 @@ export interface V1ExecutionState {
    * execution was completed.
    */
   stepCompletionOrder: string[];
+
+  /**
+   * If defined, this is the error that purposefully thrown when memoizing step
+   * state in order to support per-step errors.
+   *
+   * We use this so that if the function itself rejects with the same error, we
+   * know that it was entirely uncaught (or at the very least rethrown), so we
+   * should send a `NonRetriableError` to stop needless execution of a function
+   * that will continue to fail.
+   *
+   * TODO This is imperfect, as this state is currently kept around for longer
+   * than it needs to be. It should disappear as soon as we've seen that the
+   * error did not immediately throw. It may need to be refactored to work a
+   * little more smoothly with the core loop.
+   */
+  recentlyRejectedStepError?: StepError;
 }
 
 const hashId = (id: string): string => {
