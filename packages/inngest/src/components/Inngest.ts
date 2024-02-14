@@ -12,10 +12,10 @@ import {
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
   getFetch,
+  getMode,
   inngestHeaders,
-  isProd,
   processEnv,
-  skipDevServer,
+  type Mode,
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
 import { stringify } from "../helpers/strings";
@@ -142,7 +142,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    * settings, but should still check for the presence of an environment
    * variable if it is not set.
    */
-  private readonly isProd: Promise<boolean | undefined>;
+  private readonly mode: Mode;
 
   /**
    * A client used to interact with the Inngest API by sending or reacting to
@@ -181,15 +181,30 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     this.id = id;
 
+    this.mode = getMode({
+      explicitMode:
+        typeof isDev === "boolean" ? (isDev ? "dev" : "prod") : undefined,
+    });
+
     this.apiBaseUrl =
       baseUrl ||
       processEnv(envKeys.InngestApiBaseUrl) ||
-      processEnv(envKeys.InngestBaseUrl);
+      processEnv(envKeys.InngestBaseUrl) ||
+      (this.mode.isExplicit
+        ? this.mode.type === "prod"
+          ? defaultInngestApiBaseUrl
+          : defaultDevServerHost
+        : undefined);
 
     this.eventBaseUrl =
       baseUrl ||
       processEnv(envKeys.InngestEventApiBaseUrl) ||
-      processEnv(envKeys.InngestBaseUrl);
+      processEnv(envKeys.InngestBaseUrl) ||
+      (this.mode.isExplicit
+        ? this.mode.type === "prod"
+          ? defaultInngestEventBaseUrl
+          : defaultDevServerHost
+        : undefined);
 
     this.setEventKey(eventKey || processEnv(envKeys.InngestEventKey) || "");
 
@@ -211,10 +226,6 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       ...builtInMiddleware,
       ...(middleware || []),
     ]);
-
-    this.isProd = isProd({
-      explicitSetting: typeof isDev === "boolean" ? !isDev : undefined,
-    });
   }
 
   /**
@@ -425,21 +436,9 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     let url = this.sendEventUrl.href;
 
     /**
-     * INNGEST_BASE_URL is used to set both dev server and prod URLs, so if a
-     * user has set this it means they have already chosen a URL to hit.
+     * If we're in prod mode and have no key, fail now.
      */
-    if (!skipDevServer()) {
-      if (!this.eventBaseUrl) {
-        const devAvailable = await devServerAvailable(
-          defaultDevServerHost,
-          this.fetch
-        );
-
-        if (devAvailable) {
-          url = devServerUrl(defaultDevServerHost, `e/${this.eventKey}`).href;
-        }
-      }
-    } else if (!this.eventKeySet()) {
+    if (this.mode.type === "prod" && !this.eventKeySet()) {
       throw new Error(
         prettyError({
           whatHappened: "Failed to send event",
@@ -448,6 +447,29 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
           toFixNow: fixEventKeyMissingSteps,
         })
       );
+    }
+
+    /**
+     * If we've inferred that we're in dev mode, try to hit the dev server
+     * first to see if it exists. If it does, use it, otherwise fall back to
+     * whatever server we have configured.
+     *
+     * `INNGEST_BASE_URL` is used to set both dev server and prod URLs, so if a
+     * user has set this it means they have already chosen a URL to hit.
+     */
+    if (
+      this.mode.type === "dev" &&
+      !this.mode.isExplicit &&
+      !this.eventBaseUrl
+    ) {
+      const devAvailable = await devServerAvailable(
+        defaultDevServerHost,
+        this.fetch
+      );
+
+      if (devAvailable) {
+        url = devServerUrl(defaultDevServerHost, `e/${this.eventKey}`).href;
+      }
     }
 
     const response = await this.fetch(url, {

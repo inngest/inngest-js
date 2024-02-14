@@ -98,9 +98,7 @@ export enum envKeys {
    * {@link https://docs.railway.app/develop/variables#railway-provided-variables}
    */
   RailwayEnvironment = "RAILWAY_ENVIRONMENT",
-}
 
-export enum prodEnvKeys {
   VercelEnvKey = "VERCEL_ENV",
 }
 

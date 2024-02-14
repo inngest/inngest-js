@@ -266,9 +266,10 @@ export class InngestCommHandler<Input extends any[] = any[], Output = any, Strea
     // Warning: (ae-forgotten-export) The symbol "Handler_2" needs to be exported by the entry point index.d.ts
     readonly handler: Handler_2;
     readonly id: string;
-    protected _isProd: boolean;
     protected log(level: LogLevel, ...args: unknown[]): void;
     protected readonly logLevel: LogLevel;
+    // Warning: (ae-forgotten-export) The symbol "Mode" needs to be exported by the entry point index.d.ts
+    protected _mode: Mode | undefined;
     // (undocumented)
     protected register(url: URL, deployId: string | undefined | null, getHeaders: () => Record<string, string>): Promise<{
         status: number;

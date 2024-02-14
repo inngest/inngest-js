@@ -16,11 +16,11 @@ import {
   allProcessEnv,
   devServerHost,
   getFetch,
+  getMode,
   inngestHeaders,
-  isProd,
   platformSupportsStreaming,
-  skipDevServer,
   type Env,
+  type Mode,
 } from "../helpers/env";
 import { rethrowError, serializeError } from "../helpers/errors";
 import {
@@ -252,7 +252,7 @@ export class InngestCommHandler<
    *
    * Should be set every time a request is received.
    */
-  protected _isProd = false;
+  protected _mode: Mode | undefined;
 
   /**
    * Whether we should attempt to use the dev server.
@@ -670,19 +670,20 @@ export class InngestCommHandler<
     getInngestHeaders: () => Record<string, string>;
     reqArgs: unknown[];
   }): Promise<ActionResponse> {
-    this._isProd = await isProd({
-      env: this.env,
-      client: this.client,
-      actions,
-    });
+    const assumedMode = getMode({ env: this.env, client: this.client });
 
-    /**
-     * If we've been explicitly passed an Inngest dev sever URL, assume that
-     * we shouldn't skip the dev server.
-     */
-    this._skipDevServer = devServerHost(this.env)
-      ? false
-      : this._isProd ?? skipDevServer(this.env);
+    if (assumedMode.isExplicit) {
+      this._mode = assumedMode;
+    } else {
+      const serveIsProd = await actions.isProduction?.(
+        "starting to handle request"
+      );
+      if (typeof serveIsProd === "boolean") {
+        this._mode = { type: serveIsProd ? "prod" : "dev", isExplicit: false };
+      } else {
+        this._mode = assumedMode;
+      }
+    }
 
     this.upsertKeysFromEnv();
 
@@ -884,8 +885,7 @@ export class InngestCommHandler<
       status: 405,
       body: JSON.stringify({
         message: "No action found; request was likely not POST, PUT, or GET",
-        isProd: this._isProd,
-        skipDevServer: this._skipDevServer,
+        mode: this._mode,
       }),
       headers: {},
       version: undefined,
@@ -1139,10 +1139,6 @@ export class InngestCommHandler<
     return { status, message: error, modified };
   }
 
-  private get isProd() {
-    return this._isProd;
-  }
-
   /**
    * Given an environment, upsert any missing keys. This is useful in
    * situations where environment variables are passed directly to handlers or
@@ -1171,8 +1167,10 @@ export class InngestCommHandler<
   }
 
   protected validateSignature(sig: string | undefined, body: unknown) {
-    // Never validate signatures in development.
-    if (!this.isProd) {
+    // Never validate signatures outside of prod. Make sure we check the mode
+    // exists here instead of using nullish coalescing to confirm that the check
+    // has been completed.
+    if (this._mode && this._mode.type !== "prod") {
       return;
     }
 

@@ -4,10 +4,9 @@
 // string in order to read variables.
 
 import { type Inngest } from "../components/Inngest";
-import { type HandlerResponseWithErrors } from "../components/InngestCommHandler";
 import { type SupportedFrameworkName } from "../types";
 import { version } from "../version";
-import { envKeys, headerKeys, prodEnvKeys } from "./consts";
+import { envKeys, headerKeys } from "./consts";
 import { stringifyUnknown } from "./strings";
 
 /**
@@ -70,41 +69,12 @@ const prodChecks: [
   ["NODE_ENV", "starts with", "prod"],
   ["VERCEL_ENV", "starts with", "prod"],
   ["DENO_DEPLOYMENT_ID", "is truthy"],
-];
-
-// platformDeployChecks are a series of predicates that attempt to check whether
-// we're deployed outside of localhost testing.  This extends prodChecks with
-// platform specific checks, ensuring that if you deploy to eg. vercel without
-// NODE_ENV=production we still use prod mode.
-const platformDeployChecks: [
-  key: string,
-  customCheck: keyof typeof checkFns,
-  value?: string,
-][] = [
-  // Extend prod checks, then check if we're deployed to a platform.
-  [prodEnvKeys.VercelEnvKey, "is truthy but not", "development"],
+  [envKeys.VercelEnvKey, "is truthy but not", "development"],
   [envKeys.IsNetlify, "is truthy"],
   [envKeys.IsRender, "is truthy"],
   [envKeys.RailwayBranch, "is truthy"],
   [envKeys.IsCloudflarePages, "is truthy"],
 ];
-
-const skipDevServerChecks = prodChecks.concat(platformDeployChecks);
-
-/**
- * Returns `true` if we're running in production or on a platform, based off of
- * either passed environment variables or `process.env`.
- */
-export const skipDevServer = (
-  /**
-   * The optional environment variables to use instead of `process.env`.
-   */
-  env: Record<string, unknown> = allProcessEnv()
-): boolean => {
-  return skipDevServerChecks.some(([key, checkKey, expected]) => {
-    return checkFns[checkKey](stringifyUnknown(env[key]), expected);
-  });
-};
 
 interface IsProdOptions {
   /**
@@ -112,48 +82,50 @@ interface IsProdOptions {
    */
   env?: Record<string, unknown>;
   client?: Inngest.Any;
-  actions?: HandlerResponseWithErrors;
 
   /**
    * If specified as a `boolean`, this will be returned as the result of the
    * function. Useful for options that may or may not be set by users.
    */
-  explicitSetting?: boolean;
+  explicitMode?: Mode["type"];
+}
+
+export interface Mode {
+  type: "prod" | "dev";
+
+  /**
+   * Whether the mode was explicitly set, or inferred from other sources.
+   */
+  isExplicit: boolean;
 }
 
 /**
- * Returns `true` if we believe the current environment is production based on
- * either passed environment variables or `process.env`.
+ * Returns the mode of the current environment, based off of either passed
+ * environment variables or `process.env`, or explicit settings.
  */
-export const isProd = async ({
+export const getMode = ({
   env = allProcessEnv(),
   client,
-  actions,
-  explicitSetting,
-}: IsProdOptions = {}): Promise<boolean> => {
-  if (typeof explicitSetting === "boolean") {
-    return explicitSetting;
+  explicitMode,
+}: IsProdOptions = {}): Mode => {
+  if (explicitMode) {
+    return { type: explicitMode, isExplicit: true };
   }
 
-  if (typeof client?.["isProd"] === "boolean") {
-    return client["isProd"];
+  if (client?.["mode"].isExplicit) {
+    return client["mode"];
   }
 
   const envIsDev = parseAsBoolean(env[envKeys.InngestDevMode]);
   if (typeof envIsDev === "boolean") {
-    return !envIsDev;
+    return { type: envIsDev ? "dev" : "prod", isExplicit: true };
   }
 
-  const actionsProd = await actions?.isProduction?.(
-    "assessing if in production"
-  );
-  if (typeof actionsProd === "boolean") {
-    return actionsProd;
-  }
-
-  return prodChecks.some(([key, checkKey, expected]) => {
+  const isProd = prodChecks.some(([key, checkKey, expected]) => {
     return checkFns[checkKey](stringifyUnknown(env[key]), expected);
   });
+
+  return { type: isProd ? "prod" : "dev", isExplicit: false };
 };
 
 /**
