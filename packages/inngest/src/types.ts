@@ -573,6 +573,16 @@ export interface ClientOptions {
    */
   logger?: Logger;
   middleware?: MiddlewareStack;
+
+  /**
+   * Can be used to explicitly set the client to Development Mode, which will
+   * turn off signature verification and default to using a local URL to access
+   * a local Dev Server.
+   *
+   * This is useful for forcing the client to use a local Dev Server while also
+   * running in a production-like environment.
+   */
+  isDev?: boolean;
 }
 
 /**

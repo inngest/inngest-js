@@ -13,6 +13,7 @@ import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
   getFetch,
   inngestHeaders,
+  isProd,
   processEnv,
   skipDevServer,
 } from "../helpers/env";
@@ -132,6 +133,18 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
   /**
+   * Whether the client is running in a production environment. This can
+   * sometimes be `undefined` if the client has expressed no preference or
+   * perhaps environment variables are only available at a later stage in the
+   * runtime, for example when receiving a request.
+   *
+   * An {@link InngestCommHandler} should prioritize this value over all other
+   * settings, but should still check for the presence of an environment
+   * variable if it is not set.
+   */
+  private readonly isProd: Promise<boolean | undefined>;
+
+  /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
    *
@@ -159,6 +172,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     env,
     logger = new DefaultLogger(),
     middleware,
+    isDev,
   }: TOpts) {
     if (!id) {
       // TODO PrettyError
@@ -197,6 +211,10 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       ...builtInMiddleware,
       ...(middleware || []),
     ]);
+
+    this.isProd = isProd({
+      explicitSetting: typeof isDev === "boolean" ? !isDev : undefined,
+    });
   }
 
   /**

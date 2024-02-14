@@ -670,9 +670,11 @@ export class InngestCommHandler<
     getInngestHeaders: () => Record<string, string>;
     reqArgs: unknown[];
   }): Promise<ActionResponse> {
-    this._isProd =
-      (await actions.isProduction?.("starting to handle request")) ??
-      isProd(this.env);
+    this._isProd = await isProd({
+      env: this.env,
+      client: this.client,
+      actions,
+    });
 
     /**
      * If we've been explicitly passed an Inngest dev sever URL, assume that
@@ -1408,7 +1410,7 @@ export interface ActionResponse<
  * This enables us to provide accurate errors for each access without having to
  * wrap every access in a try/catch.
  */
-type HandlerResponseWithErrors = {
+export type HandlerResponseWithErrors = {
   [K in keyof HandlerResponse]: NonNullable<HandlerResponse[K]> extends (
     ...args: infer Args
   ) => infer R

@@ -31,6 +31,7 @@ export enum envKeys {
   InngestServePath = "INNGEST_SERVE_PATH",
   InngestLogLevel = "INNGEST_LOG_LEVEL",
   InngestStreaming = "INNGEST_STREAMING",
+  InngestDevMode = "INNGEST_DEV",
 
   BranchName = "BRANCH_NAME",
 

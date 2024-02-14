@@ -4,6 +4,7 @@
 // string in order to read variables.
 
 import { type Inngest } from "../components/Inngest";
+import { type HandlerResponseWithErrors } from "../components/InngestCommHandler";
 import { type SupportedFrameworkName } from "../types";
 import { version } from "../version";
 import { envKeys, headerKeys, prodEnvKeys } from "./consts";
@@ -105,16 +106,51 @@ export const skipDevServer = (
   });
 };
 
+interface IsProdOptions {
+  /**
+   * The optional environment variables to use instead of `process.env`.
+   */
+  env?: Record<string, unknown>;
+  client?: Inngest.Any;
+  actions?: HandlerResponseWithErrors;
+
+  /**
+   * If specified as a `boolean`, this will be returned as the result of the
+   * function. Useful for options that may or may not be set by users.
+   */
+  explicitSetting?: boolean;
+}
+
 /**
  * Returns `true` if we believe the current environment is production based on
  * either passed environment variables or `process.env`.
  */
-export const isProd = (
-  /**
-   * The optional environment variables to use instead of `process.env`.
-   */
-  env: Record<string, unknown> = allProcessEnv()
-): boolean => {
+export const isProd = async ({
+  env = allProcessEnv(),
+  client,
+  actions,
+  explicitSetting,
+}: IsProdOptions = {}): Promise<boolean> => {
+  if (typeof explicitSetting === "boolean") {
+    return explicitSetting;
+  }
+
+  if (typeof client?.["isProd"] === "boolean") {
+    return client["isProd"];
+  }
+
+  const envIsDev = parseAsBoolean(env[envKeys.InngestDevMode]);
+  if (typeof envIsDev === "boolean") {
+    return !envIsDev;
+  }
+
+  const actionsProd = await actions?.isProduction?.(
+    "assessing if in production"
+  );
+  if (typeof actionsProd === "boolean") {
+    return actionsProd;
+  }
+
   return prodChecks.some(([key, checkKey, expected]) => {
     return checkFns[checkKey](stringifyUnknown(env[key]), expected);
   });
@@ -387,4 +423,38 @@ export const getResponse = (): typeof Response => {
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
   return require("cross-fetch").Response;
+};
+
+/**
+ * Given an unknown value, try to parse it as a `boolean`. Useful for parsing
+ * environment variables that could be a selection of different values such as
+ * `"true"`, `"y"`, or `"1"`.
+ *
+ * If the value could not be confidently parsed as a `boolean` or was seen to be
+ * `undefined`, this function returns `undefined`.
+ */
+export const parseAsBoolean = (value: unknown): boolean | undefined => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return Boolean(value);
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim().toLowerCase();
+
+    if (trimmed === "undefined") {
+      return undefined;
+    }
+
+    if (["true", "1", "y", "yes"].includes(trimmed)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  return undefined;
 };
