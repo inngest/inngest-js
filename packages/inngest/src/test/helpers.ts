@@ -513,7 +513,7 @@ export const testFramework = (
           const ret = await run(
             [
               {
-                client: new Inngest({ id: "Test", env: "FOO" }),
+                client: new Inngest({ id: "Test", env: "FOO", isDev: false }),
                 functions: [],
               },
             ],
@@ -596,6 +596,7 @@ export const testFramework = (
           DENO_DEPLOYMENT_ID: "1",
           NODE_ENV: "production",
           ENVIRONMENT: "production",
+          INNGEST_DEV: "0",
         };
         test("should throw an error in prod with no signature", async () => {
           const ret = await run(
@@ -714,9 +715,7 @@ export const testFramework = (
           () => "fn"
         );
         const env = {
-          DENO_DEPLOYMENT_ID: undefined,
-          NODE_ENV: "development",
-          ENVIRONMENT: "development",
+          INNGEST_DEV: "1",
         };
 
         test("should throw an error with an invalid JSON body", async () => {
