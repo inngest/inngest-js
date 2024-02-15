@@ -2,6 +2,7 @@ import { type Simplify } from "type-fest";
 import {
   type FnFailedEventName,
   type FnFinishedEventName,
+  type FnInvokedEventName,
 } from "../helpers/consts";
 import { type IsEmptyObject, type IsStringLiteral } from "../helpers/types";
 import type * as z from "../helpers/validators/zod";
@@ -9,6 +10,7 @@ import {
   type EventPayload,
   type FailureEventPayload,
   type FinishedEventPayload,
+  type InvokedEventPayload,
 } from "../types";
 
 /**
@@ -222,6 +224,7 @@ export class EventSchemas<
   S extends Record<string, EventPayload> = {
     [FnFailedEventName]: FailureEventPayload;
     [FnFinishedEventName]: FinishedEventPayload;
+    [FnInvokedEventName]: InvokedEventPayload;
   },
 > {
   /**

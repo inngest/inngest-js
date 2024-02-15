@@ -98,6 +98,18 @@ export type FinishedEventPayload = {
 };
 
 /**
+ * The payload for any generic function invocation event. In practice, the event
+ * data will be more specific to the function being invoked.
+ *
+ * @public
+ */
+export type InvokedEventPayload = Simplify<
+  Omit<EventPayload, "name"> & {
+    name: `${internalEvents.FunctionInvoked}`;
+  }
+>;
+
+/**
  * Unique codes for the different types of operation that can be sent to Inngest
  * from SDK step functions.
  */
