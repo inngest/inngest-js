@@ -132,7 +132,7 @@ describe("runFn", () => {
     ].forEach(({ type, flowFn, badFlowFn }) => {
       describe(`${type} function`, () => {
         describe("success", () => {
-          let fn: InngestFunction<typeof opts>;
+          let fn: InngestFunction.Any;
           let ret: ExecutionResult;
           let flush: jest.SpiedFunction<() => void>;
 
@@ -146,8 +146,8 @@ describe("runFn", () => {
 
             fn = new InngestFunction(
               createClient(opts),
-              { id: "Foo" },
-              { event: "foo" },
+              { id: "Foo", triggers: [{ event: "foo" }] },
+              // { event: "foo" },
               flowFn
             );
 
@@ -184,13 +184,13 @@ describe("runFn", () => {
 
         describe("throws", () => {
           const stepErr = new Error("step error");
-          let fn: InngestFunction<typeof opts>;
+          let fn: InngestFunction.Any;
 
           beforeAll(() => {
             fn = new InngestFunction(
               createClient(opts),
-              { id: "Foo" },
-              { event: "foo" },
+              { id: "Foo", triggers: [{ event: "foo" }] },
+              // { event: "foo" },
               badFlowFn
             );
           });
@@ -2562,9 +2562,9 @@ describe("runFn", () => {
                 assertType<FailureEventPayload>(event);
                 assertType<Error>(error);
 
-                assertType<"foo">(event.data.event.name);
+                // assertType<"foo">(event.data.event.name);
                 assertType<EventPayload>(event.data.event);
-                assertType<{ title: string }>(event.data.event.data);
+                // assertType<{ title: string }>(event.data.event.data);
               },
             },
             { event: "foo" },

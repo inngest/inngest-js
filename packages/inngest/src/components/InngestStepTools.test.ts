@@ -691,7 +691,7 @@ describe("invoke", () => {
     const client = createClient(opts);
 
     const invoke = null as unknown as ReturnType<
-      typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
+      typeof createStepTools<typeof client, ["foo"]>
     >["invoke"];
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

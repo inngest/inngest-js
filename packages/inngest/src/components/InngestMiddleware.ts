@@ -8,12 +8,11 @@ import {
 } from "../helpers/types";
 import {
   type BaseContext,
-  type ClientOptions,
   type EventPayload,
   type IncomingOp,
-  type MiddlewareStack,
   type OutgoingOp,
   type SendEventBaseOutput,
+  type TriggersFromClient,
 } from "../types";
 import { type Inngest } from "./Inngest";
 import { type InngestFunction } from "./InngestFunction";
@@ -69,6 +68,13 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
     this.name = name;
     this.init = init;
   }
+}
+
+export namespace InngestMiddleware {
+  export type Stack = [
+    InngestMiddleware<MiddlewareOptions>,
+    ...InngestMiddleware<MiddlewareOptions>[],
+  ];
 }
 
 type FnsWithSameInputAsOutput<
@@ -380,7 +386,8 @@ type MiddlewareRunArgs = Readonly<{
    * The context object that will be passed to the function. This contains
    * event data, some contextual data such as the run's ID, and step tooling.
    */
-  ctx: Record<string, unknown> & Readonly<BaseContext<ClientOptions, string>>;
+  ctx: Record<string, unknown> &
+    Readonly<BaseContext<Inngest.Any, TriggersFromClient<Inngest.Any>>>; // TODO Acceptable?
 
   /**
    * The step data that will be passed to the function.
@@ -528,7 +535,7 @@ type GetMiddlewareSendEventOutputMutation<
  */
 export type MiddlewareStackSendEventOutputMutation<
   TContext,
-  TMiddleware extends MiddlewareStack,
+  TMiddleware extends InngestMiddleware.Stack,
 > = ObjectAssign<
   {
     [K in keyof TMiddleware]: GetMiddlewareSendEventOutputMutation<
@@ -539,7 +546,7 @@ export type MiddlewareStackSendEventOutputMutation<
 >;
 
 export type ExtendWithMiddleware<
-  TMiddlewareStacks extends MiddlewareStack[],
+  TMiddlewareStacks extends InngestMiddleware.Stack[],
   // eslint-disable-next-line @typescript-eslint/ban-types
   TContext = {},
 > = ObjectAssign<
@@ -554,7 +561,7 @@ export type ExtendWithMiddleware<
 >;
 
 export type ExtendSendEventWithMiddleware<
-  TMiddlewareStacks extends MiddlewareStack[],
+  TMiddlewareStacks extends InngestMiddleware.Stack[],
   // eslint-disable-next-line @typescript-eslint/ban-types
   TContext = {},
 > = ObjectAssign<
@@ -573,7 +580,7 @@ export type ExtendSendEventWithMiddleware<
  */
 export type MiddlewareStackRunInputMutation<
   TContext,
-  TMiddleware extends MiddlewareStack,
+  TMiddleware extends InngestMiddleware.Stack,
 > = ObjectAssign<
   {
     [K in keyof TMiddleware]: GetMiddlewareRunInputMutation<TMiddleware[K]>;

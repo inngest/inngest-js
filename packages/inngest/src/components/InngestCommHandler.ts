@@ -321,7 +321,7 @@ export class InngestCommHandler<
    */
   private readonly fns: Record<
     string,
-    { fn: InngestFunction; onFailure: boolean }
+    { fn: InngestFunction.Any; onFailure: boolean }
   > = {};
 
   private env: Env = allProcessEnv();
@@ -368,7 +368,7 @@ export class InngestCommHandler<
     }
 
     this.fns = this.rawFns.reduce<
-      Record<string, { fn: InngestFunction; onFailure: boolean }>
+      Record<string, { fn: InngestFunction.Any; onFailure: boolean }>
     >((acc, fn) => {
       const configs = fn["getConfig"](new URL("https://example.com"), this.id);
 

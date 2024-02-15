@@ -49,7 +49,6 @@ export type {
   FailureEventPayload,
   FinishedEventPayload,
   FunctionOptions,
-  FunctionTrigger,
   Handler,
   LogLevel,
   RegisterOptions,

@@ -240,6 +240,8 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
         ], FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>>>;
         middleware?: TMiddleware;
     }, "batchEvents", "cancelOn" | "rateLimit">, trigger: TTrigger, handler: THandler): InngestFunction<TOpts, EventsFromOpts<TOpts>, TTrigger, FunctionOptions<EventsFromOpts<TOpts>, EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>>, THandler>;
+    // (undocumented)
+    createFunctionMulti(options: any, handler: any): InngestFunction.Any;
     readonly id: string;
     // Warning: (ae-forgotten-export) The symbol "SendEventPayload" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "SendEventOutput" needs to be exported by the entry point index.d.ts
@@ -587,7 +589,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:339:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:346:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/types.ts:56:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:823:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:1046:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

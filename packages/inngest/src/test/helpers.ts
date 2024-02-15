@@ -12,7 +12,7 @@ import {
 } from "@local/helpers/consts";
 import { type Env } from "@local/helpers/env";
 import { slugify } from "@local/helpers/strings";
-import { type FunctionTrigger } from "@local/types";
+import { type FunctionConfig } from "@local/types";
 import fetch from "cross-fetch";
 import { type Request, type Response } from "express";
 import nock from "nock";
@@ -1050,7 +1050,7 @@ export const runHasTimeline = async (
 
 interface CheckIntrospection {
   name: string;
-  triggers: FunctionTrigger[];
+  triggers: FunctionConfig["triggers"];
 }
 
 export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {

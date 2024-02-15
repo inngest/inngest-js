@@ -2,7 +2,8 @@ import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
-  type EventsFromOpts,
+  type GetEvents,
+  type Inngest,
   type builtInMiddleware,
 } from "./components/Inngest";
 import { type InngestFunction } from "./components/InngestFunction";
@@ -10,7 +11,6 @@ import { type InngestFunctionReference } from "./components/InngestFunctionRefer
 import {
   type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
-  type MiddlewareOptions,
 } from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
@@ -20,6 +20,7 @@ import {
   type RecursiveTuple,
   type StrictUnion,
 } from "./helpers/types";
+import { type ValidSchemaInput } from "./helpers/validators";
 import { type Logger } from "./middleware/logger";
 
 export const failureEventErrorSchema = z
@@ -37,11 +38,6 @@ export const failureEventErrorSchema = z
       stack: val.stack,
     };
   });
-
-export type MiddlewareStack = [
-  InngestMiddleware<MiddlewareOptions>,
-  ...InngestMiddleware<MiddlewareOptions>[],
-];
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -250,28 +246,71 @@ export type WithInvocation<T extends EventPayload> = Simplify<
   { name: T["name"] | `${internalEvents.FunctionInvoked}` } & Omit<T, "name">
 >;
 
+// const inngest = new Inngest({
+//   id: "",
+//   schemas: new EventSchemas().fromRecord<{
+//     "app/user.created": {
+//       data: {
+//         userCreatedBra: string;
+//         name: string;
+//       };
+//     };
+//     "app/user.updated": {
+//       data: {
+//         foobyBrah: string;
+//         name: string;
+//       };
+//     };
+//   }>(),
+// });
+
+type GetSelectedEvents<
+  TClient extends Inngest.Any,
+  TTriggers extends TriggersFromClient<TClient>,
+> = Pick<GetEvents<TClient, true>, TTriggers[number]>;
+
+type GetContextEvents<
+  TClient extends Inngest.Any,
+  TTriggers extends TriggersFromClient<TClient>,
+  TInvokeSchema extends ValidSchemaInput = never, // TODO Use this
+> = GetSelectedEvents<TClient, TTriggers>[keyof GetSelectedEvents<
+  TClient,
+  TTriggers
+>];
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type GetContextBatch<T> = T extends any ? [T, ...T[]] : never;
+
+// type T0 = GetContextEvents<
+//   //   ^?
+//   typeof inngest,
+//   ["app/user.created", "app/user.updated"]
+// >;
+
 export type BaseContext<
-  TOpts extends ClientOptions,
-  TTrigger extends keyof EventsFromOpts<TOpts> & string,
+  TClient extends Inngest.Any,
+  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
 > = {
   /**
    * The event data present in the payload.
    */
-  event: WithInvocation<EventsFromOpts<TOpts>[TTrigger]>;
+  // event: WithInvocation<EventsFromOpts<TOpts>[TTrigger]>;
+  // TODO These should also include invocation events based on the invocation
+  // schema given!!!
+  event: GetContextEvents<TClient, TTriggers>;
+  events: GetContextBatch<GetContextEvents<TClient, TTriggers>>;
 
-  events: [
-    EventsFromOpts<TOpts>[TTrigger],
-    ...EventsFromOpts<TOpts>[TTrigger][],
-  ];
+  // events: [
+  //   EventsFromOpts<TOpts>[TTrigger],
+  //   ...EventsFromOpts<TOpts>[TTrigger][],
+  // ];
 
   /**
    * The run ID for the current function execution
    */
   runId: string;
 
-  step: ReturnType<
-    typeof createStepTools<TOpts, EventsFromOpts<TOpts>, TTrigger>
-  >;
+  step: ReturnType<typeof createStepTools<TClient>>;
 
   /**
    * The current zero-indexed attempt number for this function execution. The
@@ -288,11 +327,14 @@ export type BaseContext<
  * @internal
  */
 export type Context<
-  TOpts extends ClientOptions,
-  TEvents extends Record<string, EventPayload>,
-  TTrigger extends keyof TEvents & string,
+  // TOpts extends ClientOptions,
+  // TEvents extends Record<string, EventPayload>,
+  // TTrigger extends keyof TEvents & string,
+  // TOverrides extends Record<string, unknown> = Record<never, never>,
+  TClient extends Inngest.Any = Inngest.Any,
+  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
   TOverrides extends Record<string, unknown> = Record<never, never>,
-> = Omit<BaseContext<TOpts, TTrigger>, keyof TOverrides> & TOverrides;
+> = Omit<BaseContext<TClient, TTriggers>, keyof TOverrides> & TOverrides;
 
 /**
  * Builds a context object for an Inngest handler, optionally overriding some
@@ -305,7 +347,7 @@ export namespace Context {
    * Represents any `Context` object, regardless of generics and inference.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type Any = Context<any, any, any>;
+  export type Any = Context;
 }
 
 /**
@@ -315,17 +357,27 @@ export namespace Context {
  * @public
  */
 export type Handler<
-  TOpts extends ClientOptions,
-  TEvents extends EventsFromOpts<TOpts>,
-  TTrigger extends keyof TEvents & string,
+  // TOpts extends ClientOptions,
+  // TEvents extends EventsFromOpts<TOpts>,
+  // TTrigger extends keyof TEvents & string,
+  // TOverrides extends Record<string, unknown> = Record<never, never>,
+  TClient extends Inngest.Any,
+  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = (
   /**
    * The context argument provides access to all data and tooling available to
    * the function.
    */
-  ctx: Context<TOpts, TEvents, TTrigger, TOverrides>
+  // ctx: Context<TOpts, TEvents, TTrigger, TOverrides>
+  ctx: Context<TClient, TTriggers, TOverrides>
 ) => unknown;
+
+export type TriggersFromClient<TClient extends Inngest.Any> = (keyof GetEvents<
+  TClient,
+  true
+> &
+  string)[];
 
 /**
  * The shape of a Inngest function, taking in event, step, ctx, and step
@@ -338,7 +390,8 @@ export namespace Handler {
    * Represents any `Handler`, regardless of generics and inference.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type Any = Handler<any, any, any, any>;
+  export type Any = Handler<any, any, any>;
+  // export type Any = Handler<any, any, any, any>;
 }
 
 /**
@@ -584,7 +637,7 @@ export interface ClientOptions {
    * Defaults to a dummy logger that just log things to the console if nothing is provided.
    */
   logger?: Logger;
-  middleware?: MiddlewareStack;
+  middleware?: InngestMiddleware.Stack;
 }
 
 /**
@@ -722,6 +775,8 @@ export interface RegisterOptions {
 /**
  * A user-friendly method of specifying a trigger for an Inngest function.
  *
+ * LEGACY LEGACY LEGACY TODO
+ *
  * @public
  */
 export type TriggerOptions<T extends string> = StrictUnion<
@@ -771,8 +826,11 @@ export interface ConcurrencyOption {
  * @public
  */
 export interface FunctionOptions<
-  Events extends Record<string, EventPayload>,
-  Event extends keyof Events & string,
+  TClient extends Inngest.Any,
+  TEvents extends GetEvents<TClient, true>,
+  TEvent extends TriggersFromClient<TClient>[number],
+  TMiddleware extends InngestMiddleware.Stack,
+  TFailureHandler extends Handler.Any,
 > {
   /**
    * An unique ID used to identify the function. This is used internally for
@@ -912,7 +970,7 @@ export interface FunctionOptions<
     run?: string;
   };
 
-  cancelOn?: Cancellation<Events, Event>[];
+  cancelOn?: Cancellation<TEvents, TEvent>[];
 
   /**
    * Specifies the maximum number of retries for all steps across this function.
@@ -942,7 +1000,9 @@ export interface FunctionOptions<
     | 19
     | 20;
 
-  onFailure?: (...args: unknown[]) => unknown;
+  // onFailure?: (...args: unknown[]) => unknown;
+
+  onFailure?: TFailureHandler;
 
   /**
    * Define a set of middleware that can be registered to hook into various
@@ -950,7 +1010,7 @@ export interface FunctionOptions<
    *
    * See {@link https://innge.st/middleware}
    */
-  middleware?: MiddlewareStack;
+  middleware?: TMiddleware;
 }
 
 /**
@@ -1097,19 +1157,19 @@ export interface IntrospectRequest {
   functionsFound: number;
 }
 
-/**
- * An individual function trigger.
- *
- * @internal
- */
-export type FunctionTrigger<T = string> =
-  | {
-      event: T;
-      expression?: string;
-    }
-  | {
-      cron: string;
-    };
+// /**
+//  * An individual function trigger.
+//  *
+//  * @internal
+//  */
+// export type FunctionTrigger<T = string> =
+//   | {
+//       event: T;
+//       expression?: string;
+//     }
+//   | {
+//       cron: string;
+//     };
 
 /**
  * A block representing an individual function being registered to Inngest
@@ -1120,7 +1180,7 @@ export type FunctionTrigger<T = string> =
 export interface FunctionConfig {
   name?: string;
   id: string;
-  triggers: FunctionTrigger[];
+  triggers: ({ event: string; expression?: string } | { cron: string })[];
   steps: Record<
     string,
     {
@@ -1175,7 +1235,7 @@ export interface DevServerInfo {
  */
 export type EventNameFromTrigger<
   Events extends Record<string, EventPayload>,
-  T extends TriggerOptions<keyof Events & string>,
+  T extends InngestFunction.Trigger<keyof Events & string>,
 > = T extends string ? T : T extends { event: string } ? T["event"] : string;
 
 /**
@@ -1288,7 +1348,7 @@ export type PayloadFromAnyInngestFunction<
   : object;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;
-// TODO Types ready for when we expand this.
+// TODO Types ready for when we expand this.j
 // & {
 //   result: InvocationResult<TReturn>;
 //   cancel: (reason: string) => Promise<void>; // TODO Need to be a Promise? 🤔

@@ -5,13 +5,11 @@ import { logPrefix } from "../helpers/consts";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
-  type ObjectPaths,
   type ParametersExceptFirst,
   type SendEventPayload,
 } from "../helpers/types";
 import {
   StepOpCode,
-  type ClientOptions,
   type EventPayload,
   type HashedOp,
   type InvocationResult,
@@ -21,9 +19,11 @@ import {
   type StepOptions,
   type StepOptionsOrId,
   type TriggerEventFromFunction,
+  type TriggersFromClient,
 } from "../types";
 import {
-  type EventsFromOpts,
+  type ClientOptionsFromInngest,
+  type GetEvents,
   type GetFunctionOutput,
   type Inngest,
 } from "./Inngest";
@@ -118,11 +118,13 @@ export const STEP_INDEXING_SUFFIX = ":";
  * that the tools can use to submit a new op.
  */
 export const createStepTools = <
-  TOpts extends ClientOptions,
-  Events extends EventsFromOpts<TOpts>,
-  TriggeringEvent extends keyof Events & string,
+  // TOpts extends ClientOptions,
+  // Events extends EventsFromOpts<TOpts>,
+  // TriggeringEvent extends keyof Events & string,
+  TClient extends Inngest.Any,
+  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
 >(
-  client: Inngest<TOpts>,
+  client: TClient,
   stepHandler: StepHandler
 ) => {
   /**
@@ -185,10 +187,10 @@ export const createStepTools = <
      * Returns a promise that will resolve once the event has been sent.
      */
     sendEvent: createTool<{
-      <Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
+      <Payload extends SendEventPayload<GetEvents<TClient>>>(
         idOrOptions: StepOptionsOrId,
         payload: Payload
-      ): Promise<SendEventOutput<TOpts>>;
+      ): Promise<SendEventOutput<ClientOptionsFromInngest<TClient>>>;
     }>(
       ({ id, name }) => {
         return {
@@ -215,15 +217,19 @@ export const createStepTools = <
      * events, or to only wait a maximum amount of time before giving up and
      * returning `null` instead of any event data.
      */
+    // TODO Fix `waitForEvent` matching
     waitForEvent: createTool<
-      <IncomingEvent extends keyof Events & string>(
+      <IncomingEvent extends TriggersFromClient<TClient>[number]>(
         idOrOptions: StepOptionsOrId,
-        opts: WaitForEventOpts<Events, TriggeringEvent, IncomingEvent>
-      ) => Promise<
-        IncomingEvent extends keyof Events
-          ? Events[IncomingEvent] | null
-          : IncomingEvent | null
-      >
+        opts: WaitForEventOpts<
+          GetEvents<TClient, true>,
+          IncomingEvent, // TriggeringEvent,
+          IncomingEvent
+        >
+      ) => Promise<// IncomingEvent extends keyof Events
+      //   ? Events[IncomingEvent] | null
+      //   : IncomingEvent | null
+      any>
     >(
       (
         { id, name },
@@ -543,8 +549,9 @@ type WaitForEventOpts<
      *
      * {@link https://www.inngest.com/docs/functions/expressions}
      */
-    match?: ObjectPaths<Events[TriggeringEvent]> &
-      ObjectPaths<Events[IncomingEvent]>;
+    // match?: ObjectPaths<Events[TriggeringEvent]> &
+    //   ObjectPaths<Events[IncomingEvent]>;
+    match?: any;
 
     /**
      * If provided, the step function will wait for the incoming event to match

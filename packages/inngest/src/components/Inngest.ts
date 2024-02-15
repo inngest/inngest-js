@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { type IfNever, type Jsonify } from "type-fest";
 import { type SimplifyDeep } from "type-fest/source/merge-deep";
 import { InngestApi } from "../api/api";
@@ -7,7 +8,6 @@ import {
   defaultInngestEventBaseUrl,
   dummyEventKey,
   envKeys,
-  logPrefix,
 } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
@@ -18,11 +18,7 @@ import {
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
 import { stringify } from "../helpers/strings";
-import {
-  type ExclusiveKeys,
-  type SendEventPayload,
-  type WithoutInternal,
-} from "../helpers/types";
+import { type SendEventPayload, type WithoutInternal } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
   sendEventResponseSchema,
@@ -31,13 +27,12 @@ import {
   type EventPayload,
   type FailureEventArgs,
   type FunctionOptions,
-  type FunctionTrigger,
   type Handler,
   type InvokeTargetFunctionDefinition,
-  type MiddlewareStack,
   type SendEventOutput,
   type SendEventResponse,
   type TriggerOptions,
+  type TriggersFromClient,
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
 import { InngestFunction } from "./InngestFunction";
@@ -90,7 +85,7 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
  *
  * @public
  */
-export class Inngest<TOpts extends ClientOptions = ClientOptions> {
+export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
   /**
    * The ID of this instance, most commonly a reference to the application it
    * resides in.
@@ -159,7 +154,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     env,
     logger = new DefaultLogger(),
     middleware,
-  }: TOpts) {
+  }: TClientOpts) {
     if (!id) {
       // TODO PrettyError
       throw new Error("An `id` must be passed to create an Inngest instance.");
@@ -327,9 +322,9 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
    * });
    * ```
    */
-  public async send<Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
+  public async send<Payload extends SendEventPayload<GetEvents<this>>>(
     payload: Payload
-  ): Promise<SendEventOutput<TOpts>> {
+  ): Promise<SendEventOutput<TClientOpts>> {
     const hooks = await getHookStack(
       this.middleware,
       "onSendEvent",
@@ -373,13 +368,13 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     const applyHookToOutput = async (
       arg: Parameters<NonNullable<SendEventHookStack["transformOutput"]>>[0]
-    ): Promise<SendEventOutput<TOpts>> => {
+    ): Promise<SendEventOutput<TClientOpts>> => {
       const hookOutput = await hooks.transformOutput?.(arg);
       return {
         ...arg.result,
         ...hookOutput?.result,
         // 🤮
-      } as unknown as SendEventOutput<TOpts>;
+      } as unknown as SendEventOutput<TClientOpts>;
     };
 
     /**
@@ -454,143 +449,157 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     return await applyHookToOutput({ result: { ids: body.ids } });
   }
 
+  // public createFunctionMulti<
+  //   TOpts extends FunctionOptions2<TMiddleware>,
+  //   TMiddleware extends MiddlewareStack,
+  //   THandler extends Handler.Any = Handler<TClientOpts>,
+  // >(options: TOpts, handler: any): InngestFunction.Any {
+  //   throw new Error("Not implemented");
+  // }
   public createFunction<
-    TMiddleware extends MiddlewareStack,
-    TTrigger extends TriggerOptions<TTriggerName>,
-    TTriggerName extends keyof EventsFromOpts<TOpts> &
-      string = EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>,
-    THandler extends Handler.Any = Handler<
-      TOpts,
-      EventsFromOpts<TOpts>,
+    TFnOpts extends InngestFunction.OptionsWithTrigger<
+      this,
+      TMiddleware,
+      TTriggers
+    >,
+    TMiddleware extends InngestMiddleware.Stack,
+    TTriggers extends InngestFunction.Trigger<
+      TriggersFromClient<this>[number]
+    >[],
+    THandler extends Handler.Any = Handler.Any,
+  >(options: TFnOpts, handler: THandler): InngestFunction<TFnOpts, THandler>;
+  public createFunction<
+    TFnOpts extends FunctionOptions<
+      this,
+      GetEvents<this, true>,
       TTriggerName,
+      TMiddleware,
+      TFailureHandler
+    >,
+    TMiddleware extends InngestMiddleware.Stack,
+    TTrigger extends TriggerOptions<TTriggerName>,
+    TTriggerName extends
+      TriggersFromClient<this>[number] = EventNameFromTrigger<
+      GetEvents<this, true>,
+      TTrigger
+    >,
+    THandler extends Handler.Any = Handler<
+      this,
+      [TTriggerName],
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
-          NonNullable<TOpts["middleware"]>,
+          NonNullable<TClientOpts["middleware"]>,
           TMiddleware,
         ]
       >
     >,
-  >(
-    options: ExclusiveKeys<
-      Omit<
-        FunctionOptions<EventsFromOpts<TOpts>, TTriggerName>,
-        "onFailure" | "middleware"
-      > & {
-        /**
-         * Provide a function to be called if your function fails, meaning
-         * that it ran out of retries and was unable to complete successfully.
-         *
-         * This is useful for sending warning notifications or cleaning up
-         * after a failure and supports all the same functionality as a
-         * regular handler.
-         */
-        onFailure?: Handler<
-          TOpts,
-          EventsFromOpts<TOpts>,
-          TTriggerName,
-          ExtendWithMiddleware<
-            [
-              typeof builtInMiddleware,
-              NonNullable<TOpts["middleware"]>,
-              TMiddleware,
-            ],
-            FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
-          >
-        >;
-
-        /**
-         * Define a set of middleware that can be registered to hook into
-         * various lifecycles of the SDK and affect input and output of
-         * Inngest functionality.
-         *
-         * See {@link https://innge.st/middleware}
-         *
-         * @example
-         *
-         * ```ts
-         * export const inngest = new Inngest({
-         *   middleware: [
-         *     new InngestMiddleware({
-         *       name: "My Middleware",
-         *       init: () => {
-         *         // ...
-         *       }
-         *     })
-         *   ]
-         * });
-         * ```
-         */
-        middleware?: TMiddleware;
-      },
-      "batchEvents",
-      "cancelOn" | "rateLimit"
+    TFailureHandler extends Handler.Any = Handler<
+      this,
+      [TTriggerName],
+      ExtendWithMiddleware<
+        [
+          typeof builtInMiddleware,
+          NonNullable<ClientOptionsFromInngest<this>["middleware"]>,
+          TMiddleware,
+        ],
+        FailureEventArgs //<EventsFromOpts<TClientOpts>[TTriggerName]>
+      >
     >,
+  >(
+    options: TFnOpts,
     trigger: TTrigger,
     handler: THandler
   ): InngestFunction<
-    TOpts,
-    EventsFromOpts<TOpts>,
-    TTrigger,
-    FunctionOptions<
-      EventsFromOpts<TOpts>,
-      EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
-    >,
+    InngestFunction.OptionsWithTrigger<this, TMiddleware, [TTrigger]>,
     THandler
-  > {
-    let sanitizedOpts: FunctionOptions<
-      EventsFromOpts<TOpts>,
-      EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
-    >;
+  >;
+  public createFunction(...args: unknown[]) {
+    if (args.length === 3) {
+      const [options, trigger, handler] = args as [
+        FunctionOptions<
+          typeof this,
+          EventsFromOpts<TClientOpts>,
+          string,
+          InngestMiddleware.Stack,
+          Handler.Any
+        >,
+        TriggerOptions<string>,
+        Handler.Any,
+      ];
 
-    if (typeof options === "string") {
-      // v2 -> v3 runtime migraton warning
-      console.warn(
-        `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
-      );
-
-      sanitizedOpts = { id: options };
-    } else {
-      sanitizedOpts = options as typeof sanitizedOpts;
-    }
-
-    let sanitizedTrigger: FunctionTrigger<TTriggerName>;
-
-    if (typeof trigger === "string") {
-      // v2 -> v3 migration warning
-      console.warn(
-        `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
-      );
-
-      sanitizedTrigger = {
-        event: trigger,
+      const optionsWithTrigger: InngestFunction.OptionsWithTrigger = {
+        ...options,
+        triggers: [trigger],
       };
-    } else if (trigger.event) {
-      sanitizedTrigger = {
-        event: trigger.event,
-        expression: trigger.if,
-      };
-    } else {
-      sanitizedTrigger = trigger;
+
+      return new InngestFunction(this, optionsWithTrigger, handler);
     }
 
-    if (Object.prototype.hasOwnProperty.call(sanitizedOpts, "fns")) {
-      // v2 -> v3 migration warning
-      console.warn(
-        `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`
-      );
-    }
+    const [options, handler] = args as [
+      InngestFunction.OptionsWithTrigger,
+      Handler.Any,
+    ];
 
-    return new InngestFunction<
-      TOpts,
-      EventsFromOpts<TOpts>,
-      TTrigger,
-      FunctionOptions<
-        EventsFromOpts<TOpts>,
-        EventNameFromTrigger<EventsFromOpts<TOpts>, TTrigger>
-      >,
-      THandler
-    >(this, sanitizedOpts, sanitizedTrigger as TTrigger, handler);
+    // TODO 😬
+    return new InngestFunction(this, options, handler) as unknown;
+
+    // // TODO Use Zod to validate options. We're removing exclusivity typing from
+    // // this to reduce the size of the type, which means this must now be at
+    // // runtime instead.
+    // let sanitizedOpts: FunctionOptions<
+    //   EventsFromOpts<TClientOpts>,
+    //   EventNameFromTrigger<EventsFromOpts<TClientOpts>, TTrigger>
+    // >;
+
+    // if (typeof options === "string") {
+    //   // v2 -> v3 runtime migraton warning
+    //   console.warn(
+    //     `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
+    //   );
+
+    //   sanitizedOpts = { id: options };
+    // } else {
+    //   sanitizedOpts = options as typeof sanitizedOpts;
+    // }
+
+    // let sanitizedTrigger: FunctionTrigger<TTriggerName>;
+
+    // if (typeof trigger === "string") {
+    //   // v2 -> v3 migration warning
+    //   console.warn(
+    //     `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
+    //   );
+
+    //   sanitizedTrigger = {
+    //     event: trigger,
+    //   };
+    // } else if (trigger.event) {
+    //   sanitizedTrigger = {
+    //     event: trigger.event,
+    //     expression: trigger.if,
+    //   };
+    // } else {
+    //   sanitizedTrigger = trigger;
+    // }
+
+    // if (Object.prototype.hasOwnProperty.call(sanitizedOpts, "fns")) {
+    //   // v2 -> v3 migration warning
+    //   console.warn(
+    //     `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`
+    //   );
+    // }
+
+    // return new InngestFunction<
+    //   TClientOpts,
+    //   EventsFromOpts<TClientOpts>,
+    //   TTrigger,
+    //   FunctionOptions<
+    //     EventsFromOpts<TClientOpts>,
+    //     EventNameFromTrigger<EventsFromOpts<TClientOpts>, TTrigger>
+    //   >,
+    //   THandler
+    // >(this, sanitizedOpts, sanitizedTrigger as TTrigger, handler);
   }
 }
 
@@ -605,13 +614,16 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
  * If this is moved, please ensure that using this package in another project
  * can correctly access comments on mutated input and output.
  */
-export const builtInMiddleware = (<T extends MiddlewareStack>(m: T): T => m)([
+export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
+  m: T
+): T => m)([
   new InngestMiddleware({
     name: "Inngest: Logger",
     init({ client }) {
       return {
         onFunctionRun(arg) {
           const { ctx } = arg;
+
           const metadata = {
             runID: ctx.runId,
             eventName: ctx.event.name,
@@ -738,22 +750,29 @@ export type GetStepTools<
  * @public
  */
 export type GetFunctionInput<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TInngest extends Inngest<any>,
-  TTrigger extends keyof GetEvents<TInngest, true> & string = keyof GetEvents<
-    TInngest,
-    true
-  > &
-    string,
+  TClient extends Inngest.Any,
+  TTrigger extends
+    | TriggersFromClient<TClient>[number]
+    | TriggersFromClient<TClient>[number][],
 > = Parameters<
+  // Handler<
+  //   ClientOptionsFromInngest<TInngest>,
+  //   GetEvents<TInngest, true>,
+  //   TTrigger,
+  //   ExtendWithMiddleware<
+  //     [
+  //       typeof builtInMiddleware,
+  //       NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>,
+  //     ]
+  //   >
+  // >
   Handler<
-    ClientOptionsFromInngest<TInngest>,
-    GetEvents<TInngest, true>,
-    TTrigger,
+    TClient,
+    TTrigger extends string ? [TTrigger] : TTrigger,
     ExtendWithMiddleware<
       [
         typeof builtInMiddleware,
-        NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>,
+        NonNullable<ClientOptionsFromInngest<TClient>["middleware"]>,
       ]
     >
   >
@@ -788,7 +807,7 @@ export type GetFunctionOutput<
 export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-> = TFunction extends InngestFunction<any, any, any, any, infer IHandler>
+> = TFunction extends InngestFunction<any, infer IHandler, any, any, any>
   ? IfNever<
       SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>,
       null,

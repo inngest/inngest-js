@@ -20,13 +20,13 @@ import {
   StepOpCode,
   failureEventErrorSchema,
   type BaseContext,
-  type ClientOptions,
   type Context,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
   type OutgoingOp,
 } from "../../types";
+import { type Inngest } from "../Inngest";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware";
 import {
   STEP_INDEXING_SUFFIX,
@@ -550,7 +550,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   private createStepTools(): ReturnType<
-    typeof createStepTools<ClientOptions, Record<string, EventPayload>, string>
+    // typeof createStepTools<ClientOptions, Record<string, EventPayload>,
+    // string>
+    typeof createStepTools
   > {
     /**
      * A list of steps that have been found and are being rolled up before being
@@ -831,7 +833,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
   private async initializeMiddleware(): Promise<RunHookStack> {
     const ctx = this.options.data as Pick<
-      Readonly<BaseContext<ClientOptions, string>>,
+      Readonly<BaseContext<Inngest.Any>>,
       "event" | "events" | "runId"
     >;
 
