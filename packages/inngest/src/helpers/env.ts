@@ -91,7 +91,7 @@ interface IsProdOptions {
 }
 
 export interface Mode {
-  type: "prod" | "dev";
+  type: "cloud" | "dev";
 
   /**
    * Whether the mode was explicitly set, or inferred from other sources.
@@ -118,14 +118,14 @@ export const getMode = ({
 
   const envIsDev = parseAsBoolean(env[envKeys.InngestDevMode]);
   if (typeof envIsDev === "boolean") {
-    return { type: envIsDev ? "dev" : "prod", isExplicit: true };
+    return { type: envIsDev ? "dev" : "cloud", isExplicit: true };
   }
 
   const isProd = prodChecks.some(([key, checkKey, expected]) => {
     return checkFns[checkKey](stringifyUnknown(env[key]), expected);
   });
 
-  return { type: isProd ? "prod" : "dev", isExplicit: false };
+  return { type: isProd ? "cloud" : "dev", isExplicit: false };
 };
 
 /**

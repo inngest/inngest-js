@@ -679,7 +679,7 @@ export class InngestCommHandler<
         "starting to handle request"
       );
       if (typeof serveIsProd === "boolean") {
-        this._mode = { type: serveIsProd ? "prod" : "dev", isExplicit: false };
+        this._mode = { type: serveIsProd ? "cloud" : "dev", isExplicit: false };
       } else {
         this._mode = assumedMode;
       }
@@ -1170,7 +1170,7 @@ export class InngestCommHandler<
     // Never validate signatures outside of prod. Make sure we check the mode
     // exists here instead of using nullish coalescing to confirm that the check
     // has been completed.
-    if (this._mode && this._mode.type !== "prod") {
+    if (this._mode && this._mode.type !== "cloud") {
       return;
     }
 

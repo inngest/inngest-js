@@ -183,7 +183,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
 
     this.mode = getMode({
       explicitMode:
-        typeof isDev === "boolean" ? (isDev ? "dev" : "prod") : undefined,
+        typeof isDev === "boolean" ? (isDev ? "dev" : "cloud") : undefined,
     });
 
     this.apiBaseUrl =
@@ -191,7 +191,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       processEnv(envKeys.InngestApiBaseUrl) ||
       processEnv(envKeys.InngestBaseUrl) ||
       (this.mode.isExplicit
-        ? this.mode.type === "prod"
+        ? this.mode.type === "cloud"
           ? defaultInngestApiBaseUrl
           : defaultDevServerHost
         : undefined);
@@ -201,7 +201,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       processEnv(envKeys.InngestEventApiBaseUrl) ||
       processEnv(envKeys.InngestBaseUrl) ||
       (this.mode.isExplicit
-        ? this.mode.type === "prod"
+        ? this.mode.type === "cloud"
           ? defaultInngestEventBaseUrl
           : defaultDevServerHost
         : undefined);
@@ -438,7 +438,7 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     /**
      * If we're in prod mode and have no key, fail now.
      */
-    if (this.mode.type === "prod" && !this.eventKeySet()) {
+    if (this.mode.type === "cloud" && !this.eventKeySet()) {
       throw new Error(
         prettyError({
           whatHappened: "Failed to send event",
