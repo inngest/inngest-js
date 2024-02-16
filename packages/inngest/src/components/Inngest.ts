@@ -449,35 +449,59 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     return await applyHookToOutput({ result: { ids: body.ids } });
   }
 
-  // public createFunction<
-  //   TFnOpts extends InngestFunction.OptionsWithTrigger<
-  //     this,
-  //     TMiddleware,
-  //     TTriggers,
-  //     TFailureHandler
-  //   >,
-  //   TMiddleware extends InngestMiddleware.Stack,
-  //   TTriggers extends InngestFunction.Trigger<
-  //     TriggersFromClient<this>[number]
-  //   >[],
-  //   THandler extends Handler.Any = Handler.Any,
-  //   TFailureHandler extends Handler.Any = Handler<
-  //     this,
-  //     {
-  //       [K in keyof TTriggers]: TTriggers[K] extends { event: infer E }
-  //         ? E
-  //         : never;
-  //     },
-  //     ExtendWithMiddleware<
-  //       [
-  //         typeof builtInMiddleware,
-  //         NonNullable<ClientOptionsFromInngest<this>["middleware"]>,
-  //         TMiddleware,
-  //       ],
-  //       FailureEventArgs //<EventsFromOpts<TClientOpts>[TTriggerName]>
-  //     >
-  //   >,
-  // >(options: TFnOpts, handler: THandler): InngestFunction<TFnOpts, THandler>;
+  // overload
+  public function<
+    TFnOpts extends InngestFunction.OptionsWithTrigger<
+      this,
+      TMiddleware,
+      TTriggers,
+      TFailureHandler
+    >,
+    TMiddleware extends InngestMiddleware.Stack,
+    TTriggers extends InngestFunction.Trigger<
+      TriggersFromClient<this>[number]
+    >[],
+    THandler extends Handler.Any = Handler<
+      this,
+      {
+        [K in keyof TTriggers]: TTriggers[K] extends { event: infer E }
+          ? E
+          : never;
+      },
+      ExtendWithMiddleware<
+        [
+          typeof builtInMiddleware,
+          NonNullable<ClientOptionsFromInngest<this>["middleware"]>,
+          TMiddleware,
+        ]
+      >
+    >,
+    TFailureHandler extends Handler.Any = Handler<
+      this,
+      {
+        [K in keyof TTriggers]: TTriggers[K] extends { event: infer E }
+          ? E
+          : never;
+      },
+      ExtendWithMiddleware<
+        [
+          typeof builtInMiddleware,
+          NonNullable<ClientOptionsFromInngest<this>["middleware"]>,
+          TMiddleware,
+        ],
+        FailureEventArgs //<EventsFromOpts<TClientOpts>[TTriggerName]>
+      >
+    >,
+  >(
+    options: TFnOpts,
+    handler: THandler
+  ): InngestFunction<TFnOpts, THandler, this, TMiddleware, TTriggers> {
+    return new InngestFunction(this, options, handler);
+  }
+
+  /**
+   * @deprecated
+   */
   public createFunction<
     TFnOpts extends FunctionOptions<
       this,
@@ -579,6 +603,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
 
   //   // TODO 😬
   //   return new InngestFunction(this, options, handler) as unknown;
+  // }
 
   // LEGACY LEGACY BELOW LEGACY LEGACY
 
