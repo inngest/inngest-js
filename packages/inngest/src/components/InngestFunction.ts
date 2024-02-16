@@ -34,17 +34,6 @@ import { createV1InngestExecution } from "./execution/v1";
  * @public
  */
 export class InngestFunction<
-  // TOpts extends ClientOptions = ClientOptions,
-  // Events extends EventsFromOpts<TOpts> = EventsFromOpts<TOpts>,
-  // Trigger extends FunctionTrigger<keyof Events & string> = FunctionTrigger<
-  //   keyof Events & string
-  // >,
-  // Opts extends FunctionOptions<
-  //   Events,
-  //   EventNameFromTrigger<Events, Trigger>
-  // > = FunctionOptions<Events, EventNameFromTrigger<Events, Trigger>>,
-  // THandler extends Handler.Any = Handler<TOpts, Events, keyof Events &
-  // string>,
   TFnOpts extends InngestFunction.OptionsWithTrigger<
     TClient,
     TMiddleware,
@@ -62,9 +51,6 @@ export class InngestFunction<
 
   public readonly opts: TFnOpts;
   private readonly fn: THandler;
-  // private readonly onFailureFn?: Handler<TOpts, Events, keyof Events &
-  // string>;
-  // TODO Re-add this
   private readonly onFailureFn?: TFnOpts["onFailure"];
   private readonly client: TClient;
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
@@ -88,7 +74,6 @@ export class InngestFunction<
     this.client = client;
     this.opts = opts;
     this.fn = fn;
-    // TODO Re-add
     this.onFailureFn = this.opts.onFailure;
 
     this.middleware = this.client["initializeMiddleware"](
@@ -140,7 +125,6 @@ export class InngestFunction<
       ...opts,
       id: fnId,
       name: this.name,
-      // triggers: [this.trigger as FunctionTrigger],
       triggers: (this.opts.triggers ?? []).map((trigger) => {
         if ("event" in trigger) {
           return {
@@ -166,7 +150,6 @@ export class InngestFunction<
       },
     };
 
-    // TODO Revive
     if (cancelOn) {
       fn.cancel = cancelOn.map(({ event, timeout, if: ifStr, match }) => {
         const ret: NonNullable<FunctionConfig["cancel"]>[number] = {
@@ -189,7 +172,6 @@ export class InngestFunction<
 
     const config: FunctionConfig[] = [fn];
 
-    // TODO Revive
     if (this.onFailureFn) {
       const failureOpts = { ...opts };
       const id = `${fn.id}${InngestFunction.failureSuffix}`;
@@ -257,18 +239,6 @@ export namespace InngestFunction {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export type Any = InngestFunction<any, Handler.Any, any, any, any>;
-  // export type Any = InngestFunction<
-  //   any,
-  //   any,
-  //   any,
-  //   any,
-  //   any
-  //   // InngestFunction.OptionsWithTrigger,
-  //   // Handler.Any,
-  //   // Inngest.Any,
-  //   // InngestMiddleware.Stack,
-  //   // InngestFunction.Trigger<TriggersFromClient<Inngest.Any>[number]>[]
-  // >;
 
   /**
    * A user-friendly method of specifying a trigger for an Inngest function.
@@ -438,7 +408,6 @@ export namespace InngestFunction {
       run?: string;
     };
 
-    // TODO Solve this again for multiple events
     cancelOn?: Cancellation<
       GetEvents<TClient, true>,
       EventNameFromTrigger<GetEvents<TClient, true>, TTriggers[number]>
@@ -480,20 +449,6 @@ export namespace InngestFunction {
      * after a failure and supports all the same functionality as a
      * regular handler.
      */
-    // TODO Solve this again for multiple events
-    // onFailure?: Handler<
-    //   TOpts,
-    //   EventsFromOpts<TOpts>,
-    //   TTriggerName,
-    //   ExtendWithMiddleware<
-    //     [
-    //       typeof builtInMiddleware,
-    //       NonNullable<TOpts["middleware"]>,
-    //       TMiddleware,
-    //     ],
-    //     FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
-    //   >
-    // >;
     onFailure?: TFailureHandler;
 
     /**

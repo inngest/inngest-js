@@ -227,7 +227,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     typeof builtInMiddleware,
     NonNullable<ClientOptionsFromInngest<this>["middleware"]>,
     TMiddleware
-    ], FailureEventArgs>>>(options: TFnOpts, trigger: TTrigger, handler: THandler): InngestFunction<InngestFunction.OptionsWithTrigger<this, TMiddleware, [
+    ], FailureEventArgs<GetEvents<this, true>[TTriggerName]>>>>(options: TFnOpts, trigger: TTrigger, handler: THandler): InngestFunction<InngestFunction.OptionsWithTrigger<this, TMiddleware, [
     TTrigger
     ], TFailureHandler>, THandler, this, TMiddleware, [
     TTrigger
@@ -589,7 +589,7 @@ export type TriggerOptions<T extends string> = StrictUnion<{
     if?: string;
 } | {
     cron: string;
-}>;
+} | null>;
 
 // @public
 export type UnionKeys<T> = T extends T ? keyof T : never;
@@ -621,7 +621,7 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:345:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:352:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/types.ts:52:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:878:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:836:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

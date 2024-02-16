@@ -15,7 +15,6 @@ export const frameworkName: SupportedFrameworkName = "fastify";
 
 type InngestPluginOptions = {
   client: Inngest.Any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   functions: InngestFunction.Any[];
   options?: RegisterOptions;
 };

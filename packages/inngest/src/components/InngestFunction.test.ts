@@ -147,7 +147,6 @@ describe("runFn", () => {
             fn = new InngestFunction(
               createClient(opts),
               { id: "Foo", triggers: [{ event: "foo" }] },
-              // { event: "foo" },
               flowFn
             );
 
@@ -190,7 +189,6 @@ describe("runFn", () => {
             fn = new InngestFunction(
               createClient(opts),
               { id: "Foo", triggers: [{ event: "foo" }] },
-              // { event: "foo" },
               badFlowFn
             );
           });
@@ -2562,9 +2560,9 @@ describe("runFn", () => {
                 assertType<FailureEventPayload>(event);
                 assertType<Error>(error);
 
-                // assertType<"foo">(event.data.event.name);
+                assertType<"foo">(event.data.event.name);
                 assertType<EventPayload>(event.data.event);
-                // assertType<{ title: string }>(event.data.event.data);
+                assertType<{ title: string }>(event.data.event.data);
               },
             },
             { event: "foo" },

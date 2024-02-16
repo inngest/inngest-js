@@ -119,9 +119,6 @@ export const STEP_INDEXING_SUFFIX = ":";
  * that the tools can use to submit a new op.
  */
 export const createStepTools = <
-  // TOpts extends ClientOptions,
-  // Events extends EventsFromOpts<TOpts>,
-  // TriggeringEvent extends keyof Events & string,
   TClient extends Inngest.Any,
   TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
 >(
@@ -553,7 +550,6 @@ type WaitForEventOpts<
      */
     match?: ObjectPaths<Events[TriggeringEvent]> &
       ObjectPaths<Events[IncomingEvent]>;
-    // match?: any;
 
     /**
      * If provided, the step function will wait for the incoming event to match

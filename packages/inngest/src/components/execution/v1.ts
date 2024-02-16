@@ -549,11 +549,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return fnArg;
   }
 
-  private createStepTools(): ReturnType<
-    // typeof createStepTools<ClientOptions, Record<string, EventPayload>,
-    // string>
-    typeof createStepTools
-  > {
+  private createStepTools(): ReturnType<typeof createStepTools> {
     /**
      * A list of steps that have been found and are being rolled up before being
      * reported to the core loop.
