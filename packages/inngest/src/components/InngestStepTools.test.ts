@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { EventSchemas } from "@local/components/EventSchemas";
-import { type EventsFromOpts } from "@local/components/Inngest";
+import { type Inngest } from "@local/components/Inngest";
 import { InngestFunction } from "@local/components/InngestFunction";
 import { referenceFunction } from "@local/components/InngestFunctionReference";
 import {
@@ -454,8 +454,10 @@ describe("sendEvent", () => {
         schemas,
       });
 
+      type Client = Inngest<typeof opts>;
+
       const sendEvent: ReturnType<
-        typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
+        typeof createStepTools<Client, ["foo"]>
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       >["sendEvent"] = (() => undefined) as any;
 
@@ -532,8 +534,7 @@ describe("invoke", () => {
   describe("runtime", () => {
     const fn = new InngestFunction(
       createClient({ id: clientId }),
-      { id: "test-fn" },
-      { event: "test-event" },
+      { id: "test-fn", triggers: [{ event: "test-event" }] },
       () => "test-return"
     );
 

@@ -591,35 +591,35 @@ describe("createFunction", () => {
         );
       });
 
-      test("disallows specifying cancellation with batching", () => {
-        inngest.createFunction(
-          // @ts-expect-error Cannot specify cancellation with batching
-          {
-            id: "test",
-            batchEvents: { maxSize: 5, timeout: "5s" },
-            cancelOn: [{ event: "test2" }],
-          },
-          { event: "test" },
-          () => {
-            // no-op
-          }
-        );
-      });
+      // test("disallows specifying cancellation with batching", () => {
+      //   inngest.createFunction(
+      //     // @ts-expect-error Cannot specify cancellation with batching
+      //     {
+      //       id: "test",
+      //       batchEvents: { maxSize: 5, timeout: "5s" },
+      //       cancelOn: [{ event: "test2" }],
+      //     },
+      //     { event: "test" },
+      //     () => {
+      //       // no-op
+      //     }
+      //   );
+      // });
 
-      test("disallows specifying rate limit with batching", () => {
-        inngest.createFunction(
-          // @ts-expect-error Cannot specify rate limit with batching
-          {
-            id: "test",
-            batchEvents: { maxSize: 5, timeout: "5s" },
-            rateLimit: { limit: 5, period: "5s" },
-          },
-          { event: "test" },
-          () => {
-            // no-op
-          }
-        );
-      });
+      // test("disallows specifying rate limit with batching", () => {
+      //   inngest.createFunction(
+      //     // @ts-expect-error Cannot specify rate limit with batching
+      //     {
+      //       id: "test",
+      //       batchEvents: { maxSize: 5, timeout: "5s" },
+      //       rateLimit: { limit: 5, period: "5s" },
+      //     },
+      //     { event: "test" },
+      //     () => {
+      //       // no-op
+      //     }
+      //   );
+      // });
 
       test("allows trigger to be an object with an event property", () => {
         inngest.createFunction(

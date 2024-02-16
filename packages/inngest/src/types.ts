@@ -373,11 +373,8 @@ export type Handler<
   ctx: Context<TClient, TTriggers, TOverrides>
 ) => unknown;
 
-export type TriggersFromClient<TClient extends Inngest.Any> = (keyof GetEvents<
-  TClient,
-  true
-> &
-  string)[];
+export type TriggersFromClient<TClient extends Inngest.Any = Inngest.Any> =
+  (keyof GetEvents<TClient, true> & string)[];
 
 /**
  * The shape of a Inngest function, taking in event, step, ctx, and step
@@ -1289,8 +1286,8 @@ export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
 export type EventsFromFunction<T extends InngestFunction.Any> =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  T extends InngestFunction<any, infer TEvents, any, any, any>
-    ? TEvents
+  T extends InngestFunction<any, any, infer IClient, any, any>
+    ? GetEvents<IClient, true>
     : never;
 
 /**
@@ -1333,19 +1330,39 @@ export type TriggerEventFromFunction<
  */
 export type PayloadFromAnyInngestFunction<
   TFunction extends InngestFunction.Any,
-  TEvents = TFunction extends InngestFunction.Any
+  TEvents extends Record<
+    string,
+    EventPayload
+  > = TFunction extends InngestFunction.Any
     ? EventsFromFunction<TFunction>
     : never,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-> = TFunction extends InngestFunction<any, any, infer ITrigger, any, any>
-  ? ITrigger extends {
-      event: infer IEventTrigger extends keyof TEvents & string;
-    }
-    ? Simplify<Omit<TEvents[IEventTrigger], "name" | "ts">>
-    : ITrigger extends { cron: string }
-      ? object
-      : object
-  : object;
+> = TFunction extends InngestFunction<any, any, any, any, infer ITriggers>
+  ? ITriggers extends InngestFunction.Trigger<keyof TEvents & string>[]
+    ? Simplify<
+        Omit<
+          TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>],
+          "name" | "ts"
+        >
+      >
+    : // ? // ? Simplify<Omit<TEvents[IEventTrigger], "name" | "ts">>
+      //   // EventNameFromTrigger<TEvents, ITriggers[number]>
+      //   "yeah"
+      // : IFnOpts extends { cron: string }
+      ITriggers extends { cron: string }
+      ? object // object
+      : object // object
+  : never;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// > = TFunction extends InngestFunction<any, any, infer ITrigger, any, any>
+//   ? ITrigger extends {
+//       event: infer IEventTrigger extends keyof TEvents & string;
+//     }
+//     ? Simplify<Omit<TEvents[IEventTrigger], "name" | "ts">>
+//     : ITrigger extends { cron: string }
+//       ? object
+//       : object
+//   : object;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;
 // TODO Types ready for when we expand this.j

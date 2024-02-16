@@ -14,10 +14,9 @@ import { type RegisterOptions, type SupportedFrameworkName } from "./types";
 export const frameworkName: SupportedFrameworkName = "fastify";
 
 type InngestPluginOptions = {
+  client: Inngest.Any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: Inngest<any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  functions: InngestFunction<any, any, any, any>[];
+  functions: InngestFunction.Any[];
   options?: RegisterOptions;
 };
 

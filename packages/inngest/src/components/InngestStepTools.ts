@@ -5,6 +5,7 @@ import { logPrefix } from "../helpers/consts";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
+  type ObjectPaths,
   type ParametersExceptFirst,
   type SendEventPayload,
 } from "../helpers/types";
@@ -226,10 +227,11 @@ export const createStepTools = <
           IncomingEvent, // TriggeringEvent,
           IncomingEvent
         >
-      ) => Promise<// IncomingEvent extends keyof Events
-      //   ? Events[IncomingEvent] | null
-      //   : IncomingEvent | null
-      any>
+      ) => Promise<
+        IncomingEvent extends TriggersFromClient<TClient>[number]
+          ? GetEvents<TClient, true>[IncomingEvent] | null
+          : IncomingEvent | null
+      >
     >(
       (
         { id, name },
@@ -549,9 +551,9 @@ type WaitForEventOpts<
      *
      * {@link https://www.inngest.com/docs/functions/expressions}
      */
-    // match?: ObjectPaths<Events[TriggeringEvent]> &
-    //   ObjectPaths<Events[IncomingEvent]>;
-    match?: any;
+    match?: ObjectPaths<Events[TriggeringEvent]> &
+      ObjectPaths<Events[IncomingEvent]>;
+    // match?: any;
 
     /**
      * If provided, the step function will wait for the incoming event to match

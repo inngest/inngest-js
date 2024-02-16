@@ -2,20 +2,14 @@ import { internalEvents, queryKeys } from "../helpers/consts";
 import { type RecursiveTuple, type StrictUnion } from "../helpers/types";
 import {
   type ConcurrencyOption,
-  type FailureEventArgs,
   type FunctionConfig,
   type Handler,
   type TimeStr,
   type TimeStrBatch,
   type TriggersFromClient,
 } from "../types";
+import { type Inngest } from "./Inngest";
 import {
-  type ClientOptionsFromInngest,
-  type Inngest,
-  type builtInMiddleware,
-} from "./Inngest";
-import {
-  type ExtendWithMiddleware,
   type InngestMiddleware,
   type MiddlewareRegisterReturn,
 } from "./InngestMiddleware";
@@ -260,10 +254,10 @@ export namespace InngestFunction {
    */
   export type Any = InngestFunction<
     InngestFunction.OptionsWithTrigger,
-    any,
-    any,
-    any,
-    any
+    Handler.Any,
+    Inngest.Any,
+    InngestMiddleware.Stack,
+    InngestFunction.Trigger<TriggersFromClient<Inngest.Any>[number]>[]
   >;
 
   /**
@@ -292,6 +286,7 @@ export namespace InngestFunction {
     TTriggers extends InngestFunction.Trigger<
       TriggersFromClient<TClient>[number]
     >[] = InngestFunction.Trigger<TriggersFromClient<TClient>[number]>[],
+    TFailureHandler extends Handler.Any = Handler.Any,
   > {
     triggers?: TTriggers;
 
@@ -486,22 +481,7 @@ export namespace InngestFunction {
     //     FailureEventArgs<EventsFromOpts<TOpts>[TTriggerName]>
     //   >
     // >;
-    onFailure?: Handler<
-      TClient,
-      {
-        [K in keyof TTriggers]: TTriggers[K] extends { event: infer E }
-          ? E
-          : never;
-      },
-      ExtendWithMiddleware<
-        [
-          typeof builtInMiddleware,
-          NonNullable<ClientOptionsFromInngest<TClient>["middleware"]>,
-          TMiddleware,
-        ],
-        FailureEventArgs //<EventsFromOpts<TClientOpts>[TTriggerName]>
-      >
-    >;
+    onFailure?: TFailureHandler;
 
     /**
      * Define a set of middleware that can be registered to hook into

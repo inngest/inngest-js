@@ -316,7 +316,7 @@ export class V0InngestExecution
   private getUserFnToRun(): Handler.Any {
     if (!this.options.isFailureHandler) {
       // TODO: Review; inferred types results in an `any` here!
-      return this.options.fn["fn"] as Handler.Any;
+      return this.options.fn["fn"];
     }
 
     if (!this.options.fn["onFailureFn"]) {
