@@ -73,8 +73,7 @@ describe("#parseFnData", () => {
 
   const fn = new InngestFunction(
     createClient({ id: "test-client" }),
-    { id: "test-fn" },
-    { event: "test-event" },
+    { id: "test-fn", triggers: [{ event: "test-event" }] },
     () => "test-return"
   );
 

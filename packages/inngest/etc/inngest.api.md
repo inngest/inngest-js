@@ -312,12 +312,14 @@ TClient extends Inngest.Any = Inngest.Any, TMiddleware extends InngestMiddleware
 
 // @public
 export namespace InngestFunction {
-    export type Any = InngestFunction<InngestFunction.OptionsWithTrigger, Handler.Any, Inngest.Any, InngestMiddleware.Stack, InngestFunction.Trigger<TriggersFromClient<Inngest.Any>[number]>[]>;
+    export type Any = InngestFunction<any, Handler.Any, any, any, any>;
     export interface OptionsWithTrigger<TClient extends Inngest.Any = Inngest.Any, TMiddleware extends InngestMiddleware.Stack = InngestMiddleware.Stack, TTriggers extends InngestFunction.Trigger<TriggersFromClient<TClient>[number]>[] = InngestFunction.Trigger<TriggersFromClient<TClient>[number]>[], TFailureHandler extends Handler.Any = Handler.Any> {
         batchEvents?: {
             maxSize: number;
             timeout: TimeStrBatch;
         };
+        // (undocumented)
+        cancelOn?: Cancellation<GetEvents<TClient, true>, EventNameFromTrigger<GetEvents<TClient, true>, TTriggers[number]>>[];
         concurrency?: number | ConcurrencyOption | RecursiveTuple<ConcurrencyOption, 2>;
         debounce?: {
             key?: string;

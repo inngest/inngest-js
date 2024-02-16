@@ -1,14 +1,17 @@
 import { internalEvents, queryKeys } from "../helpers/consts";
+import { timeStr } from "../helpers/strings";
 import { type RecursiveTuple, type StrictUnion } from "../helpers/types";
 import {
+  type Cancellation,
   type ConcurrencyOption,
+  type EventNameFromTrigger,
   type FunctionConfig,
   type Handler,
   type TimeStr,
   type TimeStrBatch,
   type TriggersFromClient,
 } from "../types";
-import { type Inngest } from "./Inngest";
+import { type GetEvents, type Inngest } from "./Inngest";
 import {
   type InngestMiddleware,
   type MiddlewareRegisterReturn,
@@ -125,7 +128,7 @@ export class InngestFunction<
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
 
-    const { retries: attempts, /*cancelOn,*/ ...opts } = this.opts;
+    const { retries: attempts, cancelOn, ...opts } = this.opts;
 
     /**
      * Convert retries into the format required when defining function
@@ -164,25 +167,25 @@ export class InngestFunction<
     };
 
     // TODO Revive
-    // if (cancelOn) {
-    //   fn.cancel = cancelOn.map(({ event, timeout, if: ifStr, match }) => {
-    //     const ret: NonNullable<FunctionConfig["cancel"]>[number] = {
-    //       event,
-    //     };
+    if (cancelOn) {
+      fn.cancel = cancelOn.map(({ event, timeout, if: ifStr, match }) => {
+        const ret: NonNullable<FunctionConfig["cancel"]>[number] = {
+          event,
+        };
 
-    //     if (timeout) {
-    //       ret.timeout = timeStr(timeout);
-    //     }
+        if (timeout) {
+          ret.timeout = timeStr(timeout);
+        }
 
-    //     if (match) {
-    //       ret.if = `event.${match} == async.${match}`;
-    //     } else if (ifStr) {
-    //       ret.if = ifStr;
-    //     }
+        if (match) {
+          ret.if = `event.${match} == async.${match}`;
+        } else if (ifStr) {
+          ret.if = ifStr;
+        }
 
-    //     return ret;
-    //   }, []);
-    // }
+        return ret;
+      }, []);
+    }
 
     const config: FunctionConfig[] = [fn];
 
@@ -252,13 +255,20 @@ export namespace InngestFunction {
    * Represents any `InngestFunction` instance, regardless of generics and
    * inference.
    */
-  export type Any = InngestFunction<
-    InngestFunction.OptionsWithTrigger,
-    Handler.Any,
-    Inngest.Any,
-    InngestMiddleware.Stack,
-    InngestFunction.Trigger<TriggersFromClient<Inngest.Any>[number]>[]
-  >;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  export type Any = InngestFunction<any, Handler.Any, any, any, any>;
+  // export type Any = InngestFunction<
+  //   any,
+  //   any,
+  //   any,
+  //   any,
+  //   any
+  //   // InngestFunction.OptionsWithTrigger,
+  //   // Handler.Any,
+  //   // Inngest.Any,
+  //   // InngestMiddleware.Stack,
+  //   // InngestFunction.Trigger<TriggersFromClient<Inngest.Any>[number]>[]
+  // >;
 
   /**
    * A user-friendly method of specifying a trigger for an Inngest function.
@@ -429,7 +439,10 @@ export namespace InngestFunction {
     };
 
     // TODO Solve this again for multiple events
-    // cancelOn?: Cancellation<Events, Event>[];
+    cancelOn?: Cancellation<
+      GetEvents<TClient, true>,
+      EventNameFromTrigger<GetEvents<TClient, true>, TTriggers[number]>
+    >[];
 
     /**
      * Specifies the maximum number of retries for all steps across this function.

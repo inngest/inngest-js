@@ -532,13 +532,18 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     TMiddleware,
     [TTrigger]
   > {
-    const optionsWithTrigger: InngestFunction.OptionsWithTrigger<
+    const { cancelOn, ...rawOptions } = options;
+
+    type ShimmedOptions = InngestFunction.OptionsWithTrigger<
       typeof this,
       TMiddleware,
       [TTrigger],
       TFailureHandler
-    > = {
-      ...options,
+    >;
+
+    const optionsWithTrigger: ShimmedOptions = {
+      ...rawOptions,
+      cancelOn: cancelOn as ShimmedOptions["cancelOn"],
       triggers: [trigger],
     };
 

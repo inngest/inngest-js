@@ -315,7 +315,6 @@ export class V0InngestExecution
 
   private getUserFnToRun(): Handler.Any {
     if (!this.options.isFailureHandler) {
-      // TODO: Review; inferred types results in an `any` here!
       return this.options.fn["fn"];
     }
 
@@ -327,7 +326,8 @@ export class V0InngestExecution
       throw new Error("Cannot find function `onFailure` handler");
     }
 
-    return this.options.fn["onFailureFn"];
+    // TODO: Review; inferred types results in an `any` here!
+    return this.options.fn["onFailureFn"] as Handler.Any;
   }
 
   private createFnArg(): Context.Any {
