@@ -1,5 +1,11 @@
 # inngest
 
+## 3.14.1
+
+### Patch Changes
+
+- [#493](https://github.com/inngest/inngest-js/pull/493) [`adaa948`](https://github.com/inngest/inngest-js/commit/adaa948e04760cebd8e62d83be27e177f9fc41d6) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix registration reusing deployment IDs when reusing connections in serverless or serverful
+
 ## 3.14.0
 
 ### Minor Changes
