@@ -175,19 +175,25 @@ export const testFramework = (
     const [req, res] = createReqRes(mockReqOpts);
 
     let envToPass = { ...env };
+    let prevProcessEnv = undefined;
 
     /**
      * If we have `process` in this emulated environment, also mutate that to
      * account for common situations.
      */
     if (typeof process !== "undefined" && "env" in process) {
-      process.env = { ...process.env, ...envToPass };
+      prevProcessEnv = process.env;
+      process.env = { ...prevProcessEnv, ...envToPass };
       envToPass = { ...process.env };
     }
 
     const args = opts?.transformReq?.(req, res, envToPass) ?? [req, res];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ret = await (serveHandler as (...args: any[]) => any)(...args);
+
+    if (prevProcessEnv) {
+      process.env = prevProcessEnv;
+    }
 
     return (
       opts?.transformRes?.(args, ret) ?? {
