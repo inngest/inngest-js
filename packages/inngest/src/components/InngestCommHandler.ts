@@ -1071,8 +1071,9 @@ export class InngestCommHandler<
     let res: globalThis.Response;
 
     // Whenever we register, we check to see if the dev server is up.  This
-    // is a noop and returns false in production.
-    let registerURL = this.inngestRegisterUrl;
+    // is a noop and returns false in production. Clone the URL object to avoid
+    // mutating the property between requests.
+    let registerURL = new URL(this.inngestRegisterUrl.href);
 
     if (!this._skipDevServer) {
       const host = devServerHost(this.env);
