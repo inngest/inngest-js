@@ -1155,7 +1155,7 @@ export class InngestCommHandler<
       this.client["inngestApi"].setSigningKey(this.signingKey);
     }
 
-    if (!this.client["eventKey"] && this.env[envKeys.InngestEventKey]) {
+    if (!this.client["eventKeySet"]() && this.env[envKeys.InngestEventKey]) {
       this.client.setEventKey(String(this.env[envKeys.InngestEventKey]));
     }
 
