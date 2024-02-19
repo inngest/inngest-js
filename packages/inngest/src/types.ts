@@ -14,6 +14,7 @@ import {
 } from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
+import { type Mode } from "./helpers/env";
 import {
   type IsStringLiteral,
   type ObjectPaths,
@@ -1093,6 +1094,12 @@ export interface IntrospectRequest {
    * The number of Inngest functions found at this handler.
    */
   functionsFound: number;
+
+  /**
+   * The mode that this handler is running in and whether it has been inferred
+   * or explicitly set.
+   */
+  mode: Mode;
 }
 
 /**

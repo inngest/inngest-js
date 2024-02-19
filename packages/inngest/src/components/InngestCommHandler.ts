@@ -834,6 +834,7 @@ export class InngestCommHandler<
           hasEventKey: this.client["eventKeySet"](),
           hasSigningKey: Boolean(this.signingKey),
           functionsFound: registerBody.functions.length,
+          mode: this._mode,
         };
 
         return {
