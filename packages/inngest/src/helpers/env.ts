@@ -400,7 +400,7 @@ export const getResponse = (): typeof Response => {
 /**
  * Given an unknown value, try to parse it as a `boolean`. Useful for parsing
  * environment variables that could be a selection of different values such as
- * `"true"`, `"y"`, or `"1"`.
+ * `"true"`, `"1"`.
  *
  * If the value could not be confidently parsed as a `boolean` or was seen to be
  * `undefined`, this function returns `undefined`.
@@ -421,7 +421,7 @@ export const parseAsBoolean = (value: unknown): boolean | undefined => {
       return undefined;
     }
 
-    if (["true", "1", "y", "yes"].includes(trimmed)) {
+    if (["true", "1"].includes(trimmed)) {
       return true;
     }
 
