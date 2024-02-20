@@ -171,19 +171,25 @@ export const testFramework = (
     const [req, res] = createReqRes(mockReqOpts);
 
     let envToPass = { ...env };
+    let prevProcessEnv = undefined;
 
     /**
      * If we have `process` in this emulated environment, also mutate that to
      * account for common situations.
      */
     if (typeof process !== "undefined" && "env" in process) {
-      process.env = { ...process.env, ...envToPass };
+      prevProcessEnv = process.env;
+      process.env = { ...prevProcessEnv, ...envToPass };
       envToPass = { ...process.env };
     }
 
     const args = opts?.transformReq?.(req, res, envToPass) ?? [req, res];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ret = await (serveHandler as (...args: any[]) => any)(...args);
+
+    if (prevProcessEnv) {
+      process.env = prevProcessEnv;
+    }
 
     return (
       opts?.transformRes?.(args, ret) ?? {
@@ -261,7 +267,7 @@ export const testFramework = (
     describe("GET", () => {
       test("shows introspection data", async () => {
         const ret = await run(
-          [{ client: inngest, functions: [] }],
+          [{ client: createClient({ id: "test" }), functions: [] }],
           [
             {
               method: "GET",
@@ -286,8 +292,42 @@ export const testFramework = (
         expect(body).toMatchObject({
           message: "Inngest endpoint configured correctly.",
           functionsFound: 0,
+          hasEventKey: false,
+          hasSigningKey: false,
+        });
+      });
+
+      test("can pick up delayed event key from environment", async () => {
+        const ret = await run(
+          [{ client: createClient({ id: "test" }), functions: [] }],
+          [{ method: "GET" }],
+          { [envKeys.InngestEventKey]: "event-key-123" }
+        );
+
+        const body = JSON.parse(ret.body);
+
+        expect(body).toMatchObject({
+          message: "Inngest endpoint configured correctly.",
+          functionsFound: 0,
           hasEventKey: true,
           hasSigningKey: false,
+        });
+      });
+
+      test("can pick up delayed signing key from environment", async () => {
+        const ret = await run(
+          [{ client: createClient({ id: "test" }), functions: [] }],
+          [{ method: "GET" }],
+          { [envKeys.InngestSigningKey]: "signing-key-123" }
+        );
+
+        const body = JSON.parse(ret.body);
+
+        expect(body).toMatchObject({
+          message: "Inngest endpoint configured correctly.",
+          functionsFound: 0,
+          hasEventKey: false,
+          hasSigningKey: true,
         });
       });
     });

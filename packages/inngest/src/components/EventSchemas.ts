@@ -1,14 +1,12 @@
 import { type Simplify } from "type-fest";
-import {
-  type FnFailedEventName,
-  type FnFinishedEventName,
-} from "../helpers/consts";
+import { type internalEvents } from "../helpers/consts";
 import { type IsEmptyObject, type IsStringLiteral } from "../helpers/types";
 import type * as z from "../helpers/validators/zod";
 import {
   type EventPayload,
   type FailureEventPayload,
   type FinishedEventPayload,
+  type InvokedEventPayload,
 } from "../types";
 
 /**
@@ -32,6 +30,26 @@ export type StandardEventSchema = {
  * @public
  */
 export type StandardEventSchemas = Record<string, StandardEventSchema>;
+
+/**
+ * Asserts that the given type `T` contains a mapping for all internal events.
+ *
+ * Usage of this ensures that we never forget about an internal event in schemas
+ * when adding new ones.
+ *
+ * It also ensures that the mapped name is not the enum type, as this would
+ * require a user to use the enum type to access the event schema to declare
+ * triggers, where we want to allow them to use the string literal.
+ *
+ * @public
+ */
+export type AssertInternalEventPayloads<
+  T extends Record<internalEvents, EventPayload>,
+> = {
+  [K in keyof T as `${K & string}`]: Simplify<
+    Omit<T[K], "name"> & { name: `${K & string}` }
+  >;
+};
 
 /**
  * A string error used to highlight to a user that they have a clashing name
@@ -219,10 +237,11 @@ export type Combine<
  * @public
  */
 export class EventSchemas<
-  S extends Record<string, EventPayload> = {
-    [FnFailedEventName]: FailureEventPayload;
-    [FnFinishedEventName]: FinishedEventPayload;
-  },
+  S extends Record<string, EventPayload> = AssertInternalEventPayloads<{
+    [internalEvents.FunctionFailed]: FailureEventPayload;
+    [internalEvents.FunctionFinished]: FinishedEventPayload;
+    [internalEvents.FunctionInvoked]: InvokedEventPayload;
+  }>,
 > {
   /**
    * Use generated Inngest types to type events.
