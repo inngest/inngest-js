@@ -1,5 +1,19 @@
 # inngest
 
+## 3.14.2
+
+### Patch Changes
+
+- [#492](https://github.com/inngest/inngest-js/pull/492) [`ad67476`](https://github.com/inngest/inngest-js/commit/ad674769b190eda59d99fbbb905d3b95b7c3138e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix delayed environment variables not using event key in `"inngest/cloudflare"`
+
+- [#489](https://github.com/inngest/inngest-js/pull/489) [`244b6bd`](https://github.com/inngest/inngest-js/commit/244b6bd483543d6923d56e11fb52de2a1dbb1de3) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add generic function invocation event to all event schemas
+
+## 3.14.1
+
+### Patch Changes
+
+- [#493](https://github.com/inngest/inngest-js/pull/493) [`adaa948`](https://github.com/inngest/inngest-js/commit/adaa948e04760cebd8e62d83be27e177f9fc41d6) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix registration reusing deployment IDs when reusing connections in serverless or serverful
+
 ## 3.14.0
 
 ### Minor Changes

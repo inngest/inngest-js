@@ -1067,8 +1067,9 @@ export class InngestCommHandler<
     let res: globalThis.Response;
 
     // Whenever we register, we check to see if the dev server is up.  This
-    // is a noop and returns false in production.
-    let registerURL = this.inngestRegisterUrl;
+    // is a noop and returns false in production. Clone the URL object to avoid
+    // mutating the property between requests.
+    let registerURL = new URL(this.inngestRegisterUrl.href);
 
     const inferredDevMode =
       this._mode && !this._mode.isExplicit && this._mode.type === "dev";
@@ -1150,7 +1151,7 @@ export class InngestCommHandler<
       this.client["inngestApi"].setSigningKey(this.signingKey);
     }
 
-    if (!this.client["eventKey"] && this.env[envKeys.InngestEventKey]) {
+    if (!this.client["eventKeySet"]() && this.env[envKeys.InngestEventKey]) {
       this.client.setEventKey(String(this.env[envKeys.InngestEventKey]));
     }
 
