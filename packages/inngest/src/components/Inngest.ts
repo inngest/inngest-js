@@ -8,6 +8,7 @@ import {
   defaultInngestEventBaseUrl,
   dummyEventKey,
   envKeys,
+  logPrefix,
 } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
@@ -26,12 +27,10 @@ import {
   type EventNameFromTrigger,
   type EventPayload,
   type FailureEventArgs,
-  type FunctionOptions,
   type Handler,
   type InvokeTargetFunctionDefinition,
   type SendEventOutput,
   type SendEventResponse,
-  type TriggerOptions,
   type TriggersFromClient,
 } from "../types";
 import { type EventSchemas } from "./EventSchemas";
@@ -497,168 +496,71 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
   // ): InngestFunction<TFnOpts, THandler, this, TMiddleware, TTriggers> {
   //   return new InngestFunction(this, options, handler);
   // }
-  public createFunction<
-    TFnOpts extends FunctionOptions<
-      this,
-      GetEvents<this, true>,
-      TTriggerName,
-      TMiddleware,
-      TFailureHandler
-    >,
-    TMiddleware extends InngestMiddleware.Stack,
-    TTrigger extends TriggerOptions<TTriggerName>,
-    TTriggerName extends
-      TriggersFromClient<this>[number] = EventNameFromTrigger<
-      GetEvents<this, true>,
-      TTrigger
-    >,
-    THandler extends Handler.Any = Handler<
-      this,
-      [TTriggerName],
-      ExtendWithMiddleware<
-        [
-          typeof builtInMiddleware,
-          NonNullable<TClientOpts["middleware"]>,
-          TMiddleware,
-        ]
-      >
-    >,
-    TFailureHandler extends Handler.Any = Handler<
-      this,
-      [TTriggerName],
-      ExtendWithMiddleware<
-        [
-          typeof builtInMiddleware,
-          NonNullable<ClientOptionsFromInngest<this>["middleware"]>,
-          TMiddleware,
-        ],
-        FailureEventArgs<GetEvents<this, true>[TTriggerName]>
-      >
-    >,
-  >(
-    options: TFnOpts,
-    trigger: TTrigger,
-    handler: THandler
-  ): InngestFunction<
-    InngestFunction.OptionsWithTrigger<
-      this,
-      TMiddleware,
-      [TTrigger],
-      TFailureHandler
-    >,
-    THandler,
-    this,
-    TMiddleware,
-    [TTrigger]
-  > {
-    const { cancelOn, ...rawOptions } = options;
+  public createFunction: Inngest.CreateFunction<this> = (
+    rawOptions,
+    rawTrigger,
+    handler
+  ) => {
+    const options = this.sanitizeOptions(rawOptions);
+    const triggers = this.sanitizeTriggers(rawTrigger);
 
-    type ShimmedOptions = InngestFunction.OptionsWithTrigger<
-      typeof this,
-      TMiddleware,
-      [TTrigger],
-      TFailureHandler
-    >;
+    return new InngestFunction(
+      this,
+      {
+        ...options,
+        triggers,
+      },
+      handler
+    );
+  };
 
-    const optionsWithTrigger: ShimmedOptions = {
-      ...rawOptions,
-      cancelOn: cancelOn as ShimmedOptions["cancelOn"],
-      triggers: [trigger],
-    };
+  /**
+   * Runtime-only validation.
+   */
+  private sanitizeOptions<
+    T extends Parameters<Inngest.CreateFunction<this>>[0],
+  >(options: T): T {
+    if (Object.prototype.hasOwnProperty.call(options, "fns")) {
+      // v2 -> v3 migration warning
+      console.warn(
+        `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`
+      );
+    }
 
-    return new InngestFunction(this, optionsWithTrigger, handler);
+    if (typeof options === "string") {
+      // v2 -> v3 runtime migraton warning
+      console.warn(
+        `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
+      );
+
+      return { id: options as string } as T;
+    }
+
+    return options;
   }
-  // public createFunction(...args: unknown[]) {
-  //   // TODO ZOD ZOD ZOD PLS FFS
-  //   if (args.length === 3) {
-  //     const [options, trigger, handler] = args as [
-  //       FunctionOptions<
-  //         typeof this,
-  //         EventsFromOpts<TClientOpts>,
-  //         string,
-  //         InngestMiddleware.Stack,
-  //         Handler.Any
-  //       >,
-  //       TriggerOptions<string>,
-  //       Handler.Any,
-  //     ];
 
-  //     const optionsWithTrigger: InngestFunction.OptionsWithTrigger = {
-  //       ...options,
-  //       triggers: [trigger],
-  //     };
+  /**
+   * Runtime-only validation.
+   */
+  private sanitizeTriggers<T extends InngestFunction.Trigger<string>>(
+    triggers: T
+  ): [T] {
+    if (typeof triggers === "string") {
+      // v2 -> v3 migration warning
+      console.warn(
+        `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
+      );
 
-  //     return new InngestFunction(this, optionsWithTrigger, handler);
-  //   }
+      return [{ event: triggers as string }] as [T];
+    }
 
-  //   const [options, handler] = args as [
-  //     InngestFunction.OptionsWithTrigger,
-  //     Handler.Any,
-  //   ];
+    if (!Array.isArray(triggers)) {
+      return [triggers];
+    }
 
-  //   // TODO 😬
-  //   return new InngestFunction(this, options, handler) as unknown;
-  // }
-
-  // LEGACY LEGACY BELOW LEGACY LEGACY
-
-  // // TODO Use Zod to validate options. We're removing exclusivity typing from
-  // // this to reduce the size of the type, which means this must now be at
-  // // runtime instead.
-  // let sanitizedOpts: FunctionOptions<
-  //   EventsFromOpts<TClientOpts>,
-  //   EventNameFromTrigger<EventsFromOpts<TClientOpts>, TTrigger>
-  // >;
-
-  // if (typeof options === "string") {
-  //   // v2 -> v3 runtime migraton warning
-  //   console.warn(
-  //     `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
-  //   );
-
-  //   sanitizedOpts = { id: options };
-  // } else {
-  //   sanitizedOpts = options as typeof sanitizedOpts;
-  // }
-
-  // let sanitizedTrigger: FunctionTrigger<TTriggerName>;
-
-  // if (typeof trigger === "string") {
-  //   // v2 -> v3 migration warning
-  //   console.warn(
-  //     `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
-  //   );
-
-  //   sanitizedTrigger = {
-  //     event: trigger,
-  //   };
-  // } else if (trigger.event) {
-  //   sanitizedTrigger = {
-  //     event: trigger.event,
-  //     expression: trigger.if,
-  //   };
-  // } else {
-  //   sanitizedTrigger = trigger;
-  // }
-
-  // if (Object.prototype.hasOwnProperty.call(sanitizedOpts, "fns")) {
-  //   // v2 -> v3 migration warning
-  //   console.warn(
-  //     `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`
-  //   );
-  // }
-
-  // return new InngestFunction<
-  //   TClientOpts,
-  //   EventsFromOpts<TClientOpts>,
-  //   TTrigger,
-  //   FunctionOptions<
-  //     EventsFromOpts<TClientOpts>,
-  //     EventNameFromTrigger<EventsFromOpts<TClientOpts>, TTrigger>
-  //   >,
-  //   THandler
-  // >(this, sanitizedOpts, sanitizedTrigger as TTrigger, handler);
-  // }
+    // 🤢
+    return triggers as unknown as [T];
+  }
 }
 
 /**
@@ -762,8 +664,61 @@ export namespace Inngest {
    * Represents any `Inngest` instance, regardless of generics and
    * inference.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export type Any = Inngest;
+
+  export type CreateFunction<TClient extends Inngest.Any> = <
+    TFnOpts extends Omit<
+      InngestFunction.Options<
+        TClient,
+        TMiddleware,
+        [TTrigger],
+        TFailureHandler
+      >,
+      "triggers"
+    >,
+    TMiddleware extends InngestMiddleware.Stack,
+    TTrigger extends InngestFunction.Trigger<
+      TriggersFromClient<TClient>[number]
+    >,
+    THandler extends Handler.Any = Handler<
+      TClient,
+      [EventNameFromTrigger<GetEvents<TClient, true>, TTrigger>],
+      ExtendWithMiddleware<
+        [
+          typeof builtInMiddleware,
+          NonNullable<ClientOptionsFromInngest<TClient>["middleware"]>,
+          TMiddleware,
+        ]
+      >
+    >,
+    TFailureHandler extends Handler.Any = Handler<
+      TClient,
+      [EventNameFromTrigger<GetEvents<TClient, true>, TTrigger>],
+      ExtendWithMiddleware<
+        [
+          typeof builtInMiddleware,
+          NonNullable<ClientOptionsFromInngest<TClient>["middleware"]>,
+          TMiddleware,
+        ],
+        FailureEventArgs<
+          GetEvents<TClient, true>[EventNameFromTrigger<
+            GetEvents<TClient, true>,
+            TTrigger
+          >]
+        >
+      >
+    >,
+  >(
+    options: TFnOpts,
+    trigger: TTrigger,
+    handler: THandler
+  ) => InngestFunction<
+    InngestFunction.Options<TClient, TMiddleware, [TTrigger], TFailureHandler>,
+    THandler,
+    TClient,
+    TMiddleware,
+    [TTrigger]
+  >;
 }
 
 /**

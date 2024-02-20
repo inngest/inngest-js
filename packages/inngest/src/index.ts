@@ -48,12 +48,10 @@ export type {
   FailureEventArgs,
   FailureEventPayload,
   FinishedEventPayload,
-  FunctionOptions,
   Handler,
   LogLevel,
   RegisterOptions,
   StepOptions,
   StepOptionsOrId,
   TimeStr,
-  TriggerOptions,
 } from "./types";

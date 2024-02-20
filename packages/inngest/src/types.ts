@@ -14,13 +14,7 @@ import {
 } from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
-import {
-  type IsStringLiteral,
-  type ObjectPaths,
-  type RecursiveTuple,
-  type StrictUnion,
-} from "./helpers/types";
-import { type ValidSchemaInput } from "./helpers/validators";
+import { type IsStringLiteral, type ObjectPaths } from "./helpers/types";
 import { type Logger } from "./middleware/logger";
 
 export const failureEventErrorSchema = z
@@ -254,7 +248,7 @@ type GetSelectedEvents<
 type GetContextEvents<
   TClient extends Inngest.Any,
   TTriggers extends TriggersFromClient<TClient>,
-  TInvokeSchema extends ValidSchemaInput = never, // TODO Use this
+  // TInvokeSchema extends ValidSchemaInput = never,
 > = GetSelectedEvents<TClient, TTriggers>[keyof GetSelectedEvents<
   TClient,
   TTriggers
@@ -728,22 +722,6 @@ export interface RegisterOptions {
   id?: string;
 }
 
-/**
- * A user-friendly method of specifying a trigger for an Inngest function.
- *
- * @public
- */
-export type TriggerOptions<T extends string> = StrictUnion<
-  | {
-      event: T;
-      if?: string;
-    }
-  | {
-      cron: string;
-    }
-  | null
->;
-
 export interface ConcurrencyOption {
   /**
    * The concurrency limit for this option, adding a limit on how many concurrent
@@ -773,197 +751,6 @@ export interface ConcurrencyOption {
    * vs branch environments) or across your account (global).
    */
   scope?: "fn" | "env" | "account";
-}
-
-/**
- * A set of options for configuring an Inngest function.
- *
- * @public
- */
-export interface FunctionOptions<
-  TClient extends Inngest.Any,
-  TEvents extends GetEvents<TClient, true>,
-  TEvent extends TriggersFromClient<TClient>[number],
-  TMiddleware extends InngestMiddleware.Stack,
-  TFailureHandler extends Handler.Any,
-> {
-  /**
-   * An unique ID used to identify the function. This is used internally for
-   * versioning and referring to your function, so should not change between
-   * deployments.
-   *
-   * If you'd like to set a prettier name for your function, use the `name`
-   * option.
-   */
-  id: string;
-
-  /**
-   * A name for the function as it will appear in the Inngest Cloud UI.
-   */
-  name?: string;
-
-  /**
-   * Concurrency specifies a limit on the total number of concurrent steps that
-   * can occur across all runs of the function.  A value of 0 (or undefined) means
-   * use the maximum available concurrency.
-   *
-   * Specifying just a number means specifying only the concurrency limit. A
-   * maximum of two concurrency options can be specified.
-   */
-  concurrency?:
-    | number
-    | ConcurrencyOption
-    | RecursiveTuple<ConcurrencyOption, 2>;
-
-  /**
-   * batchEvents specifies the batch configuration on when this function
-   * should be invoked when one of the requirements are fulfilled.
-   */
-  batchEvents?: {
-    /**
-     * The maximum number of events to be consumed in one batch,
-     * Currently allowed max value is 100.
-     */
-    maxSize: number;
-
-    /**
-     * How long to wait before invoking the function with a list of events.
-     * If timeout is reached, the function will be invoked with a batch
-     * even if it's not filled up to `maxSize`.
-     *
-     * Expects 1s to 60s.
-     */
-    timeout: TimeStrBatch;
-  };
-
-  /**
-   * Allow the specification of an idempotency key using event data. If
-   * specified, this overrides the `rateLimit` object.
-   */
-  idempotency?: string;
-
-  /**
-   * Rate limit workflows, only running them a given number of times (limit) per
-   * period. This can optionally include a `key`, which is used to further
-   * constrain throttling similar to idempotency.
-   */
-  rateLimit?: {
-    /**
-     * An optional key to use for rate limiting, similar to idempotency.
-     */
-    key?: string;
-
-    /**
-     * The number of times to allow the function to run per the given `period`.
-     */
-    limit: number;
-
-    /**
-     * The period of time to allow the function to run `limit` times.
-     */
-    period: TimeStr;
-  };
-
-  /**
-   * Debounce delays functions for the `period` specified. If an event is sent,
-   * the function will not run until at least `period` has elapsed.
-   *
-   * If any new events are received that match the same debounce `key`, the
-   * function is reshceduled for another `period` delay, and the triggering
-   * event is replaced with the latest event received.
-   *
-   * See the [Debounce documentation](https://innge.st/debounce) for more
-   * information.
-   */
-  debounce?: {
-    /**
-     * An optional key to use for debouncing.
-     *
-     * See [Debounce documentation](https://innge.st/debounce) for more
-     * information on how to use `key` expressions.
-     */
-    key?: string;
-
-    /**
-     * The period of time to after receiving the last trigger to run the
-     * function.
-     *
-     * See [Debounce documentation](https://innge.st/debounce) for more
-     * information.
-     */
-    period: TimeStr;
-
-    /**
-     * The maximum time that a debounce can be extended before running.
-     * If events are continually received within the given period, a function
-     * will always run after the given timeout period.
-     *
-     * See [Debounce documentation](https://innge.st/debounce) for more
-     * information.
-     */
-    timeout?: TimeStr;
-  };
-
-  /**
-   * Configure how the priority of a function run is decided when multiple
-   * functions are triggered at the same time.
-   *
-   * See the [Priority documentation](https://innge.st/priority) for more
-   * information.
-   */
-  priority?: {
-    /**
-     * An expression to use to determine the priority of a function run. The
-     * expression can return a number between `-600` and `600`, where `600`
-     * declares that this run should be executed before any others enqueued in
-     * the last 600 seconds (10 minutes), and `-600` declares that this run
-     * should be executed after any others enqueued in the last 600 seconds.
-     *
-     * See the [Priority documentation](https://innge.st/priority) for more
-     * information.
-     */
-    run?: string;
-  };
-
-  cancelOn?: Cancellation<TEvents, TEvent>[];
-
-  /**
-   * Specifies the maximum number of retries for all steps across this function.
-   *
-   * Can be a number from `0` to `20`. Defaults to `3`.
-   */
-  retries?:
-    | 0
-    | 1
-    | 2
-    | 3
-    | 4
-    | 5
-    | 6
-    | 7
-    | 8
-    | 9
-    | 10
-    | 11
-    | 12
-    | 13
-    | 14
-    | 15
-    | 16
-    | 17
-    | 18
-    | 19
-    | 20;
-
-  onFailure?: TFailureHandler;
-
-  /**
-   * Define a set of middleware that can be registered to hook into various
-   * lifecycles of the SDK and affect input and output of Inngest functionality.
-   *
-   * See {@link https://innge.st/middleware}
-   */
-  middleware?: TMiddleware;
 }
 
 /**

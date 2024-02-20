@@ -457,18 +457,18 @@ describe("sendEvent", () => {
       type Client = Inngest<typeof opts>;
 
       const sendEvent: ReturnType<
-        typeof createStepTools<Client, ["foo"]>
+        typeof createStepTools<Client>
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       >["sendEvent"] = (() => undefined) as any;
 
       test("disallows sending a single unknown event with a string", () => {
         // @ts-expect-error Unknown event
-        void sendEvent({ name: "unknown", data: { foo: "" } });
+        void sendEvent("id", { name: "unknown", data: { foo: "" } });
       });
 
       test("disallows sending a single unknown event with an object", () => {
         // @ts-expect-error Unknown event
-        void sendEvent({ name: "unknown", data: { foo: "" } });
+        void sendEvent("id", { name: "unknown", data: { foo: "" } });
       });
 
       test("disallows sending multiple unknown events", () => {
@@ -490,12 +490,12 @@ describe("sendEvent", () => {
 
       test("disallows sending a single known event with a string and invalid data", () => {
         // @ts-expect-error Invalid data
-        void sendEvent({ name: "foo", data: { foo: 1 } });
+        void sendEvent("id", { name: "foo", data: { foo: 1 } });
       });
 
       test("disallows sending a single known event with an object and invalid data", () => {
         // @ts-expect-error Invalid data
-        void sendEvent({ name: "foo", data: { foo: 1 } });
+        void sendEvent("id", { name: "foo", data: { foo: 1 } });
       });
 
       test("disallows sending multiple known events with invalid data", () => {
@@ -692,7 +692,7 @@ describe("invoke", () => {
     const client = createClient(opts);
 
     const invoke = null as unknown as ReturnType<
-      typeof createStepTools<typeof client, ["foo"]>
+      typeof createStepTools<typeof client>
     >["invoke"];
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

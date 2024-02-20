@@ -120,7 +120,7 @@ export const STEP_INDEXING_SUFFIX = ":";
  */
 export const createStepTools = <
   TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
+  // TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
 >(
   client: TClient,
   stepHandler: StepHandler

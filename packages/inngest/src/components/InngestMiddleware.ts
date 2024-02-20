@@ -71,10 +71,8 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
 }
 
 export namespace InngestMiddleware {
-  export type Stack = [
-    InngestMiddleware<MiddlewareOptions>,
-    ...InngestMiddleware<MiddlewareOptions>[],
-  ];
+  export type Any = InngestMiddleware<MiddlewareOptions>;
+  export type Stack = [InngestMiddleware.Any, ...InngestMiddleware.Any[]];
 }
 
 type FnsWithSameInputAsOutput<

@@ -34,12 +34,8 @@ import { createV1InngestExecution } from "./execution/v1";
  * @public
  */
 export class InngestFunction<
-  TFnOpts extends InngestFunction.OptionsWithTrigger<
-    TClient,
-    TMiddleware,
-    TTriggers
-  >,
-  THandler extends Handler.Any, // todo make this specific
+  TFnOpts extends InngestFunction.Options<TClient, TMiddleware, TTriggers>,
+  THandler extends Handler.Any,
   TClient extends Inngest.Any = Inngest.Any,
   TMiddleware extends InngestMiddleware.Stack = InngestMiddleware.Stack,
   TTriggers extends InngestFunction.Trigger<
@@ -255,12 +251,16 @@ export namespace InngestFunction {
       }
   >;
 
+  export type GetOptions<T extends InngestFunction.Any> =
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    T extends InngestFunction<infer O, any, any, any, any> ? O : never;
+
   /**
    * A set of options for configuring an Inngest function.
    *
    * @public
    */
-  export interface OptionsWithTrigger<
+  export interface Options<
     TClient extends Inngest.Any = Inngest.Any,
     TMiddleware extends InngestMiddleware.Stack = InngestMiddleware.Stack,
     TTriggers extends InngestFunction.Trigger<
