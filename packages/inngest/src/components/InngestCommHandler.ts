@@ -824,7 +824,10 @@ export class InngestCommHandler<
       }
 
       if (method === "GET") {
-        const registerBody = this.registerBody(this.reqUrl(url), null);
+        const registerBody = this.registerBody({
+          url: this.reqUrl(url),
+          deployId: null,
+        });
 
         const introspection: IntrospectRequest = {
           message: "Inngest endpoint configured correctly.",
@@ -1050,10 +1053,18 @@ export class InngestCommHandler<
     return ret;
   }
 
-  protected registerBody(
-    url: URL,
-    deployId: string | undefined | null
-  ): RegisterRequest {
+  protected registerBody({
+    url,
+    deployId,
+  }: {
+    url: URL;
+
+    /**
+     * Non-optional to ensure we always consider if we have a deploy ID
+     * available to us to use.
+     */
+    deployId: string | undefined | null;
+  }): RegisterRequest {
     const body: RegisterRequest = {
       url: url.href,
       deployType: "ping",
@@ -1073,7 +1084,7 @@ export class InngestCommHandler<
     deployId: string | undefined | null,
     getHeaders: () => Record<string, string>
   ): Promise<{ status: number; message: string; modified: boolean }> {
-    const body = this.registerBody(url, deployId);
+    const body = this.registerBody({ url, deployId });
 
     let res: globalThis.Response;
 
