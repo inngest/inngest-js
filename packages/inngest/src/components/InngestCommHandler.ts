@@ -255,13 +255,6 @@ export class InngestCommHandler<
   protected _mode: Mode | undefined;
 
   /**
-   * Whether we should attempt to use the dev server.
-   *
-   * Should be set every time a request is received.
-   */
-  protected _skipDevServer = false;
-
-  /**
    * The localized `fetch` implementation used by this handler.
    */
   private readonly fetch: FetchT;
@@ -1077,7 +1070,10 @@ export class InngestCommHandler<
     // is a noop and returns false in production.
     let registerURL = this.inngestRegisterUrl;
 
-    if (!this._skipDevServer) {
+    const inferredDevMode =
+      this._mode && !this._mode.isExplicit && this._mode.type === "dev";
+
+    if (inferredDevMode) {
       const host = devServerHost(this.env);
       const hasDevServer = await devServerAvailable(host, this.fetch);
       if (hasDevServer) {
