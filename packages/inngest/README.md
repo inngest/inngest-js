@@ -6,8 +6,7 @@
   <p>
     Inngest is the reliability layer for modern applications. It combines durable execution, events, and queues into a zero-infra platform with built-in observability.
 
-    Inngest enables serverless event-driven queues, background jobs, and scheduled jobs for TypeScript.<br />
-    Works with any framework and platform.
+    Inngest enables serverless event-driven queues, background jobs, and scheduled jobs for TypeScript. Works with any framework and platform.
   </p>
   Read the <a href="https://www.inngest.com/docs?ref=github-inngest-js-readme">documentation</a> and get started in minutes.
   <br/>
