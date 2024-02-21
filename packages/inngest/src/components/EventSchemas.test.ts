@@ -895,6 +895,109 @@ describe("EventSchemas", () => {
       );
     });
 
+    test("can match between events with shared properties with multiple triggers", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        "test.event": { data: { foo: string } };
+        "test.event2": { data: { foo: string } };
+        "test.event3": { data: { foo: string } };
+      }>();
+
+      const inngest = new Inngest({
+        id: "test",
+        schemas,
+        eventKey: "test-key-123",
+      });
+
+      inngest.createFunction(
+        { id: "", cancelOn: [{ event: "test.event3", match: "data.foo" }] },
+        [{ event: "test.event" }, { event: "test.event2" }],
+        ({ step }) => {
+          void step.waitForEvent("id", {
+            event: "test.event3",
+            match: "data.foo",
+            timeout: "1h",
+          });
+        }
+      );
+    });
+
+    test("will suggest match properties based on any triggering event", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        "test.event": { data: { foo: string } };
+        "test.event2": { data: { bar: string } };
+        "test.event3": { data: { foo: string } };
+        "test.event4": { data: { bar: string } };
+      }>();
+
+      const inngest = new Inngest({
+        id: "test",
+        schemas,
+        eventKey: "test-key-123",
+      });
+
+      inngest.createFunction(
+        { id: "", cancelOn: [{ event: "test.event3", match: "data.foo" }] },
+        [{ event: "test.event" }, { event: "test.event2" }],
+        ({ step }) => {
+          void step.waitForEvent("id", {
+            event: "test.event3",
+            match: "data.foo",
+            timeout: "1h",
+          });
+
+          void step.waitForEvent("id", {
+            event: "test.event3",
+            // @ts-expect-error - `"data.bar"` is not assignable
+            match: "data.bar",
+            timeout: "1h",
+          });
+
+          void step.waitForEvent("id", {
+            event: "test.event4",
+            // @ts-expect-error - `"data.foo"` is not assignable
+            match: "data.foo",
+            timeout: "1h",
+          });
+
+          void step.waitForEvent("id", {
+            event: "test.event4",
+            match: "data.bar",
+            timeout: "1h",
+          });
+        }
+      );
+    });
+
+    test("will not suggest match properties not on the triggering event", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        "test.event": { data: { foo: string } };
+        "test.event2": { data: { bar: boolean } };
+      }>();
+
+      const inngest = new Inngest({
+        id: "test",
+        schemas,
+        eventKey: "test-key-123",
+      });
+
+      inngest.createFunction(
+        {
+          id: "test",
+          // @ts-expect-error - `"data.bar"` is not assignable
+          cancelOn: [{ event: "test.event2", match: "data.bar" }],
+        },
+        { event: "test.event" },
+        ({ step }) => {
+          void step.waitForEvent("id", {
+            event: "test.event2",
+            // @ts-expect-error - `"data.bar"` is not assignable
+            match: "data.bar",
+            timeout: "1h",
+          });
+        }
+      );
+    });
+
     test("cannot match between two events without shared properties", () => {
       const schemas = new EventSchemas().fromRecord<{
         "test.event": { data: { foo: string } };
@@ -1001,6 +1104,7 @@ describe("EventSchemas", () => {
 
       interface TestEvent2 extends EventPayload {
         name: "test.event2";
+
         data: { id: string; somethingElse: JsonValue };
       }
 
