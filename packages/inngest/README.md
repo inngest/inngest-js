@@ -4,7 +4,9 @@
   <br/>
   <br/>
   <p>
-    Serverless event-driven queues, background jobs, and scheduled jobs for Typescript.<br />
+    Inngest is the reliability layer for modern applications. It combines durable execution, events, and queues into a zero-infra platform with built-in observability.
+
+    Inngest enables serverless event-driven queues, background jobs, and scheduled jobs for TypeScript.<br />
     Works with any framework and platform.
   </p>
   Read the <a href="https://www.inngest.com/docs?ref=github-inngest-js-readme">documentation</a> and get started in minutes.
@@ -25,11 +27,11 @@
 On _any_ serverless platform ([Next.js](https://www.inngest.com/docs/sdk/serve#framework-next-js), [Deno Deploy](https://www.inngest.com/docs/sdk/serve#framework-fresh-deno), [RedwoodJS](https://www.inngest.com/docs/sdk/serve#framework-redwood), [AWS Lambda](https://www.inngest.com/docs/sdk/serve#framework-aws-lambda), and [anything else](https://www.inngest.com/docs/sdk/serve#custom-frameworks)) and with no extra infrastructure:
 
 - ⚡ Write <b>background jobs</b>
-- 🕐 Create <b>scheduled & cron jobs</b>
+- 🕐 Create <b>scheduled and cron jobs</b>
 - ♻️ Build <b>serverless queues</b>
 - 🪜 Write complex <b>step functions</b>
 - 🚘 Build <b>serverless event-driven systems</b>
-- 🪝 Reliably respond to webhooks, with retries & payloads stored for history
+- 🪝 Reliably respond to webhooks, with retries and payloads stored for history
 
 👋 _Have a question or feature request? [Join our Discord](https://www.inngest.com/discord)!_
 
