@@ -169,7 +169,7 @@ const registerResSchema = z.object({
  * Inngest's tooling such as the dev server or CLI) and taking appropriate
  * action for any served functions.
  *
- * All handlers (Next.js, RedwoodJS, Remix, Deno Fresh, etc) are created using
+ * All handlers (Next.js, RedwoodJS, Remix, Deno Fresh, etc.) are created using
  * this class; the exposed `serve` function will - most commonly - create an
  * instance of `InngestCommHandler` and then return `instance.createHandler()`.
  *
@@ -241,13 +241,13 @@ export class InngestCommHandler<
 
   /**
    * The signing key used to validate requests from Inngest. This is
-   * intentionally mutatble so that we can pick up the signing key from the
+   * intentionally mutable so that we can pick up the signing key from the
    * environment during execution if needed.
    */
   protected signingKey: string | undefined;
 
   /**
-   * A property that can be set to indicate whether or not we believe we are in
+   * A property that can be set to indicate whether we believe we are in
    * production mode.
    *
    * Should be set every time a request is received.
@@ -274,7 +274,7 @@ export class InngestCommHandler<
    * By default, the library will try to infer this using request details such
    * as the "Host" header and request path, but sometimes this isn't possible
    * (e.g. when running in a more controlled environments such as AWS Lambda or
-   * when dealing with proxies/rediects).
+   * when dealing with proxies/redirects).
    *
    * Provide the custom hostname here to ensure that the path is reported
    * correctly when registering functions with Inngest.
@@ -291,7 +291,7 @@ export class InngestCommHandler<
    * By default, the library will try to infer this using request details such
    * as the "Host" header and request path, but sometimes this isn't possible
    * (e.g. when running in a more controlled environments such as AWS Lambda or
-   * when dealing with proxies/rediects).
+   * when dealing with proxies/redirects).
    *
    * Provide the custom path (excluding the hostname) here to ensure that the
    * path is reported correctly when registering functions with Inngest.
@@ -496,7 +496,7 @@ export class InngestCommHandler<
 
       /**
        * Map over every `action` in `rawActions` and create a new `actions`
-       * object where each function is safely promisifed with each access
+       * object where each function is safely promisified with each access
        * requiring a reason.
        *
        * This helps us provide high quality errors about what's going wrong for
@@ -1277,7 +1277,7 @@ class RequestSignature {
     // raw bytes; it may be pertinent in the future to always parse, then
     // canonicalize the body to ensure it's consistent.
     const encoded = typeof body === "string" ? body : canonicalize(body);
-    // Remove the /signkey-[test|prod]-/ prefix from our signing key to calculate the HMAC.
+    // Remove the `/signkey-[test|prod]-/` prefix from our signing key to calculate the HMAC.
     const key = signingKey.replace(/signkey-\w+-/, "");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
     const mac = hmac(sha256 as any, key)

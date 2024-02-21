@@ -19,7 +19,12 @@ import {
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
 import { stringify } from "../helpers/strings";
-import { type SendEventPayload, type WithoutInternal } from "../helpers/types";
+import {
+  type AsArray,
+  type SendEventPayload,
+  type SingleOrArray,
+  type WithoutInternal,
+} from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
 import {
   sendEventResponseSchema,
@@ -542,24 +547,23 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
   /**
    * Runtime-only validation.
    */
-  private sanitizeTriggers<T extends InngestFunction.Trigger<string>>(
-    triggers: T
-  ): [T] {
+  private sanitizeTriggers<
+    T extends SingleOrArray<InngestFunction.Trigger<string>>,
+  >(triggers: T): AsArray<T> {
     if (typeof triggers === "string") {
       // v2 -> v3 migration warning
       console.warn(
         `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
       );
 
-      return [{ event: triggers as string }] as [T];
+      return [{ event: triggers as string }] as AsArray<T>;
     }
 
     if (!Array.isArray(triggers)) {
-      return [triggers];
+      return [triggers] as AsArray<T>;
     }
 
-    // 🤢
-    return triggers as unknown as [T];
+    return triggers as AsArray<T>;
   }
 }
 
@@ -671,18 +675,23 @@ export namespace Inngest {
       InngestFunction.Options<
         TClient,
         TMiddleware,
-        [TTrigger],
+        AsArray<TTrigger>,
         TFailureHandler
       >,
       "triggers"
     >,
     TMiddleware extends InngestMiddleware.Stack,
-    TTrigger extends InngestFunction.Trigger<
-      TriggersFromClient<TClient>[number]
+    TTrigger extends SingleOrArray<
+      InngestFunction.Trigger<TriggersFromClient<TClient>[number]>
     >,
     THandler extends Handler.Any = Handler<
       TClient,
-      [EventNameFromTrigger<GetEvents<TClient, true>, TTrigger>],
+      [
+        EventNameFromTrigger<
+          GetEvents<TClient, true>,
+          AsArray<TTrigger>[number]
+        >,
+      ],
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
@@ -693,7 +702,12 @@ export namespace Inngest {
     >,
     TFailureHandler extends Handler.Any = Handler<
       TClient,
-      [EventNameFromTrigger<GetEvents<TClient, true>, TTrigger>],
+      [
+        EventNameFromTrigger<
+          GetEvents<TClient, true>,
+          AsArray<TTrigger>[number]
+        >,
+      ],
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
@@ -703,7 +717,7 @@ export namespace Inngest {
         FailureEventArgs<
           GetEvents<TClient, true>[EventNameFromTrigger<
             GetEvents<TClient, true>,
-            TTrigger
+            AsArray<TTrigger>[number]
           >]
         >
       >
@@ -713,11 +727,16 @@ export namespace Inngest {
     trigger: TTrigger,
     handler: THandler
   ) => InngestFunction<
-    InngestFunction.Options<TClient, TMiddleware, [TTrigger], TFailureHandler>,
+    InngestFunction.Options<
+      TClient,
+      TMiddleware,
+      AsArray<TTrigger>,
+      TFailureHandler
+    >,
     THandler,
     TClient,
     TMiddleware,
-    [TTrigger]
+    AsArray<TTrigger>
   >;
 }
 

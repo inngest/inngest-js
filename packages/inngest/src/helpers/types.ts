@@ -7,6 +7,12 @@ import { type EventPayload } from "../types";
 export type SingleOrArray<T> = T | T[];
 
 /**
+ * Given type `T`, return it as an array if it is not already an array.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AsArray<T> = T extends any[] ? T : [T];
+
+/**
  * Returns the given generic as either itself or a promise of itself.
  */
 export type MaybePromise<T> = T | Promise<T>;

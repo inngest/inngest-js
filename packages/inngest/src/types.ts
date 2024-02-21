@@ -274,7 +274,7 @@ export type BaseContext<
    */
   runId: string;
 
-  step: ReturnType<typeof createStepTools<TClient>>;
+  step: ReturnType<typeof createStepTools<TClient, TTriggers[number]>>;
 
   /**
    * The current zero-indexed attempt number for this function execution. The
