@@ -41,8 +41,7 @@ import {
   type OutgoingOp,
 } from "@local/types";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { type IsEqual } from "type-fest";
-import { assertType } from "type-plus";
+import { assertType, type IsEqual } from "type-plus";
 import { createClient } from "../test/helpers";
 
 type TestEvents = {

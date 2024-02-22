@@ -1,6 +1,9 @@
-import { type Simplify } from "type-fest";
 import { type internalEvents } from "../helpers/consts";
-import { type IsEmptyObject, type IsStringLiteral } from "../helpers/types";
+import {
+  type IsEmptyObject,
+  type IsStringLiteral,
+  type Simplify,
+} from "../helpers/types";
 import type * as z from "../helpers/validators/zod";
 import {
   type EventPayload,

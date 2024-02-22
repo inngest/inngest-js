@@ -1,13 +1,13 @@
-import { type Jsonify } from "type-fest";
-import { type SimplifyDeep } from "type-fest/source/merge-deep";
 import { z } from "zod";
 import { logPrefix } from "../helpers/consts";
+import { type Jsonify } from "../helpers/jsonify";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
   type ObjectPaths,
   type ParametersExceptFirst,
   type SendEventPayload,
+  type SimplifyDeep,
 } from "../helpers/types";
 import {
   StepOpCode,

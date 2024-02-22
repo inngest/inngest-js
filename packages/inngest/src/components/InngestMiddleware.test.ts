@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Inngest } from "@local/components/Inngest";
 import { InngestMiddleware } from "@local/components/InngestMiddleware";
-import { type IsUnknown } from "type-fest";
 import { assertType, type IsEqual } from "type-plus";
+import { type IsUnknown } from "../helpers/types";
 
 describe("stacking and inference", () => {
   describe("onFunctionRun", () => {
