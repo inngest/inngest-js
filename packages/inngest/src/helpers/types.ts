@@ -303,7 +303,7 @@ export type IsNull<T> = [T] extends [null] ? true : false;
 /**
 Returns a boolean for whether the given type is `unknown`.
 
-@link https://github.com/dsherret/conditional-type-checks/pull/16
+{@link https://github.com/dsherret/conditional-type-checks/pull/16}
 
 Useful in type utilities, such as when dealing with unknown data from API calls.
 
@@ -340,8 +340,6 @@ store.execute((state, payload) => ({value: state.value + payload}), 5);
 store.execute((state, payload) => ({value: state.value + payload}), someExternalData);
 //=> Errors: `action` is `(state: TState) => TState`
 ```
-
-@category Utilities
 */
 export type IsUnknown<T> = unknown extends T // `T` can be `unknown` or `any`
   ? IsNull<T> extends false // `any` can be `null`, but `unknown` can't be

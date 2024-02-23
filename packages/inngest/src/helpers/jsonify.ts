@@ -1,3 +1,16 @@
+/**
+ * This is a rip of the `Jsonify` type from the `type-fest` package. It's used
+ * to represent to users how a value will be serialized and deserialized as it
+ * passes to and from an Inngest Server.
+ *
+ * We do not use the `type-fest` package directly due to some version
+ * compatibility issues:
+ *
+ * - `inngest` supports `typescript@>=4.7`
+ * - `type-fest@4` supports `typescript@>=5.1`, so the maximum version we can
+ *   use is `type-fest@3`
+ * - `type-fest@3` is not compatible with `typescript@5.4`
+ */
 /* eslint-disable @typescript-eslint/no-loss-of-precision */
 /* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -37,8 +50,6 @@ Matches the hidden `Infinity` type.
 Please upvote [this issue](https://github.com/microsoft/TypeScript/issues/32277) if you want to have this type as a built-in in TypeScript.
 
 @see NegativeInfinity
-
-@category Numeric
 */
 // See https://github.com/microsoft/TypeScript/issues/31752
 // eslint-disable-next-line @typescript-eslint/no-loss-of-precision
@@ -50,8 +61,6 @@ Matches the hidden `-Infinity` type.
 Please upvote [this issue](https://github.com/microsoft/TypeScript/issues/32277) if you want to have this type as a built-in in TypeScript.
 
 @see PositiveInfinity
-
-@category Numeric
 */
 // See https://github.com/microsoft/TypeScript/issues/31752
 // eslint-disable-next-line @typescript-eslint/no-loss-of-precision
@@ -61,8 +70,6 @@ export type NegativeInfinity = -1e999;
 Matches a JSON object.
 
 This type can be useful to enforce some input to be JSON-compatible or as a super-type to be extended from. Don't use this as a direct return type as the user would have to double-cast it: `jsonObject as unknown as CustomResponse`. Instead, you could extend your CustomResponse type from it to ensure your type only uses JSON-compatible types: `interface CustomResponse extends JsonObject { … }`.
-
-@category JSON
 */
 export type JsonObject = { [Key in string]: JsonValue } & {
   [Key in string]?: JsonValue | undefined;
@@ -70,15 +77,11 @@ export type JsonObject = { [Key in string]: JsonValue } & {
 
 /**
 Matches a JSON array.
-
-@category JSON
 */
 export type JsonArray = JsonValue[] | readonly JsonValue[];
 
 /**
 Matches any valid JSON primitive value.
-
-@category JSON
 */
 export type JsonPrimitive = string | number | boolean | null;
 
@@ -86,8 +89,6 @@ export type JsonPrimitive = string | number | boolean | null;
 Matches any valid JSON value.
 
 @see `Jsonify` if you need to transform a type to one that is assignable to `JsonValue`.
-
-@category JSON
 */
 export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
 
@@ -115,16 +116,12 @@ const bar3: EmptyObject = []; // Fail
 const bar4: EmptyObject = {a: 1}; // Fail
 ```
 
-Unfortunately, `Record<string, never>`, `Record<keyof any, never>` and `Record<never, never>` do not work. See {@link https://github.com/sindresorhus/type-fest/issues/395 #395}.
-
-@category Object
+Unfortunately, `Record<string, never>`, `Record<keyof any, never>` and `Record<never, never>` do not work. See {@link https://github.com/sindresorhus/type-fest/issues/395}.
 */
 export type EmptyObject = { [emptyObjectSymbol]?: never };
 
 /**
 Matches any [typed array](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/TypedArray), like `Uint8Array` or `Float64Array`.
-
-@category Array
 */
 export type TypedArray =
   | Int8Array
@@ -267,9 +264,7 @@ const time = {
 const timeJson = JSON.parse(JSON.stringify(time)) as Jsonify<typeof time>;
 ```
 
-@link https://github.com/Microsoft/TypeScript/issues/1897#issuecomment-710744173
-
-@category JSON
+{@link https://github.com/Microsoft/TypeScript/issues/1897#issuecomment-710744173}
 */
 export type Jsonify<T> = IsAny<T> extends true
   ? any
