@@ -200,6 +200,12 @@ export const incomingOpSchema = z.object({
 });
 
 export type IncomingOp = z.output<typeof incomingOpSchema>;
+
+/**
+ * The shape of a step operation that is sent to an Inngest Server from an SDK.
+ *
+ * @public
+ */
 export type OutgoingOp = Pick<
   HashedOp,
   "id" | "op" | "name" | "opts" | "data" | "error" | "displayName"
@@ -436,6 +442,8 @@ export type SendEventResponse = z.output<typeof sendEventResponseSchema>;
 
 /**
  * The response in code from sending an event to Inngest.
+ *
+ * @public
  */
 export type SendEventBaseOutput = {
   ids: SendEventResponse["ids"];

@@ -466,6 +466,11 @@ export class NonRetriableError extends Error {
     readonly cause?: unknown;
 }
 
+// Warning: (ae-forgotten-export) The symbol "HashedOp" needs to be exported by the entry point index.d.ts
+//
+// @public
+export type OutgoingOp = Pick<HashedOp, "id" | "op" | "name" | "opts" | "data" | "error" | "displayName">;
+
 // @public
 export class ProxyLogger implements Logger {
     constructor(logger: Logger);
@@ -522,6 +527,11 @@ export class RetryAfterError extends Error {
     readonly cause?: unknown;
     readonly retryAfter: string;
 }
+
+// @public
+export type SendEventBaseOutput = {
+    ids: SendEventResponse["ids"];
+};
 
 // @public
 export interface ServeHandlerOptions extends RegisterOptions {
@@ -606,9 +616,10 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:339:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:346:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/types.ts:57:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:267:3 - (ae-forgotten-export) The symbol "WithInvocation" needs to be exported by the entry point index.d.ts
-// src/types.ts:279:3 - (ae-forgotten-export) The symbol "createStepTools" needs to be exported by the entry point index.d.ts
-// src/types.ts:840:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:273:3 - (ae-forgotten-export) The symbol "WithInvocation" needs to be exported by the entry point index.d.ts
+// src/types.ts:285:3 - (ae-forgotten-export) The symbol "createStepTools" needs to be exported by the entry point index.d.ts
+// src/types.ts:449:3 - (ae-forgotten-export) The symbol "SendEventResponse" needs to be exported by the entry point index.d.ts
+// src/types.ts:848:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
