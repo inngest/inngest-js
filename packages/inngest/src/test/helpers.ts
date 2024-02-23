@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
@@ -616,43 +617,48 @@ export const testFramework = (
       });
 
       describe("#493", () => {
-        const serveHandler = getServeHandler([
-          { client: inngest, functions: [] },
-        ]) as ServeHandler;
+        let serveHandler: ServeHandler;
+        let makeReqWithDeployId: (deployId: string) => Promise<any>;
 
-        const makeReqWithDeployId = async (deployId: string) => {
-          let reqToMock;
+        beforeEach(() => {
+          serveHandler = getServeHandler([
+            { client: inngest, functions: [] },
+          ]) as ServeHandler;
 
-          const scope = nock("https://api.inngest.com")
-            .post("/fn/register", (b) => {
-              reqToMock = b;
+          makeReqWithDeployId = async (deployId: string) => {
+            let reqToMock;
 
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-              return b;
-            })
-            .query((q) =>
-              deployId
-                ? q[queryKeys.DeployId] === deployId
-                : !(queryKeys.DeployId in q)
-            )
-            .reply(200, {
-              status: 200,
-            });
+            const scope = nock("https://api.inngest.com")
+              .post("/fn/register", (b) => {
+                reqToMock = b;
 
-          await run(serveHandler, [
-            {
-              method: "PUT",
-              url: `/api/inngest${
-                deployId ? `?${queryKeys.DeployId}=${deployId}` : ""
-              }`,
-            },
-          ]);
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                return b;
+              })
+              .query((q) =>
+                deployId
+                  ? q[queryKeys.DeployId] === deployId
+                  : !(queryKeys.DeployId in q)
+              )
+              .reply(200, {
+                status: 200,
+              });
 
-          // Asserts that the nock scope was used
-          scope.done();
+            await run(serveHandler, [
+              {
+                method: "PUT",
+                url: `/api/inngest${
+                  deployId ? `?${queryKeys.DeployId}=${deployId}` : ""
+                }`,
+              },
+            ]);
 
-          return reqToMock;
-        };
+            // Asserts that the nock scope was used
+            scope.done();
+
+            return reqToMock;
+          };
+        });
 
         test("across multiple executions, does not hold on to the deploy ID", async () => {
           const req1 = await makeReqWithDeployId("1");
