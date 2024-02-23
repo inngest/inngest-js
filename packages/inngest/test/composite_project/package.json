@@ -16,7 +16,6 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "inngest": "file:../../inngest.tgz",
-    "prisma": "^5.10.2"
+    "inngest": "file:../../inngest.tgz"
   }
 }
