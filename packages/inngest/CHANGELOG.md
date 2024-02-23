@@ -1,5 +1,15 @@
 # inngest
 
+## 3.15.0
+
+### Minor Changes
+
+- [#488](https://github.com/inngest/inngest-js/pull/488) [`3d2429d`](https://github.com/inngest/inngest-js/commit/3d2429d02e18b46b79aab3f17fcf7441c13d3331) Thanks [@jpwilliams](https://github.com/jpwilliams)! - INN-2754 Add support for `INNGEST_DEV` and the `isDev` option, allowing a devleoper to explicitly set either Cloud or Dev mode
+
+### Patch Changes
+
+- [#498](https://github.com/inngest/inngest-js/pull/498) [`7c5b92e`](https://github.com/inngest/inngest-js/commit/7c5b92e2e77ea1eb8fa204f76e34cc6a3f10a775) Thanks [@sylwiavargas](https://github.com/sylwiavargas)! - Add keywords to the npm package
+
 ## 3.14.2
 
 ### Patch Changes
