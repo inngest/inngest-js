@@ -31,6 +31,7 @@ export enum envKeys {
   InngestServePath = "INNGEST_SERVE_PATH",
   InngestLogLevel = "INNGEST_LOG_LEVEL",
   InngestStreaming = "INNGEST_STREAMING",
+  InngestDevMode = "INNGEST_DEV",
 
   BranchName = "BRANCH_NAME",
 
@@ -97,9 +98,7 @@ export enum envKeys {
    * {@link https://docs.railway.app/develop/variables#railway-provided-variables}
    */
   RailwayEnvironment = "RAILWAY_ENVIRONMENT",
-}
 
-export enum prodEnvKeys {
   VercelEnvKey = "VERCEL_ENV",
 }
 
