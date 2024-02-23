@@ -251,6 +251,12 @@ export type WithInvocation<T extends EventPayload> = Simplify<
   { name: T["name"] | `${internalEvents.FunctionInvoked}` } & Omit<T, "name">
 >;
 
+/**
+ * Base context object, omitting any extras that may be added by middleware or
+ * function configuration.
+ *
+ * @public
+ */
 export type BaseContext<
   TOpts extends ClientOptions,
   TTrigger extends keyof EventsFromOpts<TOpts> & string,

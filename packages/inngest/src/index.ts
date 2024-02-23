@@ -42,6 +42,7 @@ export type {
 export { ProxyLogger } from "./middleware/logger";
 export type { LogArg } from "./middleware/logger";
 export type {
+  BaseContext,
   ClientOptions,
   Context,
   EventNameFromTrigger,
