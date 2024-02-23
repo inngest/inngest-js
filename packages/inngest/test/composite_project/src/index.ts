@@ -1,9 +1,13 @@
-import { Inngest, InngestMiddleware } from "inngest";
+import * as Inngest from "inngest";
 
-export const inngest = new Inngest({
+export const inngest = new Inngest.Inngest({
   id: "me",
+  schemas: new Inngest.EventSchemas().fromRecord<{
+    foo: { data: { foo: string } };
+    bar: { data: { bar: string } };
+  }>(),
   middleware: [
-    new InngestMiddleware({
+    new Inngest.InngestMiddleware({
       name: "foo",
       init() {
         return {
@@ -13,12 +17,34 @@ export const inngest = new Inngest({
             return {
               transformInput(ctx) {
                 console.log(ctx);
-
-                return {
-                  ctx: {
-                    oof: "doof",
-                  },
-                };
+              },
+              afterExecution() {
+                console.log("afterExecution");
+              },
+              afterMemoization() {
+                console.log("afterMemoization");
+              },
+              beforeExecution() {
+                console.log("beforeExecution");
+              },
+              beforeMemoization() {
+                console.log("beforeMemoization");
+              },
+              beforeResponse() {
+                console.log("beforeResponse");
+              },
+              transformOutput(ctx) {
+                console.log(ctx);
+              },
+            };
+          },
+          onSendEvent() {
+            return {
+              transformInput(ctx) {
+                console.log(ctx);
+              },
+              transformOutput(ctx) {
+                console.log(ctx);
               },
             };
           },
@@ -26,4 +52,11 @@ export const inngest = new Inngest({
       },
     }),
   ],
+});
+
+void inngest.send({ name: "foo", data: { foo: "bar" } });
+
+inngest.createFunction({ id: "my-fn" }, { event: "foo" }, async (ctx) => {
+  console.log(ctx);
+  return { foo: "bar" };
 });
