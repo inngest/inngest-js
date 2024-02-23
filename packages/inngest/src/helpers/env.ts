@@ -6,7 +6,7 @@
 import { type Inngest } from "../components/Inngest";
 import { type SupportedFrameworkName } from "../types";
 import { version } from "../version";
-import { envKeys, headerKeys } from "./consts";
+import { defaultDevServerHost, envKeys, headerKeys } from "./consts";
 import { stringifyUnknown } from "./strings";
 
 /**
@@ -36,13 +36,26 @@ export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
   // processed using webpack's DefinePlugin, which is dumb and does a straight
   // text replacement instead of actually understanding the AST, despite webpack
   // being fully capable of understanding the AST.
-  const values = [
-    env[envKeys.InngestBaseUrl],
-    env[`REACT_APP_${envKeys.InngestBaseUrl}`],
-    env[`NEXT_PUBLIC_${envKeys.InngestBaseUrl}`],
-  ];
+  const prefixes = ["REACT_APP_", "NEXT_PUBLIC_"];
+  const keys = [envKeys.InngestBaseUrl, envKeys.InngestDevMode];
 
-  return values.find((a) => !!a);
+  const values = keys.flatMap((key) => {
+    return prefixes.map((prefix) => {
+      return env[prefix + key];
+    });
+  });
+
+  return values.find((v) => {
+    if (!v) {
+      return;
+    }
+
+    try {
+      return Boolean(new URL(v));
+    } catch {
+      // no-op
+    }
+  });
 };
 
 const checkFns = (<
@@ -81,6 +94,12 @@ interface IsProdOptions {
    * The optional environment variables to use instead of `process.env`.
    */
   env?: Record<string, unknown>;
+
+  /**
+   * The Inngest client that's being used when performing this check. This is
+   * used to check if the client has an explicit mode set, and if so, to use
+   * that mode instead of inferring it from the environment.
+   */
   client?: Inngest.Any;
 
   /**
@@ -90,13 +109,72 @@ interface IsProdOptions {
   explicitMode?: Mode["type"];
 }
 
-export interface Mode {
+export interface ModeOptions {
   type: "cloud" | "dev";
 
   /**
    * Whether the mode was explicitly set, or inferred from other sources.
    */
   isExplicit: boolean;
+
+  /**
+   * If the mode was explicitly set as a dev URL, this is the URL that was set.
+   */
+  explicitDevUrl?: URL;
+}
+
+export class Mode {
+  private readonly type: "cloud" | "dev";
+
+  /**
+   * Whether the mode was explicitly set, or inferred from other sources.
+   */
+  public readonly isExplicit: boolean;
+
+  public readonly explicitDevUrl?: URL;
+
+  constructor({ type, isExplicit, explicitDevUrl }: ModeOptions) {
+    this.type = type;
+    this.isExplicit = isExplicit || Boolean(explicitDevUrl);
+    this.explicitDevUrl = explicitDevUrl;
+  }
+
+  public get isDev(): boolean {
+    return this.type === "dev";
+  }
+
+  public get isCloud(): boolean {
+    return this.type === "cloud";
+  }
+
+  public get isInferred(): boolean {
+    return !this.isExplicit;
+  }
+
+  /**
+   * If we are explicitly in a particular mode, retrieve the URL that we are
+   * sure we should be using, not considering any environment variables or other
+   * influences.
+   */
+  public getExplicitUrl(defaultCloudUrl: string): string | undefined {
+    if (!this.isExplicit) {
+      return undefined;
+    }
+
+    if (this.explicitDevUrl) {
+      return this.explicitDevUrl.href;
+    }
+
+    if (this.isCloud) {
+      return defaultCloudUrl;
+    }
+
+    if (this.isDev) {
+      return defaultDevServerHost;
+    }
+
+    return undefined;
+  }
 }
 
 /**
@@ -109,23 +187,34 @@ export const getMode = ({
   explicitMode,
 }: IsProdOptions = {}): Mode => {
   if (explicitMode) {
-    return { type: explicitMode, isExplicit: true };
+    return new Mode({ type: explicitMode, isExplicit: true });
   }
 
   if (client?.["mode"].isExplicit) {
     return client["mode"];
   }
 
-  const envIsDev = parseAsBoolean(env[envKeys.InngestDevMode]);
-  if (typeof envIsDev === "boolean") {
-    return { type: envIsDev ? "dev" : "cloud", isExplicit: true };
+  if (envKeys.InngestDevMode in env) {
+    if (typeof env[envKeys.InngestDevMode] === "string") {
+      try {
+        const explicitDevUrl = new URL(env[envKeys.InngestDevMode]);
+        return new Mode({ type: "dev", isExplicit: true, explicitDevUrl });
+      } catch {
+        // no-op
+      }
+    }
+
+    const envIsDev = parseAsBoolean(env[envKeys.InngestDevMode]);
+    if (typeof envIsDev === "boolean") {
+      return new Mode({ type: envIsDev ? "dev" : "cloud", isExplicit: true });
+    }
   }
 
   const isProd = prodChecks.some(([key, checkKey, expected]) => {
     return checkFns[checkKey](stringifyUnknown(env[key]), expected);
   });
 
-  return { type: isProd ? "cloud" : "dev", isExplicit: false };
+  return new Mode({ type: isProd ? "cloud" : "dev", isExplicit: false });
 };
 
 /**

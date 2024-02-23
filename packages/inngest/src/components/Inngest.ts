@@ -190,21 +190,13 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
       baseUrl ||
       processEnv(envKeys.InngestApiBaseUrl) ||
       processEnv(envKeys.InngestBaseUrl) ||
-      (this.mode.isExplicit
-        ? this.mode.type === "cloud"
-          ? defaultInngestApiBaseUrl
-          : defaultDevServerHost
-        : undefined);
+      this.mode.getExplicitUrl(defaultInngestApiBaseUrl);
 
     this.eventBaseUrl =
       baseUrl ||
       processEnv(envKeys.InngestEventApiBaseUrl) ||
       processEnv(envKeys.InngestBaseUrl) ||
-      (this.mode.isExplicit
-        ? this.mode.type === "cloud"
-          ? defaultInngestEventBaseUrl
-          : defaultDevServerHost
-        : undefined);
+      this.mode.getExplicitUrl(defaultInngestEventBaseUrl);
 
     this.setEventKey(eventKey || processEnv(envKeys.InngestEventKey) || "");
 
@@ -436,9 +428,9 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     let url = this.sendEventUrl.href;
 
     /**
-     * If we're in prod mode and have no key, fail now.
+     * If in prod mode and key is not present, fail now.
      */
-    if (this.mode.type === "cloud" && !this.eventKeySet()) {
+    if (this.mode.isCloud && !this.eventKeySet()) {
       throw new Error(
         prettyError({
           whatHappened: "Failed to send event",
@@ -450,18 +442,14 @@ export class Inngest<TOpts extends ClientOptions = ClientOptions> {
     }
 
     /**
-     * If we've inferred that we're in dev mode, try to hit the dev server
-     * first to see if it exists. If it does, use it, otherwise fall back to
-     * whatever server we have configured.
+     * If dev mode has been inferred, try to hit the dev server first to see if
+     * it exists. If it does, use it, otherwise fall back to whatever server we
+     * have configured.
      *
      * `INNGEST_BASE_URL` is used to set both dev server and prod URLs, so if a
      * user has set this it means they have already chosen a URL to hit.
      */
-    if (
-      this.mode.type === "dev" &&
-      !this.mode.isExplicit &&
-      !this.eventBaseUrl
-    ) {
+    if (this.mode.isDev && this.mode.isInferred && !this.eventBaseUrl) {
       const devAvailable = await devServerAvailable(
         defaultDevServerHost,
         this.fetch

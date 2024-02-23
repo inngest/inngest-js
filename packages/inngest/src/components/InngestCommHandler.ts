@@ -13,6 +13,7 @@ import {
 } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
+  Mode,
   allProcessEnv,
   devServerHost,
   getFetch,
@@ -20,7 +21,6 @@ import {
   inngestHeaders,
   platformSupportsStreaming,
   type Env,
-  type Mode,
 } from "../helpers/env";
 import { rethrowError, serializeError } from "../helpers/errors";
 import {
@@ -672,7 +672,10 @@ export class InngestCommHandler<
         "starting to handle request"
       );
       if (typeof serveIsProd === "boolean") {
-        this._mode = { type: serveIsProd ? "cloud" : "dev", isExplicit: false };
+        this._mode = new Mode({
+          type: serveIsProd ? "cloud" : "dev",
+          isExplicit: false,
+        });
       } else {
         this._mode = assumedMode;
       }
@@ -1090,7 +1093,7 @@ export class InngestCommHandler<
     let registerURL = new URL(this.inngestRegisterUrl.href);
 
     const inferredDevMode =
-      this._mode && !this._mode.isExplicit && this._mode.type === "dev";
+      this._mode && this._mode.isInferred && this._mode.isDev;
 
     if (inferredDevMode) {
       const host = devServerHost(this.env);
@@ -1098,6 +1101,8 @@ export class InngestCommHandler<
       if (hasDevServer) {
         registerURL = devServerUrl(host, "/fn/register");
       }
+    } else if (this._mode?.explicitDevUrl) {
+      registerURL = new URL(this._mode.explicitDevUrl);
     }
 
     if (deployId) {
@@ -1183,10 +1188,10 @@ export class InngestCommHandler<
   }
 
   protected validateSignature(sig: string | undefined, body: unknown) {
-    // Never validate signatures outside of prod. Make sure we check the mode
+    // Never validate signatures outside of prod. Make sure to check the mode
     // exists here instead of using nullish coalescing to confirm that the check
     // has been completed.
-    if (this._mode && this._mode.type !== "cloud") {
+    if (this._mode && !this._mode.isCloud) {
       return;
     }
 
