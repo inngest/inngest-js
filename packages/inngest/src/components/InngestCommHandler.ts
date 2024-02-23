@@ -13,13 +13,13 @@ import {
 } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
+  Mode,
   allProcessEnv,
   devServerHost,
   getFetch,
+  getMode,
   inngestHeaders,
-  isProd,
   platformSupportsStreaming,
-  skipDevServer,
   type Env,
 } from "../helpers/env";
 import { rethrowError, serializeError } from "../helpers/errors";
@@ -252,14 +252,7 @@ export class InngestCommHandler<
    *
    * Should be set every time a request is received.
    */
-  protected _isProd = false;
-
-  /**
-   * Whether we should attempt to use the dev server.
-   *
-   * Should be set every time a request is received.
-   */
-  protected _skipDevServer = false;
+  protected _mode: Mode | undefined;
 
   /**
    * The localized `fetch` implementation used by this handler.
@@ -670,17 +663,23 @@ export class InngestCommHandler<
     getInngestHeaders: () => Record<string, string>;
     reqArgs: unknown[];
   }): Promise<ActionResponse> {
-    this._isProd =
-      (await actions.isProduction?.("starting to handle request")) ??
-      isProd(this.env);
+    const assumedMode = getMode({ env: this.env, client: this.client });
 
-    /**
-     * If we've been explicitly passed an Inngest dev sever URL, assume that
-     * we shouldn't skip the dev server.
-     */
-    this._skipDevServer = devServerHost(this.env)
-      ? false
-      : this._isProd ?? skipDevServer(this.env);
+    if (assumedMode.isExplicit) {
+      this._mode = assumedMode;
+    } else {
+      const serveIsProd = await actions.isProduction?.(
+        "starting to handle request"
+      );
+      if (typeof serveIsProd === "boolean") {
+        this._mode = new Mode({
+          type: serveIsProd ? "cloud" : "dev",
+          isExplicit: false,
+        });
+      } else {
+        this._mode = assumedMode;
+      }
+    }
 
     this.upsertKeysFromEnv();
 
@@ -824,13 +823,17 @@ export class InngestCommHandler<
       }
 
       if (method === "GET") {
-        const registerBody = this.registerBody(this.reqUrl(url));
+        const registerBody = this.registerBody({
+          url: this.reqUrl(url),
+          deployId: null,
+        });
 
         const introspection: IntrospectRequest = {
           message: "Inngest endpoint configured correctly.",
           hasEventKey: this.client["eventKeySet"](),
           hasSigningKey: Boolean(this.signingKey),
           functionsFound: registerBody.functions.length,
+          mode: this._mode,
         };
 
         return {
@@ -844,10 +847,13 @@ export class InngestCommHandler<
       }
 
       if (method === "PUT") {
-        const deployId = await getQuerystring(
+        let deployId = await getQuerystring(
           "processing deployment request",
           queryKeys.DeployId
         );
+        if (deployId === "undefined") {
+          deployId = undefined;
+        }
 
         const { status, message, modified } = await this.register(
           this.reqUrl(url),
@@ -882,8 +888,7 @@ export class InngestCommHandler<
       status: 405,
       body: JSON.stringify({
         message: "No action found; request was likely not POST, PUT, or GET",
-        isProd: this._isProd,
-        skipDevServer: this._skipDevServer,
+        mode: this._mode,
       }),
       headers: {},
       version: undefined,
@@ -1047,7 +1052,18 @@ export class InngestCommHandler<
     return ret;
   }
 
-  protected registerBody(url: URL): RegisterRequest {
+  protected registerBody({
+    url,
+    deployId,
+  }: {
+    url: URL;
+
+    /**
+     * Non-optional to ensure we always consider if we have a deploy ID
+     * available to us to use.
+     */
+    deployId: string | undefined | null;
+  }): RegisterRequest {
     const body: RegisterRequest = {
       url: url.href,
       deployType: "ping",
@@ -1056,6 +1072,7 @@ export class InngestCommHandler<
       functions: this.configs(url),
       sdk: `js:v${version}`,
       v: "0.1",
+      deployId: deployId || undefined,
     };
 
     return body;
@@ -1066,7 +1083,7 @@ export class InngestCommHandler<
     deployId: string | undefined | null,
     getHeaders: () => Record<string, string>
   ): Promise<{ status: number; message: string; modified: boolean }> {
-    const body = this.registerBody(url);
+    const body = this.registerBody({ url, deployId });
 
     let res: globalThis.Response;
 
@@ -1075,15 +1092,20 @@ export class InngestCommHandler<
     // mutating the property between requests.
     let registerURL = new URL(this.inngestRegisterUrl.href);
 
-    if (!this._skipDevServer) {
+    const inferredDevMode =
+      this._mode && this._mode.isInferred && this._mode.isDev;
+
+    if (inferredDevMode) {
       const host = devServerHost(this.env);
       const hasDevServer = await devServerAvailable(host, this.fetch);
       if (hasDevServer) {
         registerURL = devServerUrl(host, "/fn/register");
       }
+    } else if (this._mode?.explicitDevUrl) {
+      registerURL = new URL(this._mode.explicitDevUrl);
     }
 
-    if (deployId && deployId !== "undefined") {
+    if (deployId) {
       registerURL.searchParams.set(queryKeys.DeployId, deployId);
     }
 
@@ -1138,10 +1160,6 @@ export class InngestCommHandler<
     return { status, message: error, modified };
   }
 
-  private get isProd() {
-    return this._isProd;
-  }
-
   /**
    * Given an environment, upsert any missing keys. This is useful in
    * situations where environment variables are passed directly to handlers or
@@ -1170,8 +1188,10 @@ export class InngestCommHandler<
   }
 
   protected validateSignature(sig: string | undefined, body: unknown) {
-    // Never validate signatures in development.
-    if (!this.isProd) {
+    // Never validate signatures outside of prod. Make sure to check the mode
+    // exists here instead of using nullish coalescing to confirm that the check
+    // has been completed.
+    if (this._mode && !this._mode.isCloud) {
       return;
     }
 
@@ -1409,7 +1429,7 @@ export interface ActionResponse<
  * This enables us to provide accurate errors for each access without having to
  * wrap every access in a try/catch.
  */
-type HandlerResponseWithErrors = {
+export type HandlerResponseWithErrors = {
   [K in keyof HandlerResponse]: NonNullable<HandlerResponse[K]> extends (
     ...args: infer Args
   ) => infer R

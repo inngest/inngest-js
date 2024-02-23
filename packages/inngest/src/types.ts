@@ -13,6 +13,7 @@ import {
 } from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
+import { type Mode } from "./helpers/env";
 import {
   type IsStringLiteral,
   type ObjectPaths,
@@ -585,6 +586,16 @@ export interface ClientOptions {
    */
   logger?: Logger;
   middleware?: MiddlewareStack;
+
+  /**
+   * Can be used to explicitly set the client to Development Mode, which will
+   * turn off signature verification and default to using a local URL to access
+   * a local Dev Server.
+   *
+   * This is useful for forcing the client to use a local Dev Server while also
+   * running in a production-like environment.
+   */
+  isDev?: boolean;
 }
 
 /**
@@ -1070,6 +1081,11 @@ export interface RegisterRequest {
    * The functions available at this particular handler.
    */
   functions: FunctionConfig[];
+
+  /**
+   * The deploy ID used to identify this particular deployment.
+   */
+  deployId?: string;
 }
 
 /**
@@ -1095,6 +1111,12 @@ export interface IntrospectRequest {
    * The number of Inngest functions found at this handler.
    */
   functionsFound: number;
+
+  /**
+   * The mode that this handler is running in and whether it has been inferred
+   * or explicitly set.
+   */
+  mode: Mode;
 }
 
 /**
