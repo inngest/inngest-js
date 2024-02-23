@@ -824,7 +824,10 @@ export class InngestCommHandler<
       }
 
       if (method === "GET") {
-        const registerBody = this.registerBody(this.reqUrl(url));
+        const registerBody = this.registerBody({
+          url: this.reqUrl(url),
+          deployId: null,
+        });
 
         const introspection: IntrospectRequest = {
           message: "Inngest endpoint configured correctly.",
@@ -844,10 +847,13 @@ export class InngestCommHandler<
       }
 
       if (method === "PUT") {
-        const deployId = await getQuerystring(
+        let deployId = await getQuerystring(
           "processing deployment request",
           queryKeys.DeployId
         );
+        if (deployId === "undefined") {
+          deployId = undefined;
+        }
 
         const { status, message, modified } = await this.register(
           this.reqUrl(url),
@@ -1047,7 +1053,18 @@ export class InngestCommHandler<
     return ret;
   }
 
-  protected registerBody(url: URL): RegisterRequest {
+  protected registerBody({
+    url,
+    deployId,
+  }: {
+    url: URL;
+
+    /**
+     * Non-optional to ensure we always consider if we have a deploy ID
+     * available to us to use.
+     */
+    deployId: string | undefined | null;
+  }): RegisterRequest {
     const body: RegisterRequest = {
       url: url.href,
       deployType: "ping",
@@ -1056,6 +1073,7 @@ export class InngestCommHandler<
       functions: this.configs(url),
       sdk: `js:v${version}`,
       v: "0.1",
+      deployId: deployId || undefined,
     };
 
     return body;
@@ -1066,7 +1084,7 @@ export class InngestCommHandler<
     deployId: string | undefined | null,
     getHeaders: () => Record<string, string>
   ): Promise<{ status: number; message: string; modified: boolean }> {
-    const body = this.registerBody(url);
+    const body = this.registerBody({ url, deployId });
 
     let res: globalThis.Response;
 
@@ -1083,7 +1101,7 @@ export class InngestCommHandler<
       }
     }
 
-    if (deployId && deployId !== "undefined") {
+    if (deployId) {
       registerURL.searchParams.set(queryKeys.DeployId, deployId);
     }
 

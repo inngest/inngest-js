@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
@@ -125,14 +126,11 @@ export const testFramework = (
     envTests?: () => void;
   }
 ) => {
-  /**
-   * Create a helper function for running tests against the given serve handler.
-   */
-  const run = async (
-    handlerOpts: Parameters<(typeof handler)["serve"]>,
-    reqOpts: Parameters<typeof httpMocks.createRequest>,
-    env: Env = {}
-  ): Promise<HandlerStandardReturn> => {
+  type ServeHandler = string & { __serveHandler: true };
+
+  const getServeHandler = (
+    handlerOpts: Parameters<(typeof handler)["serve"]>
+  ) => {
     const serveHandler = handler.serve({
       ...handlerOpts[0],
 
@@ -142,6 +140,21 @@ export const testFramework = (
        */
       fetch,
     });
+
+    return serveHandler;
+  };
+
+  /**
+   * Create a helper function for running tests against the given serve handler.
+   */
+  const run = async (
+    handlerOpts: Parameters<(typeof handler)["serve"]> | ServeHandler,
+    reqOpts: Parameters<typeof httpMocks.createRequest>,
+    env: Env = {}
+  ): Promise<HandlerStandardReturn> => {
+    const serveHandler = Array.isArray(handlerOpts)
+      ? getServeHandler(handlerOpts)
+      : handlerOpts;
 
     const host = "localhost:3000";
 
@@ -155,22 +168,6 @@ export const testFramework = (
         host,
       },
     };
-
-    if (mockReqOpts.method === "POST") {
-      const mockUrl = new URL(
-        `${mockReqOpts.protocol as string}://${host}${
-          mockReqOpts.url as string
-        }`
-      );
-
-      if (!mockUrl.searchParams.has(queryKeys.FnId)) {
-        mockUrl.searchParams.set(queryKeys.FnId, ulid());
-      }
-
-      if (!mockUrl.searchParams.has(queryKeys.StepId)) {
-        mockUrl.searchParams.set(queryKeys.StepId, "step");
-      }
-    }
 
     const [req, res] = createReqRes(mockReqOpts);
 
@@ -616,6 +613,71 @@ export const testFramework = (
               },
             },
           ],
+        });
+      });
+
+      describe("#493", () => {
+        let serveHandler: ServeHandler;
+        let makeReqWithDeployId: (deployId: string) => Promise<any>;
+
+        beforeEach(() => {
+          serveHandler = getServeHandler([
+            { client: inngest, functions: [] },
+          ]) as ServeHandler;
+
+          makeReqWithDeployId = async (deployId: string) => {
+            let reqToMock;
+
+            const scope = nock("https://api.inngest.com")
+              .post("/fn/register", (b) => {
+                reqToMock = b;
+
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                return b;
+              })
+              .query((q) =>
+                deployId
+                  ? q[queryKeys.DeployId] === deployId
+                  : !(queryKeys.DeployId in q)
+              )
+              .reply(200, {
+                status: 200,
+              });
+
+            await run(serveHandler, [
+              {
+                method: "PUT",
+                url: `/api/inngest${
+                  deployId ? `?${queryKeys.DeployId}=${deployId}` : ""
+                }`,
+              },
+            ]);
+
+            // Asserts that the nock scope was used
+            scope.done();
+
+            return reqToMock;
+          };
+        });
+
+        test("across multiple executions, does not hold on to the deploy ID", async () => {
+          const req1 = await makeReqWithDeployId("1");
+          expect(req1).toMatchObject({
+            url: expect.stringMatching("^https://localhost:3000/api/inngest"),
+            deployId: "1",
+          });
+
+          const req2 = await makeReqWithDeployId("");
+          expect(req2).toMatchObject({
+            url: expect.stringMatching("^https://localhost:3000/api/inngest"),
+          });
+          expect(req2).not.toHaveProperty("deployId");
+
+          const req3 = await makeReqWithDeployId("3");
+          expect(req3).toMatchObject({
+            url: expect.stringMatching("^https://localhost:3000/api/inngest"),
+            deployId: "3",
+          });
         });
       });
 
