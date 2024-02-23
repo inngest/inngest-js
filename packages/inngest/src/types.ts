@@ -1081,6 +1081,11 @@ export interface RegisterRequest {
    * The functions available at this particular handler.
    */
   functions: FunctionConfig[];
+
+  /**
+   * The deploy ID used to identify this particular deployment.
+   */
+  deployId?: string;
 }
 
 /**
