@@ -1,5 +1,11 @@
 # inngest
 
+## 3.15.1
+
+### Patch Changes
+
+- [#501](https://github.com/inngest/inngest-js/pull/501) [`0048c94`](https://github.com/inngest/inngest-js/commit/0048c94c7ccdcfa5e62687446376ce8341c002b5) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix failures for `composite: true` errors
+
 ## 3.15.0
 
 ### Minor Changes

@@ -42,6 +42,7 @@ export type {
 export { ProxyLogger } from "./middleware/logger";
 export type { LogArg } from "./middleware/logger";
 export type {
+  BaseContext,
   ClientOptions,
   Context,
   EventNameFromTrigger,
@@ -53,7 +54,9 @@ export type {
   FunctionTrigger,
   Handler,
   LogLevel,
+  OutgoingOp,
   RegisterOptions,
+  SendEventBaseOutput,
   StepOptions,
   StepOptionsOrId,
   TimeStr,

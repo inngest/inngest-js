@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "3.15.0",
+  "version": "3.15.1",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -17,6 +17,7 @@
     "test:types": "tsc --noEmit --project tsconfig.types.json --listFiles",
     "test:dist": "tsc --noEmit dist/**/*.d.ts",
     "test:deps": "tsx scripts/checkDependencies.ts",
+    "test:composite": "pnpm run local:pack && (cd test/composite_project && npm i ../../inngest.tgz && npm run test)",
     "clean": "rm -rf ./dist",
     "lint": "eslint .",
     "postversion": "pnpm run build && pnpm run build:copy",
