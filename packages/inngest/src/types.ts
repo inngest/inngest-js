@@ -200,6 +200,12 @@ export const incomingOpSchema = z.object({
 });
 
 export type IncomingOp = z.output<typeof incomingOpSchema>;
+
+/**
+ * The shape of a step operation that is sent to an Inngest Server from an SDK.
+ *
+ * @public
+ */
 export type OutgoingOp = Pick<
   HashedOp,
   "id" | "op" | "name" | "opts" | "data" | "error" | "displayName"
@@ -251,6 +257,12 @@ export type WithInvocation<T extends EventPayload> = Simplify<
   { name: T["name"] | `${internalEvents.FunctionInvoked}` } & Omit<T, "name">
 >;
 
+/**
+ * Base context object, omitting any extras that may be added by middleware or
+ * function configuration.
+ *
+ * @public
+ */
 export type BaseContext<
   TOpts extends ClientOptions,
   TTrigger extends keyof EventsFromOpts<TOpts> & string,
@@ -430,6 +442,8 @@ export type SendEventResponse = z.output<typeof sendEventResponseSchema>;
 
 /**
  * The response in code from sending an event to Inngest.
+ *
+ * @public
  */
 export type SendEventBaseOutput = {
   ids: SendEventResponse["ids"];

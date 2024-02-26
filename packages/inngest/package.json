@@ -17,6 +17,7 @@
     "test:types": "tsc --noEmit --project tsconfig.types.json --listFiles",
     "test:dist": "tsc --noEmit dist/**/*.d.ts",
     "test:deps": "tsx scripts/checkDependencies.ts",
+    "test:composite": "pnpm run local:pack && (cd test/composite_project && npm i ../../inngest.tgz && npm run test)",
     "clean": "rm -rf ./dist",
     "lint": "eslint .",
     "postversion": "pnpm run build && pnpm run build:copy",

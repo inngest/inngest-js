@@ -20,6 +20,18 @@ export type AssertInternalEventPayloads<T extends Record<internalEvents, EventPa
 };
 
 // @public
+export type BaseContext<TOpts extends ClientOptions, TTrigger extends keyof EventsFromOpts<TOpts> & string> = {
+    event: WithInvocation<EventsFromOpts<TOpts>[TTrigger]>;
+    events: [
+    EventsFromOpts<TOpts>[TTrigger],
+    ...EventsFromOpts<TOpts>[TTrigger][]
+    ];
+    runId: string;
+    step: ReturnType<typeof createStepTools<TOpts, EventsFromOpts<TOpts>, TTrigger>>;
+    attempt: number;
+};
+
+// @public
 export interface ClientOptions {
     baseUrl?: string;
     env?: string;
@@ -44,7 +56,6 @@ export type ClientOptionsFromInngest<TInngest extends Inngest<any>> = TInngest e
 // @public
 export type Combine<TCurr extends Record<string, EventPayload>, TInc extends StandardEventSchemas> = IsStringLiteral<keyof TCurr & string> extends true ? Simplify<Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> & StandardEventSchemaToPayload<TInc>> : StandardEventSchemaToPayload<TInc>;
 
-// Warning: (ae-forgotten-export) The symbol "BaseContext" needs to be exported by the entry point index.d.ts
 // Warning: (ae-internal-missing-underscore) The name "Context" should be prefixed with an underscore because the declaration is marked as @internal
 //
 // @internal
@@ -455,6 +466,11 @@ export class NonRetriableError extends Error {
     readonly cause?: unknown;
 }
 
+// Warning: (ae-forgotten-export) The symbol "HashedOp" needs to be exported by the entry point index.d.ts
+//
+// @public
+export type OutgoingOp = Pick<HashedOp, "id" | "op" | "name" | "opts" | "data" | "error" | "displayName">;
+
 // @public
 export class ProxyLogger implements Logger {
     constructor(logger: Logger);
@@ -511,6 +527,11 @@ export class RetryAfterError extends Error {
     readonly cause?: unknown;
     readonly retryAfter: string;
 }
+
+// @public
+export type SendEventBaseOutput = {
+    ids: SendEventResponse["ids"];
+};
 
 // @public
 export interface ServeHandlerOptions extends RegisterOptions {
@@ -595,7 +616,10 @@ export type ZodEventSchemas = Record<string, {
 // src/components/InngestMiddleware.ts:339:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventInput" needs to be exported by the entry point index.d.ts
 // src/components/InngestMiddleware.ts:346:5 - (ae-forgotten-export) The symbol "MiddlewareSendEventOutput" needs to be exported by the entry point index.d.ts
 // src/types.ts:57:5 - (ae-forgotten-export) The symbol "failureEventErrorSchema" needs to be exported by the entry point index.d.ts
-// src/types.ts:834:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
+// src/types.ts:273:3 - (ae-forgotten-export) The symbol "WithInvocation" needs to be exported by the entry point index.d.ts
+// src/types.ts:285:3 - (ae-forgotten-export) The symbol "createStepTools" needs to be exported by the entry point index.d.ts
+// src/types.ts:449:3 - (ae-forgotten-export) The symbol "SendEventResponse" needs to be exported by the entry point index.d.ts
+// src/types.ts:848:5 - (ae-forgotten-export) The symbol "TimeStrBatch" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
