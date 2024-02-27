@@ -27,7 +27,11 @@ import {
   type Handler,
   type OutgoingOp,
 } from "../../types";
-import { getHookStack, type RunHookStack } from "../InngestMiddleware";
+import {
+  getHookStack,
+  type RunHookStack,
+  type SendEventHookStack,
+} from "../InngestMiddleware";
 import {
   STEP_INDEXING_SUFFIX,
   createStepTools,
@@ -201,6 +205,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           Object.values(this.state.steps)
         );
         if (newSteps) {
+          /**
+           * Before we report, run any invocation steps through
+           * `onSendEvent.transformInput`, as invoking is still just sending an
+           * event.
+           *
+           * TODO Use the hooks to transform invocation steps. This should be a
+           * function call that transforms `newSteps`, as doing it here is bad.
+           */
+
           return {
             type: "steps-found",
             steps: newSteps,
@@ -313,9 +326,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     /**
      * We're finishing up; let's trigger the last of the hooks.
      */
-    await this.state.hooks?.afterMemoization?.();
-    await this.state.hooks?.beforeExecution?.();
-    await this.state.hooks?.afterExecution?.();
+    await this.state.hooks?.onFunctionRun.afterMemoization?.();
+    await this.state.hooks?.onFunctionRun.beforeExecution?.();
+    await this.state.hooks?.onFunctionRun.afterExecution?.();
 
     return newSteps.map<OutgoingOp>((step) => ({
       displayName: step.displayName,
@@ -334,8 +347,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     displayName,
   }: FoundStep): Promise<OutgoingOp> {
     this.timeout?.clear();
-    await this.state.hooks?.afterMemoization?.();
-    await this.state.hooks?.beforeExecution?.();
+    await this.state.hooks?.onFunctionRun.afterMemoization?.();
+    await this.state.hooks?.onFunctionRun.beforeExecution?.();
 
     const outgoingOp: OutgoingOp = {
       id,
@@ -351,7 +364,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       runAsPromise(fn)
         // eslint-disable-next-line @typescript-eslint/no-misused-promises
         .finally(async () => {
-          await this.state.hooks?.afterExecution?.();
+          await this.state.hooks?.onFunctionRun.afterExecution?.();
         })
         .then<OutgoingOp>((data) => {
           return {
@@ -385,14 +398,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      */
     void this.timeout?.start();
 
-    await this.state.hooks?.beforeMemoization?.();
+    await this.state.hooks?.onFunctionRun.beforeMemoization?.();
 
     /**
      * If we had no state to begin with, immediately end the memoization phase.
      */
     if (this.state.allStateUsed()) {
-      await this.state.hooks?.afterMemoization?.();
-      await this.state.hooks?.beforeExecution?.();
+      await this.state.hooks?.onFunctionRun.afterMemoization?.();
+      await this.state.hooks?.onFunctionRun.beforeExecution?.();
     }
 
     /**
@@ -401,9 +414,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     runAsPromise(() => this.userFnToRun(this.fnArg))
       // eslint-disable-next-line @typescript-eslint/no-misused-promises
       .finally(async () => {
-        await this.state.hooks?.afterMemoization?.();
-        await this.state.hooks?.beforeExecution?.();
-        await this.state.hooks?.afterExecution?.();
+        await this.state.hooks?.onFunctionRun.afterMemoization?.();
+        await this.state.hooks?.onFunctionRun.beforeExecution?.();
+        await this.state.hooks?.onFunctionRun.afterExecution?.();
       })
       .then((data) => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -419,12 +432,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * Using middleware, transform input before running.
    */
   private async transformInput() {
-    const inputMutations = await this.state.hooks?.transformInput?.({
-      ctx: { ...this.fnArg },
-      steps: Object.values(this.state.stepState),
-      fn: this.options.fn,
-      reqArgs: this.options.reqArgs,
-    });
+    const inputMutations =
+      await this.state.hooks?.onFunctionRun.transformInput?.({
+        ctx: { ...this.fnArg },
+        steps: Object.values(this.state.stepState),
+        fn: this.options.fn,
+        reqArgs: this.options.reqArgs,
+      });
 
     if (inputMutations?.ctx) {
       this.fnArg = inputMutations.ctx;
@@ -459,10 +473,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       output.data = serializeError(output.error);
     }
 
-    const transformedOutput = await this.state.hooks?.transformOutput?.({
-      result: { ...output },
-      step: this.state.executingStep,
-    });
+    const transformedOutput =
+      await this.state.hooks?.onFunctionRun.transformOutput?.({
+        result: { ...output },
+        step: this.state.executingStep,
+      });
 
     const { data, error } = { ...output, ...transformedOutput?.result };
 
@@ -779,8 +794,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        */
       if (!beforeExecHooksPromise && this.state.allStateUsed()) {
         await (beforeExecHooksPromise = (async () => {
-          await this.state.hooks?.beforeExecution?.();
-          await this.state.hooks?.afterMemoization?.();
+          await this.state.hooks?.onFunctionRun.beforeExecution?.();
+          await this.state.hooks?.onFunctionRun.afterMemoization?.();
         })());
       }
 
@@ -815,9 +830,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     this.timeout = createTimeoutPromise(this.timeoutDuration);
 
     void this.timeout.then(async () => {
-      await this.state.hooks?.afterMemoization?.();
-      await this.state.hooks?.beforeExecution?.();
-      await this.state.hooks?.afterExecution?.();
+      await this.state.hooks?.onFunctionRun.afterMemoization?.();
+      await this.state.hooks?.onFunctionRun.beforeExecution?.();
+      await this.state.hooks?.onFunctionRun.afterExecution?.();
 
       state.setCheckpoint({
         type: "step-not-found",
@@ -829,41 +844,58 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     });
   }
 
-  private async initializeMiddleware(): Promise<RunHookStack> {
+  private async initializeMiddleware(): Promise<{
+    onFunctionRun: RunHookStack;
+    onSendEvent: SendEventHookStack;
+  }> {
     const ctx = this.options.data as Pick<
       Readonly<BaseContext<ClientOptions, string>>,
       "event" | "events" | "runId"
     >;
 
-    const hooks = await getHookStack(
-      this.options.fn["middleware"],
-      "onFunctionRun",
-      {
-        ctx,
-        fn: this.options.fn,
-        steps: Object.values(this.options.stepState),
-        reqArgs: this.options.reqArgs,
-      },
-      {
+    const [onFunctionRun, onSendEvent] = await Promise.all([
+      getHookStack(
+        this.options.fn["middleware"],
+        "onFunctionRun",
+        {
+          ctx,
+          fn: this.options.fn,
+          steps: Object.values(this.options.stepState),
+          reqArgs: this.options.reqArgs,
+        },
+        {
+          transformInput: (prev, output) => {
+            return {
+              ctx: { ...prev.ctx, ...output?.ctx },
+              fn: this.options.fn,
+              steps: prev.steps.map((step, i) => ({
+                ...step,
+                ...output?.steps?.[i],
+              })),
+              reqArgs: prev.reqArgs,
+            };
+          },
+          transformOutput: (prev, output) => {
+            return {
+              result: { ...prev.result, ...output?.result },
+              step: prev.step,
+            };
+          },
+        }
+      ),
+      getHookStack(this.options.fn["middleware"], "onSendEvent", undefined, {
         transformInput: (prev, output) => {
-          return {
-            ctx: { ...prev.ctx, ...output?.ctx },
-            fn: this.options.fn,
-            steps: prev.steps.map((step, i) => ({
-              ...step,
-              ...output?.steps?.[i],
-            })),
-            reqArgs: prev.reqArgs,
-          };
+          return { ...prev, ...output };
         },
         transformOutput: (prev, output) => {
           return {
             result: { ...prev.result, ...output?.result },
-            step: prev.step,
           };
         },
-      }
-    );
+      }),
+    ]);
+
+    const hooks = { onFunctionRun, onSendEvent };
 
     return hooks;
   }
@@ -936,7 +968,7 @@ export interface V1ExecutionState {
    * means that these hooks can be called in many different places to ensure we
    * handle all possible execution paths.
    */
-  hooks?: RunHookStack;
+  hooks?: { onFunctionRun: RunHookStack; onSendEvent: SendEventHookStack };
 
   /**
    * Returns whether or not all state passed from the executor has been used to
