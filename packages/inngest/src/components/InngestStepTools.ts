@@ -1,6 +1,6 @@
 import { type Jsonify } from "type-fest";
 import { type SimplifyDeep } from "type-fest/source/merge-deep";
-import { z } from "zod";
+import * as z from "zod";
 import { logPrefix } from "../helpers/consts";
 import { timeStr } from "../helpers/strings";
 import {

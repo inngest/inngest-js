@@ -1,4 +1,4 @@
-import { ZodError, z } from "zod";
+import * as z from "zod";
 import { type InngestApi } from "../api/api";
 import { stepsSchemas } from "../api/schema";
 import { type InngestFunction } from "../components/InngestFunction";
@@ -244,7 +244,7 @@ export const fetchAllFnData = async ({
 
 const parseFailureErr = (err: unknown) => {
   let why: string | undefined;
-  if (err instanceof ZodError) {
+  if (err instanceof z.ZodError) {
     why = err.toString();
   }
 

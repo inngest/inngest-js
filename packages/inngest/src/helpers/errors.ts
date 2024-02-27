@@ -7,7 +7,7 @@ import {
   type SerializedError as CjsSerializedError,
 } from "serialize-error-cjs";
 import stripAnsi from "strip-ansi";
-import { z } from "zod";
+import * as z from "zod";
 import { type Inngest } from "../components/Inngest";
 import { NonRetriableError } from "../components/NonRetriableError";
 import { type ClientOptions, type OutgoingOp } from "../types";

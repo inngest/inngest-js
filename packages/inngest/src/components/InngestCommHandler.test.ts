@@ -1,6 +1,6 @@
 import { EventSchemas } from "@local";
 import { serve } from "@local/next";
-import { z } from "zod";
+import * as z from "zod";
 import { createClient } from "../test/helpers";
 
 describe("#153", () => {

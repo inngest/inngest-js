@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 
 /**
  * An error that represents a step exhausting all retries and failing. This is

@@ -1,4 +1,4 @@
-import { z } from "zod";
+import * as z from "zod";
 import { ExecutionVersion } from "../components/execution/InngestExecution";
 import { failureEventErrorSchema, type EventPayload } from "../types";
 

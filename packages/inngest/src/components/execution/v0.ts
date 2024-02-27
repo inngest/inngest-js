@@ -1,7 +1,7 @@
 import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
 import { type MaybePromise } from "type-plus";
-import { z } from "zod";
+import * as z from "zod";
 import {
   ErrCode,
   deserializeError,

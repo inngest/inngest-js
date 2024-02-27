@@ -15,7 +15,7 @@ import {
 import ms from "ms";
 import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
-import { z } from "zod";
+import * as z from "zod";
 import { createClient } from "../test/helpers";
 
 const clientId = "test-client";

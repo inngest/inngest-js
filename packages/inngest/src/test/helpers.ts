@@ -19,7 +19,7 @@ import { type Request, type Response } from "express";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { ulid } from "ulid";
-import { z } from "zod";
+import * as z from "zod";
 
 interface HandlerStandardReturn {
   status: number;

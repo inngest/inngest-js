@@ -1,7 +1,7 @@
 import canonicalize from "canonicalize";
 import debug from "debug";
 import { hmac, sha256 } from "hash.js";
-import { z } from "zod";
+import * as z from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import {
   debugPrefix,
