@@ -3,10 +3,7 @@ import { EventSchemas } from "@local/components/EventSchemas";
 import { type EventsFromOpts } from "@local/components/Inngest";
 import { InngestFunction } from "@local/components/InngestFunction";
 import { referenceFunction } from "@local/components/InngestFunctionReference";
-import {
-  createStepTools,
-  getStepOptions,
-} from "@local/components/InngestStepTools";
+import { type createStepTools } from "@local/components/InngestStepTools";
 import {
   StepOpCode,
   type ClientOptions,
@@ -16,23 +13,12 @@ import ms from "ms";
 import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
 import { z } from "zod";
-import { createClient } from "../test/helpers";
-
-const clientId = "test-client";
-
-const getStepTools = () => {
-  const step = createStepTools(
-    createClient({ id: clientId }),
-    ({ args, matchOp }) => {
-      const stepOptions = getStepOptions(args[0]);
-      return Promise.resolve(matchOp(stepOptions, ...args.slice(1)));
-    }
-  );
-
-  return step;
-};
-
-type StepTools = ReturnType<typeof getStepTools>;
+import {
+  createClient,
+  getStepTools,
+  testClientId,
+  type StepTools,
+} from "../test/helpers";
 
 describe("waitForEvent", () => {
   let step: StepTools;
@@ -531,7 +517,7 @@ describe("invoke", () => {
 
   describe("runtime", () => {
     const fn = new InngestFunction(
-      createClient({ id: clientId }),
+      createClient({ id: testClientId }),
       { id: "test-fn" },
       { event: "test-event" },
       () => "test-return"
@@ -574,7 +560,7 @@ describe("invoke", () => {
           step.invoke("id", { function: fn, data: { foo: "foo" } })
         ).resolves.toMatchObject({
           opts: {
-            function_id: fn.id(clientId),
+            function_id: fn.id(testClientId),
           },
         });
       });
@@ -599,7 +585,7 @@ describe("invoke", () => {
           })
         ).resolves.toMatchObject({
           opts: {
-            function_id: `${clientId}-test-fn`,
+            function_id: `${testClientId}-test-fn`,
           },
         });
       });

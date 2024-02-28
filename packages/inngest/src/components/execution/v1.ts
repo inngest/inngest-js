@@ -1,6 +1,7 @@
 import { sha1 } from "hash.js";
 import { type Simplify } from "type-fest";
 import { z } from "zod";
+import { internalEvents } from "../../helpers/consts";
 import {
   ErrCode,
   deserializeError,
@@ -32,6 +33,7 @@ import {
   STEP_INDEXING_SUFFIX,
   createStepTools,
   getStepOptions,
+  invokePayloadSchema,
   type FoundStep,
   type StepHandler,
 } from "../InngestStepTools";
@@ -317,13 +319,86 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     await this.state.hooks?.beforeExecution?.();
     await this.state.hooks?.afterExecution?.();
 
-    return newSteps.map<OutgoingOp>((step) => ({
+    const stepList = newSteps.map<OutgoingOp>((step) => ({
       displayName: step.displayName,
       op: step.op,
       id: step.hashedId,
       name: step.name,
       opts: step.opts,
     })) as [OutgoingOp, ...OutgoingOp[]];
+
+    /**
+     * We also run `onSendEvent` middleware hooks against `step.invoke()` steps
+     * to ensure that their `data` is transformed correctly.
+     */
+    return await this.transformNewSteps(stepList);
+  }
+
+  /**
+   * Using middleware, transform any newly-found steps before returning them to
+   * an Inngest Server.
+   */
+  private async transformNewSteps<T extends [OutgoingOp, ...OutgoingOp[]]>(
+    steps: T
+  ): Promise<T> {
+    return Promise.all(
+      steps.map(async (step) => {
+        if (step.op !== StepOpCode.InvokeFunction) {
+          return step;
+        }
+
+        const onSendEventHooks = await getHookStack(
+          this.options.fn["middleware"],
+          "onSendEvent",
+          undefined,
+          {
+            transformInput: (prev, output) => {
+              return { ...prev, ...output };
+            },
+            transformOutput: (prev, output) => {
+              return {
+                result: { ...prev.result, ...output?.result },
+              };
+            },
+          }
+        );
+
+        /**
+         * For each event being sent, create a new `onSendEvent` hook stack to
+         * process it. We do this as middleware hooks are intended to run once
+         * during each lifecycle (onFunctionRun or onSendEvent) and here, a hook
+         * is run for every single event.
+         *
+         * This is done because a developer can use this hook to filter out
+         * events entirely; if we batch all of the events together, we can't
+         * tell which ones were filtered out if we're processing >1 invocation
+         * here.
+         */
+        const transformedPayload = await onSendEventHooks.transformInput?.({
+          payloads: [
+            {
+              ...(step.opts?.payload ?? {}),
+              name: internalEvents.FunctionInvoked,
+            },
+          ],
+        });
+
+        const newPayload = invokePayloadSchema.parse(
+          transformedPayload?.payloads?.[0] ?? {}
+        );
+
+        return {
+          ...step,
+          opts: {
+            ...step.opts,
+            payload: {
+              ...(step.opts?.payload ?? {}),
+              ...newPayload,
+            },
+          },
+        };
+      })
+    ) as Promise<T>;
   }
 
   private async executeStep({

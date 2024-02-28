@@ -22,7 +22,6 @@ import {
   type InngestExecutionOptions,
 } from "@local/components/execution/InngestExecution";
 import { _internals } from "@local/components/execution/v1";
-import { ServerTiming } from "@local/helpers/ServerTiming";
 import { internalEvents } from "@local/helpers/consts";
 import {
   ErrCode,
@@ -43,7 +42,7 @@ import {
 import { fromPartial } from "@total-typescript/shoehorn";
 import { type IsEqual } from "type-fest";
 import { assertType } from "type-plus";
-import { createClient } from "../test/helpers";
+import { createClient, runFnWithStack } from "../test/helpers";
 
 type TestEvents = {
   foo: { data: { foo: string } };
@@ -94,8 +93,6 @@ const opts = (<T extends ClientOptions>(x: T): T => x)({
 });
 
 const inngest = createClient(opts);
-
-const timer = new ServerTiming();
 
 const matchError = (err: any) => {
   const serializedErr = serializeError(err);
@@ -223,39 +220,6 @@ describe("runFn", () => {
   });
 
   describe("step functions", () => {
-    const runFnWithStack = (
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      fn: InngestFunction.Any,
-      stepState: InngestExecutionOptions["stepState"],
-      opts?: {
-        executionVersion?: ExecutionVersion;
-        runStep?: string;
-        onFailure?: boolean;
-        event?: EventPayload;
-        stackOrder?: InngestExecutionOptions["stepCompletionOrder"];
-        disableImmediateExecution?: boolean;
-      }
-    ) => {
-      const execution = fn["createExecution"]({
-        version: opts?.executionVersion ?? PREFERRED_EXECUTION_VERSION,
-        partialOptions: {
-          data: fromPartial({
-            event: opts?.event || { name: "foo", data: {} },
-          }),
-          runId: "run",
-          stepState,
-          stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
-          isFailureHandler: Boolean(opts?.onFailure),
-          requestedRunStep: opts?.runStep,
-          timer,
-          disableImmediateExecution: opts?.disableImmediateExecution,
-          reqArgs: [],
-        },
-      });
-
-      return execution.start();
-    };
-
     const getHashDataSpy = () => jest.spyOn(_internals, "hashOp");
     const getWarningSpy = () => jest.spyOn(console, "warn");
     const getErrorSpy = () => jest.spyOn(console, "error");
