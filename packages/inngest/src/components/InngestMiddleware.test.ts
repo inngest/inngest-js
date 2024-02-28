@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { ExecutionVersion } from "@local/components/execution/InngestExecution";
 import { Inngest } from "@local/components/Inngest";
+import { referenceFunction } from "@local/components/InngestFunctionReference";
 import { InngestMiddleware } from "@local/components/InngestMiddleware";
 import { StepOpCode } from "@local/types";
 import { type IsUnknown } from "type-fest";
 import { assertType, type IsEqual } from "type-plus";
 import { createClient, runFnWithStack, testClientId } from "../test/helpers";
-import { ExecutionVersion } from "./execution/InngestExecution";
-import { referenceFunction } from "./InngestFunctionReference";
 
 describe("stacking and inference", () => {
   describe("onFunctionRun", () => {
