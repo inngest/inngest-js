@@ -1,7 +1,7 @@
 import { sha1 } from "hash.js";
-import { internalEvents } from "inngest/helpers/consts";
 import { type Simplify } from "type-fest";
 import { z } from "zod";
+import { internalEvents } from "../../helpers/consts";
 import {
   ErrCode,
   deserializeError,
