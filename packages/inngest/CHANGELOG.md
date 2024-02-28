@@ -1,5 +1,11 @@
 # inngest
 
+## 3.15.2
+
+### Patch Changes
+
+- [#503](https://github.com/inngest/inngest-js/pull/503) [`f6088e0`](https://github.com/inngest/inngest-js/commit/f6088e0c04b5732c3b5e95c79f75c423625ba15d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `onSendEvent.transformInput()` middleware hooks not running for `step.invoke()` payloads
+
 ## 3.15.1
 
 ### Patch Changes
