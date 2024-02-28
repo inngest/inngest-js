@@ -3,8 +3,18 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
-import { Inngest } from "@local";
+import { Inngest, InngestFunction } from "@local";
 import { type ServeHandlerOptions } from "@local/components/InngestCommHandler";
+import {
+  createStepTools,
+  getStepOptions,
+} from "@local/components/InngestStepTools";
+import {
+  ExecutionVersion,
+  InngestExecutionOptions,
+  PREFERRED_EXECUTION_VERSION,
+} from "@local/components/execution/InngestExecution";
+import { ServerTiming } from "@local/helpers/ServerTiming";
 import {
   envKeys,
   headerKeys,
@@ -13,7 +23,8 @@ import {
 } from "@local/helpers/consts";
 import { type Env } from "@local/helpers/env";
 import { slugify } from "@local/helpers/strings";
-import { type FunctionTrigger } from "@local/types";
+import { EventPayload, type FunctionTrigger } from "@local/types";
+import { fromPartial } from "@total-typescript/shoehorn";
 import fetch from "cross-fetch";
 import { type Request, type Response } from "express";
 import nock from "nock";
@@ -48,6 +59,57 @@ export const createClient = <T extends ConstructorParameters<typeof Inngest>>(
   return new Inngest(
     ...(args as ConstructorParameters<typeof Inngest>)
   ) as unknown as Inngest<T["0"]>;
+};
+
+export const testClientId = "__test_client__";
+
+export const getStepTools = (
+  client: Inngest.Any = createClient({ id: testClientId })
+) => {
+  const step = createStepTools(client, ({ args, matchOp }) => {
+    const stepOptions = getStepOptions(args[0]);
+    return Promise.resolve(matchOp(stepOptions, ...args.slice(1)));
+  });
+
+  return step;
+};
+
+export type StepTools = ReturnType<typeof getStepTools>;
+
+/**
+ * Given an Inngest function and the appropriate execution state, return the
+ * resulting data from this execution.
+ */
+export const runFnWithStack = (
+  fn: InngestFunction.Any,
+  stepState: InngestExecutionOptions["stepState"],
+  opts?: {
+    executionVersion?: ExecutionVersion;
+    runStep?: string;
+    onFailure?: boolean;
+    event?: EventPayload;
+    stackOrder?: InngestExecutionOptions["stepCompletionOrder"];
+    disableImmediateExecution?: boolean;
+  }
+) => {
+  const execution = fn["createExecution"]({
+    version: opts?.executionVersion ?? PREFERRED_EXECUTION_VERSION,
+    partialOptions: {
+      data: fromPartial({
+        event: opts?.event || { name: "foo", data: {} },
+      }),
+      runId: "run",
+      stepState,
+      stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
+      isFailureHandler: Boolean(opts?.onFailure),
+      requestedRunStep: opts?.runStep,
+      timer: new ServerTiming(),
+      disableImmediateExecution: opts?.disableImmediateExecution,
+      reqArgs: [],
+    },
+  });
+
+  return execution.start();
 };
 
 const inngest = createClient({ id: "test", eventKey: "event-key-123" });
