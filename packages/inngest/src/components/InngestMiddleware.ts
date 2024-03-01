@@ -1,10 +1,10 @@
+import { type Simplify } from "type-fest";
 import { cacheFn, waterfall } from "../helpers/functions";
 import {
   type Await,
   type MaybePromise,
   type ObjectAssign,
   type PartialK,
-  type Simplify,
 } from "../helpers/types";
 import {
   type BaseContext,

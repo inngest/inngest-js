@@ -1,3 +1,4 @@
+import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
@@ -18,7 +19,6 @@ import {
   type IsStringLiteral,
   type ObjectPaths,
   type RecursiveTuple,
-  type Simplify,
   type StrictUnion,
 } from "./helpers/types";
 import { type Logger } from "./middleware/logger";

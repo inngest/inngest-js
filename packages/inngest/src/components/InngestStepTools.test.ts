@@ -10,7 +10,8 @@ import {
   type InvocationResult,
 } from "@local/types";
 import ms from "ms";
-import { assertType, type IsEqual } from "type-plus";
+import { type IsEqual } from "type-fest";
+import { assertType } from "type-plus";
 import { z } from "zod";
 import {
   createClient,

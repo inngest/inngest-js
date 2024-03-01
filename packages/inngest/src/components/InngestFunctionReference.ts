@@ -1,4 +1,5 @@
-import { type IsAny, type Simplify } from "../helpers/types";
+import { type Simplify } from "type-fest";
+import { type IsAny } from "../helpers/types";
 import {
   type ResolveSchema,
   type ValidSchemaInput,

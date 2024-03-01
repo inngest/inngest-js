@@ -1,4 +1,4 @@
-import { type IsUnknown } from "../types";
+import { type IsUnknown } from "type-fest";
 import type * as z from "./zod";
 
 /**

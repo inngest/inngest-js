@@ -1,4 +1,5 @@
 import { sha1 } from "hash.js";
+import { type Simplify } from "type-fest";
 import { z } from "zod";
 import { internalEvents } from "../../helpers/consts";
 import {
@@ -15,7 +16,7 @@ import {
   resolveAfterPending,
   runAsPromise,
 } from "../../helpers/promises";
-import { type MaybePromise, type Simplify } from "../../helpers/types";
+import { type MaybePromise } from "../../helpers/types";
 import {
   StepOpCode,
   failureEventErrorSchema,
