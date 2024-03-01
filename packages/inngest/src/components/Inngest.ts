@@ -1,5 +1,4 @@
-import { type IfNever, type Jsonify } from "type-fest";
-import { type SimplifyDeep } from "type-fest/source/merge-deep";
+import { type IsNever } from "type-plus";
 import { InngestApi } from "../api/api";
 import {
   defaultDevServerHost,
@@ -18,10 +17,12 @@ import {
   type Mode,
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
+import { type Jsonify } from "../helpers/jsonify";
 import { stringify } from "../helpers/strings";
 import {
   type ExclusiveKeys,
   type SendEventPayload,
+  type SimplifyDeep,
   type WithoutInternal,
 } from "../helpers/types";
 import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
@@ -817,11 +818,9 @@ export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 > = TFunction extends InngestFunction<any, any, any, any, infer IHandler>
-  ? IfNever<
-      SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>,
-      null,
-      SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
-    >
+  ? IsNever<SimplifyDeep<Jsonify<ReturnType<IHandler>>>> extends true
+    ? null
+    : SimplifyDeep<Jsonify<ReturnType<IHandler>>>
   : unknown;
 
 /**
@@ -837,11 +836,9 @@ export type GetFunctionOutputFromReferenceInngestFunction<
   TFunction extends InngestFunctionReference.Any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 > = TFunction extends InngestFunctionReference<any, infer IOutput>
-  ? IfNever<
-      SimplifyDeep<Jsonify<IOutput>>,
-      null,
-      SimplifyDeep<Jsonify<IOutput>>
-    >
+  ? IsNever<SimplifyDeep<Jsonify<IOutput>>> extends true
+    ? null
+    : SimplifyDeep<Jsonify<IOutput>>
   : unknown;
 
 /**

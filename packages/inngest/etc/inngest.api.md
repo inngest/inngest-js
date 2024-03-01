@@ -4,14 +4,13 @@
 
 ```ts
 
-import { IfNever } from 'type-fest';
-import { IsEqual } from 'type-fest';
-import { IsUnknown } from 'type-fest';
-import { Jsonify } from 'type-fest';
-import { Simplify } from 'type-fest';
-import { SimplifyDeep } from 'type-fest/source/merge-deep';
+import { IsAny } from 'type-plus';
+import { IsEqual } from 'type-plus';
+import { IsNever } from 'type-plus';
 import { z } from 'zod';
 
+// Warning: (ae-forgotten-export) The symbol "Simplify" needs to be exported by the entry point index.d.ts
+//
 // @public
 export type AssertInternalEventPayloads<T extends Record<internalEvents, EventPayload>> = {
     [K in keyof T as `${K & string}`]: Simplify<Omit<T[K], "name"> & {
@@ -384,9 +383,9 @@ export namespace InngestFunctionReference {
     };
     export type HelperGenericArgs<TFnInput, TFnOutput> = HelperArgs<TFnInput, TFnOutput> | InngestFunction.Any;
     // Warning: (ae-forgotten-export) The symbol "PayloadFromAnyInngestFunction" needs to be exported by the entry point index.d.ts
-    // Warning: (ae-forgotten-export) The symbol "IsAny" needs to be exported by the entry point index.d.ts
+    // Warning: (ae-forgotten-export) The symbol "IsAny_2" needs to be exported by the entry point index.d.ts
     // Warning: (ae-forgotten-export) The symbol "ResolveSchema" needs to be exported by the entry point index.d.ts
-    export type HelperReturn<TArgs> = TArgs extends InngestFunction.Any ? InngestFunctionReference<PayloadFromAnyInngestFunction<TArgs>, GetFunctionOutput<TArgs>> : TArgs extends HelperArgs<infer TFnInput, infer TFnOutput> ? InngestFunctionReference<IsAny<ResolveSchema<TFnInput, TFnInput, any>> extends true ? MinimalEventPayload : Simplify<MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>> & Required<Pick<MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>>, "data">>>, ResolveSchema<TFnOutput, TFnOutput, unknown>> : never;
+    export type HelperReturn<TArgs> = TArgs extends InngestFunction.Any ? InngestFunctionReference<PayloadFromAnyInngestFunction<TArgs>, GetFunctionOutput<TArgs>> : TArgs extends HelperArgs<infer TFnInput, infer TFnOutput> ? InngestFunctionReference<IsAny_2<ResolveSchema<TFnInput, TFnInput, any>> extends true ? MinimalEventPayload : Simplify<MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>> & Required<Pick<MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>>, "data">>>, ResolveSchema<TFnOutput, TFnOutput, unknown>> : never;
 }
 
 // @public
@@ -605,7 +604,7 @@ export type ZodEventSchemas = Record<string, {
 
 // Warnings were encountered during analysis:
 //
-// src/components/EventSchemas.ts:243:5 - (ae-forgotten-export) The symbol "InvokedEventPayload" needs to be exported by the entry point index.d.ts
+// src/components/EventSchemas.ts:246:5 - (ae-forgotten-export) The symbol "InvokedEventPayload" needs to be exported by the entry point index.d.ts
 // src/components/InngestCommHandler.ts:908:5 - (ae-forgotten-export) The symbol "ServerTiming" needs to be exported by the entry point index.d.ts
 // src/components/InngestCommHandler.ts:910:9 - (ae-forgotten-export) The symbol "ExecutionVersion" needs to be exported by the entry point index.d.ts
 // src/components/InngestCommHandler.ts:910:36 - (ae-forgotten-export) The symbol "ExecutionResult" needs to be exported by the entry point index.d.ts
