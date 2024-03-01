@@ -1,5 +1,11 @@
 # inngest
 
+## 3.15.3
+
+### Patch Changes
+
+- [#500](https://github.com/inngest/inngest-js/pull/500) [`f21ebed`](https://github.com/inngest/inngest-js/commit/f21ebed86ab937e4faad133bd696ed8567b82d1e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for `typescript@5.4`
+
 ## 3.15.2
 
 ### Patch Changes
