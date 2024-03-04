@@ -948,12 +948,13 @@ describe("helper types", () => {
   });
 
   describe("type GetFunctionOutput", () => {
-    test("returns output of an `InngestFunction`", () => {
+    test("returns output of an async `InngestFunction`", () => {
       const fn = inngest.createFunction(
         { id: "test" },
         { event: "foo" },
+        // eslint-disable-next-line @typescript-eslint/require-await
         async () => {
-          return "foo";
+          return "foo" as const;
         }
       );
 
@@ -962,12 +963,43 @@ describe("helper types", () => {
       assertType<IsEqual<Expected, Actual>>(true);
     });
 
-    test("returns output of an `InngestFunctionReference` to an `InngestFunction`", () => {
+    test("returns output of a sync `InngestFunction`", () => {
       const fn = inngest.createFunction(
         { id: "test" },
         { event: "foo" },
+        () => {
+          return "foo" as const;
+        }
+      );
+
+      type Expected = "foo";
+      type Actual = GetFunctionOutput<typeof fn>;
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("returns output of an `InngestFunctionReference` to an async `InngestFunction`", () => {
+      const fn = inngest.createFunction(
+        { id: "test" },
+        { event: "foo" },
+        // eslint-disable-next-line @typescript-eslint/require-await
         async () => {
-          return "foo";
+          return "foo" as const;
+        }
+      );
+
+      const ref = referenceFunction<typeof fn>({ functionId: "test" });
+
+      type Expected = "foo";
+      type Actual = GetFunctionOutput<typeof ref>;
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("returns output of an `InngestFunctionReference` to a sync `InngestFunction`", () => {
+      const fn = inngest.createFunction(
+        { id: "test" },
+        { event: "foo" },
+        () => {
+          return "foo" as const;
         }
       );
 
