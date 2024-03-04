@@ -2,9 +2,11 @@ import {
   EventSchemas,
   Inngest,
   InngestMiddleware,
+  referenceFunction,
   type EventPayload,
   type GetEvents,
   type GetFunctionInput,
+  type GetFunctionOutput,
   type GetStepTools,
 } from "@local";
 import { type createStepTools } from "@local/components/InngestStepTools";
@@ -13,6 +15,7 @@ import { type IsAny } from "@local/helpers/types";
 import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
 import { assertType, type IsEqual } from "type-plus";
+import { literal } from "zod";
 import { createClient } from "../test/helpers";
 
 const testEvent: EventPayload = {
@@ -940,6 +943,50 @@ describe("helper types", () => {
         Parameters<T0["step"]["sendEvent"]>[1],
         "name"
       >;
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+  });
+
+  describe("type GetFunctionOutput", () => {
+    test("returns output of an `InngestFunction`", () => {
+      const fn = inngest.createFunction(
+        { id: "test" },
+        { event: "foo" },
+        async () => {
+          return "foo";
+        }
+      );
+
+      type Expected = "foo";
+      type Actual = GetFunctionOutput<typeof fn>;
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("returns output of an `InngestFunctionReference` to an `InngestFunction`", () => {
+      const fn = inngest.createFunction(
+        { id: "test" },
+        { event: "foo" },
+        async () => {
+          return "foo";
+        }
+      );
+
+      const ref = referenceFunction<typeof fn>({ functionId: "test" });
+
+      type Expected = "foo";
+      type Actual = GetFunctionOutput<typeof ref>;
+      assertType<IsEqual<Expected, Actual>>(true);
+    });
+
+    test("returns output of an `InngestFunctionReference` with `schemas`", () => {
+      const ref = referenceFunction({
+        functionId: "test",
+        schemas: { return: literal("foo") },
+      });
+
+      type Expected = "foo";
+      type Actual = GetFunctionOutput<typeof ref>;
+
       assertType<IsEqual<Expected, Actual>>(true);
     });
   });
