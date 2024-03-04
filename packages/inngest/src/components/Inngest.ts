@@ -818,9 +818,9 @@ export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 > = TFunction extends InngestFunction<any, any, any, any, infer IHandler>
-  ? IsNever<SimplifyDeep<Jsonify<ReturnType<IHandler>>>> extends true
+  ? IsNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> extends true
     ? null
-    : SimplifyDeep<Jsonify<ReturnType<IHandler>>>
+    : SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
   : unknown;
 
 /**
