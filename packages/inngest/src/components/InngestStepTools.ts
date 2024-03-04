@@ -1,13 +1,13 @@
-import { type Jsonify } from "type-fest";
-import { type SimplifyDeep } from "type-fest/source/merge-deep";
 import { z } from "zod";
 import { logPrefix } from "../helpers/consts";
+import { type Jsonify } from "../helpers/jsonify";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
   type ObjectPaths,
   type ParametersExceptFirst,
   type SendEventPayload,
+  type SimplifyDeep,
 } from "../helpers/types";
 import {
   StepOpCode,
@@ -405,26 +405,23 @@ export const createStepTools = <
     >(({ id, name }, invokeOpts) => {
       // Create a discriminated union to operate on based on the input types
       // available for this tool.
-      const payloadSchema = z.object({
-        data: z.record(z.any()).optional(),
-        user: z.record(z.any()).optional(),
-        v: z.string().optional(),
+      const optsSchema = invokePayloadSchema.extend({
         timeout: z.union([z.number(), z.string(), z.date()]).optional(),
       });
 
-      const parsedFnOpts = payloadSchema
+      const parsedFnOpts = optsSchema
         .extend({
           _type: z.literal("fullId").optional().default("fullId"),
           function: z.string().min(1),
         })
         .or(
-          payloadSchema.extend({
+          optsSchema.extend({
             _type: z.literal("fnInstance").optional().default("fnInstance"),
             function: z.instanceof(InngestFunction),
           })
         )
         .or(
-          payloadSchema.extend({
+          optsSchema.extend({
             _type: z.literal("refInstance").optional().default("refInstance"),
             function: z.instanceof(InngestFunctionReference),
           })
@@ -479,6 +476,16 @@ export const createStepTools = <
 
   return tools;
 };
+
+/**
+ * The event payload portion of the options for `step.invoke()`. This does not
+ * include non-payload options like `timeout` or the function to invoke.
+ */
+export const invokePayloadSchema = z.object({
+  data: z.record(z.any()).optional(),
+  user: z.record(z.any()).optional(),
+  v: z.string().optional(),
+});
 
 type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
   function: TFunction;

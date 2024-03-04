@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { type IfNever, type Jsonify } from "type-fest";
-import { type SimplifyDeep } from "type-fest/source/merge-deep";
+import { type IsNever } from "type-plus";
 import { InngestApi } from "../api/api";
 import {
   defaultDevServerHost,
@@ -13,15 +12,18 @@ import {
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import {
   getFetch,
+  getMode,
   inngestHeaders,
   processEnv,
-  skipDevServer,
+  type Mode,
 } from "../helpers/env";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
+import { type Jsonify } from "../helpers/jsonify";
 import { stringify } from "../helpers/strings";
 import {
   type AsArray,
   type SendEventPayload,
+  type SimplifyDeep,
   type SingleOrArray,
   type WithoutInternal,
 } from "../helpers/types";
@@ -131,6 +133,18 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
   /**
+   * Whether the client is running in a production environment. This can
+   * sometimes be `undefined` if the client has expressed no preference or
+   * perhaps environment variables are only available at a later stage in the
+   * runtime, for example when receiving a request.
+   *
+   * An {@link InngestCommHandler} should prioritize this value over all other
+   * settings, but should still check for the presence of an environment
+   * variable if it is not set.
+   */
+  private readonly mode: Mode;
+
+  /**
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
    *
@@ -158,6 +172,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     env,
     logger = new DefaultLogger(),
     middleware,
+    isDev,
   }: TClientOpts) {
     if (!id) {
       // TODO PrettyError
@@ -166,15 +181,22 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
 
     this.id = id;
 
+    this.mode = getMode({
+      explicitMode:
+        typeof isDev === "boolean" ? (isDev ? "dev" : "cloud") : undefined,
+    });
+
     this.apiBaseUrl =
       baseUrl ||
       processEnv(envKeys.InngestApiBaseUrl) ||
-      processEnv(envKeys.InngestBaseUrl);
+      processEnv(envKeys.InngestBaseUrl) ||
+      this.mode.getExplicitUrl(defaultInngestApiBaseUrl);
 
     this.eventBaseUrl =
       baseUrl ||
       processEnv(envKeys.InngestEventApiBaseUrl) ||
-      processEnv(envKeys.InngestBaseUrl);
+      processEnv(envKeys.InngestBaseUrl) ||
+      this.mode.getExplicitUrl(defaultInngestEventBaseUrl);
 
     this.setEventKey(eventKey || processEnv(envKeys.InngestEventKey) || "");
 
@@ -406,21 +428,9 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     let url = this.sendEventUrl.href;
 
     /**
-     * INNGEST_BASE_URL is used to set both dev server and prod URLs, so if a
-     * user has set this it means they have already chosen a URL to hit.
+     * If in prod mode and key is not present, fail now.
      */
-    if (!skipDevServer()) {
-      if (!this.eventBaseUrl) {
-        const devAvailable = await devServerAvailable(
-          defaultDevServerHost,
-          this.fetch
-        );
-
-        if (devAvailable) {
-          url = devServerUrl(defaultDevServerHost, `e/${this.eventKey}`).href;
-        }
-      }
-    } else if (!this.eventKeySet()) {
+    if (this.mode.isCloud && !this.eventKeySet()) {
       throw new Error(
         prettyError({
           whatHappened: "Failed to send event",
@@ -429,6 +439,25 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
           toFixNow: fixEventKeyMissingSteps,
         })
       );
+    }
+
+    /**
+     * If dev mode has been inferred, try to hit the dev server first to see if
+     * it exists. If it does, use it, otherwise fall back to whatever server we
+     * have configured.
+     *
+     * `INNGEST_BASE_URL` is used to set both dev server and prod URLs, so if a
+     * user has set this it means they have already chosen a URL to hit.
+     */
+    if (this.mode.isDev && this.mode.isInferred && !this.eventBaseUrl) {
+      const devAvailable = await devServerAvailable(
+        defaultDevServerHost,
+        this.fetch
+      );
+
+      if (devAvailable) {
+        url = devServerUrl(defaultDevServerHost, `e/${this.eventKey}`).href;
+      }
     }
 
     const response = await this.fetch(url, {
@@ -840,11 +869,9 @@ export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 > = TFunction extends InngestFunction<any, infer IHandler, any, any, any>
-  ? IfNever<
-      SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>,
-      null,
-      SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
-    >
+  ? IsNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> extends true
+    ? null
+    : SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
   : unknown;
 
 /**
@@ -860,11 +887,9 @@ export type GetFunctionOutputFromReferenceInngestFunction<
   TFunction extends InngestFunctionReference.Any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 > = TFunction extends InngestFunctionReference<any, infer IOutput>
-  ? IfNever<
-      SimplifyDeep<Jsonify<IOutput>>,
-      null,
-      SimplifyDeep<Jsonify<IOutput>>
-    >
+  ? IsNever<SimplifyDeep<Jsonify<IOutput>>> extends true
+    ? null
+    : SimplifyDeep<Jsonify<IOutput>>
   : unknown;
 
 /**

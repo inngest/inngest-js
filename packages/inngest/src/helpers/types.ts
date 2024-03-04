@@ -1,4 +1,4 @@
-import { type IsEqual, type Simplify } from "type-fest";
+import { type IsEqual } from "type-plus";
 import { type EventPayload } from "../types";
 
 /**
@@ -274,3 +274,81 @@ export type RecursiveTuple<
   :
       | RecursiveTuple<TElement, TLength, [TElement, ...TAccumulator]>
       | TAccumulator;
+
+// eslint-disable-next-line @typescript-eslint/ban-types
+export type Simplify<T> = { [KeyType in keyof T]: T[KeyType] } & {};
+
+export type ConditionalSimplifyDeep<
+  Type,
+  ExcludeType = never,
+  IncludeType = unknown,
+> = Type extends ExcludeType
+  ? Type
+  : Type extends IncludeType
+    ? {
+        [TypeKey in keyof Type]: ConditionalSimplifyDeep<
+          Type[TypeKey],
+          ExcludeType,
+          IncludeType
+        >;
+      }
+    : Type;
+
+export type SimplifyDeep<Type> = ConditionalSimplifyDeep<
+  Type,
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  Function | Iterable<unknown>,
+  object
+>;
+
+/**
+Returns a boolean for whether the given type is `null`.
+*/
+export type IsNull<T> = [T] extends [null] ? true : false;
+
+/**
+Returns a boolean for whether the given type is `unknown`.
+
+{@link https://github.com/dsherret/conditional-type-checks/pull/16}
+
+Useful in type utilities, such as when dealing with unknown data from API calls.
+
+@example
+```
+import type {IsUnknown} from 'type-fest';
+
+// https://github.com/pajecawav/tiny-global-store/blob/master/src/index.ts
+type Action<TState, TPayload = void> =
+	IsUnknown<TPayload> extends true
+		? (state: TState) => TState,
+		: (state: TState, payload: TPayload) => TState;
+
+class Store<TState> {
+	constructor(private state: TState) {}
+
+	execute<TPayload = void>(action: Action<TState, TPayload>, payload?: TPayload): TState {
+		this.state = action(this.state, payload);
+		return this.state;
+	}
+
+	// ... other methods
+}
+
+const store = new Store({value: 1});
+declare const someExternalData: unknown;
+
+store.execute(state => ({value: state.value + 1}));
+//=> `TPayload` is `void`
+
+store.execute((state, payload) => ({value: state.value + payload}), 5);
+//=> `TPayload` is `5`
+
+store.execute((state, payload) => ({value: state.value + payload}), someExternalData);
+//=> Errors: `action` is `(state: TState) => TState`
+```
+*/
+export type IsUnknown<T> = unknown extends T // `T` can be `unknown` or `any`
+  ? IsNull<T> extends false // `any` can be `null`, but `unknown` can't be
+    ? true
+    : false
+  : false;

@@ -87,9 +87,6 @@ importers:
       strip-ansi:
         specifier: ^5.2.0
         version: 5.2.0
-      type-fest:
-        specifier: ^3.13.1
-        version: 3.13.1
       type-plus:
         specifier: ^5.1.0
         version: 5.6.0

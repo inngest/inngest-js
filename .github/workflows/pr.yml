@@ -50,6 +50,7 @@ jobs:
       matrix:
         tsVersion:
          - 'latest'
+         - 'rc'
          - '~5.3.0'
          - '~5.2.0'
          - '~5.1.0'
@@ -106,6 +107,17 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
       - run: pnpm run test:deps
+
+  inngest_test_composite:
+    name: "inngest: Composite tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:composite
 
   "eslint-plugin_test":
     name: "eslint-plugin: Test"

@@ -31,6 +31,7 @@ export enum envKeys {
   InngestServePath = "INNGEST_SERVE_PATH",
   InngestLogLevel = "INNGEST_LOG_LEVEL",
   InngestStreaming = "INNGEST_STREAMING",
+  InngestDevMode = "INNGEST_DEV",
 
   BranchName = "BRANCH_NAME",
 
@@ -97,9 +98,7 @@ export enum envKeys {
    * {@link https://docs.railway.app/develop/variables#railway-provided-variables}
    */
   RailwayEnvironment = "RAILWAY_ENVIRONMENT",
-}
 
-export enum prodEnvKeys {
   VercelEnvKey = "VERCEL_ENV",
 }
 
@@ -144,14 +143,6 @@ export enum internalEvents {
   FunctionInvoked = "inngest/function.invoked",
   FunctionFinished = "inngest/function.finished",
 }
-
-/**
- * Accessing enum values as literals in some TypeScript types can be difficult,
- * so we also manually create the string values here.
- */
-export const FnFailedEventName = `${internalEvents.FunctionFailed}`;
-export const FnInvokedEventName = `${internalEvents.FunctionInvoked}`;
-export const FnFinishedEventName = `${internalEvents.FunctionFinished}`;
 
 export const logPrefix = chalk.magenta.bold("[Inngest]");
 

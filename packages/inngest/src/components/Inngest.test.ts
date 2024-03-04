@@ -23,6 +23,111 @@ const testEvent: EventPayload = {
 
 const testEventKey = "foo-bar-baz-test";
 
+describe("new Inngest()", () => {
+  describe("mode", () => {
+    const createTestClient = ({
+      env,
+      opts,
+    }: {
+      env?: Record<string, string>;
+      opts?: Omit<ConstructorParameters<typeof Inngest>[0], "id">;
+    } = {}): Inngest.Any => {
+      let ogKeys: Record<string, string | undefined> = {};
+
+      if (env) {
+        ogKeys = Object.keys(env).reduce<Record<string, string | undefined>>(
+          (acc, key) => {
+            acc[key] = process.env[key];
+            process.env[key] = env[key];
+            return acc;
+          },
+          {}
+        );
+      }
+
+      const inngest = new Inngest({ id: "test", ...opts });
+
+      if (env) {
+        Object.keys(ogKeys).forEach((key) => {
+          process.env[key] = ogKeys[key];
+        });
+      }
+
+      return inngest;
+    };
+
+    test("should default to inferred dev mode", () => {
+      const inngest = createTestClient();
+      expect(inngest["mode"].isDev).toBe(true);
+      expect(inngest["mode"].isExplicit).toBe(false);
+    });
+
+    test("`isDev: true` sets explicit dev mode", () => {
+      const inngest = createTestClient({ opts: { isDev: true } });
+      expect(inngest["mode"].isDev).toBe(true);
+      expect(inngest["mode"].isExplicit).toBe(true);
+    });
+
+    test("`isDev: false` sets explict cloud mode", () => {
+      const inngest = createTestClient({ opts: { isDev: false } });
+      expect(inngest["mode"].isCloud).toBe(true);
+      expect(inngest["mode"].isExplicit).toBe(true);
+    });
+
+    test("`INNGEST_DEV=1 sets explicit dev mode", () => {
+      const inngest = createTestClient({
+        env: { [envKeys.InngestDevMode]: "1" },
+      });
+      expect(inngest["mode"].isDev).toBe(true);
+      expect(inngest["mode"].isExplicit).toBe(true);
+    });
+
+    test("`INNGEST_DEV=true` sets explicit dev mode", () => {
+      const inngest = createTestClient({
+        env: { [envKeys.InngestDevMode]: "true" },
+      });
+      expect(inngest["mode"].isDev).toBe(true);
+      expect(inngest["mode"].isExplicit).toBe(true);
+    });
+
+    test("`INNGEST_DEV=false` sets explicit cloud mode", () => {
+      const inngest = createTestClient({
+        env: { [envKeys.InngestDevMode]: "false" },
+      });
+      expect(inngest["mode"].isCloud).toBe(true);
+      expect(inngest["mode"].isExplicit).toBe(true);
+    });
+
+    test("`INNGEST_DEV=0 sets explicit cloud mode", () => {
+      const inngest = createTestClient({
+        env: { [envKeys.InngestDevMode]: "0" },
+      });
+      expect(inngest["mode"].isCloud).toBe(true);
+      expect(inngest["mode"].isExplicit).toBe(true);
+    });
+
+    test("`isDev` overwrites `INNGEST_DEV`", () => {
+      const inngest = createTestClient({
+        env: { [envKeys.InngestDevMode]: "1" },
+        opts: { isDev: false },
+      });
+      expect(inngest["mode"].isDev).toBe(false);
+      expect(inngest["mode"].isExplicit).toBe(true);
+    });
+
+    test("`INNGEST_DEV=URL sets explicit dev mode", () => {
+      const inngest = createTestClient({
+        env: { [envKeys.InngestDevMode]: "http://localhost:3000" },
+      });
+      expect(inngest["mode"].isDev).toBe(true);
+      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest["mode"].explicitDevUrl?.href).toBe(
+        "http://localhost:3000/"
+      );
+    });
+  });
+});
+
 describe("send", () => {
   describe("runtime", () => {
     const originalProcessEnv = process.env;

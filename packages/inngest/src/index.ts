@@ -1,5 +1,6 @@
 export {
   EventSchemas,
+  type AssertInternalEventPayloads,
   type Combine,
   type LiteralZodEventSchema,
   type StandardEventSchemaToPayload,
@@ -41,6 +42,7 @@ export type {
 export { ProxyLogger } from "./middleware/logger";
 export type { LogArg } from "./middleware/logger";
 export type {
+  BaseContext,
   ClientOptions,
   Context,
   EventNameFromTrigger,
@@ -50,7 +52,9 @@ export type {
   FinishedEventPayload,
   Handler,
   LogLevel,
+  OutgoingOp,
   RegisterOptions,
+  SendEventBaseOutput,
   StepOptions,
   StepOptionsOrId,
   TimeStr,

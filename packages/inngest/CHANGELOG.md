@@ -1,5 +1,47 @@
 # inngest
 
+## 3.15.3
+
+### Patch Changes
+
+- [#500](https://github.com/inngest/inngest-js/pull/500) [`f21ebed`](https://github.com/inngest/inngest-js/commit/f21ebed86ab937e4faad133bd696ed8567b82d1e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for `typescript@5.4`
+
+## 3.15.2
+
+### Patch Changes
+
+- [#503](https://github.com/inngest/inngest-js/pull/503) [`f6088e0`](https://github.com/inngest/inngest-js/commit/f6088e0c04b5732c3b5e95c79f75c423625ba15d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `onSendEvent.transformInput()` middleware hooks not running for `step.invoke()` payloads
+
+## 3.15.1
+
+### Patch Changes
+
+- [#501](https://github.com/inngest/inngest-js/pull/501) [`0048c94`](https://github.com/inngest/inngest-js/commit/0048c94c7ccdcfa5e62687446376ce8341c002b5) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix failures for `composite: true` errors
+
+## 3.15.0
+
+### Minor Changes
+
+- [#488](https://github.com/inngest/inngest-js/pull/488) [`3d2429d`](https://github.com/inngest/inngest-js/commit/3d2429d02e18b46b79aab3f17fcf7441c13d3331) Thanks [@jpwilliams](https://github.com/jpwilliams)! - INN-2754 Add support for `INNGEST_DEV` and the `isDev` option, allowing a devleoper to explicitly set either Cloud or Dev mode
+
+### Patch Changes
+
+- [#498](https://github.com/inngest/inngest-js/pull/498) [`7c5b92e`](https://github.com/inngest/inngest-js/commit/7c5b92e2e77ea1eb8fa204f76e34cc6a3f10a775) Thanks [@sylwiavargas](https://github.com/sylwiavargas)! - Add keywords to the npm package
+
+## 3.14.2
+
+### Patch Changes
+
+- [#492](https://github.com/inngest/inngest-js/pull/492) [`ad67476`](https://github.com/inngest/inngest-js/commit/ad674769b190eda59d99fbbb905d3b95b7c3138e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix delayed environment variables not using event key in `"inngest/cloudflare"`
+
+- [#489](https://github.com/inngest/inngest-js/pull/489) [`244b6bd`](https://github.com/inngest/inngest-js/commit/244b6bd483543d6923d56e11fb52de2a1dbb1de3) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add generic function invocation event to all event schemas
+
+## 3.14.1
+
+### Patch Changes
+
+- [#493](https://github.com/inngest/inngest-js/pull/493) [`adaa948`](https://github.com/inngest/inngest-js/commit/adaa948e04760cebd8e62d83be27e177f9fc41d6) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix registration reusing deployment IDs when reusing connections in serverless or serverful
+
 ## 3.14.0
 
 ### Minor Changes

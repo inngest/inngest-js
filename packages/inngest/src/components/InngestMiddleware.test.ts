@@ -1,8 +1,13 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { ExecutionVersion } from "@local/components/execution/InngestExecution";
 import { Inngest } from "@local/components/Inngest";
+import { referenceFunction } from "@local/components/InngestFunctionReference";
 import { InngestMiddleware } from "@local/components/InngestMiddleware";
-import { type IsUnknown } from "type-fest";
+import { type IsUnknown } from "@local/helpers/types";
+import { StepOpCode } from "@local/types";
 import { assertType, type IsEqual } from "type-plus";
+import { createClient, runFnWithStack, testClientId } from "../test/helpers";
 
 describe("stacking and inference", () => {
   describe("onFunctionRun", () => {
@@ -260,6 +265,251 @@ describe("stacking and inference", () => {
   });
 
   describe("onSendEvent", () => {
+    describe("transformInput", () => {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const mockFetch = jest.fn(() =>
+        Promise.resolve({
+          status: 200,
+          json: () => Promise.resolve({ ids: [], status: 200 }),
+          text: () => Promise.resolve(""),
+        })
+      ) as any;
+
+      beforeEach(() => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+        mockFetch.mockClear();
+      });
+
+      describe("step.invoke()", () => {
+        test("returning a new payload overwrites the original", async () => {
+          const fn = createClient({
+            id: testClientId,
+            middleware: [
+              new InngestMiddleware({
+                name: "Test: onSendEvent.transformInput",
+                init() {
+                  return {
+                    onSendEvent() {
+                      return {
+                        transformInput() {
+                          return {
+                            payloads: [
+                              {
+                                name: "foo",
+                                data: { dataFromMiddleware: true },
+                              },
+                            ],
+                          };
+                        },
+                      };
+                    },
+                  };
+                },
+              }),
+            ],
+          }).createFunction(
+            { id: "fn_id" },
+            { event: "foo" },
+            async ({ step }) => {
+              await step.invoke("id", {
+                function: referenceFunction({
+                  functionId: "some_fn_id",
+                  data: { dataFromStep: true },
+                }),
+              });
+            }
+          );
+
+          const res = await runFnWithStack(
+            fn,
+            {},
+            { executionVersion: ExecutionVersion.V1 }
+          );
+
+          expect(res).toMatchObject({
+            steps: [
+              expect.objectContaining({
+                op: StepOpCode.InvokeFunction,
+                opts: expect.objectContaining({
+                  payload: {
+                    data: { dataFromMiddleware: true },
+                  },
+                }),
+              }),
+            ],
+          });
+        });
+
+        test("returning no payload keeps the original", async () => {
+          const fn = createClient({
+            id: testClientId,
+            middleware: [
+              new InngestMiddleware({
+                name: "Test: onSendEvent.transformInput",
+                init() {
+                  return {
+                    onSendEvent() {
+                      return {
+                        transformInput() {
+                          return {
+                            payloads: [],
+                          };
+                        },
+                      };
+                    },
+                  };
+                },
+              }),
+            ],
+          }).createFunction(
+            { id: "fn_id" },
+            { event: "foo" },
+            async ({ step }) => {
+              await step.invoke("id", {
+                function: referenceFunction({
+                  functionId: "some_fn_id",
+                }),
+                data: { dataFromStep: true },
+              });
+            }
+          );
+
+          const res = await runFnWithStack(
+            fn,
+            {},
+            { executionVersion: ExecutionVersion.V1 }
+          );
+
+          expect(res).toMatchObject({
+            steps: [
+              expect.objectContaining({
+                op: StepOpCode.InvokeFunction,
+                opts: expect.objectContaining({
+                  payload: {
+                    data: { dataFromStep: true },
+                  },
+                }),
+              }),
+            ],
+          });
+        });
+
+        test("returning a partial payload merges with the original, preferring the new value", async () => {
+          const fn = createClient({
+            id: testClientId,
+            middleware: [
+              new InngestMiddleware({
+                name: "Test: onSendEvent.transformInput",
+                init() {
+                  return {
+                    onSendEvent() {
+                      return {
+                        transformInput() {
+                          return {
+                            payloads: [
+                              {
+                                name: "foo",
+                                user: { userFromMiddleware: true },
+                              },
+                            ],
+                          };
+                        },
+                      };
+                    },
+                  };
+                },
+              }),
+            ],
+          }).createFunction(
+            { id: "fn_id" },
+            { event: "foo" },
+            async ({ step }) => {
+              await step.invoke("id", {
+                function: referenceFunction({
+                  functionId: "some_fn_id",
+                }),
+                data: { dataFromStep: true },
+              });
+            }
+          );
+
+          const res = await runFnWithStack(
+            fn,
+            {},
+            { executionVersion: ExecutionVersion.V1 }
+          );
+
+          expect(res).toMatchObject({
+            steps: [
+              expect.objectContaining({
+                op: StepOpCode.InvokeFunction,
+                opts: expect.objectContaining({
+                  payload: {
+                    data: {
+                      dataFromStep: true,
+                    },
+                    user: {
+                      userFromMiddleware: true,
+                    },
+                  },
+                }),
+              }),
+            ],
+          });
+        });
+
+        test("hook runs once per invocation", async () => {
+          const transformInputSpy = jest.fn(() => undefined);
+
+          const onSendEventSpy = jest.fn(() => ({
+            transformInput: transformInputSpy,
+          }));
+
+          const fn = createClient({
+            id: testClientId,
+            middleware: [
+              new InngestMiddleware({
+                name: "Test: onSendEvent.transformInput",
+                init() {
+                  return {
+                    onSendEvent: onSendEventSpy,
+                  };
+                },
+              }),
+            ],
+          }).createFunction(
+            { id: "fn_id" },
+            { event: "foo" },
+            async ({ step }) => {
+              await Promise.all([
+                step.invoke("id", {
+                  function: referenceFunction({
+                    functionId: "some_fn_id",
+                    data: { dataFromStep: true },
+                  }),
+                }),
+                step.invoke("id", {
+                  function: referenceFunction({
+                    functionId: "some_fn_id",
+                    data: { dataFromStep: true },
+                  }),
+                }),
+              ]);
+            }
+          );
+
+          await runFnWithStack(
+            fn,
+            {},
+            { executionVersion: ExecutionVersion.V1 }
+          );
+
+          expect(onSendEventSpy).toHaveBeenCalledTimes(2);
+          expect(transformInputSpy).toHaveBeenCalledTimes(2);
+        });
+      });
+    });
+
     describe("transformOutput", () => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const mockFetch = jest.fn(() =>

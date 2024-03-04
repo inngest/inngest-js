@@ -1,9 +1,20 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
-import { Inngest } from "@local";
+import { Inngest, InngestFunction } from "@local";
 import { type ServeHandlerOptions } from "@local/components/InngestCommHandler";
+import {
+  createStepTools,
+  getStepOptions,
+} from "@local/components/InngestStepTools";
+import {
+  ExecutionVersion,
+  InngestExecutionOptions,
+  PREFERRED_EXECUTION_VERSION,
+} from "@local/components/execution/InngestExecution";
+import { ServerTiming } from "@local/helpers/ServerTiming";
 import {
   envKeys,
   headerKeys,
@@ -12,7 +23,8 @@ import {
 } from "@local/helpers/consts";
 import { type Env } from "@local/helpers/env";
 import { slugify } from "@local/helpers/strings";
-import { type FunctionConfig } from "@local/types";
+import { EventPayload, type FunctionConfig } from "@local/types";
+import { fromPartial } from "@total-typescript/shoehorn";
 import fetch from "cross-fetch";
 import { type Request, type Response } from "express";
 import nock from "nock";
@@ -47,6 +59,57 @@ export const createClient = <T extends ConstructorParameters<typeof Inngest>>(
   return new Inngest(
     ...(args as ConstructorParameters<typeof Inngest>)
   ) as unknown as Inngest<T["0"]>;
+};
+
+export const testClientId = "__test_client__";
+
+export const getStepTools = (
+  client: Inngest.Any = createClient({ id: testClientId })
+) => {
+  const step = createStepTools(client, ({ args, matchOp }) => {
+    const stepOptions = getStepOptions(args[0]);
+    return Promise.resolve(matchOp(stepOptions, ...args.slice(1)));
+  });
+
+  return step;
+};
+
+export type StepTools = ReturnType<typeof getStepTools>;
+
+/**
+ * Given an Inngest function and the appropriate execution state, return the
+ * resulting data from this execution.
+ */
+export const runFnWithStack = (
+  fn: InngestFunction.Any,
+  stepState: InngestExecutionOptions["stepState"],
+  opts?: {
+    executionVersion?: ExecutionVersion;
+    runStep?: string;
+    onFailure?: boolean;
+    event?: EventPayload;
+    stackOrder?: InngestExecutionOptions["stepCompletionOrder"];
+    disableImmediateExecution?: boolean;
+  }
+) => {
+  const execution = fn["createExecution"]({
+    version: opts?.executionVersion ?? PREFERRED_EXECUTION_VERSION,
+    partialOptions: {
+      data: fromPartial({
+        event: opts?.event || { name: "foo", data: {} },
+      }),
+      runId: "run",
+      stepState,
+      stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
+      isFailureHandler: Boolean(opts?.onFailure),
+      requestedRunStep: opts?.runStep,
+      timer: new ServerTiming(),
+      disableImmediateExecution: opts?.disableImmediateExecution,
+      reqArgs: [],
+    },
+  });
+
+  return execution.start();
 };
 
 const inngest = createClient({ id: "test", eventKey: "event-key-123" });
@@ -125,14 +188,11 @@ export const testFramework = (
     envTests?: () => void;
   }
 ) => {
-  /**
-   * Create a helper function for running tests against the given serve handler.
-   */
-  const run = async (
-    handlerOpts: Parameters<(typeof handler)["serve"]>,
-    reqOpts: Parameters<typeof httpMocks.createRequest>,
-    env: Env = {}
-  ): Promise<HandlerStandardReturn> => {
+  type ServeHandler = string & { __serveHandler: true };
+
+  const getServeHandler = (
+    handlerOpts: Parameters<(typeof handler)["serve"]>
+  ) => {
     const serveHandler = handler.serve({
       ...handlerOpts[0],
 
@@ -142,6 +202,21 @@ export const testFramework = (
        */
       fetch,
     });
+
+    return serveHandler;
+  };
+
+  /**
+   * Create a helper function for running tests against the given serve handler.
+   */
+  const run = async (
+    handlerOpts: Parameters<(typeof handler)["serve"]> | ServeHandler,
+    reqOpts: Parameters<typeof httpMocks.createRequest>,
+    env: Env = {}
+  ): Promise<HandlerStandardReturn> => {
+    const serveHandler = Array.isArray(handlerOpts)
+      ? getServeHandler(handlerOpts)
+      : handlerOpts;
 
     const host = "localhost:3000";
 
@@ -156,38 +231,28 @@ export const testFramework = (
       },
     };
 
-    if (mockReqOpts.method === "POST") {
-      const mockUrl = new URL(
-        `${mockReqOpts.protocol as string}://${host}${
-          mockReqOpts.url as string
-        }`
-      );
-
-      if (!mockUrl.searchParams.has(queryKeys.FnId)) {
-        mockUrl.searchParams.set(queryKeys.FnId, ulid());
-      }
-
-      if (!mockUrl.searchParams.has(queryKeys.StepId)) {
-        mockUrl.searchParams.set(queryKeys.StepId, "step");
-      }
-    }
-
     const [req, res] = createReqRes(mockReqOpts);
 
     let envToPass = { ...env };
+    let prevProcessEnv = undefined;
 
     /**
      * If we have `process` in this emulated environment, also mutate that to
      * account for common situations.
      */
     if (typeof process !== "undefined" && "env" in process) {
-      process.env = { ...process.env, ...envToPass };
+      prevProcessEnv = process.env;
+      process.env = { ...prevProcessEnv, ...envToPass };
       envToPass = { ...process.env };
     }
 
     const args = opts?.transformReq?.(req, res, envToPass) ?? [req, res];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ret = await (serveHandler as (...args: any[]) => any)(...args);
+
+    if (prevProcessEnv) {
+      process.env = prevProcessEnv;
+    }
 
     return (
       opts?.transformRes?.(args, ret) ?? {
@@ -265,7 +330,7 @@ export const testFramework = (
     describe("GET", () => {
       test("shows introspection data", async () => {
         const ret = await run(
-          [{ client: inngest, functions: [] }],
+          [{ client: createClient({ id: "test" }), functions: [] }],
           [
             {
               method: "GET",
@@ -290,8 +355,42 @@ export const testFramework = (
         expect(body).toMatchObject({
           message: "Inngest endpoint configured correctly.",
           functionsFound: 0,
+          hasEventKey: false,
+          hasSigningKey: false,
+        });
+      });
+
+      test("can pick up delayed event key from environment", async () => {
+        const ret = await run(
+          [{ client: createClient({ id: "test" }), functions: [] }],
+          [{ method: "GET" }],
+          { [envKeys.InngestEventKey]: "event-key-123" }
+        );
+
+        const body = JSON.parse(ret.body);
+
+        expect(body).toMatchObject({
+          message: "Inngest endpoint configured correctly.",
+          functionsFound: 0,
           hasEventKey: true,
           hasSigningKey: false,
+        });
+      });
+
+      test("can pick up delayed signing key from environment", async () => {
+        const ret = await run(
+          [{ client: createClient({ id: "test" }), functions: [] }],
+          [{ method: "GET" }],
+          { [envKeys.InngestSigningKey]: "signing-key-123" }
+        );
+
+        const body = JSON.parse(ret.body);
+
+        expect(body).toMatchObject({
+          message: "Inngest endpoint configured correctly.",
+          functionsFound: 0,
+          hasEventKey: false,
+          hasSigningKey: true,
         });
       });
     });
@@ -513,7 +612,7 @@ export const testFramework = (
           const ret = await run(
             [
               {
-                client: new Inngest({ id: "Test", env: "FOO" }),
+                client: new Inngest({ id: "Test", env: "FOO", isDev: false }),
                 functions: [],
               },
             ],
@@ -579,6 +678,71 @@ export const testFramework = (
         });
       });
 
+      describe("#493", () => {
+        let serveHandler: ServeHandler;
+        let makeReqWithDeployId: (deployId: string) => Promise<any>;
+
+        beforeEach(() => {
+          serveHandler = getServeHandler([
+            { client: inngest, functions: [] },
+          ]) as ServeHandler;
+
+          makeReqWithDeployId = async (deployId: string) => {
+            let reqToMock;
+
+            const scope = nock("https://api.inngest.com")
+              .post("/fn/register", (b) => {
+                reqToMock = b;
+
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                return b;
+              })
+              .query((q) =>
+                deployId
+                  ? q[queryKeys.DeployId] === deployId
+                  : !(queryKeys.DeployId in q)
+              )
+              .reply(200, {
+                status: 200,
+              });
+
+            await run(serveHandler, [
+              {
+                method: "PUT",
+                url: `/api/inngest${
+                  deployId ? `?${queryKeys.DeployId}=${deployId}` : ""
+                }`,
+              },
+            ]);
+
+            // Asserts that the nock scope was used
+            scope.done();
+
+            return reqToMock;
+          };
+        });
+
+        test("across multiple executions, does not hold on to the deploy ID", async () => {
+          const req1 = await makeReqWithDeployId("1");
+          expect(req1).toMatchObject({
+            url: expect.stringMatching("^https://localhost:3000/api/inngest"),
+            deployId: "1",
+          });
+
+          const req2 = await makeReqWithDeployId("");
+          expect(req2).toMatchObject({
+            url: expect.stringMatching("^https://localhost:3000/api/inngest"),
+          });
+          expect(req2).not.toHaveProperty("deployId");
+
+          const req3 = await makeReqWithDeployId("3");
+          expect(req3).toMatchObject({
+            url: expect.stringMatching("^https://localhost:3000/api/inngest"),
+            deployId: "3",
+          });
+        });
+      });
+
       test.todo("register with dev server host from env if specified");
       test.todo("register with default dev server host if no env specified");
     });
@@ -596,6 +760,7 @@ export const testFramework = (
           DENO_DEPLOYMENT_ID: "1",
           NODE_ENV: "production",
           ENVIRONMENT: "production",
+          INNGEST_DEV: "0",
         };
         test("should throw an error in prod with no signature", async () => {
           const ret = await run(
@@ -714,9 +879,7 @@ export const testFramework = (
           () => "fn"
         );
         const env = {
-          DENO_DEPLOYMENT_ID: undefined,
-          NODE_ENV: "development",
-          ENVIRONMENT: "development",
+          INNGEST_DEV: "1",
         };
 
         test("should throw an error with an invalid JSON body", async () => {
