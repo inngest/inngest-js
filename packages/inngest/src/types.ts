@@ -250,19 +250,43 @@ export type WithInvocation<T extends EventPayload> = Simplify<
   { name: T["name"] | `${internalEvents.FunctionInvoked}` } & Omit<T, "name">
 >;
 
+/**
+ * Makes sure that all event names are stringified and not enums or other
+ * values.
+ */
+type StringifyAllEvents<T> = {
+  [K in keyof T as `${K & string}`]: Simplify<
+    Omit<T[K], "name"> & { name: `${K & string}` }
+  >;
+};
+
 type GetSelectedEvents<
   TClient extends Inngest.Any,
   TTriggers extends TriggersFromClient<TClient>,
-> = Pick<GetEvents<TClient, true>, TTriggers[number]>;
+> = Pick<GetEvents<TClient, true>, TTriggers[number]> &
+  StringifyAllEvents<{
+    [internalEvents.FunctionInvoked]: Simplify<{
+      name: `${internalEvents.FunctionInvoked}`;
+    }> &
+      Pick<
+        Pick<GetEvents<TClient, true>, TTriggers[number]>[keyof Pick<
+          GetEvents<TClient, true>,
+          TTriggers[number]
+        >],
+        AssertKeysAreFrom<EventPayload, "id" | "data" | "user" | "v" | "ts">
+      >;
+  }>;
 
 type GetContextEvents<
   TClient extends Inngest.Any,
   TTriggers extends TriggersFromClient<TClient>,
   // TInvokeSchema extends ValidSchemaInput = never,
-> = GetSelectedEvents<TClient, TTriggers>[keyof GetSelectedEvents<
-  TClient,
-  TTriggers
->];
+> = Simplify<
+  GetSelectedEvents<TClient, TTriggers>[keyof GetSelectedEvents<
+    TClient,
+    TTriggers
+  >]
+>;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type GetContextBatch<T> = T extends any ? [T, ...T[]] : never;
@@ -359,6 +383,14 @@ export namespace Handler {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   export type Any = Handler<any, any, any>;
 }
+
+/**
+ * Asserts that the given keys `U` are all present in the given object `T`.
+ *
+ * Used as an internal type guard to ensure that changes to keys are accounted
+ * for
+ */
+type AssertKeysAreFrom<_T, K extends keyof EventPayload> = K;
 
 /**
  * The shape of a single event's payload without any fields used to identify the
