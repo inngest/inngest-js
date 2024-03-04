@@ -803,7 +803,12 @@ describe("createFunction", () => {
           { id: "test" },
           { event: "bar" },
           ({ event }) => {
-            assertType<`${internalEvents.FunctionInvoked}` | "bar">(event.name);
+            assertType<
+              IsEqual<
+                `${internalEvents.FunctionInvoked}` | "bar",
+                typeof event.name
+              >
+            >(true);
             assertType<{ message: string }>(event.data);
           }
         );
@@ -815,7 +820,12 @@ describe("createFunction", () => {
           { foo: "bar" },
           { event: "foo" },
           ({ event }) => {
-            assertType<`${internalEvents.FunctionInvoked}` | "foo">(event.name);
+            assertType<
+              IsEqual<
+                `${internalEvents.FunctionInvoked}` | "foo",
+                typeof event.name
+              >
+            >(true);
             assertType<{ title: string }>(event.data);
           }
         );
@@ -826,7 +836,12 @@ describe("createFunction", () => {
           { id: "test" },
           { event: "foo" },
           ({ event }) => {
-            assertType<`${internalEvents.FunctionInvoked}` | "foo">(event.name);
+            assertType<
+              IsEqual<
+                `${internalEvents.FunctionInvoked}` | "foo",
+                typeof event.name
+              >
+            >(true);
             assertType<{ title: string }>(event.data);
           }
         );
@@ -856,6 +871,49 @@ describe("createFunction", () => {
           { event: "foo", cron: "test" },
           ({ event }) => {
             assertType<unknown>(event);
+          }
+        );
+      });
+
+      test("allows multiple event triggers", () => {
+        inngest.createFunction(
+          { id: "test" },
+          [{ event: "foo" }, { event: "bar" }],
+          ({ event }) => {
+            assertType<
+              IsEqual<
+                `${internalEvents.FunctionInvoked}` | "foo" | "bar",
+                typeof event.name
+              >
+            >(true);
+
+            assertType<
+              IsEqual<
+                { title: string } | { message: string },
+                typeof event.data
+              >
+            >(true);
+
+            switch (event.name) {
+              case "foo":
+                assertType<IsEqual<"foo", typeof event.name>>(true);
+                assertType<IsEqual<{ title: string }, typeof event.data>>(true);
+                break;
+              case "bar":
+                assertType<IsEqual<"bar", typeof event.name>>(true);
+                assertType<{ message: string }>(event.data);
+                break;
+              case "inngest/function.invoked":
+                assertType<
+                  IsEqual<"inngest/function.invoked", typeof event.name>
+                >(true);
+                assertType<
+                  IsEqual<
+                    { title: string } | { message: string },
+                    typeof event.data
+                  >
+                >(true);
+            }
           }
         );
       });
