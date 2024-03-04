@@ -2,4 +2,4 @@
 "inngest": patch
 ---
 
-Fix `GetFunctionOutput` typing sometimes resulting in `{}`
+Fix `GetFunctionOutput` and `step.invoke()` typing sometimes resulting in `{}`
