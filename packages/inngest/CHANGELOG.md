@@ -1,5 +1,11 @@
 # inngest
 
+## 3.15.4
+
+### Patch Changes
+
+- [#507](https://github.com/inngest/inngest-js/pull/507) [`882ace7`](https://github.com/inngest/inngest-js/commit/882ace7795dbcd0563e567231abb495e46f4caef) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `GetFunctionOutput` and `step.invoke()` typing sometimes resulting in `{}`
+
 ## 3.15.3
 
 ### Patch Changes
