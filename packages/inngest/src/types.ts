@@ -1172,23 +1172,30 @@ export type PayloadForAnyInngestFunction<
   > = TFunction extends InngestFunction.Any
     ? EventsFromFunction<TFunction>
     : never,
+> = TFunction extends InngestFunction<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-> = TFunction extends InngestFunction<any, any, any, any, any, infer ITriggers>
-  ? ITriggers extends InngestFunction.Trigger<keyof TEvents & string>[]
-    ? IsEqual<
-        TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>]["name"],
-        `${internalEvents.ScheduledTimer}`,
-        object,
-        Simplify<
-          Omit<
-            TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>],
-            "name" | "ts"
-          >
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  infer ITriggers extends InngestFunction.Trigger<keyof TEvents & string>[]
+>
+  ? IsEqual<
+      TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>]["name"],
+      `${internalEvents.ScheduledTimer}`,
+      object, // If this is ONLY a cron trigger, then we don't need to provide a payload
+      Simplify<
+        Omit<
+          TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>],
+          "name" | "ts"
         >
       >
-    : ITriggers extends { cron: string }
-      ? object
-      : object
+    >
   : never;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;
