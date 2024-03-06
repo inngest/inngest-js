@@ -875,8 +875,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       throw new Error("Cannot find function `onFailure` handler");
     }
 
-    // TODO: Review; inferred types results in an `any` here!
-    return this.options.fn["onFailureFn"] as Handler.Any;
+    return this.options.fn["onFailureFn"];
   }
 
   private initializeTimer(state: V1ExecutionState): void {

@@ -327,7 +327,7 @@ export class V0InngestExecution
     }
 
     // TODO: Review; inferred types results in an `any` here!
-    return this.options.fn["onFailureFn"] as Handler.Any;
+    return this.options.fn["onFailureFn"];
   }
 
   private createFnArg(): Context.Any {

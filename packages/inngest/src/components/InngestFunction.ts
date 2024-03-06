@@ -53,7 +53,7 @@ export class InngestFunction<
 
   public readonly opts: TFnOpts;
   private readonly fn: THandler;
-  private readonly onFailureFn?: TFnOpts["onFailure"];
+  private readonly onFailureFn?: TFailureHandler;
   private readonly client: TClient;
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
