@@ -34,13 +34,19 @@ import { createV1InngestExecution } from "./execution/v1";
  * @public
  */
 export class InngestFunction<
-  TFnOpts extends InngestFunction.Options<TClient, TMiddleware, TTriggers>,
+  TFnOpts extends InngestFunction.Options<
+    TClient,
+    TMiddleware,
+    TTriggers,
+    TFailureHandler
+  >,
   THandler extends Handler.Any,
+  TFailureHandler extends Handler.Any,
   TClient extends Inngest.Any = Inngest.Any,
   TMiddleware extends InngestMiddleware.Stack = InngestMiddleware.Stack,
   TTriggers extends InngestFunction.Trigger<
-    TriggersFromClient<TClient>[number]
-  >[] = InngestFunction.Trigger<TriggersFromClient<TClient>[number]>[],
+    TriggersFromClient<TClient>
+  >[] = InngestFunction.Trigger<TriggersFromClient<TClient>>[],
 > {
   static stepId = "step";
   static failureSuffix = "-failure";
@@ -233,8 +239,18 @@ export namespace InngestFunction {
    * Represents any `InngestFunction` instance, regardless of generics and
    * inference.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type Any = InngestFunction<any, Handler.Any, any, any, any>;
+  export type Any = InngestFunction<
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    any,
+    Handler.Any,
+    Handler.Any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    any
+  >;
 
   /**
    * A user-friendly method of specifying a trigger for an Inngest function.
@@ -253,7 +269,7 @@ export namespace InngestFunction {
 
   export type GetOptions<T extends InngestFunction.Any> =
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    T extends InngestFunction<infer O, any, any, any, any> ? O : never;
+    T extends InngestFunction<infer O, any, any, any, any, any> ? O : never;
 
   /**
    * A set of options for configuring an Inngest function.
@@ -264,8 +280,8 @@ export namespace InngestFunction {
     TClient extends Inngest.Any = Inngest.Any,
     TMiddleware extends InngestMiddleware.Stack = InngestMiddleware.Stack,
     TTriggers extends InngestFunction.Trigger<
-      TriggersFromClient<TClient>[number]
-    >[] = InngestFunction.Trigger<TriggersFromClient<TClient>[number]>[],
+      TriggersFromClient<TClient>
+    >[] = InngestFunction.Trigger<TriggersFromClient<TClient>>[],
     TFailureHandler extends Handler.Any = Handler.Any,
   > {
     triggers?: TTriggers;
@@ -410,7 +426,7 @@ export namespace InngestFunction {
 
     cancelOn?: Cancellation<
       GetEvents<TClient, true>,
-      EventNameFromTrigger<GetEvents<TClient, true>, TTriggers[number]>
+      EventNameFromTrigger<GetEvents<TClient, true>, TTriggers[number]> & string
     >[];
 
     /**

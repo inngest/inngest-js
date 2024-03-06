@@ -1,4 +1,4 @@
-import { type IsNever } from "type-plus";
+import { type IsEqual, type IsNever } from "type-plus";
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
@@ -274,7 +274,7 @@ type StringifyAllEvents<T> = {
 type GetSelectedEvents<
   TClient extends Inngest.Any,
   TTriggers extends TriggersFromClient<TClient>,
-> = Pick<GetEvents<TClient, true>, TTriggers[number] & string> &
+> = Pick<GetEvents<TClient, true>, TTriggers> &
   StringifyAllEvents<{
     // Invocation events could (currently) represent any of the payloads that
     // could be used to trigger the function. We use a distributive `Pick` over allto
@@ -283,9 +283,9 @@ type GetSelectedEvents<
       name: `${internalEvents.FunctionInvoked}`;
     }> &
       Pick<
-        Pick<GetEvents<TClient, true>, TTriggers[number] & string>[keyof Pick<
+        Pick<GetEvents<TClient, true>, TTriggers>[keyof Pick<
           GetEvents<TClient, true>,
-          TTriggers[number] & string
+          TTriggers
         >],
         AssertKeysAreFrom<EventPayload, "id" | "data" | "user" | "v" | "ts">
       >;
@@ -328,7 +328,7 @@ export type BaseContext<
    */
   runId: string;
 
-  step: ReturnType<typeof createStepTools<TClient, TTriggers[number]>>;
+  step: ReturnType<typeof createStepTools<TClient, TTriggers>>;
 
   /**
    * The current zero-indexed attempt number for this function execution. The
@@ -382,7 +382,7 @@ export type Handler<
 ) => unknown;
 
 export type TriggersFromClient<TClient extends Inngest.Any = Inngest.Any> =
-  (keyof GetEvents<TClient, true> & string)[];
+  keyof GetEvents<TClient, true> & string;
 
 /**
  * The shape of a Inngest function, taking in event, step, ctx, and step
@@ -395,7 +395,7 @@ export namespace Handler {
    * Represents any `Handler`, regardless of generics and inference.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type Any = Handler<any, any, any>;
+  export type Any = Handler<Inngest.Any, any, any>;
 }
 
 /**
@@ -1051,8 +1051,8 @@ export type EventNameFromTrigger<
   ? `${internalEvents.FunctionInvoked}`
   : T extends string // `string` indicates a migration from v2 to v3
     ? T
-    : T extends { event: string } // an event trigger
-      ? T["event"]
+    : T extends { event: infer IEvent } // an event trigger
+      ? IEvent
       : T extends { cron: string } // a cron trigger
         ? `${internalEvents.ScheduledTimer}`
         : never;
@@ -1108,7 +1108,7 @@ export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
 export type EventsFromFunction<T extends InngestFunction.Any> =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  T extends InngestFunction<any, any, infer IClient, any, any>
+  T extends InngestFunction<any, any, any, infer IClient, any, any>
     ? GetEvents<IClient, true>
     : never;
 
@@ -1131,7 +1131,7 @@ export type InvokeTargetFunctionDefinition =
 export type TriggerEventFromFunction<
   TFunction extends InvokeTargetFunctionDefinition,
 > = TFunction extends InngestFunction.Any
-  ? PayloadFromAnyInngestFunction<TFunction>
+  ? PayloadForAnyInngestFunction<TFunction>
   : TFunction extends InngestFunctionReference<
         infer IInput extends MinimalEventPayload,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1144,13 +1144,17 @@ export type TriggerEventFromFunction<
  * Given an {@link InngestFunction} instance, extract the {@link MinimalPayload}
  * that will be used to trigger it.
  *
+ * This is intended to see what **input** a developer is expected to give to
+ * invoke a function; it should not be used for evaluating the payload received
+ * inside an invoked function.
+ *
  * If we could not find a payload or the function does not require a payload
  * (e.g. a cron), then will return `{}`, as this is intended to be used to
  * spread into other arguments.
  *
  * @internal
  */
-export type PayloadFromAnyInngestFunction<
+export type PayloadForAnyInngestFunction<
   TFunction extends InngestFunction.Any,
   TEvents extends Record<
     string,
@@ -1159,12 +1163,17 @@ export type PayloadFromAnyInngestFunction<
     ? EventsFromFunction<TFunction>
     : never,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-> = TFunction extends InngestFunction<any, any, any, any, infer ITriggers>
+> = TFunction extends InngestFunction<any, any, any, any, any, infer ITriggers>
   ? ITriggers extends InngestFunction.Trigger<keyof TEvents & string>[]
-    ? Simplify<
-        Omit<
-          TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>],
-          "name" | "ts"
+    ? IsEqual<
+        TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>]["name"],
+        `${internalEvents.ScheduledTimer}`,
+        object,
+        Simplify<
+          Omit<
+            TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>],
+            "name" | "ts"
+          >
         >
       >
     : ITriggers extends { cron: string }

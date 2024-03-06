@@ -503,9 +503,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
   /**
    * Runtime-only validation.
    */
-  private sanitizeOptions<
-    T extends Parameters<Inngest.CreateFunction<this>>[0],
-  >(options: T): T {
+  private sanitizeOptions<T extends InngestFunction.Options>(options: T): T {
     if (Object.prototype.hasOwnProperty.call(options, "fns")) {
       // v2 -> v3 migration warning
       console.warn(
@@ -666,16 +664,11 @@ export namespace Inngest {
     >,
     TMiddleware extends InngestMiddleware.Stack,
     TTrigger extends SingleOrArray<
-      InngestFunction.Trigger<TriggersFromClient<TClient>[number]>
+      InngestFunction.Trigger<TriggersFromClient<TClient>>
     >,
     THandler extends Handler.Any = Handler<
       TClient,
-      [
-        EventNameFromTrigger<
-          GetEvents<TClient, true>,
-          AsArray<TTrigger>[number]
-        >,
-      ],
+      EventNameFromTrigger<GetEvents<TClient, true>, AsArray<TTrigger>[number]>,
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
@@ -686,12 +679,7 @@ export namespace Inngest {
     >,
     TFailureHandler extends Handler.Any = Handler<
       TClient,
-      [
-        EventNameFromTrigger<
-          GetEvents<TClient, true>,
-          AsArray<TTrigger>[number]
-        >,
-      ],
+      EventNameFromTrigger<GetEvents<TClient, true>, AsArray<TTrigger>[number]>,
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
@@ -718,6 +706,7 @@ export namespace Inngest {
       TFailureHandler
     >,
     THandler,
+    TFailureHandler,
     TClient,
     TMiddleware,
     AsArray<TTrigger>
@@ -767,9 +756,7 @@ export type GetStepTools<
  */
 export type GetFunctionInput<
   TClient extends Inngest.Any,
-  TTrigger extends
-    | TriggersFromClient<TClient>[number]
-    | TriggersFromClient<TClient>[number][] = TriggersFromClient<TClient>[number],
+  TTrigger extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
 > = Parameters<
   // Handler<
   //   ClientOptionsFromInngest<TInngest>,
@@ -784,7 +771,7 @@ export type GetFunctionInput<
   // >
   Handler<
     TClient,
-    TTrigger extends string ? [TTrigger] : TTrigger,
+    TTrigger,
     ExtendWithMiddleware<
       [
         typeof builtInMiddleware,
@@ -823,7 +810,7 @@ export type GetFunctionOutput<
 export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-> = TFunction extends InngestFunction<any, infer IHandler, any, any, any>
+> = TFunction extends InngestFunction<any, infer IHandler, any, any, any, any>
   ? IsNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> extends true
     ? null
     : SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>

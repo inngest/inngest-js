@@ -120,8 +120,7 @@ export const STEP_INDEXING_SUFFIX = ":";
  */
 export const createStepTools = <
   TClient extends Inngest.Any,
-  TTriggers extends
-    TriggersFromClient<TClient>[number] = TriggersFromClient<TClient>[number],
+  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
 >(
   client: TClient,
   stepHandler: StepHandler
@@ -218,7 +217,7 @@ export const createStepTools = <
      */
     // TODO Fix `waitForEvent` matching
     waitForEvent: createTool<
-      <IncomingEvent extends TriggersFromClient<TClient>[number] & string>(
+      <IncomingEvent extends TriggersFromClient<TClient>>(
         idOrOptions: StepOptionsOrId,
         opts: WaitForEventOpts<
           GetEvents<TClient, true>,
@@ -226,7 +225,7 @@ export const createStepTools = <
           IncomingEvent
         >
       ) => Promise<
-        IncomingEvent extends TriggersFromClient<TClient>[number]
+        IncomingEvent extends TriggersFromClient<TClient>
           ? GetEvents<TClient, true>[IncomingEvent] | null
           : IncomingEvent | null
       >
