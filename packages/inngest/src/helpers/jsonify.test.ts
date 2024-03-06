@@ -26,6 +26,13 @@ describe("Jsonify", () => {
     assertType<IsEqual<Actual, Expected>>(true);
   });
 
+  test("#513 appropriately types `string | null`", () => {
+    type Actual = Jsonify<string | null>;
+    type Expected = string | null;
+    assertType<IsAny<Actual>>(false);
+    assertType<IsEqual<Actual, Expected>>(true);
+  });
+
   describe("object", () => {
     test("allows `any`", () => {
       type Actual = Jsonify<{ foo: any }>;
@@ -48,6 +55,13 @@ describe("Jsonify", () => {
     test("allows string literals", () => {
       type Actual = Jsonify<{ foo: "bar" }>;
       type Expected = { foo: "bar" };
+      assertType<IsEqual<Actual, Expected>>(true);
+    });
+
+    test("#513 appropriately types `string | null`", () => {
+      type Actual = Jsonify<{ foo: string | null }>;
+      type Expected = { foo: string | null };
+      assertType<IsAny<Actual["foo"]>>(false);
       assertType<IsEqual<Actual, Expected>>(true);
     });
   });
