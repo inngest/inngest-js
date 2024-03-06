@@ -105,6 +105,11 @@ export type InvokedEventPayload = Simplify<
   }
 >;
 
+/**
+ * The payload for the event sent to a function when it is triggered by a cron.
+ *
+ * @public
+ */
 export type ScheduledTimerEventPayload = Simplify<
   Omit<EventPayload, "name" | "data" | "id"> & {
     name: `${internalEvents.ScheduledTimer}`;
@@ -272,6 +277,11 @@ type StringifyAllEvents<T> = {
   >;
 };
 
+/**
+ * Given a client and a set of triggers, returns a record of all the events that
+ * can be used to trigger a function. This will also include invocation events,
+ * which currently could represent any of the triggers.
+ */
 type GetSelectedEvents<
   TClient extends Inngest.Any,
   TTriggers extends TriggersFromClient<TClient>,
@@ -292,6 +302,10 @@ type GetSelectedEvents<
       >;
   }>;
 
+/**
+ * Returns a union of all the events that can be used to trigger a function
+ * based on the given `TClient` and `TTriggers`.
+ */
 type GetContextEvents<
   TClient extends Inngest.Any,
   TTriggers extends TriggersFromClient<TClient>,
