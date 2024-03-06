@@ -10,6 +10,7 @@ import {
   type FailureEventPayload,
   type FinishedEventPayload,
   type InvokedEventPayload,
+  type ScheduledTimerEventPayload,
 } from "../types";
 
 /**
@@ -244,6 +245,7 @@ export class EventSchemas<
     [internalEvents.FunctionFailed]: FailureEventPayload;
     [internalEvents.FunctionFinished]: FinishedEventPayload;
     [internalEvents.FunctionInvoked]: InvokedEventPayload;
+    [internalEvents.ScheduledTimer]: ScheduledTimerEventPayload;
   }>,
 > {
   /**

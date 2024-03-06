@@ -103,6 +103,16 @@ export type InvokedEventPayload = Simplify<
   }
 >;
 
+export type ScheduledTimerEventPayload = Simplify<
+  Omit<EventPayload, "name" | "data" | "id"> & {
+    name: `${internalEvents.ScheduledTimer}`;
+    data: {
+      cron: string;
+    };
+    id: string;
+  }
+>;
+
 /**
  * Unique codes for the different types of operation that can be sent to Inngest
  * from SDK step functions.

@@ -19,7 +19,8 @@ describe("EventSchemas", () => {
     type Expected =
       | `${internalEvents.FunctionFailed}`
       | `${internalEvents.FunctionFinished}`
-      | `${internalEvents.FunctionInvoked}`;
+      | `${internalEvents.FunctionInvoked}`
+      | `${internalEvents.ScheduledTimer}`;
 
     type Actual = Schemas<typeof schemas>[keyof Schemas<
       typeof schemas
