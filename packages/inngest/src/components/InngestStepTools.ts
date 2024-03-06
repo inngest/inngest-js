@@ -215,7 +215,6 @@ export const createStepTools = <
      * events, or to only wait a maximum amount of time before giving up and
      * returning `null` instead of any event data.
      */
-    // TODO Fix `waitForEvent` matching
     waitForEvent: createTool<
       <IncomingEvent extends TriggersFromClient<TClient>>(
         idOrOptions: StepOptionsOrId,
