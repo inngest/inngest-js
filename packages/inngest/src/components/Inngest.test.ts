@@ -878,26 +878,44 @@ describe("createFunction", () => {
         );
       });
 
+      test("allows no triggers (and no schema) with an empty array", () => {
+        inngest.createFunction({ id: "test" }, [], ({ event }) => {
+          assertType<
+            IsEqual<`${internalEvents.FunctionInvoked}`, typeof event.name>
+          >(true);
+          assertType<IsAny<typeof event.data>>(true);
+        });
+      });
+
       test("allows multiple event triggers", () => {
         inngest.createFunction(
           { id: "test" },
-          [{ event: "foo" }, { event: "bar" }],
+          [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
           ({ event }) => {
             assertType<
               IsEqual<
-                `${internalEvents.FunctionInvoked}` | "foo" | "bar",
+                | `${internalEvents.FunctionInvoked}`
+                | `${internalEvents.ScheduledTimer}`
+                | "foo"
+                | "bar",
                 typeof event.name
               >
             >(true);
 
             assertType<
               IsEqual<
-                { title: string } | { message: string },
+                { cron: string } | { title: string } | { message: string },
                 typeof event.data
               >
             >(true);
 
             switch (event.name) {
+              case "inngest/scheduled.timer":
+                assertType<
+                  IsEqual<`${internalEvents.ScheduledTimer}`, typeof event.name>
+                >(true);
+                assertType<IsEqual<{ cron: string }, typeof event.data>>(true);
+                break;
               case "foo":
                 assertType<IsEqual<"foo", typeof event.name>>(true);
                 assertType<IsEqual<{ title: string }, typeof event.data>>(true);
@@ -912,7 +930,7 @@ describe("createFunction", () => {
                 >(true);
                 assertType<
                   IsEqual<
-                    { title: string } | { message: string },
+                    { cron: string } | { title: string } | { message: string },
                     typeof event.data
                   >
                 >(true);
@@ -971,6 +989,7 @@ describe("helper types", () => {
         | `${internalEvents.FunctionFailed}`
         | `${internalEvents.FunctionFinished}`
         | `${internalEvents.FunctionInvoked}`
+        | `${internalEvents.ScheduledTimer}`
         | "foo"
         | "bar";
       type Actual = T0["event"]["name"];
