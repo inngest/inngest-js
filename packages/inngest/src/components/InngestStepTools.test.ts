@@ -795,6 +795,35 @@ describe("invoke", () => {
         });
     });
 
+    /**
+     * This test is a trade-off for not yet allowing local invocation schemas
+     * but adding multiple triggers.
+     *
+     * In the future, I foresee this being disallowed and requiring that either
+     * an invocation schema exists or that the user must provide a `name` to
+     * represent the payload they are trying to send.
+     */
+    test("allows any data shape when invoking a function with multiple triggers", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
+        () => "return"
+      );
+
+      const _test = () =>
+        invoke("id", {
+          function: fn,
+          data: {
+            foo: "",
+            bar: "",
+            cron: "",
+            // @ts-expect-error Make sure this still fails, so that we're
+            // definitely only picking up expected properties
+            boof: "",
+          },
+        });
+    });
+
     test("returns correct output type for function", () => {
       const fn = client.createFunction(
         { id: "fn" },

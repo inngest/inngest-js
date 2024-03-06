@@ -1087,6 +1087,58 @@ describe("EventSchemas", () => {
       );
     });
 
+    test("matches any property in any event when dealing with multiple triggers", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        A: { data: { a: boolean } };
+        B: { data: { b: boolean } };
+        AB: { data: { a: boolean; b: boolean } };
+      }>();
+
+      const inngest = new Inngest({
+        id: "test",
+        schemas,
+        eventKey: "test-key-123",
+      });
+
+      inngest.createFunction(
+        {
+          id: "test",
+          cancelOn: [
+            { event: "AB", match: "data.a" },
+            { event: "AB", match: "data.b" },
+          ],
+        },
+        [{ event: "A" }, { event: "B" }],
+        ({ step }) => {
+          void step.waitForEvent("a test", {
+            event: "AB",
+            match: "data.a",
+            timeout: "1h",
+          });
+
+          void step.waitForEvent("a test (safety proof)", {
+            event: "AB",
+            // @ts-expect-error - `"data.c"` is not assignable
+            match: "data.c",
+            timeout: "1h",
+          });
+
+          void step.waitForEvent("b test", {
+            event: "AB",
+            match: "data.b",
+            timeout: "1h",
+          });
+
+          void step.waitForEvent("b test (safety proof)", {
+            event: "AB",
+            // @ts-expect-error - `"data.c"` is not assignable
+            match: "data.c",
+            timeout: "1h",
+          });
+        }
+      );
+    });
+
     test("does not infinitely recurse when matching events with recursive types", () => {
       type JsonObject = { [Key in string]?: JsonValue };
       type JsonArray = Array<JsonValue>;
