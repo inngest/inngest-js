@@ -606,6 +606,9 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
  *
  * If this is moved, please ensure that using this package in another project
  * can correctly access comments on mutated input and output.
+ *
+ * This return pattern mimics the output of a `satisfies` suffix; it's used as
+ * we support versions of TypeScript prior to the introduction of `satisfies`.
  */
 export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
   m: T
