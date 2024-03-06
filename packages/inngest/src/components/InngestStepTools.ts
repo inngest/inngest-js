@@ -218,11 +218,11 @@ export const createStepTools = <
      */
     // TODO Fix `waitForEvent` matching
     waitForEvent: createTool<
-      <IncomingEvent extends TriggersFromClient<TClient>[number]>(
+      <IncomingEvent extends TriggersFromClient<TClient>[number] & string>(
         idOrOptions: StepOptionsOrId,
         opts: WaitForEventOpts<
           GetEvents<TClient, true>,
-          TTriggers,
+          TTriggers & string,
           IncomingEvent
         >
       ) => Promise<

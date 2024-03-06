@@ -1,3 +1,4 @@
+import { type IsNever } from "type-plus";
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
@@ -273,15 +274,18 @@ type StringifyAllEvents<T> = {
 type GetSelectedEvents<
   TClient extends Inngest.Any,
   TTriggers extends TriggersFromClient<TClient>,
-> = Pick<GetEvents<TClient, true>, TTriggers[number]> &
+> = Pick<GetEvents<TClient, true>, TTriggers[number] & string> &
   StringifyAllEvents<{
+    // Invocation events could (currently) represent any of the payloads that
+    // could be used to trigger the function. We use a distributive `Pick` over allto
+    // ensure this is represented correctly in typing.
     [internalEvents.FunctionInvoked]: Simplify<{
       name: `${internalEvents.FunctionInvoked}`;
     }> &
       Pick<
-        Pick<GetEvents<TClient, true>, TTriggers[number]>[keyof Pick<
+        Pick<GetEvents<TClient, true>, TTriggers[number] & string>[keyof Pick<
           GetEvents<TClient, true>,
-          TTriggers[number]
+          TTriggers[number] & string
         >],
         AssertKeysAreFrom<EventPayload, "id" | "data" | "user" | "v" | "ts">
       >;
@@ -1043,7 +1047,15 @@ export interface DevServerInfo {
 export type EventNameFromTrigger<
   Events extends Record<string, EventPayload>,
   T extends InngestFunction.Trigger<keyof Events & string>,
-> = T extends string ? T : T extends { event: string } ? T["event"] : string;
+> = IsNever<T> extends true // `never` indicates there are no triggers, so the payload could be anything
+  ? `${internalEvents.FunctionInvoked}`
+  : T extends string // `string` indicates a migration from v2 to v3
+    ? T
+    : T extends { event: string } // an event trigger
+      ? T["event"]
+      : T extends { cron: string } // a cron trigger
+        ? `${internalEvents.ScheduledTimer}`
+        : never;
 
 /**
  * A union to represent known names of supported frameworks that we can use
