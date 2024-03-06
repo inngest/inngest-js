@@ -13,6 +13,12 @@ export type SingleOrArray<T> = T | T[];
 export type AsArray<T> = T extends any[] ? T : [T];
 
 /**
+ * Given type `T`, return a tuple of `T` that contains at least one element.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AsTuple<T> = T extends any ? [T, ...T[]] : never;
+
+/**
  * Returns the given generic as either itself or a promise of itself.
  */
 export type MaybePromise<T> = T | Promise<T>;

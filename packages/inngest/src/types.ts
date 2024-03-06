@@ -16,6 +16,7 @@ import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
 import { type Mode } from "./helpers/env";
 import {
+  type AsTuple,
   type IsStringLiteral,
   type ObjectPaths,
   type Simplify,
@@ -302,9 +303,6 @@ type GetContextEvents<
   >]
 >;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type GetContextBatch<T> = T extends any ? [T, ...T[]] : never;
-
 /**
  * Base context object, omitting any extras that may be added by middleware or
  * function configuration.
@@ -318,10 +316,8 @@ export type BaseContext<
   /**
    * The event data present in the payload.
    */
-  // TODO These should also include invocation events based on the invocation
-  // schema given!!!
   event: GetContextEvents<TClient, TTriggers>;
-  events: GetContextBatch<GetContextEvents<TClient, TTriggers>>;
+  events: AsTuple<GetContextEvents<TClient, TTriggers>>;
 
   /**
    * The run ID for the current function execution
