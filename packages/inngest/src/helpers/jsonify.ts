@@ -271,7 +271,7 @@ const timeJson = JSON.parse(JSON.stringify(time)) as Jsonify<typeof time>;
 export type Jsonify<T> = IsAny<T> extends true
   ? any
   : IsUnknown<T> extends true
-    ? T
+    ? unknown
     : T extends PositiveInfinity | NegativeInfinity
       ? null
       : T extends JsonPrimitive
