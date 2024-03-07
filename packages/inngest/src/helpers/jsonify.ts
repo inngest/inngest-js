@@ -14,8 +14,8 @@
 /* eslint-disable @typescript-eslint/no-loss-of-precision */
 /* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { type IsAny, type IsNever } from "type-plus";
-import { type IsUnknown, type Simplify } from "./types";
+import { type IsNever } from "type-plus";
+import { type IsAny, type IsUnknown, type Simplify } from "./types";
 
 // Note: The return value has to be `any` and not `unknown` so it can match `void`.
 type NotJsonable = ((...arguments_: any[]) => any) | undefined | symbol;
