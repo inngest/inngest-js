@@ -400,7 +400,7 @@ export type IsNever<T> = [T] extends [never] ? true : false;
  * type IsLiteralType = IsLiteral<typeof Symbol.iterator>; // false
  *
  * type T0 = { foo: string };
- * type HasAllKnownKeys = IsLiteral<{ foo: boolean }>; // true
+ * type HasAllKnownKeys = IsLiteral<keyof T0>; // true
  *
  * type T1 = { [x: string]: any; foo: boolean };
  * type HasAllKnownKeys = IsLiteral<keyof T1>; // false
