@@ -14,8 +14,14 @@
 /* eslint-disable @typescript-eslint/no-loss-of-precision */
 /* eslint-disable @typescript-eslint/ban-types */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { type IsAny, type IsNever } from "type-plus";
-import { type IsUnknown, type Simplify } from "./types";
+import {
+  type IsAny,
+  type IsLiteral,
+  type IsNever,
+  type IsUnknown,
+  type KnownKeys,
+  type Simplify,
+} from "./types";
 
 // Note: The return value has to be `any` and not `unknown` so it can match `void`.
 type NotJsonable = ((...arguments_: any[]) => any) | undefined | symbol;
@@ -159,11 +165,13 @@ type FilterDefinedKeys<T extends object> = Exclude<
   {
     [Key in keyof T]: IsAny<T[Key]> extends true
       ? Key
-      : undefined extends T[Key]
-        ? never
-        : T[Key] extends undefined
+      : IsUnknown<T[Key]> extends true
+        ? Key
+        : undefined extends T[Key]
           ? never
-          : BaseKeyFilter<T, Key>;
+          : T[Key] extends undefined
+            ? never
+            : BaseKeyFilter<T, Key>;
   }[keyof T],
   undefined
 >;
@@ -268,30 +276,43 @@ const timeJson = JSON.parse(JSON.stringify(time)) as Jsonify<typeof time>;
 */
 export type Jsonify<T> = IsAny<T> extends true
   ? any
-  : T extends PositiveInfinity | NegativeInfinity
-    ? null
-    : T extends JsonPrimitive
-      ? T
-      : // Any object with toJSON is special case
-        T extends { toJSON(): infer J }
-        ? (() => J) extends () => JsonValue // Is J assignable to JsonValue?
-          ? J // Then T is Jsonable and its Jsonable value is J
-          : Jsonify<J> // Maybe if we look a level deeper we'll find a JsonValue
-        : // Instanced primitives are objects
-          T extends Number
-          ? number
-          : T extends String
-            ? string
-            : T extends Boolean
-              ? boolean
-              : T extends Map<any, any> | Set<any>
-                ? EmptyObject
-                : T extends TypedArray
-                  ? Record<string, number>
-                  : T extends NotJsonable
-                    ? never // Non-JSONable type union was found not empty
-                    : T extends UnknownArray
-                      ? JsonifyList<T>
-                      : T extends object
-                        ? JsonifyObject<UndefinedToOptional<T>> // JsonifyObject recursive call for its children
-                        : never; // Otherwise any other non-object is removed
+  : IsUnknown<T> extends true
+    ? unknown
+    : T extends PositiveInfinity | NegativeInfinity
+      ? null
+      : T extends JsonPrimitive
+        ? T
+        : // Any object with toJSON is special case
+          T extends { toJSON(): infer J }
+          ? (() => J) extends () => JsonValue // Is J assignable to JsonValue?
+            ? J // Then T is Jsonable and its Jsonable value is J
+            : Jsonify<J> // Maybe if we look a level deeper we'll find a JsonValue
+          : // Instanced primitives are objects
+            T extends Number
+            ? number
+            : T extends String
+              ? string
+              : T extends Boolean
+                ? boolean
+                : T extends Map<any, any> | Set<any>
+                  ? EmptyObject
+                  : T extends TypedArray
+                    ? Record<string, number>
+                    : T extends NotJsonable
+                      ? never // Non-JSONable type union was found not empty
+                      : T extends UnknownArray
+                        ? JsonifyList<T>
+                        : T extends object
+                          ? IsLiteral<keyof T> extends true
+                            ? // JsonifyObject recursive call for its children
+                              JsonifyObject<UndefinedToOptional<T>> // An object with known keys can be processed directly
+                            : Simplify<
+                                JsonifyObject<UndefinedToOptional<T>> &
+                                  // If the object has generic keys, this is a
+                                  // mapped type and we need to process the
+                                  // generic and known keys separately
+                                  JsonifyObject<
+                                    UndefinedToOptional<Pick<T, KnownKeys<T>>>
+                                  >
+                              >
+                          : never; // Otherwise any other non-object is removed

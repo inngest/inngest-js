@@ -28,6 +28,7 @@ import {
   OutgoingResultError,
   serializeError,
 } from "@local/helpers/errors";
+import { type IsEqual } from "@local/helpers/types";
 import {
   DefaultLogger,
   ProxyLogger,
@@ -40,8 +41,7 @@ import {
   type OutgoingOp,
 } from "@local/types";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { assertType, type IsEqual } from "type-plus";
-import { createClient, runFnWithStack } from "../test/helpers";
+import { assertType, createClient, runFnWithStack } from "../test/helpers";
 
 type TestEvents = {
   foo: { data: { foo: string } };

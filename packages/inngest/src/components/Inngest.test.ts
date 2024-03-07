@@ -11,12 +11,11 @@ import {
 } from "@local";
 import { type createStepTools } from "@local/components/InngestStepTools";
 import { envKeys, headerKeys, internalEvents } from "@local/helpers/consts";
-import { type IsAny } from "@local/helpers/types";
+import { type IsAny, type IsEqual } from "@local/helpers/types";
 import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
-import { assertType, type IsEqual } from "type-plus";
 import { literal } from "zod";
-import { createClient } from "../test/helpers";
+import { assertType, createClient } from "../test/helpers";
 
 const testEvent: EventPayload = {
   name: "test",

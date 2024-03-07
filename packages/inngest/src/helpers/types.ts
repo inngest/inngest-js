@@ -1,4 +1,3 @@
-import { type IsEqual } from "type-plus";
 import { type EventPayload } from "../types";
 
 /**
@@ -346,3 +345,91 @@ export type IsUnknown<T> = unknown extends T // `T` can be `unknown` or `any`
     ? true
     : false
   : false;
+
+/**
+Returns a boolean for whether the two given types are equal.
+
+{@link https://github.com/microsoft/TypeScript/issues/27024#issuecomment-421529650}
+{@link https://stackoverflow.com/questions/68961864/how-does-the-equals-work-in-typescript/68963796#68963796}
+
+Use-cases:
+- If you want to make a conditional branch based on the result of a comparison of two types.
+
+@example
+```
+import type {IsEqual} from 'type-fest';
+
+// This type returns a boolean for whether the given array includes the given item.
+// `IsEqual` is used to compare the given array at position 0 and the given item and then return true if they are equal.
+type Includes<Value extends readonly any[], Item> =
+	Value extends readonly [Value[0], ...infer rest]
+		? IsEqual<Value[0], Item> extends true
+			? true
+			: Includes<rest, Item>
+		: false;
+```
+*/
+export type IsEqual<A, B> = (<G>() => G extends A ? 1 : 2) extends <
+  G,
+>() => G extends B ? 1 : 2
+  ? true
+  : false;
+
+/**
+ * Returns a boolean for whether the given type `T` is `never`.
+ */
+export type IsNever<T> = [T] extends [never] ? true : false;
+
+/**
+ * Given a type `T`, return `Then` if `T` is a string, number, or symbol
+ * literal, else `Else`.
+ *
+ * `Then` defaults to `true` and `Else` defaults to `false`.
+ *
+ * Useful for determining if an object is a generic type or has known keys.
+ *
+ * @example
+ * ```ts
+ * type IsLiteralType = IsLiteral<"foo">; // true
+ * type IsLiteralType = IsLiteral<string>; // false
+ *
+ * type IsLiteralType = IsLiteral<1>; // true
+ * type IsLiteralType = IsLiteral<number>; // false
+ *
+ * type IsLiteralType = IsLiteral<symbol>; // true
+ * type IsLiteralType = IsLiteral<typeof Symbol.iterator>; // false
+ *
+ * type T0 = { foo: string };
+ * type HasAllKnownKeys = IsLiteral<keyof T0>; // true
+ *
+ * type T1 = { [x: string]: any; foo: boolean };
+ * type HasAllKnownKeys = IsLiteral<keyof T1>; // false
+ * ```
+ */
+export type IsLiteral<T, Then = true, Else = false> = string extends T
+  ? Else
+  : number extends T
+    ? Else
+    : symbol extends T
+      ? Else
+      : Then;
+
+/**
+ * Given an object `T`, return the keys of that object that are known literals.
+ *
+ * Useful for filtering out generic mapped types from objects.
+ *
+ * @example
+ * ```ts
+ * type T0 = { foo: string };
+ * type RegularKeys = keyof T0; // "foo"
+ * type KnownKeys = KnownLiteralKeys<T0>; // "foo"
+ *
+ * type T1 = { [x: string]: any; foo: boolean };
+ * type RegularKeys = keyof T1; // string | number
+ * type KnownKeys = KnownLiteralKeys<T1>; // "foo"
+ * ```
+ */
+export type KnownKeys<T> = keyof {
+  [K in keyof T as IsLiteral<K, K, never>]: T[K];
+};
