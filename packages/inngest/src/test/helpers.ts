@@ -1279,3 +1279,9 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
     });
   });
 };
+
+/**
+ * assert the subject satisfies the specified type T
+ * @type T the type to check against.
+ */
+export function assertType<T>(subject: T): asserts subject is T {}

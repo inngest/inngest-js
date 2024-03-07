@@ -1,4 +1,3 @@
-import { type IsNever } from "type-plus";
 import { InngestApi } from "../api/api";
 import {
   defaultDevServerHost,
@@ -21,6 +20,7 @@ import { type Jsonify } from "../helpers/jsonify";
 import { stringify } from "../helpers/strings";
 import {
   type ExclusiveKeys,
+  type IsNever,
   type SendEventPayload,
   type SimplifyDeep,
   type WithoutInternal,

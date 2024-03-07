@@ -4,15 +4,16 @@ import { type EventsFromOpts } from "@local/components/Inngest";
 import { InngestFunction } from "@local/components/InngestFunction";
 import { referenceFunction } from "@local/components/InngestFunctionReference";
 import { type createStepTools } from "@local/components/InngestStepTools";
+import { type IsEqual } from "@local/helpers/types";
 import {
   StepOpCode,
   type ClientOptions,
   type InvocationResult,
 } from "@local/types";
 import ms from "ms";
-import { assertType, type IsEqual } from "type-plus";
 import { z } from "zod";
 import {
+  assertType,
   createClient,
   getStepTools,
   testClientId,

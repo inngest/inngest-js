@@ -1,6 +1,5 @@
 import canonicalize from "canonicalize";
 import { sha1 } from "hash.js";
-import { type MaybePromise } from "type-plus";
 import { z } from "zod";
 import {
   ErrCode,
@@ -15,7 +14,7 @@ import {
   resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises";
-import { type PartialK } from "../../helpers/types";
+import { type MaybePromise, type PartialK } from "../../helpers/types";
 import {
   StepOpCode,
   failureEventErrorSchema,
