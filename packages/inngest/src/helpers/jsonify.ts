@@ -16,8 +16,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   type IsAny,
+  type IsLiteral,
   type IsNever,
   type IsUnknown,
+  type KnownKeys,
   type Simplify,
 } from "./types";
 
@@ -301,5 +303,16 @@ export type Jsonify<T> = IsAny<T> extends true
                       : T extends UnknownArray
                         ? JsonifyList<T>
                         : T extends object
-                          ? JsonifyObject<UndefinedToOptional<T>> // JsonifyObject recursive call for its children
+                          ? IsLiteral<keyof T> extends true
+                            ? // JsonifyObject recursive call for its children
+                              JsonifyObject<UndefinedToOptional<T>> // An object with known keys can be processed directly
+                            : Simplify<
+                                JsonifyObject<UndefinedToOptional<T>> &
+                                  // If the object has generic keys, this is a
+                                  // mapped type and we need to process the
+                                  // generic and known keys separately
+                                  JsonifyObject<
+                                    UndefinedToOptional<Pick<T, KnownKeys<T>>>
+                                  >
+                              >
                           : never; // Otherwise any other non-object is removed
