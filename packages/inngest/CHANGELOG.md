@@ -1,5 +1,15 @@
 # inngest
 
+## 3.15.5
+
+### Patch Changes
+
+- [#512](https://github.com/inngest/inngest-js/pull/512) [`8f03159`](https://github.com/inngest/inngest-js/commit/8f03159f0ff0b0631707fc3224b597150d4226ef) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix union step outputs sometimes being typed as `any`
+
+- [#512](https://github.com/inngest/inngest-js/pull/512) [`8f03159`](https://github.com/inngest/inngest-js/commit/8f03159f0ff0b0631707fc3224b597150d4226ef) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix step output typing (`Jsonify`) removing detail from mapped object types with overrides
+
+- [#512](https://github.com/inngest/inngest-js/pull/512) [`8f03159`](https://github.com/inngest/inngest-js/commit/8f03159f0ff0b0631707fc3224b597150d4226ef) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix step output typing (`Jsonify`) omitting `unknown` and literals
+
 ## 3.15.4
 
 ### Patch Changes
