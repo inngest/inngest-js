@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { type IsNever } from "type-plus";
 import { InngestApi } from "../api/api";
 import {
   defaultDevServerHost,
@@ -22,6 +20,7 @@ import { type Jsonify } from "../helpers/jsonify";
 import { stringify } from "../helpers/strings";
 import {
   type AsArray,
+  type IsNever,
   type SendEventPayload,
   type SimplifyDeep,
   type SingleOrArray,

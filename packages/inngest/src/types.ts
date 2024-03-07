@@ -1,4 +1,3 @@
-import { type IsEqual, type IsNever } from "type-plus";
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
@@ -17,6 +16,8 @@ import { type internalEvents } from "./helpers/consts";
 import { type Mode } from "./helpers/env";
 import {
   type AsTuple,
+  type IsEqual,
+  type IsNever,
   type IsStringLiteral,
   type ObjectPaths,
   type Simplify,
@@ -1187,15 +1188,15 @@ export type PayloadForAnyInngestFunction<
 >
   ? IsEqual<
       TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>]["name"],
-      `${internalEvents.ScheduledTimer}`,
-      object, // If this is ONLY a cron trigger, then we don't need to provide a payload
-      Simplify<
+      `${internalEvents.ScheduledTimer}`
+    > extends true
+    ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
+    : Simplify<
         Omit<
           TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>],
           "name" | "ts"
         >
       >
-    >
   : never;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;
