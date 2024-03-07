@@ -21,6 +21,7 @@ import {
   type IsStringLiteral,
   type ObjectPaths,
   type Simplify,
+  type WithoutInternal,
 } from "./helpers/types";
 import { type Logger } from "./middleware/logger";
 
@@ -306,16 +307,23 @@ type GetSelectedEvents<
 /**
  * Returns a union of all the events that can be used to trigger a function
  * based on the given `TClient` and `TTriggers`.
+ *
+ * Can optionally include or exclude internal events with `TExcludeInternal`.
  */
 type GetContextEvents<
   TClient extends Inngest.Any,
   TTriggers extends TriggersFromClient<TClient>,
+  TExcludeInternal extends boolean = false,
   // TInvokeSchema extends ValidSchemaInput = never,
 > = Simplify<
-  GetSelectedEvents<TClient, TTriggers>[keyof GetSelectedEvents<
-    TClient,
-    TTriggers
-  >]
+  TExcludeInternal extends true
+    ? WithoutInternal<
+        GetSelectedEvents<TClient, TTriggers>
+      >[keyof WithoutInternal<GetSelectedEvents<TClient, TTriggers>>]
+    : GetSelectedEvents<TClient, TTriggers>[keyof GetSelectedEvents<
+        TClient,
+        TTriggers
+      >]
 >;
 
 /**
@@ -332,7 +340,7 @@ export type BaseContext<
    * The event data present in the payload.
    */
   event: GetContextEvents<TClient, TTriggers>;
-  events: AsTuple<GetContextEvents<TClient, TTriggers>>;
+  events: AsTuple<GetContextEvents<TClient, TTriggers, true>>;
 
   /**
    * The run ID for the current function execution

@@ -11,7 +11,7 @@ import {
 } from "@local";
 import { type createStepTools } from "@local/components/InngestStepTools";
 import { envKeys, headerKeys, internalEvents } from "@local/helpers/consts";
-import { type IsAny, type IsEqual } from "@local/helpers/types";
+import { type IsAny, type IsEqual, type IsNever } from "@local/helpers/types";
 import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
 import { literal } from "zod";
@@ -860,7 +860,8 @@ describe("createFunction", () => {
         inngest.createFunction(
           { id: "test" },
           [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
-          ({ event }) => {
+          ({ event, events }) => {
+            // `event` should represent all possible triggers
             assertType<
               IsEqual<
                 | `${internalEvents.FunctionInvoked}`
@@ -871,6 +872,8 @@ describe("createFunction", () => {
               >
             >(true);
 
+            // Without narrowing, `event.data` should be the union of all
+            // possible data
             assertType<
               IsEqual<
                 { cron: string } | { title: string } | { message: string },
@@ -878,6 +881,7 @@ describe("createFunction", () => {
               >
             >(true);
 
+            // Type narrowing should allow for specific data access
             switch (event.name) {
               case "inngest/scheduled.timer":
                 assertType<
@@ -903,6 +907,46 @@ describe("createFunction", () => {
                     typeof event.data
                   >
                 >(true);
+                break;
+              default:
+                // Proves we have exhausted all possibilities
+                assertType<IsNever<typeof event>>(true);
+            }
+
+            // `events` should omit internal triggers, as they are not
+            // batched
+            assertType<IsEqual<"foo" | "bar", (typeof events)[number]["name"]>>(
+              true
+            );
+
+            // Without narrowing, `event.data` should be the union of all
+            // possible data, excluding internal triggers
+            assertType<
+              IsEqual<
+                { title: string } | { message: string },
+                (typeof events)[number]["data"]
+              >
+            >(true);
+
+            // Type narrowing should allow for specific data access
+            switch (events[0].name) {
+              case "foo":
+                assertType<"foo">(events[0].name);
+                assertType<{ title: string }>(events[0].data);
+
+                // Proves that each event can be different
+                assertType<"foo" | "bar" | undefined>(events[1]?.name);
+                break;
+              case "bar":
+                assertType<"bar">(events[0].name);
+                assertType<{ message: string }>(events[0].data);
+
+                // Proves that each event can be different
+                assertType<"foo" | "bar" | undefined>(events[1]?.name);
+                break;
+              default:
+                // Proves we have exhausted all possibilities
+                assertType<never>(events[0]);
             }
           }
         );
