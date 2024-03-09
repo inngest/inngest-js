@@ -1,10 +1,12 @@
 import { cacheFn, waterfall } from "../helpers/functions";
+import { type Jsonify } from "../helpers/jsonify";
 import {
   type Await,
   type MaybePromise,
   type ObjectAssign,
   type PartialK,
   type Simplify,
+  type SimplifyDeep,
 } from "../helpers/types";
 import {
   type BaseContext,
@@ -15,7 +17,7 @@ import {
   type OutgoingOp,
   type SendEventBaseOutput,
 } from "../types";
-import { type Inngest } from "./Inngest";
+import { Inngest } from "./Inngest";
 import { type InngestFunction } from "./InngestFunction";
 
 /**
@@ -255,6 +257,8 @@ export interface MiddlewareOptions {
  * @public
  */
 export type MiddlewareRegisterReturn = {
+  transformer?: Transformer;
+
   /**
    * This hook is called for every function execution and allows you to hook
    * into various stages of a run's lifecycle. Use this to store any state you
@@ -501,6 +505,18 @@ type GetMiddlewareRunInputMutation<
   : // eslint-disable-next-line @typescript-eslint/ban-types
     {};
 
+type GetMiddlewareRunDataTransform<
+  TMiddleware extends InngestMiddleware<MiddlewareOptions>,
+> = TMiddleware extends InngestMiddleware<infer TOpts>
+  ? TOpts["init"] extends MiddlewareRegisterFn
+    ? Await<TOpts["init"]>["transformer"] extends Transformer<
+        infer ITransformer
+      >
+      ? ITransformer
+      : PassthroughTransformer
+    : PassthroughTransformer
+  : PassthroughTransformer;
+
 /**
  * @internal
  */
@@ -580,3 +596,154 @@ export type MiddlewareStackRunInputMutation<
   },
   TContext
 >;
+
+export type MiddlewareStackRunDataTransform<
+  TInput,
+  TMiddleware extends MiddlewareStack,
+> = TMiddleware extends [
+  infer IFirst extends InngestMiddleware<MiddlewareOptions>,
+  ...infer IRest extends MiddlewareStack,
+]
+  ? MiddlewareStackRunDataTransform<
+      GetOutput<TInput, GetMiddlewareRunDataTransform<IFirst>>,
+      IRest
+    >
+  : TMiddleware[0] extends InngestMiddleware<MiddlewareOptions>
+    ? GetOutput<TInput, GetMiddlewareRunDataTransform<TMiddleware[0]>>
+    : never;
+// > = ObjectAssign<
+//   { [K in keyof TMiddleware]: GetMiddlewareRunDataTransform<TMiddleware[K]> },
+//   TInput
+// >;
+
+declare const rawArgs: unique symbol;
+type rawArgs = typeof rawArgs;
+
+// A silly helper type to flatten type output
+// eslint-disable-next-line @typescript-eslint/ban-types
+export type Simplify<T> = { [K in keyof T]: T[K] } & {};
+
+// Create an interface that pretends it's a function
+interface InterfaceFn {
+  [rawArgs]: unknown;
+  args: this[rawArgs] extends infer args extends unknown[] ? args : never;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  input: this[rawArgs] extends [infer arg, ...any] ? arg : never;
+  output: unknown;
+}
+
+// Mimic `.apply()`
+type Apply<TFn extends InterfaceFn, TArgs extends unknown[]> = (TFn & {
+  [rawArgs]: TArgs;
+})["output"];
+
+// Add an interface for
+interface AffectReturnType extends InterfaceFn {
+  output: this["args"] extends [infer IFn extends InterfaceFn, infer IFnValue]
+    ? IFnValue extends (...args: infer IArgs) => infer IReturnType
+      ? (...args: IArgs) => Apply<IFn, [IReturnType]>
+      : never
+    : never;
+}
+
+// "Transformers" are just one of these interface "functions"
+interface CustomTransformer extends InterfaceFn {}
+
+type TransformerOpts = {
+  serialize?: (data: unknown) => any;
+  deserialize?: (data: unknown) => any;
+};
+
+class Transformer<TTransformer extends CustomTransformer = JsonifyTransformer> {
+  public serialize?: (data: unknown) => any;
+  public deserialize?: (data: unknown) => any;
+
+  constructor(opts: TransformerOpts = {}) {
+    this.serialize = opts.serialize;
+    this.deserialize = opts.deserialize;
+  }
+}
+
+// The default transformer would be just a passthrough
+// In practice, probably something like `Simplify<Jsonify<T>>`
+interface PassthroughTransformer extends CustomTransformer {
+  output: this["input"];
+}
+
+interface JsonifyTransformer extends CustomTransformer {
+  output: SimplifyDeep<Jsonify<this["input"]>>;
+}
+
+// Let's create a function to pull out some transforme data.
+// This is proof that we can pass our transformer and affect output types.
+type GetOutput<
+  TInput,
+  TTransformer extends CustomTransformer = PassthroughTransformer,
+> = ReturnType<
+  Apply<AffectReturnType, [TTransformer, <I extends TInput>(i: I) => I]>
+>;
+
+const fooMw = new InngestMiddleware({
+  name: "foo",
+  init: () => {
+    interface FooTransformer extends CustomTransformer {
+      output: {
+        [K in keyof this["input"]]: this["input"][K] extends Date
+          ? string
+          : this["input"][K];
+      };
+    }
+
+    return {
+      transformer: new Transformer<FooTransformer>(),
+    };
+  },
+});
+
+const barMw = new InngestMiddleware({
+  name: "bar",
+  init: () => {
+    interface MyTransformer extends CustomTransformer {
+      output: {
+        [K in keyof this["input"] as this["input"][K] extends Date
+          ? never
+          : K]: this["input"][K];
+      };
+    }
+
+    return {
+      transformer: new Transformer<MyTransformer>(),
+    };
+  },
+});
+
+type T0 = GetMiddlewareRunDataTransform<typeof fooMw>;
+//   ^?
+
+type MyInput = {
+  foo: string;
+  date: Date;
+  password: string;
+};
+
+type T1 = GetOutput<MyInput, T0>;
+//   ^?
+
+type T2 = MiddlewareStackRunDataTransform<MyInput, [typeof fooMw]>;
+//   ^?
+
+type T3 = MiddlewareStackRunDataTransform<
+  // ^?
+  MyInput,
+  [typeof fooMw, typeof fooMw]
+>;
+
+const inngest = new Inngest({
+  id: "my-app",
+  middleware: [fooMw],
+});
+
+inngest.createFunction({ id: "my-fn" }, { event: "" }, async ({ step }) => {
+  const foo = await step.run("foo", () => new Date());
+  //     ^?
+});
