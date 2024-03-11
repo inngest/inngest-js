@@ -20,13 +20,13 @@ import {
   StepOpCode,
   failureEventErrorSchema,
   type BaseContext,
-  type ClientOptions,
   type Context,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
   type OutgoingOp,
 } from "../../types";
+import { type Inngest } from "../Inngest";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware";
 import {
   STEP_INDEXING_SUFFIX,
@@ -623,9 +623,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return fnArg;
   }
 
-  private createStepTools(): ReturnType<
-    typeof createStepTools<ClientOptions, Record<string, EventPayload>, string>
-  > {
+  private createStepTools(): ReturnType<typeof createStepTools> {
     /**
      * A list of steps that have been found and are being rolled up before being
      * reported to the core loop.
@@ -866,8 +864,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
   private getUserFnToRun(): Handler.Any {
     if (!this.options.isFailureHandler) {
-      // TODO: Review; inferred types results in an `any` here!
-      return this.options.fn["fn"] as Handler.Any;
+      return this.options.fn["fn"];
     }
 
     if (!this.options.fn["onFailureFn"]) {
@@ -905,7 +902,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
   private async initializeMiddleware(): Promise<RunHookStack> {
     const ctx = this.options.data as Pick<
-      Readonly<BaseContext<ClientOptions, string>>,
+      Readonly<BaseContext<Inngest.Any>>,
       "event" | "events" | "runId"
     >;
 

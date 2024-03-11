@@ -11,7 +11,7 @@ import {
 } from "@local";
 import { type createStepTools } from "@local/components/InngestStepTools";
 import { envKeys, headerKeys, internalEvents } from "@local/helpers/consts";
-import { type IsAny, type IsEqual } from "@local/helpers/types";
+import { type IsAny, type IsEqual, type IsNever } from "@local/helpers/types";
 import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
 import { literal } from "zod";
@@ -698,36 +698,6 @@ describe("createFunction", () => {
         );
       });
 
-      test("disallows specifying cancellation with batching", () => {
-        inngest.createFunction(
-          // @ts-expect-error Cannot specify cancellation with batching
-          {
-            id: "test",
-            batchEvents: { maxSize: 5, timeout: "5s" },
-            cancelOn: [{ event: "test2" }],
-          },
-          { event: "test" },
-          () => {
-            // no-op
-          }
-        );
-      });
-
-      test("disallows specifying rate limit with batching", () => {
-        inngest.createFunction(
-          // @ts-expect-error Cannot specify rate limit with batching
-          {
-            id: "test",
-            batchEvents: { maxSize: 5, timeout: "5s" },
-            rateLimit: { limit: 5, period: "5s" },
-          },
-          { event: "test" },
-          () => {
-            // no-op
-          }
-        );
-      });
-
       test("allows trigger to be an object with an event property", () => {
         inngest.createFunction(
           { id: "test" },
@@ -805,7 +775,12 @@ describe("createFunction", () => {
           { id: "test" },
           { event: "bar" },
           ({ event }) => {
-            assertType<`${internalEvents.FunctionInvoked}` | "bar">(event.name);
+            assertType<
+              IsEqual<
+                `${internalEvents.FunctionInvoked}` | "bar",
+                typeof event.name
+              >
+            >(true);
             assertType<{ message: string }>(event.data);
           }
         );
@@ -817,7 +792,12 @@ describe("createFunction", () => {
           { foo: "bar" },
           { event: "foo" },
           ({ event }) => {
-            assertType<`${internalEvents.FunctionInvoked}` | "foo">(event.name);
+            assertType<
+              IsEqual<
+                `${internalEvents.FunctionInvoked}` | "foo",
+                typeof event.name
+              >
+            >(true);
             assertType<{ title: string }>(event.data);
           }
         );
@@ -828,7 +808,12 @@ describe("createFunction", () => {
           { id: "test" },
           { event: "foo" },
           ({ event }) => {
-            assertType<`${internalEvents.FunctionInvoked}` | "foo">(event.name);
+            assertType<
+              IsEqual<
+                `${internalEvents.FunctionInvoked}` | "foo",
+                typeof event.name
+              >
+            >(true);
             assertType<{ title: string }>(event.data);
           }
         );
@@ -858,6 +843,111 @@ describe("createFunction", () => {
           { event: "foo", cron: "test" },
           ({ event }) => {
             assertType<unknown>(event);
+          }
+        );
+      });
+
+      test("allows no triggers (and no schema) with an empty array", () => {
+        inngest.createFunction({ id: "test" }, [], ({ event }) => {
+          assertType<
+            IsEqual<`${internalEvents.FunctionInvoked}`, typeof event.name>
+          >(true);
+          assertType<IsAny<typeof event.data>>(true);
+        });
+      });
+
+      test("allows multiple event triggers", () => {
+        inngest.createFunction(
+          { id: "test" },
+          [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
+          ({ event, events }) => {
+            // `event` should represent all possible triggers
+            assertType<
+              IsEqual<
+                | `${internalEvents.FunctionInvoked}`
+                | `${internalEvents.ScheduledTimer}`
+                | "foo"
+                | "bar",
+                typeof event.name
+              >
+            >(true);
+
+            // Without narrowing, `event.data` should be the union of all
+            // possible data
+            assertType<
+              IsEqual<
+                { cron: string } | { title: string } | { message: string },
+                typeof event.data
+              >
+            >(true);
+
+            // Type narrowing should allow for specific data access
+            switch (event.name) {
+              case "inngest/scheduled.timer":
+                assertType<
+                  IsEqual<`${internalEvents.ScheduledTimer}`, typeof event.name>
+                >(true);
+                assertType<IsEqual<{ cron: string }, typeof event.data>>(true);
+                break;
+              case "foo":
+                assertType<IsEqual<"foo", typeof event.name>>(true);
+                assertType<IsEqual<{ title: string }, typeof event.data>>(true);
+                break;
+              case "bar":
+                assertType<IsEqual<"bar", typeof event.name>>(true);
+                assertType<{ message: string }>(event.data);
+                break;
+              case "inngest/function.invoked":
+                assertType<
+                  IsEqual<"inngest/function.invoked", typeof event.name>
+                >(true);
+                assertType<
+                  IsEqual<
+                    { cron: string } | { title: string } | { message: string },
+                    typeof event.data
+                  >
+                >(true);
+                break;
+              default:
+                // Proves we have exhausted all possibilities
+                assertType<IsNever<typeof event>>(true);
+            }
+
+            // `events` should omit internal triggers, as they are not
+            // batched
+            assertType<IsEqual<"foo" | "bar", (typeof events)[number]["name"]>>(
+              true
+            );
+
+            // Without narrowing, `event.data` should be the union of all
+            // possible data, excluding internal triggers
+            assertType<
+              IsEqual<
+                { title: string } | { message: string },
+                (typeof events)[number]["data"]
+              >
+            >(true);
+
+            // Type narrowing should allow for specific data access
+            switch (events[0].name) {
+              case "foo":
+                assertType<"foo">(events[0].name);
+                assertType<{ title: string }>(events[0].data);
+
+                // Proves that each event can be different
+                assertType<"foo" | "bar" | undefined>(events[1]?.name);
+                break;
+              case "bar":
+                assertType<"bar">(events[0].name);
+                assertType<{ message: string }>(events[0].data);
+
+                // Proves that each event can be different
+                assertType<"foo" | "bar" | undefined>(events[1]?.name);
+                break;
+              default:
+                // Proves we have exhausted all possibilities
+                assertType<never>(events[0]);
+            }
           }
         );
       });
@@ -912,6 +1002,7 @@ describe("helper types", () => {
         | `${internalEvents.FunctionFailed}`
         | `${internalEvents.FunctionFinished}`
         | `${internalEvents.FunctionInvoked}`
+        | `${internalEvents.ScheduledTimer}`
         | "foo"
         | "bar";
       type Actual = T0["event"]["name"];

@@ -23,7 +23,7 @@ import {
 } from "@local/helpers/consts";
 import { type Env } from "@local/helpers/env";
 import { slugify } from "@local/helpers/strings";
-import { EventPayload, type FunctionTrigger } from "@local/types";
+import { EventPayload, type FunctionConfig } from "@local/types";
 import { fromPartial } from "@total-typescript/shoehorn";
 import fetch from "cross-fetch";
 import { type Request, type Response } from "express";
@@ -1213,7 +1213,7 @@ export const runHasTimeline = async (
 
 interface CheckIntrospection {
   name: string;
-  triggers: FunctionTrigger[];
+  triggers: FunctionConfig["triggers"];
 }
 
 export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {

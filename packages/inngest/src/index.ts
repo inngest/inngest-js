@@ -50,8 +50,6 @@ export type {
   FailureEventArgs,
   FailureEventPayload,
   FinishedEventPayload,
-  FunctionOptions,
-  FunctionTrigger,
   Handler,
   LogLevel,
   OutgoingOp,
@@ -60,5 +58,4 @@ export type {
   StepOptions,
   StepOptionsOrId,
   TimeStr,
-  TriggerOptions,
 } from "./types";

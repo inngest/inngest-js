@@ -19,7 +19,6 @@ import {
   StepOpCode,
   failureEventErrorSchema,
   type BaseContext,
-  type ClientOptions,
   type Context,
   type EventPayload,
   type FailureEventArgs,
@@ -29,6 +28,7 @@ import {
   type OpStack,
   type OutgoingOp,
 } from "../../types";
+import { type Inngest } from "../Inngest";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware";
 import {
   createStepTools,
@@ -246,7 +246,7 @@ export class V0InngestExecution
 
   private async initializeMiddleware(): Promise<RunHookStack> {
     const ctx = this.options.data as Pick<
-      Readonly<BaseContext<ClientOptions, string>>,
+      Readonly<BaseContext<Inngest.Any>>,
       "event" | "events" | "runId"
     >;
 
@@ -314,8 +314,7 @@ export class V0InngestExecution
 
   private getUserFnToRun(): Handler.Any {
     if (!this.options.isFailureHandler) {
-      // TODO: Review; inferred types results in an `any` here!
-      return this.options.fn["fn"] as Handler.Any;
+      return this.options.fn["fn"];
     }
 
     if (!this.options.fn["onFailureFn"]) {
@@ -326,6 +325,7 @@ export class V0InngestExecution
       throw new Error("Cannot find function `onFailure` handler");
     }
 
+    // TODO: Review; inferred types results in an `any` here!
     return this.options.fn["onFailureFn"];
   }
 

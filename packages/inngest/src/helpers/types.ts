@@ -6,6 +6,48 @@ import { type EventPayload } from "../types";
 export type SingleOrArray<T> = T | T[];
 
 /**
+ * Given type `T`, return it as an array if it is not already an array.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AsArray<T> = T extends any[] ? T : [T];
+
+/**
+ * Given type `T`, return a tuple of `T` that contains at least one element,
+ * where `T` is not distributed, such that each array element could be any type
+ * that satisfies `T`.
+ *
+ * See also {@link AsDistributedTuple}.
+ *
+ * @example
+ * ```ts
+ * // ["foo", ..."foo"[]]
+ * type T0 = AsTuple<"foo">;
+ *
+ * // ["foo" | "bar", ...("foo" | "bar")[]]
+ * type T1 = AsTuple<"foo" | "bar">;
+ */
+export type AsTuple<T> = Simplify<[T, ...T[]]>;
+
+/**
+ * Given type `T`, return a tuple of `T` that contains at least one element,
+ * where `T` is also distributed, such that the array can be type narrowed by
+ * checking a single element.
+ *
+ * See also {@link AsTuple}.
+ *
+ * @example
+ * ```ts
+ *  // ["foo", ..."foo"[]]
+ * type T0 = AsDistributedTuple<"foo">;
+ *
+ * // ["foo", ..."foo"[]] | ["bar", ..."bar"[]]
+ * type T1 = AsDistributedTuple<"foo" | "bar">;
+ * ```
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AsDistributedTuple<T> = T extends any ? [T, ...T[]] : never;
+
+/**
  * Returns the given generic as either itself or a promise of itself.
  */
 export type MaybePromise<T> = T | Promise<T>;

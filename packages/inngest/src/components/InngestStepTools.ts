@@ -11,7 +11,6 @@ import {
 } from "../helpers/types";
 import {
   StepOpCode,
-  type ClientOptions,
   type EventPayload,
   type HashedOp,
   type InvocationResult,
@@ -21,9 +20,11 @@ import {
   type StepOptions,
   type StepOptionsOrId,
   type TriggerEventFromFunction,
+  type TriggersFromClient,
 } from "../types";
 import {
-  type EventsFromOpts,
+  type ClientOptionsFromInngest,
+  type GetEvents,
   type GetFunctionOutput,
   type Inngest,
 } from "./Inngest";
@@ -118,11 +119,10 @@ export const STEP_INDEXING_SUFFIX = ":";
  * that the tools can use to submit a new op.
  */
 export const createStepTools = <
-  TOpts extends ClientOptions,
-  Events extends EventsFromOpts<TOpts>,
-  TriggeringEvent extends keyof Events & string,
+  TClient extends Inngest.Any,
+  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
 >(
-  client: Inngest<TOpts>,
+  client: TClient,
   stepHandler: StepHandler
 ) => {
   /**
@@ -185,10 +185,10 @@ export const createStepTools = <
      * Returns a promise that will resolve once the event has been sent.
      */
     sendEvent: createTool<{
-      <Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
+      <Payload extends SendEventPayload<GetEvents<TClient>>>(
         idOrOptions: StepOptionsOrId,
         payload: Payload
-      ): Promise<SendEventOutput<TOpts>>;
+      ): Promise<SendEventOutput<ClientOptionsFromInngest<TClient>>>;
     }>(
       ({ id, name }) => {
         return {
@@ -216,12 +216,16 @@ export const createStepTools = <
      * returning `null` instead of any event data.
      */
     waitForEvent: createTool<
-      <IncomingEvent extends keyof Events & string>(
+      <IncomingEvent extends TriggersFromClient<TClient>>(
         idOrOptions: StepOptionsOrId,
-        opts: WaitForEventOpts<Events, TriggeringEvent, IncomingEvent>
+        opts: WaitForEventOpts<
+          GetEvents<TClient, true>,
+          TTriggers & string,
+          IncomingEvent
+        >
       ) => Promise<
-        IncomingEvent extends keyof Events
-          ? Events[IncomingEvent] | null
+        IncomingEvent extends TriggersFromClient<TClient>
+          ? GetEvents<TClient, true>[IncomingEvent] | null
           : IncomingEvent | null
       >
     >(
