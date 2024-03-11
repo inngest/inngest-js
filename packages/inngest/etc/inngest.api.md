@@ -496,11 +496,11 @@ export enum queryKeys {
     StepId = "stepId"
 }
 
-// Warning: (ae-forgotten-export) The symbol "ValidZodValue" needs to be exported by the entry point index.d.ts
-// Warning: (ae-forgotten-export) The symbol "ZodTypeAny" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "ValidSchemaInput" needs to be exported by the entry point index.d.ts
+// Warning: (ae-forgotten-export) The symbol "ValidSchemaOutput" needs to be exported by the entry point index.d.ts
 //
 // @public
-export const referenceFunction: <TArgs extends InngestFunctionReference.HelperGenericArgs<TFnInput, TFnOutput>, TFnInput extends ValidZodValue = ValidZodValue, TFnOutput extends ZodTypeAny = ZodTypeAny>({ functionId, appId, }: TArgs extends InngestFunction.Any ? Omit<InngestFunctionReference.HelperArgs<any, any>, "schemas"> : TArgs) => InngestFunctionReference.HelperReturn<TArgs>;
+export const referenceFunction: <TArgs extends InngestFunctionReference.HelperGenericArgs<TFnInput, TFnOutput>, TFnInput extends ValidSchemaInput = ValidSchemaInput, TFnOutput extends ValidSchemaOutput = ValidSchemaOutput>({ functionId, appId, }: TArgs extends InngestFunction.Any ? Omit<InngestFunctionReference.HelperArgs<any, any>, "schemas"> : TArgs) => InngestFunctionReference.HelperReturn<TArgs>;
 
 // @public
 export interface RegisterOptions {
