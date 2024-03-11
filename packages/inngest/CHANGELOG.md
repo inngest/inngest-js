@@ -1,5 +1,11 @@
 # inngest
 
+## 3.16.0
+
+### Minor Changes
+
+- [#497](https://github.com/inngest/inngest-js/pull/497) [`e12c8a6`](https://github.com/inngest/inngest-js/commit/e12c8a6850bdf0b40d064951f25fcb8e69df3262) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add the ability to define multiple triggers when creating a function
+
 ## 3.15.5
 
 ### Patch Changes
