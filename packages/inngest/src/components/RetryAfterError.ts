@@ -21,7 +21,7 @@ export class RetryAfterError extends Error {
 
   /**
    * The time after which the function should be retried. Represents either a
-   * number of seconds or a RFC3339 date.
+   * number of milliseconds or a RFC3339 date.
    */
   public readonly retryAfter: string;
 
@@ -30,7 +30,7 @@ export class RetryAfterError extends Error {
 
     /**
      * The time after which the function should be retried. Represents either a
-     * number of seconds or a RFC3339 date.
+     * number of milliseconds or a RFC3339 date.
      */
     retryAfter: number | string | Date,
 
@@ -54,7 +54,7 @@ export class RetryAfterError extends Error {
 
       if (!isFinite(Number(seconds))) {
         throw new Error(
-          "retryAfter must be a number of seconds, a ms-compatible string, or a Date"
+          "retryAfter must be a number of milliseconds, a ms-compatible string, or a Date"
         );
       }
 
