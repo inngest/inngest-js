@@ -376,10 +376,6 @@ export class V0InngestExecution
 
     const stepHandler: StepHandler = ({ args, matchOp, opts }) => {
       if (this.state.nonStepFnDetected) {
-        if (opts?.nonStepExecuteInline && opts.fn) {
-          return Promise.resolve(opts.fn(...args));
-        }
-
         throw new NonRetriableError(
           functionStoppedRunningErr(ErrCode.STEP_USED_AFTER_ASYNC)
         );

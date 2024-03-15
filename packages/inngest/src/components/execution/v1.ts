@@ -749,11 +749,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }): Promise<unknown> => {
       await beforeExecHooksPromise;
 
-      if (!this.state.hasSteps && opts?.nonStepExecuteInline && opts.fn) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        return runAsPromise(() => opts.fn?.(...args));
-      }
-
       if (this.state.executingStep) {
         /**
          * If a step is found after asynchronous actions during another step's
