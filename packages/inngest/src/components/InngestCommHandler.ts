@@ -722,12 +722,35 @@ export class InngestCommHandler<
           (await getQuerystring("processing run request", queryKeys.StepId)) ||
           null;
 
+        const headersToForward = [
+          headerKeys.TraceParent,
+          headerKeys.TraceState,
+        ];
+
+        const headers = await headersToForward.reduce<
+          Promise<Record<string, string>>
+        >(async (acc, header) => {
+          const value = await actions.headers(
+            `fetching ${header} for forwarding`,
+            header
+          );
+          if (value) {
+            return {
+              ...(await acc),
+              [header]: value,
+            };
+          }
+
+          return acc;
+        }, Promise.resolve({}));
+
         const { version, result } = this.runStep({
           functionId: fnId,
           data: body,
           stepId,
           timer,
           reqArgs,
+          headers,
         });
         const stepOutput = await result;
 
@@ -901,12 +924,14 @@ export class InngestCommHandler<
     data,
     timer,
     reqArgs,
+    headers,
   }: {
     functionId: string;
     stepId: string | null;
     data: unknown;
     timer: ServerTiming;
     reqArgs: unknown[];
+    headers: Record<string, string>;
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
     const fn = this.fns[functionId];
     if (!fn) {
@@ -972,6 +997,7 @@ export class InngestCommHandler<
               isFailureHandler: fn.onFailure,
               stepCompletionOrder: ctx?.stack?.stack ?? [],
               reqArgs,
+              headers,
             },
           };
         },
@@ -1007,6 +1033,7 @@ export class InngestCommHandler<
               disableImmediateExecution: ctx?.disable_immediate_execution,
               stepCompletionOrder: ctx?.stack?.stack ?? [],
               reqArgs,
+              headers,
             },
           };
         },
