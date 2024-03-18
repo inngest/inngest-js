@@ -54,6 +54,11 @@ export interface InngestExecutionOptions {
   data: Omit<Context.Any, "step">;
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
+
+  /**
+   * Headers to be sent with any request to Inngest during this execution.
+   */
+  headers: Record<string, string>;
   requestedRunStep?: string;
   timer?: ServerTiming;
   isFailureHandler?: boolean;
