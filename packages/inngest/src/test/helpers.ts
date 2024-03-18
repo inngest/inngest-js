@@ -11,6 +11,8 @@ import {
 } from "@local/components/InngestStepTools";
 import {
   ExecutionVersion,
+  IInngestExecution,
+  InngestExecution,
   InngestExecutionOptions,
   PREFERRED_EXECUTION_VERSION,
 } from "@local/components/execution/InngestExecution";
@@ -64,9 +66,31 @@ export const createClient = <T extends ConstructorParameters<typeof Inngest>>(
 export const testClientId = "__test_client__";
 
 export const getStepTools = (
-  client: Inngest.Any = createClient({ id: testClientId })
+  client: Inngest.Any = createClient({ id: testClientId }),
+  executionOptions: Partial<InngestExecutionOptions> = {}
 ) => {
-  const step = createStepTools(client, ({ args, matchOp }) => {
+  const execution = client
+    .createFunction({ id: "test" }, { event: "test" }, () => undefined)
+    ["createExecution"]({
+      version: PREFERRED_EXECUTION_VERSION,
+      partialOptions: {
+        data: fromPartial({
+          event: { name: "foo", data: {} },
+        }),
+        runId: "run",
+        stepState: {},
+        stepCompletionOrder: [],
+        isFailureHandler: false,
+        requestedRunStep: undefined,
+        timer: new ServerTiming(),
+        disableImmediateExecution: false,
+        reqArgs: [],
+        headers: {},
+        ...executionOptions,
+      },
+    }) as IInngestExecution & InngestExecution;
+
+  const step = createStepTools(client, execution, ({ args, matchOp }) => {
     const stepOptions = getStepOptions(args[0]);
     return Promise.resolve(matchOp(stepOptions, ...args.slice(1)));
   });
@@ -106,6 +130,7 @@ export const runFnWithStack = (
       timer: new ServerTiming(),
       disableImmediateExecution: opts?.disableImmediateExecution,
       reqArgs: [],
+      headers: {},
     },
   });
 
