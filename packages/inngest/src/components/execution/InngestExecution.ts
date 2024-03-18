@@ -68,7 +68,6 @@ export class InngestExecution {
   protected debug: Debugger;
 
   constructor(protected options: InngestExecutionOptions) {
-    this.options = options;
     this.debug = Debug(debugPrefix).extend(this.options.runId);
   }
 }
