@@ -618,6 +618,10 @@ export interface ClientOptions {
    *
    * By default the library will try to use the native Web API fetch, falling
    * back to a Node implementation if no global fetch can be found.
+   *
+   * If you wish to specify your own fetch, make sure that you preserve its
+   * binding, either by using `.bind` or by wrapping it in an anonymous
+   * function.
    */
   fetch?: typeof fetch;
 
