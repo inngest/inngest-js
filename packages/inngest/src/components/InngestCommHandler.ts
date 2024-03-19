@@ -773,7 +773,9 @@ export class InngestCommHandler<
                 [headerKeys.NoRetry]: "false",
               },
               body: stringify({
-                error: `Could not find step "${result.step.id}" to run; timed out`,
+                error: `Could not find step "${
+                  result.step.displayName || result.step.id
+                }" to run; timed out`,
               }),
               version,
             };
