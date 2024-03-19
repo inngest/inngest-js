@@ -1,5 +1,19 @@
 # inngest
 
+## 3.16.1
+
+### Patch Changes
+
+- [#518](https://github.com/inngest/inngest-js/pull/518) [`bc494da`](https://github.com/inngest/inngest-js/commit/bc494da7477c44fc4cfb1ff983a92abbc31cfd23) Thanks [@jpwilliams](https://github.com/jpwilliams)! - INN-2861 No longer execute `step.sendEvent()` inline
+
+  To send an event in a function without making it a step function, use `inngest.send()` instead.
+
+- [#519](https://github.com/inngest/inngest-js/pull/519) [`775fee7`](https://github.com/inngest/inngest-js/commit/775fee71794d32058d4188c079915fbf54e07660) Thanks [@jpwilliams](https://github.com/jpwilliams)! - When timing out during parallel recovery, will now prefer logging the step's name instead of its internal hashed ID
+
+- [#517](https://github.com/inngest/inngest-js/pull/517) [`f8a8f7b`](https://github.com/inngest/inngest-js/commit/f8a8f7b24a55b46c2d70749702babfc8ebda5428) Thanks [@wtachau](https://github.com/wtachau)! - Fix `RetryAfterError` comments; it accepts milliseconds as a `number`, not seconds
+
+- [#521](https://github.com/inngest/inngest-js/pull/521) [`9aa3979`](https://github.com/inngest/inngest-js/commit/9aa397927ec40530a67c10d3040ca250193b4d3f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - INN-2880 Add warning if `fetch` fails and is a custom implementation
+
 ## 3.16.0
 
 ### Minor Changes
