@@ -31,7 +31,6 @@ import fetch from "cross-fetch";
 import { type Request, type Response } from "express";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
-import { ulid } from "ulid";
 import { z } from "zod";
 
 interface HandlerStandardReturn {
@@ -939,19 +938,19 @@ export const sendEvent = async (
   data?: Record<string, unknown>,
   user?: Record<string, unknown>
 ): Promise<string> => {
-  const id = ulid();
-
   const res = await fetch("http://localhost:8288/e/key", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ id, name, data: data || {}, user, ts: Date.now() }),
+    body: JSON.stringify({ name, data: data || {}, user, ts: Date.now() }),
   });
 
   if (!res.ok) {
     throw new Error(await res.text());
   }
+
+  const id = (await res.json()).ids[0];
 
   return id;
 };
