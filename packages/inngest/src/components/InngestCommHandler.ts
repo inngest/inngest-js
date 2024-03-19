@@ -727,22 +727,27 @@ export class InngestCommHandler<
           headerKeys.TraceState,
         ];
 
-        const headers = await headersToForward.reduce<
-          Promise<Record<string, string>>
-        >(async (acc, header) => {
+        const headerPromises = headersToForward.map(async (header) => {
           const value = await actions.headers(
             `fetching ${header} for forwarding`,
             header
           );
-          if (value) {
-            return {
-              ...(await acc),
-              [header]: value,
-            };
-          }
 
-          return acc;
-        }, Promise.resolve({}));
+          return { header, value };
+        });
+
+        const fetchedHeaders = await Promise.all(headerPromises);
+
+        const headers = fetchedHeaders.reduce<Record<string, string>>(
+          (acc, { header, value }) => {
+            if (value) {
+              acc[header] = value;
+            }
+
+            return acc;
+          },
+          {}
+        );
 
         const { version, result } = this.runStep({
           functionId: fnId,
