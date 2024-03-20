@@ -62,12 +62,12 @@ Write serverless functions and background jobs right in your own code:
 ```ts
 import { Inngest } from "inngest";
 
-const inngest = new Inngest({ name: "My App" });
+const inngest = new Inngest({ id: "My App" });
 
 // This function will be invoked by Inngest via HTTP any time
 // the "app/user.signup" event is sent to to Inngest
 export default inngest.createFunction(
-  { name: "User onboarding communication" },
+  { id: "User onboarding communication" },
   { event: "app/user.signup" },
   async ({ event, step }) => {
     await step.run("Send welcome email", async () => {
@@ -95,7 +95,7 @@ import { serve } from "inngest/next";
 import myFunction from "../userOnboardingCOmmunication"; // see above function
 
 // You can create this in a single file and import where it's needed
-const inngest = new Inngest({ name: "My App" });
+const inngest = new Inngest({ id: "My App" });
 
 // Securely serve your Inngest functions for remote invocation:
 export default serve(inngest, [myFunction]);
@@ -106,7 +106,7 @@ export default serve(inngest, [myFunction]);
 ```ts
 // Send events
 import { Inngest } from "inngest";
-const inngest = new Inngest({ name: "My App" });
+const inngest = new Inngest({ id: "My App" });
 
 // This will run the function above automatically, in the background
 inngest.send("app/user.signup", {
