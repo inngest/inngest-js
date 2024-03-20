@@ -7,6 +7,7 @@
     Inngest is the reliability layer for modern applications. It combines durable execution, events, and queues into a zero-infra platform with built-in observability.
 
     Inngest enables serverless event-driven queues, background jobs, and scheduled jobs for TypeScript. Works with any framework and platform.
+
   </p>
   Read the <a href="https://www.inngest.com/docs?ref=github-inngest-js-readme">documentation</a> and get started in minutes.
   <br/>
@@ -62,12 +63,12 @@ Write serverless functions and background jobs right in your own code:
 ```ts
 import { Inngest } from "inngest";
 
-const inngest = new Inngest({ id: "My App" });
+const inngest = new Inngest({ id: "my-app" });
 
 // This function will be invoked by Inngest via HTTP any time
 // the "app/user.signup" event is sent to to Inngest
 export default inngest.createFunction(
-  { id: "User onboarding communication" },
+  { id: "user-onboarding-communication" },
   { event: "app/user.signup" },
   async ({ event, step }) => {
     await step.run("Send welcome email", async () => {
@@ -95,7 +96,7 @@ import { serve } from "inngest/next";
 import myFunction from "../userOnboardingCOmmunication"; // see above function
 
 // You can create this in a single file and import where it's needed
-const inngest = new Inngest({ id: "My App" });
+const inngest = new Inngest({ id: "my-app" });
 
 // Securely serve your Inngest functions for remote invocation:
 export default serve(inngest, [myFunction]);
@@ -106,7 +107,7 @@ export default serve(inngest, [myFunction]);
 ```ts
 // Send events
 import { Inngest } from "inngest";
-const inngest = new Inngest({ id: "My App" });
+const inngest = new Inngest({ id: "my-app" });
 
 // This will run the function above automatically, in the background
 inngest.send("app/user.signup", {
