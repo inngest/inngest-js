@@ -722,12 +722,9 @@ export class InngestCommHandler<
           (await getQuerystring("processing run request", queryKeys.StepId)) ||
           null;
 
-        const headersToForward = [
-          headerKeys.TraceParent,
-          headerKeys.TraceState,
-        ];
+        const headersToFetch = [headerKeys.TraceParent, headerKeys.TraceState];
 
-        const headerPromises = headersToForward.map(async (header) => {
+        const headerPromises = headersToFetch.map(async (header) => {
           const value = await actions.headers(
             `fetching ${header} for forwarding`,
             header
@@ -738,7 +735,7 @@ export class InngestCommHandler<
 
         const fetchedHeaders = await Promise.all(headerPromises);
 
-        const headers = fetchedHeaders.reduce<Record<string, string>>(
+        const headersToForward = fetchedHeaders.reduce<Record<string, string>>(
           (acc, { header, value }) => {
             if (value) {
               acc[header] = value;
@@ -755,7 +752,7 @@ export class InngestCommHandler<
           stepId,
           timer,
           reqArgs,
-          headers,
+          headers: headersToForward,
         });
         const stepOutput = await result;
 
@@ -774,6 +771,7 @@ export class InngestCommHandler<
               status: result.retriable ? 500 : 400,
               headers: {
                 "Content-Type": "application/json",
+                ...headersToForward,
                 [headerKeys.NoRetry]: result.retriable ? "false" : "true",
                 ...(typeof result.retriable === "string"
                   ? { [headerKeys.RetryAfter]: result.retriable }
@@ -788,6 +786,7 @@ export class InngestCommHandler<
               status: 200,
               headers: {
                 "Content-Type": "application/json",
+                ...headersToForward,
               },
               body: stringify(undefinedToNull(result.data)),
               version,
@@ -798,6 +797,7 @@ export class InngestCommHandler<
               status: 500,
               headers: {
                 "Content-Type": "application/json",
+                ...headersToForward,
                 [headerKeys.NoRetry]: "false",
               },
               body: stringify({
@@ -815,6 +815,7 @@ export class InngestCommHandler<
               status: 206,
               headers: {
                 "Content-Type": "application/json",
+                ...headersToForward,
                 ...(typeof result.retriable !== "undefined"
                   ? {
                       [headerKeys.NoRetry]: result.retriable ? "false" : "true",
@@ -833,7 +834,10 @@ export class InngestCommHandler<
 
             return {
               status: 206,
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                ...headersToForward,
+              },
               body: stringify(steps),
               version,
             };
