@@ -86,16 +86,6 @@ export interface StepToolOptions<
    * `data` property.
    */
   fn?: (...args: Parameters<T>) => unknown;
-
-  /**
-   * If `true` and we have detected that this is a  non-step function, the
-   * provided `fn` will be called and the result returned immediately
-   * instead of being executed later.
-   *
-   * If no `fn` is provided to the tool, this will throw the same error as
-   * if this setting was `false`.
-   */
-  nonStepExecuteInline?: boolean;
 }
 
 export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
@@ -201,7 +191,6 @@ export const createStepTools = <
         };
       },
       {
-        nonStepExecuteInline: true,
         fn: (idOrOptions, payload) => {
           return client["_send"]({
             payload,

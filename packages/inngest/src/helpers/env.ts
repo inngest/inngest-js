@@ -439,12 +439,51 @@ export const platformSupportsStreaming = (
 };
 
 /**
+ * A unique symbol used to mark a custom fetch implementation. We wrap the
+ * implementations to provide some extra control when handling errors.
+ */
+const CUSTOM_FETCH_MARKER = Symbol("Custom fetch implementation");
+
+/**
  * Given a potential fetch function, return the fetch function to use based on
  * this and the environment.
  */
 export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
+  /**
+   * If we've explicitly been given a fetch function, use that.
+   */
   if (givenFetch) {
-    return givenFetch;
+    if (CUSTOM_FETCH_MARKER in givenFetch) {
+      return givenFetch;
+    }
+
+    /**
+     * We wrap the given fetch function to provide some extra control when
+     * handling errors.
+     */
+    const customFetch: typeof fetch = async (...args) => {
+      try {
+        return await givenFetch(...args);
+      } catch (err) {
+        console.warn(
+          "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope."
+        );
+        throw err;
+      }
+    };
+
+    /**
+     * Mark the custom fetch implementation so that we can identify it later, in
+     * addition to adding some runtime properties to it to make it seem as much
+     * like the original fetch as possible.
+     */
+    Object.defineProperties(customFetch, {
+      [CUSTOM_FETCH_MARKER]: {},
+      name: { value: givenFetch.name },
+      length: { value: givenFetch.length },
+    });
+
+    return customFetch;
   }
 
   /**
