@@ -722,12 +722,37 @@ export class InngestCommHandler<
           (await getQuerystring("processing run request", queryKeys.StepId)) ||
           null;
 
+        const headersToFetch = [headerKeys.TraceParent, headerKeys.TraceState];
+
+        const headerPromises = headersToFetch.map(async (header) => {
+          const value = await actions.headers(
+            `fetching ${header} for forwarding`,
+            header
+          );
+
+          return { header, value };
+        });
+
+        const fetchedHeaders = await Promise.all(headerPromises);
+
+        const headersToForward = fetchedHeaders.reduce<Record<string, string>>(
+          (acc, { header, value }) => {
+            if (value) {
+              acc[header] = value;
+            }
+
+            return acc;
+          },
+          {}
+        );
+
         const { version, result } = this.runStep({
           functionId: fnId,
           data: body,
           stepId,
           timer,
           reqArgs,
+          headers: headersToForward,
         });
         const stepOutput = await result;
 
@@ -746,6 +771,7 @@ export class InngestCommHandler<
               status: result.retriable ? 500 : 400,
               headers: {
                 "Content-Type": "application/json",
+                ...headersToForward,
                 [headerKeys.NoRetry]: result.retriable ? "false" : "true",
                 ...(typeof result.retriable === "string"
                   ? { [headerKeys.RetryAfter]: result.retriable }
@@ -760,6 +786,7 @@ export class InngestCommHandler<
               status: 200,
               headers: {
                 "Content-Type": "application/json",
+                ...headersToForward,
               },
               body: stringify(undefinedToNull(result.data)),
               version,
@@ -770,6 +797,7 @@ export class InngestCommHandler<
               status: 500,
               headers: {
                 "Content-Type": "application/json",
+                ...headersToForward,
                 [headerKeys.NoRetry]: "false",
               },
               body: stringify({
@@ -787,6 +815,7 @@ export class InngestCommHandler<
               status: 206,
               headers: {
                 "Content-Type": "application/json",
+                ...headersToForward,
                 ...(typeof result.retriable !== "undefined"
                   ? {
                       [headerKeys.NoRetry]: result.retriable ? "false" : "true",
@@ -805,7 +834,10 @@ export class InngestCommHandler<
 
             return {
               status: 206,
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                ...headersToForward,
+              },
               body: stringify(steps),
               version,
             };
@@ -903,12 +935,14 @@ export class InngestCommHandler<
     data,
     timer,
     reqArgs,
+    headers,
   }: {
     functionId: string;
     stepId: string | null;
     data: unknown;
     timer: ServerTiming;
     reqArgs: unknown[];
+    headers: Record<string, string>;
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
     const fn = this.fns[functionId];
     if (!fn) {
@@ -974,6 +1008,7 @@ export class InngestCommHandler<
               isFailureHandler: fn.onFailure,
               stepCompletionOrder: ctx?.stack?.stack ?? [],
               reqArgs,
+              headers,
             },
           };
         },
@@ -1009,6 +1044,7 @@ export class InngestCommHandler<
               disableImmediateExecution: ctx?.disable_immediate_execution,
               stepCompletionOrder: ctx?.stack?.stack ?? [],
               reqArgs,
+              headers,
             },
           };
         },

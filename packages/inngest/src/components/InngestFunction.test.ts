@@ -156,6 +156,7 @@ describe("runFn", () => {
                 stepState: {},
                 stepCompletionOrder: [],
                 reqArgs: [],
+                headers: {},
               },
             });
 
@@ -200,6 +201,7 @@ describe("runFn", () => {
                 runId: "run",
                 stepCompletionOrder: [],
                 reqArgs: [],
+                headers: {},
               },
             });
 

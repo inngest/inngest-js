@@ -854,7 +854,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       return promise;
     };
 
-    return createStepTools(this.options.client, stepHandler);
+    return createStepTools(this.options.client, this, stepHandler);
   }
 
   private getUserFnToRun(): Handler.Any {
