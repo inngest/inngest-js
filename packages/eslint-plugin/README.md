@@ -1,8 +1,5 @@
 # `@inngest/eslint-plugin`
 
-> [!WARNING]
-> This package is currently in alpha and is undocumented. Use with caution.
-
 An ESLint plugin and config for [`inngest`](/packages/inngest/).
 
 ## Getting started
@@ -22,7 +19,7 @@ Add the plugin to your ESLint configuration file with the recommended config.
 }
 ```
 
-You can also manually configure each rule instead of using the `plugin:@inngest/recommend` config.
+You can also manually configure each rule instead of using the `plugin:@inngest/recommended` config.
 
 ```json
 {
