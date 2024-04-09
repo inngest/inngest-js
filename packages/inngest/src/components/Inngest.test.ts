@@ -141,13 +141,16 @@ describe("send", () => {
       error,
     }: Partial<SendEventResponse> = {}) => {
       return jest.fn((url: string, opts: { body: string }) => {
-        const json = {
-          status,
-          ids:
-            ids ??
-            (JSON.parse(opts.body) as EventPayload[]).map(() => "test-id"),
-          error,
-        };
+        const json = error
+          ? {
+              error,
+            }
+          : {
+              status,
+              ids:
+                ids ??
+                (JSON.parse(opts.body) as EventPayload[]).map(() => "test-id"),
+            };
 
         return Promise.resolve({
           status,
