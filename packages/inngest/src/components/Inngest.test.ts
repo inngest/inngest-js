@@ -165,7 +165,12 @@ describe("send", () => {
     };
 
     beforeAll(() => {
-      global.fetch = setFetch();
+      Object.defineProperties(global, {
+        fetch: {
+          value: setFetch(),
+          configurable: true,
+        },
+      });
     });
 
     beforeEach(() => {
@@ -174,7 +179,13 @@ describe("send", () => {
     });
 
     afterAll(() => {
-      global.fetch = originalFetch;
+      Object.defineProperties(global, {
+        fetch: {
+          value: originalFetch,
+          configurable: true,
+        },
+      });
+
       process.env = originalProcessEnv;
     });
 
