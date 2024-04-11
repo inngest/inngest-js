@@ -1,3 +1,4 @@
+import { type Temporal } from "@js-temporal/polyfill";
 import { z } from "zod";
 import { logPrefix } from "../helpers/consts";
 import { type Jsonify } from "../helpers/jsonify";
@@ -317,7 +318,12 @@ export const createStepTools = <
         /**
          * The amount of time to wait before continuing.
          */
-        time: number | string
+        time:
+          | number
+          | string
+          | Temporal.Duration
+          | Temporal.Instant
+          | Temporal.ZonedDateTime
       ) => Promise<void>
     >(({ id, name }, time) => {
       /**
