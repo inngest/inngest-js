@@ -1,7 +1,13 @@
+import { type Temporal } from "@js-temporal/polyfill";
 import { sha256 } from "hash.js";
 import { default as safeStringify } from "json-stringify-safe";
 import ms from "ms";
 import { type TimeStr } from "../types";
+import {
+  isTemporalDuration,
+  isTemporalInstant,
+  isTemporalZonedDateTime,
+} from "./temporal";
 
 /**
  * Safely `JSON.stringify()` an `input`, handling circular refernences and
@@ -56,24 +62,52 @@ const periods = [
 ] as const;
 
 /**
- * Convert a given `Date`, `number`, or `ms`-compatible `string` to a
+ * Convert a given `Date`, `Temporal`, `number`, or `ms`-compatible `string` to a
  * Inngest sleep-compatible time string (e.g. `"1d"` or `"2h3010s"`).
- *
- * Can optionally provide a `now` date to use as the base for the calculation,
- * otherwise a new date will be created on invocation.
  */
 export const timeStr = (
   /**
    * The future date to use to convert to a time string.
    */
-  input: string | number | Date
+  input:
+    | string
+    | number
+    | Date
+    | Temporal.Duration
+    | Temporal.DurationLike // TODO
+    | Temporal.Instant
+    | Temporal.ZonedDateTime
 ): string => {
-  if (input instanceof Date) {
-    return input.toISOString();
+  switch (true) {
+    case typeof input === "string":
+      return timeStrFromMs(ms(input));
+
+    case typeof input === "number":
+      return timeStrFromMs(input);
+
+    case input instanceof Date:
+      return input.toISOString();
+
+    case isTemporalDuration(input):
+      return timeStrFromMs(
+        input.round("millisecond").total({ unit: "millisecond" })
+      );
+
+    case isTemporalInstant(input):
+      return input.round("millisecond").toString();
+
+    case isTemporalZonedDateTime(input):
+      return input.toInstant().round("millisecond").toString();
+
+    default:
+      throw new Error(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        `Failed to create time string from input: ${input as any}`
+      );
   }
+};
 
-  const milliseconds: number = typeof input === "string" ? ms(input) : input;
-
+const timeStrFromMs = (ms: number): TimeStr => {
   const [, timeStr] = periods.reduce<[number, string]>(
     ([num, str], [suffix, period]) => {
       const numPeriods = Math.floor(num / period);
@@ -84,7 +118,7 @@ export const timeStr = (
 
       return [num, str];
     },
-    [milliseconds, ""]
+    [ms, ""]
   );
 
   return timeStr as TimeStr;
