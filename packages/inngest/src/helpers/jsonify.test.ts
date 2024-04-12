@@ -102,4 +102,41 @@ describe("Jsonify", () => {
       assertType<IsAny<Actual["foo"]["bar"]>>(true);
     });
   });
+
+  describe("#537", () => {
+    describe("nested { name: string; } object is preserved", () => {
+      test("when nullable", () => {
+        type Actual = Jsonify<{
+          profile: { name: string } | null;
+        }>;
+        type Expected = {
+          profile: { name: string } | null;
+        };
+
+        assertType<IsEqual<Actual, Expected>>(true);
+      });
+
+      test("when union with another object", () => {
+        type Actual = Jsonify<{
+          profile: { name: string } | { age: number };
+        }>;
+        type Expected = {
+          profile: { name: string } | { age: number };
+        };
+
+        assertType<IsEqual<Actual, Expected>>(true);
+      });
+
+      test("when union with another scalar", () => {
+        type Actual = Jsonify<{
+          profile: { name: string } | boolean;
+        }>;
+        type Expected = {
+          profile: { name: string } | boolean;
+        };
+
+        assertType<IsEqual<Actual, Expected>>(true);
+      });
+    });
+  });
 });
