@@ -277,6 +277,7 @@ checkDependencies("tsconfig.build.json", [
   "src/fastify.ts",
   "src/h3.ts",
   "src/koa.ts",
+  "src/hono.ts",
   "src/lambda.ts",
   "src/next.ts",
   "src/nuxt.ts",

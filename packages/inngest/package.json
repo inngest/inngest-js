@@ -115,6 +115,11 @@
       "import": "./deno/fresh.js",
       "types": "./deno/fresh.d.ts"
     },
+    "./hono": {
+      "require": "./hono.js",
+      "import": "./hono.js",
+      "types": "./hono.d.ts"
+    },
     "./api/*": "./api/*.js",
     "./components/*": "./components/*.js",
     "./deno/*": "./deno/*.js",
@@ -210,6 +215,7 @@
     "fastify": "^4.21.0",
     "genversion": "^3.1.1",
     "glob": "^10.3.10",
+    "hono": "^4.2.3",
     "inquirer": "^9.2.10",
     "jest": "^29.3.1",
     "koa": "^2.14.2",
