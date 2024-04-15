@@ -43,7 +43,7 @@ import {
   type RegisterOptions,
   type RegisterRequest,
   type SupportedFrameworkName,
-  SecureIntrospection,
+  type SecureIntrospection,
 } from "../types";
 import { version } from "../version";
 import { type Inngest } from "./Inngest";
