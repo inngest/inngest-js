@@ -364,6 +364,40 @@ export namespace InngestFunction {
     };
 
     /**
+     * Rate limit workflows, only running them a given number of times (limit) per
+     * period. This can optionally include a `key`, which is used to further
+     * constrain throttling similar to idempotency.
+     */
+    throttle?: {
+      /**
+       *  An optional expression which returns a throttling key for controlling throttling.
+       *  Every unique key is its own throttle limit.  Event data may be used within this
+       *  expression, eg "event.data.user_id".
+       */
+      key?: string;
+
+      /**
+       * The total number of runs allowed to start within the given `period`.  The limit is
+       * applied evenly over the period.
+       */
+      limit: number;
+
+      /**
+       * The period of time for the rate limit.  Run starts are evenly spaced through
+       * the given period.  The minimum granularity is 1 second.
+       */
+      period: TimeStr;
+
+      /**
+       * The number of runs allowed to start in the given window in a single burst.
+       * A burst > 1 bypasses smoothing for the burst and allows many runs to start
+       * at once, if desired.  Defaults to 1, which disables bursting.
+       */
+      burst?: number;
+    };
+
+
+    /**
      * Debounce delays functions for the `period` specified. If an event is sent,
      * the function will not run until at least `period` has elapsed.
      *
