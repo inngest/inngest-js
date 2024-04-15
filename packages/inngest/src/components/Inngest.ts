@@ -208,6 +208,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     this.inngestApi = new InngestApi({
       baseUrl: this.apiBaseUrl || defaultInngestApiBaseUrl,
       signingKey: processEnv(envKeys.InngestSigningKey) || "",
+      signingKeyFallback: processEnv(envKeys.InngestSigningKeyFallback),
       fetch: this.fetch,
     });
 
@@ -459,6 +460,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       }
     }
 
+    // We don't need to do fallback auth here because this uses event keys and
+    // not signing keys
     const response = await this.fetch(url, {
       method: "POST",
       body: stringify(payloads),

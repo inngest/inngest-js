@@ -12,32 +12,45 @@ import {
   type ErrorResponse,
   type StepsResponse,
 } from "./schema";
+import { fetchWithAuthFallback } from "inngest/helpers/net";
 
 type FetchT = typeof fetch;
 
 interface InngestApiConstructorOpts {
   baseUrl?: string;
   signingKey: string;
+  signingKeyFallback: string | undefined;
   fetch?: FetchT;
 }
 
 export class InngestApi {
   public readonly baseUrl: string;
   private signingKey: string;
+  private signingKeyFallback: string | undefined;
   private readonly fetch: FetchT;
 
   constructor({
     baseUrl = "https://api.inngest.com",
     signingKey,
+    signingKeyFallback,
     fetch,
   }: InngestApiConstructorOpts) {
     this.baseUrl = baseUrl;
     this.signingKey = signingKey;
+    this.signingKeyFallback = signingKeyFallback;
     this.fetch = getFetch(fetch);
   }
 
   private get hashedKey(): string {
     return hashSigningKey(this.signingKey);
+  }
+
+  private get hashedFallbackKey(): string | undefined {
+    if (!this.signingKeyFallback) {
+      return;
+    }
+
+    return hashSigningKey(this.signingKeyFallback);
   }
 
   // set the signing key in case it was not instantiated previously
@@ -47,14 +60,23 @@ export class InngestApi {
     }
   }
 
+  setSigningKeyFallback(key: string | undefined) {
+    if (typeof key === "string" && !this.signingKeyFallback) {
+      this.signingKeyFallback = key;
+    }
+  }
+
   async getRunSteps(
     runId: string,
     version: ExecutionVersion
   ): Promise<Result<StepsResponse, ErrorResponse>> {
     const url = new URL(`/v0/runs/${runId}/actions`, this.baseUrl);
 
-    return this.fetch(url, {
-      headers: { Authorization: `Bearer ${this.hashedKey}` },
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url,
     })
       .then(async (resp) => {
         const data: unknown = await resp.json();
@@ -78,8 +100,11 @@ export class InngestApi {
   ): Promise<Result<BatchResponse, ErrorResponse>> {
     const url = new URL(`/v0/runs/${runId}/batch`, this.baseUrl);
 
-    return this.fetch(url, {
-      headers: { Authorization: `Bearer ${this.hashedKey}` },
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url,
     })
       .then(async (resp) => {
         const data: unknown = await resp.json();

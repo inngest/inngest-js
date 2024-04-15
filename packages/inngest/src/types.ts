@@ -735,6 +735,12 @@ export interface RegisterOptions {
   signingKey?: string;
 
   /**
+   * The same as signingKey, except used as a fallback when auth fails using the
+   * primary signing key.
+   */
+  signingKeyFallback?: string;
+
+  /**
    * The URL used to register functions with Inngest.
    * Defaults to https://api.inngest.com/fn/register
    */
@@ -980,29 +986,20 @@ export interface RegisterRequest {
  *
  * @internal
  */
-export interface IntrospectRequest {
-  message: string;
+export interface InsecureIntrospection {
+  extra: {
+    is_mod_explicit: boolean;
+    message: string;
+  };
+  function_count: number;
+  has_event_key: boolean;
+  has_signing_key: boolean;
+  mode: "cloud" | "dev";
+}
 
-  /**
-   * Represents whether a signing key could be found when running this handler.
-   */
-  hasSigningKey: boolean;
-
-  /**
-   * Represents whether an event key could be found when running this handler.
-   */
-  hasEventKey: boolean;
-
-  /**
-   * The number of Inngest functions found at this handler.
-   */
-  functionsFound: number;
-
-  /**
-   * The mode that this handler is running in and whether it has been inferred
-   * or explicitly set.
-   */
-  mode: Mode;
+export interface SecureIntrospection extends InsecureIntrospection {
+  signing_key_fallback_hash: string | null;
+  signing_key_hash: string | null;
 }
 
 /**
