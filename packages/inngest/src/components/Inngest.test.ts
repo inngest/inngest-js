@@ -139,8 +139,8 @@ describe("send", () => {
       status = 200,
       ids,
       error,
-    }: Partial<SendEventResponse> = {}) => {
-      return jest.fn((url: string, opts: { body: string }) => {
+    }: Partial<SendEventResponse> = {}): void => {
+      const mockFn = jest.fn((url: string, opts: { body: string }) => {
         const json = {
           status,
           ids:
@@ -158,11 +158,15 @@ describe("send", () => {
             return Promise.resolve(JSON.stringify(json));
           },
         });
-      }) as unknown as typeof fetch;
+      });
+
+      Object.defineProperties(global, {
+        fetch: { value: mockFn, configurable: true },
+      });
     };
 
     beforeAll(() => {
-      global.fetch = setFetch();
+      setFetch();
     });
 
     beforeEach(() => {
@@ -171,7 +175,9 @@ describe("send", () => {
     });
 
     afterAll(() => {
-      global.fetch = originalFetch;
+      Object.defineProperties(global, {
+        fetch: { value: originalFetch, configurable: true },
+      });
       process.env = originalProcessEnv;
     });
 
@@ -480,21 +486,21 @@ describe("send", () => {
     });
 
     test("should return error from Inngest if parsed", () => {
-      global.fetch = setFetch({ status: 400, error: "Test Error" });
+      setFetch({ status: 400, error: "Test Error" });
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       return expect(inngest.send(testEvent)).rejects.toThrowError("Test Error");
     });
 
     test("should return error from Inngest if parsed even for 200", () => {
-      global.fetch = setFetch({ status: 200, error: "Test Error" });
+      setFetch({ status: 200, error: "Test Error" });
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       return expect(inngest.send(testEvent)).rejects.toThrowError("Test Error");
     });
 
     test("should return error if bad status code with no error string", () => {
-      global.fetch = setFetch({ status: 400 });
+      setFetch({ status: 400 });
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       return expect(inngest.send(testEvent)).rejects.toThrowError(
@@ -503,7 +509,7 @@ describe("send", () => {
     });
 
     test("should return unknown error from response text if very bad status code", () => {
-      global.fetch = setFetch({ status: 600 });
+      setFetch({ status: 600 });
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       return expect(inngest.send(testEvent)).rejects.toThrowError("600");
