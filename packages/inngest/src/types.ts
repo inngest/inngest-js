@@ -492,12 +492,12 @@ export const sendEventResponseSchema = z.object({
   /**
    * Event IDs
    */
-  ids: z.array(z.string()),
+  ids: z.array(z.string()).default([]),
 
   /**
    * HTTP Status Code. Will be undefined if no request was sent.
    */
-  status: z.number(),
+  status: z.number().default(0),
 
   /**
    * Error message. Will be undefined if no error occurred.
