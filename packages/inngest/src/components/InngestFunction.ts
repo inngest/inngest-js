@@ -364,7 +364,7 @@ export namespace InngestFunction {
     };
 
     /**
-     * Rate limit workflows, only running them a given number of times (limit) per
+     * Rate limit function runs, only running them a given number of times (limit) per
      * period. This can optionally include a `key`, which is used to further
      * constrain throttling similar to idempotency.
      */
