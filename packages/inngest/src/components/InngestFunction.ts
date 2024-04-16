@@ -345,7 +345,7 @@ export namespace InngestFunction {
      * Rate limit function runs, only running them a given number of times (limit) per
      * period.  Note that rate limit is a lossy, hard limit.  Once the limit is hit,
      * new runs will be skipped.  To enqueue work when a rate limit is hit, use the
-     * `throttle` parameter.
+     * {@link throttle} parameter.
      */
     rateLimit?: {
       /**
@@ -367,8 +367,8 @@ export namespace InngestFunction {
     /**
      * Throttles function runs, only running them a given number of times (limit) per
      * period.  Once the limit is hit, new runs will be enqueued and will start when there's
-     * capacity.  This may lead to a large backlog.  For hard rate limiting, use the `rateLimit`
-     * parameter.
+     * capacity.  This may lead to a large backlog.  For hard rate limiting, use the
+     * {@link rateLimit} parameter.
      */
     throttle?: {
       /**
