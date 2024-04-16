@@ -1,5 +1,11 @@
 # inngest
 
+## 3.17.0
+
+### Minor Changes
+
+- [#540](https://github.com/inngest/inngest-js/pull/540) [`91e07dc`](https://github.com/inngest/inngest-js/commit/91e07dc79a27bf32d45f1b56b235421d8cc6b5c4) Thanks [@tonyhb](https://github.com/tonyhb)! - Add throttling to function configurations
+
 ## 3.16.2
 
 ### Patch Changes
