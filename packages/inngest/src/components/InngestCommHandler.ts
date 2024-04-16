@@ -29,6 +29,7 @@ import {
   undefinedToNull,
   type FnData,
 } from "../helpers/functions";
+import { fetchWithAuthFallback } from "../helpers/net";
 import { runAsPromise } from "../helpers/promises";
 import { createStream } from "../helpers/stream";
 import { hashSigningKey, stringify } from "../helpers/strings";
@@ -42,8 +43,8 @@ import {
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
-  type SupportedFrameworkName,
   type SecureIntrospection,
+  type SupportedFrameworkName,
 } from "../types";
 import { version } from "../version";
 import { type Inngest } from "./Inngest";
@@ -59,7 +60,6 @@ import {
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
 } from "./execution/InngestExecution";
-import { fetchWithAuthFallback } from "inngest/helpers/net";
 
 /**
  * A set of options that can be passed to a serve handler, intended to be used

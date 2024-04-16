@@ -2,6 +2,7 @@ import { type fetch } from "cross-fetch";
 import { type ExecutionVersion } from "../components/execution/InngestExecution";
 import { getFetch } from "../helpers/env";
 import { getErrorMessage } from "../helpers/errors";
+import { fetchWithAuthFallback } from "../helpers/net";
 import { hashSigningKey } from "../helpers/strings";
 import { err, ok, type Result } from "../types";
 import {
@@ -12,7 +13,6 @@ import {
   type ErrorResponse,
   type StepsResponse,
 } from "./schema";
-import { fetchWithAuthFallback } from "inngest/helpers/net";
 
 type FetchT = typeof fetch;
 
