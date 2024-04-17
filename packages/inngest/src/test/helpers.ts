@@ -631,7 +631,7 @@ export const testFramework = (
 
       describe("env detection and headers", () => {
         test("uses env headers from client", async () => {
-          nock("https://api.inngest.com").post("/fn/register").reply(200);
+          nock("https://api.inngest.com").post("/fn/register").reply(200, {});
 
           const ret = await run(
             [

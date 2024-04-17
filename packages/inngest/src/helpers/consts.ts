@@ -33,6 +33,10 @@ export enum envKeys {
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
 
+  /**
+   * @deprecated It's unknown what this env var was used for, but we do not
+   * provide explicit support for it. Prefer using `INNGEST_ENV` instead.
+   */
   BranchName = "BRANCH_NAME",
 
   /**

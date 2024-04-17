@@ -1177,6 +1177,7 @@ export class InngestCommHandler<
       data = await res.json();
     } catch (err) {
       this.log("warn", "Couldn't unpack register response:", err);
+      throw err;
     }
     const { status, error, skipped, modified } = registerResSchema.parse(data);
 

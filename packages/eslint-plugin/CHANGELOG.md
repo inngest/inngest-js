@@ -1,5 +1,11 @@
 # @inngest/eslint-plugin
 
+## 0.0.5
+
+### Patch Changes
+
+- [#527](https://github.com/inngest/inngest-js/pull/527) [`fde23f2`](https://github.com/inngest/inngest-js/commit/fde23f2eb92bcd0ed35023b6ff0988f8a5277ec4) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove `@inngest/eslint-plugin` alpha warnings
+
 ## 0.0.4
 
 ### Patch Changes

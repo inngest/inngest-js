@@ -1,5 +1,21 @@
 # inngest
 
+## 3.17.0
+
+### Minor Changes
+
+- [#540](https://github.com/inngest/inngest-js/pull/540) [`91e07dc`](https://github.com/inngest/inngest-js/commit/91e07dc79a27bf32d45f1b56b235421d8cc6b5c4) Thanks [@tonyhb](https://github.com/tonyhb)! - Add throttling to function configurations
+
+## 3.16.2
+
+### Patch Changes
+
+- [#538](https://github.com/inngest/inngest-js/pull/538) [`d9d57c4`](https://github.com/inngest/inngest-js/commit/d9d57c43c6ad9600e3b184bba777a36d1ffa99e6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `{ name: string; }` objects being filtered out of `step.run()` responses when nullable or a union
+
+- [#536](https://github.com/inngest/inngest-js/pull/536) [`73e04a5`](https://github.com/inngest/inngest-js/commit/73e04a576eab9ea48a18738c3037f8e9436d7a91) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Do not swallow JSON parsing errors when syncing
+
+- [#535](https://github.com/inngest/inngest-js/pull/535) [`09ef143`](https://github.com/inngest/inngest-js/commit/09ef14362bc11573d7ab8bfb8e4286ef06c6cda9) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix sending events sometimes returning generic errors when we can be more specific
+
 ## 3.16.1
 
 ### Patch Changes
