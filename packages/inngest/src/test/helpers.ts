@@ -871,6 +871,111 @@ export const testFramework = (
             body: JSON.stringify("fn"),
           });
         });
+
+        describe("key rotation", () => {
+          test("should validate a signature with a fallback key successfully", async () => {
+            const event = {
+              data: {},
+              id: "",
+              name: "inngest/scheduled.timer",
+              ts: 1674082830001,
+              user: {},
+              v: "1",
+            };
+
+            const body = {
+              ctx: {
+                fn_id: "local-testing-local-cron",
+                run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+                step_id: "step",
+              },
+              event,
+              events: [event],
+              steps: {},
+              use_api: false,
+            };
+            const ret = await run(
+              [
+                {
+                  client: inngest,
+                  functions: [fn],
+                  signingKey: "fake",
+                  signingKeyFallback:
+                    "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+                  __testingAllowExpiredSignatures: true,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any,
+              ],
+              [
+                {
+                  method: "POST",
+                  headers: {
+                    [headerKeys.Signature]:
+                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                  },
+                  url: "/api/inngest?fnId=test-test&stepId=step",
+                  body,
+                },
+              ],
+              env
+            );
+            expect(ret).toMatchObject({
+              status: 200,
+              body: JSON.stringify("fn"),
+            });
+          });
+
+          test("should fail if validation fails with both keys", async () => {
+            const event = {
+              data: {},
+              id: "",
+              name: "inngest/scheduled.timer",
+              ts: 1674082830001,
+              user: {},
+              v: "1",
+            };
+
+            const body = {
+              ctx: {
+                fn_id: "local-testing-local-cron",
+                run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+                step_id: "step",
+              },
+              event,
+              events: [event],
+              steps: {},
+              use_api: false,
+            };
+            const ret = await run(
+              [
+                {
+                  client: inngest,
+                  functions: [fn],
+                  signingKey: "fake",
+                  signingKeyFallback: "another-fake",
+                  __testingAllowExpiredSignatures: true,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any,
+              ],
+              [
+                {
+                  method: "POST",
+                  headers: {
+                    [headerKeys.Signature]:
+                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                  },
+                  url: "/api/inngest?fnId=test-test&stepId=step",
+                  body,
+                },
+              ],
+              env
+            );
+            expect(ret).toMatchObject({
+              status: 500,
+              body: expect.stringContaining("Invalid signature"),
+            });
+          });
+        });
       });
 
       describe("malformed payloads", () => {
