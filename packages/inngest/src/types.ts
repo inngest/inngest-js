@@ -987,7 +987,7 @@ export interface RegisterRequest {
  */
 export interface InsecureIntrospection {
   extra: {
-    is_mod_explicit: boolean;
+    is_mode_explicit: boolean;
     message: string;
   };
   function_count: number;

@@ -850,7 +850,7 @@ export class InngestCommHandler<
 
         let introspection: InsecureIntrospection | SecureIntrospection = {
           extra: {
-            is_mod_explicit: this._mode.isExplicit,
+            is_mode_explicit: this._mode.isExplicit,
             message: "Inngest endpoint configured correctly.",
           },
           has_event_key: this.client["eventKeySet"](),
