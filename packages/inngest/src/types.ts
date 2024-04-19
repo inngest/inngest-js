@@ -1030,10 +1030,16 @@ export interface FunctionConfig {
     maxSize: number;
     timeout: string;
   };
+  rateLimit?: {
+    key?: string;
+    limit: number;
+    period: TimeStr;
+  };
   throttle?: {
     key?: string;
-    count: number;
+    limit: number;
     period: TimeStr;
+    burst?: number;
   };
   cancel?: {
     event: string;
