@@ -1,5 +1,5 @@
 ---
-"inngest": patch
+"inngest": minor
 ---
 
 Add signing key rotation support
