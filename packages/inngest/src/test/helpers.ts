@@ -329,7 +329,12 @@ export const testFramework = (
     describe("GET", () => {
       test("shows introspection data", async () => {
         const ret = await run(
-          [{ client: createClient({ id: "test" }), functions: [] }],
+          [
+            {
+              client: createClient({ id: "test", isDev: true }),
+              functions: [],
+            },
+          ],
           [
             {
               method: "GET",
@@ -352,10 +357,13 @@ export const testFramework = (
         });
 
         expect(body).toMatchObject({
-          message: "Inngest endpoint configured correctly.",
-          functionsFound: 0,
-          hasEventKey: false,
-          hasSigningKey: false,
+          function_count: 0,
+          has_event_key: false,
+          has_signing_key: false,
+          mode: "dev",
+          extra: expect.objectContaining({
+            is_mode_explicit: true,
+          }),
         });
       });
 
@@ -369,10 +377,7 @@ export const testFramework = (
         const body = JSON.parse(ret.body);
 
         expect(body).toMatchObject({
-          message: "Inngest endpoint configured correctly.",
-          functionsFound: 0,
-          hasEventKey: true,
-          hasSigningKey: false,
+          has_event_key: true,
         });
       });
 
@@ -386,10 +391,7 @@ export const testFramework = (
         const body = JSON.parse(ret.body);
 
         expect(body).toMatchObject({
-          message: "Inngest endpoint configured correctly.",
-          functionsFound: 0,
-          hasEventKey: false,
-          hasSigningKey: true,
+          has_signing_key: true,
         });
       });
     });
