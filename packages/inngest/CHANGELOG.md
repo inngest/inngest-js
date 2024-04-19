@@ -1,5 +1,11 @@
 # inngest
 
+## 3.18.0
+
+### Minor Changes
+
+- [#541](https://github.com/inngest/inngest-js/pull/541) [`52431a6`](https://github.com/inngest/inngest-js/commit/52431a6beef4f8d94c4c0d7c2c3c3023c0020e4d) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Add signing key rotation support
+
 ## 3.17.0
 
 ### Minor Changes
