@@ -1329,10 +1329,10 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
 
       const { success } = z
         .object({
-          message: z.string(),
-          hasSigningKey: z.boolean(),
-          hasEventKey: z.boolean(),
-          functionsFound: z.number(),
+          has_signing_key: z.boolean(),
+          has_event_key: z.boolean(),
+          function_count: z.number(),
+          mode: z.string(),
         })
         .safeParse(await res.json());
 
