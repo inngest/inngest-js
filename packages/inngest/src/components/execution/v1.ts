@@ -749,6 +749,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }): Promise<unknown> => {
       await beforeExecHooksPromise;
 
+      const stepOptions = getStepOptions(args[0]);
+      const opId = matchOp(stepOptions, ...args.slice(1));
+
       if (this.state.executingStep) {
         /**
          * If a step is found after asynchronous actions during another step's
@@ -765,7 +768,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          */
         console.warn(
           prettyError({
-            whatHappened: "We detected that you have nested `step.*` tooling.",
+            whatHappened: `We detected that you have nested \`step.*\` tooling in \`${opId.displayName ?? opId.id}\``, 
             consequences: "Nesting `step.*` tooling is not supported.",
             type: "warn",
             reassurance:
@@ -777,9 +780,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           })
         );
       }
-
-      const stepOptions = getStepOptions(args[0]);
-      const opId = matchOp(stepOptions, ...args.slice(1));
 
       if (this.state.steps[opId.id]) {
         const originalId = opId.id;
