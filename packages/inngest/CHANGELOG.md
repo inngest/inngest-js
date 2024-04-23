@@ -1,5 +1,13 @@
 # inngest
 
+## 3.18.1
+
+### Patch Changes
+
+- [#520](https://github.com/inngest/inngest-js/pull/520) [`0703740`](https://github.com/inngest/inngest-js/commit/0703740fbc3225be752328bd8bc078db8a1419c5) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add selective header forwarding when sending events, allowing context propagation when tracing fanouts 👀
+
+- [#549](https://github.com/inngest/inngest-js/pull/549) [`f759de1`](https://github.com/inngest/inngest-js/commit/f759de1839d3337eb46e0fe51a41730a6864636c) Thanks [@maktouch](https://github.com/maktouch)! - Add step name or ID when there’s a NESTING_STEPS error
+
 ## 3.18.0
 
 ### Minor Changes
