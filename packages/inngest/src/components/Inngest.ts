@@ -351,6 +351,20 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
   public async send<Payload extends SendEventPayload<GetEvents<this>>>(
     payload: Payload
   ): Promise<SendEventOutput<TClientOpts>> {
+    return this._send({ payload });
+  }
+
+  /**
+   * Internal method for sending an event, used to allow Inngest internals to
+   * further customize the request sent to an Inngest Server.
+   */
+  private async _send<Payload extends SendEventPayload<GetEvents<this>>>({
+    payload,
+    headers,
+  }: {
+    payload: Payload;
+    headers?: Record<string, string>;
+  }): Promise<SendEventOutput<TClientOpts>> {
     const hooks = await getHookStack(
       this.middleware,
       "onSendEvent",
@@ -465,7 +479,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     const response = await this.fetch(url, {
       method: "POST",
       body: stringify(payloads),
-      headers: { ...this.headers },
+      headers: { ...this.headers, ...headers },
     });
 
     let body: SendEventResponse | undefined;

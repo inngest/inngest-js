@@ -127,6 +127,8 @@ export enum headerKeys {
   RetryAfter = "retry-after",
   InngestServerKind = "x-inngest-server-kind",
   InngestExpectedServerKind = "x-inngest-expected-server-kind",
+  TraceParent = "traceparent",
+  TraceState = "tracestate",
 }
 
 export const defaultInngestApiBaseUrl = "https://api.inngest.com/";
