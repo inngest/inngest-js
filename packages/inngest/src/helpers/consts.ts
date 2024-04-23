@@ -17,6 +17,7 @@ export enum queryKeys {
 
 export enum envKeys {
   InngestSigningKey = "INNGEST_SIGNING_KEY",
+  InngestSigningKeyFallback = "INNGEST_SIGNING_KEY_FALLBACK",
   InngestEventKey = "INNGEST_EVENT_KEY",
 
   /**

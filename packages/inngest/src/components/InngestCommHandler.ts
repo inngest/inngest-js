@@ -29,6 +29,7 @@ import {
   undefinedToNull,
   type FnData,
 } from "../helpers/functions";
+import { fetchWithAuthFallback } from "../helpers/net";
 import { runAsPromise } from "../helpers/promises";
 import { createStream } from "../helpers/stream";
 import { hashSigningKey, stringify } from "../helpers/strings";
@@ -37,11 +38,12 @@ import {
   logLevels,
   type EventPayload,
   type FunctionConfig,
-  type IntrospectRequest,
+  type InsecureIntrospection,
   type LogLevel,
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
+  type SecureIntrospection,
   type SupportedFrameworkName,
 } from "../types";
 import { version } from "../version";
@@ -247,6 +249,12 @@ export class InngestCommHandler<
   protected signingKey: string | undefined;
 
   /**
+   * The same as signingKey, except used as a fallback when auth fails using the
+   * primary signing key.
+   */
+  protected signingKeyFallback: string | undefined;
+
+  /**
    * A property that can be set to indicate whether we believe we are in
    * production mode.
    *
@@ -394,6 +402,7 @@ export class InngestCommHandler<
     );
 
     this.signingKey = options.signingKey;
+    this.signingKeyFallback = options.signingKeyFallback;
     this.serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
     this.servePath = options.servePath || this.env[envKeys.InngestServePath];
 
@@ -440,6 +449,10 @@ export class InngestCommHandler<
   // same signing key prefix.
   private get hashedSigningKey(): string {
     return hashSigningKey(this.signingKey);
+  }
+
+  private get hashedSigningKeyFallback(): string {
+    return hashSigningKey(this.signingKeyFallback);
   }
 
   /**
@@ -862,13 +875,38 @@ export class InngestCommHandler<
           deployId: null,
         });
 
-        const introspection: IntrospectRequest = {
-          message: "Inngest endpoint configured correctly.",
-          hasEventKey: this.client["eventKeySet"](),
-          hasSigningKey: Boolean(this.signingKey),
-          functionsFound: registerBody.functions.length,
-          mode: this._mode,
+        const signature = await actions.headers(
+          "checking signature for run request",
+          headerKeys.Signature
+        );
+
+        let introspection: InsecureIntrospection | SecureIntrospection = {
+          extra: {
+            is_mode_explicit: this._mode.isExplicit,
+            message: "Inngest endpoint configured correctly.",
+          },
+          has_event_key: this.client["eventKeySet"](),
+          has_signing_key: Boolean(this.signingKey),
+          function_count: registerBody.functions.length,
+          mode: this._mode.type,
         };
+
+        // Only allow secure introspection in Cloud mode, since Dev mode skips
+        // signature validation
+        if (this._mode.type === "cloud") {
+          try {
+            this.validateSignature(signature ?? undefined, "");
+
+            introspection = {
+              ...introspection,
+              signing_key_fallback_hash: this.hashedSigningKeyFallback,
+              signing_key_hash: this.hashedSigningKey,
+            };
+          } catch {
+            // Swallow signature validation error since we'll just return the
+            // insecure introspection
+          }
+        }
 
         return {
           status: 200,
@@ -1148,14 +1186,17 @@ export class InngestCommHandler<
     }
 
     try {
-      res = await this.fetch(registerURL.href, {
-        method: "POST",
-        body: stringify(body),
-        headers: {
-          ...getHeaders(),
-          Authorization: `Bearer ${this.hashedSigningKey}`,
+      res = await fetchWithAuthFallback({
+        authToken: this.hashedSigningKey,
+        authTokenFallback: this.hashedSigningKeyFallback,
+        fetch: this.fetch,
+        url: registerURL.href,
+        options: {
+          method: "POST",
+          body: stringify(body),
+          headers: getHeaders(),
+          redirect: "follow",
         },
-        redirect: "follow",
       });
     } catch (err: unknown) {
       this.log("error", err);
@@ -1213,6 +1254,16 @@ export class InngestCommHandler<
       this.client["inngestApi"].setSigningKey(this.signingKey);
     }
 
+    if (this.env[envKeys.InngestSigningKeyFallback]) {
+      if (!this.signingKeyFallback) {
+        this.signingKeyFallback = String(
+          this.env[envKeys.InngestSigningKeyFallback]
+        );
+      }
+
+      this.client["inngestApi"].setSigningKeyFallback(this.signingKeyFallback);
+    }
+
     if (!this.client["eventKeySet"]() && this.env[envKeys.InngestEventKey]) {
       this.client.setEventKey(String(this.env[envKeys.InngestEventKey]));
     }
@@ -1253,6 +1304,7 @@ export class InngestCommHandler<
       body,
       allowExpiredSignatures: this.allowExpiredSignatures,
       signingKey: this.signingKey,
+      signingKeyFallback: this.signingKeyFallback,
     });
   }
 
@@ -1318,7 +1370,7 @@ class RequestSignature {
     return delta > 1000 * 60 * 5;
   }
 
-  public verifySignature({
+  #verifySignature({
     body,
     signingKey,
     allowExpiredSignatures,
@@ -1348,6 +1400,32 @@ class RequestSignature {
     if (mac !== this.signature) {
       // TODO PrettyError
       throw new Error("Invalid signature");
+    }
+  }
+
+  public verifySignature({
+    body,
+    signingKey,
+    signingKeyFallback,
+    allowExpiredSignatures,
+  }: {
+    body: unknown;
+    signingKey: string;
+    signingKeyFallback: string | undefined;
+    allowExpiredSignatures: boolean;
+  }): void {
+    try {
+      this.#verifySignature({ body, signingKey, allowExpiredSignatures });
+    } catch (err) {
+      if (!signingKeyFallback) {
+        throw err;
+      }
+
+      this.#verifySignature({
+        body,
+        signingKey: signingKeyFallback,
+        allowExpiredSignatures,
+      });
     }
   }
 }
