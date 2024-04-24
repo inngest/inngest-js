@@ -44,7 +44,7 @@ importers:
         version: 29.5.0(@types/node@18.16.16)
       ts-jest:
         specifier: ^29.1.0
-        version: 29.1.0(@babel/core@7.23.6)(jest@29.5.0)(typescript@5.4.2)
+        version: 29.1.0(@babel/core@7.21.3)(jest@29.5.0)(typescript@5.4.2)
 
   packages/eslint-plugin-internal:
     dependencies:
@@ -182,8 +182,8 @@ importers:
         specifier: ^10.3.10
         version: 10.3.10
       hono:
-        specifier: ^4.2.3
-        version: 4.2.3
+        specifier: ^4.2.7
+        version: 4.2.7
       inquirer:
         specifier: ^9.2.10
         version: 9.2.10
@@ -6040,8 +6040,8 @@ packages:
       space-separated-tokens: 2.0.2
     dev: true
 
-  /hono@4.2.3:
-    resolution: {integrity: sha512-yZDnPOp/XzjIB7KUWaOxwLSywnhxMvAKth8hfKhWQiWXeZhBfC6GlFnEst/FOOgn7rSWjShhQPS89PLEuHxq3Q==}
+  /hono@4.2.7:
+    resolution: {integrity: sha512-k1xHi86tJnRIVvqhFMBDGFKJ8r5O+bEsT4P59ZK59r0F300Xd910/r237inVfuT/VmE86RQQffX4OYNda6dLXw==}
     engines: {node: '>=16.0.0'}
     dev: true
 

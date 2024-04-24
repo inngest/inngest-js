@@ -215,7 +215,7 @@
     "fastify": "^4.21.0",
     "genversion": "^3.1.1",
     "glob": "^10.3.10",
-    "hono": "^4.2.3",
+    "hono": "^4.2.7",
     "inquirer": "^9.2.10",
     "jest": "^29.3.1",
     "jest-fetch-mock": "^3.0.3",
