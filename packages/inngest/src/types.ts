@@ -1102,7 +1102,8 @@ export type SupportedFrameworkName =
   | "deno/fresh"
   | "sveltekit"
   | "fastify"
-  | "koa";
+  | "koa"
+  | "hono";
 
 /**
  * A set of options that can be passed to any step to configure it.
