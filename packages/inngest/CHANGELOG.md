@@ -1,5 +1,11 @@
 # inngest
 
+## 3.19.0
+
+### Minor Changes
+
+- [#539](https://github.com/inngest/inngest-js/pull/539) [`24f1e7d`](https://github.com/inngest/inngest-js/commit/24f1e7de92d609e0a9ee9df1e3dfa0d2f7c8f682) Thanks [@prettyirrelevant](https://github.com/prettyirrelevant)! - Added framework support for Hono
+
 ## 3.18.1
 
 ### Patch Changes
