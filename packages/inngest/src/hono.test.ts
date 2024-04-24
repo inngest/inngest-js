@@ -2,7 +2,46 @@ import * as HonoHandler from "@local/hono";
 import { Response } from "cross-fetch";
 import { testFramework } from "./test/helpers";
 
+const originalFetch = globalThis.fetch;
+const originalResponse = globalThis.Response;
+const originalHeaders = globalThis.Headers;
+
 testFramework("Hono", HonoHandler, {
+  /**
+   * Make sure this stuff is available for all polyfilled Node environments.
+   */
+  lifecycleChanges: () => {
+    beforeEach(() => {
+      jest.resetModules();
+      Object.defineProperties(globalThis, {
+        /**
+         * Fake a global `fetch` value, which is available as as a Web Standard
+         * API.
+         */
+        fetch: { value: fetch, configurable: true },
+        /**
+         * Fake a global `Response` class, which is used to create new responses
+         * for the handler.
+         */
+        Response: { value: Response, configurable: true },
+        /**
+         * Fake a global `Headers` class, which is used to create new Headers
+         * objects during response building.
+         */
+        Headers: { value: Headers, configurable: true },
+      });
+    });
+    afterEach(() => {
+      /**
+       * Reset all changes made to the global scope
+       */
+      Object.defineProperties(globalThis, {
+        fetch: { value: originalFetch, configurable: true },
+        Response: { value: originalResponse, configurable: true },
+        Headers: { value: originalHeaders, configurable: true },
+      });
+    });
+  },
   transformReq: (req) => {
     const c = {
       req: {
