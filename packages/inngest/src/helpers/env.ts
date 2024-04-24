@@ -124,7 +124,7 @@ export interface ModeOptions {
 }
 
 export class Mode {
-  private readonly type: "cloud" | "dev";
+  public readonly type: "cloud" | "dev";
 
   /**
    * Whether the mode was explicitly set, or inferred from other sources.

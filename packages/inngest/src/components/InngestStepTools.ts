@@ -30,6 +30,7 @@ import {
 } from "./Inngest";
 import { InngestFunction } from "./InngestFunction";
 import { InngestFunctionReference } from "./InngestFunctionReference";
+import { type InngestExecution } from "./execution/InngestExecution";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -113,6 +114,7 @@ export const createStepTools = <
   TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
 >(
   client: TClient,
+  execution: InngestExecution,
   stepHandler: StepHandler
 ) => {
   /**
@@ -190,7 +192,10 @@ export const createStepTools = <
       },
       {
         fn: (idOrOptions, payload) => {
-          return client.send(payload);
+          return client["_send"]({
+            payload,
+            headers: execution["options"]["headers"],
+          });
         },
       }
     ),

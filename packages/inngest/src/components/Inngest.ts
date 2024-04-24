@@ -208,6 +208,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     this.inngestApi = new InngestApi({
       baseUrl: this.apiBaseUrl || defaultInngestApiBaseUrl,
       signingKey: processEnv(envKeys.InngestSigningKey) || "",
+      signingKeyFallback: processEnv(envKeys.InngestSigningKeyFallback),
       fetch: this.fetch,
     });
 
@@ -350,6 +351,20 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
   public async send<Payload extends SendEventPayload<GetEvents<this>>>(
     payload: Payload
   ): Promise<SendEventOutput<TClientOpts>> {
+    return this._send({ payload });
+  }
+
+  /**
+   * Internal method for sending an event, used to allow Inngest internals to
+   * further customize the request sent to an Inngest Server.
+   */
+  private async _send<Payload extends SendEventPayload<GetEvents<this>>>({
+    payload,
+    headers,
+  }: {
+    payload: Payload;
+    headers?: Record<string, string>;
+  }): Promise<SendEventOutput<TClientOpts>> {
     const hooks = await getHookStack(
       this.middleware,
       "onSendEvent",
@@ -459,10 +474,12 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       }
     }
 
+    // We don't need to do fallback auth here because this uses event keys and
+    // not signing keys
     const response = await this.fetch(url, {
       method: "POST",
       body: stringify(payloads),
-      headers: { ...this.headers },
+      headers: { ...this.headers, ...headers },
     });
 
     let body: SendEventResponse | undefined;
