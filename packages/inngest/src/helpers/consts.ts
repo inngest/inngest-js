@@ -17,6 +17,7 @@ export enum queryKeys {
 
 export enum envKeys {
   InngestSigningKey = "INNGEST_SIGNING_KEY",
+  InngestSigningKeyFallback = "INNGEST_SIGNING_KEY_FALLBACK",
   InngestEventKey = "INNGEST_EVENT_KEY",
 
   /**
@@ -126,6 +127,8 @@ export enum headerKeys {
   RetryAfter = "retry-after",
   InngestServerKind = "x-inngest-server-kind",
   InngestExpectedServerKind = "x-inngest-expected-server-kind",
+  TraceParent = "traceparent",
+  TraceState = "tracestate",
 }
 
 export const defaultInngestApiBaseUrl = "https://api.inngest.com/";

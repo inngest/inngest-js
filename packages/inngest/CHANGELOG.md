@@ -1,5 +1,41 @@
 # inngest
 
+## 3.19.0
+
+### Minor Changes
+
+- [#539](https://github.com/inngest/inngest-js/pull/539) [`24f1e7d`](https://github.com/inngest/inngest-js/commit/24f1e7de92d609e0a9ee9df1e3dfa0d2f7c8f682) Thanks [@prettyirrelevant](https://github.com/prettyirrelevant)! - Added framework support for Hono
+
+## 3.18.1
+
+### Patch Changes
+
+- [#520](https://github.com/inngest/inngest-js/pull/520) [`0703740`](https://github.com/inngest/inngest-js/commit/0703740fbc3225be752328bd8bc078db8a1419c5) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add selective header forwarding when sending events, allowing context propagation when tracing fanouts 👀
+
+- [#549](https://github.com/inngest/inngest-js/pull/549) [`f759de1`](https://github.com/inngest/inngest-js/commit/f759de1839d3337eb46e0fe51a41730a6864636c) Thanks [@maktouch](https://github.com/maktouch)! - Add step name or ID when there’s a NESTING_STEPS error
+
+## 3.18.0
+
+### Minor Changes
+
+- [#541](https://github.com/inngest/inngest-js/pull/541) [`52431a6`](https://github.com/inngest/inngest-js/commit/52431a6beef4f8d94c4c0d7c2c3c3023c0020e4d) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Add signing key rotation support
+
+## 3.17.0
+
+### Minor Changes
+
+- [#540](https://github.com/inngest/inngest-js/pull/540) [`91e07dc`](https://github.com/inngest/inngest-js/commit/91e07dc79a27bf32d45f1b56b235421d8cc6b5c4) Thanks [@tonyhb](https://github.com/tonyhb)! - Add throttling to function configurations
+
+## 3.16.2
+
+### Patch Changes
+
+- [#538](https://github.com/inngest/inngest-js/pull/538) [`d9d57c4`](https://github.com/inngest/inngest-js/commit/d9d57c43c6ad9600e3b184bba777a36d1ffa99e6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `{ name: string; }` objects being filtered out of `step.run()` responses when nullable or a union
+
+- [#536](https://github.com/inngest/inngest-js/pull/536) [`73e04a5`](https://github.com/inngest/inngest-js/commit/73e04a576eab9ea48a18738c3037f8e9436d7a91) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Do not swallow JSON parsing errors when syncing
+
+- [#535](https://github.com/inngest/inngest-js/pull/535) [`09ef143`](https://github.com/inngest/inngest-js/commit/09ef14362bc11573d7ab8bfb8e4286ef06c6cda9) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix sending events sometimes returning generic errors when we can be more specific
+
 ## 3.16.1
 
 ### Patch Changes

@@ -11,6 +11,8 @@ import {
 } from "@local/components/InngestStepTools";
 import {
   ExecutionVersion,
+  IInngestExecution,
+  InngestExecution,
   InngestExecutionOptions,
   PREFERRED_EXECUTION_VERSION,
 } from "@local/components/execution/InngestExecution";
@@ -63,9 +65,31 @@ export const createClient = <T extends ConstructorParameters<typeof Inngest>>(
 export const testClientId = "__test_client__";
 
 export const getStepTools = (
-  client: Inngest.Any = createClient({ id: testClientId })
+  client: Inngest.Any = createClient({ id: testClientId }),
+  executionOptions: Partial<InngestExecutionOptions> = {}
 ) => {
-  const step = createStepTools(client, ({ args, matchOp }) => {
+  const execution = client
+    .createFunction({ id: "test" }, { event: "test" }, () => undefined)
+    ["createExecution"]({
+      version: PREFERRED_EXECUTION_VERSION,
+      partialOptions: {
+        data: fromPartial({
+          event: { name: "foo", data: {} },
+        }),
+        runId: "run",
+        stepState: {},
+        stepCompletionOrder: [],
+        isFailureHandler: false,
+        requestedRunStep: undefined,
+        timer: new ServerTiming(),
+        disableImmediateExecution: false,
+        reqArgs: [],
+        headers: {},
+        ...executionOptions,
+      },
+    }) as IInngestExecution & InngestExecution;
+
+  const step = createStepTools(client, execution, ({ args, matchOp }) => {
     const stepOptions = getStepOptions(args[0]);
     return Promise.resolve(matchOp(stepOptions, ...args.slice(1)));
   });
@@ -105,6 +129,7 @@ export const runFnWithStack = (
       timer: new ServerTiming(),
       disableImmediateExecution: opts?.disableImmediateExecution,
       reqArgs: [],
+      headers: {},
     },
   });
 
@@ -329,7 +354,12 @@ export const testFramework = (
     describe("GET", () => {
       test("shows introspection data", async () => {
         const ret = await run(
-          [{ client: createClient({ id: "test" }), functions: [] }],
+          [
+            {
+              client: createClient({ id: "test", isDev: true }),
+              functions: [],
+            },
+          ],
           [
             {
               method: "GET",
@@ -352,10 +382,13 @@ export const testFramework = (
         });
 
         expect(body).toMatchObject({
-          message: "Inngest endpoint configured correctly.",
-          functionsFound: 0,
-          hasEventKey: false,
-          hasSigningKey: false,
+          function_count: 0,
+          has_event_key: false,
+          has_signing_key: false,
+          mode: "dev",
+          extra: expect.objectContaining({
+            is_mode_explicit: true,
+          }),
         });
       });
 
@@ -369,10 +402,7 @@ export const testFramework = (
         const body = JSON.parse(ret.body);
 
         expect(body).toMatchObject({
-          message: "Inngest endpoint configured correctly.",
-          functionsFound: 0,
-          hasEventKey: true,
-          hasSigningKey: false,
+          has_event_key: true,
         });
       });
 
@@ -386,10 +416,7 @@ export const testFramework = (
         const body = JSON.parse(ret.body);
 
         expect(body).toMatchObject({
-          message: "Inngest endpoint configured correctly.",
-          functionsFound: 0,
-          hasEventKey: false,
-          hasSigningKey: true,
+          has_signing_key: true,
         });
       });
     });
@@ -606,7 +633,7 @@ export const testFramework = (
 
       describe("env detection and headers", () => {
         test("uses env headers from client", async () => {
-          nock("https://api.inngest.com").post("/fn/register").reply(200);
+          nock("https://api.inngest.com").post("/fn/register").reply(200, {});
 
           const ret = await run(
             [
@@ -867,6 +894,111 @@ export const testFramework = (
           expect(ret).toMatchObject({
             status: 200,
             body: JSON.stringify("fn"),
+          });
+        });
+
+        describe("key rotation", () => {
+          test("should validate a signature with a fallback key successfully", async () => {
+            const event = {
+              data: {},
+              id: "",
+              name: "inngest/scheduled.timer",
+              ts: 1674082830001,
+              user: {},
+              v: "1",
+            };
+
+            const body = {
+              ctx: {
+                fn_id: "local-testing-local-cron",
+                run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+                step_id: "step",
+              },
+              event,
+              events: [event],
+              steps: {},
+              use_api: false,
+            };
+            const ret = await run(
+              [
+                {
+                  client: inngest,
+                  functions: [fn],
+                  signingKey: "fake",
+                  signingKeyFallback:
+                    "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+                  __testingAllowExpiredSignatures: true,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any,
+              ],
+              [
+                {
+                  method: "POST",
+                  headers: {
+                    [headerKeys.Signature]:
+                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                  },
+                  url: "/api/inngest?fnId=test-test&stepId=step",
+                  body,
+                },
+              ],
+              env
+            );
+            expect(ret).toMatchObject({
+              status: 200,
+              body: JSON.stringify("fn"),
+            });
+          });
+
+          test("should fail if validation fails with both keys", async () => {
+            const event = {
+              data: {},
+              id: "",
+              name: "inngest/scheduled.timer",
+              ts: 1674082830001,
+              user: {},
+              v: "1",
+            };
+
+            const body = {
+              ctx: {
+                fn_id: "local-testing-local-cron",
+                run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+                step_id: "step",
+              },
+              event,
+              events: [event],
+              steps: {},
+              use_api: false,
+            };
+            const ret = await run(
+              [
+                {
+                  client: inngest,
+                  functions: [fn],
+                  signingKey: "fake",
+                  signingKeyFallback: "another-fake",
+                  __testingAllowExpiredSignatures: true,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any,
+              ],
+              [
+                {
+                  method: "POST",
+                  headers: {
+                    [headerKeys.Signature]:
+                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                  },
+                  url: "/api/inngest?fnId=test-test&stepId=step",
+                  body,
+                },
+              ],
+              env
+            );
+            expect(ret).toMatchObject({
+              status: 500,
+              body: expect.stringContaining("Invalid signature"),
+            });
           });
         });
       });
@@ -1222,10 +1354,10 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
 
       const { success } = z
         .object({
-          message: z.string(),
-          hasSigningKey: z.boolean(),
-          hasEventKey: z.boolean(),
-          functionsFound: z.number(),
+          has_signing_key: z.boolean(),
+          has_event_key: z.boolean(),
+          function_count: z.number(),
+          mode: z.string(),
         })
         .safeParse(await res.json());
 
