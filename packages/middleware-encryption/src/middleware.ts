@@ -1,5 +1,4 @@
-import AES from "crypto-js/aes";
-import CryptoJSUtf8 from "crypto-js/enc-utf8";
+import sodium from "libsodium-wrappers";
 import { InngestMiddleware, type MiddlewareRegisterReturn } from "inngest";
 
 /**
@@ -245,7 +244,18 @@ export class DefaultEncryptionService extends EncryptionService {
   }
 
   encrypt(value: unknown): string {
-    return AES.encrypt(JSON.stringify(value), this.keys[0]).toString();
+    const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
+    const message = sodium.from_string(JSON.stringify(value));
+    const ciphertext = sodium.crypto_secretbox_easy(
+      message,
+      nonce,
+      sodium.from_hex(this.keys[0])
+    );
+
+    const combined = new Uint8Array(nonce.length + ciphertext.length);
+    combined.set(nonce);
+    combined.set(ciphertext, nonce.length);
+    return sodium.to_base64(combined, sodium.base64_variants.ORIGINAL);
   }
 
   decrypt(value: string): unknown {
@@ -253,8 +263,21 @@ export class DefaultEncryptionService extends EncryptionService {
 
     for (const key of this.keys) {
       try {
-        const decrypted = AES.decrypt(value, key).toString(CryptoJSUtf8);
-        return JSON.parse(decrypted);
+        const combined = sodium.from_base64(
+          value,
+          sodium.base64_variants.ORIGINAL
+        );
+        const nonce = combined.slice(0, sodium.crypto_secretbox_NONCEBYTES);
+        const ciphertext = combined.slice(sodium.crypto_secretbox_NONCEBYTES);
+
+        const decrypted = sodium.crypto_secretbox_open_easy(
+          ciphertext,
+          nonce,
+          sodium.from_hex(key)
+        );
+
+        const decoder = new TextDecoder('utf8')
+        return JSON.parse(decoder.decode(decrypted));
       } catch (decryptionError) {
         err = decryptionError;
         continue;
