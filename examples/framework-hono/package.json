@@ -1,13 +1,14 @@
 {
-  "scripts": {
-    "dev": "wrangler dev --port 3000 src/index.ts",
-    "deploy": "wrangler deploy --minify src/index.ts"
-  },
-  "dependencies": {
-    "hono": "^4.2.7"
-  },
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240403.0",
-    "wrangler": "^3.47.0"
-  }
+	"scripts": {
+		"dev": "wrangler dev --port 3000 src/index.ts",
+		"deploy": "wrangler deploy --minify src/index.ts"
+	},
+	"dependencies": {
+		"hono": "^4.2.8",
+		"inngest": "^3.19.0"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20240423.0",
+		"wrangler": "^3.52.0"
+	}
 }

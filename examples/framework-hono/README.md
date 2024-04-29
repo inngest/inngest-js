@@ -1,6 +1,6 @@
 # Inngest Hono Template
 
-This is a [Hono](https://hono.dev/) v4 project targetting Cloudflare Workers. It is a reference on how to send and receive events with Inngest and Hono.
+This is a [Hono](https://hono.dev/) v4 project targeting Cloudflare Workers. It is a reference on how to send and receive events with Inngest and Hono.
 
 ## Getting Started
 
