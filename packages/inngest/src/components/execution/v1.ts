@@ -768,7 +768,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          */
         console.warn(
           prettyError({
-            whatHappened: `We detected that you have nested \`step.*\` tooling in \`${opId.displayName ?? opId.id}\``, 
+            whatHappened: `We detected that you have nested \`step.*\` tooling in \`${
+              opId.displayName ?? opId.id
+            }\``,
             consequences: "Nesting `step.*` tooling is not supported.",
             type: "warn",
             reassurance:

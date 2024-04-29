@@ -401,7 +401,8 @@ type MiddlewareRunArgs = Readonly<{
    * The raw arguments given to serve handler being used to execute the
    * function.
    */
-  reqArgs: Readonly<unknown[]>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  reqArgs: Readonly<any[]>;
 }>;
 
 /**

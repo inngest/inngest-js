@@ -4,7 +4,7 @@ import { Inngest } from "@local/components/Inngest";
 import { referenceFunction } from "@local/components/InngestFunctionReference";
 import { InngestMiddleware } from "@local/components/InngestMiddleware";
 import { ExecutionVersion } from "@local/components/execution/InngestExecution";
-import { type IsEqual, type IsUnknown } from "@local/helpers/types";
+import { type IsEqual, type IsAny } from "@local/helpers/types";
 import { StepOpCode } from "@local/types";
 import {
   assertType,
@@ -21,13 +21,13 @@ describe("stacking and inference", () => {
         init() {
           return {
             onFunctionRun({ reqArgs }) {
-              assertType<IsEqual<typeof reqArgs, readonly unknown[]>>(true);
-              assertType<IsUnknown<(typeof reqArgs)[number]>>(true);
+              assertType<IsEqual<typeof reqArgs, readonly any[]>>(true);
+              assertType<IsAny<(typeof reqArgs)[number]>>(true);
 
               return {
                 transformInput({ reqArgs }) {
-                  assertType<IsEqual<typeof reqArgs, readonly unknown[]>>(true);
-                  assertType<IsUnknown<(typeof reqArgs)[number]>>(true);
+                  assertType<IsEqual<typeof reqArgs, readonly any[]>>(true);
+                  assertType<IsAny<(typeof reqArgs)[number]>>(true);
                 },
               };
             },
