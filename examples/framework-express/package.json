@@ -1,0 +1,22 @@
+{
+  "name": "framework-express",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx index.ts",
+    "start": "node dist/index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2",
+    "inngest": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.5.2",
+    "tsx": "^4.7.3",
+    "typescript": "^5.1.6"
+  }
+}
