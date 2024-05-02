@@ -27,7 +27,8 @@
     "dev:lint": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run lint'",
     "build:copy": "cp package.json LICENSE.md README.md CHANGELOG.md dist",
     "local:pack": "pnpm run build && pnpm run build:copy && yarn pack --verbose --frozen-lockfile --filename inngest.tgz --cwd dist",
-    "dev:example": "tsx scripts/runExample.ts"
+    "dev:example": "tsx scripts/runExample.ts",
+    "bench": "tsx test/benchmark/main.ts"
   },
   "exports": {
     ".": {
@@ -206,6 +207,7 @@
     "@typescript-eslint/parser": "^6.0.0",
     "@vercel/node": "^2.15.9",
     "astro": "^4.0.7",
+    "callsites": "^4.1.0",
     "concurrently": "^7.4.0",
     "eslint": "^8.30.0",
     "eslint-config-prettier": "^9.0.0",
@@ -221,6 +223,7 @@
     "jest-fetch-mock": "^3.0.3",
     "koa": "^2.14.2",
     "minimist": "^1.2.8",
+    "mitata": "^0.1.11",
     "next": "^13.5.4",
     "nock": "^13.2.9",
     "node-mocks-http": "^1.11.0",

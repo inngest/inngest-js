@@ -44,7 +44,7 @@ importers:
         version: 29.5.0(@types/node@18.16.16)
       ts-jest:
         specifier: ^29.1.0
-        version: 29.1.0(@babel/core@7.21.3)(jest@29.5.0)(typescript@5.4.2)
+        version: 29.1.0(@babel/core@7.23.6)(jest@29.5.0)(typescript@5.4.2)
 
   packages/eslint-plugin-internal:
     dependencies:
@@ -154,6 +154,9 @@ importers:
       astro:
         specifier: ^4.0.7
         version: 4.0.7(@types/node@18.16.16)(typescript@5.4.2)
+      callsites:
+        specifier: ^4.1.0
+        version: 4.1.0
       concurrently:
         specifier: ^7.4.0
         version: 7.4.0
@@ -199,9 +202,12 @@ importers:
       minimist:
         specifier: ^1.2.8
         version: 1.2.8
+      mitata:
+        specifier: ^0.1.11
+        version: 0.1.11
       next:
         specifier: ^13.5.4
-        version: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0)(react@18.2.0)
+        version: 13.5.4(@babel/core@7.21.3)(react-dom@18.2.0)(react@18.2.0)
       nock:
         specifier: ^13.2.9
         version: 13.2.9
@@ -219,7 +225,7 @@ importers:
         version: 0.3.4
       ts-jest:
         specifier: ^29.1.0
-        version: 29.1.0(@babel/core@7.23.6)(jest@29.5.0)(typescript@5.4.2)
+        version: 29.1.0(@babel/core@7.21.3)(jest@29.5.0)(typescript@5.4.2)
       tsx:
         specifier: ^3.12.7
         version: 3.12.7
@@ -3839,6 +3845,11 @@ packages:
   /callsites@3.1.0:
     resolution: {integrity: sha512-P8BjAsXvZS+VIDUI11hHCQEv74YT67YUi5JJFNWIqL235sBmjX4+qx9Muvls5ivyNENctx46xQLQ3aTuE7ssaQ==}
     engines: {node: '>=6'}
+
+  /callsites@4.1.0:
+    resolution: {integrity: sha512-aBMbD1Xxay75ViYezwT40aQONfr+pSXTHwNKvIXhXD6+LY3F1dLIcceoC5OZKBVHbXcysz1hL9D2w0JJIMXpUw==}
+    engines: {node: '>=12.20'}
+    dev: true
 
   /camelcase-keys@6.2.2:
     resolution: {integrity: sha512-YrwaA0vEKazPBkn0ipTiMpSajYDSe+KjQfrjhcBMxJt/znbvlHd8Pw/Vamaz5EB4Wfhs3SUR3Z9mwRu/P3s3Yg==}
@@ -7830,6 +7841,10 @@ packages:
     engines: {node: '>=16 || 14 >=14.17'}
     dev: true
 
+  /mitata@0.1.11:
+    resolution: {integrity: sha512-cs6FiWcnRxn7atVumm8wA8R70XCDmMXgVgb/qWUSjr5dwuIBr7zC+22mbGYPlbyFixlIOjuP//A0e72Q1ZoGDw==}
+    dev: true
+
   /mixme@0.5.9:
     resolution: {integrity: sha512-VC5fg6ySUscaWUpI4gxCBTQMH2RdUpNrk+MsbpCYtIvf9SBJdiUey4qE7BXviJsJR4nDQxCZ+3yaYNW3guz/Pw==}
     engines: {node: '>= 8.0.0'}
@@ -7904,7 +7919,7 @@ packages:
     engines: {node: '>= 0.6'}
     dev: true
 
-  /next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0)(react@18.2.0):
+  /next@13.5.4(@babel/core@7.21.3)(react-dom@18.2.0)(react@18.2.0):
     resolution: {integrity: sha512-+93un5S779gho8y9ASQhb/bTkQF17FNQOtXLKAj3lsNgltEcF0C5PMLLncDmH+8X1EnJH1kbqAERa29nRXqhjA==}
     engines: {node: '>=16.14.0'}
     hasBin: true
@@ -7926,7 +7941,7 @@ packages:
       postcss: 8.4.31
       react: 18.2.0
       react-dom: 18.2.0(react@18.2.0)
-      styled-jsx: 5.1.1(@babel/core@7.23.6)(react@18.2.0)
+      styled-jsx: 5.1.1(@babel/core@7.21.3)(react@18.2.0)
       watchpack: 2.4.0
     optionalDependencies:
       '@next/swc-darwin-arm64': 13.5.4
@@ -9619,7 +9634,7 @@ packages:
     resolution: {integrity: sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig==}
     engines: {node: '>=8'}
 
-  /styled-jsx@5.1.1(@babel/core@7.23.6)(react@18.2.0):
+  /styled-jsx@5.1.1(@babel/core@7.21.3)(react@18.2.0):
     resolution: {integrity: sha512-pW7uC1l4mBZ8ugbiZrcIsiIvVx1UmTfw7UkC3Um2tmfUq9Bhk8IiyEIPl6F8agHgjzku6j0xQEZbfA5uSgSaCw==}
     engines: {node: '>= 12.0.0'}
     peerDependencies:
@@ -9632,7 +9647,7 @@ packages:
       babel-plugin-macros:
         optional: true
     dependencies:
-      '@babel/core': 7.23.6
+      '@babel/core': 7.21.3
       client-only: 0.0.1
       react: 18.2.0
     dev: true
