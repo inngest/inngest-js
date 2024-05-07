@@ -1,5 +1,11 @@
 # inngest
 
+## 3.19.1
+
+### Patch Changes
+
+- [#561](https://github.com/inngest/inngest-js/pull/561) [`405733f`](https://github.com/inngest/inngest-js/commit/405733f2acd6a1619f32ec5627a7b99637a3b531) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Optimize memoization of steps, providing a performance improvement of up 48x for very high step counts
+
 ## 3.19.0
 
 ### Minor Changes
