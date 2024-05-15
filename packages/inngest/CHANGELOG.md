@@ -1,5 +1,11 @@
 # inngest
 
+## 3.19.2
+
+### Patch Changes
+
+- [#569](https://github.com/inngest/inngest-js/pull/569) [`f79e3e2`](https://github.com/inngest/inngest-js/commit/f79e3e26fe3063a1811722e8569e2507d41dc6d4) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Omit `id` when specifying an event for `step.invoke()`; idempotency IDs are not used here
+
 ## 3.19.1
 
 ### Patch Changes
