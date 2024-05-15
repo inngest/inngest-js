@@ -485,7 +485,7 @@ type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
 
 type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
   InvocationTargetOpts<TFunction> &
-    TriggerEventFromFunction<TFunction> & {
+    Omit<TriggerEventFromFunction<TFunction>, "id"> & {
       /**
        * The step function will wait for the invocation to finish for a maximum
        * of this time, at which point the retured promise will be rejected
