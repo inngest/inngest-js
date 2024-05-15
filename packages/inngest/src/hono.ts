@@ -3,6 +3,7 @@ import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
+import { type Env } from "./helpers/env";
 import { type SupportedFrameworkName } from "./types";
 
 export const frameworkName: SupportedFrameworkName = "hono";
@@ -40,6 +41,7 @@ export const serve = (options: ServeHandlerOptions) => {
         headers: (key) => c.req.header(key),
         method: () => c.req.method,
         body: () => c.req.json(),
+        env: () => c.env as Env,
       };
     },
   });
