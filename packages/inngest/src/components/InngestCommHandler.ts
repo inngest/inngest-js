@@ -1210,17 +1210,51 @@ export class InngestCommHandler<
       };
     }
 
+    const raw = await res.text();
+
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     let data: z.input<typeof registerResSchema> = {};
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      data = await res.json();
+      data = JSON.parse(raw);
     } catch (err) {
       this.log("warn", "Couldn't unpack register response:", err);
-      throw err;
+
+      let message = "Failed to register";
+      if (err instanceof Error) {
+        message += `; ${err.message}`;
+      }
+      message += `; status code: ${res.status}`;
+
+      return {
+        status: 500,
+        message,
+        modified: false,
+      };
     }
-    const { status, error, skipped, modified } = registerResSchema.parse(data);
+
+    let status: number;
+    let error: string;
+    let skipped: boolean;
+    let modified: boolean;
+    try {
+      ({ status, error, skipped, modified } = registerResSchema.parse(data));
+    } catch (err) {
+      this.log("warn", "Invalid register response schema:", err);
+
+      let message = "Failed to register";
+      if (err instanceof Error) {
+        message += `; ${err.message}`;
+      }
+      message += `; status code: ${res.status}`;
+
+      return {
+        status: 500,
+        message,
+        modified: false,
+      };
+    }
 
     // The dev server polls this endpoint to register functions every few
     // seconds, but we only want to log that we've registered functions if
