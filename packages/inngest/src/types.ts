@@ -13,7 +13,6 @@ import {
 } from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
-import { type Mode } from "./helpers/env";
 import {
   type AsTuple,
   type IsEqual,
@@ -493,12 +492,12 @@ export const sendEventResponseSchema = z.object({
   /**
    * Event IDs
    */
-  ids: z.array(z.string()),
+  ids: z.array(z.string()).default([]),
 
   /**
    * HTTP Status Code. Will be undefined if no request was sent.
    */
-  status: z.number(),
+  status: z.number().default(0),
 
   /**
    * Error message. Will be undefined if no error occurred.
@@ -733,6 +732,12 @@ export interface RegisterOptions {
    * receive events from Inngest.
    */
   signingKey?: string;
+
+  /**
+   * The same as signingKey, except used as a fallback when auth fails using the
+   * primary signing key.
+   */
+  signingKeyFallback?: string;
 
   /**
    * The URL used to register functions with Inngest.
@@ -980,29 +985,20 @@ export interface RegisterRequest {
  *
  * @internal
  */
-export interface IntrospectRequest {
-  message: string;
+export interface InsecureIntrospection {
+  extra: {
+    is_mode_explicit: boolean;
+    message: string;
+  };
+  function_count: number;
+  has_event_key: boolean;
+  has_signing_key: boolean;
+  mode: "cloud" | "dev";
+}
 
-  /**
-   * Represents whether a signing key could be found when running this handler.
-   */
-  hasSigningKey: boolean;
-
-  /**
-   * Represents whether an event key could be found when running this handler.
-   */
-  hasEventKey: boolean;
-
-  /**
-   * The number of Inngest functions found at this handler.
-   */
-  functionsFound: number;
-
-  /**
-   * The mode that this handler is running in and whether it has been inferred
-   * or explicitly set.
-   */
-  mode: Mode;
+export interface SecureIntrospection extends InsecureIntrospection {
+  signing_key_fallback_hash: string | null;
+  signing_key_hash: string | null;
 }
 
 /**
@@ -1034,10 +1030,16 @@ export interface FunctionConfig {
     maxSize: number;
     timeout: string;
   };
+  rateLimit?: {
+    key?: string;
+    limit: number;
+    period: TimeStr;
+  };
   throttle?: {
     key?: string;
-    count: number;
+    limit: number;
     period: TimeStr;
+    burst?: number;
   };
   cancel?: {
     event: string;
@@ -1100,7 +1102,8 @@ export type SupportedFrameworkName =
   | "deno/fresh"
   | "sveltekit"
   | "fastify"
-  | "koa";
+  | "koa"
+  | "hono";
 
 /**
  * A set of options that can be passed to any step to configure it.

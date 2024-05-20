@@ -1,5 +1,5 @@
 {
-  "name": "framework-fastify",
+  "name": "framework-express",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -11,7 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "fastify": "^4.21.0",
+    "express": "^4.19.2",
     "inngest": "^3.0.0"
   },
   "devDependencies": {

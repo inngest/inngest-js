@@ -631,6 +631,20 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     let foundStepsToReport: FoundStep[] = [];
 
     /**
+     * A map of the subset of found steps to report that have not yet been
+     * handled. Used for fast access to steps that need to be handled in order.
+     */
+    let unhandledFoundStepsToReport: Record<string, FoundStep> = {};
+
+    /**
+     * An ordered list of step IDs that have yet to be handled in this
+     * execution. Used to ensure that we handle steps in the order they were
+     * found and based on the `stepCompletionOrder` in this execution's state.
+     */
+    const remainingStepCompletionOrder: string[] =
+      this.state.stepCompletionOrder.slice();
+
+    /**
      * A promise that's used to ensure that step reporting cannot be run more than
      * once in a given asynchronous time span.
      */
@@ -710,14 +724,18 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         .then(() => {
           foundStepsReportPromise = undefined;
 
-          for (let i = 0; i < this.state.stepCompletionOrder.length; i++) {
-            const handled = foundStepsToReport
-              .find((step) => {
-                return step.hashedId === this.state.stepCompletionOrder[i];
-              })
-              ?.handle();
+          for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
+            const nextStepId = remainingStepCompletionOrder[i];
+            if (!nextStepId) {
+              // Strange - removed this empty index
+              remainingStepCompletionOrder.splice(i, 1);
+              continue;
+            }
 
+            const handled = unhandledFoundStepsToReport[nextStepId]?.handle();
             if (handled) {
+              remainingStepCompletionOrder.splice(i, 1);
+              delete unhandledFoundStepsToReport[nextStepId];
               return void reportNextTick();
             }
           }
@@ -726,6 +744,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           // found and report it.
           const steps = [...foundStepsToReport] as [FoundStep, ...FoundStep[]];
           foundStepsToReport = [];
+          unhandledFoundStepsToReport = {};
 
           return void this.state.setCheckpoint({
             type: "steps-found",
@@ -739,6 +758,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      */
     const pushStepToReport = (step: FoundStep) => {
       foundStepsToReport.push(step);
+      unhandledFoundStepsToReport[step.hashedId] = step;
       reportNextTick();
     };
 
@@ -748,6 +768,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       opts,
     }): Promise<unknown> => {
       await beforeExecHooksPromise;
+
+      const stepOptions = getStepOptions(args[0]);
+      const opId = matchOp(stepOptions, ...args.slice(1));
 
       if (this.state.executingStep) {
         /**
@@ -765,7 +788,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          */
         console.warn(
           prettyError({
-            whatHappened: "We detected that you have nested `step.*` tooling.",
+            whatHappened: `We detected that you have nested \`step.*\` tooling in \`${opId.displayName ?? opId.id}\``, 
             consequences: "Nesting `step.*` tooling is not supported.",
             type: "warn",
             reassurance:
@@ -777,9 +800,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           })
         );
       }
-
-      const stepOptions = getStepOptions(args[0]);
-      const opId = matchOp(stepOptions, ...args.slice(1));
 
       if (this.state.steps[opId.id]) {
         const originalId = opId.id;
@@ -854,7 +874,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       return promise;
     };
 
-    return createStepTools(this.options.client, stepHandler);
+    return createStepTools(this.options.client, this, stepHandler);
   }
 
   private getUserFnToRun(): Handler.Any {
