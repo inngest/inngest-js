@@ -1,5 +1,13 @@
 # inngest
 
+## 3.19.4
+
+### Patch Changes
+
+- [#571](https://github.com/inngest/inngest-js/pull/571) [`67ca3aa`](https://github.com/inngest/inngest-js/commit/67ca3aab1912f2a409364988e9a029acbab2aa61) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `"inngest/hono"` serve handler not handling relative and absolute `req.url`
+
+- [#571](https://github.com/inngest/inngest-js/pull/571) [`67ca3aa`](https://github.com/inngest/inngest-js/commit/67ca3aab1912f2a409364988e9a029acbab2aa61) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `"inngest/hono"` serve handler not parsing environment variables
+
 ## 3.19.3
 
 ### Patch Changes
