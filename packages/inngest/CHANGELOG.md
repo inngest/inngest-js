@@ -1,5 +1,11 @@
 # inngest
 
+## 3.19.3
+
+### Patch Changes
+
+- [#573](https://github.com/inngest/inngest-js/pull/573) [`2b208af`](https://github.com/inngest/inngest-js/commit/2b208af066d503e9d237848b4924dae5260b3d1c) Thanks [@goodoldneon](https://github.com/goodoldneon)! - More gracefully handle non-JSON sync responses.
+
 ## 3.19.2
 
 ### Patch Changes
