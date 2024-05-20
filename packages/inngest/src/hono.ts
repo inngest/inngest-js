@@ -37,9 +37,11 @@ export const serve = (options: ServeHandlerOptions) => {
           return c.body(body, { headers, status });
         },
         url: () => {
-          // If this is an absolute URL, use it right now.
-          if (URL.canParse(c.req.url)) {
+          try {
+            // If this is an absolute URL, use it right now.
             return new URL(c.req.url);
+          } catch {
+            // no-op
           }
 
           // We now know that `c.req.url` is a relative URL, so let's try
