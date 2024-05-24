@@ -1,5 +1,7 @@
-import { type ServeHandlerOptions } from "./components/InngestCommHandler";
-import { serve as serveEdge } from "./edge";
+import {
+  InngestCommHandler,
+  type ServeHandlerOptions,
+} from "./components/InngestCommHandler";
 import { type SupportedFrameworkName } from "./types";
 
 export const frameworkName: SupportedFrameworkName = "astro";
@@ -19,7 +21,24 @@ export const frameworkName: SupportedFrameworkName = "astro";
  * @public
  */
 export const serve = (options: ServeHandlerOptions) => {
-  const requestHandler = serveEdge(options);
+  const commHandler = new InngestCommHandler({
+    frameworkName,
+    fetch: fetch.bind(globalThis),
+    ...options,
+    handler: ({ request: req }: { request: Request }) => {
+      return {
+        body: () => req.json(),
+        headers: (key) => req.headers.get(key),
+        method: () => req.method,
+        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+        transformResponse: ({ body, status, headers }) => {
+          return new Response(body, { status, headers });
+        },
+      };
+    },
+  });
+
+  const requestHandler = commHandler.createHandler();
   type RequestHandler = typeof requestHandler;
 
   return Object.defineProperties(requestHandler, {

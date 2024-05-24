@@ -51,7 +51,7 @@ testFramework("Astro", AstroHandler, {
     (req as any).headers = headers;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
     (req as any).json = () => Promise.resolve(req.body);
-    return [req];
+    return [{ request: req }];
   },
   transformRes: async (_args, ret: Response) => {
     const headers: Record<string, string> = {};
