@@ -1,4 +1,3 @@
-import { type APIContext } from "astro";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
@@ -26,23 +25,12 @@ export const serve = (options: ServeHandlerOptions) => {
     frameworkName,
     fetch: fetch.bind(globalThis),
     ...options,
-    handler: ({ request }: APIContext) => {
+    handler: ({ request: req }: { request: Request }) => {
       return {
-        body: () => request.json(),
-        headers: (key) => request.headers.get(key),
-        method: () => request.method,
-        url: () => {
-          // Attempt to get host separately as Astro will warn if
-          // not in server output mode
-          const host = request.headers.get("host");
-          if (!host || host.length === 0) {
-            throw new Error(
-              `Could not access Astro.request.headers.host. Please change your Astro config to use "server" or "hybrid" output mode.`
-            );
-          }
-          return new URL(request.url, `https://${host || ""}`);
-        },
-
+        body: () => req.json(),
+        headers: (key) => req.headers.get(key),
+        method: () => req.method,
+        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
         transformResponse: ({ body, status, headers }) => {
           return new Response(body, { status, headers });
         },

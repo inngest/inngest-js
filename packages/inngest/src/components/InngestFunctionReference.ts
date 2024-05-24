@@ -58,7 +58,7 @@ export const referenceFunction = <
 }: TArgs extends InngestFunction.Any
   ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
     Omit<InngestFunctionReference.HelperArgs<any, any>, "schemas">
-  : TArgs) => {
+  : TArgs): InngestFunctionReference.HelperReturn<TArgs> => {
   return new InngestFunctionReference({
     functionId,
     appId,

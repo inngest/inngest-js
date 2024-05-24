@@ -1,5 +1,5 @@
 import { type NextApiRequest, type NextApiResponse } from "next";
-import { type NextRequest } from "next/server";
+import { type NextRequest } from "next/server.js";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
