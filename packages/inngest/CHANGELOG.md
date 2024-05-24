@@ -1,5 +1,11 @@
 # inngest
 
+## 3.19.5
+
+### Patch Changes
+
+- [#576](https://github.com/inngest/inngest-js/pull/576) [`f1be005`](https://github.com/inngest/inngest-js/commit/f1be0051154590bda51fe20c9bbcba8c20148d65) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix function-level middleware typing being missing; only client-level was providing types
+
 ## 3.19.4
 
 ### Patch Changes
