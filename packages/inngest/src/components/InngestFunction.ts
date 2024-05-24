@@ -398,7 +398,6 @@ export namespace InngestFunction {
       burst?: number;
     };
 
-
     /**
      * Debounce delays functions for the `period` specified. If an event is sent,
      * the function will not run until at least `period` has elapsed.

@@ -206,7 +206,6 @@
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "@vercel/node": "^2.15.9",
-    "astro": "^4.0.7",
     "aws-lambda": "^1.0.7",
     "callsites": "^4.1.0",
     "concurrently": "^7.4.0",
@@ -243,7 +242,6 @@
   "peerDependencies": {
     "@sveltejs/kit": "^1.27.3",
     "@vercel/node": "^2.15.9",
-    "astro": "^4.0.7",
     "aws-lambda": "^1.0.7",
     "express": "^4.19.2",
     "fastify": "^4.21.0",

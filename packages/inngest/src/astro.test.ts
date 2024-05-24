@@ -1,4 +1,4 @@
-import * as EdgeHandler from "@local/edge";
+import * as AstroHandler from "@local/astro";
 import fetch, { Headers, Response } from "cross-fetch";
 import { testFramework } from "./test/helpers";
 
@@ -6,7 +6,7 @@ const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;
 const originalHeaders = globalThis.Headers;
 
-testFramework("Edge", EdgeHandler, {
+testFramework("Astro", AstroHandler, {
   /**
    * Make sure this stuff is available for all polyfilled Node environments.
    */
