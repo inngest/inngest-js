@@ -1,5 +1,11 @@
 # inngest
 
+## 3.19.6
+
+### Patch Changes
+
+- [#580](https://github.com/inngest/inngest-js/pull/580) [`d8a2de0`](https://github.com/inngest/inngest-js/commit/d8a2de0dcefd4b50b6b8216158566d77bb6ee405) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Vanity bump for JSR deploy
+
 ## 3.19.5
 
 ### Patch Changes
