@@ -669,15 +669,6 @@ export namespace Inngest {
   export type Any = Inngest;
 
   export type CreateFunction<TClient extends Inngest.Any> = <
-    TFnOpts extends Omit<
-      InngestFunction.Options<
-        TClient,
-        TMiddleware,
-        AsArray<TTrigger>,
-        TFailureHandler
-      >,
-      "triggers"
-    >,
     TMiddleware extends InngestMiddleware.Stack,
     TTrigger extends SingleOrArray<
       InngestFunction.Trigger<TriggersFromClient<TClient>>
@@ -711,15 +702,26 @@ export namespace Inngest {
       >
     >,
   >(
-    options: TFnOpts,
+    options: Omit<
+      InngestFunction.Options<
+        TClient,
+        TMiddleware,
+        AsArray<TTrigger>,
+        TFailureHandler
+      >,
+      "triggers"
+    >,
     trigger: TTrigger,
     handler: THandler
   ) => InngestFunction<
-    InngestFunction.Options<
-      TClient,
-      TMiddleware,
-      AsArray<TTrigger>,
-      TFailureHandler
+    Omit<
+      InngestFunction.Options<
+        TClient,
+        TMiddleware,
+        AsArray<TTrigger>,
+        TFailureHandler
+      >,
+      "triggers"
     >,
     THandler,
     TFailureHandler,
