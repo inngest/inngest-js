@@ -1,5 +1,11 @@
 # inngest
 
+## 3.19.7
+
+### Patch Changes
+
+- [#582](https://github.com/inngest/inngest-js/pull/582) [`5d1ad4a`](https://github.com/inngest/inngest-js/commit/5d1ad4af8532416d41491d0e6a9c6a9f10ce0bb4) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow in-CI changes when publishing to JSR; mostly a vanity bump
+
 ## 3.19.6
 
 ### Patch Changes
