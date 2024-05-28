@@ -11,7 +11,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
     "postversion": "pnpm run build",
-    "release": "node ../../scripts/release/publish.js"
+    "release:version": "node ../../scripts/release/jsrVersion.js",
+    "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty"
   },
   "files": [
     "dist"

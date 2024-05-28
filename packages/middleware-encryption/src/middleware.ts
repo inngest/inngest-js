@@ -1,6 +1,10 @@
-import AES from "crypto-js/aes";
-import CryptoJSUtf8 from "crypto-js/enc-utf8";
-import { InngestMiddleware, type MiddlewareRegisterReturn } from "inngest";
+import AES from "crypto-js/aes.js";
+import CryptoJSUtf8 from "crypto-js/enc-utf8.js";
+import {
+  InngestMiddleware,
+  type MiddlewareOptions,
+  type MiddlewareRegisterReturn,
+} from "inngest";
 
 /**
  * A marker used to identify encrypted values without having to guess.
@@ -50,7 +54,7 @@ export const encryptionMiddleware = (
    * `encryptionService` is not provided, the `key` option is required.
    */
   opts: EncryptionMiddlewareOptions
-) => {
+): InngestMiddleware<MiddlewareOptions> => {
   const service =
     opts.encryptionService || new DefaultEncryptionService(opts.key);
   const shouldEncryptEvents = Boolean(
