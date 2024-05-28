@@ -1,0 +1,11 @@
+{
+  "$schema": "https://jsr.io/schema/config-file.v1.json",
+  "name": "@inngest/middleware-encryption",
+  "description": "E2E encryption middleware for Inngest.",
+  "version": "0.1.3",
+  "include": ["./src/**/*.ts"],
+  "exclude": [],
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
