@@ -1,3 +1,20 @@
+/**
+ * An adapter for Remix to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/remix";
+ * import functions from "~/inngest";
+ *
+ * const handler = serve({ id: "my-remix-app", functions });
+ *
+ * export { handler as loader, handler as action };
+ * ```
+ *
+ * @module
+ */
+
 import { z } from "zod";
 import {
   InngestCommHandler,
@@ -7,6 +24,10 @@ import {
 import { type Env } from "./helpers/env";
 import { type SupportedFrameworkName } from "./types";
 
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
 export const frameworkName: SupportedFrameworkName = "remix";
 
 const createNewResponse = ({
@@ -15,9 +36,9 @@ const createNewResponse = ({
   headers,
 }: ActionResponse<string | ReadableStream>): Response => {
   /**
-   * If `Response` isn't included in this environment, it's probably a Node
-   * env that isn't already polyfilling. In this case, we can polyfill it
-   * here to be safe.
+   * If `Response` isn't included in this environment, it's probably a Node env
+   * that isn't already polyfilling. In this case, we can polyfill it here to be
+   * safe.
    */
   let Res: typeof Response;
 

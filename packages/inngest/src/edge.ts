@@ -1,9 +1,31 @@
+/**
+ * An adapter for any request that handles standard Web APIs such as `fetch`,
+ * `Request,` and `Response` to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * This is reused by many other adapters, but can be used directly.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/edge";
+ * import functions from "~/inngest";
+ *
+ * export const handler = serve({ id: "my-edge-app", functions });
+ * ```
+ *
+ * @module
+ */
+
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
 import { type SupportedFrameworkName } from "./types";
 
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
 export const frameworkName: SupportedFrameworkName = "edge";
 
 /**

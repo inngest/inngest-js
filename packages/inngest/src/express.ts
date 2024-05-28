@@ -1,3 +1,25 @@
+/**
+ * An adapter for Express to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/express";
+ * import { inngest } from "./src/inngest/client";
+ * import fnA from "./src/inngest/fnA"; // Your own function
+ *
+ * // Important:  ensure you add JSON middleware to process incoming JSON POST payloads.
+ * app.use(express.json());
+ * app.use(
+ *   // Expose the middleware on our recommended path at `/api/inngest`.
+ *   "/api/inngest",
+ *   serve({ client: inngest, functions: [fnA] })
+ * );
+ * ```
+ *
+ * @module
+ */
+
 import { type VercelRequest, type VercelResponse } from "@vercel/node";
 import { type Request, type Response } from "express";
 import {
@@ -7,6 +29,10 @@ import {
 import { type Either } from "./helpers/types";
 import { type SupportedFrameworkName } from "./types";
 
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
 export const frameworkName: SupportedFrameworkName = "express";
 
 /**
@@ -16,6 +42,21 @@ export const frameworkName: SupportedFrameworkName = "express";
  * The return type is currently `any` to ensure there's no required type matches
  * between the `express` and `vercel` packages. This may change in the future to
  * appropriately infer.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/express";
+ * import { inngest } from "./src/inngest/client";
+ * import fnA from "./src/inngest/fnA"; // Your own function
+ *
+ * // Important:  ensure you add JSON middleware to process incoming JSON POST payloads.
+ * app.use(express.json());
+ * app.use(
+ *   // Expose the middleware on our recommended path at `/api/inngest`.
+ *   "/api/inngest",
+ *   serve({ client: inngest, functions: [fnA] })
+ * );
+ * ```
  *
  * @public
  */

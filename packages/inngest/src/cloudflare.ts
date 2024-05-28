@@ -1,14 +1,50 @@
+/**
+ * An adapter for Cloudflare Workers (and Workers on Pages) to serve and
+ * register any declared functions with Inngest, making them available to be
+ * triggered by events.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/cloudflare";
+ * import { inngest } from "../../inngest/client";
+ * import fnA from "../../inngest/fnA"; // Your own function
+ *
+ * export const onRequest = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ * });
+ * ```
+ *
+ * @module
+ */
+
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
 import { type SupportedFrameworkName } from "./types";
 
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
 export const frameworkName: SupportedFrameworkName = "cloudflare-pages";
 
 /**
  * In Cloudflare, serve and register any declared functions with Inngest, making
  * them available to be triggered by events.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/cloudflare";
+ * import { inngest } from "../../inngest/client";
+ * import fnA from "../../inngest/fnA"; // Your own function
+ *
+ * export const onRequest = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ * });
+ * ```
  *
  * @public
  */
