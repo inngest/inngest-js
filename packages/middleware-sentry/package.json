@@ -1,0 +1,40 @@
+{
+  "name": "@inngest/middleware-sentry",
+  "version": "0.0.0",
+  "description": "Sentry middleware for Inngest.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "postversion": "pnpm run build",
+    "release:version": "node ../../scripts/release/jsrVersion.js",
+    "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "inngest-middleware",
+    "inngest",
+    "middleware",
+    "sentry"
+  ],
+  "homepage": "https://github.com/inngest/inngest-js/tree/main/packages/middleware-sentry#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/middleware-sentry"
+  },
+  "author": "Jack Williams <jack@inngest.com>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@sentry/node": "^8.5.0",
+    "inngest": "^3.19.7",
+    "typescript": "~5.4.0"
+  },
+  "peerDependencies": {
+    "@sentry/node": "^8.0.0",
+    "inngest": "^3.0.0"
+  }
+}
