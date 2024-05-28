@@ -39,7 +39,14 @@ export const frameworkName: SupportedFrameworkName = "astro";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((ctx: { request: Request }) => Promise<Response>) & {
+  GET: (ctx: { request: Request }) => Promise<Response>;
+  POST: (ctx: { request: Request }) => Promise<Response>;
+  PUT: (ctx: { request: Request }) => Promise<Response>;
+} => {
   const commHandler = new InngestCommHandler({
     frameworkName,
     fetch: fetch.bind(globalThis),

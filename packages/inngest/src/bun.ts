@@ -62,7 +62,10 @@ export const frameworkName: SupportedFrameworkName = "bun";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((req: Request) => Promise<Response>) => {
   const optsOverrides: InternalServeHandlerOptions = {
     ...options,
     frameworkName,

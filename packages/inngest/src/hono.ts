@@ -49,7 +49,10 @@ export const frameworkName: SupportedFrameworkName = "hono";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((c: Context) => Promise<Response>) => {
   const handler = new InngestCommHandler({
     fetch: fetch.bind(globalThis),
     frameworkName,

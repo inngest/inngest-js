@@ -33,6 +33,7 @@ import {
   readBody,
   send,
   setHeaders,
+  type EventHandlerRequest,
   type H3Event,
 } from "h3";
 import {
@@ -76,11 +77,14 @@ export const frameworkName: SupportedFrameworkName = "h3";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((event: H3Event<EventHandlerRequest>) => Promise<void>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
-    handler: (event: H3Event) => {
+    handler: (event: H3Event<EventHandlerRequest>) => {
       return {
         body: () => readBody(event),
         headers: (key) => getHeader(event, key),

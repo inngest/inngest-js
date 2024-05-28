@@ -43,8 +43,13 @@ export const frameworkName: SupportedFrameworkName = "edge";
  *
  * export const handler = serve({ id: "my-edge-app", functions });
  * ```
+ *
+ * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((req: Request) => Promise<Response>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     fetch: fetch.bind(globalThis),

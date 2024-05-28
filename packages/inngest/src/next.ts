@@ -57,7 +57,14 @@ export const frameworkName: SupportedFrameworkName = "nextjs";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((expectedReq: NextRequest, res: NextApiResponse) => Promise<Response>) & {
+  GET: (expectedReq: NextRequest, res: NextApiResponse) => Promise<Response>;
+  POST: (expectedReq: NextRequest, res: NextApiResponse) => Promise<Response>;
+  PUT: (expectedReq: NextRequest, res: NextApiResponse) => Promise<Response>;
+} => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,

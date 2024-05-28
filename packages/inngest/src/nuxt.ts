@@ -52,7 +52,10 @@ export const frameworkName: SupportedFrameworkName = "nuxt";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ReturnType<typeof serveH3> => {
   const optsOverrides: InternalServeHandlerOptions = {
     ...options,
     frameworkName,

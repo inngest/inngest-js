@@ -52,7 +52,12 @@ export const frameworkName: SupportedFrameworkName = "koa";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((
+  ctx: Koa.ParameterizedContext<Koa.DefaultState, Koa.DefaultContext, unknown>
+) => Promise<void>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,

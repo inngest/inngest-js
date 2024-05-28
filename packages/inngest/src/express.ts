@@ -60,6 +60,7 @@ export const frameworkName: SupportedFrameworkName = "express";
  *
  * @public
  */
+// Has explicit return type to avoid JSR-defined "slow types"
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const serve = (options: ServeHandlerOptions): any => {
   const handler = new InngestCommHandler({

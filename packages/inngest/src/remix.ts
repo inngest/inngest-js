@@ -78,7 +78,10 @@ const createNewResponse = ({
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((ctx: { request: Request; context?: unknown }) => Promise<Response>) => {
   const contextSchema = z.object({
     env: z.record(z.string(), z.any()),
   });

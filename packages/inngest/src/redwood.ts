@@ -60,7 +60,13 @@ export const frameworkName: SupportedFrameworkName = "redwoodjs";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((
+  event: APIGatewayProxyEvent,
+  _context: LambdaContext
+) => Promise<RedwoodResponse>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,

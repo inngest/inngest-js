@@ -47,7 +47,10 @@ export const frameworkName: SupportedFrameworkName = "deno/fresh";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((req: Request) => Promise<Response>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,

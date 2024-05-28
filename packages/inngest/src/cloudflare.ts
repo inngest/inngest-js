@@ -48,7 +48,13 @@ export const frameworkName: SupportedFrameworkName = "cloudflare-pages";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((ctx: {
+  request: Request;
+  env: Record<string, string | undefined>;
+}) => Promise<Response>) => {
   const handler = new InngestCommHandler({
     frameworkName,
 

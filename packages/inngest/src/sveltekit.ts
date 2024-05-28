@@ -57,7 +57,14 @@ export const frameworkName: SupportedFrameworkName = "sveltekit";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((event: RequestEvent) => Promise<Response>) & {
+  GET: (event: RequestEvent) => Promise<Response>;
+  POST: (event: RequestEvent) => Promise<Response>;
+  PUT: (event: RequestEvent) => Promise<Response>;
+} => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,

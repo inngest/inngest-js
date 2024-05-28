@@ -26,6 +26,7 @@
 
 import {
   type APIGatewayEvent,
+  type APIGatewayProxyEvent,
   type APIGatewayProxyEventV2,
   type APIGatewayProxyResult,
   type Context,
@@ -68,12 +69,18 @@ export const frameworkName: SupportedFrameworkName = "aws-lambda";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((
+  event: Either<APIGatewayProxyEvent, APIGatewayProxyEventV2>,
+  _context: Context
+) => Promise<APIGatewayProxyResult>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
     handler: (
-      event: Either<APIGatewayEvent, APIGatewayProxyEventV2>,
+      event: Either<APIGatewayProxyEvent, APIGatewayProxyEventV2>,
       _context: Context
     ) => {
       /**
