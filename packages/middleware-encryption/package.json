@@ -33,6 +33,7 @@
   "license": "Apache-2.0",
   "devDependencies": {
     "@types/crypto-js": "^4.2.1",
+    "inngest": "^3.19.7",
     "typescript": "~5.4.0"
   },
   "dependencies": {
