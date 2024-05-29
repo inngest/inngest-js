@@ -1,5 +1,32 @@
+/**
+ * An adapter for AWS Lambda to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example
+ *
+ * ```ts
+ * import { Inngest } from "inngest";
+ * import { serve } from "inngest/lambda";
+ *
+ * const inngest = new Inngest({ id: "my-lambda-app" });
+ *
+ * const fn = inngest.createFunction(
+ *   { id: "hello-world" },
+ *   { event: "test/hello.world" },
+ *   async ({ event }) => {
+ *    return "Hello World";
+ *  }
+ * );
+ *
+ * export const handler = serve({ client: inngest, functions: [fn] });
+ * ```
+ *
+ * @module
+ */
+
 import {
   type APIGatewayEvent,
+  type APIGatewayProxyEvent,
   type APIGatewayProxyEventV2,
   type APIGatewayProxyResult,
   type Context,
@@ -11,6 +38,10 @@ import {
 import { type Either } from "./helpers/types";
 import { type SupportedFrameworkName } from "./types";
 
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
 export const frameworkName: SupportedFrameworkName = "aws-lambda";
 
 /**
@@ -38,12 +69,18 @@ export const frameworkName: SupportedFrameworkName = "aws-lambda";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((
+  event: Either<APIGatewayProxyEvent, APIGatewayProxyEventV2>,
+  _context: Context
+) => Promise<APIGatewayProxyResult>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
     handler: (
-      event: Either<APIGatewayEvent, APIGatewayProxyEventV2>,
+      event: Either<APIGatewayProxyEvent, APIGatewayProxyEventV2>,
       _context: Context
     ) => {
       /**
