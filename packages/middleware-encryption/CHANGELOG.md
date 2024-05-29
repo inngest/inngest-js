@@ -1,5 +1,11 @@
 # @inngest/middleware-encryption
 
+## 0.1.4
+
+### Patch Changes
+
+- [#588](https://github.com/inngest/inngest-js/pull/588) [`b398c6d`](https://github.com/inngest/inngest-js/commit/b398c6d016936b057a3af6c43c717aa9ee723fc7) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Publish `@inngest/middleware-encryption` to JSR
+
 ## 0.1.3
 
 ### Patch Changes
