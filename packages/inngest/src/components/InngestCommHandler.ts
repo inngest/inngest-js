@@ -6,6 +6,7 @@ import { ServerTiming } from "../helpers/ServerTiming";
 import {
   debugPrefix,
   defaultInngestApiBaseUrl,
+  defaultInngestEventBaseUrl,
   envKeys,
   headerKeys,
   logPrefix,
@@ -32,18 +33,18 @@ import {
 import { fetchWithAuthFallback } from "../helpers/net";
 import { runAsPromise } from "../helpers/promises";
 import { createStream } from "../helpers/stream";
-import { hashSigningKey, stringify } from "../helpers/strings";
+import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
 import {
   logLevels,
   type EventPayload,
   type FunctionConfig,
-  type InsecureIntrospection,
+  type UnauthenticatedIntrospection,
   type LogLevel,
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
-  type SecureIntrospection,
+  type AuthenticatedIntrospection,
   type SupportedFrameworkName,
 } from "../types";
 import { version } from "../version";
@@ -445,13 +446,26 @@ export class InngestCommHandler<
     this.fetch = getFetch(options.fetch || this.client["fetch"]);
   }
 
+  private get hashedEventKey(): string | undefined {
+    if (!this.client["eventKey"]) {
+      return undefined;
+    }
+    return hashEventKey(this.client["eventKey"]);
+  }
+
   // hashedSigningKey creates a sha256 checksum of the signing key with the
   // same signing key prefix.
-  private get hashedSigningKey(): string {
+  private get hashedSigningKey(): string | undefined {
+    if (!this.signingKey) {
+      return undefined;
+    }
     return hashSigningKey(this.signingKey);
   }
 
-  private get hashedSigningKeyFallback(): string {
+  private get hashedSigningKeyFallback(): string | undefined {
+    if (!this.signingKeyFallback) {
+      return undefined;
+    }
     return hashSigningKey(this.signingKeyFallback);
   }
 
@@ -880,7 +894,10 @@ export class InngestCommHandler<
           headerKeys.Signature
         );
 
-        let introspection: InsecureIntrospection | SecureIntrospection = {
+        let introspection:
+          | UnauthenticatedIntrospection
+          | AuthenticatedIntrospection = {
+          authentication_succeeded: null,
           extra: {
             is_mode_explicit: this._mode.isExplicit,
             message: "Inngest endpoint configured correctly.",
@@ -889,9 +906,10 @@ export class InngestCommHandler<
           has_signing_key: Boolean(this.signingKey),
           function_count: registerBody.functions.length,
           mode: this._mode.type,
+          schema_version: "2024-05-24",
         };
 
-        // Only allow secure introspection in Cloud mode, since Dev mode skips
+        // Only allow authenticated introspection in Cloud mode, since Dev mode skips
         // signature validation
         if (this._mode.type === "cloud") {
           try {
@@ -899,12 +917,25 @@ export class InngestCommHandler<
 
             introspection = {
               ...introspection,
-              signing_key_fallback_hash: this.hashedSigningKeyFallback,
-              signing_key_hash: this.hashedSigningKey,
-            };
+              authentication_succeeded: true,
+              api_origin: this.client["apiBaseUrl"] ?? defaultInngestApiBaseUrl,
+              app_id: this.client.id,
+              env: this.client["headers"][headerKeys.Environment] ?? null,
+              event_api_origin: "hi",
+              event_key_hash: this.hashedEventKey ?? null,
+              framework: this.frameworkName,
+              is_streaming: Boolean(this.streaming),
+              sdk_language: "js",
+              sdk_version: version,
+              serve_origin: this.serveHost ?? null,
+              serve_path: this.servePath ?? null,
+              signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
+              signing_key_hash: this.hashedSigningKey ?? null,
+            } satisfies AuthenticatedIntrospection;
           } catch {
             // Swallow signature validation error since we'll just return the
-            // insecure introspection
+            // unauthenticated introspection
+            introspection.authentication_succeeded = false;
           }
         }
 
