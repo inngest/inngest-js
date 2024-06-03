@@ -1006,8 +1006,10 @@ export interface AuthenticatedIntrospection
   env: string | null;
   event_api_origin: string;
   event_key_hash: string | null;
+  extra: UnauthenticatedIntrospection["extra"] & {
+    is_streaming: boolean;
+  };
   framework: string;
-  is_streaming: boolean | null;
   sdk_language: string;
   sdk_version: string;
   serve_origin: string | null;

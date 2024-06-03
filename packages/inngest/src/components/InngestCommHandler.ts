@@ -6,7 +6,6 @@ import { ServerTiming } from "../helpers/ServerTiming";
 import {
   debugPrefix,
   defaultInngestApiBaseUrl,
-  defaultInngestEventBaseUrl,
   envKeys,
   headerKeys,
   logPrefix,
@@ -923,8 +922,11 @@ export class InngestCommHandler<
               env: this.client["headers"][headerKeys.Environment] ?? null,
               event_api_origin: "hi",
               event_key_hash: this.hashedEventKey ?? null,
+              extra: {
+                ...introspection.extra,
+                is_streaming: Boolean(this.streaming),
+              },
               framework: this.frameworkName,
-              is_streaming: Boolean(this.streaming),
               sdk_language: "js",
               sdk_version: version,
               serve_origin: this.serveHost ?? null,
