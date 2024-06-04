@@ -6,6 +6,7 @@ import { ServerTiming } from "../helpers/ServerTiming";
 import {
   debugPrefix,
   defaultInngestApiBaseUrl,
+  defaultInngestEventBaseUrl,
   envKeys,
   headerKeys,
   logPrefix,
@@ -329,6 +330,10 @@ export class InngestCommHandler<
 
   private allowExpiredSignatures: boolean;
 
+  private apiBaseUrl: string;
+
+  private eventApiBaseUrl: string;
+
   constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>) {
     /**
      * v2 -> v3 migration error.
@@ -397,9 +402,23 @@ export class InngestCommHandler<
       options.baseUrl ||
         this.env[envKeys.InngestApiBaseUrl] ||
         this.env[envKeys.InngestBaseUrl] ||
-        this.client["apiBaseUrl"] ||
+        this.client.apiBaseUrl ||
         defaultInngestApiBaseUrl
     );
+
+    this.apiBaseUrl =
+      options.baseUrl ??
+      this.env[envKeys.InngestApiBaseUrl] ??
+      this.env[envKeys.InngestBaseUrl] ??
+      this.client.apiBaseUrl ??
+      defaultInngestApiBaseUrl;
+
+    this.eventApiBaseUrl =
+      options.baseUrl ??
+      this.env[envKeys.InngestEventApiBaseUrl] ??
+      this.env[envKeys.InngestBaseUrl] ??
+      this.client.eventBaseUrl ??
+      defaultInngestEventBaseUrl;
 
     this.signingKey = options.signingKey;
     this.signingKeyFallback = options.signingKeyFallback;
@@ -906,7 +925,7 @@ export class InngestCommHandler<
           function_count: registerBody.functions.length,
           mode: this._mode.type,
           schema_version: "2024-05-24",
-        };
+        } satisfies UnauthenticatedIntrospection;
 
         // Only allow authenticated introspection in Cloud mode, since Dev mode skips
         // signature validation
@@ -917,10 +936,14 @@ export class InngestCommHandler<
             introspection = {
               ...introspection,
               authentication_succeeded: true,
-              api_origin: this.client["apiBaseUrl"] ?? defaultInngestApiBaseUrl,
+              api_origin: this.apiBaseUrl,
               app_id: this.client.id,
-              env: this.client["headers"][headerKeys.Environment] ?? null,
-              event_api_origin: "hi",
+              env:
+                (await actions.headers(
+                  "fetching environment for introspection request",
+                  headerKeys.Environment
+                )) || null,
+              event_api_origin: this.eventApiBaseUrl,
               event_key_hash: this.hashedEventKey ?? null,
               extra: {
                 ...introspection.extra,
@@ -929,15 +952,20 @@ export class InngestCommHandler<
               framework: this.frameworkName,
               sdk_language: "js",
               sdk_version: version,
-              serve_origin: this.serveHost ?? null,
-              serve_path: this.servePath ?? null,
+              serve_origin:
+                this.env["INNGEST_SERVE_HOST"] ?? this.serveHost ?? null,
+              serve_path:
+                this.env["INNGEST_SERVE_PATH"] ?? this.servePath ?? null,
               signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
               signing_key_hash: this.hashedSigningKey ?? null,
             } satisfies AuthenticatedIntrospection;
           } catch {
             // Swallow signature validation error since we'll just return the
             // unauthenticated introspection
-            introspection.authentication_succeeded = false;
+            introspection = {
+              ...introspection,
+              authentication_succeeded: false,
+            } satisfies UnauthenticatedIntrospection;
           }
         }
 

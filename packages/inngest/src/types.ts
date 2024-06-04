@@ -986,7 +986,7 @@ export interface RegisterRequest {
  * @internal
  */
 export interface UnauthenticatedIntrospection {
-  authentication_succeeded: boolean | null;
+  authentication_succeeded: false | null;
   extra: {
     is_mode_explicit: boolean;
     message: string;
@@ -999,7 +999,7 @@ export interface UnauthenticatedIntrospection {
 }
 
 export interface AuthenticatedIntrospection
-  extends UnauthenticatedIntrospection {
+  extends Omit<UnauthenticatedIntrospection, "authentication_succeeded"> {
   api_origin: string;
   app_id: string;
   authentication_succeeded: true;
