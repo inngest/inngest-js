@@ -37,15 +37,15 @@ import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
 import {
   logLevels,
+  type AuthenticatedIntrospection,
   type EventPayload,
   type FunctionConfig,
-  type UnauthenticatedIntrospection,
   type LogLevel,
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
-  type AuthenticatedIntrospection,
   type SupportedFrameworkName,
+  type UnauthenticatedIntrospection,
 } from "../types";
 import { version } from "../version";
 import { type Inngest } from "./Inngest";
@@ -283,7 +283,7 @@ export class InngestCommHandler<
    *
    * To also provide a custom path, use `servePath`.
    */
-  protected readonly serveHost: string | undefined;
+  readonly #serveHost: string | undefined;
 
   /**
    * The path to the Inngest serve endpoint. e.g.:
@@ -300,7 +300,7 @@ export class InngestCommHandler<
    *
    * To also provide a custom hostname, use `serveHost`.
    */
-  protected readonly servePath: string | undefined;
+  readonly #servePath: string | undefined;
 
   /**
    * The minimum level to log from the Inngest serve handler.
@@ -330,11 +330,12 @@ export class InngestCommHandler<
 
   private allowExpiredSignatures: boolean;
 
-  private apiBaseUrl: string;
-
-  private eventApiBaseUrl: string;
+  readonly #options: InngestCommHandlerOptions<Input, Output, StreamOutput>;
 
   constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>) {
+    // Set input options directly so we can reference them later
+    this.#options = options;
+
     /**
      * v2 -> v3 migration error.
      *
@@ -397,33 +398,12 @@ export class InngestCommHandler<
       };
     }, {});
 
-    this.inngestRegisterUrl = new URL(
-      "/fn/register",
-      options.baseUrl ||
-        this.env[envKeys.InngestApiBaseUrl] ||
-        this.env[envKeys.InngestBaseUrl] ||
-        this.client.apiBaseUrl ||
-        defaultInngestApiBaseUrl
-    );
-
-    this.apiBaseUrl =
-      options.baseUrl ??
-      this.env[envKeys.InngestApiBaseUrl] ??
-      this.env[envKeys.InngestBaseUrl] ??
-      this.client.apiBaseUrl ??
-      defaultInngestApiBaseUrl;
-
-    this.eventApiBaseUrl =
-      options.baseUrl ??
-      this.env[envKeys.InngestEventApiBaseUrl] ??
-      this.env[envKeys.InngestBaseUrl] ??
-      this.client.eventBaseUrl ??
-      defaultInngestEventBaseUrl;
+    this.inngestRegisterUrl = new URL("/fn/register", this.apiBaseUrl);
 
     this.signingKey = options.signingKey;
     this.signingKeyFallback = options.signingKeyFallback;
-    this.serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
-    this.servePath = options.servePath || this.env[envKeys.InngestServePath];
+    this.#serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
+    this.#servePath = options.servePath || this.env[envKeys.InngestServePath];
 
     const defaultLogLevel: typeof this.logLevel = "info";
     this.logLevel = z
@@ -464,6 +444,60 @@ export class InngestCommHandler<
     this.fetch = getFetch(options.fetch || this.client["fetch"]);
   }
 
+  /**
+   * Get the API base URL for the Inngest API.
+   *
+   * This is a getter to encourage checking the environment for the API base URL
+   * each time it's accessed, as it may change during execution.
+   */
+  protected get apiBaseUrl(): string {
+    return (
+      this.#options.baseUrl ||
+      this.env[envKeys.InngestApiBaseUrl] ||
+      this.env[envKeys.InngestBaseUrl] ||
+      this.client.apiBaseUrl ||
+      defaultInngestApiBaseUrl
+    );
+  }
+
+  /**
+   * Get the event API base URL for the Inngest API.
+   *
+   * This is a getter to encourage checking the environment for the event API
+   * base URL each time it's accessed, as it may change during execution.
+   */
+  protected get eventApiBaseUrl(): string {
+    return (
+      this.#options.baseUrl ||
+      this.env[envKeys.InngestEventApiBaseUrl] ||
+      this.env[envKeys.InngestBaseUrl] ||
+      this.client.eventBaseUrl ||
+      defaultInngestEventBaseUrl
+    );
+  }
+
+  /**
+   * The host used to access the Inngest serve endpoint, e.g.:
+   * `https://myapp.com`
+   *
+   * This is a getter to encourage checking the environment for the serve host
+   * each time it's accessed, as it may change during execution.
+   */
+  protected get serveHost(): string | undefined {
+    return this.#serveHost || this.env[envKeys.InngestServeHost];
+  }
+
+  /**
+   * The path to the Inngest serve endpoint. e.g.:
+   * `/some/long/path/to/inngest/endpoint`
+   *
+   * This is a getter to encourage checking the environment for the serve path
+   * each time it's accessed, as it may change during execution.
+   */
+  protected get servePath(): string | undefined {
+    return this.#servePath || this.env[envKeys.InngestServePath];
+  }
+
   private get hashedEventKey(): string | undefined {
     if (!this.client["eventKey"]) {
       return undefined;
@@ -485,6 +519,33 @@ export class InngestCommHandler<
       return undefined;
     }
     return hashSigningKey(this.signingKeyFallback);
+  }
+
+  /**
+   * Returns a `boolean` representing whether this handler will stream responses
+   * or not. Takes into account the user's preference and the platform's
+   * capabilities.
+   */
+  private shouldStream(actions: HandlerResponseWithErrors): boolean {
+    // We must be able to stream responses to continue.
+    if (!actions.transformStreamingResponse) {
+      return false;
+    }
+
+    // If the user has forced streaming, we should always stream.
+    if (this.streaming === "force") {
+      return true;
+    }
+
+    // If the user has allowed streaming, we should stream if the platform
+    // supports it.
+    return (
+      this.streaming === "allow" &&
+      platformSupportsStreaming(
+        this.frameworkName as SupportedFrameworkName,
+        this.env
+      )
+    );
   }
 
   /**
@@ -617,15 +678,7 @@ export class InngestCommHandler<
         },
       });
 
-      const wantToStream =
-        this.streaming === "force" ||
-        (this.streaming === "allow" &&
-          platformSupportsStreaming(
-            this.frameworkName as SupportedFrameworkName,
-            this.env
-          ));
-
-      if (wantToStream && actions.transformStreamingResponse) {
+      if (this.shouldStream(actions)) {
         const method = await actions.method("starting streaming response");
 
         if (method === "POST") {
@@ -947,15 +1000,13 @@ export class InngestCommHandler<
               event_key_hash: this.hashedEventKey ?? null,
               extra: {
                 ...introspection.extra,
-                is_streaming: Boolean(this.streaming),
+                is_streaming: this.shouldStream(actions),
               },
               framework: this.frameworkName,
               sdk_language: "js",
               sdk_version: version,
-              serve_origin:
-                this.env["INNGEST_SERVE_HOST"] ?? this.serveHost ?? null,
-              serve_path:
-                this.env["INNGEST_SERVE_PATH"] ?? this.servePath ?? null,
+              serve_origin: this.serveHost ?? null,
+              serve_path: this.servePath ?? null,
               signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
               signing_key_hash: this.hashedSigningKey ?? null,
             } satisfies AuthenticatedIntrospection;
