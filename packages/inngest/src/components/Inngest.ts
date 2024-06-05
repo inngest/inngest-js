@@ -107,8 +107,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
    */
   private eventKey = "";
 
-  readonly #apiBaseUrl: string | undefined;
-  readonly #eventBaseUrl: string | undefined;
+  private readonly _apiBaseUrl: string | undefined;
+  private readonly _eventBaseUrl: string | undefined;
 
   private readonly inngestApi: InngestApi;
 
@@ -145,11 +145,11 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
   private readonly mode: Mode;
 
   get apiBaseUrl(): string | undefined {
-    return this.#apiBaseUrl;
+    return this._apiBaseUrl;
   }
 
   get eventBaseUrl(): string | undefined {
-    return this.#eventBaseUrl;
+    return this._eventBaseUrl;
   }
 
   get env(): string | null {
@@ -198,13 +198,13 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
         typeof isDev === "boolean" ? (isDev ? "dev" : "cloud") : undefined,
     });
 
-    this.#apiBaseUrl =
+    this._apiBaseUrl =
       baseUrl ||
       processEnv(envKeys.InngestApiBaseUrl) ||
       processEnv(envKeys.InngestBaseUrl) ||
       this.mode.getExplicitUrl(defaultInngestApiBaseUrl);
 
-    this.#eventBaseUrl =
+    this._eventBaseUrl =
       baseUrl ||
       processEnv(envKeys.InngestEventApiBaseUrl) ||
       processEnv(envKeys.InngestBaseUrl) ||

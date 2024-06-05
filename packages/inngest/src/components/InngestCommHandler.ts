@@ -283,7 +283,7 @@ export class InngestCommHandler<
    *
    * To also provide a custom path, use `servePath`.
    */
-  readonly #serveHost: string | undefined;
+  private readonly _serveHost: string | undefined;
 
   /**
    * The path to the Inngest serve endpoint. e.g.:
@@ -300,7 +300,7 @@ export class InngestCommHandler<
    *
    * To also provide a custom hostname, use `serveHost`.
    */
-  readonly #servePath: string | undefined;
+  private readonly _servePath: string | undefined;
 
   /**
    * The minimum level to log from the Inngest serve handler.
@@ -330,11 +330,15 @@ export class InngestCommHandler<
 
   private allowExpiredSignatures: boolean;
 
-  readonly #options: InngestCommHandlerOptions<Input, Output, StreamOutput>;
+  private readonly _options: InngestCommHandlerOptions<
+    Input,
+    Output,
+    StreamOutput
+  >;
 
   constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>) {
     // Set input options directly so we can reference them later
-    this.#options = options;
+    this._options = options;
 
     /**
      * v2 -> v3 migration error.
@@ -402,8 +406,8 @@ export class InngestCommHandler<
 
     this.signingKey = options.signingKey;
     this.signingKeyFallback = options.signingKeyFallback;
-    this.#serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
-    this.#servePath = options.servePath || this.env[envKeys.InngestServePath];
+    this._serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
+    this._servePath = options.servePath || this.env[envKeys.InngestServePath];
 
     const defaultLogLevel: typeof this.logLevel = "info";
     this.logLevel = z
@@ -452,7 +456,7 @@ export class InngestCommHandler<
    */
   protected get apiBaseUrl(): string {
     return (
-      this.#options.baseUrl ||
+      this._options.baseUrl ||
       this.env[envKeys.InngestApiBaseUrl] ||
       this.env[envKeys.InngestBaseUrl] ||
       this.client.apiBaseUrl ||
@@ -468,7 +472,7 @@ export class InngestCommHandler<
    */
   protected get eventApiBaseUrl(): string {
     return (
-      this.#options.baseUrl ||
+      this._options.baseUrl ||
       this.env[envKeys.InngestEventApiBaseUrl] ||
       this.env[envKeys.InngestBaseUrl] ||
       this.client.eventBaseUrl ||
@@ -478,24 +482,43 @@ export class InngestCommHandler<
 
   /**
    * The host used to access the Inngest serve endpoint, e.g.:
-   * `https://myapp.com`
    *
-   * This is a getter to encourage checking the environment for the serve host
-   * each time it's accessed, as it may change during execution.
+   *     "https://myapp.com"
+   *
+   * By default, the library will try to infer this using request details such
+   * as the "Host" header and request path, but sometimes this isn't possible
+   * (e.g. when running in a more controlled environments such as AWS Lambda or
+   * when dealing with proxies/redirects).
+   *
+   * Provide the custom hostname here to ensure that the path is reported
+   * correctly when registering functions with Inngest.
+   *
+   * To also provide a custom path, use `servePath`.
    */
   protected get serveHost(): string | undefined {
-    return this.#serveHost || this.env[envKeys.InngestServeHost];
+    return this._serveHost || this.env[envKeys.InngestServeHost];
   }
 
   /**
    * The path to the Inngest serve endpoint. e.g.:
-   * `/some/long/path/to/inngest/endpoint`
+   *
+   *     "/some/long/path/to/inngest/endpoint"
+   *
+   * By default, the library will try to infer this using request details such
+   * as the "Host" header and request path, but sometimes this isn't possible
+   * (e.g. when running in a more controlled environments such as AWS Lambda or
+   * when dealing with proxies/redirects).
+   *
+   * Provide the custom path (excluding the hostname) here to ensure that the
+   * path is reported correctly when registering functions with Inngest.
+   *
+   * To also provide a custom hostname, use `serveHost`.
    *
    * This is a getter to encourage checking the environment for the serve path
    * each time it's accessed, as it may change during execution.
    */
   protected get servePath(): string | undefined {
-    return this.#servePath || this.env[envKeys.InngestServePath];
+    return this._servePath || this.env[envKeys.InngestServePath];
   }
 
   private get hashedEventKey(): string | undefined {
