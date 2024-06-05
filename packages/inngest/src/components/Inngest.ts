@@ -5,6 +5,7 @@ import {
   defaultInngestEventBaseUrl,
   dummyEventKey,
   envKeys,
+  headerKeys,
   logPrefix,
 } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
@@ -106,8 +107,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
    */
   private eventKey = "";
 
-  private readonly apiBaseUrl: string | undefined;
-  private readonly eventBaseUrl: string | undefined;
+  private readonly _apiBaseUrl: string | undefined;
+  private readonly _eventBaseUrl: string | undefined;
 
   private readonly inngestApi: InngestApi;
 
@@ -142,6 +143,18 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
    * variable if it is not set.
    */
   private readonly mode: Mode;
+
+  get apiBaseUrl(): string | undefined {
+    return this._apiBaseUrl;
+  }
+
+  get eventBaseUrl(): string | undefined {
+    return this._eventBaseUrl;
+  }
+
+  get env(): string | null {
+    return this.headers[headerKeys.Environment] ?? null;
+  }
 
   /**
    * A client used to interact with the Inngest API by sending or reacting to
@@ -185,13 +198,13 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
         typeof isDev === "boolean" ? (isDev ? "dev" : "cloud") : undefined,
     });
 
-    this.apiBaseUrl =
+    this._apiBaseUrl =
       baseUrl ||
       processEnv(envKeys.InngestApiBaseUrl) ||
       processEnv(envKeys.InngestBaseUrl) ||
       this.mode.getExplicitUrl(defaultInngestApiBaseUrl);
 
-    this.eventBaseUrl =
+    this._eventBaseUrl =
       baseUrl ||
       processEnv(envKeys.InngestEventApiBaseUrl) ||
       processEnv(envKeys.InngestBaseUrl) ||
