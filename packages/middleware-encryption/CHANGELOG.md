@@ -1,5 +1,19 @@
 # @inngest/middleware-encryption
 
+## 0.1.5
+
+### Patch Changes
+
+- [#589](https://github.com/inngest/inngest-js/pull/589) [`8d2a015`](https://github.com/inngest/inngest-js/commit/8d2a0150c722da07f7f2228f3cea677ccd56f29b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `inngest` not being correctly defined as a peer dependency of `@inngest/middleware-encryption`
+
+- [#589](https://github.com/inngest/inngest-js/pull/589) [`8d2a015`](https://github.com/inngest/inngest-js/commit/8d2a0150c722da07f7f2228f3cea677ccd56f29b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Documented all exports
+
+## 0.1.4
+
+### Patch Changes
+
+- [#588](https://github.com/inngest/inngest-js/pull/588) [`b398c6d`](https://github.com/inngest/inngest-js/commit/b398c6d016936b057a3af6c43c717aa9ee723fc7) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Publish `@inngest/middleware-encryption` to JSR
+
 ## 0.1.3
 
 ### Patch Changes
