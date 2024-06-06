@@ -1,5 +1,11 @@
 # inngest
 
+## 3.19.10
+
+### Patch Changes
+
+- [#599](https://github.com/inngest/inngest-js/pull/599) [`a2e7bd7`](https://github.com/inngest/inngest-js/commit/a2e7bd7e33b61b7ed866725f1354d60d7ee65a6c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Widen `@sveltejs/kit` peer dep range to `>=1.27.3` from `^1.27.3`
+
 ## 3.19.9
 
 ### Patch Changes
