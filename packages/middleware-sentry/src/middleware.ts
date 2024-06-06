@@ -1,5 +1,9 @@
 import * as Sentry from "@sentry/node";
-import { InngestMiddleware } from "inngest";
+import {
+  InngestMiddleware,
+  type MiddlewareRegisterFn,
+  type MiddlewareRegisterReturn,
+} from "inngest";
 
 /**
  * Options used to configure the Sentry middleware.
@@ -23,6 +27,35 @@ export interface SentryMiddlewareOptions {
  * Captures errors and performance data from Inngest functions and sends them to
  * Sentry.
  *
+ * Use the `sentryMiddleware()` helper to create a new Sentry middleware.
+ *
+ * This type is used an explicit return type for the `sentryMiddleware` function
+ * to allow better JSR publishing.
+ */
+export type SentryMiddleware = InngestMiddleware<{
+  name: string;
+  init: (...args: Parameters<MiddlewareRegisterFn>) => {
+    onFunctionRun: (
+      ...args: Parameters<
+        NonNullable<MiddlewareRegisterReturn["onFunctionRun"]>
+      >
+    ) => {
+      transformInput: () => {
+        ctx: {
+          /**
+           * The Sentry client fetched by `import * as Sentry from "@sentry/node"`.
+           */
+          sentry: typeof Sentry;
+        };
+      };
+    };
+  };
+}>;
+
+/**
+ * Captures errors and performance data from Inngest functions and sends them to
+ * Sentry.
+ *
  * This imports Sentry directly and relies on it already being initialized using
  * `Sentry.init()`. For more information on how to configure Sentry, see the
  * [Sentry documentation](https://docs.sentry.io/platforms/node/).
@@ -32,20 +65,22 @@ export const sentryMiddleware = (
    * Options used to configure the Sentry middleware.
    */
   opts?: SentryMiddlewareOptions
-) => {
-  return new InngestMiddleware({
+): SentryMiddleware => {
+  const mw = new InngestMiddleware({
     name: "@inngest/middleware-sentry",
     init({ client }) {
       return {
         onFunctionRun({ ctx, fn, steps }) {
           return Sentry.withScope((scope) => {
-            scope.setTags({
+            const sharedTags: Record<string, string> = {
               "inngest.client.id": client.id,
               "inngest.function.id": fn.id(client.id),
               "inngest.function.name": fn.name,
               "inngest.event": ctx.event.name,
               "inngest.run.id": ctx.runId,
-            });
+            };
+
+            scope.setTags(sharedTags);
 
             let memoSpan: Sentry.Span;
             let execSpan: Sentry.Span;
@@ -54,7 +89,11 @@ export const sentryMiddleware = (
               {
                 name: "Inngest Function Run",
                 op: "run",
-                attributes: { "inngest.event": JSON.stringify(ctx.event) },
+                attributes: {
+                  ...sharedTags,
+                  "inngest.event": JSON.stringify(ctx.event),
+                },
+                scope,
               },
               (reqSpan) => {
                 return {
@@ -70,14 +109,16 @@ export const sentryMiddleware = (
                     };
                   },
                   beforeMemoization() {
-                    Sentry.withActiveSpan(reqSpan, () => {
+                    Sentry.withActiveSpan(reqSpan, (scope) => {
                       Sentry.startSpanManual(
                         {
                           name: "Memoization",
                           op: "memoization",
                           attributes: {
+                            ...sharedTags,
                             "inngest.memoization.count": steps.length,
                           },
+                          scope,
                         },
                         (_memoSpan) => {
                           memoSpan = _memoSpan;
@@ -89,11 +130,15 @@ export const sentryMiddleware = (
                     memoSpan?.end();
                   },
                   beforeExecution() {
-                    Sentry.withActiveSpan(reqSpan, () => {
+                    Sentry.withActiveSpan(reqSpan, (scope) => {
                       Sentry.startSpanManual(
                         {
                           name: "Execution",
                           op: "execution",
+                          attributes: {
+                            ...sharedTags,
+                          },
+                          scope,
                         },
                         (_execSpan) => {
                           execSpan = _execSpan;
@@ -108,10 +153,11 @@ export const sentryMiddleware = (
                     // Set step metadata
                     if (step) {
                       Sentry.withActiveSpan(reqSpan, (scope) => {
-                        scope.setTags({
-                          "inngest.step.name": step.displayName,
-                          "inngest.step.op": step.op,
-                        });
+                        sharedTags["inngest.step.name"] =
+                          step.displayName ?? "";
+                        sharedTags["inngest.step.op"] = step.op;
+
+                        scope.setTags(sharedTags);
                       });
                     }
 
@@ -122,6 +168,7 @@ export const sentryMiddleware = (
                       });
 
                       Sentry.withActiveSpan(reqSpan, (scope) => {
+                        scope.setTags(sharedTags);
                         scope.captureException(result.error);
                       });
                     } else {
@@ -145,4 +192,6 @@ export const sentryMiddleware = (
       };
     },
   });
+
+  return mw as SentryMiddleware;
 };
