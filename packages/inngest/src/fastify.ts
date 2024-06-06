@@ -50,6 +50,7 @@
  */
 
 import {
+  type FastifyInstance,
   type FastifyPluginCallback,
   type FastifyReply,
   type FastifyRequest,
@@ -105,7 +106,12 @@ type InngestPluginOptions = {
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+export const serve = (
+  options: ServeHandlerOptions
+): ((
+  req: FastifyRequest<{ Querystring: Record<string, string | undefined> }>,
+  reply: FastifyReply
+) => Promise<unknown>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
@@ -173,7 +179,11 @@ export const serve = (options: ServeHandlerOptions) => {
  *
  * @public
  */
-const fastifyPlugin = ((fastify, options, done) => {
+const fastifyPlugin: (
+  fastify: FastifyInstance,
+  options: InngestPluginOptions,
+  done: (err?: Error | undefined) => void
+) => void = ((fastify, options, done): void => {
   if (!options?.client) {
     throw new Error(
       "Inngest `client` is required when serving with Fastify plugin"
