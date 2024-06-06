@@ -472,7 +472,10 @@ export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
          * We also use this opportunity to log the causing error, as code higher
          * up the stack will likely abstract this.
          */
-        if (err instanceof Error && err.message?.startsWith("fetch failed")) {
+        if (
+          !(err instanceof Error) ||
+          !err.message?.startsWith("fetch failed")
+        ) {
           console.warn(
             "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope."
           );
