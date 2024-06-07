@@ -100,10 +100,6 @@ export const sentryMiddleware = (
                   transformInput() {
                     return {
                       ctx: {
-                        /**
-                         * The Sentry client passed to
-                         * `@inngest/middleware-sentry`.
-                         */
                         sentry: Sentry,
                       },
                     };
