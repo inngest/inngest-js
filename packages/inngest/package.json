@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "3.19.9",
+  "version": "3.19.11",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -240,7 +240,7 @@
     "npm": "9.6.4"
   },
   "peerDependencies": {
-    "@sveltejs/kit": "^1.27.3",
+    "@sveltejs/kit": ">=1.27.3",
     "@vercel/node": "^2.15.9",
     "aws-lambda": "^1.0.7",
     "express": "^4.19.2",

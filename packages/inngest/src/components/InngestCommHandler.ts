@@ -445,7 +445,7 @@ export class InngestCommHandler<
       })
       .parse(options.streaming || this.env[envKeys.InngestStreaming]);
 
-    this.fetch = getFetch(options.fetch || this.client["fetch"]);
+    this.fetch = options.fetch ? getFetch(options.fetch) : this.client["fetch"];
   }
 
   /**

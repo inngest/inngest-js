@@ -1,6 +1,5 @@
 import { type fetch } from "cross-fetch";
 import { type ExecutionVersion } from "../components/execution/InngestExecution";
-import { getFetch } from "../helpers/env";
 import { getErrorMessage } from "../helpers/errors";
 import { fetchWithAuthFallback } from "../helpers/net";
 import { hashSigningKey } from "../helpers/strings";
@@ -20,7 +19,7 @@ interface InngestApiConstructorOpts {
   baseUrl?: string;
   signingKey: string;
   signingKeyFallback: string | undefined;
-  fetch?: FetchT;
+  fetch: FetchT;
 }
 
 export class InngestApi {
@@ -38,7 +37,7 @@ export class InngestApi {
     this.baseUrl = baseUrl;
     this.signingKey = signingKey;
     this.signingKeyFallback = signingKeyFallback;
-    this.fetch = getFetch(fetch);
+    this.fetch = fetch;
   }
 
   private get hashedKey(): string {
