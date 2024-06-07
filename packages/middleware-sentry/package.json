@@ -37,7 +37,7 @@
     "typescript": "~5.4.0"
   },
   "peerDependencies": {
-    "@sentry/node": "^8.0.0",
-    "inngest": "^3.0.0"
+    "@sentry/node": ">=8.0.0",
+    "inngest": ">=3.0.0"
   }
 }
