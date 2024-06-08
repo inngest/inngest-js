@@ -7,6 +7,6 @@
     "preinstall": "npx only-allow pnpm"
   },
   "peerDependencies": {
-    "eslint": "^8.23.1"
+    "eslint": "^9.0.0"
   }
 }
