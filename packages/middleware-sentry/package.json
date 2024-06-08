@@ -32,12 +32,14 @@
   "author": "Jack Williams <jack@inngest.com>",
   "license": "Apache-2.0",
   "devDependencies": {
-    "@sentry/node": "^8.5.0",
-    "inngest": "^3.19.7",
+    "@sentry/core": "^8.8.0",
+    "@sentry/types": "^8.8.0",
+    "inngest": "^3.19.11",
     "typescript": "~5.4.0"
   },
   "peerDependencies": {
-    "@sentry/node": ">=8.0.0",
+    "@sentry/core": ">=8.0.0",
+    "@sentry/types": ">=8.0.0",
     "inngest": ">=3.0.0"
   }
 }

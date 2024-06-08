@@ -1,4 +1,5 @@
-import * as Sentry from "@sentry/node";
+import * as Sentry from "@sentry/core";
+import { type Span } from "@sentry/types";
 import {
   InngestMiddleware,
   type MiddlewareRegisterFn,
@@ -82,8 +83,8 @@ export const sentryMiddleware = (
 
             scope.setTags(sharedTags);
 
-            let memoSpan: Sentry.Span;
-            let execSpan: Sentry.Span;
+            let memoSpan: Span;
+            let execSpan: Span;
 
             return Sentry.startSpanManual(
               {
