@@ -40,6 +40,6 @@
     "crypto-js": "^4.2.0"
   },
   "peerDependencies": {
-    "inngest": ">=3.0.0"
+    "inngest": "^3.0.0"
   }
 }
