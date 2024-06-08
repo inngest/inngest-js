@@ -1,5 +1,11 @@
 # @inngest/middleware-encryption
 
+## 0.1.6
+
+### Patch Changes
+
+- [#604](https://github.com/inngest/inngest-js/pull/604) [`8b41f6b`](https://github.com/inngest/inngest-js/commit/8b41f6b7c7a89d62e851920970de52ba5a3b2734) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Widen range of `inngest` peer dependency
+
 ## 0.1.5
 
 ### Patch Changes
