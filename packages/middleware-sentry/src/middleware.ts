@@ -77,7 +77,7 @@ export const sentryMiddleware = (
               "inngest.client.id": client.id,
               "inngest.function.id": fn.id(client.id),
               "inngest.function.name": fn.name,
-              "inngest.event": ctx.event.name,
+              "inngest.event.name": ctx.event.name,
               "inngest.run.id": ctx.runId,
             };
 
