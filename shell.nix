@@ -16,6 +16,8 @@ let
 
 in pkgs.mkShell {
   buildInputs = [
+    pkgs.nodejs_18
+    pkgs.graphql-language-service
     pkgs.nodePackages.typescript-language-server
     pkgs.nodePackages.vscode-langservers-extracted
   ];
