@@ -1,5 +1,11 @@
 # inngest
 
+## 3.19.13
+
+### Patch Changes
+
+- [#612](https://github.com/inngest/inngest-js/pull/612) [`2d6e4e1`](https://github.com/inngest/inngest-js/commit/2d6e4e1fb423c889db9c75d7e22996b1eb7864dd) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix event key appearing invalid when securely introspected via the dashboard
+
 ## 3.19.12
 
 ### Patch Changes
