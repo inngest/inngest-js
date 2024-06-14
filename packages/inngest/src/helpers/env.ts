@@ -244,7 +244,17 @@ export const processEnv = (key: string): EnvValue => {
   return allProcessEnv()[key];
 };
 
+/**
+ * The Deno environment, which is not always available.
+ */
 declare const Deno: {
+  env: { toObject: () => Env };
+};
+
+/**
+ * The Netlify environment, which is not always available.
+ */
+declare const Netlify: {
   env: { toObject: () => Env };
 };
 
@@ -257,6 +267,7 @@ declare const Deno: {
  * where it may not be defined, such as Deno or the browser.
  */
 export const allProcessEnv = (): Env => {
+  // Node, or Node-like environments
   try {
     // eslint-disable-next-line @inngest/internal/process-warn
     if (process.env) {
@@ -267,8 +278,20 @@ export const allProcessEnv = (): Env => {
     // noop
   }
 
+  // Deno
   try {
     const env = Deno.env.toObject();
+
+    if (env) {
+      return env;
+    }
+  } catch (_err) {
+    // noop
+  }
+
+  // Netlify
+  try {
+    const env = Netlify.env.toObject();
 
     if (env) {
       return env;
