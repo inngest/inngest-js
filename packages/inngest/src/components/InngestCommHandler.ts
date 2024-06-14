@@ -1313,7 +1313,10 @@ export class InngestCommHandler<
         registerURL = devServerUrl(host, "/fn/register");
       }
     } else if (this._mode?.explicitDevUrl) {
-      registerURL = new URL(this._mode.explicitDevUrl);
+      registerURL = devServerUrl(
+        this._mode.explicitDevUrl.href,
+        "/fn/register"
+      );
     }
 
     if (deployId) {
