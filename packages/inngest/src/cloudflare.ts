@@ -150,5 +150,22 @@ export const serve = (
     },
   });
 
-  return handler.createHandler();
+  const requestHandler = handler.createHandler();
+  type RequestHandler = typeof requestHandler;
+
+  /**
+   * When returning the handler, we haven't yet seen the input arguments for a
+   * request, so we can't yet know if it's a Cloudflare Pages Function or a
+   * Cloudflare Worker. We'll need to assert the shape of the input arguments
+   * at runtime.
+   *
+   * This means that we cover all bases needed for export when returning the
+   * handler, ensuring both `export const onRequest = serve(...)` and `export
+   * default serve(...)` are supported.
+   */
+  return Object.defineProperties(requestHandler, {
+    fetch: { value: requestHandler },
+  }) as RequestHandler & {
+    fetch: RequestHandler;
+  };
 };
