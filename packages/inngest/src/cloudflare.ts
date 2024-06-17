@@ -150,7 +150,15 @@ export const serve = (
     },
   });
 
-  const requestHandler = handler.createHandler();
+  /**
+   * Assign a non-variadic length to the handler to ensure early runtime guards
+   * aren't triggered when assessing whether exported functions are valid within
+   * the framework.
+   */
+  const requestHandler = Object.defineProperties(handler.createHandler(), {
+    length: { value: 2 },
+  });
+
   type RequestHandler = typeof requestHandler;
 
   /**
