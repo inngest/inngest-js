@@ -514,3 +514,12 @@ export type IsLiteral<T, Then = true, Else = false> = string extends T
 export type KnownKeys<T> = keyof {
   [K in keyof T as IsLiteral<K, K, never>]: T[K];
 };
+
+/**
+ * Given an object `T`, return the keys of that object that are public, ignoring
+ * `private` and `protected` keys.
+ *
+ * This shouldn't commonly be used or exposed in user-facing types, as it can
+ * skew extension checks.
+ */
+export type Public<T> = { [K in keyof T]: T[K] };

@@ -209,7 +209,7 @@ export class InngestFunction<
     return config;
   }
 
-  private createExecution(opts: CreateExecutionOptions): IInngestExecution {
+  protected createExecution(opts: CreateExecutionOptions): IInngestExecution {
     const options: InngestExecutionOptions = {
       client: this.client,
       fn: this,
