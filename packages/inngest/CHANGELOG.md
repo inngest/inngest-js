@@ -1,5 +1,11 @@
 # inngest
 
+## 3.19.15
+
+### Patch Changes
+
+- [#619](https://github.com/inngest/inngest-js/pull/619) [`7542fc2`](https://github.com/inngest/inngest-js/commit/7542fc2512677e566ef1ba7b3ddc3dd5994069df) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `"inngest/cloudflare"` serve handler now supports both Cloudflare Pages Functions and Cloudflare Workers
+
 ## 3.19.14
 
 ### Patch Changes
