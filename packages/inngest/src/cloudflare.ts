@@ -21,10 +21,12 @@
  * import { inngest } from "../../inngest/client";
  * import fnA from "../../inngest/fnA"; // Your own function
  *
- * export default serve({
- *   client: inngest,
- *   functions: [fnA],
- * });
+ * export default {
+ *   fetch: serve({
+ *     client: inngest,
+ *     functions: [fnA],
+ *   }),
+ * };
  * ```
  *
  * @module
@@ -107,10 +109,12 @@ const deriveHandlerArgs = (
  * import { inngest } from "../../inngest/client";
  * import fnA from "../../inngest/fnA"; // Your own function
  *
- * export default serve({
- *   client: inngest,
- *   functions: [fnA],
- * });
+ * export default {
+ *   fetch: serve({
+ *     client: inngest,
+ *     functions: [fnA],
+ *   }),
+ * };
  * ```
  *
  * @public
@@ -159,21 +163,5 @@ export const serve = (
     length: { value: 2 },
   });
 
-  type RequestHandler = typeof requestHandler;
-
-  /**
-   * When returning the handler, we haven't yet seen the input arguments for a
-   * request, so we can't yet know if it's a Cloudflare Pages Function or a
-   * Cloudflare Worker. We'll need to assert the shape of the input arguments
-   * at runtime.
-   *
-   * This means that we cover all bases needed for export when returning the
-   * handler, ensuring both `export const onRequest = serve(...)` and `export
-   * default serve(...)` are supported.
-   */
-  return Object.defineProperties(requestHandler, {
-    fetch: { value: requestHandler },
-  }) as RequestHandler & {
-    fetch: RequestHandler;
-  };
+  return requestHandler;
 };
