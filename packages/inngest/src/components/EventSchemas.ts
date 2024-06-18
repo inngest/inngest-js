@@ -251,8 +251,10 @@ export class EventSchemas<
   /**
    * Use generated Inngest types to type events.
    */
-  public fromGenerated<T extends StandardEventSchemas>() {
-    return new EventSchemas<Combine<S, T>>();
+  public fromGenerated<T extends StandardEventSchemas>(): EventSchemas<
+    Combine<S, T>
+  > {
+    return this;
   }
 
   /**
@@ -278,8 +280,8 @@ export class EventSchemas<
     ..._args: PreventClashingNames<T> extends ClashingNameError
       ? [ClashingNameError]
       : []
-  ) {
-    return new EventSchemas<Combine<S, T>>();
+  ): EventSchemas<Combine<S, T>> {
+    return this;
   }
 
   /**
@@ -308,15 +310,17 @@ export class EventSchemas<
    * });
    * ```
    */
-  public fromUnion<T extends { name: string } & StandardEventSchema>() {
-    return new EventSchemas<
-      Combine<
-        S,
-        {
-          [K in T["name"]]: Extract<T, { name: K }>;
-        }
-      >
-    >();
+  public fromUnion<
+    T extends { name: string } & StandardEventSchema,
+  >(): EventSchemas<
+    Combine<
+      S,
+      {
+        [K in T["name"]]: Extract<T, { name: K }>;
+      }
+    >
+  > {
+    return this;
   }
 
   /**
@@ -341,14 +345,14 @@ export class EventSchemas<
   public fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     schemas: T
-  ) {
-    return new EventSchemas<
-      Combine<
-        S,
-        ZodToStandardSchema<
-          T extends ZodEventSchemas ? T : LiteralToRecordZodSchemas<T>
-        >
+  ): EventSchemas<
+    Combine<
+      S,
+      ZodToStandardSchema<
+        T extends ZodEventSchemas ? T : LiteralToRecordZodSchemas<T>
       >
-    >();
+    >
+  > {
+    return this;
   }
 }

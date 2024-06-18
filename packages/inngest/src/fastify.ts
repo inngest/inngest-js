@@ -1,4 +1,56 @@
+/**
+ * An adapter for Fastify to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example Plugin (recommended)
+ * ```ts
+ * import Fastify from "fastify";
+ * import inngestFastify from "inngest/fastify";
+ * import { inngest, fnA } from "./inngest";
+ *
+ * const fastify = Fastify();
+ *
+ * fastify.register(inngestFastify, {
+ *   client: inngest,
+ *   functions: [fnA],
+ *   options: {},
+ * });
+ *
+ * fastify.listen({ port: 3000 }, function (err, address) {
+ *   if (err) {
+ *     fastify.log.error(err);
+ *     process.exit(1);
+ *   }
+ * });
+ * ```
+ *
+ * @example Route
+ * ```ts
+ * import Fastify from "fastify";
+ * import { serve } from "inngest/fastify";
+ * import { fnA, inngest } from "./inngest";
+ *
+ * const fastify = Fastify();
+ *
+ * fastify.route({
+ *   method: ["GET", "POST", "PUT"],
+ *   handler: serve({ client: inngest, functions: [fnA] }),
+ *   url: "/api/inngest",
+ * });
+ *
+ * fastify.listen({ port: 3000 }, function (err, address) {
+ *   if (err) {
+ *     fastify.log.error(err);
+ *     process.exit(1);
+ *   }
+ * });
+ * ```
+ *
+ * @module
+ */
+
 import {
+  type FastifyInstance,
   type FastifyPluginCallback,
   type FastifyReply,
   type FastifyRequest,
@@ -11,6 +63,10 @@ import {
 import { type InngestFunction } from "./components/InngestFunction";
 import { type RegisterOptions, type SupportedFrameworkName } from "./types";
 
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
 export const frameworkName: SupportedFrameworkName = "fastify";
 
 type InngestPluginOptions = {
@@ -23,9 +79,39 @@ type InngestPluginOptions = {
  * Serve and register any declared functions with Inngest, making them available
  * to be triggered by events.
  *
+ * It's recommended to use the Fastify plugin to serve your functions with
+ * Inngest instead of using this `serve()` function directly.
+ *
+ * @example
+ * ```ts
+ * import Fastify from "fastify";
+ * import { serve } from "inngest/fastify";
+ * import { fnA, inngest } from "./inngest";
+ *
+ * const fastify = Fastify();
+ *
+ * fastify.route({
+ *   method: ["GET", "POST", "PUT"],
+ *   handler: serve({ client: inngest, functions: [fnA] }),
+ *   url: "/api/inngest",
+ * });
+ *
+ * fastify.listen({ port: 3000 }, function (err, address) {
+ *   if (err) {
+ *     fastify.log.error(err);
+ *     process.exit(1);
+ *   }
+ * });
+ * ```
+ *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+export const serve = (
+  options: ServeHandlerOptions
+): ((
+  req: FastifyRequest<{ Querystring: Record<string, string | undefined> }>,
+  reply: FastifyReply
+) => Promise<unknown>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
@@ -69,9 +155,35 @@ export const serve = (options: ServeHandlerOptions) => {
  * Serve and register any declared functions with Inngest, making them available
  * to be triggered by events.
  *
+ * @example
+ * ```ts
+ * import Fastify from "fastify";
+ * import inngestFastify from "inngest/fastify";
+ * import { inngest, fnA } from "./inngest";
+ *
+ * const fastify = Fastify();
+ *
+ * fastify.register(inngestFastify, {
+ *   client: inngest,
+ *   functions: [fnA],
+ *   options: {},
+ * });
+ *
+ * fastify.listen({ port: 3000 }, function (err, address) {
+ *   if (err) {
+ *     fastify.log.error(err);
+ *     process.exit(1);
+ *   }
+ * });
+ * ```
+ *
  * @public
  */
-const fastifyPlugin = ((fastify, options, done) => {
+const fastifyPlugin: (
+  fastify: FastifyInstance,
+  options: InngestPluginOptions,
+  done: (err?: Error | undefined) => void
+) => void = ((fastify, options, done): void => {
   if (!options?.client) {
     throw new Error(
       "Inngest `client` is required when serving with Fastify plugin"

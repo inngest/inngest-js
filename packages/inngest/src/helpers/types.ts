@@ -120,6 +120,24 @@ type AnyIsEqual<T1, T2> = T1 extends T2
   : never;
 
 /**
+ * The maximum recursion depth for object paths when traversing an object. For
+ * example, a depth of `2` would find `data.foo`, `data.foo.bar`, but not
+ * `data.foo.bar.baz`.
+ *
+ * Current (TS 5.4) versions of TypeScript have a high base recursion depth of
+ * 1000, though the repeated mapping of object paths is intensive; just getting
+ * to that depth incurs a significant performance cost, resulting in TypeScript
+ * appearing to hang instead of reaching its limit.
+ *
+ * We combat a facet of this issue by limiting the recurson depth here, though
+ * the sheer number of events can also stress the compiler.
+ *
+ * In the future, we will remove this field in favour of a more efficient CEL
+ * implementation.
+ */
+type MaxObjectPathsDepth = 8;
+
+/**
  * A helper for concatenating an existing path `K` with new paths from the
  * value `V`, making sure to skip those we've already seen in
  * `TraversedTypes`.
@@ -127,27 +145,48 @@ type AnyIsEqual<T1, T2> = T1 extends T2
  * Purposefully skips some primitive objects to avoid building unsupported or
  * recursive paths.
  */
-type PathImpl<K extends string | number, V, TraversedTypes> = V extends
-  | Primitive
-  | Date
+type PathImpl<
+  K extends string | number,
+  V,
+  TraversedTypes,
+  TDepthTracker extends number[],
+> = V extends Primitive | Date
   ? `${K}`
   : true extends AnyIsEqual<TraversedTypes, V>
     ? `${K}`
-    : `${K}` | `${K}.${PathInternal<V, TraversedTypes | V>}`;
+    :
+        | `${K}`
+        | `${K}.${PathInternal<V, TraversedTypes | V, [...TDepthTracker, 0]>}`;
 
 /**
  * Start iterating over a given object `T` and return all string paths used to
  * access properties within that object as if you were in code.
  */
-type PathInternal<T, TraversedTypes = T> = T extends ReadonlyArray<infer V>
-  ? IsTuple<T> extends true
-    ? {
-        [K in TupleKeys<T>]-?: PathImpl<K & string, T[K], TraversedTypes>;
-      }[TupleKeys<T>]
-    : PathImpl<number, V, TraversedTypes>
-  : {
-      [K in keyof T]-?: PathImpl<K & string, T[K], TraversedTypes>;
-    }[keyof T];
+type PathInternal<
+  T,
+  TraversedTypes = T,
+  TDepthTracker extends number[] = [],
+> = TDepthTracker["length"] extends MaxObjectPathsDepth
+  ? never
+  : T extends ReadonlyArray<infer V>
+    ? IsTuple<T> extends true
+      ? {
+          [K in TupleKeys<T>]-?: PathImpl<
+            K & string,
+            T[K],
+            TraversedTypes,
+            TDepthTracker
+          >;
+        }[TupleKeys<T>]
+      : PathImpl<number, V, TraversedTypes, TDepthTracker>
+    : {
+        [K in keyof T]-?: PathImpl<
+          K & string,
+          T[K],
+          TraversedTypes,
+          TDepthTracker
+        >;
+      }[keyof T];
 
 /**
  * Given an object, recursively return all string paths used to access
@@ -475,3 +514,12 @@ export type IsLiteral<T, Then = true, Else = false> = string extends T
 export type KnownKeys<T> = keyof {
   [K in keyof T as IsLiteral<K, K, never>]: T[K];
 };
+
+/**
+ * Given an object `T`, return the keys of that object that are public, ignoring
+ * `private` and `protected` keys.
+ *
+ * This shouldn't commonly be used or exposed in user-facing types, as it can
+ * skew extension checks.
+ */
+export type Public<T> = { [K in keyof T]: T[K] };

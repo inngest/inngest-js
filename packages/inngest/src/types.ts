@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
+  type builtInMiddleware,
   type GetEvents,
   type Inngest,
-  type builtInMiddleware,
 } from "./components/Inngest";
 import { type InngestFunction } from "./components/InngestFunction";
 import { type InngestFunctionReference } from "./components/InngestFunctionReference";
@@ -19,6 +19,7 @@ import {
   type IsNever,
   type IsStringLiteral,
   type ObjectPaths,
+  type Public,
   type Simplify,
   type WithoutInternal,
 } from "./helpers/types";
@@ -985,7 +986,8 @@ export interface RegisterRequest {
  *
  * @internal
  */
-export interface InsecureIntrospection {
+export interface UnauthenticatedIntrospection {
+  authentication_succeeded: false | null;
   extra: {
     is_mode_explicit: boolean;
     message: string;
@@ -994,9 +996,25 @@ export interface InsecureIntrospection {
   has_event_key: boolean;
   has_signing_key: boolean;
   mode: "cloud" | "dev";
+  schema_version: "2024-05-24";
 }
 
-export interface SecureIntrospection extends InsecureIntrospection {
+export interface AuthenticatedIntrospection
+  extends Omit<UnauthenticatedIntrospection, "authentication_succeeded"> {
+  api_origin: string;
+  app_id: string;
+  authentication_succeeded: true;
+  env: string | null;
+  event_api_origin: string;
+  event_key_hash: string | null;
+  extra: UnauthenticatedIntrospection["extra"] & {
+    is_streaming: boolean;
+  };
+  framework: string;
+  sdk_language: string;
+  sdk_version: string;
+  serve_origin: string | null;
+  serve_path: string | null;
   signing_key_fallback_hash: string | null;
   signing_key_hash: string | null;
 }
@@ -1144,8 +1162,8 @@ export type EventsFromFunction<T extends InngestFunction.Any> =
  * @public
  */
 export type InvokeTargetFunctionDefinition =
-  | InngestFunctionReference.Any
-  | InngestFunction.Any
+  | Public<InngestFunctionReference.Any>
+  | Public<InngestFunction.Any>
   | string;
 
 /**

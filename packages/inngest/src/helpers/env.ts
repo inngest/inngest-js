@@ -244,7 +244,17 @@ export const processEnv = (key: string): EnvValue => {
   return allProcessEnv()[key];
 };
 
+/**
+ * The Deno environment, which is not always available.
+ */
 declare const Deno: {
+  env: { toObject: () => Env };
+};
+
+/**
+ * The Netlify environment, which is not always available.
+ */
+declare const Netlify: {
   env: { toObject: () => Env };
 };
 
@@ -257,6 +267,7 @@ declare const Deno: {
  * where it may not be defined, such as Deno or the browser.
  */
 export const allProcessEnv = (): Env => {
+  // Node, or Node-like environments
   try {
     // eslint-disable-next-line @inngest/internal/process-warn
     if (process.env) {
@@ -267,8 +278,20 @@ export const allProcessEnv = (): Env => {
     // noop
   }
 
+  // Deno
   try {
     const env = Deno.env.toObject();
+
+    if (env) {
+      return env;
+    }
+  } catch (_err) {
+    // noop
+  }
+
+  // Netlify
+  try {
+    const env = Netlify.env.toObject();
 
     if (env) {
       return env;
@@ -465,9 +488,23 @@ export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
       try {
         return await givenFetch(...args);
       } catch (err) {
-        console.warn(
-          "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope."
-        );
+        /**
+         * Capture warnings that are not simple fetch failures and highlight
+         * them for the user.
+         *
+         * We also use this opportunity to log the causing error, as code higher
+         * up the stack will likely abstract this.
+         */
+        if (
+          !(err instanceof Error) ||
+          !err.message?.startsWith("fetch failed")
+        ) {
+          console.warn(
+            "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope."
+          );
+          console.error(err);
+        }
+
         throw err;
       }
     };

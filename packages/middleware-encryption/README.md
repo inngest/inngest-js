@@ -1,8 +1,5 @@
 # @inngest/middleware-encryption
 
-> [!WARNING]
-> This package is currently in alpha. Use with caution.
-
 This package provides an encryption middleware for Inngest, enabling secure handling of sensitive data. It encrypts data being sent to and from Inngest, ensuring plaintext data never leaves your server.
 
 ## Features

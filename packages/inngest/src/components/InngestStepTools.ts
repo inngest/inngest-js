@@ -4,6 +4,7 @@ import { type Jsonify } from "../helpers/jsonify";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
+  type IsStringLiteral,
   type ObjectPaths,
   type ParametersExceptFirst,
   type SendEventPayload,
@@ -485,7 +486,7 @@ type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
 
 type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
   InvocationTargetOpts<TFunction> &
-    TriggerEventFromFunction<TFunction> & {
+    Omit<TriggerEventFromFunction<TFunction>, "id"> & {
       /**
        * The step function will wait for the invocation to finish for a maximum
        * of this time, at which point the retured promise will be rejected
@@ -548,8 +549,12 @@ type WaitForEventOpts<
      *
      * {@link https://www.inngest.com/docs/functions/expressions}
      */
-    match?: ObjectPaths<Events[TriggeringEvent]> &
-      ObjectPaths<Events[IncomingEvent]>;
+    match?: IsStringLiteral<keyof Events & string> extends true
+      ? IsStringLiteral<IncomingEvent & string> extends true
+        ? ObjectPaths<Events[TriggeringEvent]> &
+            ObjectPaths<Events[IncomingEvent]>
+        : string
+      : string;
 
     /**
      * If provided, the step function will wait for the incoming event to match

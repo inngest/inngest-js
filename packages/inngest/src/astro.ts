@@ -1,15 +1,33 @@
-import { type APIContext } from "astro";
+/**
+ * An adapter for Astro to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example
+ * ```ts
+ * export const { GET, POST, PUT } = serve({
+ *   client: inngest,
+ *   functions: [fn1, fn2],
+ * });
+ * ```
+ *
+ * @module
+ */
+
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
 import { type SupportedFrameworkName } from "./types";
 
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
 export const frameworkName: SupportedFrameworkName = "astro";
 
 /**
- * In Astro, serve and register any declared functions with Inngest, making
- * them available to be triggered by events.
+ * In Astro, serve and register any declared functions with Inngest, making them
+ * available to be triggered by events.
  *
  * @example
  * ```ts
@@ -21,28 +39,24 @@ export const frameworkName: SupportedFrameworkName = "astro";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((ctx: { request: Request }) => Promise<Response>) & {
+  GET: (ctx: { request: Request }) => Promise<Response>;
+  POST: (ctx: { request: Request }) => Promise<Response>;
+  PUT: (ctx: { request: Request }) => Promise<Response>;
+} => {
   const commHandler = new InngestCommHandler({
     frameworkName,
     fetch: fetch.bind(globalThis),
     ...options,
-    handler: ({ request }: APIContext) => {
+    handler: ({ request: req }: { request: Request }) => {
       return {
-        body: () => request.json(),
-        headers: (key) => request.headers.get(key),
-        method: () => request.method,
-        url: () => {
-          // Attempt to get host separately as Astro will warn if
-          // not in server output mode
-          const host = request.headers.get("host");
-          if (!host || host.length === 0) {
-            throw new Error(
-              `Could not access Astro.request.headers.host. Please change your Astro config to use "server" or "hybrid" output mode.`
-            );
-          }
-          return new URL(request.url, `https://${host || ""}`);
-        },
-
+        body: () => req.json(),
+        headers: (key) => req.headers.get(key),
+        method: () => req.method,
+        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
         transformResponse: ({ body, status, headers }) => {
           return new Response(body, { status, headers });
         },

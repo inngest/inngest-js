@@ -1,3 +1,23 @@
+/**
+ * An adapter for AWS Lambda to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/redwood";
+ * import { inngest } from "src/inngest/client";
+ * import fnA from "src/inngest/fnA"; // Your own function
+ *
+ * export const handler = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ *   servePath: "/api/inngest",
+ * });
+ * ```
+ *
+ * @module
+ */
+
 import {
   type APIGatewayProxyEvent,
   type Context as LambdaContext,
@@ -15,15 +35,38 @@ export interface RedwoodResponse {
   headers?: Record<string, string>;
 }
 
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
 export const frameworkName: SupportedFrameworkName = "redwoodjs";
 
 /**
  * In Redwood.js, serve and register any declared functions with Inngest, making
  * them available to be triggered by events.
  *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/redwood";
+ * import { inngest } from "src/inngest/client";
+ * import fnA from "src/inngest/fnA"; // Your own function
+ *
+ * export const handler = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ *   servePath: "/api/inngest",
+ * });
+ * ```
+ *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((
+  event: APIGatewayProxyEvent,
+  _context: LambdaContext
+) => Promise<RedwoodResponse>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,

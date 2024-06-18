@@ -1,3 +1,43 @@
+/**
+ * The primary entrypoint for the Inngest SDK. This provides all the necessary
+ * exports to create, run, and trigger Inngest functions.
+ *
+ * Typical usage involves creating a new Inngest client with `Inngest`, and then
+ * using the client to create functions, middleware, and other tools.
+ *
+ * See {@link https://www.inngest.com/docs} for more information.
+ *
+ * @example Create an Inngest client
+ * ```ts
+ * const inngest = new Inngest({
+ *   id: "my-app-id",
+ * });
+ * ```
+ *
+ * @example Create an Inngest function
+ * ```ts
+ * const myFn = inngest.createFunction({
+ *  id: "my-function",
+ * }, {
+ *   event: "user/created",
+ * }, async ({ event, step }) => {
+ *   console.log("User created:", event.data);
+ * });
+ * ```
+ *
+ * @example Send an event
+ * ```ts
+ * await inngest.send({
+ *   name: "user/created",
+ *   data: {
+ *     id: "123",
+ *   },
+ * });
+ * ```
+ *
+ * @module
+ */
+
 export {
   EventSchemas,
   type AssertInternalEventPayloads,
