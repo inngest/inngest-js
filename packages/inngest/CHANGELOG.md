@@ -1,5 +1,13 @@
 # inngest
 
+## 3.19.16
+
+### Patch Changes
+
+- [#618](https://github.com/inngest/inngest-js/pull/618) [`1f0cb29`](https://github.com/inngest/inngest-js/commit/1f0cb2910776184c1444c709f6c7c8ad1fddf2e4) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Expose `InngestFunction#createExecution()` as a `protected` method to allow custom unit testing.
+
+  Note that this is an internal API and can change at any time; first-party testing tools will be adde at a later date.
+
 ## 3.19.15
 
 ### Patch Changes
