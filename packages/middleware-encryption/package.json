@@ -34,7 +34,7 @@
   "devDependencies": {
     "@types/crypto-js": "^4.2.1",
     "inngest": "^3.19.7",
-    "typescript": "~5.4.0"
+    "typescript": "~5.5.2"
   },
   "dependencies": {
     "crypto-js": "^4.2.0"
