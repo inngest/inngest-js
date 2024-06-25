@@ -1,5 +1,13 @@
 # @inngest/middleware-encryption
 
+## 0.1.7
+
+### Patch Changes
+
+- [#623](https://github.com/inngest/inngest-js/pull/623) [`cc96657`](https://github.com/inngest/inngest-js/commit/cc966578fce01d65a0916ae56c4a47037e2b548f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Upgraded TypeScript to 5.5.
+
+  No change in behaviour or downstream compatibility is expected, but emitted declaration files will still change, so the patch version will bump for all affected packages.
+
 ## 0.1.6
 
 ### Patch Changes

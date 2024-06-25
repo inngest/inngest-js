@@ -1,5 +1,15 @@
 # inngest
 
+## 3.19.17
+
+### Patch Changes
+
+- [#623](https://github.com/inngest/inngest-js/pull/623) [`cc96657`](https://github.com/inngest/inngest-js/commit/cc966578fce01d65a0916ae56c4a47037e2b548f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Upgraded TypeScript to 5.5.
+
+  No change in behaviour or downstream compatibility is expected, but emitted declaration files will still change, so the patch version will bump for all affected packages.
+
+- [#626](https://github.com/inngest/inngest-js/pull/626) [`6e41c90`](https://github.com/inngest/inngest-js/commit/6e41c9080e599a43c078ef8c88bbb593183d7d4d) Thanks [@cohlar](https://github.com/cohlar)! - Export `ScheduledTimerEventPayload` for ESM
+
 ## 3.19.16
 
 ### Patch Changes
