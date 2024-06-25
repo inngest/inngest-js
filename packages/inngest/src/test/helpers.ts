@@ -1352,16 +1352,12 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
     it("should be registered in SDK UI", async () => {
       const res = await fetch("http://localhost:3000/api/inngest");
 
-      const { success } = z
-        .object({
-          has_signing_key: z.boolean(),
-          has_event_key: z.boolean(),
-          function_count: z.number(),
-          mode: z.string(),
-        })
-        .safeParse(await res.json());
-
-      expect(success).toEqual(true);
+      await expect(res.json()).resolves.toMatchObject({
+        has_signing_key: expect.any(Boolean),
+        has_event_key: expect.any(Boolean),
+        function_count: expect.any(Number),
+        mode: expect.any(String),
+      });
     });
 
     it("should be registered in Dev Server UI", async () => {
