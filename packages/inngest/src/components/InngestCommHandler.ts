@@ -1241,17 +1241,14 @@ export class InngestCommHandler<
     );
 
     for (const config of configs) {
-      try {
-        functionConfigSchema.parse(config);
-      } catch (e) {
-        if (e instanceof z.ZodError) {
-          this.log(
-            "error",
-            `Config invalid for function "${config.id}" : ${e.errors
-              .map((err) => err.message)
-              .join("; ")}`
-          );
-        }
+      const check = functionConfigSchema.safeParse(config);
+      if (!check.success) {
+        const errors = check.error.errors.map((err) => err.message).join("; ");
+
+        this.log(
+          "error",
+          `Config invalid for function "${config.id}" : ${errors}`
+        );
       }
     }
 

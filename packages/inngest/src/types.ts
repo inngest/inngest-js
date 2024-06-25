@@ -1019,6 +1019,14 @@ export interface AuthenticatedIntrospection
   signing_key_hash: string | null;
 }
 
+/**
+ * The schema used to represent an individual function being synced with
+ * Inngest.
+ *
+ * Note that this should only be used to validate the shape of a config object
+ * and not used for feature compatibility, such as feature X being exclusive
+ * with feature Y; these should be handled on the Inngest side.
+ */
 export const functionConfigSchema = z.strictObject({
   name: z.string().optional(),
   id: z.string(),
@@ -1059,14 +1067,14 @@ export const functionConfigSchema = z.strictObject({
     .strictObject({
       key: z.string().optional(),
       limit: z.number(),
-      period: z.string(),
+      period: z.string().transform((x) => x as TimeStr),
     })
     .optional(),
   throttle: z
     .strictObject({
       key: z.string().optional(),
       limit: z.number(),
-      period: z.string(),
+      period: z.string().transform((x) => x as TimeStr),
       burst: z.number().optional(),
     })
     .optional(),
@@ -1081,54 +1089,12 @@ export const functionConfigSchema = z.strictObject({
     .optional(),
 });
 
-export type FunctionConfig = z.output<typeof functionConfigSchema>;
-
 /**
- * A block representing an individual function being registered to Inngest
- * Cloud.
+ * The shape of an individual function being synced with Inngest.
  *
  * @internal
  */
-// export interface FunctionConfig {
-//   name?: string;
-//   id: string;
-//   triggers: ({ event: string; expression?: string } | { cron: string })[];
-//   steps: Record<
-//     string,
-//     {
-//       id: string;
-//       name: string;
-//       runtime: {
-//         type: "http";
-//         url: string;
-//       };
-//       retries?: {
-//         attempts?: number;
-//       };
-//     }
-//   >;
-//   idempotency?: string;
-//   batchEvents?: {
-//     maxSize: number;
-//     timeout: string;
-//   };
-//   rateLimit?: {
-//     key?: string;
-//     limit: number;
-//     period: TimeStr;
-//   };
-//   throttle?: {
-//     key?: string;
-//     limit: number;
-//     period: TimeStr;
-//     burst?: number;
-//   };
-//   cancel?: {
-//     event: string;
-//     if?: string;
-//     timeout?: string;
-//   }[];
-// }
+export type FunctionConfig = z.output<typeof functionConfigSchema>;
 
 export interface DevServerInfo {
   /**
