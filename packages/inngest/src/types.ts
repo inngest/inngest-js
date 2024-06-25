@@ -1020,51 +1020,81 @@ export interface AuthenticatedIntrospection
 }
 
 /**
- * A block representing an individual function being registered to Inngest
- * Cloud.
+ * The schema used to represent an individual function being synced with
+ * Inngest.
+ *
+ * Note that this should only be used to validate the shape of a config object
+ * and not used for feature compatibility, such as feature X being exclusive
+ * with feature Y; these should be handled on the Inngest side.
+ */
+export const functionConfigSchema = z.strictObject({
+  name: z.string().optional(),
+  id: z.string(),
+  triggers: z.array(
+    z.union([
+      z.strictObject({
+        event: z.string(),
+        expression: z.string().optional(),
+      }),
+      z.strictObject({
+        cron: z.string(),
+      }),
+    ])
+  ),
+  steps: z.record(
+    z.strictObject({
+      id: z.string(),
+      name: z.string(),
+      runtime: z.strictObject({
+        type: z.literal("http"),
+        url: z.string(),
+      }),
+      retries: z
+        .strictObject({
+          attempts: z.number().optional(),
+        })
+        .optional(),
+    })
+  ),
+  idempotency: z.string().optional(),
+  batchEvents: z
+    .strictObject({
+      maxSize: z.number(),
+      timeout: z.string(),
+    })
+    .optional(),
+  rateLimit: z
+    .strictObject({
+      key: z.string().optional(),
+      limit: z.number(),
+      period: z.string().transform((x) => x as TimeStr),
+    })
+    .optional(),
+  throttle: z
+    .strictObject({
+      key: z.string().optional(),
+      limit: z.number(),
+      period: z.string().transform((x) => x as TimeStr),
+      burst: z.number().optional(),
+    })
+    .optional(),
+  cancel: z
+    .array(
+      z.strictObject({
+        event: z.string(),
+        if: z.string().optional(),
+        timeout: z.string().optional(),
+      })
+    )
+    .optional(),
+});
+
+/**
+ * The shape of an individual function being synced with Inngest.
  *
  * @internal
  */
-export interface FunctionConfig {
-  name?: string;
-  id: string;
-  triggers: ({ event: string; expression?: string } | { cron: string })[];
-  steps: Record<
-    string,
-    {
-      id: string;
-      name: string;
-      runtime: {
-        type: "http";
-        url: string;
-      };
-      retries?: {
-        attempts?: number;
-      };
-    }
-  >;
-  idempotency?: string;
-  batchEvents?: {
-    maxSize: number;
-    timeout: string;
-  };
-  rateLimit?: {
-    key?: string;
-    limit: number;
-    period: TimeStr;
-  };
-  throttle?: {
-    key?: string;
-    limit: number;
-    period: TimeStr;
-    burst?: number;
-  };
-  cancel?: {
-    event: string;
-    if?: string;
-    timeout?: string;
-  }[];
-}
+export type FunctionConfig = z.output<typeof functionConfigSchema>;
 
 export interface DevServerInfo {
   /**
