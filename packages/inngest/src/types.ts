@@ -1019,52 +1019,116 @@ export interface AuthenticatedIntrospection
   signing_key_hash: string | null;
 }
 
+export const functionConfigSchema = z.strictObject({
+  name: z.string().optional(),
+  id: z.string(),
+  triggers: z.array(
+    z.union([
+      z.strictObject({
+        event: z.string(),
+        expression: z.string().optional(),
+      }),
+      z.strictObject({
+        cron: z.string(),
+      }),
+    ])
+  ),
+  steps: z.record(
+    z.strictObject({
+      id: z.string(),
+      name: z.string(),
+      runtime: z.strictObject({
+        type: z.literal("http"),
+        url: z.string(),
+      }),
+      retries: z
+        .strictObject({
+          attempts: z.number().optional(),
+        })
+        .optional(),
+    })
+  ),
+  idempotency: z.string().optional(),
+  batchEvents: z
+    .strictObject({
+      maxSize: z.number(),
+      timeout: z.string(),
+    })
+    .optional(),
+  rateLimit: z
+    .strictObject({
+      key: z.string().optional(),
+      limit: z.number(),
+      period: z.string(),
+    })
+    .optional(),
+  throttle: z
+    .strictObject({
+      key: z.string().optional(),
+      limit: z.number(),
+      period: z.string(),
+      burst: z.number().optional(),
+    })
+    .optional(),
+  cancel: z
+    .array(
+      z.strictObject({
+        event: z.string(),
+        if: z.string().optional(),
+        timeout: z.string().optional(),
+      })
+    )
+    .optional(),
+});
+
+export type FunctionConfig = z.output<typeof functionConfigSchema>;
+
 /**
  * A block representing an individual function being registered to Inngest
  * Cloud.
  *
  * @internal
  */
-export interface FunctionConfig {
-  name?: string;
-  id: string;
-  triggers: ({ event: string; expression?: string } | { cron: string })[];
-  steps: Record<
-    string,
-    {
-      id: string;
-      name: string;
-      runtime: {
-        type: "http";
-        url: string;
-      };
-      retries?: {
-        attempts?: number;
-      };
-    }
-  >;
-  idempotency?: string;
-  batchEvents?: {
-    maxSize: number;
-    timeout: string;
-  };
-  rateLimit?: {
-    key?: string;
-    limit: number;
-    period: TimeStr;
-  };
-  throttle?: {
-    key?: string;
-    limit: number;
-    period: TimeStr;
-    burst?: number;
-  };
-  cancel?: {
-    event: string;
-    if?: string;
-    timeout?: string;
-  }[];
-}
+// export interface FunctionConfig {
+//   name?: string;
+//   id: string;
+//   triggers: ({ event: string; expression?: string } | { cron: string })[];
+//   steps: Record<
+//     string,
+//     {
+//       id: string;
+//       name: string;
+//       runtime: {
+//         type: "http";
+//         url: string;
+//       };
+//       retries?: {
+//         attempts?: number;
+//       };
+//     }
+//   >;
+//   idempotency?: string;
+//   batchEvents?: {
+//     maxSize: number;
+//     timeout: string;
+//   };
+//   rateLimit?: {
+//     key?: string;
+//     limit: number;
+//     period: TimeStr;
+//   };
+//   throttle?: {
+//     key?: string;
+//     limit: number;
+//     period: TimeStr;
+//     burst?: number;
+//   };
+//   cancel?: {
+//     event: string;
+//     if?: string;
+//     timeout?: string;
+//   }[];
+// }
 
 export interface DevServerInfo {
   /**

@@ -36,6 +36,7 @@ import { createStream } from "../helpers/stream";
 import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
 import {
+  functionConfigSchema,
   logLevels,
   type AuthenticatedIntrospection,
   type EventPayload,
@@ -1234,10 +1235,27 @@ export class InngestCommHandler<
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    return Object.values(this.rawFns).reduce<FunctionConfig[]>(
+    const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
       (acc, fn) => [...acc, ...fn["getConfig"](url, this.id)],
       []
     );
+
+    for (const config of configs) {
+      try {
+        functionConfigSchema.parse(config);
+      } catch (e) {
+        if (e instanceof z.ZodError) {
+          this.log(
+            "error",
+            `Config invalid for function "${config.id}" : ${e.errors
+              .map((err) => err.message)
+              .join("; ")}`
+          );
+        }
+      }
+    }
+
+    return configs;
   }
 
   /**
