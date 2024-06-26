@@ -1,5 +1,13 @@
 # inngest
 
+## 3.19.18
+
+### Patch Changes
+
+- [#625](https://github.com/inngest/inngest-js/pull/625) [`3ae2c9b`](https://github.com/inngest/inngest-js/commit/3ae2c9b186613f0a441d98f5d020755b34acaa4f) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Clearly log invalid function configurations for users, circumventing non-exhaustive typing for extraneous properties in client and function config
+
+- [#628](https://github.com/inngest/inngest-js/pull/628) [`996c0c5`](https://github.com/inngest/inngest-js/commit/996c0c503bec6f0ac2fc2897c87a6a416c88c3eb) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Removed inspect message
+
 ## 3.19.17
 
 ### Patch Changes
