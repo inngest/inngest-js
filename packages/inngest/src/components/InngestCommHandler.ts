@@ -995,7 +995,6 @@ export class InngestCommHandler<
           authentication_succeeded: null,
           extra: {
             is_mode_explicit: this._mode.isExplicit,
-            message: "Inngest endpoint configured correctly.",
           },
           has_event_key: this.client["eventKeySet"](),
           has_signing_key: Boolean(this.signingKey),

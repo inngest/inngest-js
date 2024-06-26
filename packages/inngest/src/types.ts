@@ -990,7 +990,6 @@ export interface UnauthenticatedIntrospection {
   authentication_succeeded: false | null;
   extra: {
     is_mode_explicit: boolean;
-    message: string;
   };
   function_count: number;
   has_event_key: boolean;
