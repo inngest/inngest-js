@@ -825,6 +825,22 @@ export interface RegisterOptions {
   id?: string;
 }
 
+/**
+ * This schema is used internally to share the shape of a concurrency option
+ * when validating config. We cannot add comments to Zod fields, so we just use
+ * an extra type check to ensure it matches our exported expectations.
+ */
+const concurrencyOptionSchema = z.strictObject({
+  limit: z.number(),
+  key: z.string().optional(),
+  scope: z.enum(["fn", "env", "account"]).optional(),
+});
+
+const _checkConcurrencySchemaAligns: IsEqual<
+  ConcurrencyOption,
+  z.output<typeof concurrencyOptionSchema>
+> = true;
+
 export interface ConcurrencyOption {
   /**
    * The concurrency limit for this option, adding a limit on how many concurrent
@@ -1086,14 +1102,31 @@ export const functionConfigSchema = z.strictObject({
       })
     )
     .optional(),
-  concurrency: z.union([
-    z.number(),
-    z.strictObject({
-      limit: z.number(),
+  debounce: z
+    .strictObject({
       key: z.string().optional(),
-      scope: z.union([z.literal("fn"), z.literal("env"), z.literal("account")]),
-    }),
-  ]),
+      period: z.string().transform((x) => x as TimeStr),
+      timeout: z
+        .string()
+        .transform((x) => x as TimeStr)
+        .optional(),
+    })
+    .optional(),
+  priority: z
+    .strictObject({
+      run: z.string().optional(),
+    })
+    .optional(),
+  concurrency: z
+    .union([
+      z.number(),
+      concurrencyOptionSchema.transform((x) => x as ConcurrencyOption),
+      z
+        .array(concurrencyOptionSchema.transform((x) => x as ConcurrencyOption))
+        .min(1)
+        .max(2),
+    ])
+    .optional(),
 });
 
 /**
