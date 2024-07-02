@@ -191,7 +191,6 @@ export class InngestFunction<
     const config: FunctionConfig[] = [fn];
 
     if (this.onFailureFn) {
-      const failureOpts = { ...opts };
       const id = `${fn.id}${InngestFunction.failureSuffix}`;
       const name = `${fn.name ?? fn.id} (failure)`;
 
@@ -199,7 +198,6 @@ export class InngestFunction<
       failureStepUrl.searchParams.set(queryKeys.FnId, id);
 
       config.push({
-        ...failureOpts,
         id,
         name,
         triggers: [
