@@ -115,7 +115,17 @@ export class InngestFunction<
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
 
-    const { retries: attempts, cancelOn, ...opts } = this.opts;
+    const {
+      retries: attempts,
+      cancelOn,
+      idempotency,
+      batchEvents,
+      rateLimit,
+      throttle,
+      concurrency,
+      debounce,
+      priority,
+    } = this.opts;
 
     /**
      * Convert retries into the format required when defining function
@@ -124,13 +134,12 @@ export class InngestFunction<
     const retries = typeof attempts === "undefined" ? undefined : { attempts };
 
     const fn: FunctionConfig = {
-      ...opts,
       id: fnId,
       name: this.name,
       triggers: (this.opts.triggers ?? []).map((trigger) => {
         if ("event" in trigger) {
           return {
-            event: trigger.event,
+            event: trigger.event as string,
             expression: trigger.if,
           };
         }
@@ -150,6 +159,13 @@ export class InngestFunction<
           retries,
         },
       },
+      idempotency,
+      batchEvents,
+      rateLimit,
+      throttle,
+      concurrency,
+      debounce,
+      priority,
     };
 
     if (cancelOn) {
