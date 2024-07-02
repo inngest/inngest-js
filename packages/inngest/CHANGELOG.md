@@ -1,5 +1,15 @@
 # inngest
 
+## 3.19.19
+
+### Patch Changes
+
+- [#631](https://github.com/inngest/inngest-js/pull/631) [`ac6796c`](https://github.com/inngest/inngest-js/commit/ac6796c4c8b381c7d8c66e5247afbb40632d0417) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix exception being thrown from `debug` when used with Nitro running on Cloudflare Pages
+
+- [`191fe36`](https://github.com/inngest/inngest-js/commit/191fe360b14d74fde73245a6acc3423ea07b7bf6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix failure handlers incorrectly inheriting config options such as `batchEvents` and `concurrency` from their parent function
+
+- [#630](https://github.com/inngest/inngest-js/pull/630) [`d4de6d7`](https://github.com/inngest/inngest-js/commit/d4de6d7db0e03f8ca896d1216d38d0b0e9f954e8) Thanks [@stefanosala](https://github.com/stefanosala)! - Fix missing config fields such as `concurrency` when validating
+
 ## 3.19.18
 
 ### Patch Changes
