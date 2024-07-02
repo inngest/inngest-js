@@ -11,6 +11,7 @@ import {
 import { undefinedToNull } from "../../helpers/functions";
 import {
   createDeferredPromise,
+  createDeferredPromiseWithStack,
   createTimeoutPromise,
   resolveAfterPending,
   runAsPromise,
@@ -561,21 +562,26 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   private createExecutionState(): V1ExecutionState {
-    let { promise: checkpointPromise, resolve: checkpointResolve } =
-      createDeferredPromise<Checkpoint>();
+    const d = createDeferredPromiseWithStack<Checkpoint>();
+    let checkpointResolve = d.deferred.resolve;
+    const checkpointResults = d.results;
 
     const loop: V1ExecutionState["loop"] = (async function* (
       cleanUp?: () => void
     ) {
       try {
         while (true) {
-          yield await checkpointPromise;
+          const res = (await checkpointResults.next()).value;
+          if (res) {
+            yield res;
+          }
         }
       } finally {
         cleanUp?.();
       }
     })(() => {
       this.timeout?.clear();
+      void checkpointResults.return();
     });
 
     const state: V1ExecutionState = {
@@ -585,8 +591,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       hasSteps: Boolean(Object.keys(this.options.stepState).length),
       stepCompletionOrder: this.options.stepCompletionOrder,
       setCheckpoint: (checkpoint: Checkpoint) => {
-        ({ promise: checkpointPromise, resolve: checkpointResolve } =
-          checkpointResolve(checkpoint));
+        ({ resolve: checkpointResolve } = checkpointResolve(checkpoint));
       },
       allStateUsed: () => {
         return Object.values(state.stepState).every((step) => {
