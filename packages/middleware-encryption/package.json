@@ -33,11 +33,12 @@
   "license": "Apache-2.0",
   "devDependencies": {
     "@types/crypto-js": "^4.2.1",
+    "@types/libsodium-wrappers": "^0.7.14",
     "inngest": "^3.19.7",
     "typescript": "~5.5.2"
   },
   "dependencies": {
-    "crypto-js": "^4.2.0"
+    "libsodium-wrappers": "^0.7.13"
   },
   "peerDependencies": {
     "inngest": ">=3.0.0"
