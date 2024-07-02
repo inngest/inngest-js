@@ -94,6 +94,7 @@ export type {
   LogLevel,
   OutgoingOp,
   RegisterOptions,
+  ScheduledTimerEventPayload,
   SendEventBaseOutput,
   StepOptions,
   StepOptionsOrId,

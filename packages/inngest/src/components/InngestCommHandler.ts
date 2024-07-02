@@ -36,6 +36,7 @@ import { createStream } from "../helpers/stream";
 import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
 import {
+  functionConfigSchema,
   logLevels,
   type AuthenticatedIntrospection,
   type EventPayload,
@@ -994,7 +995,6 @@ export class InngestCommHandler<
           authentication_succeeded: null,
           extra: {
             is_mode_explicit: this._mode.isExplicit,
-            message: "Inngest endpoint configured correctly.",
           },
           has_event_key: this.client["eventKeySet"](),
           has_signing_key: Boolean(this.signingKey),
@@ -1234,10 +1234,24 @@ export class InngestCommHandler<
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    return Object.values(this.rawFns).reduce<FunctionConfig[]>(
+    const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
       (acc, fn) => [...acc, ...fn["getConfig"](url, this.id)],
       []
     );
+
+    for (const config of configs) {
+      const check = functionConfigSchema.safeParse(config);
+      if (!check.success) {
+        const errors = check.error.errors.map((err) => err.message).join("; ");
+
+        this.log(
+          "error",
+          `Config invalid for function "${config.id}" : ${errors}`
+        );
+      }
+    }
+
+    return configs;
   }
 
   /**
