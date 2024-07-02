@@ -1086,6 +1086,14 @@ export const functionConfigSchema = z.strictObject({
       })
     )
     .optional(),
+  concurrency: z.union([
+    z.number(),
+    z.strictObject({
+      limit: z.number(),
+      key: z.string().optional(),
+      scope: z.union([z.literal("fn"), z.literal("env"), z.literal("account")]),
+    }),
+  ]),
 });
 
 /**
