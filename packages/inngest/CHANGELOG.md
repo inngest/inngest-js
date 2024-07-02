@@ -1,5 +1,11 @@
 # inngest
 
+## 3.19.19
+
+### Patch Changes
+
+- [#631](https://github.com/inngest/inngest-js/pull/631) [`ac6796c`](https://github.com/inngest/inngest-js/commit/ac6796c4c8b381c7d8c66e5247afbb40632d0417) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix exception being thrown from `debug` when used with Nitro running on Cloudflare Pages
+
 ## 3.19.18
 
 ### Patch Changes
