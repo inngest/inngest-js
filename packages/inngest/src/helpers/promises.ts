@@ -33,7 +33,7 @@ export const createFrozenPromise = (): Promise<unknown> => {
  * Returns a Promise that resolves after the current event loop's microtasks
  * have finished, but before the next event loop tick.
  */
-export const resolveAfterPending = (): Promise<void> => {
+export const resolveAfterPending = (count = 1000): Promise<void> => {
   /**
    * This uses a brute force implementation that will continue to enqueue
    * microtasks 1000 times before resolving. This is to ensure that the
@@ -50,7 +50,7 @@ export const resolveAfterPending = (): Promise<void> => {
 
     const iterate = () => {
       shimQueueMicrotask(() => {
-        if (i++ > 1000) {
+        if (i++ > count) {
           return resolve();
         }
 

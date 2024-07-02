@@ -171,6 +171,7 @@ async function startDevServer(
   const serverProcess = startProcess(
     "npx",
     [
+      "--yes",
       "inngest-cli@latest",
       "dev",
       "--port",

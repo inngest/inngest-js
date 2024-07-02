@@ -1,5 +1,27 @@
+/**
+ * An adapter for Next.js to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * Supports Next.js 12+, both serverless and edge.
+ *
+ * @example Next.js <=12 or the pages router can export the handler directly
+ * ```ts
+ * export default serve({ client: inngest, functions: [fn1, fn2] });
+ * ```
+ *
+ * @example Next.js >=13 with the `app` dir must export individual methods
+ * ```ts
+ * export const { GET, POST, PUT } = serve({
+ *            client: inngest,
+ *            functions: [fn1, fn2],
+ * });
+ * ```
+ *
+ * @module
+ */
+
 import { type NextApiRequest, type NextApiResponse } from "next";
-import { type NextRequest } from "next/server";
+import { type NextRequest } from "next/server.js";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
@@ -8,6 +30,10 @@ import { getResponse } from "./helpers/env";
 import { type Either } from "./helpers/types";
 import { type SupportedFrameworkName } from "./types";
 
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
 export const frameworkName: SupportedFrameworkName = "nextjs";
 
 /**
@@ -31,7 +57,14 @@ export const frameworkName: SupportedFrameworkName = "nextjs";
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((expectedReq: NextRequest, res: NextApiResponse) => Promise<Response>) & {
+  GET: (expectedReq: NextRequest, res: NextApiResponse) => Promise<Response>;
+  POST: (expectedReq: NextRequest, res: NextApiResponse) => Promise<Response>;
+  PUT: (expectedReq: NextRequest, res: NextApiResponse) => Promise<Response>;
+} => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,

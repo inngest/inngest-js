@@ -6,6 +6,7 @@ import { ServerTiming } from "../helpers/ServerTiming";
 import {
   debugPrefix,
   defaultInngestApiBaseUrl,
+  defaultInngestEventBaseUrl,
   envKeys,
   headerKeys,
   logPrefix,
@@ -32,19 +33,20 @@ import {
 import { fetchWithAuthFallback } from "../helpers/net";
 import { runAsPromise } from "../helpers/promises";
 import { createStream } from "../helpers/stream";
-import { hashSigningKey, stringify } from "../helpers/strings";
+import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
 import {
+  functionConfigSchema,
   logLevels,
+  type AuthenticatedIntrospection,
   type EventPayload,
   type FunctionConfig,
-  type InsecureIntrospection,
   type LogLevel,
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
-  type SecureIntrospection,
   type SupportedFrameworkName,
+  type UnauthenticatedIntrospection,
 } from "../types";
 import { version } from "../version";
 import { type Inngest } from "./Inngest";
@@ -282,7 +284,7 @@ export class InngestCommHandler<
    *
    * To also provide a custom path, use `servePath`.
    */
-  protected readonly serveHost: string | undefined;
+  private readonly _serveHost: string | undefined;
 
   /**
    * The path to the Inngest serve endpoint. e.g.:
@@ -299,7 +301,7 @@ export class InngestCommHandler<
    *
    * To also provide a custom hostname, use `serveHost`.
    */
-  protected readonly servePath: string | undefined;
+  private readonly _servePath: string | undefined;
 
   /**
    * The minimum level to log from the Inngest serve handler.
@@ -329,7 +331,16 @@ export class InngestCommHandler<
 
   private allowExpiredSignatures: boolean;
 
+  private readonly _options: InngestCommHandlerOptions<
+    Input,
+    Output,
+    StreamOutput
+  >;
+
   constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>) {
+    // Set input options directly so we can reference them later
+    this._options = options;
+
     /**
      * v2 -> v3 migration error.
      *
@@ -392,19 +403,12 @@ export class InngestCommHandler<
       };
     }, {});
 
-    this.inngestRegisterUrl = new URL(
-      "/fn/register",
-      options.baseUrl ||
-        this.env[envKeys.InngestApiBaseUrl] ||
-        this.env[envKeys.InngestBaseUrl] ||
-        this.client["apiBaseUrl"] ||
-        defaultInngestApiBaseUrl
-    );
+    this.inngestRegisterUrl = new URL("/fn/register", this.apiBaseUrl);
 
     this.signingKey = options.signingKey;
     this.signingKeyFallback = options.signingKeyFallback;
-    this.serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
-    this.servePath = options.servePath || this.env[envKeys.InngestServePath];
+    this._serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
+    this._servePath = options.servePath || this.env[envKeys.InngestServePath];
 
     const defaultLogLevel: typeof this.logLevel = "info";
     this.logLevel = z
@@ -442,17 +446,130 @@ export class InngestCommHandler<
       })
       .parse(options.streaming || this.env[envKeys.InngestStreaming]);
 
-    this.fetch = getFetch(options.fetch || this.client["fetch"]);
+    this.fetch = options.fetch ? getFetch(options.fetch) : this.client["fetch"];
+  }
+
+  /**
+   * Get the API base URL for the Inngest API.
+   *
+   * This is a getter to encourage checking the environment for the API base URL
+   * each time it's accessed, as it may change during execution.
+   */
+  protected get apiBaseUrl(): string {
+    return (
+      this._options.baseUrl ||
+      this.env[envKeys.InngestApiBaseUrl] ||
+      this.env[envKeys.InngestBaseUrl] ||
+      this.client.apiBaseUrl ||
+      defaultInngestApiBaseUrl
+    );
+  }
+
+  /**
+   * Get the event API base URL for the Inngest API.
+   *
+   * This is a getter to encourage checking the environment for the event API
+   * base URL each time it's accessed, as it may change during execution.
+   */
+  protected get eventApiBaseUrl(): string {
+    return (
+      this._options.baseUrl ||
+      this.env[envKeys.InngestEventApiBaseUrl] ||
+      this.env[envKeys.InngestBaseUrl] ||
+      this.client.eventBaseUrl ||
+      defaultInngestEventBaseUrl
+    );
+  }
+
+  /**
+   * The host used to access the Inngest serve endpoint, e.g.:
+   *
+   *     "https://myapp.com"
+   *
+   * By default, the library will try to infer this using request details such
+   * as the "Host" header and request path, but sometimes this isn't possible
+   * (e.g. when running in a more controlled environments such as AWS Lambda or
+   * when dealing with proxies/redirects).
+   *
+   * Provide the custom hostname here to ensure that the path is reported
+   * correctly when registering functions with Inngest.
+   *
+   * To also provide a custom path, use `servePath`.
+   */
+  protected get serveHost(): string | undefined {
+    return this._serveHost || this.env[envKeys.InngestServeHost];
+  }
+
+  /**
+   * The path to the Inngest serve endpoint. e.g.:
+   *
+   *     "/some/long/path/to/inngest/endpoint"
+   *
+   * By default, the library will try to infer this using request details such
+   * as the "Host" header and request path, but sometimes this isn't possible
+   * (e.g. when running in a more controlled environments such as AWS Lambda or
+   * when dealing with proxies/redirects).
+   *
+   * Provide the custom path (excluding the hostname) here to ensure that the
+   * path is reported correctly when registering functions with Inngest.
+   *
+   * To also provide a custom hostname, use `serveHost`.
+   *
+   * This is a getter to encourage checking the environment for the serve path
+   * each time it's accessed, as it may change during execution.
+   */
+  protected get servePath(): string | undefined {
+    return this._servePath || this.env[envKeys.InngestServePath];
+  }
+
+  private get hashedEventKey(): string | undefined {
+    if (!this.client["eventKey"]) {
+      return undefined;
+    }
+    return hashEventKey(this.client["eventKey"]);
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
   // same signing key prefix.
-  private get hashedSigningKey(): string {
+  private get hashedSigningKey(): string | undefined {
+    if (!this.signingKey) {
+      return undefined;
+    }
     return hashSigningKey(this.signingKey);
   }
 
-  private get hashedSigningKeyFallback(): string {
+  private get hashedSigningKeyFallback(): string | undefined {
+    if (!this.signingKeyFallback) {
+      return undefined;
+    }
     return hashSigningKey(this.signingKeyFallback);
+  }
+
+  /**
+   * Returns a `boolean` representing whether this handler will stream responses
+   * or not. Takes into account the user's preference and the platform's
+   * capabilities.
+   */
+  private shouldStream(actions: HandlerResponseWithErrors): boolean {
+    // We must be able to stream responses to continue.
+    if (!actions.transformStreamingResponse) {
+      return false;
+    }
+
+    // If the user has forced streaming, we should always stream.
+    if (this.streaming === "force") {
+      return true;
+    }
+
+    // If the user has allowed streaming, we should stream if the platform
+    // supports it.
+    return (
+      this.streaming === "allow" &&
+      platformSupportsStreaming(
+        this.frameworkName as SupportedFrameworkName,
+        this.env
+      )
+    );
   }
 
   /**
@@ -585,15 +702,7 @@ export class InngestCommHandler<
         },
       });
 
-      const wantToStream =
-        this.streaming === "force" ||
-        (this.streaming === "allow" &&
-          platformSupportsStreaming(
-            this.frameworkName as SupportedFrameworkName,
-            this.env
-          ));
-
-      if (wantToStream && actions.transformStreamingResponse) {
+      if (this.shouldStream(actions)) {
         const method = await actions.method("starting streaming response");
 
         if (method === "POST") {
@@ -880,18 +989,21 @@ export class InngestCommHandler<
           headerKeys.Signature
         );
 
-        let introspection: InsecureIntrospection | SecureIntrospection = {
+        let introspection:
+          | UnauthenticatedIntrospection
+          | AuthenticatedIntrospection = {
+          authentication_succeeded: null,
           extra: {
             is_mode_explicit: this._mode.isExplicit,
-            message: "Inngest endpoint configured correctly.",
           },
           has_event_key: this.client["eventKeySet"](),
           has_signing_key: Boolean(this.signingKey),
           function_count: registerBody.functions.length,
           mode: this._mode.type,
-        };
+          schema_version: "2024-05-24",
+        } satisfies UnauthenticatedIntrospection;
 
-        // Only allow secure introspection in Cloud mode, since Dev mode skips
+        // Only allow authenticated introspection in Cloud mode, since Dev mode skips
         // signature validation
         if (this._mode.type === "cloud") {
           try {
@@ -899,12 +1011,35 @@ export class InngestCommHandler<
 
             introspection = {
               ...introspection,
-              signing_key_fallback_hash: this.hashedSigningKeyFallback,
-              signing_key_hash: this.hashedSigningKey,
-            };
+              authentication_succeeded: true,
+              api_origin: this.apiBaseUrl,
+              app_id: this.client.id,
+              env:
+                (await actions.headers(
+                  "fetching environment for introspection request",
+                  headerKeys.Environment
+                )) || null,
+              event_api_origin: this.eventApiBaseUrl,
+              event_key_hash: this.hashedEventKey ?? null,
+              extra: {
+                ...introspection.extra,
+                is_streaming: this.shouldStream(actions),
+              },
+              framework: this.frameworkName,
+              sdk_language: "js",
+              sdk_version: version,
+              serve_origin: this.serveHost ?? null,
+              serve_path: this.servePath ?? null,
+              signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
+              signing_key_hash: this.hashedSigningKey ?? null,
+            } satisfies AuthenticatedIntrospection;
           } catch {
             // Swallow signature validation error since we'll just return the
-            // insecure introspection
+            // unauthenticated introspection
+            introspection = {
+              ...introspection,
+              authentication_succeeded: false,
+            } satisfies UnauthenticatedIntrospection;
           }
         }
 
@@ -1099,10 +1234,24 @@ export class InngestCommHandler<
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    return Object.values(this.rawFns).reduce<FunctionConfig[]>(
+    const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
       (acc, fn) => [...acc, ...fn["getConfig"](url, this.id)],
       []
     );
+
+    for (const config of configs) {
+      const check = functionConfigSchema.safeParse(config);
+      if (!check.success) {
+        const errors = check.error.errors.map((err) => err.message).join("; ");
+
+        this.log(
+          "error",
+          `Config invalid for function "${config.id}" : ${errors}`
+        );
+      }
+    }
+
+    return configs;
   }
 
   /**
@@ -1178,7 +1327,10 @@ export class InngestCommHandler<
         registerURL = devServerUrl(host, "/fn/register");
       }
     } else if (this._mode?.explicitDevUrl) {
-      registerURL = new URL(this._mode.explicitDevUrl);
+      registerURL = devServerUrl(
+        this._mode.explicitDevUrl.href,
+        "/fn/register"
+      );
     }
 
     if (deployId) {
@@ -1210,17 +1362,51 @@ export class InngestCommHandler<
       };
     }
 
+    const raw = await res.text();
+
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     let data: z.input<typeof registerResSchema> = {};
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      data = await res.json();
+      data = JSON.parse(raw);
     } catch (err) {
       this.log("warn", "Couldn't unpack register response:", err);
-      throw err;
+
+      let message = "Failed to register";
+      if (err instanceof Error) {
+        message += `; ${err.message}`;
+      }
+      message += `; status code: ${res.status}`;
+
+      return {
+        status: 500,
+        message,
+        modified: false,
+      };
     }
-    const { status, error, skipped, modified } = registerResSchema.parse(data);
+
+    let status: number;
+    let error: string;
+    let skipped: boolean;
+    let modified: boolean;
+    try {
+      ({ status, error, skipped, modified } = registerResSchema.parse(data));
+    } catch (err) {
+      this.log("warn", "Invalid register response schema:", err);
+
+      let message = "Failed to register";
+      if (err instanceof Error) {
+        message += `; ${err.message}`;
+      }
+      message += `; status code: ${res.status}`;
+
+      return {
+        status: 500,
+        message,
+        modified: false,
+      };
+    }
 
     // The dev server polls this endpoint to register functions every few
     // seconds, but we only want to log that we've registered functions if

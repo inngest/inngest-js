@@ -209,7 +209,7 @@ export class InngestFunction<
     return config;
   }
 
-  private createExecution(opts: CreateExecutionOptions): IInngestExecution {
+  protected createExecution(opts: CreateExecutionOptions): IInngestExecution {
     const options: InngestExecutionOptions = {
       client: this.client,
       fn: this,
@@ -397,7 +397,6 @@ export namespace InngestFunction {
        */
       burst?: number;
     };
-
 
     /**
      * Debounce delays functions for the `period` specified. If an event is sent,

@@ -35,6 +35,7 @@ jobs:
       - uses: changesets/action@v1
         id: changesets
         with:
+          version: pnpm run release:version
           publish: pnpm run release:all
           title: ${{ github.ref_name == 'main' && 'Release @latest' || format('Release {0}', github.ref_name) }}
         env:

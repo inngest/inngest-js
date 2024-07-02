@@ -152,7 +152,7 @@ export enum internalEvents {
   ScheduledTimer = "inngest/scheduled.timer",
 }
 
-export const logPrefix = chalk.magenta.bold("[Inngest]");
+export const logPrefix: string = chalk.magenta.bold("[Inngest]");
 
 export const debugPrefix = "inngest";
 
