@@ -152,10 +152,15 @@ export class Mode {
   }
 
   /**
-   * Considering only the mode, retrieve the URL that we are sure we should be
-   * using, not considering any environment variables or other influences.
+   * If we are explicitly in a particular mode, retrieve the URL that we are
+   * sure we should be using, not considering any environment variables or other
+   * influences.
    */
-  public getUrlFromMode(defaultCloudUrl: string): string | undefined {
+  public getExplicitUrl(defaultCloudUrl: string): string | undefined {
+    if (!this.isExplicit) {
+      return undefined;
+    }
+
     if (this.explicitDevUrl) {
       return this.explicitDevUrl.href;
     }
