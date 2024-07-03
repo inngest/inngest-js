@@ -5,7 +5,7 @@ This package provides an encryption middleware for Inngest, enabling secure hand
 ## Features
 
 - **Data Encryption:** Encrypts step and event data, with support for multiple encryption keys.
-- **Customizable Encryption Service:** Allows use of a custom encryption service or defaults to using `AES-256-CBC`.
+- **Customizable Encryption Service:** Allows use of a custom encryption service or defaults to using [Sodium](https://doc.libsodium.org/).
 
 ## Installation
 
@@ -15,6 +15,8 @@ npm install @inngest/middleware-encryption
 
 > [!NOTE]
 > Requires TypeScript SDK v3+
+>
+> Upgrading from v0.x.x of this package? See [MIGRATION.md](./MIGRATION.md).
 
 ## Usage
 
@@ -40,18 +42,17 @@ const inngest = new Inngest({
 });
 ```
 
+## Enabling event encryption
 
+By default, only step data is encrypted. This can be changed by setting
+`encryptEventData: true` in the options.
 
-## Customizing event encryption
-
-Only select pieces of event data are encrypted. By default, only the `data.encrypted` field.
-
-This can be customized using the `eventEncryptionField` setting
-
-- `string` - Encrypt fields matching this name
-- `string[]` - Encrypt fields matching these names
-- `(field: string) => boolean` - Provide a function to decide whether to encrypt a field
-- `false` - Disable all event encryption
+```ts
+const mw = encryptionMiddleware({
+  // ...
+  encryptEventData: true,
+});
+```
 
 ## Rotating encryption keys
 
@@ -65,6 +66,7 @@ To create a custom encryption service, you need to implement the abstract `Encry
 
 ```ts
 export abstract class EncryptionService {
+  public abstract identifier: string;
   public abstract encrypt(value: unknown): string;
   public abstract decrypt(value: string): unknown;
 }
@@ -76,6 +78,8 @@ For example, here's how you might define, instantiate, and use a custom encrypti
 import { EncryptionService } from "@inngest/middleware-encryption";
 
 class CustomEncryptionService implements EncryptionService {
+  public identifier = "my-custom-strategy";
+
   constructor(/* custom parameters */) {
     // Initialization code here
   }
