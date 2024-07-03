@@ -1,11 +1,10 @@
-import AES from "crypto-js/aes.js";
-import CryptoJSUtf8 from "crypto-js/enc-utf8.js";
 import {
   InngestMiddleware,
   type MiddlewareOptions,
   type MiddlewareRegisterReturn,
 } from "inngest";
-import sodium from "libsodium-wrappers";
+import { LEGACY_V0Service } from "./strategies/legacy";
+import { LibSodiumEncryptionService } from "./strategies/libSodium";
 
 /**
  * A marker used to identify encrypted values without having to guess.
@@ -13,21 +12,9 @@ import sodium from "libsodium-wrappers";
 const ENCRYPTION_MARKER = "__ENCRYPTED__";
 
 /**
- * The default field used to store encrypted data in events.
+ * A marker used to identify the strategy used for encryption.
  */
-export const DEFAULT_ENCRYPTION_FIELD = "encrypted";
-
-/**
- * Available types to control the top-level fields of the event that will be
- * encrypted. Can be a single field name, an array of field names, a function
- * that returns `true` if a field should be encrypted, or `false` to disable all
- * event encryption.
- */
-export type EventEncryptionFieldInput =
-  | string
-  | string[]
-  | ((field: string) => boolean)
-  | false;
+const STRATEGY_MARKER = "__STRATEGY__";
 
 /**
  * Options used to configure the encryption middleware.
@@ -47,14 +34,23 @@ export interface EncryptionMiddlewareOptions {
   encryptionService?: EncryptionService;
 
   /**
-   * The top-level fields of the event that will be encrypted. Can be a single
-   * field name, an array of field names, a function that returns `true` if a
-   * field should be encrypted, or `false` to disable all event encryption.
+   * If `true`, the encryption middleware will encrypt all event data, otherwise
+   * only step data will be encrypted.
    *
-   * By default, the top-level field named `"encrypted"` will be encrypted
-   * (exported as `DEFAULT_ENCRYPTION_FIELD`).
+   * Note that this is opt-in as other services consuming events must then use
+   * an encryption middleware.
    */
-  eventEncryptionField?: EventEncryptionFieldInput;
+  encryptEventData?: boolean;
+
+  /**
+   * If set and `enabled` is `true, the encryption middleware will only encrypt
+   * using the legacy V0 AES encryption service. This is useful for
+   * transitioning all services to using the new encryption service before then
+   * removing the flag and moving all encryption to LibSodium.
+   *
+   * If you used a custom `encryptionService` beforehand, continue using that.
+   */
+  legacyV0Service?: Omit<LEGACY_V0Service.Options, "key">;
 }
 
 /**
@@ -68,14 +64,20 @@ export const encryptionMiddleware = (
   opts: EncryptionMiddlewareOptions
 ): InngestMiddleware<MiddlewareOptions> => {
   const service =
-    opts.encryptionService || new DefaultEncryptionService(opts.key);
-  const shouldEncryptEvents = Boolean(
-    opts.eventEncryptionField ?? DEFAULT_ENCRYPTION_FIELD
-  );
+    opts.encryptionService || new LibSodiumEncryptionService(opts.key);
+
+  const shouldEncryptEvents = Boolean(opts.encryptEventData);
+
+  const v0Legacy = new LEGACY_V0Service({
+    key: opts.key,
+    forceEncryptWithV0: Boolean(opts.legacyV0Service?.forceEncryptWithV0),
+    ...opts.legacyV0Service,
+  });
 
   const encryptValue = (value: unknown): EncryptedValue => {
     return {
       [ENCRYPTION_MARKER]: true,
+      [STRATEGY_MARKER]: service.identifier,
       data: service.encrypt(value),
     };
   };
@@ -88,44 +90,37 @@ export const encryptionMiddleware = (
     return value;
   };
 
-  const fieldShouldBeEncrypted = (field: string): boolean => {
-    if (typeof opts.eventEncryptionField === "undefined") {
-      return field === DEFAULT_ENCRYPTION_FIELD;
-    }
-
-    if (typeof opts.eventEncryptionField === "function") {
-      return opts.eventEncryptionField(field);
-    }
-
-    if (Array.isArray(opts.eventEncryptionField)) {
-      return opts.eventEncryptionField.includes(field);
-    }
-
-    return opts.eventEncryptionField === field;
-  };
-
   const encryptEventData = (data: Record<string, unknown>): unknown => {
-    const encryptedData = Object.keys(data).reduce((acc, key) => {
-      if (fieldShouldBeEncrypted(key)) {
-        return { ...acc, [key]: encryptValue(data[key]) };
-      }
+    // if we're not supposed to be encrypted events, don't do it. this should be
+    // checked elsewhere but we'll be super safe
+    if (!shouldEncryptEvents) {
+      return data;
+    }
 
-      return { ...acc, [key]: data[key] };
-    }, {});
+    // are we forced to use v0?
+    if (opts.legacyV0Service?.forceEncryptWithV0) {
+      return v0Legacy.encryptEventData(data);
+    }
 
-    return encryptedData;
+    // if we're not forced to use v0, use the current encryption service
+    return encryptValue(data);
   };
 
   const decryptEventData = (data: Record<string, unknown>): unknown => {
-    const decryptedData = Object.keys(data).reduce((acc, key) => {
-      if (isEncryptedValue(data[key])) {
-        return { ...acc, [key]: decryptValue(data[key]) };
+    // if the entire value is encrypted, match it and decrypt
+    if (isEncryptedValue(data)) {
+      if (service.identifier !== data[STRATEGY_MARKER]) {
+        throw new Error(
+          `Mismatched encryption service; received an event payload using "${data[STRATEGY_MARKER]}", but the configured encryption service is "${service.identifier}"`
+        );
       }
 
-      return { ...acc, [key]: data[key] };
-    }, {});
+      return decryptValue(data);
+    }
 
-    return decryptedData;
+    // if the entire value isn't encrypted, also check each top-level field in
+    // case it's a v0 encryption.
+    return v0Legacy.decryptEventData(data);
   };
 
   return new InngestMiddleware({
@@ -140,10 +135,7 @@ export const encryptionMiddleware = (
                   ...step,
                   data: step.data && decryptValue(step.data),
                 })),
-              };
-
-              if (shouldEncryptEvents) {
-                inputTransformer.ctx = {
+                ctx: {
                   event: ctx.event && {
                     ...ctx.event,
                     data: ctx.event.data && decryptEventData(ctx.event.data),
@@ -154,8 +146,8 @@ export const encryptionMiddleware = (
                       ...event,
                       data: event.data && decryptEventData(event.data),
                     })),
-                } as {};
-              }
+                } as {},
+              };
 
               return inputTransformer;
             },
@@ -199,6 +191,7 @@ export const encryptionMiddleware = (
  */
 export interface EncryptedValue {
   [ENCRYPTION_MARKER]: true;
+  [STRATEGY_MARKER]: string | undefined;
   data: string;
 }
 
@@ -214,14 +207,15 @@ type InputTransformer = NonNullable<
   >
 >;
 
-const isEncryptedValue = (value: unknown): value is EncryptedValue => {
+export const isEncryptedValue = (value: unknown): value is EncryptedValue => {
   return (
     typeof value === "object" &&
     value !== null &&
     ENCRYPTION_MARKER in value &&
     value[ENCRYPTION_MARKER] === true &&
     "data" in value &&
-    typeof value["data"] === "string"
+    typeof value["data"] === "string" &&
+    (!(STRATEGY_MARKER in value) || typeof value[STRATEGY_MARKER] === "string")
   );
 };
 
@@ -231,6 +225,12 @@ const isEncryptedValue = (value: unknown): value is EncryptedValue => {
  * service provided by this package.
  */
 export abstract class EncryptionService {
+  /**
+   * A unique identifier for this encryption service. This is used to identify
+   * the encryption service when serializing and deserializing encrypted values.
+   */
+  public abstract identifier: string;
+
   /**
    * Given an `unknown` value, encrypts it and returns the encrypted value as a
    * `string`.
@@ -242,163 +242,4 @@ export abstract class EncryptionService {
    * any value.
    */
   public abstract decrypt(value: string): unknown;
-}
-
-/**
- * The default encryption service used by the encryption middleware.
- *
- * This service uses LibSodium to encrypt and decrypt data. It supports multiple
- * keys, so that you can rotate keys without breaking existing encrypted data.
- *
- * An option is also provided to encrypt with a previous methodology, allowing
- * you to transition all services to using this new strategy before removing the
- * flag.
- */
-export namespace DefaultEncryptionService {
-  export interface Options {
-    encryptUsingV0?: boolean;
-  }
-}
-
-/**
- * The default encryption service used by the encryption middleware.
- *
- * This service uses LibSodium to encrypt and decrypt data. It supports multiple
- * keys, so that you can rotate keys without breaking existing encrypted data.
- *
- * An option is also provided to encrypt with a previous methodology, allowing
- * you to transition all services to using this new strategy before removing the
- * flag.
- */
-export class DefaultEncryptionService extends EncryptionService {
-  private readonly keys: [string, ...string[]];
-  private v0EncryptionService: V0AESEncryptionService;
-  private encryptUsingV0: boolean;
-
-  constructor(
-    key: string | string[] | undefined,
-    options?: DefaultEncryptionService.Options
-  ) {
-    super();
-
-    if (!key) {
-      throw new Error("Missing encryption key(s) in encryption middleware");
-    }
-
-    const keys = (Array.isArray(key) ? key : [key])
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    if (!keys.length) {
-      throw new Error("Missing encryption key(s) in encryption middleware");
-    }
-
-    this.keys = keys as [string, ...string[]];
-
-    this.v0EncryptionService = new V0AESEncryptionService(this.keys);
-    this.encryptUsingV0 = Boolean(options?.encryptUsingV0);
-  }
-
-  encrypt(value: unknown): string {
-    if (this.encryptUsingV0) {
-      return this.v0EncryptionService.encrypt(value);
-    }
-
-    const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
-    const message = sodium.from_string(JSON.stringify(value));
-    const ciphertext = sodium.crypto_secretbox_easy(
-      message,
-      nonce,
-      sodium.from_hex(this.keys[0])
-    );
-
-    const combined = new Uint8Array(nonce.length + ciphertext.length);
-    combined.set(nonce);
-    combined.set(ciphertext, nonce.length);
-
-    return sodium.to_base64(combined, sodium.base64_variants.ORIGINAL);
-  }
-
-  decrypt(value: string): unknown {
-    for (const key of this.keys) {
-      try {
-        const combined = sodium.from_base64(
-          value,
-          sodium.base64_variants.ORIGINAL
-        );
-        const nonce = combined.slice(0, sodium.crypto_secretbox_NONCEBYTES);
-        const ciphertext = combined.slice(sodium.crypto_secretbox_NONCEBYTES);
-
-        const decrypted = sodium.crypto_secretbox_open_easy(
-          ciphertext,
-          nonce,
-          sodium.from_hex(key)
-        );
-
-        const decoder = new TextDecoder("utf8");
-
-        return JSON.parse(decoder.decode(decrypted));
-      } catch {
-        // noop
-      }
-    }
-
-    return this.v0EncryptionService.decrypt(value);
-  }
-}
-
-/**
- * The V0 AES encryption service used by the encryption middleware.
- *
- * This service uses AES encryption to encrypt and decrypt data. It supports
- * multiple keys, so that you can rotate keys without breaking existing
- * encrypted data.
- *
- * It was the method used before the default encryption service using LibSodium
- * was added, and is still used internally for decrypting data to ensure
- * compatibility with older versions.
- */
-export class V0AESEncryptionService extends EncryptionService {
-  private readonly keys: [string, ...string[]];
-
-  constructor(key: string | string[] | undefined) {
-    super();
-
-    if (!key) {
-      throw new Error("Missing encryption key(s) in encryption middleware");
-    }
-
-    const keys = (Array.isArray(key) ? key : [key])
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    if (!keys.length) {
-      throw new Error("Missing encryption key(s) in encryption middleware");
-    }
-
-    this.keys = keys as [string, ...string[]];
-  }
-
-  encrypt(value: unknown): string {
-    return AES.encrypt(JSON.stringify(value), this.keys[0]).toString();
-  }
-
-  decrypt(value: string): unknown {
-    let err: unknown;
-
-    for (const key of this.keys) {
-      try {
-        const decrypted = AES.decrypt(value, key).toString(CryptoJSUtf8);
-        return JSON.parse(decrypted);
-      } catch (decryptionError) {
-        err = decryptionError;
-        continue;
-      }
-    }
-
-    throw (
-      err ||
-      new Error("Unable to decrypt value; no keys were able to decrypt it")
-    );
-  }
 }
