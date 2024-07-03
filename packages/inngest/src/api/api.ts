@@ -1,5 +1,10 @@
 import { type fetch } from "cross-fetch";
 import { type ExecutionVersion } from "../components/execution/InngestExecution";
+import {
+  defaultDevServerHost,
+  defaultInngestApiBaseUrl,
+} from "../helpers/consts";
+import { devServerAvailable } from "../helpers/devserver";
 import { type Mode } from "../helpers/env";
 import { getErrorMessage } from "../helpers/errors";
 import { fetchWithAuthFallback } from "../helpers/net";
@@ -72,17 +77,32 @@ export class InngestApi {
     }
   }
 
+  private async getTargetUrl(path: string): Promise<URL> {
+    let url = new URL(path, defaultInngestApiBaseUrl);
+
+    if (this.mode.isDev && this.mode.isInferred && !this.apiBaseUrl) {
+      const devAvailable = await devServerAvailable(
+        defaultDevServerHost,
+        this.fetch
+      );
+
+      if (devAvailable) {
+        url = new URL(path, defaultDevServerHost);
+      }
+    }
+
+    return url;
+  }
+
   async getRunSteps(
     runId: string,
     version: ExecutionVersion
   ): Promise<Result<StepsResponse, ErrorResponse>> {
-    const url = new URL(`/v0/runs/${runId}/actions`, this.baseUrl);
-
     return fetchWithAuthFallback({
       authToken: this.hashedKey,
       authTokenFallback: this.hashedFallbackKey,
       fetch: this.fetch,
-      url,
+      url: await this.getTargetUrl(`/v0/runs/${runId}/actions`),
     })
       .then(async (resp) => {
         const data: unknown = await resp.json();
@@ -104,13 +124,11 @@ export class InngestApi {
   async getRunBatch(
     runId: string
   ): Promise<Result<BatchResponse, ErrorResponse>> {
-    const url = new URL(`/v0/runs/${runId}/batch`, this.baseUrl);
-
     return fetchWithAuthFallback({
       authToken: this.hashedKey,
       authTokenFallback: this.hashedFallbackKey,
       fetch: this.fetch,
-      url,
+      url: await this.getTargetUrl(`/v0/runs/${runId}/batch`),
     })
       .then(async (resp) => {
         const data: unknown = await resp.json();
