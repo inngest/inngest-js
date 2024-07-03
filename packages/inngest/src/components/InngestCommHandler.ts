@@ -1245,7 +1245,7 @@ export class InngestCommHandler<
         const errors = check.error.errors.map((err) => err.message).join("; ");
 
         this.log(
-          "error",
+          "warn",
           `Config invalid for function "${config.id}" : ${errors}`
         );
       }
