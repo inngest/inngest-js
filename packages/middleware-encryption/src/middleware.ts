@@ -1,3 +1,5 @@
+import AES from "crypto-js/aes.js";
+import CryptoJSUtf8 from "crypto-js/enc-utf8.js";
 import {
   InngestMiddleware,
   type MiddlewareOptions,
@@ -245,11 +247,118 @@ export abstract class EncryptionService {
 /**
  * The default encryption service used by the encryption middleware.
  *
+ * This service uses LibSodium to encrypt and decrypt data. It supports multiple
+ * keys, so that you can rotate keys without breaking existing encrypted data.
+ *
+ * An option is also provided to encrypt with a previous methodology, allowing
+ * you to transition all services to using this new strategy before removing the
+ * flag.
+ */
+export namespace DefaultEncryptionService {
+  export interface Options {
+    encryptUsingV0?: boolean;
+  }
+}
+
+/**
+ * The default encryption service used by the encryption middleware.
+ *
+ * This service uses LibSodium to encrypt and decrypt data. It supports multiple
+ * keys, so that you can rotate keys without breaking existing encrypted data.
+ *
+ * An option is also provided to encrypt with a previous methodology, allowing
+ * you to transition all services to using this new strategy before removing the
+ * flag.
+ */
+export class DefaultEncryptionService extends EncryptionService {
+  private readonly keys: [string, ...string[]];
+  private v0EncryptionService: V0AESEncryptionService;
+  private encryptUsingV0: boolean;
+
+  constructor(
+    key: string | string[] | undefined,
+    options?: DefaultEncryptionService.Options
+  ) {
+    super();
+
+    if (!key) {
+      throw new Error("Missing encryption key(s) in encryption middleware");
+    }
+
+    const keys = (Array.isArray(key) ? key : [key])
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (!keys.length) {
+      throw new Error("Missing encryption key(s) in encryption middleware");
+    }
+
+    this.keys = keys as [string, ...string[]];
+
+    this.v0EncryptionService = new V0AESEncryptionService(this.keys);
+    this.encryptUsingV0 = Boolean(options?.encryptUsingV0);
+  }
+
+  encrypt(value: unknown): string {
+    if (this.encryptUsingV0) {
+      return this.v0EncryptionService.encrypt(value);
+    }
+
+    const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
+    const message = sodium.from_string(JSON.stringify(value));
+    const ciphertext = sodium.crypto_secretbox_easy(
+      message,
+      nonce,
+      sodium.from_hex(this.keys[0])
+    );
+
+    const combined = new Uint8Array(nonce.length + ciphertext.length);
+    combined.set(nonce);
+    combined.set(ciphertext, nonce.length);
+
+    return sodium.to_base64(combined, sodium.base64_variants.ORIGINAL);
+  }
+
+  decrypt(value: string): unknown {
+    for (const key of this.keys) {
+      try {
+        const combined = sodium.from_base64(
+          value,
+          sodium.base64_variants.ORIGINAL
+        );
+        const nonce = combined.slice(0, sodium.crypto_secretbox_NONCEBYTES);
+        const ciphertext = combined.slice(sodium.crypto_secretbox_NONCEBYTES);
+
+        const decrypted = sodium.crypto_secretbox_open_easy(
+          ciphertext,
+          nonce,
+          sodium.from_hex(key)
+        );
+
+        const decoder = new TextDecoder("utf8");
+
+        return JSON.parse(decoder.decode(decrypted));
+      } catch {
+        // noop
+      }
+    }
+
+    return this.v0EncryptionService.decrypt(value);
+  }
+}
+
+/**
+ * The V0 AES encryption service used by the encryption middleware.
+ *
  * This service uses AES encryption to encrypt and decrypt data. It supports
  * multiple keys, so that you can rotate keys without breaking existing
  * encrypted data.
+ *
+ * It was the method used before the default encryption service using LibSodium
+ * was added, and is still used internally for decrypting data to ensure
+ * compatibility with older versions.
  */
-export class DefaultEncryptionService extends EncryptionService {
+export class V0AESEncryptionService extends EncryptionService {
   private readonly keys: [string, ...string[]];
 
   constructor(key: string | string[] | undefined) {
@@ -271,18 +380,7 @@ export class DefaultEncryptionService extends EncryptionService {
   }
 
   encrypt(value: unknown): string {
-    const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
-    const message = sodium.from_string(JSON.stringify(value));
-    const ciphertext = sodium.crypto_secretbox_easy(
-      message,
-      nonce,
-      sodium.from_hex(this.keys[0])
-    );
-
-    const combined = new Uint8Array(nonce.length + ciphertext.length);
-    combined.set(nonce);
-    combined.set(ciphertext, nonce.length);
-    return sodium.to_base64(combined, sodium.base64_variants.ORIGINAL);
+    return AES.encrypt(JSON.stringify(value), this.keys[0]).toString();
   }
 
   decrypt(value: string): unknown {
@@ -290,21 +388,8 @@ export class DefaultEncryptionService extends EncryptionService {
 
     for (const key of this.keys) {
       try {
-        const combined = sodium.from_base64(
-          value,
-          sodium.base64_variants.ORIGINAL
-        );
-        const nonce = combined.slice(0, sodium.crypto_secretbox_NONCEBYTES);
-        const ciphertext = combined.slice(sodium.crypto_secretbox_NONCEBYTES);
-
-        const decrypted = sodium.crypto_secretbox_open_easy(
-          ciphertext,
-          nonce,
-          sodium.from_hex(key)
-        );
-
-        const decoder = new TextDecoder("utf8");
-        return JSON.parse(decoder.decode(decrypted));
+        const decrypted = AES.decrypt(value, key).toString(CryptoJSUtf8);
+        return JSON.parse(decrypted);
       } catch (decryptionError) {
         err = decryptionError;
         continue;
