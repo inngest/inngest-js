@@ -1,5 +1,13 @@
 # inngest
 
+## 3.19.20
+
+### Patch Changes
+
+- [#636](https://github.com/inngest/inngest-js/pull/636) [`b0e6237`](https://github.com/inngest/inngest-js/commit/b0e6237b427d6b8a9e2333d8198798f4c8e61339) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix inferred dev mode resulting in contacting the production API when fetching large state
+
+- [#634](https://github.com/inngest/inngest-js/pull/634) [`ac402ef`](https://github.com/inngest/inngest-js/commit/ac402ef743dbe99261a7728701df70ddd9beaf5d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Change an error when function configuration is invalid to a warning instead
+
 ## 3.19.19
 
 ### Patch Changes
