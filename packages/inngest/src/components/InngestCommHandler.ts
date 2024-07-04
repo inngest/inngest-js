@@ -763,6 +763,18 @@ export class InngestCommHandler<
     return handler;
   }
 
+  private get mode(): Mode | undefined {
+    return this._mode;
+  }
+
+  private set mode(m) {
+    this._mode = m;
+
+    if (m) {
+      this.client["mode"] = m;
+    }
+  }
+
   /**
    * Given a set of functions to check if an action is available from the
    * instance's handler, enact any action that is found.
@@ -1245,7 +1257,7 @@ export class InngestCommHandler<
         const errors = check.error.errors.map((err) => err.message).join("; ");
 
         this.log(
-          "error",
+          "warn",
           `Config invalid for function "${config.id}" : ${errors}`
         );
       }
