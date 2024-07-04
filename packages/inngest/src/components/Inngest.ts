@@ -142,7 +142,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
    * settings, but should still check for the presence of an environment
    * variable if it is not set.
    */
-  private readonly mode: Mode;
+  private _mode: Mode;
 
   get apiBaseUrl(): string | undefined {
     return this._apiBaseUrl;
@@ -193,7 +193,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
 
     this.id = id;
 
-    this.mode = getMode({
+    this._mode = getMode({
       explicitMode:
         typeof isDev === "boolean" ? (isDev ? "dev" : "cloud") : undefined,
     });
@@ -219,10 +219,11 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     this.fetch = getFetch(fetch);
 
     this.inngestApi = new InngestApi({
-      baseUrl: this.apiBaseUrl || defaultInngestApiBaseUrl,
+      baseUrl: this.apiBaseUrl,
       signingKey: processEnv(envKeys.InngestSigningKey) || "",
       signingKeyFallback: processEnv(envKeys.InngestSigningKeyFallback),
       fetch: this.fetch,
+      mode: this.mode,
     });
 
     this.logger = logger;
@@ -262,6 +263,15 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     );
 
     return [...prefix, ...(await stack)];
+  }
+
+  private get mode(): Mode {
+    return this._mode;
+  }
+
+  private set mode(m) {
+    this._mode = m;
+    this.inngestApi["mode"] = m;
   }
 
   /**
