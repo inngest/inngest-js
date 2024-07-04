@@ -1,5 +1,11 @@
 # inngest
 
+## 3.19.21
+
+### Patch Changes
+
+- [#622](https://github.com/inngest/inngest-js/pull/622) [`c041d6f`](https://github.com/inngest/inngest-js/commit/c041d6f08ba1039f73b62435a113128eb2435641) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix rare theoretical checkpoint hang
+
 ## 3.19.20
 
 ### Patch Changes
