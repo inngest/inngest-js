@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
+  type builtInMiddleware,
   type GetEvents,
   type Inngest,
-  type builtInMiddleware,
 } from "./components/Inngest";
 import { type InngestFunction } from "./components/InngestFunction";
 import { type InngestFunctionReference } from "./components/InngestFunctionReference";
@@ -19,6 +19,7 @@ import {
   type IsNever,
   type IsStringLiteral,
   type ObjectPaths,
+  type Public,
   type Simplify,
   type WithoutInternal,
 } from "./helpers/types";
@@ -824,6 +825,22 @@ export interface RegisterOptions {
   id?: string;
 }
 
+/**
+ * This schema is used internally to share the shape of a concurrency option
+ * when validating config. We cannot add comments to Zod fields, so we just use
+ * an extra type check to ensure it matches our exported expectations.
+ */
+const concurrencyOptionSchema = z.strictObject({
+  limit: z.number(),
+  key: z.string().optional(),
+  scope: z.enum(["fn", "env", "account"]).optional(),
+});
+
+const _checkConcurrencySchemaAligns: IsEqual<
+  ConcurrencyOption,
+  z.output<typeof concurrencyOptionSchema>
+> = true;
+
 export interface ConcurrencyOption {
   /**
    * The concurrency limit for this option, adding a limit on how many concurrent
@@ -989,7 +1006,6 @@ export interface UnauthenticatedIntrospection {
   authentication_succeeded: false | null;
   extra: {
     is_mode_explicit: boolean;
-    message: string;
   };
   function_count: number;
   has_event_key: boolean;
@@ -1019,51 +1035,106 @@ export interface AuthenticatedIntrospection
 }
 
 /**
- * A block representing an individual function being registered to Inngest
- * Cloud.
+ * The schema used to represent an individual function being synced with
+ * Inngest.
+ *
+ * Note that this should only be used to validate the shape of a config object
+ * and not used for feature compatibility, such as feature X being exclusive
+ * with feature Y; these should be handled on the Inngest side.
+ */
+export const functionConfigSchema = z.strictObject({
+  name: z.string().optional(),
+  id: z.string(),
+  triggers: z.array(
+    z.union([
+      z.strictObject({
+        event: z.string(),
+        expression: z.string().optional(),
+      }),
+      z.strictObject({
+        cron: z.string(),
+      }),
+    ])
+  ),
+  steps: z.record(
+    z.strictObject({
+      id: z.string(),
+      name: z.string(),
+      runtime: z.strictObject({
+        type: z.literal("http"),
+        url: z.string(),
+      }),
+      retries: z
+        .strictObject({
+          attempts: z.number().optional(),
+        })
+        .optional(),
+    })
+  ),
+  idempotency: z.string().optional(),
+  batchEvents: z
+    .strictObject({
+      maxSize: z.number(),
+      timeout: z.string(),
+    })
+    .optional(),
+  rateLimit: z
+    .strictObject({
+      key: z.string().optional(),
+      limit: z.number(),
+      period: z.string().transform((x) => x as TimeStr),
+    })
+    .optional(),
+  throttle: z
+    .strictObject({
+      key: z.string().optional(),
+      limit: z.number(),
+      period: z.string().transform((x) => x as TimeStr),
+      burst: z.number().optional(),
+    })
+    .optional(),
+  cancel: z
+    .array(
+      z.strictObject({
+        event: z.string(),
+        if: z.string().optional(),
+        timeout: z.string().optional(),
+      })
+    )
+    .optional(),
+  debounce: z
+    .strictObject({
+      key: z.string().optional(),
+      period: z.string().transform((x) => x as TimeStr),
+      timeout: z
+        .string()
+        .transform((x) => x as TimeStr)
+        .optional(),
+    })
+    .optional(),
+  priority: z
+    .strictObject({
+      run: z.string().optional(),
+    })
+    .optional(),
+  concurrency: z
+    .union([
+      z.number(),
+      concurrencyOptionSchema.transform((x) => x as ConcurrencyOption),
+      z
+        .array(concurrencyOptionSchema.transform((x) => x as ConcurrencyOption))
+        .min(1)
+        .max(2),
+    ])
+    .optional(),
+});
+
+/**
+ * The shape of an individual function being synced with Inngest.
  *
  * @internal
  */
-export interface FunctionConfig {
-  name?: string;
-  id: string;
-  triggers: ({ event: string; expression?: string } | { cron: string })[];
-  steps: Record<
-    string,
-    {
-      id: string;
-      name: string;
-      runtime: {
-        type: "http";
-        url: string;
-      };
-      retries?: {
-        attempts?: number;
-      };
-    }
-  >;
-  idempotency?: string;
-  batchEvents?: {
-    maxSize: number;
-    timeout: string;
-  };
-  rateLimit?: {
-    key?: string;
-    limit: number;
-    period: TimeStr;
-  };
-  throttle?: {
-    key?: string;
-    limit: number;
-    period: TimeStr;
-    burst?: number;
-  };
-  cancel?: {
-    event: string;
-    if?: string;
-    timeout?: string;
-  }[];
-}
+export type FunctionConfig = z.output<typeof functionConfigSchema>;
 
 export interface DevServerInfo {
   /**
@@ -1161,8 +1232,8 @@ export type EventsFromFunction<T extends InngestFunction.Any> =
  * @public
  */
 export type InvokeTargetFunctionDefinition =
-  | InngestFunctionReference.Any
-  | InngestFunction.Any
+  | Public<InngestFunctionReference.Any>
+  | Public<InngestFunction.Any>
   | string;
 
 /**

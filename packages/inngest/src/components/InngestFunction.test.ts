@@ -12,8 +12,6 @@ import {
   NonRetriableError,
   type EventPayload,
 } from "@local";
-import { InngestFunction } from "@local/components/InngestFunction";
-import { STEP_INDEXING_SUFFIX } from "@local/components/InngestStepTools";
 import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
@@ -22,6 +20,8 @@ import {
   type InngestExecutionOptions,
 } from "@local/components/execution/InngestExecution";
 import { _internals } from "@local/components/execution/v1";
+import { InngestFunction } from "@local/components/InngestFunction";
+import { STEP_INDEXING_SUFFIX } from "@local/components/InngestStepTools";
 import { internalEvents } from "@local/helpers/consts";
 import {
   ErrCode,
@@ -408,11 +408,16 @@ describe("runFn", () => {
                 (ret.type === "step-ran" || ret.type === "steps-found")
               ) {
                 test("output hashes match expected shape", () => {
+                  // Horrible syntax for TS 4.7+ compatibility - lack of narrowing
                   const outgoingOps: OutgoingOp[] =
                     ret!.type === "step-ran"
-                      ? [ret!.step]
+                      ? [
+                          (ret as Extract<typeof ret, { type: "step-ran" }>)!
+                            .step,
+                        ]
                       : ret!.type === "steps-found"
-                        ? ret!.steps
+                        ? (ret as Extract<typeof ret, { type: "steps-found" }>)!
+                            .steps
                         : [];
 
                   outgoingOps.forEach((op) => {

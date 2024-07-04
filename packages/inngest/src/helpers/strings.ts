@@ -105,7 +105,7 @@ export const stringifyUnknown = (input: unknown): string | undefined => {
 };
 
 export const hashEventKey = (eventKey: string): string => {
-  return sha256().update(eventKey, "hex").digest("hex");
+  return sha256().update(eventKey).digest("hex");
 };
 
 export const hashSigningKey = (signingKey: string | undefined): string => {

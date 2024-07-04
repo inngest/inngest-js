@@ -1,6 +1,6 @@
 {
   "name": "@inngest/middleware-encryption",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "description": "E2E encryption middleware for Inngest.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -34,12 +34,12 @@
   "devDependencies": {
     "@types/crypto-js": "^4.2.1",
     "inngest": "^3.19.7",
-    "typescript": "~5.4.0"
+    "typescript": "~5.5.2"
   },
   "dependencies": {
     "crypto-js": "^4.2.0"
   },
   "peerDependencies": {
-    "inngest": "^3.0.0"
+    "inngest": ">=3.0.0"
   }
 }
