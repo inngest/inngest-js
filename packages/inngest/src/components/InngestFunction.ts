@@ -363,6 +363,13 @@ export namespace InngestFunction {
      */
     rateLimit?: {
       /**
+       *  An optional way to specify many extra function runs can be triggered
+       *  within a time bucket. Note that increasing this value may lead to rate
+       *  limit exceedance
+       */
+      burst?: number;
+
+      /**
        * An optional key to use for rate limiting, similar to idempotency.
        */
       key?: string;

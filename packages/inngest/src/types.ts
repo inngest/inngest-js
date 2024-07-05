@@ -1080,6 +1080,7 @@ export const functionConfigSchema = z.strictObject({
     .optional(),
   rateLimit: z
     .strictObject({
+      burst: z.number().optional(),
       key: z.string().optional(),
       limit: z.number(),
       period: z.string().transform((x) => x as TimeStr),
