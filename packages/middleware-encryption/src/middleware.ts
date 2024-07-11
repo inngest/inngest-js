@@ -1,20 +1,6 @@
-import {
-  InngestMiddleware,
-  type MiddlewareOptions,
-  type MiddlewareRegisterReturn,
-} from "inngest";
-import { LEGACY_V0Service } from "./strategies/legacy";
-import { LibSodiumEncryptionService } from "./strategies/libSodium";
-
-/**
- * A marker used to identify encrypted values without having to guess.
- */
-const ENCRYPTION_MARKER = "__ENCRYPTED__";
-
-/**
- * A marker used to identify the strategy used for encryption.
- */
-const STRATEGY_MARKER = "__STRATEGY__";
+import { InngestMiddleware, type MiddlewareOptions } from "inngest";
+import { getEncryptionStages } from "./stages";
+import { type LEGACY_V0Service } from "./strategies/legacy";
 
 /**
  * Options used to configure the encryption middleware.
@@ -63,161 +49,25 @@ export const encryptionMiddleware = (
    */
   opts: EncryptionMiddlewareOptions
 ): InngestMiddleware<MiddlewareOptions> => {
-  const service =
-    opts.encryptionService || new LibSodiumEncryptionService(opts.key);
-
-  const shouldEncryptEvents = Boolean(opts.encryptEventData);
-
-  const v0Legacy = new LEGACY_V0Service({
-    key: opts.key,
-    forceEncryptWithV0: Boolean(opts.legacyV0Service?.forceEncryptWithV0),
-    ...opts.legacyV0Service,
-  });
-
-  const encryptValue = (value: unknown): EncryptedValue => {
-    return {
-      [ENCRYPTION_MARKER]: true,
-      [STRATEGY_MARKER]: service.identifier,
-      data: service.encrypt(value),
-    };
-  };
-
-  const decryptValue = (value: unknown): unknown => {
-    if (isEncryptedValue(value)) {
-      return service.decrypt(value.data);
-    }
-
-    return value;
-  };
-
-  const encryptEventData = (data: Record<string, unknown>): unknown => {
-    // if we're not supposed to be encrypted events, don't do it. this should be
-    // checked elsewhere but we'll be super safe
-    if (!shouldEncryptEvents) {
-      return data;
-    }
-
-    // are we forced to use v0?
-    if (opts.legacyV0Service?.forceEncryptWithV0) {
-      return v0Legacy.encryptEventData(data);
-    }
-
-    // if we're not forced to use v0, use the current encryption service
-    return encryptValue(data);
-  };
-
-  const decryptEventData = (data: Record<string, unknown>): unknown => {
-    // if the entire value is encrypted, match it and decrypt
-    if (isEncryptedValue(data)) {
-      if (service.identifier !== data[STRATEGY_MARKER]) {
-        throw new Error(
-          `Mismatched encryption service; received an event payload using "${data[STRATEGY_MARKER]}", but the configured encryption service is "${service.identifier}"`
-        );
-      }
-
-      return decryptValue(data);
-    }
-
-    // if the entire value isn't encrypted, also check each top-level field in
-    // case it's a v0 encryption.
-    return v0Legacy.decryptEventData(data);
-  };
+  const { encrypt, decrypt } = getEncryptionStages(opts);
 
   return new InngestMiddleware({
     name: "@inngest/middleware-encryption",
     init: () => {
-      const registration: MiddlewareRegisterReturn = {
-        onFunctionRun: () => {
+      return {
+        onFunctionRun: (...args) => {
           return {
-            transformInput: ({ ctx, steps }) => {
-              const inputTransformer: InputTransformer = {
-                steps: steps.map((step) => ({
-                  ...step,
-                  data: step.data && decryptValue(step.data),
-                })),
-                ctx: {
-                  event: ctx.event && {
-                    ...ctx.event,
-                    data: ctx.event.data && decryptEventData(ctx.event.data),
-                  },
-                  events:
-                    ctx.events &&
-                    ctx.events?.map((event) => ({
-                      ...event,
-                      data: event.data && decryptEventData(event.data),
-                    })),
-                } as {},
-              };
-
-              return inputTransformer;
-            },
-            transformOutput: (ctx) => {
-              if (!ctx.step) {
-                return;
-              }
-
-              return {
-                result: {
-                  data: ctx.result.data && encryptValue(ctx.result.data),
-                },
-              };
-            },
+            ...encrypt.onFunctionRun(...args),
+            ...decrypt.onFunctionRun(...args),
           };
         },
+        onSendEvent: encrypt.onSendEvent,
       };
-
-      if (shouldEncryptEvents) {
-        registration.onSendEvent = () => {
-          return {
-            transformInput: ({ payloads }) => {
-              return {
-                payloads: payloads.map((payload) => ({
-                  ...payload,
-                  data: payload.data && encryptEventData(payload.data),
-                })),
-              };
-            },
-          };
-        };
-      }
-
-      return registration;
     },
   });
 };
 
-/**
- * The encrypted value as it will be sent to Inngest.
- */
-export interface EncryptedValue {
-  [ENCRYPTION_MARKER]: true;
-  [STRATEGY_MARKER]: string | undefined;
-  data: string;
-}
-
-type InputTransformer = NonNullable<
-  Awaited<
-    ReturnType<
-      NonNullable<
-        Awaited<
-          ReturnType<NonNullable<MiddlewareRegisterReturn["onFunctionRun"]>>
-        >["transformInput"]
-      >
-    >
-  >
->;
-
-export const isEncryptedValue = (value: unknown): value is EncryptedValue => {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    ENCRYPTION_MARKER in value &&
-    value[ENCRYPTION_MARKER] === true &&
-    "data" in value &&
-    typeof value["data"] === "string" &&
-    (!(STRATEGY_MARKER in value) || typeof value[STRATEGY_MARKER] === "string")
-  );
-};
+export type MaybePromise<T> = T | Promise<T>;
 
 /**
  * A service that encrypts and decrypts data. You can implement this abstract
@@ -235,11 +85,11 @@ export abstract class EncryptionService {
    * Given an `unknown` value, encrypts it and returns the encrypted value as a
    * `string`.
    */
-  public abstract encrypt(value: unknown): string;
+  public abstract encrypt(value: unknown): MaybePromise<string>;
 
   /**
    * Given an encrypted `string`, decrypts it and returns the decrypted value as
    * any value.
    */
-  public abstract decrypt(value: string): unknown;
+  public abstract decrypt(value: string): MaybePromise<unknown>;
 }

@@ -8,6 +8,9 @@
   ],
   "exclude": [],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "manual": "./src/manual.ts",
+    "strategies/aes": "./src/strategies/aes.ts",
+    "strategies/libsodium": "./src/strategies/libsodium.ts"
   }
 }

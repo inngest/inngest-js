@@ -1,4 +1,5 @@
-import { EncryptionMiddlewareOptions, isEncryptedValue } from "../middleware";
+import { EncryptionMiddlewareOptions } from "../middleware";
+import { isEncryptedValue } from "../stages";
 import { AESEncryptionService } from "./aes";
 
 /**
