@@ -3,9 +3,6 @@ import { logPrefix } from "../helpers/consts";
 import { type Jsonify } from "../helpers/jsonify";
 import { timeStr } from "../helpers/strings";
 import {
-  type ExclusiveKeys,
-  type IsStringLiteral,
-  type ObjectPaths,
   type ParametersExceptFirst,
   type SendEventPayload,
   type SimplifyDeep,
@@ -213,11 +210,7 @@ export const createStepTools = <
     waitForEvent: createTool<
       <IncomingEvent extends TriggersFromClient<TClient>>(
         idOrOptions: StepOptionsOrId,
-        opts: WaitForEventOpts<
-          GetEvents<TClient, true>,
-          TTriggers & string,
-          IncomingEvent
-        >
+        opts: WaitForEventOpts<GetEvents<TClient, true>, IncomingEvent>
       ) => Promise<
         IncomingEvent extends TriggersFromClient<TClient>
           ? GetEvents<TClient, true>[IncomingEvent] | null
@@ -237,9 +230,7 @@ export const createStepTools = <
         };
 
         if (typeof opts !== "string") {
-          if (opts?.match) {
-            matchOpts.if = `event.${opts.match} == async.${opts.match}`;
-          } else if (opts?.if) {
+          if (opts?.if) {
             matchOpts.if = opts.if;
           }
         }
@@ -510,7 +501,6 @@ type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
  */
 type WaitForEventOpts<
   Events extends Record<string, EventPayload>,
-  TriggeringEvent extends keyof Events,
   IncomingEvent extends keyof Events,
 > = {
   event: IncomingEvent;
@@ -526,50 +516,18 @@ type WaitForEventOpts<
    * {@link https://npm.im/ms}
    */
   timeout: number | string | Date;
-} & ExclusiveKeys<
-  {
-    /**
-     * If provided, the step function will wait for the incoming event to match
-     * particular criteria. If the event does not match, it will be ignored and
-     * the step function will wait for another event.
-     *
-     * It must be a string of a dot-notation field name within both events to
-     * compare, e.g. `"data.id"` or `"user.email"`.
-     *
-     * ```
-     * // Wait for an event where the `user.email` field matches
-     * match: "user.email"
-     * ```
-     *
-     * All of these are helpers for the `if` option, which allows you to specify
-     * a custom condition to check. This can be useful if you need to compare
-     * multiple fields or use a more complex condition.
-     *
-     * See the Inngest expressions docs for more information.
-     *
-     * {@link https://www.inngest.com/docs/functions/expressions}
-     */
-    match?: IsStringLiteral<keyof Events & string> extends true
-      ? IsStringLiteral<IncomingEvent & string> extends true
-        ? ObjectPaths<Events[TriggeringEvent]> &
-            ObjectPaths<Events[IncomingEvent]>
-        : string
-      : string;
 
-    /**
-     * If provided, the step function will wait for the incoming event to match
-     * the given condition. If the event does not match, it will be ignored and
-     * the step function will wait for another event.
-     *
-     * The condition is a string of Google's Common Expression Language. For most
-     * simple cases, you might prefer to use `match` instead.
-     *
-     * See the Inngest expressions docs for more information.
-     *
-     * {@link https://www.inngest.com/docs/functions/expressions}
-     */
-    if?: string;
-  },
-  "match",
-  "if"
->;
+  /**
+   * If provided, the step function will wait for the incoming event to match
+   * the given condition. If the event does not match, it will be ignored and
+   * the step function will wait for another event.
+   *
+   * The condition is a string of Google's Common Expression Language. For most
+   * simple cases, you might prefer to use `match` instead.
+   *
+   * See the Inngest expressions docs for more information.
+   *
+   * {@link https://www.inngest.com/docs/functions/expressions}
+   */
+  if?: string;
+};

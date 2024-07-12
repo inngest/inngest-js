@@ -17,8 +17,6 @@ import {
   type AsTuple,
   type IsEqual,
   type IsNever,
-  type IsStringLiteral,
-  type ObjectPaths,
   type Public,
   type Simplify,
   type WithoutInternal,
@@ -877,10 +875,7 @@ export interface ConcurrencyOption {
  *
  * @public
  */
-export type Cancellation<
-  Events extends Record<string, EventPayload>,
-  TriggeringEvent extends keyof Events & string,
-> = {
+export type Cancellation<Events extends Record<string, EventPayload>> = {
   [K in keyof Events & string]: {
     /**
      * The name of the event that should cancel the function run.
@@ -903,31 +898,6 @@ export type Cancellation<
      * ```
      */
     if?: string;
-
-    /**
-     * If provided, the step function will wait for the incoming event to match
-     * particular criteria. If the event does not match, it will be ignored and
-     * the step function will wait for another event.
-     *
-     * It must be a string of a dot-notation field name within both events to
-     * compare, e.g. `"data.id"` or `"user.email"`.
-     *
-     * ```
-     * // Wait for an event where the `user.email` field matches
-     * match: "user.email"
-     * ```
-     *
-     * All of these are helpers for the `if` option, which allows you to specify
-     * a custom condition to check. This can be useful if you need to compare
-     * multiple fields or use a more complex condition.
-     *
-     * See the Inngest expressions docs for more information.
-     *
-     * {@link https://www.inngest.com/docs/functions/expressions}
-     */
-    match?: IsStringLiteral<keyof Events & string> extends true
-      ? ObjectPaths<Events[TriggeringEvent]> & ObjectPaths<Events[K]>
-      : string;
 
     /**
      * An optional timeout that the cancel is valid for.  If this isn't

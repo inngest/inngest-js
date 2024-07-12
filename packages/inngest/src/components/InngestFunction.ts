@@ -4,7 +4,6 @@ import { type RecursiveTuple, type StrictUnion } from "../helpers/types";
 import {
   type Cancellation,
   type ConcurrencyOption,
-  type EventNameFromTrigger,
   type FunctionConfig,
   type Handler,
   type TimeStr,
@@ -169,7 +168,7 @@ export class InngestFunction<
     };
 
     if (cancelOn) {
-      fn.cancel = cancelOn.map(({ event, timeout, if: ifStr, match }) => {
+      fn.cancel = cancelOn.map(({ event, timeout, if: ifStr }) => {
         const ret: NonNullable<FunctionConfig["cancel"]>[number] = {
           event,
         };
@@ -178,9 +177,7 @@ export class InngestFunction<
           ret.timeout = timeStr(timeout);
         }
 
-        if (match) {
-          ret.if = `event.${match} == async.${match}`;
-        } else if (ifStr) {
+        if (ifStr) {
           ret.if = ifStr;
         }
 
@@ -473,10 +470,7 @@ export namespace InngestFunction {
       run?: string;
     };
 
-    cancelOn?: Cancellation<
-      GetEvents<TClient, true>,
-      EventNameFromTrigger<GetEvents<TClient, true>, TTriggers[number]> & string
-    >[];
+    cancelOn?: Cancellation<GetEvents<TClient, true>>[];
 
     /**
      * Specifies the maximum number of retries for all steps across this function.

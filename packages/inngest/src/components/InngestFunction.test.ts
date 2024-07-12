@@ -2632,19 +2632,6 @@ describe("runFn", () => {
             }
           );
         });
-
-        test("allows any match", () => {
-          inngest.createFunction(
-            {
-              id: "test",
-              cancelOn: [{ event: "anything", match: "data.anything" }],
-            },
-            { event: "test" },
-            () => {
-              // no-op
-            }
-          );
-        });
       });
 
       describe("multiple custom types", () => {
@@ -2690,33 +2677,6 @@ describe("runFn", () => {
             }
           );
         });
-
-        test("disallows known event name with bad field match", () => {
-          inngest.createFunction(
-            {
-              name: "test",
-              // @ts-expect-error Unknown match field
-              cancelOn: [{ event: "bar", match: "data.title" }],
-            },
-            { event: "foo" },
-            () => {
-              // no-op
-            }
-          );
-        });
-
-        test("allows known event name with good field match", () => {
-          inngest.createFunction(
-            {
-              id: "test",
-              cancelOn: [{ event: "baz", match: "data.title" }],
-            },
-            { event: "foo" },
-            () => {
-              // no-op
-            }
-          );
-        });
       });
     });
 
@@ -2742,7 +2702,12 @@ describe("runFn", () => {
       });
 
       const fn = inngest.createFunction(
-        { id: "testfn", cancelOn: [{ event: "baz", match: "data.title" }] },
+        {
+          id: "testfn",
+          cancelOn: [
+            { event: "baz", if: "event.data.title == async.data.title" },
+          ],
+        },
         { event: "foo" },
         () => {
           // no-op
