@@ -79,8 +79,12 @@ export type SendEventPayload<Events extends Record<string, EventPayload>> =
  * @public
  */
 export type WithoutInternal<T extends Record<string, EventPayload>> = {
-  [K in keyof T as K extends `inngest/${string}` ? never : K]: T[K];
+  [K in keyof T as WithoutInternalStr<K & string>]: T[K];
 };
+
+export type WithoutInternalStr<T extends string> = T extends `inngest/${string}`
+  ? never
+  : T;
 
 /**
  * A list of simple, JSON-compatible, primitive types that contain no other

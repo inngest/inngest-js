@@ -9,6 +9,7 @@ import {
   type ParametersExceptFirst,
   type SendEventPayload,
   type SimplifyDeep,
+  type WithoutInternalStr,
 } from "../helpers/types";
 import {
   StepOpCode,
@@ -211,7 +212,7 @@ export const createStepTools = <
      * returning `null` instead of any event data.
      */
     waitForEvent: createTool<
-      <IncomingEvent extends TriggersFromClient<TClient>>(
+      <IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>>(
         idOrOptions: StepOptionsOrId,
         opts: WaitForEventOpts<
           GetEvents<TClient, true>,
@@ -219,8 +220,8 @@ export const createStepTools = <
           IncomingEvent
         >
       ) => Promise<
-        IncomingEvent extends TriggersFromClient<TClient>
-          ? GetEvents<TClient, true>[IncomingEvent] | null
+        IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>
+          ? GetEvents<TClient, false>[IncomingEvent] | null
           : IncomingEvent | null
       >
     >(
