@@ -67,10 +67,18 @@ To create a custom encryption service, you need to implement the abstract `Encry
 ```ts
 export abstract class EncryptionService {
   public abstract identifier: string;
-  public abstract encrypt(value: unknown): string;
-  public abstract decrypt(value: string): unknown;
+  public abstract encrypt(value: unknown): MaybePromise<string>;
+  public abstract decrypt(value: string): MaybePromise<unknown>;
 }
 ```
+
+> [!TIP]
+> Notice that the return values of these functions can be synchronous or return
+> promises. In the latter case, encryption/decryption will happen in parallel
+> for every relevant step and event. In practice, this also allows you to mimic
+> [dataloader](https://github.com/graphql/dataloader)-like behaviour by
+> collecting all encryption/decryption requests during one tick and choosing how
+> to process them all at once.
 
 For example, here's how you might define, instantiate, and use a custom encryption service:
 
