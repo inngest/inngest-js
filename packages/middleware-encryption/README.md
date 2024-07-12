@@ -119,3 +119,42 @@ const inngest = new Inngest({
   middleware: [mw],
 });
 ```
+
+## Advanced: Manual usage
+
+In v3 of the TypeScript SDK, middleware is run in sequence and not as the usual
+encapsulating layer. For example, middleware of `[foo, bar]` would run hooks in
+the order:
+```
+foo.transformInput
+bar.transformInput
+foo.transformOutput
+bar.transformOutput
+```
+This is problematic for middleware that affects payloads such as encryption, as
+we'd want it to be the first and last hooks to run instead of always the first
+for every stage.
+
+While this will change and be fixed in v4 of the TypeScript SDK, if you're using v3 alongside
+_other_ middleware that also affects the payload, we provide two separate
+middleware that you can use to wrap the other middleware.
+
+```ts
+import { manualEncryptionMiddleware } from "@inngest/middleware-encryption/manual";
+
+const {
+  decryptionMiddleware,
+  encryptionMiddleware,
+} = manualEncryptionMiddleware({
+  key: "your-encryption-key",
+});
+
+const inngest = new Inngest({
+  id: "my-app",
+  middleware: [
+    decryptionMiddleware,
+    someOtherMwAffectingPayloads,
+    encryptionMiddleware,
+  ],
+});
+```
