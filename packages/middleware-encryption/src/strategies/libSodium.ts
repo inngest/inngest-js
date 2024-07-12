@@ -12,7 +12,7 @@ import { EncryptionService } from "../middleware";
  * flag.
  */
 export class LibSodiumEncryptionService extends EncryptionService {
-  private readonly keys: [string, ...string[]];
+  private readonly keys: Promise<Uint8Array[]>;
 
   public identifier = "libsodium";
 
@@ -31,17 +31,25 @@ export class LibSodiumEncryptionService extends EncryptionService {
       throw new Error("Missing encryption key(s) in encryption middleware");
     }
 
-    this.keys = keys as [string, ...string[]];
+    /**
+     * Ensure we pre-hash the keys to the correct length before using them, and
+     * also always wait for sodium to be ready. Accessing keys in other
+     * functions always requires awaiting this value, so we can never skip this
+     * readiness check.
+     */
+    this.keys = sodium.ready.then(() => {
+      return keys.map((k) => {
+        return sodium.crypto_generichash(sodium.crypto_secretbox_KEYBYTES, k);
+      });
+    });
   }
 
-  encrypt(value: unknown): string {
+  async encrypt(value: unknown): Promise<string> {
+    const keys = await this.keys;
+
     const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
     const message = sodium.from_string(JSON.stringify(value));
-    const ciphertext = sodium.crypto_secretbox_easy(
-      message,
-      nonce,
-      sodium.from_hex(this.keys[0])
-    );
+    const ciphertext = sodium.crypto_secretbox_easy(message, nonce, keys[0]);
 
     const combined = new Uint8Array(nonce.length + ciphertext.length);
     combined.set(nonce);
@@ -50,10 +58,12 @@ export class LibSodiumEncryptionService extends EncryptionService {
     return sodium.to_base64(combined, sodium.base64_variants.ORIGINAL);
   }
 
-  decrypt(value: string): unknown {
+  async decrypt(value: string): Promise<unknown> {
+    const keys = await this.keys;
+
     let err: unknown;
 
-    for (const key of this.keys) {
+    for (const key of keys) {
       try {
         const combined = sodium.from_base64(
           value,
@@ -65,7 +75,7 @@ export class LibSodiumEncryptionService extends EncryptionService {
         const decrypted = sodium.crypto_secretbox_open_easy(
           ciphertext,
           nonce,
-          sodium.from_hex(key)
+          key
         );
 
         const decoder = new TextDecoder("utf8");
