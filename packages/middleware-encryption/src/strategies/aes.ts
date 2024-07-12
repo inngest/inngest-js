@@ -1,6 +1,6 @@
 import AES from "crypto-js/aes.js";
 import CryptoJSUtf8 from "crypto-js/enc-utf8.js";
-import { EncryptionService } from "../middleware";
+import { type EncryptionService } from "../middleware";
 
 /**
  * The AES encryption service used by the encryption middleware.
@@ -13,14 +13,12 @@ import { EncryptionService } from "../middleware";
  * was added, and is still used internally for decrypting data to ensure
  * compatibility with older versions.
  */
-export class AESEncryptionService extends EncryptionService {
+export class AESEncryptionService implements EncryptionService {
   private readonly keys: [string, ...string[]];
 
   public identifier = "aes";
 
   constructor(key: string | string[] | undefined) {
-    super();
-
     if (!key) {
       throw new Error("Missing encryption key(s) in encryption middleware");
     }

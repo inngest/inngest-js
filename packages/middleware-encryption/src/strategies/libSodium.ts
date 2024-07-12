@@ -1,5 +1,5 @@
 import sodium from "libsodium-wrappers";
-import { EncryptionService } from "../middleware";
+import { type EncryptionService } from "../middleware";
 
 /**
  * The default encryption service used by the encryption middleware.
@@ -11,14 +11,12 @@ import { EncryptionService } from "../middleware";
  * you to transition all services to using this new strategy before removing the
  * flag.
  */
-export class LibSodiumEncryptionService extends EncryptionService {
+export class LibSodiumEncryptionService implements EncryptionService {
   private readonly keys: Promise<Uint8Array[]>;
 
   public identifier = "libsodium";
 
   constructor(key: string | string[] | undefined) {
-    super();
-
     if (!key) {
       throw new Error("Missing encryption key(s) in encryption middleware");
     }
