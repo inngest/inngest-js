@@ -2,21 +2,43 @@
   "name": "@inngest/middleware-encryption",
   "version": "0.1.7",
   "description": "E2E encryption middleware for Inngest.",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./index.js",
+  "types": "./index.d.ts",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "build": "tsc",
+    "build": "pnpm run build:clean && pnpm run build:tsc && pnpm run build:copy",
+    "build:clean": "rm -rf ./dist",
+    "build:tsc": "tsc",
+    "build:copy": "cp package.json LICENSE.md README.md CHANGELOG.md dist",
     "postversion": "pnpm run build",
     "release:version": "node ../../scripts/release/jsrVersion.js",
-    "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty"
+    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty"
   },
-  "files": [
-    "dist"
-  ],
+  "exports": {
+    ".": {
+      "require": "./index.js",
+      "import": "./index.js",
+      "types": "./index.d.ts"
+    },
+    "./manual": {
+      "require": "./manual.js",
+      "import": "./manual.js",
+      "types": "./manual.d.ts"
+    },
+    "./strategies/aes": {
+      "require": "./strategies/aes.js",
+      "import": "./strategies/aes.js",
+      "types": "./strategies/aes.d.ts"
+    },
+    "./strategies/libsodium": {
+      "require": "./strategies/libsodium.js",
+      "import": "./strategies/libsodium.js",
+      "types": "./strategies/libsodium.d.ts"
+    }
+  },
   "keywords": [
     "inngest-middleware",
     "inngest",
