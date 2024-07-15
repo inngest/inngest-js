@@ -4,8 +4,6 @@ import { type Jsonify } from "../helpers/jsonify";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
-  type IsStringLiteral,
-  type ObjectPaths,
   type ParametersExceptFirst,
   type SendEventPayload,
   type SimplifyDeep,
@@ -214,11 +212,7 @@ export const createStepTools = <
     waitForEvent: createTool<
       <IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>>(
         idOrOptions: StepOptionsOrId,
-        opts: WaitForEventOpts<
-          GetEvents<TClient, true>,
-          TTriggers & string,
-          IncomingEvent
-        >
+        opts: WaitForEventOpts<GetEvents<TClient, true>, IncomingEvent>
       ) => Promise<
         IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>
           ? GetEvents<TClient, false>[IncomingEvent] | null
@@ -511,7 +505,6 @@ type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
  */
 type WaitForEventOpts<
   Events extends Record<string, EventPayload>,
-  TriggeringEvent extends keyof Events,
   IncomingEvent extends keyof Events,
 > = {
   event: IncomingEvent;
@@ -549,13 +542,10 @@ type WaitForEventOpts<
      * See the Inngest expressions docs for more information.
      *
      * {@link https://www.inngest.com/docs/functions/expressions}
+     *
+     * @deprecated Use `if` instead.
      */
-    match?: IsStringLiteral<keyof Events & string> extends true
-      ? IsStringLiteral<IncomingEvent & string> extends true
-        ? ObjectPaths<Events[TriggeringEvent]> &
-            ObjectPaths<Events[IncomingEvent]>
-        : string
-      : string;
+    match?: string;
 
     /**
      * If provided, the step function will wait for the incoming event to match
