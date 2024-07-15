@@ -66,7 +66,7 @@ export const getEncryptionStages = (
 
   const encryptValue = async (
     value: unknown
-  ): Promise<EncryptionService.EncryptedValue> => {
+  ): Promise<EncryptionService.PartialEncryptedValue> => {
     return {
       [EncryptionService.ENCRYPTION_MARKER]: true,
       [EncryptionService.STRATEGY_MARKER]: service.identifier,
