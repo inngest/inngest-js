@@ -17,8 +17,6 @@ import {
   type AsTuple,
   type IsEqual,
   type IsNever,
-  type IsStringLiteral,
-  type ObjectPaths,
   type Public,
   type Simplify,
   type WithoutInternal,
@@ -877,10 +875,7 @@ export interface ConcurrencyOption {
  *
  * @public
  */
-export type Cancellation<
-  Events extends Record<string, EventPayload>,
-  TriggeringEvent extends keyof Events & string,
-> = {
+export type Cancellation<Events extends Record<string, EventPayload>> = {
   [K in keyof Events & string]: {
     /**
      * The name of the event that should cancel the function run.
@@ -924,10 +919,10 @@ export type Cancellation<
      * See the Inngest expressions docs for more information.
      *
      * {@link https://www.inngest.com/docs/functions/expressions}
+     *
+     * @deprecated Use `if` instead.
      */
-    match?: IsStringLiteral<keyof Events & string> extends true
-      ? ObjectPaths<Events[TriggeringEvent]> & ObjectPaths<Events[K]>
-      : string;
+    match?: string;
 
     /**
      * An optional timeout that the cancel is valid for.  If this isn't

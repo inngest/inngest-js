@@ -2691,21 +2691,7 @@ describe("runFn", () => {
           );
         });
 
-        test("disallows known event name with bad field match", () => {
-          inngest.createFunction(
-            {
-              name: "test",
-              // @ts-expect-error Unknown match field
-              cancelOn: [{ event: "bar", match: "data.title" }],
-            },
-            { event: "foo" },
-            () => {
-              // no-op
-            }
-          );
-        });
-
-        test("allows known event name with good field match", () => {
+        test("allows known event name with a field match", () => {
           inngest.createFunction(
             {
               id: "test",
