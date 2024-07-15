@@ -4,7 +4,6 @@ import { type RecursiveTuple, type StrictUnion } from "../helpers/types";
 import {
   type Cancellation,
   type ConcurrencyOption,
-  type EventNameFromTrigger,
   type FunctionConfig,
   type Handler,
   type TimeStr,
@@ -473,10 +472,7 @@ export namespace InngestFunction {
       run?: string;
     };
 
-    cancelOn?: Cancellation<
-      GetEvents<TClient, true>,
-      EventNameFromTrigger<GetEvents<TClient, true>, TTriggers[number]> & string
-    >[];
+    cancelOn?: Cancellation<GetEvents<TClient, true>>[];
 
     /**
      * Specifies the maximum number of retries for all steps across this function.
