@@ -1071,6 +1071,7 @@ export const functionConfigSchema = z.strictObject({
     .strictObject({
       maxSize: z.number(),
       timeout: z.string(),
+      key: z.string().optional(),
     })
     .optional(),
   rateLimit: z
