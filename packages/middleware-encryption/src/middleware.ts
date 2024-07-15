@@ -82,14 +82,48 @@ export abstract class EncryptionService {
   public abstract identifier: string;
 
   /**
-   * Given an `unknown` value, encrypts it and returns the encrypted value as a
-   * `string`.
+   * Given an `unknown` value, encrypts it and returns the the encrypted value.
    */
-  public abstract encrypt(value: unknown): MaybePromise<string>;
+  public abstract encrypt(
+    value: unknown
+  ): MaybePromise<EncryptionService.PartialEncryptedValue>;
 
   /**
    * Given an encrypted `string`, decrypts it and returns the decrypted value as
    * any value.
    */
   public abstract decrypt(value: string): MaybePromise<unknown>;
+}
+
+export namespace EncryptionService {
+  /**
+   * A marker used to identify encrypted values without having to guess.
+   */
+  export const ENCRYPTION_MARKER = "__ENCRYPTED__";
+
+  /**
+   * A marker used to identify the strategy used for encryption.
+   */
+  export const STRATEGY_MARKER = "__STRATEGY__";
+
+  /**
+   * The encrypted value as it will be sent to Inngest.
+   */
+  export interface EncryptedValue {
+    [ENCRYPTION_MARKER]: true;
+    [STRATEGY_MARKER]: string | undefined;
+    data: string;
+  }
+
+  /**
+   * A partial encrypted value, allowing an encryption service to specify the
+   * data and any other metadata needed to decrypt the value.
+   */
+  export interface PartialEncryptedValue
+    extends Omit<
+      EncryptedValue,
+      typeof ENCRYPTION_MARKER | typeof STRATEGY_MARKER
+    > {
+    [key: string]: unknown;
+  }
 }

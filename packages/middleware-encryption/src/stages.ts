@@ -1,5 +1,5 @@
 import { type MiddlewareRegisterReturn } from "inngest";
-import { type EncryptionService } from "./middleware";
+import { EncryptionService } from "./middleware";
 import { LEGACY_V0Service } from "./strategies/legacy";
 import { LibSodiumEncryptionService } from "./strategies/libSodium";
 
@@ -64,11 +64,13 @@ export const getEncryptionStages = (
     ...opts.legacyV0Service,
   });
 
-  const encryptValue = async (value: unknown): Promise<EncryptedValue> => {
+  const encryptValue = async (
+    value: unknown
+  ): Promise<EncryptionService.EncryptedValue> => {
     return {
-      [ENCRYPTION_MARKER]: true,
-      [STRATEGY_MARKER]: service.identifier,
-      data: await service.encrypt(value),
+      [EncryptionService.ENCRYPTION_MARKER]: true,
+      [EncryptionService.STRATEGY_MARKER]: service.identifier,
+      ...(await service.encrypt(value)),
     };
   };
 
@@ -103,9 +105,11 @@ export const getEncryptionStages = (
   ): Promise<unknown> => {
     // if the entire value is encrypted, match it and decrypt
     if (isEncryptedValue(data)) {
-      if (service.identifier !== data[STRATEGY_MARKER]) {
+      if (service.identifier !== data[EncryptionService.STRATEGY_MARKER]) {
         throw new Error(
-          `Mismatched encryption service; received an event payload using "${data[STRATEGY_MARKER]}", but the configured encryption service is "${service.identifier}"`
+          `Mismatched encryption service; received an event payload using "${
+            data[EncryptionService.STRATEGY_MARKER]
+          }", but the configured encryption service is "${service.identifier}"`
         );
       }
 
@@ -198,14 +202,6 @@ export const getEncryptionStages = (
     },
   };
 };
-/**
- * The encrypted value as it will be sent to Inngest.
- */
-export interface EncryptedValue {
-  [ENCRYPTION_MARKER]: true;
-  [STRATEGY_MARKER]: string | undefined;
-  data: string;
-}
 
 type InputTransformer = NonNullable<
   Awaited<
@@ -223,24 +219,17 @@ type FunctionRunHook = NonNullable<MiddlewareRegisterReturn["onFunctionRun"]>;
 
 type SendEventHook = NonNullable<MiddlewareRegisterReturn["onSendEvent"]>;
 
-export const isEncryptedValue = (value: unknown): value is EncryptedValue => {
+export const isEncryptedValue = (
+  value: unknown
+): value is EncryptionService.EncryptedValue => {
   return (
     typeof value === "object" &&
     value !== null &&
-    ENCRYPTION_MARKER in value &&
-    value[ENCRYPTION_MARKER] === true &&
+    EncryptionService.ENCRYPTION_MARKER in value &&
+    value[EncryptionService.ENCRYPTION_MARKER] === true &&
     "data" in value &&
     typeof value["data"] === "string" &&
-    (!(STRATEGY_MARKER in value) || typeof value[STRATEGY_MARKER] === "string")
+    (!(EncryptionService.STRATEGY_MARKER in value) ||
+      typeof value[EncryptionService.STRATEGY_MARKER] === "string")
   );
 };
-
-/**
- * A marker used to identify encrypted values without having to guess.
- */
-const ENCRYPTION_MARKER = "__ENCRYPTED__";
-
-/**
- * A marker used to identify the strategy used for encryption.
- */
-const STRATEGY_MARKER = "__STRATEGY__";

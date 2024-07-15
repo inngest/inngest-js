@@ -34,8 +34,10 @@ export class AESEncryptionService implements EncryptionService {
     this.keys = keys as [string, ...string[]];
   }
 
-  encrypt(value: unknown): string {
-    return AES.encrypt(JSON.stringify(value), this.keys[0]).toString();
+  encrypt(value: unknown): EncryptionService.PartialEncryptedValue {
+    return {
+      data: AES.encrypt(JSON.stringify(value), this.keys[0]).toString(),
+    };
   }
 
   decrypt(value: string): unknown {
