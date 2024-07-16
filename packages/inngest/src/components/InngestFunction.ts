@@ -346,6 +346,14 @@ export namespace InngestFunction {
        * Expects 1s to 60s.
        */
       timeout: TimeStrBatch;
+
+      /**
+       * An optional key to use for batching.
+       *
+       * See [batch documentation](https://innge.st/batching) for more
+       * information on how to use `key` expressions.
+       */
+      key?: string;
     };
 
     /**
