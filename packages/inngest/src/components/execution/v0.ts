@@ -490,9 +490,13 @@ export class V0InngestExecution
 
     const { data, error } = { ...output, ...transformedOutput?.result };
 
-    if (typeof error !== "undefined") {
-      await this.state.hooks?.finished?.({ result: { error } });
+    if (!step) {
+      await this.state.hooks?.finished?.({
+        result: { ...(typeof error !== "undefined" ? { error } : { data }) },
+      });
+    }
 
+    if (typeof error !== "undefined") {
       /**
        * Ensure we give middleware the chance to decide on retriable behaviour
        * by looking at the error returned from output transformation.
@@ -506,8 +510,6 @@ export class V0InngestExecution
 
       return { type: "function-rejected", error: serializedError, retriable };
     }
-
-    await this.state.hooks?.finished?.({ result: { data } });
 
     return { type: "function-resolved", data: undefinedToNull(data) };
   }
