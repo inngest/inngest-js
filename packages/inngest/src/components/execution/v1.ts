@@ -881,8 +881,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        */
       if (!beforeExecHooksPromise && this.state.allStateUsed()) {
         await (beforeExecHooksPromise = (async () => {
-          await this.state.hooks?.beforeExecution?.();
           await this.state.hooks?.afterMemoization?.();
+          await this.state.hooks?.beforeExecution?.();
         })());
       }
 
