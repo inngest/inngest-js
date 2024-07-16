@@ -339,7 +339,8 @@ export type MiddlewareRegisterReturn = {
     /**
      * The `beforeResponse` hook is called after the output has been set and
      * before the response is sent back to Inngest. This is where you can
-     * perform any final actions before the response is sent back to Inngest.
+     * perform any final actions before the response is sent back to Inngest and
+     * is the final hook called.
      */
     beforeResponse?: BlankHook;
   }>;
