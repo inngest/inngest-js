@@ -542,6 +542,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     const { data, error } = { ...output, ...transformedOutput?.result };
 
     if (typeof error !== "undefined") {
+      await this.state.hooks?.finished?.({ result: { error } });
+
       /**
        * Ensure we give middleware the chance to decide on retriable behaviour
        * by looking at the error returned from output transformation.
@@ -557,6 +559,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       return { type: "function-rejected", error: serializedError, retriable };
     }
+
+    await this.state.hooks?.finished?.({ result: { data } });
 
     return { type: "function-resolved", data: undefinedToNull(data) };
   }
