@@ -418,7 +418,10 @@ type InitialRunInfo = Readonly<
        * A partial context object that will be passed to the function. Does not
        * necessarily contain all the data that will be passed to the function.
        */
-      ctx: Pick<MiddlewareRunArgs["ctx"], "event" | "runId">;
+      ctx: Readonly<{
+        event: EventPayload;
+        runId: string;
+      }>;
     }
   >
 >;
