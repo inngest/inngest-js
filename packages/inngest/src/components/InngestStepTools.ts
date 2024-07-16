@@ -109,10 +109,7 @@ export const STEP_INDEXING_SUFFIX = ":";
  * An op stack (function state) is passed in as well as some mutable properties
  * that the tools can use to submit a new op.
  */
-export const createStepTools = <
-  TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
->(
+export const createStepTools = <TClient extends Inngest.Any>(
   client: TClient,
   execution: InngestExecution,
   stepHandler: StepHandler
