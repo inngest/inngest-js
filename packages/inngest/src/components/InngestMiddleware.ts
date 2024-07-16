@@ -157,9 +157,7 @@ export const getHookStack = async <
       [K in keyof TResult as Await<TResult[K]> extends Parameters<TResult[K]>[0]
         ? K
         : Await<TResult[K]> extends void | undefined
-          ? Parameters<TResult[K]>[0] extends void | undefined
-            ? K
-            : never
+          ? K
           : never]: void;
     }
   >
