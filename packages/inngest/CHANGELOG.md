@@ -1,5 +1,38 @@
 # inngest
 
+## 3.21.0
+
+### Minor Changes
+
+- [#651](https://github.com/inngest/inngest-js/pull/651) [`a527cd3`](https://github.com/inngest/inngest-js/commit/a527cd33c89d409c7d51022517ee579dedd71b7f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add a new `onFunctionRun.finished` middleware hook, allowing you to hook into a run finishing successfully or failing
+
+  ```ts
+  new InngestMiddleware({
+    name: "My Middleware",
+    init() {
+      return {
+        onFunctionRun() {
+          finished({ result }) {
+            // ...
+          },
+        },
+      };
+    },
+  });
+  ```
+
+- [#650](https://github.com/inngest/inngest-js/pull/650) [`db9ed0e`](https://github.com/inngest/inngest-js/commit/db9ed0e24e02254cf1c49a510fb97e61f898899a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow specifying an `env` when sending events via the client
+
+  ```ts
+  await inngest.send({ name: "my.event" }, { env: "my-custom-env" });
+  ```
+
+### Patch Changes
+
+- [#646](https://github.com/inngest/inngest-js/pull/646) [`0c5865c`](https://github.com/inngest/inngest-js/commit/0c5865c17279b1ccad08ffc3fb85771bb9f207d1) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix circular `ctx` type in middleware for TS <5.1
+
+- [#651](https://github.com/inngest/inngest-js/pull/651) [`a527cd3`](https://github.com/inngest/inngest-js/commit/a527cd33c89d409c7d51022517ee579dedd71b7f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `beforeExecution()` hook order when all state has been used running before `afterMemoization()`
+
 ## 3.20.0
 
 ### Minor Changes
