@@ -157,9 +157,7 @@ export const getHookStack = async <
       [K in keyof TResult as Await<TResult[K]> extends Parameters<TResult[K]>[0]
         ? K
         : Await<TResult[K]> extends void | undefined
-          ? Parameters<TResult[K]>[0] extends void | undefined
-            ? K
-            : never
+          ? K
           : never]: void;
     }
   >
@@ -324,9 +322,25 @@ export type MiddlewareRegisterReturn = {
     transformOutput?: MiddlewareRunOutput;
 
     /**
+     * The `finished` hook is called when the function has finished executing
+     * and has returned a final response that will end the run, either a
+     * successful or error response. In the case of an error response, further
+     * retries may be attempted and call this hook again.
+     *
+     * The output provided will be after `transformOutput` has been applied.
+     *
+     * This is not guaranteed to be called on every execution, and may be called
+     * multiple times if many parallel executions reach the end of the function;
+     * for a guaranteed single execution, create a function with an event
+     * trigger of `"inngest/function.finished"`.
+     */
+    finished?: MiddlewareRunFinished;
+
+    /**
      * The `beforeResponse` hook is called after the output has been set and
      * before the response is sent back to Inngest. This is where you can
-     * perform any final actions before the response is sent back to Inngest.
+     * perform any final actions before the response is sent back to Inngest and
+     * is the final hook called.
      */
     beforeResponse?: BlankHook;
   }>;
@@ -486,6 +500,10 @@ type MiddlewareRunOutput = (ctx: {
   result: Readonly<Pick<OutgoingOp, "error" | "data">>;
   step?: Readonly<Omit<OutgoingOp, "id">>;
 }) => MaybePromise<{ result?: Partial<Pick<OutgoingOp, "data">> } | void>;
+
+type MiddlewareRunFinished = (ctx: {
+  result: Readonly<Pick<OutgoingOp, "error" | "data">>;
+}) => MaybePromise<void>;
 
 /**
  * @internal

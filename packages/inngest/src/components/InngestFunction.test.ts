@@ -77,6 +77,7 @@ const opts = (<T extends ClientOptions>(x: T): T => x)({
               beforeResponse: mockHook,
               transformInput: mockHook,
               transformOutput: mockHook,
+              finished: mockHook,
             };
           },
           onSendEvent: () => {

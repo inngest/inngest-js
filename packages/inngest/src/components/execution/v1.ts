@@ -534,12 +534,20 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       output.data = serializeError(output.error);
     }
 
+    const isStepExecution = Boolean(this.state.executingStep);
+
     const transformedOutput = await this.state.hooks?.transformOutput?.({
       result: { ...output },
       step: this.state.executingStep,
     });
 
     const { data, error } = { ...output, ...transformedOutput?.result };
+
+    if (!isStepExecution) {
+      await this.state.hooks?.finished?.({
+        result: { ...(typeof error !== "undefined" ? { error } : { data }) },
+      });
+    }
 
     if (typeof error !== "undefined") {
       /**
@@ -873,8 +881,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        */
       if (!beforeExecHooksPromise && this.state.allStateUsed()) {
         await (beforeExecHooksPromise = (async () => {
-          await this.state.hooks?.beforeExecution?.();
           await this.state.hooks?.afterMemoization?.();
+          await this.state.hooks?.beforeExecution?.();
         })());
       }
 

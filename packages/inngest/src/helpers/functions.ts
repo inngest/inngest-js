@@ -59,8 +59,17 @@ export const waterfall = <TFns extends ((arg?: any) => any)[]>(
       const prev = await acc;
       const output = (await fn(prev)) as Promise<Await<TFns[number]>>;
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-      return transform ? await transform(prev, output) : output;
+      if (transform) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        return await transform(prev, output);
+      }
+
+      if (typeof output === "undefined") {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        return prev;
+      }
+
+      return output;
     }, Promise.resolve(args[0]));
 
     return chain;
