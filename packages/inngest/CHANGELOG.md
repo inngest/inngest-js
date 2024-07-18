@@ -1,5 +1,13 @@
 # inngest
 
+## 3.21.1
+
+### Patch Changes
+
+- [#655](https://github.com/inngest/inngest-js/pull/655) [`12df420`](https://github.com/inngest/inngest-js/commit/12df4209a972123e2a46ec2aaef3f5df8f3881b5) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Do not allow objectish `[]` for an event's `data` when providing schemas
+
+  This helps solve an issue whereby types would be happy but sending an event fails at runtime.
+
 ## 3.21.0
 
 ### Minor Changes
