@@ -1,17 +1,18 @@
 {
   "name": "runtime-bun",
   "module": "index.ts",
-  "type": "module",
-  "scripts": {
-    "dev": "bun run --watch index.ts"
-  },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
+  "scripts": {
+    "dev": "bun run --watch index.ts"
+  },
+  "type": "module",
   "dependencies": {
-    "inngest": "^3.0.0"
+    "@inngest/middleware-encryption": "../../packages/middleware-encryption/inngest-middleware-encryption.tgz",
+    "inngest": "../../packages/inngest/inngest.tgz"
   }
 }
