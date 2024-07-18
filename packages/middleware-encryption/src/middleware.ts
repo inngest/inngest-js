@@ -11,7 +11,7 @@ export interface EncryptionMiddlewareOptions {
    * provided, the first key will be used to encrypt data and all keys will be
    * tried when decrypting data.
    */
-  key?: string | string[];
+  key: string | string[];
 
   /**
    * The encryption service used to encrypt and decrypt data. If not provided, a

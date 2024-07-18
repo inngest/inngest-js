@@ -1,44 +1,10 @@
 import { type MiddlewareRegisterReturn } from "inngest";
-import { EncryptionService } from "./middleware";
+import {
+  type EncryptionMiddlewareOptions,
+  EncryptionService,
+} from "./middleware";
 import { LEGACY_V0Service } from "./strategies/legacy";
 import { LibSodiumEncryptionService } from "./strategies/libSodium";
-
-/**
- * Options used to configure the encryption middleware.
- */
-export interface EncryptionMiddlewareOptions {
-  /**
-   * The key or keys used to encrypt and decrypt data. If multiple keys are
-   * provided, the first key will be used to encrypt data and all keys will be
-   * tried when decrypting data.
-   */
-  key?: string | string[];
-
-  /**
-   * The encryption service used to encrypt and decrypt data. If not provided, a
-   * default encryption service will be used.
-   */
-  encryptionService?: EncryptionService;
-
-  /**
-   * If `true`, the encryption middleware will encrypt all event data, otherwise
-   * only step data will be encrypted.
-   *
-   * Note that this is opt-in as other services consuming events must then use
-   * an encryption middleware.
-   */
-  encryptEventData?: boolean;
-
-  /**
-   * If set and `enabled` is `true, the encryption middleware will only encrypt
-   * using the legacy V0 AES encryption service. This is useful for
-   * transitioning all services to using the new encryption service before then
-   * removing the flag and moving all encryption to LibSodium.
-   *
-   * If you used a custom `encryptionService` beforehand, continue using that.
-   */
-  legacyV0Service?: Omit<LEGACY_V0Service.Options, "key">;
-}
 
 /**
  * Encrypts and decrypts data sent to and from Inngest.

@@ -1,6 +1,6 @@
 import { InngestMiddleware, type MiddlewareOptions } from "inngest";
+import { type EncryptionMiddlewareOptions } from "./middleware";
 import {
-  type EncryptionMiddlewareOptions,
   getEncryptionStages,
 } from "./stages";
 
