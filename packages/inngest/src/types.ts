@@ -345,7 +345,7 @@ export type BaseContext<
    */
   runId: string;
 
-  step: ReturnType<typeof createStepTools<TClient, TTriggers>>;
+  step: ReturnType<typeof createStepTools<TClient>>;
 
   /**
    * The current zero-indexed attempt number for this function execution. The
@@ -1071,6 +1071,7 @@ export const functionConfigSchema = z.strictObject({
     .strictObject({
       maxSize: z.number(),
       timeout: z.string(),
+      key: z.string().optional(),
     })
     .optional(),
   rateLimit: z

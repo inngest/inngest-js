@@ -490,6 +490,12 @@ export class V0InngestExecution
 
     const { data, error } = { ...output, ...transformedOutput?.result };
 
+    if (!step) {
+      await this.state.hooks?.finished?.({
+        result: { ...(typeof error !== "undefined" ? { error } : { data }) },
+      });
+    }
+
     if (typeof error !== "undefined") {
       /**
        * Ensure we give middleware the chance to decide on retriable behaviour
