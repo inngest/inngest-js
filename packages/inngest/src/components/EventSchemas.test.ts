@@ -144,6 +144,13 @@ describe("EventSchemas", () => {
       }>();
     });
 
+    test("cannot set objectish type for data", () => {
+      // @ts-expect-error Data must be object type or any
+      new EventSchemas().fromRecord<{
+        "test.event": { data: [] };
+      }>();
+    });
+
     test("can set event with matching 'name'", () => {
       const schemas = new EventSchemas().fromRecord<{
         "test.event": { name: "test.event"; data: { foo: string } };
