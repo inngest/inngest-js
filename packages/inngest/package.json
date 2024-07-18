@@ -164,7 +164,7 @@
     "flow control"
   ],
   "author": "Dan Farrelly <dan@inngest.com>",
-  "license": "GPL-3.0",
+  "license": "Apache-2.0",
   "private": false,
   "prettier": {
     "tabWidth": 2,
