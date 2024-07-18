@@ -47,6 +47,23 @@ const createReqRes = (...args: Parameters<typeof httpMocks.createRequest>) => {
   return [req, res] as [typeof req, typeof res];
 };
 
+const retryFetch = async (
+  retries: number,
+  ...args: Parameters<typeof fetch>
+) => {
+  let lastError;
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fetch(...args);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError;
+};
+
 /**
  * This is hack to get around the fact that the internal Inngest class exposes
  * certain methods that aren't exposed outside of the library. This is
@@ -1350,7 +1367,7 @@ interface CheckIntrospection {
 export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
   describe("introspection", () => {
     it("should be registered in SDK UI", async () => {
-      const res = await fetch("http://localhost:3000/api/inngest");
+      const res = await retryFetch(5, "http://localhost:3000/api/inngest");
 
       await expect(res.json()).resolves.toMatchObject({
         has_signing_key: expect.any(Boolean),
