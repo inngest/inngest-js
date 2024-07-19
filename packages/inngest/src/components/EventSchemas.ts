@@ -246,6 +246,15 @@ export class EventSchemas<
     [internalEvents.ScheduledTimer]: ScheduledTimerEventPayload;
   }>,
 > {
+  protected runtimeSchemas: Record<string, unknown> = {};
+
+  private addRuntimeSchemas(schemas: Record<string, unknown>) {
+    this.runtimeSchemas = {
+      ...this.runtimeSchemas,
+      ...schemas,
+    };
+  }
+
   /**
    * Use generated Inngest types to type events.
    */
@@ -351,6 +360,26 @@ export class EventSchemas<
       >
     >
   > {
+    let runtimeSchemas: Record<string, unknown>;
+
+    if (Array.isArray(schemas)) {
+      runtimeSchemas = schemas.reduce((acc, schema) => {
+        const {
+          name: { value: name },
+          ...rest
+        } = schema.shape;
+
+        return {
+          ...acc,
+          [name]: rest,
+        };
+      }, {});
+    } else {
+      runtimeSchemas = schemas;
+    }
+
+    this.addRuntimeSchemas(runtimeSchemas);
+
     return this;
   }
 }
