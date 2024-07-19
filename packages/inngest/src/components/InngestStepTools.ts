@@ -4,14 +4,13 @@ import { type Jsonify } from "../helpers/jsonify";
 import { timeStr } from "../helpers/strings";
 import {
   type ExclusiveKeys,
-  type ObjectPaths,
   type ParametersExceptFirst,
   type SendEventPayload,
   type SimplifyDeep,
+  type WithoutInternalStr,
 } from "../helpers/types";
 import {
   StepOpCode,
-  type ClientOptions,
   type EventPayload,
   type HashedOp,
   type InvocationResult,
@@ -21,14 +20,17 @@ import {
   type StepOptions,
   type StepOptionsOrId,
   type TriggerEventFromFunction,
+  type TriggersFromClient,
 } from "../types";
 import {
-  type EventsFromOpts,
+  type ClientOptionsFromInngest,
+  type GetEvents,
   type GetFunctionOutput,
   type Inngest,
 } from "./Inngest";
 import { InngestFunction } from "./InngestFunction";
 import { InngestFunctionReference } from "./InngestFunctionReference";
+import { type InngestExecution } from "./execution/InngestExecution";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -84,16 +86,6 @@ export interface StepToolOptions<
    * `data` property.
    */
   fn?: (...args: Parameters<T>) => unknown;
-
-  /**
-   * If `true` and we have detected that this is a  non-step function, the
-   * provided `fn` will be called and the result returned immediately
-   * instead of being executed later.
-   *
-   * If no `fn` is provided to the tool, this will throw the same error as
-   * if this setting was `false`.
-   */
-  nonStepExecuteInline?: boolean;
 }
 
 export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
@@ -117,12 +109,9 @@ export const STEP_INDEXING_SUFFIX = ":";
  * An op stack (function state) is passed in as well as some mutable properties
  * that the tools can use to submit a new op.
  */
-export const createStepTools = <
-  TOpts extends ClientOptions,
-  Events extends EventsFromOpts<TOpts>,
-  TriggeringEvent extends keyof Events & string,
->(
-  client: Inngest<TOpts>,
+export const createStepTools = <TClient extends Inngest.Any>(
+  client: TClient,
+  execution: InngestExecution,
   stepHandler: StepHandler
 ) => {
   /**
@@ -185,10 +174,10 @@ export const createStepTools = <
      * Returns a promise that will resolve once the event has been sent.
      */
     sendEvent: createTool<{
-      <Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
+      <Payload extends SendEventPayload<GetEvents<TClient>>>(
         idOrOptions: StepOptionsOrId,
         payload: Payload
-      ): Promise<SendEventOutput<TOpts>>;
+      ): Promise<SendEventOutput<ClientOptionsFromInngest<TClient>>>;
     }>(
       ({ id, name }) => {
         return {
@@ -199,9 +188,11 @@ export const createStepTools = <
         };
       },
       {
-        nonStepExecuteInline: true,
         fn: (idOrOptions, payload) => {
-          return client.send(payload);
+          return client["_send"]({
+            payload,
+            headers: execution["options"]["headers"],
+          });
         },
       }
     ),
@@ -216,12 +207,12 @@ export const createStepTools = <
      * returning `null` instead of any event data.
      */
     waitForEvent: createTool<
-      <IncomingEvent extends keyof Events & string>(
+      <IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>>(
         idOrOptions: StepOptionsOrId,
-        opts: WaitForEventOpts<Events, TriggeringEvent, IncomingEvent>
+        opts: WaitForEventOpts<GetEvents<TClient, true>, IncomingEvent>
       ) => Promise<
-        IncomingEvent extends keyof Events
-          ? Events[IncomingEvent] | null
+        IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>
+          ? GetEvents<TClient, false>[IncomingEvent] | null
           : IncomingEvent | null
       >
     >(
@@ -487,7 +478,7 @@ type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
 
 type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
   InvocationTargetOpts<TFunction> &
-    TriggerEventFromFunction<TFunction> & {
+    Omit<TriggerEventFromFunction<TFunction>, "id"> & {
       /**
        * The step function will wait for the invocation to finish for a maximum
        * of this time, at which point the retured promise will be rejected
@@ -511,7 +502,6 @@ type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
  */
 type WaitForEventOpts<
   Events extends Record<string, EventPayload>,
-  TriggeringEvent extends keyof Events,
   IncomingEvent extends keyof Events,
 > = {
   event: IncomingEvent;
@@ -549,9 +539,10 @@ type WaitForEventOpts<
      * See the Inngest expressions docs for more information.
      *
      * {@link https://www.inngest.com/docs/functions/expressions}
+     *
+     * @deprecated Use `if` instead.
      */
-    match?: ObjectPaths<Events[TriggeringEvent]> &
-      ObjectPaths<Events[IncomingEvent]>;
+    match?: string;
 
     /**
      * If provided, the step function will wait for the incoming event to match

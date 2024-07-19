@@ -17,6 +17,7 @@ export enum queryKeys {
 
 export enum envKeys {
   InngestSigningKey = "INNGEST_SIGNING_KEY",
+  InngestSigningKeyFallback = "INNGEST_SIGNING_KEY_FALLBACK",
   InngestEventKey = "INNGEST_EVENT_KEY",
 
   /**
@@ -33,6 +34,10 @@ export enum envKeys {
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
 
+  /**
+   * @deprecated It's unknown what this env var was used for, but we do not
+   * provide explicit support for it. Prefer using `INNGEST_ENV` instead.
+   */
   BranchName = "BRANCH_NAME",
 
   /**
@@ -122,6 +127,8 @@ export enum headerKeys {
   RetryAfter = "retry-after",
   InngestServerKind = "x-inngest-server-kind",
   InngestExpectedServerKind = "x-inngest-expected-server-kind",
+  TraceParent = "traceparent",
+  TraceState = "tracestate",
 }
 
 export const defaultInngestApiBaseUrl = "https://api.inngest.com/";
@@ -142,9 +149,10 @@ export enum internalEvents {
   FunctionFailed = "inngest/function.failed",
   FunctionInvoked = "inngest/function.invoked",
   FunctionFinished = "inngest/function.finished",
+  ScheduledTimer = "inngest/scheduled.timer",
 }
 
-export const logPrefix = chalk.magenta.bold("[Inngest]");
+export const logPrefix: string = chalk.magenta.bold("[Inngest]");
 
 export const debugPrefix = "inngest";
 

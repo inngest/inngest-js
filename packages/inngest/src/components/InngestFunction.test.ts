@@ -12,8 +12,6 @@ import {
   NonRetriableError,
   type EventPayload,
 } from "@local";
-import { InngestFunction } from "@local/components/InngestFunction";
-import { STEP_INDEXING_SUFFIX } from "@local/components/InngestStepTools";
 import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
@@ -22,6 +20,8 @@ import {
   type InngestExecutionOptions,
 } from "@local/components/execution/InngestExecution";
 import { _internals } from "@local/components/execution/v1";
+import { InngestFunction } from "@local/components/InngestFunction";
+import { STEP_INDEXING_SUFFIX } from "@local/components/InngestStepTools";
 import { internalEvents } from "@local/helpers/consts";
 import {
   ErrCode,
@@ -77,6 +77,7 @@ const opts = (<T extends ClientOptions>(x: T): T => x)({
               beforeResponse: mockHook,
               transformInput: mockHook,
               transformOutput: mockHook,
+              finished: mockHook,
             };
           },
           onSendEvent: () => {
@@ -128,7 +129,7 @@ describe("runFn", () => {
     ].forEach(({ type, flowFn, badFlowFn }) => {
       describe(`${type} function`, () => {
         describe("success", () => {
-          let fn: InngestFunction<typeof opts>;
+          let fn: InngestFunction.Any;
           let ret: ExecutionResult;
           let flush: jest.SpiedFunction<() => void>;
 
@@ -142,8 +143,7 @@ describe("runFn", () => {
 
             fn = new InngestFunction(
               createClient(opts),
-              { id: "Foo" },
-              { event: "foo" },
+              { id: "Foo", triggers: [{ event: "foo" }] },
               flowFn
             );
 
@@ -157,6 +157,7 @@ describe("runFn", () => {
                 stepState: {},
                 stepCompletionOrder: [],
                 reqArgs: [],
+                headers: {},
               },
             });
 
@@ -180,13 +181,12 @@ describe("runFn", () => {
 
         describe("throws", () => {
           const stepErr = new Error("step error");
-          let fn: InngestFunction<typeof opts>;
+          let fn: InngestFunction.Any;
 
           beforeAll(() => {
             fn = new InngestFunction(
               createClient(opts),
-              { id: "Foo" },
-              { event: "foo" },
+              { id: "Foo", triggers: [{ event: "foo" }] },
               badFlowFn
             );
           });
@@ -202,6 +202,7 @@ describe("runFn", () => {
                 runId: "run",
                 stepCompletionOrder: [],
                 reqArgs: [],
+                headers: {},
               },
             });
 
@@ -408,11 +409,16 @@ describe("runFn", () => {
                 (ret.type === "step-ran" || ret.type === "steps-found")
               ) {
                 test("output hashes match expected shape", () => {
+                  // Horrible syntax for TS 4.7+ compatibility - lack of narrowing
                   const outgoingOps: OutgoingOp[] =
                     ret!.type === "step-ran"
-                      ? [ret!.step]
+                      ? [
+                          (ret as Extract<typeof ret, { type: "step-ran" }>)!
+                            .step,
+                        ]
                       : ret!.type === "steps-found"
-                        ? ret!.steps
+                        ? (ret as Extract<typeof ret, { type: "steps-found" }>)!
+                            .steps
                         : [];
 
                   outgoingOps.forEach((op) => {
@@ -2686,21 +2692,7 @@ describe("runFn", () => {
           );
         });
 
-        test("disallows known event name with bad field match", () => {
-          inngest.createFunction(
-            {
-              name: "test",
-              // @ts-expect-error Unknown match field
-              cancelOn: [{ event: "bar", match: "data.title" }],
-            },
-            { event: "foo" },
-            () => {
-              // no-op
-            }
-          );
-        });
-
-        test("allows known event name with good field match", () => {
+        test("allows known event name with a field match", () => {
           inngest.createFunction(
             {
               id: "test",

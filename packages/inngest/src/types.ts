@@ -1,25 +1,25 @@
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
-  type EventsFromOpts,
   type builtInMiddleware,
+  type GetEvents,
+  type Inngest,
 } from "./components/Inngest";
 import { type InngestFunction } from "./components/InngestFunction";
 import { type InngestFunctionReference } from "./components/InngestFunctionReference";
 import {
   type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
-  type MiddlewareOptions,
 } from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
-import { type Mode } from "./helpers/env";
 import {
-  type IsStringLiteral,
-  type ObjectPaths,
-  type RecursiveTuple,
+  type AsTuple,
+  type IsEqual,
+  type IsNever,
+  type Public,
   type Simplify,
-  type StrictUnion,
+  type WithoutInternal,
 } from "./helpers/types";
 import { type Logger } from "./middleware/logger";
 
@@ -38,11 +38,6 @@ export const failureEventErrorSchema = z
       stack: val.stack,
     };
   });
-
-export type MiddlewareStack = [
-  InngestMiddleware<MiddlewareOptions>,
-  ...InngestMiddleware<MiddlewareOptions>[],
-];
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -107,6 +102,21 @@ export type FinishedEventPayload = {
 export type InvokedEventPayload = Simplify<
   Omit<EventPayload, "name"> & {
     name: `${internalEvents.FunctionInvoked}`;
+  }
+>;
+
+/**
+ * The payload for the event sent to a function when it is triggered by a cron.
+ *
+ * @public
+ */
+export type ScheduledTimerEventPayload = Simplify<
+  Omit<EventPayload, "name" | "data" | "id"> & {
+    name: `${internalEvents.ScheduledTimer}`;
+    data: {
+      cron: string;
+    };
+    id: string;
   }
 >;
 
@@ -258,33 +268,84 @@ export type WithInvocation<T extends EventPayload> = Simplify<
 >;
 
 /**
+ * Makes sure that all event names are stringified and not enums or other
+ * values.
+ */
+type StringifyAllEvents<T> = {
+  [K in keyof T as `${K & string}`]: Simplify<
+    Omit<T[K], "name"> & { name: `${K & string}` }
+  >;
+};
+
+/**
+ * Given a client and a set of triggers, returns a record of all the events that
+ * can be used to trigger a function. This will also include invocation events,
+ * which currently could represent any of the triggers.
+ */
+type GetSelectedEvents<
+  TClient extends Inngest.Any,
+  TTriggers extends TriggersFromClient<TClient>,
+> = Pick<GetEvents<TClient, true>, TTriggers> &
+  StringifyAllEvents<{
+    // Invocation events could (currently) represent any of the payloads that
+    // could be used to trigger the function. We use a distributive `Pick` over allto
+    // ensure this is represented correctly in typing.
+    [internalEvents.FunctionInvoked]: Simplify<{
+      name: `${internalEvents.FunctionInvoked}`;
+    }> &
+      Pick<
+        Pick<GetEvents<TClient, true>, TTriggers>[keyof Pick<
+          GetEvents<TClient, true>,
+          TTriggers
+        >],
+        AssertKeysAreFrom<EventPayload, "id" | "data" | "user" | "v" | "ts">
+      >;
+  }>;
+
+/**
+ * Returns a union of all the events that can be used to trigger a function
+ * based on the given `TClient` and `TTriggers`.
+ *
+ * Can optionally include or exclude internal events with `TExcludeInternal`.
+ */
+type GetContextEvents<
+  TClient extends Inngest.Any,
+  TTriggers extends TriggersFromClient<TClient>,
+  TExcludeInternal extends boolean = false,
+  // TInvokeSchema extends ValidSchemaInput = never,
+> = Simplify<
+  TExcludeInternal extends true
+    ? WithoutInternal<
+        GetSelectedEvents<TClient, TTriggers>
+      >[keyof WithoutInternal<GetSelectedEvents<TClient, TTriggers>>]
+    : GetSelectedEvents<TClient, TTriggers>[keyof GetSelectedEvents<
+        TClient,
+        TTriggers
+      >]
+>;
+
+/**
  * Base context object, omitting any extras that may be added by middleware or
  * function configuration.
  *
  * @public
  */
 export type BaseContext<
-  TOpts extends ClientOptions,
-  TTrigger extends keyof EventsFromOpts<TOpts> & string,
+  TClient extends Inngest.Any,
+  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
 > = {
   /**
    * The event data present in the payload.
    */
-  event: WithInvocation<EventsFromOpts<TOpts>[TTrigger]>;
-
-  events: [
-    EventsFromOpts<TOpts>[TTrigger],
-    ...EventsFromOpts<TOpts>[TTrigger][],
-  ];
+  event: GetContextEvents<TClient, TTriggers>;
+  events: AsTuple<GetContextEvents<TClient, TTriggers, true>>;
 
   /**
    * The run ID for the current function execution
    */
   runId: string;
 
-  step: ReturnType<
-    typeof createStepTools<TOpts, EventsFromOpts<TOpts>, TTrigger>
-  >;
+  step: ReturnType<typeof createStepTools<TClient>>;
 
   /**
    * The current zero-indexed attempt number for this function execution. The
@@ -301,11 +362,10 @@ export type BaseContext<
  * @internal
  */
 export type Context<
-  TOpts extends ClientOptions,
-  TEvents extends Record<string, EventPayload>,
-  TTrigger extends keyof TEvents & string,
+  TClient extends Inngest.Any = Inngest.Any,
+  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
   TOverrides extends Record<string, unknown> = Record<never, never>,
-> = Omit<BaseContext<TOpts, TTrigger>, keyof TOverrides> & TOverrides;
+> = Omit<BaseContext<TClient, TTriggers>, keyof TOverrides> & TOverrides;
 
 /**
  * Builds a context object for an Inngest handler, optionally overriding some
@@ -317,8 +377,7 @@ export namespace Context {
   /**
    * Represents any `Context` object, regardless of generics and inference.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type Any = Context<any, any, any>;
+  export type Any = Context;
 }
 
 /**
@@ -328,17 +387,19 @@ export namespace Context {
  * @public
  */
 export type Handler<
-  TOpts extends ClientOptions,
-  TEvents extends EventsFromOpts<TOpts>,
-  TTrigger extends keyof TEvents & string,
+  TClient extends Inngest.Any,
+  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = (
   /**
    * The context argument provides access to all data and tooling available to
    * the function.
    */
-  ctx: Context<TOpts, TEvents, TTrigger, TOverrides>
+  ctx: Context<TClient, TTriggers, TOverrides>
 ) => unknown;
+
+export type TriggersFromClient<TClient extends Inngest.Any = Inngest.Any> =
+  keyof GetEvents<TClient, true> & string;
 
 /**
  * The shape of a Inngest function, taking in event, step, ctx, and step
@@ -351,8 +412,16 @@ export namespace Handler {
    * Represents any `Handler`, regardless of generics and inference.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  export type Any = Handler<any, any, any, any>;
+  export type Any = Handler<Inngest.Any, any, any>;
 }
+
+/**
+ * Asserts that the given keys `U` are all present in the given object `T`.
+ *
+ * Used as an internal type guard to ensure that changes to keys are accounted
+ * for
+ */
+type AssertKeysAreFrom<T, K extends keyof T> = K;
 
 /**
  * The shape of a single event's payload without any fields used to identify the
@@ -422,12 +491,12 @@ export const sendEventResponseSchema = z.object({
   /**
    * Event IDs
    */
-  ids: z.array(z.string()),
+  ids: z.array(z.string()).default([]),
 
   /**
    * HTTP Status Code. Will be undefined if no request was sent.
    */
-  status: z.number(),
+  status: z.number().default(0),
 
   /**
    * Error message. Will be undefined if no error occurred.
@@ -547,6 +616,10 @@ export interface ClientOptions {
    *
    * By default the library will try to use the native Web API fetch, falling
    * back to a Node implementation if no global fetch can be found.
+   *
+   * If you wish to specify your own fetch, make sure that you preserve its
+   * binding, either by using `.bind` or by wrapping it in an anonymous
+   * function.
    */
   fetch?: typeof fetch;
 
@@ -599,7 +672,7 @@ export interface ClientOptions {
    * Defaults to a dummy logger that just log things to the console if nothing is provided.
    */
   logger?: Logger;
-  middleware?: MiddlewareStack;
+  middleware?: InngestMiddleware.Stack;
 
   /**
    * Can be used to explicitly set the client to Development Mode, which will
@@ -658,6 +731,12 @@ export interface RegisterOptions {
    * receive events from Inngest.
    */
   signingKey?: string;
+
+  /**
+   * The same as signingKey, except used as a fallback when auth fails using the
+   * primary signing key.
+   */
+  signingKeyFallback?: string;
 
   /**
    * The URL used to register functions with Inngest.
@@ -745,19 +824,20 @@ export interface RegisterOptions {
 }
 
 /**
- * A user-friendly method of specifying a trigger for an Inngest function.
- *
- * @public
+ * This schema is used internally to share the shape of a concurrency option
+ * when validating config. We cannot add comments to Zod fields, so we just use
+ * an extra type check to ensure it matches our exported expectations.
  */
-export type TriggerOptions<T extends string> = StrictUnion<
-  | {
-      event: T;
-      if?: string;
-    }
-  | {
-      cron: string;
-    }
->;
+const concurrencyOptionSchema = z.strictObject({
+  limit: z.number(),
+  key: z.string().optional(),
+  scope: z.enum(["fn", "env", "account"]).optional(),
+});
+
+const _checkConcurrencySchemaAligns: IsEqual<
+  ConcurrencyOption,
+  z.output<typeof concurrencyOptionSchema>
+> = true;
 
 export interface ConcurrencyOption {
   /**
@@ -791,202 +871,11 @@ export interface ConcurrencyOption {
 }
 
 /**
- * A set of options for configuring an Inngest function.
- *
- * @public
- */
-export interface FunctionOptions<
-  Events extends Record<string, EventPayload>,
-  Event extends keyof Events & string,
-> {
-  /**
-   * An unique ID used to identify the function. This is used internally for
-   * versioning and referring to your function, so should not change between
-   * deployments.
-   *
-   * If you'd like to set a prettier name for your function, use the `name`
-   * option.
-   */
-  id: string;
-
-  /**
-   * A name for the function as it will appear in the Inngest Cloud UI.
-   */
-  name?: string;
-
-  /**
-   * Concurrency specifies a limit on the total number of concurrent steps that
-   * can occur across all runs of the function.  A value of 0 (or undefined) means
-   * use the maximum available concurrency.
-   *
-   * Specifying just a number means specifying only the concurrency limit. A
-   * maximum of two concurrency options can be specified.
-   */
-  concurrency?:
-    | number
-    | ConcurrencyOption
-    | RecursiveTuple<ConcurrencyOption, 2>;
-
-  /**
-   * batchEvents specifies the batch configuration on when this function
-   * should be invoked when one of the requirements are fulfilled.
-   */
-  batchEvents?: {
-    /**
-     * The maximum number of events to be consumed in one batch,
-     * Currently allowed max value is 100.
-     */
-    maxSize: number;
-
-    /**
-     * How long to wait before invoking the function with a list of events.
-     * If timeout is reached, the function will be invoked with a batch
-     * even if it's not filled up to `maxSize`.
-     *
-     * Expects 1s to 60s.
-     */
-    timeout: TimeStrBatch;
-  };
-
-  /**
-   * Allow the specification of an idempotency key using event data. If
-   * specified, this overrides the `rateLimit` object.
-   */
-  idempotency?: string;
-
-  /**
-   * Rate limit workflows, only running them a given number of times (limit) per
-   * period. This can optionally include a `key`, which is used to further
-   * constrain throttling similar to idempotency.
-   */
-  rateLimit?: {
-    /**
-     * An optional key to use for rate limiting, similar to idempotency.
-     */
-    key?: string;
-
-    /**
-     * The number of times to allow the function to run per the given `period`.
-     */
-    limit: number;
-
-    /**
-     * The period of time to allow the function to run `limit` times.
-     */
-    period: TimeStr;
-  };
-
-  /**
-   * Debounce delays functions for the `period` specified. If an event is sent,
-   * the function will not run until at least `period` has elapsed.
-   *
-   * If any new events are received that match the same debounce `key`, the
-   * function is reshceduled for another `period` delay, and the triggering
-   * event is replaced with the latest event received.
-   *
-   * See the [Debounce documentation](https://innge.st/debounce) for more
-   * information.
-   */
-  debounce?: {
-    /**
-     * An optional key to use for debouncing.
-     *
-     * See [Debounce documentation](https://innge.st/debounce) for more
-     * information on how to use `key` expressions.
-     */
-    key?: string;
-
-    /**
-     * The period of time to after receiving the last trigger to run the
-     * function.
-     *
-     * See [Debounce documentation](https://innge.st/debounce) for more
-     * information.
-     */
-    period: TimeStr;
-
-    /**
-     * The maximum time that a debounce can be extended before running.
-     * If events are continually received within the given period, a function
-     * will always run after the given timeout period.
-     *
-     * See [Debounce documentation](https://innge.st/debounce) for more
-     * information.
-     */
-    timeout?: TimeStr;
-  };
-
-  /**
-   * Configure how the priority of a function run is decided when multiple
-   * functions are triggered at the same time.
-   *
-   * See the [Priority documentation](https://innge.st/priority) for more
-   * information.
-   */
-  priority?: {
-    /**
-     * An expression to use to determine the priority of a function run. The
-     * expression can return a number between `-600` and `600`, where `600`
-     * declares that this run should be executed before any others enqueued in
-     * the last 600 seconds (10 minutes), and `-600` declares that this run
-     * should be executed after any others enqueued in the last 600 seconds.
-     *
-     * See the [Priority documentation](https://innge.st/priority) for more
-     * information.
-     */
-    run?: string;
-  };
-
-  cancelOn?: Cancellation<Events, Event>[];
-
-  /**
-   * Specifies the maximum number of retries for all steps across this function.
-   *
-   * Can be a number from `0` to `20`. Defaults to `3`.
-   */
-  retries?:
-    | 0
-    | 1
-    | 2
-    | 3
-    | 4
-    | 5
-    | 6
-    | 7
-    | 8
-    | 9
-    | 10
-    | 11
-    | 12
-    | 13
-    | 14
-    | 15
-    | 16
-    | 17
-    | 18
-    | 19
-    | 20;
-
-  onFailure?: (...args: unknown[]) => unknown;
-
-  /**
-   * Define a set of middleware that can be registered to hook into various
-   * lifecycles of the SDK and affect input and output of Inngest functionality.
-   *
-   * See {@link https://innge.st/middleware}
-   */
-  middleware?: MiddlewareStack;
-}
-
-/**
  * Configuration for cancelling a function run based on an incoming event.
  *
  * @public
  */
-export type Cancellation<
-  Events extends Record<string, EventPayload>,
-  TriggeringEvent extends keyof Events & string,
-> = {
+export type Cancellation<Events extends Record<string, EventPayload>> = {
   [K in keyof Events & string]: {
     /**
      * The name of the event that should cancel the function run.
@@ -1030,10 +919,10 @@ export type Cancellation<
      * See the Inngest expressions docs for more information.
      *
      * {@link https://www.inngest.com/docs/functions/expressions}
+     *
+     * @deprecated Use `if` instead.
      */
-    match?: IsStringLiteral<keyof Events & string> extends true
-      ? ObjectPaths<Events[TriggeringEvent]> & ObjectPaths<Events[K]>
-      : string;
+    match?: string;
 
     /**
      * An optional timeout that the cancel is valid for.  If this isn't
@@ -1108,85 +997,140 @@ export interface RegisterRequest {
  *
  * @internal
  */
-export interface IntrospectRequest {
-  message: string;
+export interface UnauthenticatedIntrospection {
+  authentication_succeeded: false | null;
+  extra: {
+    is_mode_explicit: boolean;
+  };
+  function_count: number;
+  has_event_key: boolean;
+  has_signing_key: boolean;
+  mode: "cloud" | "dev";
+  schema_version: "2024-05-24";
+}
 
-  /**
-   * Represents whether a signing key could be found when running this handler.
-   */
-  hasSigningKey: boolean;
-
-  /**
-   * Represents whether an event key could be found when running this handler.
-   */
-  hasEventKey: boolean;
-
-  /**
-   * The number of Inngest functions found at this handler.
-   */
-  functionsFound: number;
-
-  /**
-   * The mode that this handler is running in and whether it has been inferred
-   * or explicitly set.
-   */
-  mode: Mode;
+export interface AuthenticatedIntrospection
+  extends Omit<UnauthenticatedIntrospection, "authentication_succeeded"> {
+  api_origin: string;
+  app_id: string;
+  authentication_succeeded: true;
+  env: string | null;
+  event_api_origin: string;
+  event_key_hash: string | null;
+  extra: UnauthenticatedIntrospection["extra"] & {
+    is_streaming: boolean;
+  };
+  framework: string;
+  sdk_language: string;
+  sdk_version: string;
+  serve_origin: string | null;
+  serve_path: string | null;
+  signing_key_fallback_hash: string | null;
+  signing_key_hash: string | null;
 }
 
 /**
- * An individual function trigger.
+ * The schema used to represent an individual function being synced with
+ * Inngest.
  *
- * @internal
+ * Note that this should only be used to validate the shape of a config object
+ * and not used for feature compatibility, such as feature X being exclusive
+ * with feature Y; these should be handled on the Inngest side.
  */
-export type FunctionTrigger<T = string> =
-  | {
-      event: T;
-      expression?: string;
-    }
-  | {
-      cron: string;
-    };
+export const functionConfigSchema = z.strictObject({
+  name: z.string().optional(),
+  id: z.string(),
+  triggers: z.array(
+    z.union([
+      z.strictObject({
+        event: z.string(),
+        expression: z.string().optional(),
+      }),
+      z.strictObject({
+        cron: z.string(),
+      }),
+    ])
+  ),
+  steps: z.record(
+    z.strictObject({
+      id: z.string(),
+      name: z.string(),
+      runtime: z.strictObject({
+        type: z.literal("http"),
+        url: z.string(),
+      }),
+      retries: z
+        .strictObject({
+          attempts: z.number().optional(),
+        })
+        .optional(),
+    })
+  ),
+  idempotency: z.string().optional(),
+  batchEvents: z
+    .strictObject({
+      maxSize: z.number(),
+      timeout: z.string(),
+      key: z.string().optional(),
+    })
+    .optional(),
+  rateLimit: z
+    .strictObject({
+      key: z.string().optional(),
+      limit: z.number(),
+      period: z.string().transform((x) => x as TimeStr),
+    })
+    .optional(),
+  throttle: z
+    .strictObject({
+      key: z.string().optional(),
+      limit: z.number(),
+      period: z.string().transform((x) => x as TimeStr),
+      burst: z.number().optional(),
+    })
+    .optional(),
+  cancel: z
+    .array(
+      z.strictObject({
+        event: z.string(),
+        if: z.string().optional(),
+        timeout: z.string().optional(),
+      })
+    )
+    .optional(),
+  debounce: z
+    .strictObject({
+      key: z.string().optional(),
+      period: z.string().transform((x) => x as TimeStr),
+      timeout: z
+        .string()
+        .transform((x) => x as TimeStr)
+        .optional(),
+    })
+    .optional(),
+  priority: z
+    .strictObject({
+      run: z.string().optional(),
+    })
+    .optional(),
+  concurrency: z
+    .union([
+      z.number(),
+      concurrencyOptionSchema.transform((x) => x as ConcurrencyOption),
+      z
+        .array(concurrencyOptionSchema.transform((x) => x as ConcurrencyOption))
+        .min(1)
+        .max(2),
+    ])
+    .optional(),
+});
 
 /**
- * A block representing an individual function being registered to Inngest
- * Cloud.
+ * The shape of an individual function being synced with Inngest.
  *
  * @internal
  */
-export interface FunctionConfig {
-  name?: string;
-  id: string;
-  triggers: FunctionTrigger[];
-  steps: Record<
-    string,
-    {
-      id: string;
-      name: string;
-      runtime: {
-        type: "http";
-        url: string;
-      };
-      retries?: {
-        attempts?: number;
-      };
-    }
-  >;
-  idempotency?: string;
-  batchEvents?: {
-    maxSize: number;
-    timeout: string;
-  };
-  throttle?: {
-    key?: string;
-    count: number;
-    period: TimeStr;
-  };
-  cancel?: {
-    event: string;
-    if?: string;
-    timeout?: string;
-  }[];
-}
+export type FunctionConfig = z.output<typeof functionConfigSchema>;
 
 export interface DevServerInfo {
   /**
@@ -1211,8 +1155,16 @@ export interface DevServerInfo {
  */
 export type EventNameFromTrigger<
   Events extends Record<string, EventPayload>,
-  T extends TriggerOptions<keyof Events & string>,
-> = T extends string ? T : T extends { event: string } ? T["event"] : string;
+  T extends InngestFunction.Trigger<keyof Events & string>,
+> = IsNever<T> extends true // `never` indicates there are no triggers, so the payload could be anything
+  ? `${internalEvents.FunctionInvoked}`
+  : T extends string // `string` indicates a migration from v2 to v3
+    ? T
+    : T extends { event: infer IEvent } // an event trigger
+      ? IEvent
+      : T extends { cron: string } // a cron trigger
+        ? `${internalEvents.ScheduledTimer}`
+        : never;
 
 /**
  * A union to represent known names of supported frameworks that we can use
@@ -1234,7 +1186,8 @@ export type SupportedFrameworkName =
   | "deno/fresh"
   | "sveltekit"
   | "fastify"
-  | "koa";
+  | "koa"
+  | "hono";
 
 /**
  * A set of options that can be passed to any step to configure it.
@@ -1265,8 +1218,8 @@ export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
 export type EventsFromFunction<T extends InngestFunction.Any> =
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  T extends InngestFunction<any, infer TEvents, any, any, any>
-    ? TEvents
+  T extends InngestFunction<any, any, any, infer IClient, any, any>
+    ? GetEvents<IClient, true>
     : never;
 
 /**
@@ -1275,8 +1228,8 @@ export type EventsFromFunction<T extends InngestFunction.Any> =
  * @public
  */
 export type InvokeTargetFunctionDefinition =
-  | InngestFunctionReference.Any
-  | InngestFunction.Any
+  | Public<InngestFunctionReference.Any>
+  | Public<InngestFunction.Any>
   | string;
 
 /**
@@ -1288,7 +1241,7 @@ export type InvokeTargetFunctionDefinition =
 export type TriggerEventFromFunction<
   TFunction extends InvokeTargetFunctionDefinition,
 > = TFunction extends InngestFunction.Any
-  ? PayloadFromAnyInngestFunction<TFunction>
+  ? PayloadForAnyInngestFunction<TFunction>
   : TFunction extends InngestFunctionReference<
         infer IInput extends MinimalEventPayload,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1301,27 +1254,49 @@ export type TriggerEventFromFunction<
  * Given an {@link InngestFunction} instance, extract the {@link MinimalPayload}
  * that will be used to trigger it.
  *
+ * This is intended to see what **input** a developer is expected to give to
+ * invoke a function; it should not be used for evaluating the payload received
+ * inside an invoked function.
+ *
  * If we could not find a payload or the function does not require a payload
  * (e.g. a cron), then will return `{}`, as this is intended to be used to
  * spread into other arguments.
  *
  * @internal
  */
-export type PayloadFromAnyInngestFunction<
+export type PayloadForAnyInngestFunction<
   TFunction extends InngestFunction.Any,
-  TEvents = TFunction extends InngestFunction.Any
+  TEvents extends Record<
+    string,
+    EventPayload
+  > = TFunction extends InngestFunction.Any
     ? EventsFromFunction<TFunction>
     : never,
+> = TFunction extends InngestFunction<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-> = TFunction extends InngestFunction<any, any, infer ITrigger, any, any>
-  ? ITrigger extends {
-      event: infer IEventTrigger extends keyof TEvents & string;
-    }
-    ? Simplify<Omit<TEvents[IEventTrigger], "name" | "ts">>
-    : ITrigger extends { cron: string }
-      ? object
-      : object
-  : object;
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  infer ITriggers extends InngestFunction.Trigger<keyof TEvents & string>[]
+>
+  ? IsEqual<
+      TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>]["name"],
+      `${internalEvents.ScheduledTimer}`
+    > extends true
+    ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
+    : Simplify<
+        Omit<
+          TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>],
+          "name" | "ts"
+        >
+      >
+  : never;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;
 // TODO Types ready for when we expand this.

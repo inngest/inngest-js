@@ -11,6 +11,7 @@ import {
 import { undefinedToNull } from "../../helpers/functions";
 import {
   createDeferredPromise,
+  createDeferredPromiseWithStack,
   createTimeoutPromise,
   resolveAfterPending,
   runAsPromise,
@@ -20,13 +21,13 @@ import {
   StepOpCode,
   failureEventErrorSchema,
   type BaseContext,
-  type ClientOptions,
   type Context,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
   type OutgoingOp,
 } from "../../types";
+import { type Inngest } from "../Inngest";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware";
 import {
   STEP_INDEXING_SUFFIX,
@@ -533,12 +534,20 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       output.data = serializeError(output.error);
     }
 
+    const isStepExecution = Boolean(this.state.executingStep);
+
     const transformedOutput = await this.state.hooks?.transformOutput?.({
       result: { ...output },
       step: this.state.executingStep,
     });
 
     const { data, error } = { ...output, ...transformedOutput?.result };
+
+    if (!isStepExecution) {
+      await this.state.hooks?.finished?.({
+        result: { ...(typeof error !== "undefined" ? { error } : { data }) },
+      });
+    }
 
     if (typeof error !== "undefined") {
       /**
@@ -561,21 +570,26 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   private createExecutionState(): V1ExecutionState {
-    let { promise: checkpointPromise, resolve: checkpointResolve } =
-      createDeferredPromise<Checkpoint>();
+    const d = createDeferredPromiseWithStack<Checkpoint>();
+    let checkpointResolve = d.deferred.resolve;
+    const checkpointResults = d.results;
 
     const loop: V1ExecutionState["loop"] = (async function* (
       cleanUp?: () => void
     ) {
       try {
         while (true) {
-          yield await checkpointPromise;
+          const res = (await checkpointResults.next()).value;
+          if (res) {
+            yield res;
+          }
         }
       } finally {
         cleanUp?.();
       }
     })(() => {
       this.timeout?.clear();
+      void checkpointResults.return();
     });
 
     const state: V1ExecutionState = {
@@ -585,8 +599,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       hasSteps: Boolean(Object.keys(this.options.stepState).length),
       stepCompletionOrder: this.options.stepCompletionOrder,
       setCheckpoint: (checkpoint: Checkpoint) => {
-        ({ promise: checkpointPromise, resolve: checkpointResolve } =
-          checkpointResolve(checkpoint));
+        ({ resolve: checkpointResolve } = checkpointResolve(checkpoint));
       },
       allStateUsed: () => {
         return Object.values(state.stepState).every((step) => {
@@ -623,14 +636,26 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return fnArg;
   }
 
-  private createStepTools(): ReturnType<
-    typeof createStepTools<ClientOptions, Record<string, EventPayload>, string>
-  > {
+  private createStepTools(): ReturnType<typeof createStepTools> {
     /**
      * A list of steps that have been found and are being rolled up before being
      * reported to the core loop.
      */
     let foundStepsToReport: FoundStep[] = [];
+
+    /**
+     * A map of the subset of found steps to report that have not yet been
+     * handled. Used for fast access to steps that need to be handled in order.
+     */
+    let unhandledFoundStepsToReport: Record<string, FoundStep> = {};
+
+    /**
+     * An ordered list of step IDs that have yet to be handled in this
+     * execution. Used to ensure that we handle steps in the order they were
+     * found and based on the `stepCompletionOrder` in this execution's state.
+     */
+    const remainingStepCompletionOrder: string[] =
+      this.state.stepCompletionOrder.slice();
 
     /**
      * A promise that's used to ensure that step reporting cannot be run more than
@@ -712,14 +737,18 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         .then(() => {
           foundStepsReportPromise = undefined;
 
-          for (let i = 0; i < this.state.stepCompletionOrder.length; i++) {
-            const handled = foundStepsToReport
-              .find((step) => {
-                return step.hashedId === this.state.stepCompletionOrder[i];
-              })
-              ?.handle();
+          for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
+            const nextStepId = remainingStepCompletionOrder[i];
+            if (!nextStepId) {
+              // Strange - removed this empty index
+              remainingStepCompletionOrder.splice(i, 1);
+              continue;
+            }
 
+            const handled = unhandledFoundStepsToReport[nextStepId]?.handle();
             if (handled) {
+              remainingStepCompletionOrder.splice(i, 1);
+              delete unhandledFoundStepsToReport[nextStepId];
               return void reportNextTick();
             }
           }
@@ -728,6 +757,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           // found and report it.
           const steps = [...foundStepsToReport] as [FoundStep, ...FoundStep[]];
           foundStepsToReport = [];
+          unhandledFoundStepsToReport = {};
 
           return void this.state.setCheckpoint({
             type: "steps-found",
@@ -741,6 +771,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      */
     const pushStepToReport = (step: FoundStep) => {
       foundStepsToReport.push(step);
+      unhandledFoundStepsToReport[step.hashedId] = step;
       reportNextTick();
     };
 
@@ -751,10 +782,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }): Promise<unknown> => {
       await beforeExecHooksPromise;
 
-      if (!this.state.hasSteps && opts?.nonStepExecuteInline && opts.fn) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        return runAsPromise(() => opts.fn?.(...args));
-      }
+      const stepOptions = getStepOptions(args[0]);
+      const opId = matchOp(stepOptions, ...args.slice(1));
 
       if (this.state.executingStep) {
         /**
@@ -772,7 +801,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          */
         console.warn(
           prettyError({
-            whatHappened: "We detected that you have nested `step.*` tooling.",
+            whatHappened: `We detected that you have nested \`step.*\` tooling in \`${
+              opId.displayName ?? opId.id
+            }\``,
             consequences: "Nesting `step.*` tooling is not supported.",
             type: "warn",
             reassurance:
@@ -784,9 +815,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           })
         );
       }
-
-      const stepOptions = getStepOptions(args[0]);
-      const opId = matchOp(stepOptions, ...args.slice(1));
 
       if (this.state.steps[opId.id]) {
         const originalId = opId.id;
@@ -853,21 +881,20 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        */
       if (!beforeExecHooksPromise && this.state.allStateUsed()) {
         await (beforeExecHooksPromise = (async () => {
-          await this.state.hooks?.beforeExecution?.();
           await this.state.hooks?.afterMemoization?.();
+          await this.state.hooks?.beforeExecution?.();
         })());
       }
 
       return promise;
     };
 
-    return createStepTools(this.options.client, stepHandler);
+    return createStepTools(this.options.client, this, stepHandler);
   }
 
   private getUserFnToRun(): Handler.Any {
     if (!this.options.isFailureHandler) {
-      // TODO: Review; inferred types results in an `any` here!
-      return this.options.fn["fn"] as Handler.Any;
+      return this.options.fn["fn"];
     }
 
     if (!this.options.fn["onFailureFn"]) {
@@ -905,7 +932,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
   private async initializeMiddleware(): Promise<RunHookStack> {
     const ctx = this.options.data as Pick<
-      Readonly<BaseContext<ClientOptions, string>>,
+      Readonly<BaseContext<Inngest.Any>>,
       "event" | "events" | "runId"
     >;
 

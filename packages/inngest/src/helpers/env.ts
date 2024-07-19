@@ -124,7 +124,7 @@ export interface ModeOptions {
 }
 
 export class Mode {
-  private readonly type: "cloud" | "dev";
+  public readonly type: "cloud" | "dev";
 
   /**
    * Whether the mode was explicitly set, or inferred from other sources.
@@ -244,7 +244,17 @@ export const processEnv = (key: string): EnvValue => {
   return allProcessEnv()[key];
 };
 
+/**
+ * The Deno environment, which is not always available.
+ */
 declare const Deno: {
+  env: { toObject: () => Env };
+};
+
+/**
+ * The Netlify environment, which is not always available.
+ */
+declare const Netlify: {
   env: { toObject: () => Env };
 };
 
@@ -257,6 +267,7 @@ declare const Deno: {
  * where it may not be defined, such as Deno or the browser.
  */
 export const allProcessEnv = (): Env => {
+  // Node, or Node-like environments
   try {
     // eslint-disable-next-line @inngest/internal/process-warn
     if (process.env) {
@@ -267,8 +278,20 @@ export const allProcessEnv = (): Env => {
     // noop
   }
 
+  // Deno
   try {
     const env = Deno.env.toObject();
+
+    if (env) {
+      return env;
+    }
+  } catch (_err) {
+    // noop
+  }
+
+  // Netlify
+  try {
+    const env = Netlify.env.toObject();
 
     if (env) {
       return env;
@@ -439,12 +462,65 @@ export const platformSupportsStreaming = (
 };
 
 /**
+ * A unique symbol used to mark a custom fetch implementation. We wrap the
+ * implementations to provide some extra control when handling errors.
+ */
+const CUSTOM_FETCH_MARKER = Symbol("Custom fetch implementation");
+
+/**
  * Given a potential fetch function, return the fetch function to use based on
  * this and the environment.
  */
 export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
+  /**
+   * If we've explicitly been given a fetch function, use that.
+   */
   if (givenFetch) {
-    return givenFetch;
+    if (CUSTOM_FETCH_MARKER in givenFetch) {
+      return givenFetch;
+    }
+
+    /**
+     * We wrap the given fetch function to provide some extra control when
+     * handling errors.
+     */
+    const customFetch: typeof fetch = async (...args) => {
+      try {
+        return await givenFetch(...args);
+      } catch (err) {
+        /**
+         * Capture warnings that are not simple fetch failures and highlight
+         * them for the user.
+         *
+         * We also use this opportunity to log the causing error, as code higher
+         * up the stack will likely abstract this.
+         */
+        if (
+          !(err instanceof Error) ||
+          !err.message?.startsWith("fetch failed")
+        ) {
+          console.warn(
+            "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope."
+          );
+          console.error(err);
+        }
+
+        throw err;
+      }
+    };
+
+    /**
+     * Mark the custom fetch implementation so that we can identify it later, in
+     * addition to adding some runtime properties to it to make it seem as much
+     * like the original fetch as possible.
+     */
+    Object.defineProperties(customFetch, {
+      [CUSTOM_FETCH_MARKER]: {},
+      name: { value: givenFetch.name },
+      length: { value: givenFetch.length },
+    });
+
+    return customFetch;
   }
 
   /**

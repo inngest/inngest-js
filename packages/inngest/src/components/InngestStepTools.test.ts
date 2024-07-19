@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { EventSchemas } from "@local/components/EventSchemas";
-import { type EventsFromOpts } from "@local/components/Inngest";
+import { type Inngest } from "@local/components/Inngest";
 import { InngestFunction } from "@local/components/InngestFunction";
 import { referenceFunction } from "@local/components/InngestFunctionReference";
 import { type createStepTools } from "@local/components/InngestStepTools";
@@ -440,19 +440,21 @@ describe("sendEvent", () => {
         schemas,
       });
 
+      type Client = Inngest<typeof opts>;
+
       const sendEvent: ReturnType<
-        typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
+        typeof createStepTools<Client>
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       >["sendEvent"] = (() => undefined) as any;
 
       test("disallows sending a single unknown event with a string", () => {
         // @ts-expect-error Unknown event
-        void sendEvent({ name: "unknown", data: { foo: "" } });
+        void sendEvent("id", { name: "unknown", data: { foo: "" } });
       });
 
       test("disallows sending a single unknown event with an object", () => {
         // @ts-expect-error Unknown event
-        void sendEvent({ name: "unknown", data: { foo: "" } });
+        void sendEvent("id", { name: "unknown", data: { foo: "" } });
       });
 
       test("disallows sending multiple unknown events", () => {
@@ -474,12 +476,12 @@ describe("sendEvent", () => {
 
       test("disallows sending a single known event with a string and invalid data", () => {
         // @ts-expect-error Invalid data
-        void sendEvent({ name: "foo", data: { foo: 1 } });
+        void sendEvent("id", { name: "foo", data: { foo: 1 } });
       });
 
       test("disallows sending a single known event with an object and invalid data", () => {
         // @ts-expect-error Invalid data
-        void sendEvent({ name: "foo", data: { foo: 1 } });
+        void sendEvent("id", { name: "foo", data: { foo: 1 } });
       });
 
       test("disallows sending multiple known events with invalid data", () => {
@@ -518,8 +520,7 @@ describe("invoke", () => {
   describe("runtime", () => {
     const fn = new InngestFunction(
       createClient({ id: testClientId }),
-      { id: "test-fn" },
-      { event: "test-event" },
+      { id: "test-fn", triggers: [{ event: "test-event" }] },
       () => "test-return"
     );
 
@@ -677,7 +678,7 @@ describe("invoke", () => {
     const client = createClient(opts);
 
     const invoke = null as unknown as ReturnType<
-      typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
+      typeof createStepTools<typeof client>
     >["invoke"];
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -792,6 +793,35 @@ describe("invoke", () => {
           }),
           // @ts-expect-error Invalid payload provided
           data: { bar: "" },
+        });
+    });
+
+    /**
+     * This test is a trade-off for not yet allowing local invocation schemas
+     * but adding multiple triggers.
+     *
+     * In the future, I foresee this being disallowed and requiring that either
+     * an invocation schema exists or that the user must provide a `name` to
+     * represent the payload they are trying to send.
+     */
+    test("allows any data shape when invoking a function with multiple triggers", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
+        () => "return"
+      );
+
+      const _test = () =>
+        invoke("id", {
+          function: fn,
+          data: {
+            foo: "",
+            bar: "",
+            cron: "",
+            // @ts-expect-error Make sure this still fails, so that we're
+            // definitely only picking up expected properties
+            boof: "",
+          },
         });
     });
 

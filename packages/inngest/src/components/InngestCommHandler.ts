@@ -6,6 +6,7 @@ import { ServerTiming } from "../helpers/ServerTiming";
 import {
   debugPrefix,
   defaultInngestApiBaseUrl,
+  defaultInngestEventBaseUrl,
   envKeys,
   headerKeys,
   logPrefix,
@@ -29,20 +30,23 @@ import {
   undefinedToNull,
   type FnData,
 } from "../helpers/functions";
+import { fetchWithAuthFallback } from "../helpers/net";
 import { runAsPromise } from "../helpers/promises";
 import { createStream } from "../helpers/stream";
-import { hashSigningKey, stringify } from "../helpers/strings";
+import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings";
 import { type MaybePromise } from "../helpers/types";
 import {
+  functionConfigSchema,
   logLevels,
+  type AuthenticatedIntrospection,
   type EventPayload,
   type FunctionConfig,
-  type IntrospectRequest,
   type LogLevel,
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
   type SupportedFrameworkName,
+  type UnauthenticatedIntrospection,
 } from "../types";
 import { version } from "../version";
 import { type Inngest } from "./Inngest";
@@ -169,7 +173,7 @@ const registerResSchema = z.object({
  * Inngest's tooling such as the dev server or CLI) and taking appropriate
  * action for any served functions.
  *
- * All handlers (Next.js, RedwoodJS, Remix, Deno Fresh, etc) are created using
+ * All handlers (Next.js, RedwoodJS, Remix, Deno Fresh, etc.) are created using
  * this class; the exposed `serve` function will - most commonly - create an
  * instance of `InngestCommHandler` and then return `instance.createHandler()`.
  *
@@ -241,13 +245,19 @@ export class InngestCommHandler<
 
   /**
    * The signing key used to validate requests from Inngest. This is
-   * intentionally mutatble so that we can pick up the signing key from the
+   * intentionally mutable so that we can pick up the signing key from the
    * environment during execution if needed.
    */
   protected signingKey: string | undefined;
 
   /**
-   * A property that can be set to indicate whether or not we believe we are in
+   * The same as signingKey, except used as a fallback when auth fails using the
+   * primary signing key.
+   */
+  protected signingKeyFallback: string | undefined;
+
+  /**
+   * A property that can be set to indicate whether we believe we are in
    * production mode.
    *
    * Should be set every time a request is received.
@@ -267,14 +277,14 @@ export class InngestCommHandler<
    * By default, the library will try to infer this using request details such
    * as the "Host" header and request path, but sometimes this isn't possible
    * (e.g. when running in a more controlled environments such as AWS Lambda or
-   * when dealing with proxies/rediects).
+   * when dealing with proxies/redirects).
    *
    * Provide the custom hostname here to ensure that the path is reported
    * correctly when registering functions with Inngest.
    *
    * To also provide a custom path, use `servePath`.
    */
-  protected readonly serveHost: string | undefined;
+  private readonly _serveHost: string | undefined;
 
   /**
    * The path to the Inngest serve endpoint. e.g.:
@@ -284,14 +294,14 @@ export class InngestCommHandler<
    * By default, the library will try to infer this using request details such
    * as the "Host" header and request path, but sometimes this isn't possible
    * (e.g. when running in a more controlled environments such as AWS Lambda or
-   * when dealing with proxies/rediects).
+   * when dealing with proxies/redirects).
    *
    * Provide the custom path (excluding the hostname) here to ensure that the
    * path is reported correctly when registering functions with Inngest.
    *
    * To also provide a custom hostname, use `serveHost`.
    */
-  protected readonly servePath: string | undefined;
+  private readonly _servePath: string | undefined;
 
   /**
    * The minimum level to log from the Inngest serve handler.
@@ -314,14 +324,23 @@ export class InngestCommHandler<
    */
   private readonly fns: Record<
     string,
-    { fn: InngestFunction; onFailure: boolean }
+    { fn: InngestFunction.Any; onFailure: boolean }
   > = {};
 
   private env: Env = allProcessEnv();
 
   private allowExpiredSignatures: boolean;
 
+  private readonly _options: InngestCommHandlerOptions<
+    Input,
+    Output,
+    StreamOutput
+  >;
+
   constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>) {
+    // Set input options directly so we can reference them later
+    this._options = options;
+
     /**
      * v2 -> v3 migration error.
      *
@@ -361,7 +380,7 @@ export class InngestCommHandler<
     }
 
     this.fns = this.rawFns.reduce<
-      Record<string, { fn: InngestFunction; onFailure: boolean }>
+      Record<string, { fn: InngestFunction.Any; onFailure: boolean }>
     >((acc, fn) => {
       const configs = fn["getConfig"](new URL("https://example.com"), this.id);
 
@@ -384,18 +403,12 @@ export class InngestCommHandler<
       };
     }, {});
 
-    this.inngestRegisterUrl = new URL(
-      "/fn/register",
-      options.baseUrl ||
-        this.env[envKeys.InngestApiBaseUrl] ||
-        this.env[envKeys.InngestBaseUrl] ||
-        this.client["apiBaseUrl"] ||
-        defaultInngestApiBaseUrl
-    );
+    this.inngestRegisterUrl = new URL("/fn/register", this.apiBaseUrl);
 
     this.signingKey = options.signingKey;
-    this.serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
-    this.servePath = options.servePath || this.env[envKeys.InngestServePath];
+    this.signingKeyFallback = options.signingKeyFallback;
+    this._serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
+    this._servePath = options.servePath || this.env[envKeys.InngestServePath];
 
     const defaultLogLevel: typeof this.logLevel = "info";
     this.logLevel = z
@@ -433,13 +446,130 @@ export class InngestCommHandler<
       })
       .parse(options.streaming || this.env[envKeys.InngestStreaming]);
 
-    this.fetch = getFetch(options.fetch || this.client["fetch"]);
+    this.fetch = options.fetch ? getFetch(options.fetch) : this.client["fetch"];
+  }
+
+  /**
+   * Get the API base URL for the Inngest API.
+   *
+   * This is a getter to encourage checking the environment for the API base URL
+   * each time it's accessed, as it may change during execution.
+   */
+  protected get apiBaseUrl(): string {
+    return (
+      this._options.baseUrl ||
+      this.env[envKeys.InngestApiBaseUrl] ||
+      this.env[envKeys.InngestBaseUrl] ||
+      this.client.apiBaseUrl ||
+      defaultInngestApiBaseUrl
+    );
+  }
+
+  /**
+   * Get the event API base URL for the Inngest API.
+   *
+   * This is a getter to encourage checking the environment for the event API
+   * base URL each time it's accessed, as it may change during execution.
+   */
+  protected get eventApiBaseUrl(): string {
+    return (
+      this._options.baseUrl ||
+      this.env[envKeys.InngestEventApiBaseUrl] ||
+      this.env[envKeys.InngestBaseUrl] ||
+      this.client.eventBaseUrl ||
+      defaultInngestEventBaseUrl
+    );
+  }
+
+  /**
+   * The host used to access the Inngest serve endpoint, e.g.:
+   *
+   *     "https://myapp.com"
+   *
+   * By default, the library will try to infer this using request details such
+   * as the "Host" header and request path, but sometimes this isn't possible
+   * (e.g. when running in a more controlled environments such as AWS Lambda or
+   * when dealing with proxies/redirects).
+   *
+   * Provide the custom hostname here to ensure that the path is reported
+   * correctly when registering functions with Inngest.
+   *
+   * To also provide a custom path, use `servePath`.
+   */
+  protected get serveHost(): string | undefined {
+    return this._serveHost || this.env[envKeys.InngestServeHost];
+  }
+
+  /**
+   * The path to the Inngest serve endpoint. e.g.:
+   *
+   *     "/some/long/path/to/inngest/endpoint"
+   *
+   * By default, the library will try to infer this using request details such
+   * as the "Host" header and request path, but sometimes this isn't possible
+   * (e.g. when running in a more controlled environments such as AWS Lambda or
+   * when dealing with proxies/redirects).
+   *
+   * Provide the custom path (excluding the hostname) here to ensure that the
+   * path is reported correctly when registering functions with Inngest.
+   *
+   * To also provide a custom hostname, use `serveHost`.
+   *
+   * This is a getter to encourage checking the environment for the serve path
+   * each time it's accessed, as it may change during execution.
+   */
+  protected get servePath(): string | undefined {
+    return this._servePath || this.env[envKeys.InngestServePath];
+  }
+
+  private get hashedEventKey(): string | undefined {
+    if (!this.client["eventKey"]) {
+      return undefined;
+    }
+    return hashEventKey(this.client["eventKey"]);
   }
 
   // hashedSigningKey creates a sha256 checksum of the signing key with the
   // same signing key prefix.
-  private get hashedSigningKey(): string {
+  private get hashedSigningKey(): string | undefined {
+    if (!this.signingKey) {
+      return undefined;
+    }
     return hashSigningKey(this.signingKey);
+  }
+
+  private get hashedSigningKeyFallback(): string | undefined {
+    if (!this.signingKeyFallback) {
+      return undefined;
+    }
+    return hashSigningKey(this.signingKeyFallback);
+  }
+
+  /**
+   * Returns a `boolean` representing whether this handler will stream responses
+   * or not. Takes into account the user's preference and the platform's
+   * capabilities.
+   */
+  private shouldStream(actions: HandlerResponseWithErrors): boolean {
+    // We must be able to stream responses to continue.
+    if (!actions.transformStreamingResponse) {
+      return false;
+    }
+
+    // If the user has forced streaming, we should always stream.
+    if (this.streaming === "force") {
+      return true;
+    }
+
+    // If the user has allowed streaming, we should stream if the platform
+    // supports it.
+    return (
+      this.streaming === "allow" &&
+      platformSupportsStreaming(
+        this.frameworkName as SupportedFrameworkName,
+        this.env
+      )
+    );
   }
 
   /**
@@ -489,7 +619,7 @@ export class InngestCommHandler<
 
       /**
        * Map over every `action` in `rawActions` and create a new `actions`
-       * object where each function is safely promisifed with each access
+       * object where each function is safely promisified with each access
        * requiring a reason.
        *
        * This helps us provide high quality errors about what's going wrong for
@@ -572,15 +702,7 @@ export class InngestCommHandler<
         },
       });
 
-      const wantToStream =
-        this.streaming === "force" ||
-        (this.streaming === "allow" &&
-          platformSupportsStreaming(
-            this.frameworkName as SupportedFrameworkName,
-            this.env
-          ));
-
-      if (wantToStream && actions.transformStreamingResponse) {
+      if (this.shouldStream(actions)) {
         const method = await actions.method("starting streaming response");
 
         if (method === "POST") {
@@ -639,6 +761,18 @@ export class InngestCommHandler<
     });
 
     return handler;
+  }
+
+  private get mode(): Mode | undefined {
+    return this._mode;
+  }
+
+  private set mode(m) {
+    this._mode = m;
+
+    if (m) {
+      this.client["mode"] = m;
+    }
   }
 
   /**
@@ -722,12 +856,37 @@ export class InngestCommHandler<
           (await getQuerystring("processing run request", queryKeys.StepId)) ||
           null;
 
+        const headersToFetch = [headerKeys.TraceParent, headerKeys.TraceState];
+
+        const headerPromises = headersToFetch.map(async (header) => {
+          const value = await actions.headers(
+            `fetching ${header} for forwarding`,
+            header
+          );
+
+          return { header, value };
+        });
+
+        const fetchedHeaders = await Promise.all(headerPromises);
+
+        const headersToForward = fetchedHeaders.reduce<Record<string, string>>(
+          (acc, { header, value }) => {
+            if (value) {
+              acc[header] = value;
+            }
+
+            return acc;
+          },
+          {}
+        );
+
         const { version, result } = this.runStep({
           functionId: fnId,
           data: body,
           stepId,
           timer,
           reqArgs,
+          headers: headersToForward,
         });
         const stepOutput = await result;
 
@@ -746,6 +905,7 @@ export class InngestCommHandler<
               status: result.retriable ? 500 : 400,
               headers: {
                 "Content-Type": "application/json",
+                ...headersToForward,
                 [headerKeys.NoRetry]: result.retriable ? "false" : "true",
                 ...(typeof result.retriable === "string"
                   ? { [headerKeys.RetryAfter]: result.retriable }
@@ -760,6 +920,7 @@ export class InngestCommHandler<
               status: 200,
               headers: {
                 "Content-Type": "application/json",
+                ...headersToForward,
               },
               body: stringify(undefinedToNull(result.data)),
               version,
@@ -770,10 +931,13 @@ export class InngestCommHandler<
               status: 500,
               headers: {
                 "Content-Type": "application/json",
+                ...headersToForward,
                 [headerKeys.NoRetry]: "false",
               },
               body: stringify({
-                error: `Could not find step "${result.step.id}" to run; timed out`,
+                error: `Could not find step "${
+                  result.step.displayName || result.step.id
+                }" to run; timed out`,
               }),
               version,
             };
@@ -785,6 +949,7 @@ export class InngestCommHandler<
               status: 206,
               headers: {
                 "Content-Type": "application/json",
+                ...headersToForward,
                 ...(typeof result.retriable !== "undefined"
                   ? {
                       [headerKeys.NoRetry]: result.retriable ? "false" : "true",
@@ -803,7 +968,10 @@ export class InngestCommHandler<
 
             return {
               status: 206,
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                ...headersToForward,
+              },
               body: stringify(steps),
               version,
             };
@@ -828,13 +996,64 @@ export class InngestCommHandler<
           deployId: null,
         });
 
-        const introspection: IntrospectRequest = {
-          message: "Inngest endpoint configured correctly.",
-          hasEventKey: this.client["eventKeySet"](),
-          hasSigningKey: Boolean(this.signingKey),
-          functionsFound: registerBody.functions.length,
-          mode: this._mode,
-        };
+        const signature = await actions.headers(
+          "checking signature for run request",
+          headerKeys.Signature
+        );
+
+        let introspection:
+          | UnauthenticatedIntrospection
+          | AuthenticatedIntrospection = {
+          authentication_succeeded: null,
+          extra: {
+            is_mode_explicit: this._mode.isExplicit,
+          },
+          has_event_key: this.client["eventKeySet"](),
+          has_signing_key: Boolean(this.signingKey),
+          function_count: registerBody.functions.length,
+          mode: this._mode.type,
+          schema_version: "2024-05-24",
+        } satisfies UnauthenticatedIntrospection;
+
+        // Only allow authenticated introspection in Cloud mode, since Dev mode skips
+        // signature validation
+        if (this._mode.type === "cloud") {
+          try {
+            this.validateSignature(signature ?? undefined, "");
+
+            introspection = {
+              ...introspection,
+              authentication_succeeded: true,
+              api_origin: this.apiBaseUrl,
+              app_id: this.client.id,
+              env:
+                (await actions.headers(
+                  "fetching environment for introspection request",
+                  headerKeys.Environment
+                )) || null,
+              event_api_origin: this.eventApiBaseUrl,
+              event_key_hash: this.hashedEventKey ?? null,
+              extra: {
+                ...introspection.extra,
+                is_streaming: this.shouldStream(actions),
+              },
+              framework: this.frameworkName,
+              sdk_language: "js",
+              sdk_version: version,
+              serve_origin: this.serveHost ?? null,
+              serve_path: this.servePath ?? null,
+              signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
+              signing_key_hash: this.hashedSigningKey ?? null,
+            } satisfies AuthenticatedIntrospection;
+          } catch {
+            // Swallow signature validation error since we'll just return the
+            // unauthenticated introspection
+            introspection = {
+              ...introspection,
+              authentication_succeeded: false,
+            } satisfies UnauthenticatedIntrospection;
+          }
+        }
 
         return {
           status: 200,
@@ -901,12 +1120,14 @@ export class InngestCommHandler<
     data,
     timer,
     reqArgs,
+    headers,
   }: {
     functionId: string;
     stepId: string | null;
     data: unknown;
     timer: ServerTiming;
     reqArgs: unknown[];
+    headers: Record<string, string>;
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
     const fn = this.fns[functionId];
     if (!fn) {
@@ -972,6 +1193,7 @@ export class InngestCommHandler<
               isFailureHandler: fn.onFailure,
               stepCompletionOrder: ctx?.stack?.stack ?? [],
               reqArgs,
+              headers,
             },
           };
         },
@@ -1007,6 +1229,7 @@ export class InngestCommHandler<
               disableImmediateExecution: ctx?.disable_immediate_execution,
               stepCompletionOrder: ctx?.stack?.stack ?? [],
               reqArgs,
+              headers,
             },
           };
         },
@@ -1023,10 +1246,24 @@ export class InngestCommHandler<
   }
 
   protected configs(url: URL): FunctionConfig[] {
-    return Object.values(this.rawFns).reduce<FunctionConfig[]>(
+    const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
       (acc, fn) => [...acc, ...fn["getConfig"](url, this.id)],
       []
     );
+
+    for (const config of configs) {
+      const check = functionConfigSchema.safeParse(config);
+      if (!check.success) {
+        const errors = check.error.errors.map((err) => err.message).join("; ");
+
+        this.log(
+          "warn",
+          `Config invalid for function "${config.id}" : ${errors}`
+        );
+      }
+    }
+
+    return configs;
   }
 
   /**
@@ -1102,7 +1339,10 @@ export class InngestCommHandler<
         registerURL = devServerUrl(host, "/fn/register");
       }
     } else if (this._mode?.explicitDevUrl) {
-      registerURL = new URL(this._mode.explicitDevUrl);
+      registerURL = devServerUrl(
+        this._mode.explicitDevUrl.href,
+        "/fn/register"
+      );
     }
 
     if (deployId) {
@@ -1110,14 +1350,17 @@ export class InngestCommHandler<
     }
 
     try {
-      res = await this.fetch(registerURL.href, {
-        method: "POST",
-        body: stringify(body),
-        headers: {
-          ...getHeaders(),
-          Authorization: `Bearer ${this.hashedSigningKey}`,
+      res = await fetchWithAuthFallback({
+        authToken: this.hashedSigningKey,
+        authTokenFallback: this.hashedSigningKeyFallback,
+        fetch: this.fetch,
+        url: registerURL.href,
+        options: {
+          method: "POST",
+          body: stringify(body),
+          headers: getHeaders(),
+          redirect: "follow",
         },
-        redirect: "follow",
       });
     } catch (err: unknown) {
       this.log("error", err);
@@ -1131,16 +1374,51 @@ export class InngestCommHandler<
       };
     }
 
+    const raw = await res.text();
+
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     let data: z.input<typeof registerResSchema> = {};
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      data = await res.json();
+      data = JSON.parse(raw);
     } catch (err) {
       this.log("warn", "Couldn't unpack register response:", err);
+
+      let message = "Failed to register";
+      if (err instanceof Error) {
+        message += `; ${err.message}`;
+      }
+      message += `; status code: ${res.status}`;
+
+      return {
+        status: 500,
+        message,
+        modified: false,
+      };
     }
-    const { status, error, skipped, modified } = registerResSchema.parse(data);
+
+    let status: number;
+    let error: string;
+    let skipped: boolean;
+    let modified: boolean;
+    try {
+      ({ status, error, skipped, modified } = registerResSchema.parse(data));
+    } catch (err) {
+      this.log("warn", "Invalid register response schema:", err);
+
+      let message = "Failed to register";
+      if (err instanceof Error) {
+        message += `; ${err.message}`;
+      }
+      message += `; status code: ${res.status}`;
+
+      return {
+        status: 500,
+        message,
+        modified: false,
+      };
+    }
 
     // The dev server polls this endpoint to register functions every few
     // seconds, but we only want to log that we've registered functions if
@@ -1172,6 +1450,16 @@ export class InngestCommHandler<
       }
 
       this.client["inngestApi"].setSigningKey(this.signingKey);
+    }
+
+    if (this.env[envKeys.InngestSigningKeyFallback]) {
+      if (!this.signingKeyFallback) {
+        this.signingKeyFallback = String(
+          this.env[envKeys.InngestSigningKeyFallback]
+        );
+      }
+
+      this.client["inngestApi"].setSigningKeyFallback(this.signingKeyFallback);
     }
 
     if (!this.client["eventKeySet"]() && this.env[envKeys.InngestEventKey]) {
@@ -1214,6 +1502,7 @@ export class InngestCommHandler<
       body,
       allowExpiredSignatures: this.allowExpiredSignatures,
       signingKey: this.signingKey,
+      signingKeyFallback: this.signingKeyFallback,
     });
   }
 
@@ -1279,7 +1568,7 @@ class RequestSignature {
     return delta > 1000 * 60 * 5;
   }
 
-  public verifySignature({
+  #verifySignature({
     body,
     signingKey,
     allowExpiredSignatures,
@@ -1298,7 +1587,7 @@ class RequestSignature {
     // raw bytes; it may be pertinent in the future to always parse, then
     // canonicalize the body to ensure it's consistent.
     const encoded = typeof body === "string" ? body : canonicalize(body);
-    // Remove the /signkey-[test|prod]-/ prefix from our signing key to calculate the HMAC.
+    // Remove the `/signkey-[test|prod]-/` prefix from our signing key to calculate the HMAC.
     const key = signingKey.replace(/signkey-\w+-/, "");
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
     const mac = hmac(sha256 as any, key)
@@ -1309,6 +1598,32 @@ class RequestSignature {
     if (mac !== this.signature) {
       // TODO PrettyError
       throw new Error("Invalid signature");
+    }
+  }
+
+  public verifySignature({
+    body,
+    signingKey,
+    signingKeyFallback,
+    allowExpiredSignatures,
+  }: {
+    body: unknown;
+    signingKey: string;
+    signingKeyFallback: string | undefined;
+    allowExpiredSignatures: boolean;
+  }): void {
+    try {
+      this.#verifySignature({ body, signingKey, allowExpiredSignatures });
+    } catch (err) {
+      if (!signingKeyFallback) {
+        throw err;
+      }
+
+      this.#verifySignature({
+        body,
+        signingKey: signingKeyFallback,
+        allowExpiredSignatures,
+      });
     }
   }
 }

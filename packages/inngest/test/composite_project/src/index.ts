@@ -16,7 +16,7 @@ export const inngest = new Inngest.Inngest({
 
             return {
               transformInput(ctx) {
-                console.log(ctx);
+                console.log("transformInput", ctx);
               },
               afterExecution() {
                 console.log("afterExecution");
@@ -34,7 +34,10 @@ export const inngest = new Inngest.Inngest({
                 console.log("beforeResponse");
               },
               transformOutput(ctx) {
-                console.log(ctx);
+                console.log("transformOutput", ctx);
+              },
+              finished() {
+                console.log("finished");
               },
             };
           },
@@ -56,7 +59,38 @@ export const inngest = new Inngest.Inngest({
 
 void inngest.send({ name: "foo", data: { foo: "bar" } });
 
-inngest.createFunction({ id: "my-fn" }, { event: "foo" }, async (ctx) => {
-  console.log(ctx);
-  return { foo: "bar" };
-});
+const fn = inngest.createFunction(
+  { id: "my-fn" },
+  { event: "foo" },
+  async (ctx) => {
+    console.log(ctx);
+    return { foo: "bar" };
+  }
+);
+
+const fn2 = inngest.createFunction(
+  { id: "my-fn-2" },
+  [{ event: "foo" }, { cron: "* * * * *" }],
+  async (ctx) => {
+    console.log(ctx);
+    return { foo: "bar" };
+  }
+);
+
+inngest.createFunction(
+  { id: "my-fn-3", cancelOn: [{ event: "foo", match: "data.foo" }] },
+  [{ event: "foo" }, { cron: "* * * * *" }],
+  async (ctx) => {
+    console.log(ctx);
+
+    ctx.step.invoke("id", { function: fn2, data: { foo: "bar" } });
+
+    ctx.step.waitForEvent("id", {
+      event: "foo",
+      match: "data.foo",
+      timeout: 1000,
+    });
+
+    return { foo: "bar" };
+  }
+);

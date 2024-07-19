@@ -10,12 +10,11 @@ import {
 } from "../helpers/types";
 import {
   type BaseContext,
-  type ClientOptions,
   type EventPayload,
   type IncomingOp,
-  type MiddlewareStack,
   type OutgoingOp,
   type SendEventBaseOutput,
+  type TriggersFromClient,
 } from "../types";
 import { Inngest } from "./Inngest";
 import { type InngestFunction } from "./InngestFunction";
@@ -71,6 +70,11 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
     this.name = name;
     this.init = init;
   }
+}
+
+export namespace InngestMiddleware {
+  export type Any = InngestMiddleware<MiddlewareOptions>;
+  export type Stack = [InngestMiddleware.Any, ...InngestMiddleware.Any[]];
 }
 
 type FnsWithSameInputAsOutput<
@@ -155,9 +159,7 @@ export const getHookStack = async <
       [K in keyof TResult as Await<TResult[K]> extends Parameters<TResult[K]>[0]
         ? K
         : Await<TResult[K]> extends void | undefined
-          ? Parameters<TResult[K]>[0] extends void | undefined
-            ? K
-            : never
+          ? K
           : never]: void;
     }
   >
@@ -324,9 +326,25 @@ export type MiddlewareRegisterReturn = {
     transformOutput?: MiddlewareRunOutput;
 
     /**
+     * The `finished` hook is called when the function has finished executing
+     * and has returned a final response that will end the run, either a
+     * successful or error response. In the case of an error response, further
+     * retries may be attempted and call this hook again.
+     *
+     * The output provided will be after `transformOutput` has been applied.
+     *
+     * This is not guaranteed to be called on every execution, and may be called
+     * multiple times if many parallel executions reach the end of the function;
+     * for a guaranteed single execution, create a function with an event
+     * trigger of `"inngest/function.finished"`.
+     */
+    finished?: MiddlewareRunFinished;
+
+    /**
      * The `beforeResponse` hook is called after the output has been set and
      * before the response is sent back to Inngest. This is where you can
-     * perform any final actions before the response is sent back to Inngest.
+     * perform any final actions before the response is sent back to Inngest and
+     * is the final hook called.
      */
     beforeResponse?: BlankHook;
   }>;
@@ -384,7 +402,8 @@ type MiddlewareRunArgs = Readonly<{
    * The context object that will be passed to the function. This contains
    * event data, some contextual data such as the run's ID, and step tooling.
    */
-  ctx: Record<string, unknown> & Readonly<BaseContext<ClientOptions, string>>;
+  ctx: Record<string, unknown> &
+    Readonly<BaseContext<Inngest.Any, TriggersFromClient<Inngest.Any>>>; // TODO Acceptable?
 
   /**
    * The step data that will be passed to the function.
@@ -417,7 +436,10 @@ type InitialRunInfo = Readonly<
        * A partial context object that will be passed to the function. Does not
        * necessarily contain all the data that will be passed to the function.
        */
-      ctx: Pick<MiddlewareRunArgs["ctx"], "event" | "runId">;
+      ctx: Readonly<{
+        event: EventPayload;
+        runId: string;
+      }>;
     }
   >
 >;
@@ -483,6 +505,10 @@ type MiddlewareRunOutput = (ctx: {
   step?: Readonly<Omit<OutgoingOp, "id">>;
 }) => MaybePromise<{ result?: Partial<Pick<OutgoingOp, "data">> } | void>;
 
+type MiddlewareRunFinished = (ctx: {
+  result: Readonly<Pick<OutgoingOp, "error" | "data">>;
+}) => MaybePromise<void>;
+
 /**
  * @internal
  */
@@ -544,7 +570,7 @@ type GetMiddlewareSendEventOutputMutation<
  */
 export type MiddlewareStackSendEventOutputMutation<
   TContext,
-  TMiddleware extends MiddlewareStack,
+  TMiddleware extends InngestMiddleware.Stack,
 > = ObjectAssign<
   {
     [K in keyof TMiddleware]: GetMiddlewareSendEventOutputMutation<
@@ -555,7 +581,7 @@ export type MiddlewareStackSendEventOutputMutation<
 >;
 
 export type ExtendWithMiddleware<
-  TMiddlewareStacks extends MiddlewareStack[],
+  TMiddlewareStacks extends InngestMiddleware.Stack[],
   // eslint-disable-next-line @typescript-eslint/ban-types
   TContext = {},
 > = ObjectAssign<
@@ -570,7 +596,7 @@ export type ExtendWithMiddleware<
 >;
 
 export type ExtendSendEventWithMiddleware<
-  TMiddlewareStacks extends MiddlewareStack[],
+  TMiddlewareStacks extends InngestMiddleware.Stack[],
   // eslint-disable-next-line @typescript-eslint/ban-types
   TContext = {},
 > = ObjectAssign<
@@ -589,7 +615,7 @@ export type ExtendSendEventWithMiddleware<
  */
 export type MiddlewareStackRunInputMutation<
   TContext,
-  TMiddleware extends MiddlewareStack,
+  TMiddleware extends InngestMiddleware.Stack,
 > = ObjectAssign<
   {
     [K in keyof TMiddleware]: GetMiddlewareRunInputMutation<TMiddleware[K]>;

@@ -6,7 +6,7 @@ import {
 } from "../helpers/validators";
 import {
   type MinimalEventPayload,
-  type PayloadFromAnyInngestFunction,
+  type PayloadForAnyInngestFunction,
 } from "../types";
 import { type GetFunctionOutput } from "./Inngest";
 import { type InngestFunction } from "./InngestFunction";
@@ -58,7 +58,7 @@ export const referenceFunction = <
 }: TArgs extends InngestFunction.Any
   ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
     Omit<InngestFunctionReference.HelperArgs<any, any>, "schemas">
-  : TArgs) => {
+  : TArgs): InngestFunctionReference.HelperReturn<TArgs> => {
   return new InngestFunctionReference({
     functionId,
     appId,
@@ -150,7 +150,7 @@ export namespace InngestFunctionReference {
    */
   export type HelperReturn<TArgs> = TArgs extends InngestFunction.Any
     ? InngestFunctionReference<
-        PayloadFromAnyInngestFunction<TArgs>,
+        PayloadForAnyInngestFunction<TArgs>,
         GetFunctionOutput<TArgs>
       >
     : TArgs extends HelperArgs<infer TFnInput, infer TFnOutput>

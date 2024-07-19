@@ -1,7 +1,13 @@
 import { type fetch } from "cross-fetch";
 import { type ExecutionVersion } from "../components/execution/InngestExecution";
-import { getFetch } from "../helpers/env";
+import {
+  defaultDevServerHost,
+  defaultInngestApiBaseUrl,
+} from "../helpers/consts";
+import { devServerAvailable } from "../helpers/devserver";
+import { type Mode } from "../helpers/env";
 import { getErrorMessage } from "../helpers/errors";
+import { fetchWithAuthFallback } from "../helpers/net";
 import { hashSigningKey } from "../helpers/strings";
 import { err, ok, type Result } from "../types";
 import {
@@ -15,29 +21,47 @@ import {
 
 type FetchT = typeof fetch;
 
-interface InngestApiConstructorOpts {
-  baseUrl?: string;
-  signingKey: string;
-  fetch?: FetchT;
+export namespace InngestApi {
+  export interface Options {
+    baseUrl?: string;
+    signingKey: string;
+    signingKeyFallback: string | undefined;
+    fetch: FetchT;
+    mode: Mode;
+  }
 }
 
 export class InngestApi {
-  public readonly baseUrl: string;
+  public readonly apiBaseUrl?: string;
   private signingKey: string;
+  private signingKeyFallback: string | undefined;
   private readonly fetch: FetchT;
+  private mode: Mode;
 
   constructor({
-    baseUrl = "https://api.inngest.com",
+    baseUrl,
     signingKey,
+    signingKeyFallback,
     fetch,
-  }: InngestApiConstructorOpts) {
-    this.baseUrl = baseUrl;
+    mode,
+  }: InngestApi.Options) {
+    this.apiBaseUrl = baseUrl;
     this.signingKey = signingKey;
-    this.fetch = getFetch(fetch);
+    this.signingKeyFallback = signingKeyFallback;
+    this.fetch = fetch;
+    this.mode = mode;
   }
 
   private get hashedKey(): string {
     return hashSigningKey(this.signingKey);
+  }
+
+  private get hashedFallbackKey(): string | undefined {
+    if (!this.signingKeyFallback) {
+      return;
+    }
+
+    return hashSigningKey(this.signingKeyFallback);
   }
 
   // set the signing key in case it was not instantiated previously
@@ -47,14 +71,38 @@ export class InngestApi {
     }
   }
 
+  setSigningKeyFallback(key: string | undefined) {
+    if (typeof key === "string" && !this.signingKeyFallback) {
+      this.signingKeyFallback = key;
+    }
+  }
+
+  private async getTargetUrl(path: string): Promise<URL> {
+    let url = new URL(path, defaultInngestApiBaseUrl);
+
+    if (this.mode.isDev && this.mode.isInferred && !this.apiBaseUrl) {
+      const devAvailable = await devServerAvailable(
+        defaultDevServerHost,
+        this.fetch
+      );
+
+      if (devAvailable) {
+        url = new URL(path, defaultDevServerHost);
+      }
+    }
+
+    return url;
+  }
+
   async getRunSteps(
     runId: string,
     version: ExecutionVersion
   ): Promise<Result<StepsResponse, ErrorResponse>> {
-    const url = new URL(`/v0/runs/${runId}/actions`, this.baseUrl);
-
-    return this.fetch(url, {
-      headers: { Authorization: `Bearer ${this.hashedKey}` },
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url: await this.getTargetUrl(`/v0/runs/${runId}/actions`),
     })
       .then(async (resp) => {
         const data: unknown = await resp.json();
@@ -76,10 +124,11 @@ export class InngestApi {
   async getRunBatch(
     runId: string
   ): Promise<Result<BatchResponse, ErrorResponse>> {
-    const url = new URL(`/v0/runs/${runId}/batch`, this.baseUrl);
-
-    return this.fetch(url, {
-      headers: { Authorization: `Bearer ${this.hashedKey}` },
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url: await this.getTargetUrl(`/v0/runs/${runId}/batch`),
     })
       .then(async (resp) => {
         const data: unknown = await resp.json();

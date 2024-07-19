@@ -33,7 +33,7 @@ export const createFrozenPromise = (): Promise<unknown> => {
  * Returns a Promise that resolves after the current event loop's microtasks
  * have finished, but before the next event loop tick.
  */
-export const resolveAfterPending = (): Promise<void> => {
+export const resolveAfterPending = (count = 1000): Promise<void> => {
   /**
    * This uses a brute force implementation that will continue to enqueue
    * microtasks 1000 times before resolving. This is to ensure that the
@@ -50,7 +50,7 @@ export const resolveAfterPending = (): Promise<void> => {
 
     const iterate = () => {
       shimQueueMicrotask(() => {
-        if (i++ > 1000) {
+        if (i++ > count) {
           return resolve();
         }
 
@@ -94,6 +94,60 @@ export const createDeferredPromise = <T>(): DeferredPromiseReturn<T> => {
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   return { promise, resolve: resolve!, reject: reject! };
+};
+
+/**
+ * Creates and returns a deferred Promise that can be resolved or rejected with
+ * the returned `resolve` and `reject` functions.
+ *
+ * For each Promise resolved or rejected this way, this will also keep a stack
+ * of all unhandled Promises, resolved or rejected.
+ *
+ * Once a Promise is read, it is removed from the stack.
+ */
+export const createDeferredPromiseWithStack = <T>(): {
+  deferred: DeferredPromiseReturn<T>;
+  results: AsyncGenerator<Awaited<T>, void, void>;
+} => {
+  const settledPromises: Promise<T>[] = [];
+  let rotateQueue: (value: void) => void = () => {};
+
+  const results = (async function* () {
+    while (true) {
+      const next = settledPromises.shift();
+
+      if (next) {
+        yield next;
+      } else {
+        await new Promise<void>((resolve) => {
+          rotateQueue = resolve;
+        });
+      }
+    }
+  })();
+
+  const shimDeferredPromise = (deferred: DeferredPromiseReturn<T>) => {
+    const originalResolve = deferred.resolve;
+    const originalReject = deferred.reject;
+
+    deferred.resolve = (value: T) => {
+      settledPromises.push(deferred.promise);
+      rotateQueue();
+      return shimDeferredPromise(originalResolve(value));
+    };
+
+    deferred.reject = (reason) => {
+      settledPromises.push(deferred.promise);
+      rotateQueue();
+      return shimDeferredPromise(originalReject(reason));
+    };
+
+    return deferred;
+  };
+
+  const deferred = shimDeferredPromise(createDeferredPromise<T>());
+
+  return { deferred, results };
 };
 
 interface TimeoutPromise extends Promise<void> {

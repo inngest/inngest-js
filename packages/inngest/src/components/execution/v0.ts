@@ -19,7 +19,6 @@ import {
   StepOpCode,
   failureEventErrorSchema,
   type BaseContext,
-  type ClientOptions,
   type Context,
   type EventPayload,
   type FailureEventArgs,
@@ -29,6 +28,7 @@ import {
   type OpStack,
   type OutgoingOp,
 } from "../../types";
+import { type Inngest } from "../Inngest";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware";
 import {
   createStepTools,
@@ -246,7 +246,7 @@ export class V0InngestExecution
 
   private async initializeMiddleware(): Promise<RunHookStack> {
     const ctx = this.options.data as Pick<
-      Readonly<BaseContext<ClientOptions, string>>,
+      Readonly<BaseContext<Inngest.Any>>,
       "event" | "events" | "runId"
     >;
 
@@ -314,8 +314,7 @@ export class V0InngestExecution
 
   private getUserFnToRun(): Handler.Any {
     if (!this.options.isFailureHandler) {
-      // TODO: Review; inferred types results in an `any` here!
-      return this.options.fn["fn"] as Handler.Any;
+      return this.options.fn["fn"];
     }
 
     if (!this.options.fn["onFailureFn"]) {
@@ -326,6 +325,7 @@ export class V0InngestExecution
       throw new Error("Cannot find function `onFailure` handler");
     }
 
+    // TODO: Review; inferred types results in an `any` here!
     return this.options.fn["onFailureFn"];
   }
 
@@ -376,10 +376,6 @@ export class V0InngestExecution
 
     const stepHandler: StepHandler = ({ args, matchOp, opts }) => {
       if (this.state.nonStepFnDetected) {
-        if (opts?.nonStepExecuteInline && opts.fn) {
-          return Promise.resolve(opts.fn(...args));
-        }
-
         throw new NonRetriableError(
           functionStoppedRunningErr(ErrCode.STEP_USED_AFTER_ASYNC)
         );
@@ -417,7 +413,7 @@ export class V0InngestExecution
       });
     };
 
-    const step = createStepTools(this.options.client, stepHandler);
+    const step = createStepTools(this.options.client, this, stepHandler);
 
     let fnArg = {
       ...(this.options.data as { event: EventPayload }),
@@ -493,6 +489,12 @@ export class V0InngestExecution
     });
 
     const { data, error } = { ...output, ...transformedOutput?.result };
+
+    if (!step) {
+      await this.state.hooks?.finished?.({
+        result: { ...(typeof error !== "undefined" ? { error } : { data }) },
+      });
+    }
 
     if (typeof error !== "undefined") {
       /**

@@ -1,13 +1,27 @@
-import AES from "crypto-js/aes";
-import CryptoJSUtf8 from "crypto-js/enc-utf8";
-import { InngestMiddleware, type MiddlewareRegisterReturn } from "inngest";
+import AES from "crypto-js/aes.js";
+import CryptoJSUtf8 from "crypto-js/enc-utf8.js";
+import {
+  InngestMiddleware,
+  type MiddlewareOptions,
+  type MiddlewareRegisterReturn,
+} from "inngest";
 
 /**
  * A marker used to identify encrypted values without having to guess.
  */
 const ENCRYPTION_MARKER = "__ENCRYPTED__";
+
+/**
+ * The default field used to store encrypted data in events.
+ */
 export const DEFAULT_ENCRYPTION_FIELD = "encrypted";
 
+/**
+ * Available types to control the top-level fields of the event that will be
+ * encrypted. Can be a single field name, an array of field names, a function
+ * that returns `true` if a field should be encrypted, or `false` to disable all
+ * event encryption.
+ */
 export type EventEncryptionFieldInput =
   | string
   | string[]
@@ -20,23 +34,24 @@ export type EventEncryptionFieldInput =
 export interface EncryptionMiddlewareOptions {
   /**
    * The key or keys used to encrypt and decrypt data. If multiple keys are
-   * provided, the first key will be used to encrypt data and all keys will
-   * be tried when decrypting data.
+   * provided, the first key will be used to encrypt data and all keys will be
+   * tried when decrypting data.
    */
   key?: string | string[];
 
   /**
-   * The encryption service used to encrypt and decrypt data. If not provided,
-   * a default encryption service will be used.
+   * The encryption service used to encrypt and decrypt data. If not provided, a
+   * default encryption service will be used.
    */
   encryptionService?: EncryptionService;
 
   /**
    * The top-level fields of the event that will be encrypted. Can be a single
-   * field name, an array of field names, a function that returns `true` if
-   * a field should be encrypted, or `false` to disable all event encryption.
+   * field name, an array of field names, a function that returns `true` if a
+   * field should be encrypted, or `false` to disable all event encryption.
    *
-   * By default, the top-level field named `"encrypted"` will be encrypted (exported as `DEFAULT_ENCRYPTION_FIELD`).
+   * By default, the top-level field named `"encrypted"` will be encrypted
+   * (exported as `DEFAULT_ENCRYPTION_FIELD`).
    */
   eventEncryptionField?: EventEncryptionFieldInput;
 }
@@ -50,7 +65,7 @@ export const encryptionMiddleware = (
    * `encryptionService` is not provided, the `key` option is required.
    */
   opts: EncryptionMiddlewareOptions
-) => {
+): InngestMiddleware<MiddlewareOptions> => {
   const service =
     opts.encryptionService || new DefaultEncryptionService(opts.key);
   const shouldEncryptEvents = Boolean(
@@ -178,6 +193,9 @@ export const encryptionMiddleware = (
   });
 };
 
+/**
+ * The encrypted value as it will be sent to Inngest.
+ */
 export interface EncryptedValue {
   [ENCRYPTION_MARKER]: true;
   data: string;
@@ -212,7 +230,16 @@ const isEncryptedValue = (value: unknown): value is EncryptedValue => {
  * service provided by this package.
  */
 export abstract class EncryptionService {
+  /**
+   * Given an `unknown` value, encrypts it and returns the encrypted value as a
+   * `string`.
+   */
   public abstract encrypt(value: unknown): string;
+
+  /**
+   * Given an encrypted `string`, decrypts it and returns the decrypted value as
+   * any value.
+   */
   public abstract decrypt(value: string): unknown;
 }
 

@@ -11,6 +11,8 @@ import {
 } from "@local/components/InngestStepTools";
 import {
   ExecutionVersion,
+  IInngestExecution,
+  InngestExecution,
   InngestExecutionOptions,
   PREFERRED_EXECUTION_VERSION,
 } from "@local/components/execution/InngestExecution";
@@ -23,13 +25,12 @@ import {
 } from "@local/helpers/consts";
 import { type Env } from "@local/helpers/env";
 import { slugify } from "@local/helpers/strings";
-import { EventPayload, type FunctionTrigger } from "@local/types";
+import { EventPayload, type FunctionConfig } from "@local/types";
 import { fromPartial } from "@total-typescript/shoehorn";
 import fetch from "cross-fetch";
 import { type Request, type Response } from "express";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
-import { ulid } from "ulid";
 import { z } from "zod";
 
 interface HandlerStandardReturn {
@@ -44,6 +45,23 @@ const createReqRes = (...args: Parameters<typeof httpMocks.createRequest>) => {
   const res = httpMocks.createResponse();
 
   return [req, res] as [typeof req, typeof res];
+};
+
+const retryFetch = async (
+  retries: number,
+  ...args: Parameters<typeof fetch>
+) => {
+  let lastError;
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fetch(...args);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError;
 };
 
 /**
@@ -64,9 +82,31 @@ export const createClient = <T extends ConstructorParameters<typeof Inngest>>(
 export const testClientId = "__test_client__";
 
 export const getStepTools = (
-  client: Inngest.Any = createClient({ id: testClientId })
+  client: Inngest.Any = createClient({ id: testClientId }),
+  executionOptions: Partial<InngestExecutionOptions> = {}
 ) => {
-  const step = createStepTools(client, ({ args, matchOp }) => {
+  const execution = client
+    .createFunction({ id: "test" }, { event: "test" }, () => undefined)
+    ["createExecution"]({
+      version: PREFERRED_EXECUTION_VERSION,
+      partialOptions: {
+        data: fromPartial({
+          event: { name: "foo", data: {} },
+        }),
+        runId: "run",
+        stepState: {},
+        stepCompletionOrder: [],
+        isFailureHandler: false,
+        requestedRunStep: undefined,
+        timer: new ServerTiming(),
+        disableImmediateExecution: false,
+        reqArgs: [],
+        headers: {},
+        ...executionOptions,
+      },
+    }) as IInngestExecution & InngestExecution;
+
+  const step = createStepTools(client, execution, ({ args, matchOp }) => {
     const stepOptions = getStepOptions(args[0]);
     return Promise.resolve(matchOp(stepOptions, ...args.slice(1)));
   });
@@ -106,6 +146,7 @@ export const runFnWithStack = (
       timer: new ServerTiming(),
       disableImmediateExecution: opts?.disableImmediateExecution,
       reqArgs: [],
+      headers: {},
     },
   });
 
@@ -330,7 +371,12 @@ export const testFramework = (
     describe("GET", () => {
       test("shows introspection data", async () => {
         const ret = await run(
-          [{ client: createClient({ id: "test" }), functions: [] }],
+          [
+            {
+              client: createClient({ id: "test", isDev: true }),
+              functions: [],
+            },
+          ],
           [
             {
               method: "GET",
@@ -353,10 +399,13 @@ export const testFramework = (
         });
 
         expect(body).toMatchObject({
-          message: "Inngest endpoint configured correctly.",
-          functionsFound: 0,
-          hasEventKey: false,
-          hasSigningKey: false,
+          function_count: 0,
+          has_event_key: false,
+          has_signing_key: false,
+          mode: "dev",
+          extra: expect.objectContaining({
+            is_mode_explicit: true,
+          }),
         });
       });
 
@@ -370,10 +419,7 @@ export const testFramework = (
         const body = JSON.parse(ret.body);
 
         expect(body).toMatchObject({
-          message: "Inngest endpoint configured correctly.",
-          functionsFound: 0,
-          hasEventKey: true,
-          hasSigningKey: false,
+          has_event_key: true,
         });
       });
 
@@ -387,10 +433,7 @@ export const testFramework = (
         const body = JSON.parse(ret.body);
 
         expect(body).toMatchObject({
-          message: "Inngest endpoint configured correctly.",
-          functionsFound: 0,
-          hasEventKey: false,
-          hasSigningKey: true,
+          has_signing_key: true,
         });
       });
     });
@@ -607,7 +650,7 @@ export const testFramework = (
 
       describe("env detection and headers", () => {
         test("uses env headers from client", async () => {
-          nock("https://api.inngest.com").post("/fn/register").reply(200);
+          nock("https://api.inngest.com").post("/fn/register").reply(200, {});
 
           const ret = await run(
             [
@@ -870,6 +913,111 @@ export const testFramework = (
             body: JSON.stringify("fn"),
           });
         });
+
+        describe("key rotation", () => {
+          test("should validate a signature with a fallback key successfully", async () => {
+            const event = {
+              data: {},
+              id: "",
+              name: "inngest/scheduled.timer",
+              ts: 1674082830001,
+              user: {},
+              v: "1",
+            };
+
+            const body = {
+              ctx: {
+                fn_id: "local-testing-local-cron",
+                run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+                step_id: "step",
+              },
+              event,
+              events: [event],
+              steps: {},
+              use_api: false,
+            };
+            const ret = await run(
+              [
+                {
+                  client: inngest,
+                  functions: [fn],
+                  signingKey: "fake",
+                  signingKeyFallback:
+                    "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+                  __testingAllowExpiredSignatures: true,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any,
+              ],
+              [
+                {
+                  method: "POST",
+                  headers: {
+                    [headerKeys.Signature]:
+                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                  },
+                  url: "/api/inngest?fnId=test-test&stepId=step",
+                  body,
+                },
+              ],
+              env
+            );
+            expect(ret).toMatchObject({
+              status: 200,
+              body: JSON.stringify("fn"),
+            });
+          });
+
+          test("should fail if validation fails with both keys", async () => {
+            const event = {
+              data: {},
+              id: "",
+              name: "inngest/scheduled.timer",
+              ts: 1674082830001,
+              user: {},
+              v: "1",
+            };
+
+            const body = {
+              ctx: {
+                fn_id: "local-testing-local-cron",
+                run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+                step_id: "step",
+              },
+              event,
+              events: [event],
+              steps: {},
+              use_api: false,
+            };
+            const ret = await run(
+              [
+                {
+                  client: inngest,
+                  functions: [fn],
+                  signingKey: "fake",
+                  signingKeyFallback: "another-fake",
+                  __testingAllowExpiredSignatures: true,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any,
+              ],
+              [
+                {
+                  method: "POST",
+                  headers: {
+                    [headerKeys.Signature]:
+                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                  },
+                  url: "/api/inngest?fnId=test-test&stepId=step",
+                  body,
+                },
+              ],
+              env
+            );
+            expect(ret).toMatchObject({
+              status: 500,
+              body: expect.stringContaining("Invalid signature"),
+            });
+          });
+        });
       });
 
       describe("malformed payloads", () => {
@@ -914,19 +1062,19 @@ export const sendEvent = async (
   data?: Record<string, unknown>,
   user?: Record<string, unknown>
 ): Promise<string> => {
-  const id = ulid();
-
   const res = await fetch("http://localhost:8288/e/key", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ id, name, data: data || {}, user, ts: Date.now() }),
+    body: JSON.stringify({ name, data: data || {}, user, ts: Date.now() }),
   });
 
   if (!res.ok) {
     throw new Error(await res.text());
   }
+
+  const id = (await res.json()).ids[0];
 
   return id;
 };
@@ -1213,24 +1361,20 @@ export const runHasTimeline = async (
 
 interface CheckIntrospection {
   name: string;
-  triggers: FunctionTrigger[];
+  triggers: FunctionConfig["triggers"];
 }
 
 export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
   describe("introspection", () => {
     it("should be registered in SDK UI", async () => {
-      const res = await fetch("http://localhost:3000/api/inngest");
+      const res = await retryFetch(5, "http://localhost:3000/api/inngest");
 
-      const { success } = z
-        .object({
-          message: z.string(),
-          hasSigningKey: z.boolean(),
-          hasEventKey: z.boolean(),
-          functionsFound: z.number(),
-        })
-        .safeParse(await res.json());
-
-      expect(success).toEqual(true);
+      await expect(res.json()).resolves.toMatchObject({
+        has_signing_key: expect.any(Boolean),
+        has_event_key: expect.any(Boolean),
+        function_count: expect.any(Number),
+        mode: expect.any(String),
+      });
     });
 
     it("should be registered in Dev Server UI", async () => {

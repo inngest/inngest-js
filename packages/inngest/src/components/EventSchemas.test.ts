@@ -2,7 +2,7 @@ import { EventSchemas } from "@local/components/EventSchemas";
 import { Inngest, type GetEvents } from "@local/components/Inngest";
 import { type internalEvents } from "@local/helpers/consts";
 import { type IsAny, type IsEqual } from "@local/helpers/types";
-import { type EventPayload, type FailureEventPayload } from "@local/types";
+import { type FailureEventPayload } from "@local/types";
 import { z } from "zod";
 import { assertType } from "../test/helpers";
 
@@ -19,7 +19,8 @@ describe("EventSchemas", () => {
     type Expected =
       | `${internalEvents.FunctionFailed}`
       | `${internalEvents.FunctionFinished}`
-      | `${internalEvents.FunctionInvoked}`;
+      | `${internalEvents.FunctionInvoked}`
+      | `${internalEvents.ScheduledTimer}`;
 
     type Actual = Schemas<typeof schemas>[keyof Schemas<
       typeof schemas
@@ -140,6 +141,13 @@ describe("EventSchemas", () => {
       // @ts-expect-error Data must be object type or any
       new EventSchemas().fromRecord<{
         "test.event": { data: string };
+      }>();
+    });
+
+    test("cannot set objectish type for data", () => {
+      // @ts-expect-error Data must be object type or any
+      new EventSchemas().fromRecord<{
+        "test.event": { data: [] };
       }>();
     });
 
@@ -861,166 +869,6 @@ describe("EventSchemas", () => {
           );
           assertType<IsAny<typeof event.data>>(true);
           assertType<IsAny<typeof event.user>>(true);
-        }
-      );
-    });
-  });
-
-  describe("event matching expressions", () => {
-    test("can match between two events with shared properties", () => {
-      const schemas = new EventSchemas().fromRecord<{
-        "test.event": { data: { foo: string } };
-        "test.event2": { data: { foo: string } };
-      }>();
-
-      const inngest = new Inngest({
-        id: "test",
-        schemas,
-        eventKey: "test-key-123",
-      });
-
-      inngest.createFunction(
-        {
-          id: "test",
-          cancelOn: [{ event: "test.event2", match: "data.foo" }],
-        },
-        { event: "test.event" },
-        ({ step }) => {
-          void step.waitForEvent("id", {
-            event: "test.event2",
-            match: "data.foo",
-            timeout: "1h",
-          });
-        }
-      );
-    });
-
-    test("cannot match between two events without shared properties", () => {
-      const schemas = new EventSchemas().fromRecord<{
-        "test.event": { data: { foo: string } };
-        "test.event2": { data: { bar: boolean } };
-      }>();
-
-      const inngest = new Inngest({
-        id: "test",
-        schemas,
-        eventKey: "test-key-123",
-      });
-
-      inngest.createFunction(
-        {
-          id: "test",
-          // @ts-expect-error - `"data.foo"` is not assignable
-          cancelOn: [{ event: "test.event2", match: "data.foo" }],
-        },
-        { event: "test.event" },
-        ({ step }) => {
-          void step.waitForEvent("id", {
-            event: "test.event2",
-            // @ts-expect-error - `"data.foo"` is not assignable
-            match: "data.foo",
-            timeout: "1h",
-          });
-        }
-      );
-    });
-
-    test("can match any property on typed event A when B is 'any'", () => {
-      const schemas = new EventSchemas().fromRecord<{
-        "test.event": { data: { foo: string } };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        "test.event2": { data: any };
-      }>();
-
-      const inngest = new Inngest({
-        id: "test",
-        schemas,
-        eventKey: "test-key-123",
-      });
-
-      inngest.createFunction(
-        {
-          id: "test",
-          cancelOn: [{ event: "test.event2", match: "data.foo" }],
-        },
-        { event: "test.event" },
-        ({ step }) => {
-          void step.waitForEvent("id", {
-            event: "test.event2",
-            match: "data.foo",
-            timeout: "1h",
-          });
-        }
-      );
-    });
-
-    test("can match any property on typed event B when A is 'any'", () => {
-      const schemas = new EventSchemas().fromRecord<{
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        "test.event": { data: any };
-        "test.event2": { data: { foo: string } };
-      }>();
-
-      const inngest = new Inngest({
-        id: "test",
-        schemas,
-        eventKey: "test-key-123",
-      });
-
-      inngest.createFunction(
-        {
-          id: "test",
-          cancelOn: [{ event: "test.event2", match: "data.foo" }],
-        },
-        { event: "test.event" },
-        ({ step }) => {
-          void step.waitForEvent("id", {
-            event: "test.event",
-            match: "data.foo",
-            timeout: "1h",
-          });
-        }
-      );
-    });
-
-    test("does not infinitely recurse when matching events with recursive types", () => {
-      type JsonObject = { [Key in string]?: JsonValue };
-      type JsonArray = Array<JsonValue>;
-      type JsonValue =
-        | string
-        | number
-        | boolean
-        | JsonObject
-        | JsonArray
-        | null;
-
-      interface TestEvent extends EventPayload {
-        name: "test.event";
-        data: { id: string; other: JsonValue; yer: string[] };
-      }
-
-      interface TestEvent2 extends EventPayload {
-        name: "test.event2";
-        data: { id: string; somethingElse: JsonValue };
-      }
-
-      const schemas = new EventSchemas().fromUnion<TestEvent | TestEvent2>();
-
-      const inngest = new Inngest({
-        id: "test",
-        schemas,
-        eventKey: "test-key-123",
-      });
-
-      inngest.createFunction(
-        { id: "test", cancelOn: [{ event: "test.event2", match: "data.id" }] },
-        { event: "test.event" },
-        ({ step }) => {
-          void step.waitForEvent("id", {
-            event: "test.event2",
-            match: "data.id",
-            timeout: "1h",
-          });
         }
       );
     });

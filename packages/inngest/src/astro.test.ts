@@ -1,4 +1,4 @@
-import * as EdgeHandler from "@local/edge";
+import * as AstroHandler from "@local/astro";
 import fetch, { Headers, Response } from "cross-fetch";
 import { testFramework } from "./test/helpers";
 
@@ -6,7 +6,7 @@ const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;
 const originalHeaders = globalThis.Headers;
 
-testFramework("Edge", EdgeHandler, {
+testFramework("Astro", AstroHandler, {
   /**
    * Make sure this stuff is available for all polyfilled Node environments.
    */
@@ -51,7 +51,7 @@ testFramework("Edge", EdgeHandler, {
     (req as any).headers = headers;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
     (req as any).json = () => Promise.resolve(req.body);
-    return [req];
+    return [{ request: req }];
   },
   transformRes: async (_args, ret: Response) => {
     const headers: Record<string, string> = {};
