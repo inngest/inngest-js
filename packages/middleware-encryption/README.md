@@ -1,6 +1,16 @@
 # @inngest/middleware-encryption
 
-This package provides an encryption middleware for Inngest, enabling secure handling of sensitive data. It encrypts data being sent to and from Inngest, ensuring plaintext data never leaves your server.
+This package provides an encryption middleware for Inngest, enabling secure
+handling of sensitive data. It encrypts data being sent to and from Inngest,
+ensuring plaintext data never leaves your server.
+
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Rotating encryption keys](#rotating-encryption-keys)
+- [Implementing your own encryption](#implementing-your-own-encryption)
+- [Advanced](#advanced)
+  - [Manual usage](#manual-usage)
 
 ## Features
 
@@ -43,18 +53,6 @@ const inngest = new Inngest({
 });
 ```
 
-## Enabling event encryption
-
-By default, only step data is encrypted. This can be changed by setting
-`encryptEventData: true` in the options.
-
-```ts
-const mw = encryptionMiddleware({
-  // ...
-  encryptEventData: true,
-});
-```
-
 ## Rotating encryption keys
 
 Provide an `Array<string>` when providing your `key` to support rotating encryption keys.
@@ -63,12 +61,25 @@ The first key is always used to encrypt, but decryption will be attempted with a
 
 ## Implementing your own encryption
 
-To create a custom encryption service, you need to implement the abstract `EncryptionService` class provided by the package. Your custom service must implement two core methods: `encrypt` and `decrypt`.
+To create a custom encryption service, you need to implement the abstract
+`EncryptionService` class provided by the package. Your custom service must
+implement an `identifier` and two core methods: `encrypt` and `decrypt`.
 
 ```ts
+export namespace EncryptionService {
+  export interface PartialEncryptedValue {
+    data: string;
+    [key: string]: unknown;
+  }
+}
+
 export abstract class EncryptionService {
   public abstract identifier: string;
-  public abstract encrypt(value: unknown): MaybePromise<string>;
+
+  public abstract encrypt(
+    value: unknown
+  ): MaybePromise<EncryptionService.PartialEncryptedValue>;
+
   public abstract decrypt(value: string): MaybePromise<unknown>;
 }
 ```
@@ -80,6 +91,9 @@ export abstract class EncryptionService {
 > [dataloader](https://github.com/graphql/dataloader)-like behaviour by
 > collecting all encryption/decryption requests during one tick and choosing how
 > to process them all at once.
+>
+> This could be useful for a service which stores state in a remote store like
+> S3, for example.
 
 For example, here's how you might define, instantiate, and use a custom encryption service:
 
@@ -93,12 +107,14 @@ class CustomEncryptionService implements EncryptionService {
     // Initialization code here
   }
 
-  encrypt(value: unknown): string {
+  encrypt(
+    value: unknown
+  ): MaybePromise<EncryptionService.PartialEncryptedValue> {
     // Implement your custom encryption logic here
     // Example: return CustomEncryptLib.encrypt(JSON.stringify(value), this.customKey);
   }
 
-  decrypt(value: string): unknown {
+  decrypt(value: string): MaybePromise<unknown> {
     // Implement your custom decryption logic here
     // Example: return JSON.parse(CustomEncryptLib.decrypt(value, this.customKey));
   }
@@ -121,7 +137,9 @@ const inngest = new Inngest({
 });
 ```
 
-## Advanced: Manual usage
+## Advanced
+
+### Manual usage
 
 In v3 of the TypeScript SDK, middleware is run in sequence and not as the usual
 encapsulating layer. For example, middleware of `[foo, bar]` would run hooks in
