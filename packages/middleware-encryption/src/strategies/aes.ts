@@ -16,7 +16,7 @@ import { type EncryptionService } from "../middleware";
 export class AESEncryptionService implements EncryptionService {
   private readonly keys: [string, ...string[]];
 
-  public identifier = "aes";
+  public identifier = "inngest/aes";
 
   constructor(key: string | string[] | undefined) {
     if (!key) {

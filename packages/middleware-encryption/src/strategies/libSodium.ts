@@ -14,7 +14,7 @@ import { type EncryptionService } from "../middleware";
 export class LibSodiumEncryptionService implements EncryptionService {
   private readonly keys: Promise<Uint8Array[]>;
 
-  public identifier = "libsodium";
+  public identifier = "inngest/libsodium";
 
   constructor(key: string | string[] | undefined) {
     if (!key) {
