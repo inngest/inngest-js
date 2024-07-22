@@ -123,9 +123,6 @@ export const getEncryptionStages = (
 
         return {
           transformOutput: async (ctx) => {
-            if (!ctx.step) {
-              return;
-            }
             return {
               result: {
                 data: ctx.result.data && (await encryptValue(ctx.result.data)),
