@@ -117,6 +117,10 @@ export const getEncryptionStages = (
   return {
     encrypt: {
       onFunctionRun: () => {
+        if (opts.decryptOnly) {
+          return {};
+        }
+
         return {
           transformOutput: async (ctx) => {
             if (!ctx.step) {
