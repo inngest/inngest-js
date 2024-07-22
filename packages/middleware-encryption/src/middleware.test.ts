@@ -1,13 +1,18 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 import FetchMock from "fetch-mock-jest";
-import { Context, EventPayload, Inngest, InngestMiddleware } from "inngest";
 import {
-  ExecutionResult,
+  type Context,
+  type EventPayload,
+  Inngest,
+  InngestMiddleware,
+} from "inngest";
+import {
+  type ExecutionResult,
   ExecutionVersion,
-  InngestExecutionOptions,
+  type InngestExecutionOptions,
 } from "inngest/components/execution/InngestExecution";
 import { _internals } from "inngest/components/execution/v1";
-import { SendEventPayload } from "inngest/helpers/types";
+import { type SendEventPayload } from "inngest/helpers/types";
 import { encryptionMiddleware, EncryptionService } from "./middleware";
 
 const id = "test-client";
@@ -18,7 +23,7 @@ const fetchMock = FetchMock.sandbox();
 
 const partialEncryptedValue = {
   [EncryptionService.ENCRYPTION_MARKER]: true,
-  [EncryptionService.STRATEGY_MARKER]: "libsodium",
+  [EncryptionService.STRATEGY_MARKER]: "inngest/libsodium",
   data: expect.any(String),
 };
 
@@ -61,7 +66,7 @@ describe("encryptionMiddleware", () => {
       });
     };
 
-    test("does not encrypt a sent event by default", async () => {
+    test("encrypts a sent event's field by default", async () => {
       const inngest = new Inngest({
         id,
         fetch: fetchMock as typeof fetch,
@@ -72,36 +77,15 @@ describe("encryptionMiddleware", () => {
 
       const evt = await mockSend(inngest, {
         name: "my.event",
-        data: { foo: "bar" },
+        data: { foo: "bar", [EncryptionService.ENCRYPTED_EVENT_FIELD]: "baz" },
       });
 
       expect(evt).toMatchObject({
         name: "my.event",
-        data: { foo: "bar" },
-      });
-    });
-
-    test("encrypts a sent event", async () => {
-      const inngest = new Inngest({
-        id,
-        fetch: fetchMock as typeof fetch,
-        baseUrl,
-        eventKey,
-        middleware: [encryptionMiddleware({ key, encryptEventData: true })],
-      });
-
-      const evt = await mockSend(inngest, {
-        name: "my.event",
-        data: { foo: "bar" },
-      });
-
-      expect(evt).toMatchObject({
-        name: "my.event",
-        data: {
-          [EncryptionService.ENCRYPTION_MARKER]: true,
-          [EncryptionService.STRATEGY_MARKER]: "libsodium",
-          data: expect.any(String),
-        },
+        data: expect.objectContaining({
+          foo: "bar",
+          encrypted: partialEncryptedValue,
+        }),
       });
     });
   });

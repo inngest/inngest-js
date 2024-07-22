@@ -14,19 +14,24 @@ export interface EncryptionMiddlewareOptions {
   key: string | string[];
 
   /**
+   * Puts the encryption middleware into a mode where it only decrypts data and
+   * does not encrypt it.
+   *
+   * This is useful for adding the middleware to many services (or the same
+   * service with rolling deploys) before enabling encryption, so that all
+   * services are ready to decrypt data when it is encrypted.
+   *
+   * It can also be used to slowly phase out E2E encryption so that it can be
+   * safely removed from services once no more data from current runs is
+   * encrypted.
+   */
+  decryptOnly?: boolean;
+
+  /**
    * The encryption service used to encrypt and decrypt data. If not provided, a
    * default encryption service will be used.
    */
   encryptionService?: EncryptionService;
-
-  /**
-   * If `true`, the encryption middleware will encrypt all event data, otherwise
-   * only step data will be encrypted.
-   *
-   * Note that this is opt-in as other services consuming events must then use
-   * an encryption middleware.
-   */
-  encryptEventData?: boolean;
 
   /**
    * If set and `enabled` is `true, the encryption middleware will only encrypt
@@ -105,6 +110,11 @@ export namespace EncryptionService {
    * A marker used to identify the strategy used for encryption.
    */
   export const STRATEGY_MARKER = "__STRATEGY__";
+
+  /**
+   * The field used to store encrypted values in events.
+   */
+  export const ENCRYPTED_EVENT_FIELD = "encrypted";
 
   /**
    * The encrypted value as it will be sent to Inngest.

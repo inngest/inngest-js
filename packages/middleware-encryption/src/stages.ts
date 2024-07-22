@@ -22,8 +22,6 @@ export const getEncryptionStages = (
   const service =
     opts.encryptionService || new LibSodiumEncryptionService(opts.key);
 
-  const shouldEncryptEvents = Boolean(opts.encryptEventData);
-
   const v0Legacy = new LEGACY_V0Service({
     key: opts.key,
     forceEncryptWithV0: Boolean(opts.legacyV0Service?.forceEncryptWithV0),
@@ -49,42 +47,71 @@ export const getEncryptionStages = (
   };
 
   const encryptEventData = async (
-    data: Record<string, unknown>
+    eventData: Record<string, unknown>
   ): Promise<unknown> => {
-    // if we're not supposed to be encrypted events, don't do it. this should be
-    // checked elsewhere but we'll be super safe
-    if (!shouldEncryptEvents) {
-      return data;
-    }
-
     // are we forced to use v0?
     if (opts.legacyV0Service?.forceEncryptWithV0) {
-      return v0Legacy.encryptEventData(data);
+      return v0Legacy.encryptEventData(eventData);
+    }
+
+    // Get the encrypted field if we have it.
+    if (!eventHasEncryptedField(eventData)) {
+      return eventData;
     }
 
     // if we're not forced to use v0, use the current encryption service
-    return encryptValue(data);
+    return {
+      ...eventData,
+      [EncryptionService.ENCRYPTED_EVENT_FIELD]: await encryptValue(
+        eventData[EncryptionService.ENCRYPTED_EVENT_FIELD]
+      ),
+    };
   };
 
   const decryptEventData = async (
-    data: Record<string, unknown>
+    eventData: Record<string, unknown>
   ): Promise<unknown> => {
-    // if the entire value is encrypted, match it and decrypt
-    if (isEncryptedValue(data)) {
-      if (service.identifier !== data[EncryptionService.STRATEGY_MARKER]) {
+    // See if we have an encrypted field. If so, decrypt it.
+    if (eventHasEncryptedField(eventData)) {
+      if (
+        !isEncryptedValue(eventData[EncryptionService.ENCRYPTED_EVENT_FIELD])
+      ) {
+        // No need to decrypt, but will warn as it's strange to receive this
+        // value unencrypted
+        console.warn(
+          `Received unencrypted "${EncryptionService.ENCRYPTED_EVENT_FIELD}" field in event payload; is there a service that's not yet encrypting event data?`
+        );
+
+        return eventData;
+      }
+
+      if (
+        service.identifier !==
+        eventData.encrypted[EncryptionService.STRATEGY_MARKER]
+      ) {
         throw new Error(
           `Mismatched encryption service; received an event payload using "${
-            data[EncryptionService.STRATEGY_MARKER]
+            eventData.encrypted[EncryptionService.STRATEGY_MARKER]
           }", but the configured encryption service is "${service.identifier}"`
         );
       }
 
-      return decryptValue(data);
+      return {
+        ...eventData,
+        [EncryptionService.ENCRYPTED_EVENT_FIELD]: await decryptValue(
+          eventData[EncryptionService.ENCRYPTED_EVENT_FIELD]
+        ),
+      };
     }
 
-    // if the entire value isn't encrypted, also check each top-level field in
-    // case it's a v0 encryption.
-    return v0Legacy.decryptEventData(data);
+    // if we didn't find an `encrypted` field, it could still be a v0 encrypted
+    // event. v0 will only differ if it has specified an `eventEncryptionField`
+    // option, so check that here or return
+    if (!opts.legacyV0Service?.eventEncryptionField) {
+      return v0Legacy.decryptEventData(eventData);
+    }
+
+    return eventData;
   };
 
   return {
@@ -105,23 +132,18 @@ export const getEncryptionStages = (
       },
 
       onSendEvent: () => {
-        if (shouldEncryptEvents) {
-          return {
-            transformInput: async ({ payloads }) => {
-              return {
-                payloads: await Promise.all(
-                  payloads.map(async (payload) => ({
-                    ...payload,
-                    data:
-                      payload.data && (await encryptEventData(payload.data)),
-                  }))
-                ),
-              };
-            },
-          };
-        }
-
-        return {};
+        return {
+          transformInput: async ({ payloads }) => {
+            return {
+              payloads: await Promise.all(
+                payloads.map(async (payload) => ({
+                  ...payload,
+                  data: payload.data && (await encryptEventData(payload.data)),
+                }))
+              ),
+            };
+          },
+        };
       },
     },
 
@@ -197,5 +219,15 @@ export const isEncryptedValue = (
     typeof value["data"] === "string" &&
     (!(EncryptionService.STRATEGY_MARKER in value) ||
       typeof value[EncryptionService.STRATEGY_MARKER] === "string")
+  );
+};
+
+const eventHasEncryptedField = (
+  eventData: unknown
+): eventData is { encrypted: unknown } => {
+  return (
+    typeof eventData === "object" &&
+    eventData !== null &&
+    EncryptionService.ENCRYPTED_EVENT_FIELD in eventData
   );
 };
