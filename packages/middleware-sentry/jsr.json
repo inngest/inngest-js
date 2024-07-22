@@ -1,0 +1,13 @@
+{
+  "$schema": "https://jsr.io/schema/config-file.v1.json",
+  "name": "@inngest/middleware-sentry",
+  "description": "Sentry middleware for Inngest.",
+  "version": "0.1.0",
+  "include": [
+    "./src/**/*.ts"
+  ],
+  "exclude": [],
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

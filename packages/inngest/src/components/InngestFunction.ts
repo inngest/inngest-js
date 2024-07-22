@@ -4,7 +4,6 @@ import { type RecursiveTuple, type StrictUnion } from "../helpers/types";
 import {
   type Cancellation,
   type ConcurrencyOption,
-  type EventNameFromTrigger,
   type FunctionConfig,
   type Handler,
   type TimeStr,
@@ -347,6 +346,14 @@ export namespace InngestFunction {
        * Expects 1s to 60s.
        */
       timeout: TimeStrBatch;
+
+      /**
+       * An optional key to use for batching.
+       *
+       * See [batch documentation](https://innge.st/batching) for more
+       * information on how to use `key` expressions.
+       */
+      key?: string;
     };
 
     /**
@@ -473,10 +480,7 @@ export namespace InngestFunction {
       run?: string;
     };
 
-    cancelOn?: Cancellation<
-      GetEvents<TClient, true>,
-      EventNameFromTrigger<GetEvents<TClient, true>, TTriggers[number]> & string
-    >[];
+    cancelOn?: Cancellation<GetEvents<TClient, true>>[];
 
     /**
      * Specifies the maximum number of retries for all steps across this function.

@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "3.19.20",
+  "version": "3.21.1",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -164,7 +164,7 @@
     "flow control"
   ],
   "author": "Dan Farrelly <dan@inngest.com>",
-  "license": "GPL-3.0",
+  "license": "Apache-2.0",
   "private": false,
   "prettier": {
     "tabWidth": 2,

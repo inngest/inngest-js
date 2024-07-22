@@ -1,5 +1,66 @@
 # inngest
 
+## 3.21.1
+
+### Patch Changes
+
+- [#655](https://github.com/inngest/inngest-js/pull/655) [`12df420`](https://github.com/inngest/inngest-js/commit/12df4209a972123e2a46ec2aaef3f5df8f3881b5) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Do not allow objectish `[]` for an event's `data` when providing schemas
+
+  This helps solve an issue whereby types would be happy but sending an event fails at runtime.
+
+## 3.21.0
+
+### Minor Changes
+
+- [#651](https://github.com/inngest/inngest-js/pull/651) [`a527cd3`](https://github.com/inngest/inngest-js/commit/a527cd33c89d409c7d51022517ee579dedd71b7f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add a new `onFunctionRun.finished` middleware hook, allowing you to hook into a run finishing successfully or failing
+
+  ```ts
+  new InngestMiddleware({
+    name: "My Middleware",
+    init() {
+      return {
+        onFunctionRun() {
+          finished({ result }) {
+            // ...
+          },
+        },
+      };
+    },
+  });
+  ```
+
+- [#650](https://github.com/inngest/inngest-js/pull/650) [`db9ed0e`](https://github.com/inngest/inngest-js/commit/db9ed0e24e02254cf1c49a510fb97e61f898899a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow specifying an `env` when sending events via the client
+
+  ```ts
+  await inngest.send({ name: "my.event" }, { env: "my-custom-env" });
+  ```
+
+### Patch Changes
+
+- [#646](https://github.com/inngest/inngest-js/pull/646) [`0c5865c`](https://github.com/inngest/inngest-js/commit/0c5865c17279b1ccad08ffc3fb85771bb9f207d1) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix circular `ctx` type in middleware for TS <5.1
+
+- [#651](https://github.com/inngest/inngest-js/pull/651) [`a527cd3`](https://github.com/inngest/inngest-js/commit/a527cd33c89d409c7d51022517ee579dedd71b7f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `beforeExecution()` hook order when all state has been used running before `afterMemoization()`
+
+## 3.20.0
+
+### Minor Changes
+
+- [#645](https://github.com/inngest/inngest-js/pull/645) [`809b4ef`](https://github.com/inngest/inngest-js/commit/809b4efec259a608ce77a004d98fbc2f36d2bc3a) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Introduces support for the `key` expression on the batchEvents configuration. This can be used to batch events by customer. For more details, check out the [batching documentation](https://innge.st/batching)!
+
+## 3.19.22
+
+### Patch Changes
+
+- [#644](https://github.com/inngest/inngest-js/pull/644) [`7eb27e4`](https://github.com/inngest/inngest-js/commit/7eb27e4683153a700319f820a0605c89d21c0d93) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Loosen typing on `match` options and mark as deprecated to remove performance concerns in codebases with a very large number of event types; all `match` fields are now simply typed as `string`
+
+- [#641](https://github.com/inngest/inngest-js/pull/641) [`99f196a`](https://github.com/inngest/inngest-js/commit/99f196a26b9b346c69739989b1aa38aa4b1ff7a8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove incorrect type showing internal events in `step.waitForEvent()`
+
+## 3.19.21
+
+### Patch Changes
+
+- [#622](https://github.com/inngest/inngest-js/pull/622) [`c041d6f`](https://github.com/inngest/inngest-js/commit/c041d6f08ba1039f73b62435a113128eb2435641) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix rare theoretical checkpoint hang
+
 ## 3.19.20
 
 ### Patch Changes

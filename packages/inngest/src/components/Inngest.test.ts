@@ -260,7 +260,7 @@ describe("send", () => {
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
-    test("should send env:foo if explicitly set", async () => {
+    test("should send env:foo if explicitly set in client", async () => {
       const inngest = createClient({
         id: "test",
         eventKey: testEventKey,
@@ -268,6 +268,26 @@ describe("send", () => {
       });
 
       await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/e/${testEventKey}`),
+        expect.objectContaining({
+          method: "POST",
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          headers: expect.objectContaining({
+            [headerKeys.Environment]: "foo",
+          }),
+        })
+      );
+    });
+
+    test("should send env:foo if explicitly set in send call", async () => {
+      const inngest = createClient({ id: "test", eventKey: testEventKey });
+
+      await expect(
+        inngest.send(testEvent, { env: "foo" })
+      ).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
       });
       expect(global.fetch).toHaveBeenCalledWith(
@@ -305,7 +325,7 @@ describe("send", () => {
       );
     });
 
-    test("should send explicit env:foo over env var if set in both", async () => {
+    test("should send explicit env:foo over env var if set in env and client", async () => {
       process.env[envKeys.InngestEnvironment] = "bar";
 
       const inngest = createClient({
@@ -338,6 +358,32 @@ describe("send", () => {
       });
 
       await expect(inngest.send(testEvent)).resolves.toMatchObject({
+        ids: Array(1).fill(expect.any(String)),
+      });
+      expect(global.fetch).toHaveBeenCalledWith(
+        expect.stringContaining(`/e/${testEventKey}`),
+        expect.objectContaining({
+          method: "POST",
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          headers: expect.objectContaining({
+            [headerKeys.Environment]: "foo",
+          }),
+        })
+      );
+    });
+
+    test("should send explicit env:foo over env var and client if set in send call", async () => {
+      process.env[envKeys.InngestEnvironment] = "bar";
+
+      const inngest = createClient({
+        id: "test",
+        eventKey: testEventKey,
+        env: "baz",
+      });
+
+      await expect(
+        inngest.send(testEvent, { env: "foo" })
+      ).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
       });
       expect(global.fetch).toHaveBeenCalledWith(

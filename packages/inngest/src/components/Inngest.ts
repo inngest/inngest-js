@@ -372,9 +372,23 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
    * ```
    */
   public async send<Payload extends SendEventPayload<GetEvents<this>>>(
-    payload: Payload
+    payload: Payload,
+    options?: {
+      /**
+       * The Inngest environment to send events to. Defaults to whichever
+       * environment this client's event key is associated with.
+       *
+       * It's likely you never need to change this unless you're trying to sync
+       * multiple systems together using branch names.
+       */
+      env?: string;
+    }
   ): Promise<SendEventOutput<TClientOpts>> {
-    return this._send({ payload });
+    const headers: Record<string, string> = {
+      ...(options?.env ? { [headerKeys.Environment]: options.env } : {}),
+    };
+
+    return this._send({ payload, headers });
   }
 
   /**
