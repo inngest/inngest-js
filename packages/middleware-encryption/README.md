@@ -25,6 +25,7 @@ To use the encryption middleware, import and initialize it with your encryption 
 By default, the following will be encrypted:
 
 - All step data
+- All function output
 - Event data placed inside `data.encrypted`
 
 ```ts

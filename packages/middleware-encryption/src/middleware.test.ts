@@ -104,8 +104,18 @@ describe("encryptionMiddleware", () => {
         }
 
         test(spec.name, async () => {
+          if (!spec.result && !spec.rawOutput) {
+            throw new Error("Missing result or rawOutput in spec");
+          }
+
           const result = await runFn({ spec });
-          expect(result).toMatchObject(spec.result);
+          if (spec.result) {
+            expect(result.execResult).toMatchObject(spec.result);
+          }
+
+          if (spec.rawOutput) {
+            expect(result.rawOutput).toEqual(spec.rawOutput);
+          }
         });
       });
     };
@@ -160,15 +170,17 @@ describe("encryptionMiddleware", () => {
           },
         },
         {
-          name: "returns decrypted data",
+          name: "returns encrypted data",
           fn,
           result: {
             type: "function-resolved",
-            data: {
-              foo: { foo: "foo" },
-              bar: { foowas: { foo: "foo" }, bar: "bar" },
-            },
+            data: partialEncryptedValue,
           },
+          rawOutput: {
+            foo: { foo: "foo" },
+            bar: { foowas: { foo: "foo" }, bar: "bar" },
+          },
+
           steps: {
             [stepIds.foo]: {
               id: stepIds.foo,
@@ -199,22 +211,40 @@ type Specification = {
   steps?: InngestExecutionOptions["stepState"];
   events?: [EventPayload, ...EventPayload[]];
   fn: (ctx: Context) => unknown;
-  result: ExecutionResult;
+
+  /**
+   * The result of the execution as it will be sent back to Inngest.
+   */
+  result?: ExecutionResult;
+
+  /**
+   * The raw output from the user's function, before any potential encryption.
+   */
+  rawOutput?: unknown;
 };
 
 const runFn = async ({
   spec: {
-    fn: testFn,
+    fn: specFn,
     steps = {},
     events = [{ name: "my-event", data: { foo: "bar" } }],
   },
 }: {
   spec: Specification;
-}): Promise<ExecutionResult> => {
+}): Promise<{ execResult: ExecutionResult; rawOutput: unknown }> => {
   const inngest = new Inngest({
     id: "test-client",
     middleware: [encryptionMiddleware({ key })],
   });
+
+  let rawOutput: unknown;
+
+  // wrap the given fn so we can get the raw output without encryption for
+  // testing
+  const testFn = async (ctx: Context) => {
+    rawOutput = await specFn(ctx);
+    return rawOutput;
+  };
 
   const fn = inngest.createFunction(
     { id: "my-fn" },
@@ -241,7 +271,7 @@ const runFn = async ({
     },
   });
 
-  const result = await execution.start();
+  const execResult = await execution.start();
 
-  return result;
+  return { execResult, rawOutput };
 };
