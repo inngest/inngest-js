@@ -9,6 +9,6 @@
     ".": "./src/index.ts",
     "./manual": "./src/manual.ts",
     "./strategies/aes": "./src/strategies/aes.ts",
-    "./strategies/libsodium": "./src/strategies/libsodium.ts"
+    "./strategies/libsodium": "./src/strategies/libSodium.ts"
   }
 }
