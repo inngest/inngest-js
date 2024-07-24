@@ -144,6 +144,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
    */
   private _mode: Mode;
 
+  protected readonly schemas?: NonNullable<TClientOpts["schemas"]>;
+
   get apiBaseUrl(): string | undefined {
     return this._apiBaseUrl;
   }
@@ -185,6 +187,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     logger = new DefaultLogger(),
     middleware,
     isDev,
+    schemas,
   }: TClientOpts) {
     if (!id) {
       // TODO PrettyError
@@ -225,6 +228,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       fetch: this.fetch,
       mode: this.mode,
     });
+
+    this.schemas = schemas;
 
     this.logger = logger;
 
