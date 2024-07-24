@@ -7,11 +7,21 @@ import { type LEGACY_V0Service } from "./strategies/legacy";
  */
 export interface EncryptionMiddlewareOptions {
   /**
-   * The key or keys used to encrypt and decrypt data. If multiple keys are
-   * provided, the first key will be used to encrypt data and all keys will be
-   * tried when decrypting data.
+   * The key used to encrypt and decrypt data. If you are rotating keys, you can
+   * add `fallbackDecryptionKeys` to allow the middleware to decrypt data with
+   * multiple keys.
+   *
+   * This key will always be used to encrypt.
    */
-  key: string | string[];
+  key: string;
+
+  /**
+   * If you are rotating keys, you can add `fallbackDecryptionKeys` to allow the
+   * middleware to decrypt data with multiple keys.
+   *
+   * None of these keys will be used for encryption.
+   */
+  fallbackDecryptionKeys?: string[];
 
   /**
    * Puts the encryption middleware into a mode where it only decrypts data and
@@ -32,6 +42,13 @@ export interface EncryptionMiddlewareOptions {
    * default encryption service will be used.
    */
   encryptionService?: EncryptionService;
+
+  /**
+   * The name of the top-level field of the event that will be encrypted.
+   *
+   * By default, the top-level field named `"encrypted"` will be encrypted.
+   */
+  eventEncryptionField?: string;
 
   /**
    * If set and `enabled` is `true, the encryption middleware will only encrypt
@@ -112,9 +129,9 @@ export namespace EncryptionService {
   export const STRATEGY_MARKER = "__STRATEGY__";
 
   /**
-   * The field used to store encrypted values in events.
+   * The default field used to store encrypted values in events.
    */
-  export const ENCRYPTED_EVENT_FIELD = "encrypted";
+  export const DEFAULT_ENCRYPTED_EVENT_FIELD = "encrypted";
 
   /**
    * The encrypted value as it will be sent to Inngest.
@@ -122,6 +139,14 @@ export namespace EncryptionService {
   export interface EncryptedValue {
     [ENCRYPTION_MARKER]: true;
     [STRATEGY_MARKER]: string | undefined;
+    data: string;
+  }
+
+  /**
+   * A V0 encrypted value, which only contains the encrypted data.
+   */
+  export interface V0EncryptedValue {
+    [ENCRYPTION_MARKER]: true;
     data: string;
   }
 

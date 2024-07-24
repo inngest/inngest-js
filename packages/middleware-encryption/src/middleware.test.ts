@@ -77,7 +77,10 @@ describe("encryptionMiddleware", () => {
 
       const evt = await mockSend(inngest, {
         name: "my.event",
-        data: { foo: "bar", [EncryptionService.ENCRYPTED_EVENT_FIELD]: "baz" },
+        data: {
+          foo: "bar",
+          [EncryptionService.DEFAULT_ENCRYPTED_EVENT_FIELD]: "baz",
+        },
       });
 
       expect(evt).toMatchObject({

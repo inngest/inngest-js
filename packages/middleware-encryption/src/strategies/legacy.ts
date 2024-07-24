@@ -1,4 +1,4 @@
-import { type EncryptionMiddlewareOptions } from "../middleware";
+import { EncryptionService } from "../middleware";
 import { isEncryptedValue } from "../stages";
 import { AESEncryptionService } from "./aes";
 
@@ -26,7 +26,7 @@ export namespace LEGACY_V0Service {
      * provided, the first key will be used to encrypt data and all keys will be
      * tried when decrypting data.
      */
-    key: EncryptionMiddlewareOptions["key"];
+    key: string | string[];
 
     /**
      * If `true`, the encryption middleware will only encrypt using the legacy
@@ -49,10 +49,10 @@ export namespace LEGACY_V0Service {
 }
 
 export class LEGACY_V0Service {
-  protected readonly AESService: AESEncryptionService;
+  public readonly service: AESEncryptionService;
 
   constructor(protected options: LEGACY_V0Service.Options) {
-    this.AESService = new AESEncryptionService(this.options.key);
+    this.service = new AESEncryptionService(this.options.key);
   }
 
   public fieldShouldBeEncrypted(field: string): boolean {
@@ -74,7 +74,10 @@ export class LEGACY_V0Service {
   public encryptEventData(data: Record<string, unknown>): unknown {
     const encryptedData = Object.keys(data).reduce((acc, key) => {
       if (this.fieldShouldBeEncrypted(key)) {
-        return { ...acc, [key]: this.AESService.encrypt(data[key]) };
+        const value = this.service.encrypt(data[key]);
+        delete value[EncryptionService.STRATEGY_MARKER];
+
+        return { ...acc, [key]: value };
       }
 
       return { ...acc, [key]: data[key] };
@@ -86,7 +89,7 @@ export class LEGACY_V0Service {
   public decryptEventData(data: Record<string, unknown>): unknown {
     const decryptedData = Object.keys(data).reduce((acc, key) => {
       if (isEncryptedValue(data[key])) {
-        return { ...acc, [key]: this.AESService.decrypt(data[key].data) };
+        return { ...acc, [key]: this.service.decrypt(data[key].data) };
       }
 
       return { ...acc, [key]: data[key] };
