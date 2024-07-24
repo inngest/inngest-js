@@ -22,8 +22,10 @@ import {
  */
 export type StandardEventSchema = {
   name?: string;
-  data?: Record<string, unknown>;
-  user?: Record<string, unknown>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data?: Record<string, any>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  user?: Record<string, any>;
 };
 
 /**

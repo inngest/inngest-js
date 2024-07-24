@@ -1,5 +1,11 @@
 # inngest
 
+## 3.21.2
+
+### Patch Changes
+
+- [#660](https://github.com/inngest/inngest-js/pull/660) [`4ba0ccb`](https://github.com/inngest/inngest-js/commit/4ba0ccb7c616655abffae21aa2aff4932421f285) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Revert not allowing objectish (`[]`) values in `event.data`
+
 ## 3.21.1
 
 ### Patch Changes
