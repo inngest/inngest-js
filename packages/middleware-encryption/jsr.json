@@ -3,14 +3,12 @@
   "name": "@inngest/middleware-encryption",
   "description": "E2E encryption middleware for Inngest.",
   "version": "1.0.0",
-  "include": [
-    "./src/**/*.ts"
-  ],
+  "include": ["./src/**/*.ts"],
   "exclude": [],
   "exports": {
     ".": "./src/index.ts",
-    "manual": "./src/manual.ts",
-    "strategies/aes": "./src/strategies/aes.ts",
-    "strategies/libsodium": "./src/strategies/libsodium.ts"
+    "./manual": "./src/manual.ts",
+    "./strategies/aes": "./src/strategies/aes.ts",
+    "./strategies/libsodium": "./src/strategies/libsodium.ts"
   }
 }
