@@ -5,7 +5,7 @@
 ## Breaking changes
 
 - Default to using [LibSodium](https://libsodium.gitbook.io/doc)
-- Removed field-level event encryption
+- Changed field-level event encryption
 - Custom encryption services now require identifiers
 
 ## Features
