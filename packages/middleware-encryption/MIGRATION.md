@@ -10,18 +10,23 @@ ensuring we can provide easier cross-language E2E encryption.
 If you only use the middleware on a single service/app and only passed a `key`
 as required, you can upgrade with no changes. Otherwise, read on.
 
-### Customizing field-level event encryption removed
+### Customizing field-level event encryption changed
 
 In v0, you could customize which fields in an event would be encrypted. By
 default this was the `encrypted` field, but you could choose any top-level
 fields.
 
-To help avoid users forgetting to add configuration or logic for encrypting
-specific fields containing sensitive data (or misplacing that data), only the
-default (`data.encrypted`) is used now.
+For v1 we want to simplify this config to ensure it's easy to understand and
+replicate when also adding the middleware to other services and languages.
+Therefore, only `string` is allowed when customizing this field and `string[]`,
+`(field: string) => boolean`, and `false` have been removed.
 
 If you customized field-level encryption in v0, move the option to the new
 `v0Legacy` object, which will continue to decrypt those fields.
+
+> [!NOTE]
+> Any events encrypted with v1 (without `forceEncryptWithV0` set) will use the
+> new top-level `eventEncryptionField` and _not_ this option.
 
 ```ts
 const mw = encryptionMiddleware({

@@ -53,11 +53,45 @@ const inngest = new Inngest({
 });
 ```
 
+## Customizing event encryption
+
+Only select pieces of event data are encrypted. By default, only the `data.encrypted` field.
+
+This can be customized using the `eventEncryptionField` setting:
+
+- `string` - Encrypts the top-level field matching this name
+
 ## Rotating encryption keys
 
-Provide an `Array<string>` when providing your `key` to support rotating encryption keys.
+The `key` will always be used to encrypt. You can also specify
+`fallbackDecryptionKeys` to be used to attempt decryption if the primary key
+fails.
 
-The first key is always used to encrypt, but decryption will be attempted with all keys.
+The rollout of a new key would be as follows:
+
+```ts
+// start out with the current key
+encryptionMiddleware({
+  key: "current",
+});
+
+// deploy all services with the new key as a decryption fallback
+encryptionMiddleware({
+  key: "current",
+  fallbackDecryptionKeys: ["new"],
+});
+
+// deploy all services using the new key for encryption
+encryptionMiddleware({
+  key: "new",
+  fallbackDecryptionKeys: ["current"],
+});
+
+// once you are sure all data using the "current" key has passed, phase it out
+encryptionMiddleware({
+  key: "new",
+});
+```
 
 ## Implementing your own encryption
 
@@ -66,20 +100,9 @@ To create a custom encryption service, you need to implement the abstract
 implement an `identifier` and two core methods: `encrypt` and `decrypt`.
 
 ```ts
-export namespace EncryptionService {
-  export interface PartialEncryptedValue {
-    data: string;
-    [key: string]: unknown;
-  }
-}
-
 export abstract class EncryptionService {
   public abstract identifier: string;
-
-  public abstract encrypt(
-    value: unknown
-  ): MaybePromise<EncryptionService.PartialEncryptedValue>;
-
+  public abstract encrypt(value: unknown): MaybePromise<string>;
   public abstract decrypt(value: string): MaybePromise<unknown>;
 }
 ```
@@ -107,9 +130,7 @@ class CustomEncryptionService implements EncryptionService {
     // Initialization code here
   }
 
-  encrypt(
-    value: unknown
-  ): MaybePromise<EncryptionService.PartialEncryptedValue> {
+  encrypt(value: unknown): MaybePromise<string> {
     // Implement your custom encryption logic here
     // Example: return CustomEncryptLib.encrypt(JSON.stringify(value), this.customKey);
   }
@@ -145,10 +166,10 @@ In v3 of the TypeScript SDK, middleware is run in sequence and not as the usual
 encapsulating layer. For example, middleware of `[foo, bar]` would run hooks in
 the order:
 ```
-foo.transformInput
-bar.transformInput
-foo.transformOutput
-bar.transformOutput
+foo -> transformInput
+bar -> transformInput
+foo -> transformOutput
+bar -> transformOutput
 ```
 This is problematic for middleware that affects payloads such as encryption, as
 we'd want it to be the first and last hooks to run instead of always the first
