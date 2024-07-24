@@ -51,6 +51,15 @@ export const getEncryptionStages = (
   const encryptValue = async (
     value: unknown
   ): Promise<EncryptionService.PartialEncryptedValue> => {
+    // Show a warning if we believe the value is already encrypted. This may
+    // happen if user accidentally adds encryption middleware at both the
+    // client and function levels.
+    if (isEncryptedValue(value) || isV0EncryptedValue(value)) {
+      console.warn(
+        "Encryption middleware is encrypting a value that appears to be already encrypted. Did you add the middleware twice?"
+      );
+    }
+
     if (opts.legacyV0Service?.forceEncryptWithV0) {
       return {
         [EncryptionService.ENCRYPTION_MARKER]: true,
