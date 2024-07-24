@@ -54,14 +54,14 @@ export const getEncryptionStages = (
     if (opts.legacyV0Service?.forceEncryptWithV0) {
       return {
         [EncryptionService.ENCRYPTION_MARKER]: true,
-        data: getV0LegacyService().service.encrypt(value).data,
+        data: getV0LegacyService().service.encrypt(value),
       };
     }
 
     return {
       [EncryptionService.ENCRYPTION_MARKER]: true,
       [EncryptionService.STRATEGY_MARKER]: service.identifier,
-      ...(await service.encrypt(value)),
+      data: await service.encrypt(value),
     };
   };
 

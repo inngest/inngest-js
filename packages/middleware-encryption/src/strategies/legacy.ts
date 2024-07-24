@@ -1,5 +1,4 @@
 import { EncryptionService } from "../middleware";
-import { isEncryptedValue } from "../stages";
 import { AESEncryptionService } from "./aes";
 
 /**
@@ -74,27 +73,18 @@ export class LEGACY_V0Service {
   public encryptEventData(data: Record<string, unknown>): unknown {
     const encryptedData = Object.keys(data).reduce((acc, key) => {
       if (this.fieldShouldBeEncrypted(key)) {
-        const value = this.service.encrypt(data[key]);
-        delete value[EncryptionService.STRATEGY_MARKER];
-
-        return { ...acc, [key]: value };
+        return {
+          ...acc,
+          [key]: {
+            [EncryptionService.ENCRYPTION_MARKER]: true,
+            data: this.service.encrypt(data[key]),
+          },
+        };
       }
 
       return { ...acc, [key]: data[key] };
     }, {});
 
     return encryptedData;
-  }
-
-  public decryptEventData(data: Record<string, unknown>): unknown {
-    const decryptedData = Object.keys(data).reduce((acc, key) => {
-      if (isEncryptedValue(data[key])) {
-        return { ...acc, [key]: this.service.decrypt(data[key].data) };
-      }
-
-      return { ...acc, [key]: data[key] };
-    }, {});
-
-    return decryptedData;
   }
 }

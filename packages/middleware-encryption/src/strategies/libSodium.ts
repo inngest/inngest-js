@@ -42,9 +42,7 @@ export class LibSodiumEncryptionService implements EncryptionService {
     });
   }
 
-  async encrypt(
-    value: unknown
-  ): Promise<EncryptionService.PartialEncryptedValue> {
+  async encrypt(value: unknown): Promise<string> {
     const keys = await this.keys;
 
     const nonce = sodium.randombytes_buf(sodium.crypto_secretbox_NONCEBYTES);
@@ -55,9 +53,7 @@ export class LibSodiumEncryptionService implements EncryptionService {
     combined.set(nonce);
     combined.set(ciphertext, nonce.length);
 
-    return {
-      data: sodium.to_base64(combined, sodium.base64_variants.ORIGINAL),
-    };
+    return sodium.to_base64(combined, sodium.base64_variants.ORIGINAL);
   }
 
   async decrypt(value: string): Promise<unknown> {

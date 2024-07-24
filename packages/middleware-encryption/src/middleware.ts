@@ -106,9 +106,7 @@ export abstract class EncryptionService {
   /**
    * Given an `unknown` value, encrypts it and returns the the encrypted value.
    */
-  public abstract encrypt(
-    value: unknown
-  ): MaybePromise<EncryptionService.PartialEncryptedValue>;
+  public abstract encrypt(value: unknown): MaybePromise<string>;
 
   /**
    * Given an encrypted `string`, decrypts it and returns the decrypted value as
