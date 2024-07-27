@@ -226,6 +226,11 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     ]);
   }
 
+  /**
+   * Set the environment variables for this client. This is useful if you are
+   * passed environment variables at runtime instead of as globals and need to
+   * update the client with those values as requests come in.
+   */
   public setEnvVars(
     env: Record<string, string | undefined> = allProcessEnv()
   ): this {
