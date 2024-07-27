@@ -121,6 +121,11 @@ export interface ModeOptions {
    * If the mode was explicitly set as a dev URL, this is the URL that was set.
    */
   explicitDevUrl?: URL;
+
+  /**
+   * Environment variables to use when determining the mode.
+   */
+  env?: Env;
 }
 
 export class Mode {
@@ -133,7 +138,15 @@ export class Mode {
 
   public readonly explicitDevUrl?: URL;
 
-  constructor({ type, isExplicit, explicitDevUrl }: ModeOptions) {
+  private readonly env: Env;
+
+  constructor({
+    type,
+    isExplicit,
+    explicitDevUrl,
+    env = allProcessEnv(),
+  }: ModeOptions) {
+    this.env = env;
     this.type = type;
     this.isExplicit = isExplicit || Boolean(explicitDevUrl);
     this.explicitDevUrl = explicitDevUrl;
