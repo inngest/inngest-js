@@ -32,7 +32,7 @@ export namespace InngestApi {
 }
 
 export class InngestApi {
-  public readonly apiBaseUrl?: string;
+  public apiBaseUrl?: string;
   private signingKey: string;
   private signingKeyFallback: string | undefined;
   private readonly fetch: FetchT;
