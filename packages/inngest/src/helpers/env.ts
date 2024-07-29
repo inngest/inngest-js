@@ -93,7 +93,7 @@ interface IsProdOptions {
   /**
    * The optional environment variables to use instead of `process.env`.
    */
-  env?: Record<string, unknown>;
+  env?: Record<string, EnvValue>;
 
   /**
    * The Inngest client that's being used when performing this check. This is
@@ -200,7 +200,7 @@ export const getMode = ({
   explicitMode,
 }: IsProdOptions = {}): Mode => {
   if (explicitMode) {
-    return new Mode({ type: explicitMode, isExplicit: true });
+    return new Mode({ type: explicitMode, isExplicit: true, env });
   }
 
   if (client?.["mode"].isExplicit) {
@@ -211,7 +211,7 @@ export const getMode = ({
     if (typeof env[envKeys.InngestDevMode] === "string") {
       try {
         const explicitDevUrl = new URL(env[envKeys.InngestDevMode]);
-        return new Mode({ type: "dev", isExplicit: true, explicitDevUrl });
+        return new Mode({ type: "dev", isExplicit: true, explicitDevUrl, env });
       } catch {
         // no-op
       }
@@ -219,7 +219,11 @@ export const getMode = ({
 
     const envIsDev = parseAsBoolean(env[envKeys.InngestDevMode]);
     if (typeof envIsDev === "boolean") {
-      return new Mode({ type: envIsDev ? "dev" : "cloud", isExplicit: true });
+      return new Mode({
+        type: envIsDev ? "dev" : "cloud",
+        isExplicit: true,
+        env,
+      });
     }
   }
 
@@ -227,7 +231,7 @@ export const getMode = ({
     return checkFns[checkKey](stringifyUnknown(env[key]), expected);
   });
 
-  return new Mode({ type: isProd ? "cloud" : "dev", isExplicit: false });
+  return new Mode({ type: isProd ? "cloud" : "dev", isExplicit: false, env });
 };
 
 /**
