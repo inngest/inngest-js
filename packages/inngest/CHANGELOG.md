@@ -1,5 +1,11 @@
 # inngest
 
+## 3.22.0
+
+### Minor Changes
+
+- [#665](https://github.com/inngest/inngest-js/pull/665) [`1a4962d`](https://github.com/inngest/inngest-js/commit/1a4962dd1d1ba26f41fa8477f3099ad716c57f66) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `inngest.setEnvVars(env)` to set env vars late on the client
+
 ## 3.21.2
 
 ### Patch Changes

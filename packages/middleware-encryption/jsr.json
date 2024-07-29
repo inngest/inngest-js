@@ -3,7 +3,9 @@
   "name": "@inngest/middleware-encryption",
   "description": "E2E encryption middleware for Inngest.",
   "version": "1.0.0",
-  "include": ["./src/**/*.ts"],
+  "include": [
+    "./src/**/*.ts"
+  ],
   "exclude": [],
   "exports": {
     ".": "./src/index.ts",
