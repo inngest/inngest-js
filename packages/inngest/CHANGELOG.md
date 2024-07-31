@@ -1,5 +1,11 @@
 # inngest
 
+## 3.22.1
+
+### Patch Changes
+
+- [#667](https://github.com/inngest/inngest-js/pull/667) [`7e0fd10`](https://github.com/inngest/inngest-js/commit/7e0fd10d742839fc3521cc46b33560be8f3d8dd9) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix event key hash exists when event key is not set
+
 ## 3.22.0
 
 ### Minor Changes
