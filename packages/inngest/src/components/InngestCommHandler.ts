@@ -7,6 +7,7 @@ import {
   debugPrefix,
   defaultInngestApiBaseUrl,
   defaultInngestEventBaseUrl,
+  dummyEventKey,
   envKeys,
   headerKeys,
   logPrefix,
@@ -523,7 +524,7 @@ export class InngestCommHandler<
   }
 
   private get hashedEventKey(): string | undefined {
-    if (!this.client["eventKey"]) {
+    if (!this.client["eventKey"] || this.client["eventKey"] === dummyEventKey) {
       return undefined;
     }
     return hashEventKey(this.client["eventKey"]);
