@@ -5,50 +5,42 @@ export const noNestedSteps: TSESLint.RuleModule<"no-nested-steps"> = {
     type: "problem",
     docs: {
       description:
-        "disallow use of any `step.*` within a `step.run()` function",
+        "disallow use of any `step.*` within another `step.*` function",
       recommended: "recommended",
     },
     schema: [], // no options
     messages: {
       "no-nested-steps":
-        "Use of `step.*` within a `step.run()` function is not allowed",
+        "Use of `step.*` within another `step.*` function is not allowed",
     },
   },
   defaultOptions: [],
-  create(context) {
-    let stepRunDepth = 0;
+  create(context: TSESLint.RuleContext<"no-nested-steps", []>) {
+    let stepDepth = 0;
 
     return {
-      CallExpression(node) {
+      CallExpression(node: TSESLint.TSESTree.CallExpression) {
         if (
           node.callee.type === AST_NODE_TYPES.MemberExpression &&
           node.callee.object.type === AST_NODE_TYPES.Identifier &&
           node.callee.object.name === "step"
         ) {
-          if (
-            node.callee.property.type === AST_NODE_TYPES.Identifier &&
-            node.callee.property.name === "run"
-          ) {
-            stepRunDepth += 1;
-          }
-
-          if (stepRunDepth > 1) {
+          if (stepDepth > 0) {
             context.report({
               node,
               messageId: "no-nested-steps",
             });
           }
+          stepDepth++;
         }
       },
-      "CallExpression:exit"(node) {
+      "CallExpression:exit"(node: TSESLint.TSESTree.CallExpression) {
         if (
           node.callee.type === AST_NODE_TYPES.MemberExpression &&
           node.callee.object.type === AST_NODE_TYPES.Identifier &&
-          node.callee.object.name === "step" &&
-          node.callee.property.type === AST_NODE_TYPES.Identifier &&
-          node.callee.property.name === "run"
+          node.callee.object.name === "step"
         ) {
-          stepRunDepth -= 1;
+          stepDepth--;
         }
       },
     };
