@@ -1,5 +1,11 @@
 # @inngest/eslint-plugin
 
+## 0.0.7
+
+### Patch Changes
+
+- [#669](https://github.com/inngest/inngest-js/pull/669) [`cff63ca`](https://github.com/inngest/inngest-js/commit/cff63ca32ae82088e91cad6aea574cfc1ec6f1bc) Thanks [@swiecki](https://github.com/swiecki)! - Fix `no-nested-steps` not catching nested steps other than `step.run()`
+
 ## 0.0.6
 
 ### Patch Changes
