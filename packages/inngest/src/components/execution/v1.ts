@@ -19,7 +19,7 @@ import {
 import { type MaybePromise, type Simplify } from "../../helpers/types";
 import {
   StepOpCode,
-  failureEventErrorSchema,
+  jsonErrorSchema,
   type BaseContext,
   type Context,
   type EventPayload,
@@ -624,7 +624,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      */
     if (this.options.isFailureHandler) {
       const eventData = z
-        .object({ error: failureEventErrorSchema })
+        .object({ error: jsonErrorSchema })
         .parse(fnArg.event?.data);
 
       (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
