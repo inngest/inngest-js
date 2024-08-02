@@ -19,7 +19,7 @@ export const noNestedSteps: TSESLint.RuleModule<"no-nested-steps"> = {
     let stepDepth = 0;
 
     return {
-      CallExpression(node: TSESLint.TSESTree.CallExpression) {
+      CallExpression(node) {
         if (
           node.callee.type === AST_NODE_TYPES.MemberExpression &&
           node.callee.object.type === AST_NODE_TYPES.Identifier &&
@@ -34,7 +34,7 @@ export const noNestedSteps: TSESLint.RuleModule<"no-nested-steps"> = {
           stepDepth++;
         }
       },
-      "CallExpression:exit"(node: TSESLint.TSESTree.CallExpression) {
+      "CallExpression:exit"(node) {
         if (
           node.callee.type === AST_NODE_TYPES.MemberExpression &&
           node.callee.object.type === AST_NODE_TYPES.Identifier &&
