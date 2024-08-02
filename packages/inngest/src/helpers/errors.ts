@@ -113,6 +113,8 @@ export const serializeError = (subject: unknown): SerializedError => {
         ...serializeError(
           new Error(typeof subject === "string" ? subject : stringify(subject))
         ),
+        // Remove the stack; it's not relevant here
+        stack: "",
         [SERIALIZED_KEY]: SERIALIZED_VALUE,
       };
     } catch (err) {
