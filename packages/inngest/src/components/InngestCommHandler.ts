@@ -935,14 +935,27 @@ export class InngestCommHandler<
           };
         }
 
-        const probe = await getQuerystring(
+        const rawProbe = await getQuerystring(
           "testing for probe",
           queryKeys.Probe
-        ).then((probe) => {
-          return enumFromValue(probeEnum, probe);
-        });
-        // Is this request a probe? If so, act on it.
-        if (probe) {
+        );
+        if (rawProbe) {
+          const probe = enumFromValue(probeEnum, rawProbe);
+          if (!probe) {
+            // If we're here, we've received a probe that we don't recognize.
+            // Fail.
+            return {
+              status: 400,
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: stringify(
+                serializeError(new Error(`Unknown probe "${rawProbe}"`))
+              ),
+              version: undefined,
+            };
+          }
+
           // Provide actions for every probe available.
           const probeActions: Record<
             probeEnum,
