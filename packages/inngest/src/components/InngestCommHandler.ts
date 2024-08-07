@@ -699,6 +699,18 @@ export class InngestCommHandler<
 
       const methodP = actions.method("starting to handle request");
 
+      const headerPromises = [
+        headerKeys.TraceParent,
+        headerKeys.TraceState,
+      ].map(async (header) => {
+        const value = await actions.headers(
+          `fetching ${header} for forwarding`,
+          header
+        );
+
+        return { header, value };
+      });
+
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const [signature, method, body] = await Promise.all([
         actions
@@ -720,6 +732,21 @@ export class InngestCommHandler<
 
       const signatureValidation = this.validateSignature(signature, body);
 
+      const headersToForwardP = Promise.all(headerPromises).then(
+        (fetchedHeaders) => {
+          return fetchedHeaders.reduce<Record<string, string>>(
+            (acc, { header, value }) => {
+              if (value) {
+                acc[header] = value;
+              }
+
+              return acc;
+            },
+            {}
+          );
+        }
+      );
+
       const actionRes = timer.wrap("action", () =>
         this.handleAction({
           actions,
@@ -730,6 +757,7 @@ export class InngestCommHandler<
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           body,
           method,
+          headers: headersToForwardP,
         })
       );
 
@@ -761,6 +789,7 @@ export class InngestCommHandler<
           ...res,
           headers: {
             ...getInngestHeaders(),
+            ...(await headersToForwardP),
             ...res.headers,
             ...(res.version === null
               ? {}
@@ -866,6 +895,7 @@ export class InngestCommHandler<
     signatureValidation,
     body,
     method,
+    headers,
   }: {
     actions: HandlerResponseWithErrors;
     timer: ServerTiming;
@@ -875,6 +905,7 @@ export class InngestCommHandler<
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     body: any;
     method: string;
+    headers: Promise<Record<string, string>>;
   }): Promise<ActionResponse> {
     try {
       const url = await actions.url("starting to handle request");
@@ -894,39 +925,22 @@ export class InngestCommHandler<
       if (method === "POST") {
         const validationResult = await signatureValidation;
         if (!validationResult.success) {
-          throw validationResult.err;
+          return {
+            status: 401,
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: stringify(serializeError(validationResult.err)),
+            version: undefined,
+          };
         }
 
-        const headerPromises = [
-          headerKeys.TraceParent,
-          headerKeys.TraceState,
-        ].map(async (header) => {
-          const value = await actions.headers(
-            `fetching ${header} for forwarding`,
-            header
-          );
-
-          return { header, value };
+        const probe = await getQuerystring(
+          "testing for probe",
+          queryKeys.Probe
+        ).then((probe) => {
+          return enumFromValue(probeEnum, probe);
         });
-
-        const [probe, headersToForward] = await Promise.all([
-          getQuerystring("testing for probe", queryKeys.Probe).then((probe) => {
-            return enumFromValue(probeEnum, probe);
-          }),
-          Promise.all(headerPromises).then((fetchedHeaders) => {
-            return fetchedHeaders.reduce<Record<string, string>>(
-              (acc, { header, value }) => {
-                if (value) {
-                  acc[header] = value;
-                }
-
-                return acc;
-              },
-              {}
-            );
-          }),
-        ]);
-
         // Is this request a probe? If so, act on it.
         if (probe) {
           // Provide actions for every probe available.
@@ -938,7 +952,6 @@ export class InngestCommHandler<
               status: 200,
               headers: {
                 "Content-Type": "application/json",
-                ...headersToForward,
               },
               body: "",
               version: undefined,
@@ -967,7 +980,7 @@ export class InngestCommHandler<
           stepId,
           timer,
           reqArgs,
-          headers: headersToForward,
+          headers: await headers,
         });
         const stepOutput = await result;
 
@@ -986,7 +999,6 @@ export class InngestCommHandler<
               status: result.retriable ? 500 : 400,
               headers: {
                 "Content-Type": "application/json",
-                ...headersToForward,
                 [headerKeys.NoRetry]: result.retriable ? "false" : "true",
                 ...(typeof result.retriable === "string"
                   ? { [headerKeys.RetryAfter]: result.retriable }
@@ -1001,7 +1013,6 @@ export class InngestCommHandler<
               status: 200,
               headers: {
                 "Content-Type": "application/json",
-                ...headersToForward,
               },
               body: stringify(undefinedToNull(result.data)),
               version,
@@ -1012,7 +1023,6 @@ export class InngestCommHandler<
               status: 500,
               headers: {
                 "Content-Type": "application/json",
-                ...headersToForward,
                 [headerKeys.NoRetry]: "false",
               },
               body: stringify({
@@ -1030,7 +1040,6 @@ export class InngestCommHandler<
               status: 206,
               headers: {
                 "Content-Type": "application/json",
-                ...headersToForward,
                 ...(typeof result.retriable !== "undefined"
                   ? {
                       [headerKeys.NoRetry]: result.retriable ? "false" : "true",
@@ -1051,7 +1060,6 @@ export class InngestCommHandler<
               status: 206,
               headers: {
                 "Content-Type": "application/json",
-                ...headersToForward,
               },
               body: stringify(steps),
               version,
@@ -1101,7 +1109,14 @@ export class InngestCommHandler<
           try {
             const validationResult = await signatureValidation;
             if (!validationResult.success) {
-              throw validationResult.err;
+              return {
+                status: 401,
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: stringify(serializeError(validationResult.err)),
+                version: undefined,
+              };
             }
 
             introspection = {
