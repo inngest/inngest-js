@@ -1027,6 +1027,9 @@ export class InngestCommHandler<
               authentication_succeeded: true,
               api_origin: this.apiBaseUrl,
               app_id: this.client.id,
+              capabilities: {
+                trust_probe: "v1",
+              },
               env:
                 (await actions.headers(
                   "fetching environment for introspection request",

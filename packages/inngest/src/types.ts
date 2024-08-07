@@ -991,6 +991,10 @@ export interface RegisterRequest {
   deployId?: string;
 }
 
+export interface IntrospectionCapabilities {
+  trust_probe: "v1";
+}
+
 /**
  * The response to send to the local SDK UI when an introspection request is
  * made.
@@ -1014,6 +1018,7 @@ export interface AuthenticatedIntrospection
   api_origin: string;
   app_id: string;
   authentication_succeeded: true;
+  capabilities: IntrospectionCapabilities;
   env: string | null;
   event_api_origin: string;
   event_key_hash: string | null;
