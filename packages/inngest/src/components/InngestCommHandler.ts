@@ -11,9 +11,11 @@ import {
   envKeys,
   headerKeys,
   logPrefix,
+  probe as probeEnum,
   queryKeys,
 } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+import { enumFromValue } from "../helpers/enum";
 import {
   Mode,
   allProcessEnv,
@@ -842,7 +844,59 @@ export class InngestCommHandler<
 
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const body = await actions.body("processing run request");
+
         this.validateSignature(signature ?? undefined, body);
+
+        const headerPromises = [
+          headerKeys.TraceParent,
+          headerKeys.TraceState,
+        ].map(async (header) => {
+          const value = await actions.headers(
+            `fetching ${header} for forwarding`,
+            header
+          );
+
+          return { header, value };
+        });
+
+        const [probe, headersToForward] = await Promise.all([
+          getQuerystring("testing for probe", queryKeys.Probe).then((probe) => {
+            return enumFromValue(probeEnum, probe);
+          }),
+          Promise.all(headerPromises).then((fetchedHeaders) => {
+            return fetchedHeaders.reduce<Record<string, string>>(
+              (acc, { header, value }) => {
+                if (value) {
+                  acc[header] = value;
+                }
+
+                return acc;
+              },
+              {}
+            );
+          }),
+        ]);
+
+        // Is this request a probe? If so, act on it.
+        if (probe) {
+          // Provide actions for every probe available.
+          const probeActions: Record<
+            probeEnum,
+            () => MaybePromise<ActionResponse>
+          > = {
+            [probeEnum.Trust]: () => ({
+              status: 200,
+              headers: {
+                "Content-Type": "application/json",
+                ...headersToForward,
+              },
+              body: "",
+              version: undefined,
+            }),
+          };
+
+          return probeActions[probe]();
+        }
 
         const fnId = await getQuerystring(
           "processing run request",
@@ -856,30 +910,6 @@ export class InngestCommHandler<
         const stepId =
           (await getQuerystring("processing run request", queryKeys.StepId)) ||
           null;
-
-        const headersToFetch = [headerKeys.TraceParent, headerKeys.TraceState];
-
-        const headerPromises = headersToFetch.map(async (header) => {
-          const value = await actions.headers(
-            `fetching ${header} for forwarding`,
-            header
-          );
-
-          return { header, value };
-        });
-
-        const fetchedHeaders = await Promise.all(headerPromises);
-
-        const headersToForward = fetchedHeaders.reduce<Record<string, string>>(
-          (acc, { header, value }) => {
-            if (value) {
-              acc[header] = value;
-            }
-
-            return acc;
-          },
-          {}
-        );
 
         const { version, result } = this.runStep({
           functionId: fnId,
