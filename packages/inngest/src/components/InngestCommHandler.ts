@@ -677,16 +677,48 @@ export class InngestCommHandler<
           },
         });
 
-      const signature = await actions.headers(
-        "checking signature for request",
-        headerKeys.Signature
-      );
+      const assumedMode = getMode({ env: this.env, client: this.client });
+
+      if (assumedMode.isExplicit) {
+        this._mode = assumedMode;
+      } else {
+        const serveIsProd = await actions.isProduction?.(
+          "starting to handle request"
+        );
+        if (typeof serveIsProd === "boolean") {
+          this._mode = new Mode({
+            type: serveIsProd ? "cloud" : "dev",
+            isExplicit: false,
+          });
+        } else {
+          this._mode = assumedMode;
+        }
+      }
+
+      this.upsertKeysFromEnv();
+
+      const methodP = actions.method("starting to handle request");
+
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const body = await actions.body("checking body for request signing");
-      const signatureValidation = this.validateSignature(
-        signature ?? undefined,
-        body
-      );
+      const [signature, method, body] = await Promise.all([
+        actions
+          .headers("checking signature for request", headerKeys.Signature)
+          .then((headerSignature) => {
+            return headerSignature ?? undefined;
+          }),
+        methodP,
+        methodP.then((method) => {
+          if (method === "POST") {
+            return actions.body(
+              `checking body for request signing as method is ${method}`
+            );
+          }
+
+          return "";
+        }),
+      ]);
+
+      const signatureValidation = this.validateSignature(signature, body);
 
       const actionRes = timer.wrap("action", () =>
         this.handleAction({
@@ -697,6 +729,7 @@ export class InngestCommHandler<
           signatureValidation,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           body,
+          method,
         })
       );
 
@@ -711,12 +744,12 @@ export class InngestCommHandler<
         res: ActionResponse
       ): Promise<ActionResponse> => {
         const signature = await signatureValidation
-          .then((keyUsed) => {
-            if (!keyUsed) {
-              return;
+          .then((result) => {
+            if (!result.success || !result.keyUsed) {
+              return undefined;
             }
 
-            return this.getResponseSignature(keyUsed, res.body);
+            return this.getResponseSignature(result.keyUsed, res.body);
           })
           .catch((_err) => {
             // no-op; only sign responses if we have successfully validated the
@@ -832,38 +865,19 @@ export class InngestCommHandler<
     reqArgs,
     signatureValidation,
     body,
+    method,
   }: {
     actions: HandlerResponseWithErrors;
     timer: ServerTiming;
     getInngestHeaders: () => Record<string, string>;
     reqArgs: unknown[];
-    signatureValidation: Promise<string>;
+    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     body: any;
+    method: string;
   }): Promise<ActionResponse> {
-    const assumedMode = getMode({ env: this.env, client: this.client });
-
-    if (assumedMode.isExplicit) {
-      this._mode = assumedMode;
-    } else {
-      const serveIsProd = await actions.isProduction?.(
-        "starting to handle request"
-      );
-      if (typeof serveIsProd === "boolean") {
-        this._mode = new Mode({
-          type: serveIsProd ? "cloud" : "dev",
-          isExplicit: false,
-        });
-      } else {
-        this._mode = assumedMode;
-      }
-    }
-
-    this.upsertKeysFromEnv();
-
     try {
       const url = await actions.url("starting to handle request");
-      const method = await actions.method("starting to handle request");
 
       const getQuerystring = async (
         reason: string,
@@ -878,7 +892,10 @@ export class InngestCommHandler<
       };
 
       if (method === "POST") {
-        await signatureValidation;
+        const validationResult = await signatureValidation;
+        if (!validationResult.success) {
+          throw validationResult.err;
+        }
 
         const headerPromises = [
           headerKeys.TraceParent,
@@ -1060,6 +1077,10 @@ export class InngestCommHandler<
           deployId: null,
         });
 
+        if (!this._mode) {
+          throw new Error("No mode set; cannot introspect without mode");
+        }
+
         let introspection:
           | UnauthenticatedIntrospection
           | AuthenticatedIntrospection = {
@@ -1078,7 +1099,10 @@ export class InngestCommHandler<
         // signature validation
         if (this._mode.type === "cloud") {
           try {
-            await signatureValidation;
+            const validationResult = await signatureValidation;
+            if (!validationResult.success) {
+              throw validationResult.err;
+            }
 
             introspection = {
               ...introspection,
@@ -1545,35 +1569,44 @@ export class InngestCommHandler<
   protected async validateSignature(
     sig: string | undefined,
     body: unknown
-  ): Promise<string> {
-    // Never validate signatures outside of prod. Make sure to check the mode
-    // exists here instead of using nullish coalescing to confirm that the check
-    // has been completed.
-    if (this._mode && !this._mode.isCloud) {
-      return "";
-    }
+  ): Promise<
+    { success: true; keyUsed: string } | { success: false; err: Error }
+  > {
+    try {
+      // Never validate signatures outside of prod. Make sure to check the mode
+      // exists here instead of using nullish coalescing to confirm that the check
+      // has been completed.
+      if (this._mode && !this._mode.isCloud) {
+        return { success: true, keyUsed: "" };
+      }
 
-    // If we're here, we're in production; lack of a signing key is an error.
-    if (!this.signingKey) {
-      // TODO PrettyError
-      throw new Error(
-        `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`
-      );
-    }
+      // If we're here, we're in production; lack of a signing key is an error.
+      if (!this.signingKey) {
+        // TODO PrettyError
+        throw new Error(
+          `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`
+        );
+      }
 
-    // If we're here, we're in production; lack of a req signature is an error.
-    if (!sig) {
-      // TODO PrettyError
-      throw new Error(`No ${headerKeys.Signature} provided`);
-    }
+      // If we're here, we're in production; lack of a req signature is an error.
+      if (!sig) {
+        // TODO PrettyError
+        throw new Error(`No ${headerKeys.Signature} provided`);
+      }
 
-    // Validate the signature
-    return new RequestSignature(sig).verifySignature({
-      body,
-      allowExpiredSignatures: this.allowExpiredSignatures,
-      signingKey: this.signingKey,
-      signingKeyFallback: this.signingKeyFallback,
-    });
+      // Validate the signature
+      return {
+        success: true,
+        keyUsed: new RequestSignature(sig).verifySignature({
+          body,
+          allowExpiredSignatures: this.allowExpiredSignatures,
+          signingKey: this.signingKey,
+          signingKeyFallback: this.signingKeyFallback,
+        }),
+      };
+    } catch (err) {
+      return { success: false, err: err as Error };
+    }
   }
 
   protected getResponseSignature(key: string, body: string): string {
