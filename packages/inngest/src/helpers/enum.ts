@@ -7,15 +7,7 @@ export const enumFromValue = <T extends Record<string, unknown>>(
   enumType: T,
   value: unknown
 ): T[keyof T] | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
+  if (Object.values(enumType).includes(value)) {
+    return value as T[keyof T];
   }
-
-  const enumValue = enumType[value as keyof T];
-
-  if (typeof enumValue === "undefined") {
-    return undefined;
-  }
-
-  return enumValue;
 };
