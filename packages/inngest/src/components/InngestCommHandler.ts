@@ -1,6 +1,4 @@
-import canonicalize from "canonicalize";
 import debug from "debug";
-import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
 import { ServerTiming } from "../helpers/ServerTiming";
 import {
@@ -33,7 +31,7 @@ import {
   undefinedToNull,
   type FnData,
 } from "../helpers/functions";
-import { fetchWithAuthFallback } from "../helpers/net";
+import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net";
 import { runAsPromise } from "../helpers/promises";
 import { createStream } from "../helpers/stream";
 import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings";
@@ -679,31 +677,69 @@ export class InngestCommHandler<
           },
         });
 
+      const signature = await actions.headers(
+        "checking signature for request",
+        headerKeys.Signature
+      );
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const body = await actions.body("checking body for request signing");
+      const signatureValidation = this.validateSignature(
+        signature ?? undefined,
+        body
+      );
+
       const actionRes = timer.wrap("action", () =>
-        this.handleAction({ actions, timer, getInngestHeaders, reqArgs: args })
+        this.handleAction({
+          actions,
+          timer,
+          getInngestHeaders,
+          reqArgs: args,
+          signatureValidation,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          body,
+        })
       );
 
       /**
        * Prepares an action response by merging returned data to provide
        * trailing information such as `Server-Timing` headers.
        *
-       * It should always prioritize the headers returned by the action, as
-       * they may contain important information such as `Content-Type`.
+       * It should always prioritize the headers returned by the action, as they
+       * may contain important information such as `Content-Type`.
        */
-      const prepareActionRes = (res: ActionResponse): ActionResponse => ({
-        ...res,
-        headers: {
-          ...getInngestHeaders(),
-          ...res.headers,
-          ...(res.version === null
-            ? {}
-            : {
-                [headerKeys.RequestVersion]: (
-                  res.version ?? PREFERRED_EXECUTION_VERSION
-                ).toString(),
-              }),
-        },
-      });
+      const prepareActionRes = async (
+        res: ActionResponse
+      ): Promise<ActionResponse> => {
+        const signature = await signatureValidation
+          .then((keyUsed) => {
+            if (!keyUsed) {
+              return;
+            }
+
+            return this.getResponseSignature(keyUsed, res.body);
+          })
+          .catch((_err) => {
+            // no-op; only sign responses if we have successfully validated the
+            // request
+            return undefined;
+          });
+
+        return {
+          ...res,
+          headers: {
+            ...getInngestHeaders(),
+            ...res.headers,
+            ...(res.version === null
+              ? {}
+              : {
+                  [headerKeys.RequestVersion]: (
+                    res.version ?? PREFERRED_EXECUTION_VERSION
+                  ).toString(),
+                }),
+            ...(signature ? { [headerKeys.Signature]: signature } : {}),
+          },
+        };
+      };
 
       if (this.shouldStream(actions)) {
         const method = await actions.method("starting streaming response");
@@ -743,11 +779,11 @@ export class InngestCommHandler<
 
     /**
      * Some platforms check (at runtime) the length of the function being used
-     * to handle an endpoint. If this is a variadic function, it will fail
-     * that check.
+     * to handle an endpoint. If this is a variadic function, it will fail that
+     * check.
      *
-     * Therefore, we expect the arguments accepted to be the same length as
-     * the `handler` function passed internally.
+     * Therefore, we expect the arguments accepted to be the same length as the
+     * `handler` function passed internally.
      *
      * We also set a name to avoid a common useless name in tracing such as
      * `"anonymous"` or `"bound function"`.
@@ -794,11 +830,16 @@ export class InngestCommHandler<
     timer,
     getInngestHeaders,
     reqArgs,
+    signatureValidation,
+    body,
   }: {
     actions: HandlerResponseWithErrors;
     timer: ServerTiming;
     getInngestHeaders: () => Record<string, string>;
     reqArgs: unknown[];
+    signatureValidation: Promise<string>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    body: any;
   }): Promise<ActionResponse> {
     const assumedMode = getMode({ env: this.env, client: this.client });
 
@@ -837,15 +878,7 @@ export class InngestCommHandler<
       };
 
       if (method === "POST") {
-        const signature = await actions.headers(
-          "checking signature for run request",
-          headerKeys.Signature
-        );
-
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const body = await actions.body("processing run request");
-
-        this.validateSignature(signature ?? undefined, body);
+        await signatureValidation;
 
         const headerPromises = [
           headerKeys.TraceParent,
@@ -1027,11 +1060,6 @@ export class InngestCommHandler<
           deployId: null,
         });
 
-        const signature = await actions.headers(
-          "checking signature for run request",
-          headerKeys.Signature
-        );
-
         let introspection:
           | UnauthenticatedIntrospection
           | AuthenticatedIntrospection = {
@@ -1050,7 +1078,7 @@ export class InngestCommHandler<
         // signature validation
         if (this._mode.type === "cloud") {
           try {
-            this.validateSignature(signature ?? undefined, "");
+            await signatureValidation;
 
             introspection = {
               ...introspection,
@@ -1509,12 +1537,20 @@ export class InngestCommHandler<
     }
   }
 
-  protected validateSignature(sig: string | undefined, body: unknown) {
+  /**
+   * Validate the signature of a request and return the signing key used to
+   * validate it.
+   */
+  // eslint-disable-next-line @typescript-eslint/require-await
+  protected async validateSignature(
+    sig: string | undefined,
+    body: unknown
+  ): Promise<string> {
     // Never validate signatures outside of prod. Make sure to check the mode
     // exists here instead of using nullish coalescing to confirm that the check
     // has been completed.
     if (this._mode && !this._mode.isCloud) {
-      return;
+      return "";
     }
 
     // If we're here, we're in production; lack of a signing key is an error.
@@ -1532,7 +1568,7 @@ export class InngestCommHandler<
     }
 
     // Validate the signature
-    new RequestSignature(sig).verifySignature({
+    return new RequestSignature(sig).verifySignature({
       body,
       allowExpiredSignatures: this.allowExpiredSignatures,
       signingKey: this.signingKey,
@@ -1540,8 +1576,11 @@ export class InngestCommHandler<
     });
   }
 
-  protected signResponse(): string {
-    return "";
+  protected getResponseSignature(key: string, body: string): string {
+    const now = Date.now();
+    const mac = signDataWithKey(body, key, now.toString());
+
+    return `s=${mac}&t=${now}`;
   }
 
   /**
@@ -1616,19 +1655,7 @@ class RequestSignature {
       throw new Error("Signature has expired");
     }
 
-    // Calculate the HMAC of the request body ourselves.
-    // We make the assumption here that a stringified body is the same as the
-    // raw bytes; it may be pertinent in the future to always parse, then
-    // canonicalize the body to ensure it's consistent.
-    const encoded = typeof body === "string" ? body : canonicalize(body);
-    // Remove the `/signkey-[test|prod]-/` prefix from our signing key to calculate the HMAC.
-    const key = signingKey.replace(/signkey-\w+-/, "");
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
-    const mac = hmac(sha256 as any, key)
-      .update(encoded)
-      .update(this.timestamp)
-      .digest("hex");
-
+    const mac = signDataWithKey(body, signingKey, this.timestamp);
     if (mac !== this.signature) {
       // TODO PrettyError
       throw new Error("Invalid signature");
@@ -1645,9 +1672,11 @@ class RequestSignature {
     signingKey: string;
     signingKeyFallback: string | undefined;
     allowExpiredSignatures: boolean;
-  }): void {
+  }): string {
     try {
       this.#verifySignature({ body, signingKey, allowExpiredSignatures });
+
+      return signingKey;
     } catch (err) {
       if (!signingKeyFallback) {
         throw err;
@@ -1658,6 +1687,8 @@ class RequestSignature {
         signingKey: signingKeyFallback,
         allowExpiredSignatures,
       });
+
+      return signingKeyFallback;
     }
   }
 }
