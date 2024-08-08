@@ -166,6 +166,7 @@ export const sentryMiddleware = (
 
                       Sentry.withActiveSpan(reqSpan, (scope) => {
                         scope.setTags(sharedTags);
+                        scope.setTransactionName(`inngest:${fn.name}`);
                         scope.captureException(result.error);
                       });
                     } else {
