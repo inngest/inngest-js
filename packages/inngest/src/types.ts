@@ -989,6 +989,11 @@ export interface RegisterRequest {
    * The deploy ID used to identify this particular deployment.
    */
   deployId?: string;
+
+  /**
+   * Capabilities of the SDK.
+   */
+  capabilities: Capabilities;
 }
 
 export interface Capabilities {

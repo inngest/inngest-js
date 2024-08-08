@@ -1424,6 +1424,9 @@ export class InngestCommHandler<
       sdk: `js:v${version}`,
       v: "0.1",
       deployId: deployId || undefined,
+      capabilities: {
+        trust_probe: "v1",
+      },
     };
 
     return body;
