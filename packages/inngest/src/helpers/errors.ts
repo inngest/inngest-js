@@ -89,7 +89,8 @@ export const serializeError = (subject: unknown): SerializedError => {
         if (
           typeof target === "object" &&
           target !== null &&
-          "cause" in target
+          "cause" in target &&
+          target.cause
         ) {
           target = target.cause = serializeError(target.cause);
           continue;
