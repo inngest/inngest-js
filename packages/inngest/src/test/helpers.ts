@@ -812,9 +812,8 @@ export const testFramework = (
             [{ method: "POST", headers: {} }],
             env
           );
-          expect(ret.status).toEqual(500);
+          expect(ret.status).toEqual(401);
           expect(JSON.parse(ret.body)).toMatchObject({
-            type: "internal",
             message: expect.stringContaining(
               `No ${headerKeys.Signature} provided`
             ),
@@ -826,9 +825,8 @@ export const testFramework = (
             [{ method: "POST", headers: { [headerKeys.Signature]: "t=&s=" } }],
             env
           );
-          expect(ret.status).toEqual(500);
+          expect(ret.status).toEqual(401);
           expect(JSON.parse(ret.body)).toMatchObject({
-            type: "internal",
             message: expect.stringContaining(
               `Invalid ${headerKeys.Signature} provided`
             ),
@@ -854,7 +852,7 @@ export const testFramework = (
             env
           );
           expect(ret).toMatchObject({
-            status: 500,
+            status: 401,
             body: expect.stringContaining("Signature has expired"),
           });
         });
@@ -1013,7 +1011,7 @@ export const testFramework = (
               env
             );
             expect(ret).toMatchObject({
-              status: 500,
+              status: 401,
               body: expect.stringContaining("Invalid signature"),
             });
           });

@@ -10,9 +10,14 @@ import chalk from "chalk";
  * @public
  */
 export enum queryKeys {
-  FnId = "fnId",
-  StepId = "stepId",
   DeployId = "deployId",
+  FnId = "fnId",
+  Probe = "probe",
+  StepId = "stepId",
+}
+
+export enum probe {
+  Trust = "trust",
 }
 
 export enum envKeys {
