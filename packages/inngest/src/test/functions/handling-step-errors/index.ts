@@ -6,11 +6,13 @@ export default inngest.createFunction(
   async ({ step }) => {
     try {
       await step.run("a", () => {
-        throw new Error("Oh no!");
+        throw new Error("Oh no!", {
+          cause: new Error("This is the cause"),
+        });
       });
     } catch (err) {
       await step.run("b", () => {
-        return `err was: ${err.message}`;
+        return `err was: "${err.message}" and the cause was: "${err.cause.message}"`;
       });
     }
 
