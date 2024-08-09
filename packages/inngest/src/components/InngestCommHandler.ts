@@ -1644,7 +1644,7 @@ export class InngestCommHandler<
     const now = Date.now();
     const mac = signDataWithKey(body, key, now.toString());
 
-    return `s=${mac}&t=${now}`;
+    return `t=${now}&s=${mac}`;
   }
 
   /**
