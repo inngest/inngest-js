@@ -28,6 +28,7 @@ import {
 } from "./components/InngestCommHandler";
 import { type Either } from "./helpers/types";
 import { type SupportedFrameworkName } from "./types";
+import { clear } from "console";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -61,6 +62,9 @@ export const frameworkName: SupportedFrameworkName = "express";
  * @public
  */
 // Has explicit return type to avoid JSR-defined "slow types"
+
+let reqCounter = 0;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const serve = (options: ServeHandlerOptions): any => {
   const handler = new InngestCommHandler({
@@ -70,6 +74,15 @@ export const serve = (options: ServeHandlerOptions): any => {
       req: Either<VercelRequest, Request>,
       res: Either<Response, VercelResponse>
     ) => {
+      reqCounter++;
+      const start = Date.now();
+
+      const local = reqCounter;
+      const timer = setTimeout(() => {
+        const dur = Math.round(((Date.now() - start) / 1000.0) * 100) / 100;
+        console.log(dur.toFixed(2), local);
+      }, 200);
+
       return {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         body: () => req.body,
@@ -98,6 +111,7 @@ export const serve = (options: ServeHandlerOptions): any => {
           return Array.isArray(qs) ? qs[0] : qs;
         },
         transformResponse: ({ body, headers, status }) => {
+          clearTimeout(timer);
           for (const [name, value] of Object.entries(headers)) {
             res.setHeader(name, value);
           }

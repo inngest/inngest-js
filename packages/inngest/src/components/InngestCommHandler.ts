@@ -1424,6 +1424,9 @@ export class InngestCommHandler<
       sdk: `js:v${version}`,
       v: "0.1",
       deployId: deployId || undefined,
+      capabilities: {
+        trust_probe: "v1",
+      },
     };
 
     return body;
@@ -1615,11 +1618,11 @@ export class InngestCommHandler<
           `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`
         );
       }
-
+      // console.log("sig", sig)
       // If we're here, we're in production; lack of a req signature is an error.
       if (!sig) {
         // TODO PrettyError
-        throw new Error(`No ${headerKeys.Signature} provided`);
+        throw new Error(`No ${headerKeys.Signature} provided!`);
       }
 
       // Validate the signature
@@ -1641,7 +1644,7 @@ export class InngestCommHandler<
     const now = Date.now();
     const mac = signDataWithKey(body, key, now.toString());
 
-    return `s=${mac}&t=${now}`;
+    return `t=${now}&s=${mac}`;
   }
 
   /**
