@@ -1,5 +1,11 @@
 # inngest
 
+## 3.22.2
+
+### Patch Changes
+
+- [#671](https://github.com/inngest/inngest-js/pull/671) [`4f91d9c`](https://github.com/inngest/inngest-js/commit/4f91d9c302592ecc2228914469dd057ae148005b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add de(serialization) of `Error.cause`, meaning nested errors can now be correctly used with `StepError`
+
 ## 3.22.1
 
 ### Patch Changes
