@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ExecutionVersion } from "../components/execution/InngestExecution";
-import { failureEventErrorSchema, type EventPayload } from "../types";
+import { jsonErrorSchema, type EventPayload } from "../types";
 
 export const errorSchema = z.object({
   error: z.string(),
@@ -31,7 +31,7 @@ export const stepsSchemas = {
           z
             .object({
               type: z.literal("error").optional().default("error"),
-              error: failureEventErrorSchema,
+              error: jsonErrorSchema,
             })
             .strict()
         )
