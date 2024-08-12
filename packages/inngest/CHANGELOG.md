@@ -1,5 +1,11 @@
 # inngest
 
+## 3.22.3
+
+### Patch Changes
+
+- [#677](https://github.com/inngest/inngest-js/pull/677) [`f4c3dc4`](https://github.com/inngest/inngest-js/commit/f4c3dc4664ce0727769e7a284e5b1c22ef9c4018) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix wrong URL when INNGEST_DEV=1
+
 ## 3.22.2
 
 ### Patch Changes
