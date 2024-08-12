@@ -78,6 +78,10 @@ export class InngestApi {
   }
 
   private async getTargetUrl(path: string): Promise<URL> {
+    if (this.apiBaseUrl) {
+      return new URL(path, this.apiBaseUrl);
+    }
+
     let url = new URL(path, defaultInngestApiBaseUrl);
 
     if (this.mode.isDev && this.mode.isInferred && !this.apiBaseUrl) {
