@@ -1001,6 +1001,15 @@ export interface RegisterRequest {
    * The deploy ID used to identify this particular deployment.
    */
   deployId?: string;
+
+  /**
+   * Capabilities of the SDK.
+   */
+  capabilities: Capabilities;
+}
+
+export interface Capabilities {
+  trust_probe: "v1";
 }
 
 /**
@@ -1026,6 +1035,7 @@ export interface AuthenticatedIntrospection
   api_origin: string;
   app_id: string;
   authentication_succeeded: true;
+  capabilities: Capabilities;
   env: string | null;
   event_api_origin: string;
   event_key_hash: string | null;
