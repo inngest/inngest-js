@@ -23,21 +23,33 @@ import {
 } from "./helpers/types";
 import { type Logger } from "./middleware/logger";
 
-export const failureEventErrorSchema = z
-  .object({
-    name: z.string().trim().optional(),
-    error: z.string().trim().optional(),
-    message: z.string().trim().optional(),
-    stack: z.string().trim().optional(),
+const baseJsonErrorSchema = z.object({
+  name: z.string().trim().optional(),
+  error: z.string().trim().optional(),
+  message: z.string().trim().optional(),
+  stack: z.string().trim().optional(),
+});
+
+export type JsonError = z.infer<typeof baseJsonErrorSchema> & {
+  name: string;
+  message: string;
+  cause?: JsonError;
+};
+
+export const jsonErrorSchema = baseJsonErrorSchema
+  .extend({
+    cause: z.lazy(() => jsonErrorSchema).optional(),
   })
+  .passthrough()
   .catch({})
   .transform((val) => {
     return {
+      ...val,
       name: val.name || "Error",
       message: val.message || val.error || "Unknown error",
       stack: val.stack,
     };
-  });
+  }) as z.ZodType<JsonError>;
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -49,7 +61,7 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
   data: {
     function_id: string;
     run_id: string;
-    error: z.output<typeof failureEventErrorSchema>;
+    error: z.output<typeof jsonErrorSchema>;
     event: P;
   };
 };
@@ -85,7 +97,7 @@ export type FinishedEventPayload = {
     correlation_id?: string;
   } & (
     | {
-        error: z.output<typeof failureEventErrorSchema>;
+        error: z.output<typeof jsonErrorSchema>;
       }
     | {
         result: unknown;
@@ -989,6 +1001,15 @@ export interface RegisterRequest {
    * The deploy ID used to identify this particular deployment.
    */
   deployId?: string;
+
+  /**
+   * Capabilities of the SDK.
+   */
+  capabilities: Capabilities;
+}
+
+export interface Capabilities {
+  trust_probe: "v1";
 }
 
 /**
@@ -1014,6 +1035,7 @@ export interface AuthenticatedIntrospection
   api_origin: string;
   app_id: string;
   authentication_succeeded: true;
+  capabilities: Capabilities;
   env: string | null;
   event_api_origin: string;
   event_key_hash: string | null;

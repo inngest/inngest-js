@@ -1,5 +1,23 @@
 # inngest
 
+## 3.22.4
+
+### Patch Changes
+
+- [#674](https://github.com/inngest/inngest-js/pull/674) [`4100172`](https://github.com/inngest/inngest-js/commit/410017219045c29c0155ecefaf1a1e157b413a41) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add trust probes and response signing for syncing validation
+
+## 3.22.3
+
+### Patch Changes
+
+- [#677](https://github.com/inngest/inngest-js/pull/677) [`f4c3dc4`](https://github.com/inngest/inngest-js/commit/f4c3dc4664ce0727769e7a284e5b1c22ef9c4018) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix wrong URL when INNGEST_DEV=1
+
+## 3.22.2
+
+### Patch Changes
+
+- [#671](https://github.com/inngest/inngest-js/pull/671) [`4f91d9c`](https://github.com/inngest/inngest-js/commit/4f91d9c302592ecc2228914469dd057ae148005b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add de(serialization) of `Error.cause`, meaning nested errors can now be correctly used with `StepError`
+
 ## 3.22.1
 
 ### Patch Changes

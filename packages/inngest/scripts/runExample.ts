@@ -72,6 +72,12 @@ void inquirer
     // If Bun is seen, use it. Otherwise, use npm. Hacky, but this doesn't need
     // to be fancy.
     if (example.startsWith("bun")) {
+      // Force reinstalling, otherwise it can just see the local package/version
+      // and stick to a stale version.
+      await exec("bun", ["remove", "inngest"], {
+        cwd: examplePath,
+      });
+
       await exec("bun", ["add", "--no-save", `inngest@${relativeTgzPath}`], {
         cwd: examplePath,
       });
