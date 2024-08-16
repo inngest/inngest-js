@@ -1,5 +1,11 @@
 # inngest
 
+## 3.22.4
+
+### Patch Changes
+
+- [#674](https://github.com/inngest/inngest-js/pull/674) [`4100172`](https://github.com/inngest/inngest-js/commit/410017219045c29c0155ecefaf1a1e157b413a41) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add trust probes and response signing for syncing validation
+
 ## 3.22.3
 
 ### Patch Changes
