@@ -17,7 +17,7 @@ import {
 import { type MaybePromise, type PartialK } from "../../helpers/types";
 import {
   StepOpCode,
-  failureEventErrorSchema,
+  jsonErrorSchema,
   type BaseContext,
   type Context,
   type EventPayload,
@@ -422,7 +422,7 @@ export class V0InngestExecution
 
     if (this.options.isFailureHandler) {
       const eventData = z
-        .object({ error: failureEventErrorSchema })
+        .object({ error: jsonErrorSchema })
         .parse(fnArg.event?.data);
 
       (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
