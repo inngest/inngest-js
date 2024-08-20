@@ -814,7 +814,7 @@ export class InngestCommHandler<
            * appropriate response is always given.
            */
           void actionRes.then((res) => {
-            return finalize(prepareActionRes(res));
+            void prepareActionRes(res).then(finalize);
           });
 
           return timer.wrap("res", () => {
