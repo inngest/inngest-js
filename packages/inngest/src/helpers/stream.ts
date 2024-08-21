@@ -53,8 +53,14 @@ export const createStream = (opts?: {
 
           const finalize = (data: unknown) => {
             clearInterval(heartbeat);
-            controller.enqueue(encoder.encode(stringify(data)));
-            controller.close();
+
+            // `data` may be a `Promise`. If it is, we need to wait for it to
+            // resolve before sending it. To support this elegantly we'll always
+            // assume it's a promise and handle that case.
+            void Promise.resolve(data).then((resolvedData) => {
+              controller.enqueue(encoder.encode(stringify(resolvedData)));
+              controller.close();
+            });
           };
 
           passFinalize(finalize);
