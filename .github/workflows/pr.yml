@@ -189,6 +189,12 @@ jobs:
       fail-fast: false
       matrix:
         example: ${{ fromJson(needs.examples-matrix.outputs.matrix) }}
+        streaming: [""]
+        include:
+          - example: framework-remix
+            streaming: force
+          - example: framework-nextjs-app-router
+            streaming: force
     steps:
       # Checkout the repo
       - name: Checkout SDK
@@ -204,3 +210,5 @@ jobs:
 
       - name: Run integration tests
         run: pnpm run itest ${{ matrix.example }}
+        env:
+          INNGEST_STREAMING: ${{ matrix.streaming }}
