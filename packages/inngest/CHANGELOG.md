@@ -1,5 +1,13 @@
 # inngest
 
+## 3.22.5
+
+### Patch Changes
+
+- [#682](https://github.com/inngest/inngest-js/pull/682) [`2019fe2`](https://github.com/inngest/inngest-js/commit/2019fe218bba7e82c85622d9b90b7eebaa305488) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix empty response body when streaming
+
+- [#684](https://github.com/inngest/inngest-js/pull/684) [`ae7ea5c`](https://github.com/inngest/inngest-js/commit/ae7ea5c66fc7a6829a7d843a5f7f90ab9936e8cd) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow passing `error` when transforming outputs in middleware
+
 ## 3.22.4
 
 ### Patch Changes
