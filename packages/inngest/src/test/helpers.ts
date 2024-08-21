@@ -662,7 +662,7 @@ export const testFramework = (
             [
               {
                 method: "PUT",
-                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
+                headers: { [headerKeys.InngestServerKind]: serverKind.Cloud },
               },
             ]
           );
@@ -671,7 +671,7 @@ export const testFramework = (
             status: 200,
             headers: expect.objectContaining({
               [headerKeys.Environment]: expect.stringMatching("FOO"),
-              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
+              [headerKeys.InngestExpectedServerKind]: serverKind.Cloud,
             }),
           });
         });

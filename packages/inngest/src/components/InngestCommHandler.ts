@@ -11,7 +11,6 @@ import {
   logPrefix,
   probe as probeEnum,
   queryKeys,
-  serverKind,
 } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import { enumFromValue } from "../helpers/enum";
