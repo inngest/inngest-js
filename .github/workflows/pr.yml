@@ -189,7 +189,10 @@ jobs:
       fail-fast: false
       matrix:
         example: ${{ fromJson(needs.examples-matrix.outputs.matrix) }}
-        streaming: ["false", "force"]
+        streaming: [""]
+        include:
+          - example: framework-remix
+            streaming: force
     steps:
       # Checkout the repo
       - name: Checkout SDK
