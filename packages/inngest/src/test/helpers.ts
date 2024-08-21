@@ -675,6 +675,33 @@ export const testFramework = (
             }),
           });
         });
+
+        test("throws 400 if in different mode to server", async () => {
+          nock("https://api.inngest.com").post("/fn/register").reply(200, {});
+
+          const ret = await run(
+            [
+              {
+                client: new Inngest({ id: "Test", isDev: false }),
+                functions: [],
+              },
+            ],
+            [
+              {
+                method: "PUT",
+                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
+              },
+            ]
+          );
+
+          expect(ret).toMatchObject({
+            status: 400,
+            body: expect.stringContaining("Server kind mismatch"),
+            headers: expect.objectContaining({
+              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
+            }),
+          });
+        });
       });
 
       test("register with overwritten host and path when specified", async () => {
