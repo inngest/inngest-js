@@ -1188,6 +1188,23 @@ export class InngestCommHandler<
           deployId = undefined;
         }
 
+        const requestServerKind = await actions.headers(
+          `reading ${headerKeys.InngestServerKind} header`,
+          headerKeys.InngestServerKind
+        );
+        if (requestServerKind && requestServerKind !== this._mode?.type) {
+          return {
+            status: 400,
+            body: stringify({
+              message: `Server kind mismatch; expected "${this._mode?.type}" but got "${requestServerKind}"`,
+            }),
+            headers: {
+              "Content-Type": "application/json",
+            },
+            version: undefined,
+          };
+        }
+
         const { status, message, modified } = await this.register(
           this.reqUrl(url),
           deployId,
