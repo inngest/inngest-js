@@ -193,6 +193,10 @@ jobs:
         include:
           - example: framework-remix
             streaming: force
+          - example: framework-nextjs-app-router
+            streaming: force
+          - example: framework-nextjs-pages-router
+            streaming: force
     steps:
       # Checkout the repo
       - name: Checkout SDK
