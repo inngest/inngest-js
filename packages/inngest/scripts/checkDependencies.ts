@@ -268,7 +268,7 @@ function checkDependencies(
   }
 }
 
-checkDependencies("tsconfig.build.json", [
+const ignoreFiles = [
   "src/astro.ts",
   "src/cloudflare.ts",
   "src/digitalocean.ts",
@@ -284,4 +284,7 @@ checkDependencies("tsconfig.build.json", [
   "src/redwood.ts",
   "src/remix.ts",
   "src/sveltekit.ts",
-]);
+];
+
+checkDependencies("tsconfig.build.cjs.json", ignoreFiles);
+checkDependencies("tsconfig.build.esm.json", ignoreFiles);

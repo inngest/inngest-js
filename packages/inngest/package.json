@@ -4,13 +4,14 @@
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "main": "./index.js",
   "types": "./index.d.ts",
+  "type": "module",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
     "prebuild": "pnpm run pb:version",
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
-    "build": "pnpm run clean && tsc --project tsconfig.build.json",
+    "build": "pnpm run clean && tsc --project tsconfig.build.cjs.json && tsc --project tsconfig.build.esm.json",
     "test": "jest --silent --logHeapUsage --maxWorkers=8 --coverage --ci",
     "itest": "tsx scripts/integrationTestRunner.ts",
     "test:examples": "jest --logHeapUsage --maxWorkers=8 --testMatch \"**/test/functions/**/*.test.ts\" --ci --verbose",
@@ -33,100 +34,120 @@
   },
   "exports": {
     ".": {
+      "types": "./index.d.ts",
       "require": "./index.js",
-      "import": "./index.js",
-      "types": "./index.d.ts"
+      "import": "./esm/index.js"
     },
     "./astro": {
+      "types": "./astro.d.ts",
       "require": "./astro.js",
-      "import": "./astro.js",
-      "types": "./astro.d.ts"
+      "import": "./esm/astro.js"
     },
     "./bun": {
+      "types": "./bun.d.ts",
       "require": "./bun.js",
-      "import": "./bun.js",
-      "types": "./bun.d.ts"
+      "import": "./esm/bun.js"
     },
     "./cloudflare": {
+      "types": "./cloudflare.d.ts",
       "require": "./cloudflare.js",
-      "import": "./cloudflare.js",
-      "types": "./cloudflare.d.ts"
+      "import": "./esm/cloudflare.js"
     },
     "./digitalocean": {
+      "types": "./digitalocean.d.ts",
       "require": "./digitalocean.js",
-      "import": "./digitalocean.js",
-      "types": "./digitalocean.d.ts"
+      "import": "./esm/digitalocean.js"
     },
     "./edge": {
+      "types": "./edge.d.ts",
       "require": "./edge.js",
-      "import": "./edge.js",
-      "types": "./edge.d.ts"
+      "import": "./esm/edge.js"
     },
     "./express": {
+      "types": "./express.d.ts",
       "require": "./express.js",
-      "import": "./express.js",
-      "types": "./express.d.ts"
+      "import": "./esm/express.js"
     },
     "./fastify": {
+      "types": "./fastify.d.ts",
       "require": "./fastify.js",
-      "import": "./fastify.js",
-      "types": "./fastify.d.ts"
+      "import": "./esm/fastify.js"
     },
     "./h3": {
+      "types": "./h3.d.ts",
       "require": "./h3.js",
-      "import": "./h3.js",
-      "types": "./h3.d.ts"
+      "import": "./esm/h3.js"
     },
     "./koa": {
+      "types": "./koa.d.ts",
       "require": "./koa.js",
-      "import": "./koa.js",
-      "types": "./koa.d.ts"
+      "import": "./esm/koa.js"
     },
     "./lambda": {
+      "types": "./lambda.d.ts",
       "require": "./lambda.js",
-      "import": "./lambda.js",
-      "types": "./lambda.d.ts"
+      "import": "./esm/lambda.js"
     },
     "./next": {
+      "types": "./next.d.ts",
       "require": "./next.js",
-      "import": "./next.js",
-      "types": "./next.d.ts"
+      "import": "./esm/next.js"
     },
     "./nuxt": {
+      "types": "./nuxt.d.ts",
       "require": "./nuxt.js",
-      "import": "./nuxt.js",
-      "types": "./nuxt.d.ts"
+      "import": "./esm/nuxt.js"
     },
     "./redwood": {
+      "types": "./redwood.d.ts",
       "require": "./redwood.js",
-      "import": "./redwood.js",
-      "types": "./redwood.d.ts"
+      "import": "./esm/redwood.js"
     },
     "./remix": {
+      "types": "./remix.d.ts",
       "require": "./remix.js",
-      "import": "./remix.js",
-      "types": "./remix.d.ts"
+      "import": "./esm/remix.js"
     },
     "./sveltekit": {
+      "types": "./sveltekit.d.ts",
       "require": "./sveltekit.js",
-      "import": "./sveltekit.js",
-      "types": "./sveltekit.d.ts"
+      "import": "./esm/sveltekit.js"
     },
     "./deno/fresh": {
+      "types": "./deno/fresh.d.ts",
       "require": "./deno/fresh.js",
-      "import": "./deno/fresh.js",
-      "types": "./deno/fresh.d.ts"
+      "import": "./esm/deno/fresh.js"
     },
     "./hono": {
+      "types": "./hono.d.ts",
       "require": "./hono.js",
-      "import": "./hono.js",
-      "types": "./hono.d.ts"
+      "import": "./esm/hono.js"
     },
-    "./api/*": "./api/*.js",
-    "./components/*": "./components/*.js",
-    "./deno/*": "./deno/*.js",
-    "./helpers/*": "./helpers/*.js",
-    "./middleware/*": "./middleware/*.js"
+    "./api/*": {
+      "types": "./api/*.d.ts",
+      "require": "./api/*.js",
+      "import": "./esm/api/*.js"
+    },
+    "./components/*": {
+      "types": "./components/*.d.ts",
+      "require": "./components/*.js",
+      "import": "./esm/components/*.js"
+    },
+    "./deno/*": {
+      "types": "./deno/*.d.ts",
+      "require": "./deno/*.js",
+      "import": "./esm/deno/*.js"
+    },
+    "./helpers/*": {
+      "types": "./helpers/*.d.ts",
+      "require": "./helpers/*.js",
+      "import": "./esm/helpers/*.js"
+    },
+    "./middleware/*": {
+      "types": "./middleware/*.d.ts",
+      "require": "./middleware/*.js",
+      "import": "./esm/middleware/*.js"
+    }
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
