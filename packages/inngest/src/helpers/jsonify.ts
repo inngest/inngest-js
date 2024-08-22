@@ -21,7 +21,7 @@ import {
   type IsUnknown,
   type KnownKeys,
   type Simplify,
-} from "./types";
+} from "./types.js";
 
 // Note: The return value has to be `any` and not `unknown` so it can match `void`.
 type NotJsonable = ((...arguments_: any[]) => any) | undefined | symbol;

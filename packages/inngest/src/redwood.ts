@@ -25,9 +25,9 @@ import {
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler";
-import { processEnv } from "./helpers/env";
-import { type SupportedFrameworkName } from "./types";
+} from "./components/InngestCommHandler.js";
+import { processEnv } from "./helpers/env.js";
+import { type SupportedFrameworkName } from "./types.js";
 
 export interface RedwoodResponse {
   statusCode: number;

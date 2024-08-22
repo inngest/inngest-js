@@ -1,11 +1,11 @@
 import Debug, { type Debugger } from "debug";
-import { type ServerTiming } from "../../helpers/ServerTiming";
-import { debugPrefix } from "../../helpers/consts";
-import { type MaybePromise, type Simplify } from "../../helpers/types";
-import { type Context, type IncomingOp, type OutgoingOp } from "../../types";
-import { type Inngest } from "../Inngest";
-import { type ActionResponse } from "../InngestCommHandler";
-import { type InngestFunction } from "../InngestFunction";
+import { type ServerTiming } from "../../helpers/ServerTiming.js";
+import { debugPrefix } from "../../helpers/consts.js";
+import { type MaybePromise, type Simplify } from "../../helpers/types.js";
+import { type Context, type IncomingOp, type OutgoingOp } from "../../types.js";
+import { type Inngest } from "../Inngest.js";
+import { type ActionResponse } from "../InngestCommHandler.js";
+import { type InngestFunction } from "../InngestFunction.js";
 
 /**
  * The possible results of an execution.

@@ -1,18 +1,18 @@
 import { z } from "zod";
-import { type EventSchemas } from "./components/EventSchemas";
+import { type EventSchemas } from "./components/EventSchemas.js";
 import {
   type builtInMiddleware,
   type GetEvents,
   type Inngest,
-} from "./components/Inngest";
-import { type InngestFunction } from "./components/InngestFunction";
-import { type InngestFunctionReference } from "./components/InngestFunctionReference";
+} from "./components/Inngest.js";
+import { type InngestFunction } from "./components/InngestFunction.js";
+import { type InngestFunctionReference } from "./components/InngestFunctionReference.js";
 import {
   type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
-} from "./components/InngestMiddleware";
-import { type createStepTools } from "./components/InngestStepTools";
-import { type internalEvents } from "./helpers/consts";
+} from "./components/InngestMiddleware.js";
+import { type createStepTools } from "./components/InngestStepTools.js";
+import { type internalEvents } from "./helpers/consts.js";
 import {
   type AsTuple,
   type IsEqual,
@@ -20,8 +20,8 @@ import {
   type Public,
   type Simplify,
   type WithoutInternal,
-} from "./helpers/types";
-import { type Logger } from "./middleware/logger";
+} from "./helpers/types.js";
+import { type Logger } from "./middleware/logger.js";
 
 const baseJsonErrorSchema = z.object({
   name: z.string().trim().optional(),

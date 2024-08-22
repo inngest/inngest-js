@@ -1,22 +1,22 @@
 import { sha1 } from "hash.js";
 import { z } from "zod";
-import { internalEvents } from "../../helpers/consts";
+import { internalEvents } from "../../helpers/consts.js";
 import {
   ErrCode,
   deserializeError,
   minifyPrettyError,
   prettyError,
   serializeError,
-} from "../../helpers/errors";
-import { undefinedToNull } from "../../helpers/functions";
+} from "../../helpers/errors.js";
+import { undefinedToNull } from "../../helpers/functions.js";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
   createTimeoutPromise,
   resolveAfterPending,
   runAsPromise,
-} from "../../helpers/promises";
-import { type MaybePromise, type Simplify } from "../../helpers/types";
+} from "../../helpers/promises.js";
+import { type MaybePromise, type Simplify } from "../../helpers/types.js";
 import {
   StepOpCode,
   jsonErrorSchema,
@@ -26,9 +26,9 @@ import {
   type FailureEventArgs,
   type Handler,
   type OutgoingOp,
-} from "../../types";
-import { type Inngest } from "../Inngest";
-import { getHookStack, type RunHookStack } from "../InngestMiddleware";
+} from "../../types.js";
+import { type Inngest } from "../Inngest.js";
+import { getHookStack, type RunHookStack } from "../InngestMiddleware.js";
 import {
   STEP_INDEXING_SUFFIX,
   createStepTools,
@@ -36,10 +36,10 @@ import {
   invokePayloadSchema,
   type FoundStep,
   type StepHandler,
-} from "../InngestStepTools";
-import { NonRetriableError } from "../NonRetriableError";
-import { RetryAfterError } from "../RetryAfterError";
-import { StepError } from "../StepError";
+} from "../InngestStepTools.js";
+import { NonRetriableError } from "../NonRetriableError.js";
+import { RetryAfterError } from "../RetryAfterError.js";
+import { StepError } from "../StepError.js";
 import {
   InngestExecution,
   type ExecutionResult,
@@ -47,7 +47,7 @@ import {
   type InngestExecutionFactory,
   type InngestExecutionOptions,
   type MemoizedOp,
-} from "./InngestExecution";
+} from "./InngestExecution.js";
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);

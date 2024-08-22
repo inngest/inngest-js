@@ -1,14 +1,14 @@
 import { z } from "zod";
-import { logPrefix } from "../helpers/consts";
-import { type Jsonify } from "../helpers/jsonify";
-import { timeStr } from "../helpers/strings";
+import { logPrefix } from "../helpers/consts.js";
+import { type Jsonify } from "../helpers/jsonify.js";
+import { timeStr } from "../helpers/strings.js";
 import {
   type ExclusiveKeys,
   type ParametersExceptFirst,
   type SendEventPayload,
   type SimplifyDeep,
   type WithoutInternalStr,
-} from "../helpers/types";
+} from "../helpers/types.js";
 import {
   StepOpCode,
   type EventPayload,
@@ -21,16 +21,16 @@ import {
   type StepOptionsOrId,
   type TriggerEventFromFunction,
   type TriggersFromClient,
-} from "../types";
+} from "../types.js";
 import {
   type ClientOptionsFromInngest,
   type GetEvents,
   type GetFunctionOutput,
   type Inngest,
-} from "./Inngest";
-import { InngestFunction } from "./InngestFunction";
-import { InngestFunctionReference } from "./InngestFunctionReference";
-import { type InngestExecution } from "./execution/InngestExecution";
+} from "./Inngest.js";
+import { InngestFunction } from "./InngestFunction.js";
+import { InngestFunctionReference } from "./InngestFunctionReference.js";
+import { type InngestExecution } from "./execution/InngestExecution.js";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;

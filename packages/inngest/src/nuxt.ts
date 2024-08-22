@@ -8,9 +8,9 @@
 import {
   type InternalServeHandlerOptions,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler";
-import { serve as serveH3 } from "./h3";
-import { type SupportedFrameworkName } from "./types";
+} from "./components/InngestCommHandler.js";
+import { serve as serveH3 } from "./h3.js";
+import { type SupportedFrameworkName } from "./types.js";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
