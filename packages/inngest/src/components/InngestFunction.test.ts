@@ -41,7 +41,7 @@ import {
   type OutgoingOp,
 } from "@local/types";
 import { fromPartial } from "@total-typescript/shoehorn";
-import { assertType, createClient, runFnWithStack } from "../test/helpers";
+import { assertType, createClient, runFnWithStack } from "../__test__/helpers";
 
 type TestEvents = {
   foo: { data: { foo: string } };

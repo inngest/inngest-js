@@ -33,7 +33,7 @@ module.exports = {
       {
         devDependencies: [
           "**/*.test.ts",
-          "**/test/**",
+          "**/__test__/**",
           "**/scripts/**",
           "src/cloudflare.ts",
           "src/digitalocean.ts",

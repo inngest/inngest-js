@@ -3,7 +3,7 @@ import {
   eventRunWithName,
   runHasTimeline,
   sendEvent,
-} from "@local/test/helpers";
+} from "@local/__test__/helpers";
 import { events } from ".";
 
 checkIntrospection({
@@ -33,6 +33,7 @@ describe("run", () => {
 
       expect(item).toBeDefined();
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const output = await item?.getOutput();
       expect(output).toEqual(`Hello, ${eventName}!`);
     }, 60000);

@@ -2,7 +2,7 @@ import * as FastifyHandler from "@local/fastify";
 import { fromAny } from "@total-typescript/shoehorn";
 import { type Response } from "express";
 import { type FastifyReply, type FastifyRequest } from "fastify";
-import { testFramework } from "./test/helpers";
+import { testFramework } from "./__test__/helpers";
 
 class MockFastifyReply {
   constructor(public res: Response) {}

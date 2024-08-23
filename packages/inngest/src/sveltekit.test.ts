@@ -2,7 +2,7 @@ import * as SvelteKitHandler from "@local/sveltekit";
 import { type RequestEvent } from "@sveltejs/kit";
 import { fromPartial } from "@total-typescript/shoehorn";
 import fetch, { Headers, Response } from "cross-fetch";
-import { testFramework } from "./test/helpers";
+import { testFramework } from "./__test__/helpers";
 
 const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;

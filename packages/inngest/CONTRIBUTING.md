@@ -44,7 +44,7 @@ pnpm local:pack # creates inngest.tgz
 yarn add ~/path/to/packages/inngest/inngest.tgz
 ```
 
-After running `local:pack`, you can then also run integration tests, which will use the dev server and the collection of tests in `packages/inngest/src/test/functions/`.
+After running `local:pack`, you can then also run integration tests, which will use the dev server and the collection of tests in `packages/inngest/src/__test__/functions/`.
 
 ```sh
 # Usage: pnpm run itest <example> [devServerPort] [exampleServerPort]

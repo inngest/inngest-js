@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { type Jsonify } from "@local/helpers/jsonify";
 import { type IsAny, type IsEqual, type IsUnknown } from "@local/helpers/types";
-import { assertType } from "../test/helpers";
+import { assertType } from "../__test__/helpers";
 
 describe("Jsonify", () => {
   describe("unnested", () => {

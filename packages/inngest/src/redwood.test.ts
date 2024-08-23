@@ -1,5 +1,5 @@
 import * as RedwoodHandler from "@local/redwood";
-import { testFramework } from "./test/helpers";
+import { testFramework } from "./__test__/helpers";
 
 testFramework("Redwood.js", RedwoodHandler, {
   transformReq: (req, _res, _env) => {

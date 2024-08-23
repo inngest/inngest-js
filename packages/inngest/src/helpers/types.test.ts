@@ -1,5 +1,5 @@
 import { type IsEqual, type RecursiveTuple } from "@local/helpers/types";
-import { assertType } from "../test/helpers";
+import { assertType } from "../__test__/helpers";
 
 describe("RecursiveTuple", () => {
   test("should create a tuple of length 1", () => {

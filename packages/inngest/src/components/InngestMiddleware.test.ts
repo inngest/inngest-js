@@ -12,7 +12,7 @@ import {
   createClient,
   runFnWithStack,
   testClientId,
-} from "../test/helpers";
+} from "../__test__/helpers";
 
 describe("stacking and inference", () => {
   describe("onFunctionRun", () => {

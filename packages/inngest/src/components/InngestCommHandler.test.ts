@@ -1,7 +1,7 @@
 import { EventSchemas, InngestCommHandler } from "@local";
 import { serve } from "@local/next";
 import { z } from "zod";
-import { createClient } from "../test/helpers";
+import { createClient } from "../__test__/helpers";
 
 describe("#153", () => {
   test('does not throw "type instantiation is excessively deep and possibly infinite" for looping type', () => {

@@ -1,4 +1,4 @@
 import * as NextHandler from "@local/next";
-import { testFramework } from "./test/helpers";
+import { testFramework } from "./__test__/helpers";
 
 testFramework("Next", NextHandler);

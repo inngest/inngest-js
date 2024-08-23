@@ -1,6 +1,6 @@
 import * as CloudflareHandler from "@local/cloudflare";
 import fetch, { Headers, Response } from "cross-fetch";
-import { testFramework } from "./test/helpers";
+import { testFramework } from "./__test__/helpers";
 
 const originalProcess = process;
 const originalFetch = globalThis.fetch;

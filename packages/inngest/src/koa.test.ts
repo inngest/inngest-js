@@ -2,7 +2,7 @@ import * as KoaHandler from "@local/koa";
 import { createMockContext } from "@shopify/jest-koa-mocks";
 import { type Dictionary } from "@shopify/jest-koa-mocks/build/ts/create-mock-cookies";
 import { type RequestMethod } from "node-mocks-http";
-import { testFramework } from "./test/helpers";
+import { testFramework } from "./__test__/helpers";
 
 testFramework("Koa", KoaHandler, {
   transformReq: (req, _res, _env) => {

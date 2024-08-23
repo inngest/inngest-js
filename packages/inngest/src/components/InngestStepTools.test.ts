@@ -18,7 +18,7 @@ import {
   getStepTools,
   testClientId,
   type StepTools,
-} from "../test/helpers";
+} from "../__test__/helpers";
 
 describe("waitForEvent", () => {
   let step: StepTools;

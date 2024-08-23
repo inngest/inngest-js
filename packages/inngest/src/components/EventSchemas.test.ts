@@ -4,7 +4,7 @@ import { type internalEvents } from "@local/helpers/consts";
 import { type IsAny, type IsEqual } from "@local/helpers/types";
 import { type FailureEventPayload } from "@local/types";
 import { z } from "zod";
-import { assertType } from "../test/helpers";
+import { assertType } from "../__test__/helpers";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Schemas<T extends EventSchemas<any>> = GetEvents<

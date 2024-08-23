@@ -5,7 +5,7 @@ import {
   eventRunWithName,
   runHasTimeline,
   sendEvent,
-} from "@local/test/helpers";
+} from "@local/__test__/helpers";
 
 checkIntrospection({
   name: "step-invoke-not-found",

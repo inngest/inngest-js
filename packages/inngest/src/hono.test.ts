@@ -1,6 +1,6 @@
 import * as HonoHandler from "@local/hono";
 import fetch, { Headers, Response } from "cross-fetch";
-import { testFramework } from "./test/helpers";
+import { testFramework } from "./__test__/helpers";
 
 const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;

@@ -1,6 +1,6 @@
 import * as ExpressHandler from "@local/express";
 import { type VercelRequest, type VercelRequestQuery } from "@vercel/node";
-import { testFramework } from "./test/helpers";
+import { testFramework } from "./__test__/helpers";
 
 testFramework("Express", ExpressHandler);
 

@@ -20,7 +20,7 @@ import { type IsAny, type IsEqual, type IsNever } from "@local/helpers/types";
 import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
 import { literal } from "zod";
-import { assertType, createClient } from "../test/helpers";
+import { assertType, createClient } from "../__test__/helpers";
 
 const testEvent: EventPayload = {
   name: "test",

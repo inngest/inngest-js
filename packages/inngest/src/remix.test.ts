@@ -1,6 +1,6 @@
 import * as RemixHandler from "@local/remix";
 import { Headers } from "cross-fetch";
-import { testFramework } from "./test/helpers";
+import { testFramework } from "./__test__/helpers";
 
 testFramework("Remix", RemixHandler, {
   transformReq: (req) => {

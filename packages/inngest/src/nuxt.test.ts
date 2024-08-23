@@ -1,6 +1,6 @@
 import * as NuxtHandler from "@local/nuxt";
 import { createEvent } from "h3";
-import { testFramework } from "./test/helpers";
+import { testFramework } from "./__test__/helpers";
 
 testFramework("Nuxt", NuxtHandler, {
   transformReq(req, res) {
