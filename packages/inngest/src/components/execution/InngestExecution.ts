@@ -19,7 +19,13 @@ export interface ExecutionResults {
 }
 
 export type ExecutionResult = {
-  [K in keyof ExecutionResults]: Simplify<{ type: K } & ExecutionResults[K]>;
+  [K in keyof ExecutionResults]: Simplify<
+    {
+      type: K;
+      ctx: Context.Any;
+      ops: Record<string, MemoizedOp>;
+    } & ExecutionResults[K]
+  >;
 }[keyof ExecutionResults];
 
 export type ExecutionResultHandler<T = ActionResponse> = (
@@ -31,6 +37,11 @@ export type ExecutionResultHandlers<T = ActionResponse> = {
 };
 
 export interface MemoizedOp extends IncomingOp {
+  /**
+   * If the step has been hit during this run, these will be the arguments
+   * passed to it.
+   */
+  rawArgs?: unknown[];
   fulfilled?: boolean;
   seen?: boolean;
 }
@@ -63,6 +74,12 @@ export interface InngestExecutionOptions {
   timer?: ServerTiming;
   isFailureHandler?: boolean;
   disableImmediateExecution?: boolean;
+
+  /**
+   * Provide the ability to transform the context passed to the function before
+   * the execution starts.
+   */
+  transformCtx?: (ctx: Readonly<Context.Any>) => Context.Any;
 }
 
 export type InngestExecutionFactory = (
