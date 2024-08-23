@@ -179,6 +179,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           if (transformResult.type === "function-resolved") {
             return {
               type: "step-ran",
+              ctx: transformResult.ctx,
+              ops: transformResult.ops,
               step: _internals.hashOp({
                 ...stepResult,
                 data: transformResult.data,
@@ -188,6 +190,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           } else if (transformResult.type === "function-rejected") {
             return {
               type: "step-ran",
+              ctx: transformResult.ctx,
+              ops: transformResult.ops,
               step: _internals.hashOp({
                 ...stepResult,
                 error: transformResult.error,
@@ -205,6 +209,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         if (newSteps) {
           return {
             type: "steps-found",
+            ctx: this.fnArg,
+            ops: this.ops,
             steps: newSteps,
           };
         }
@@ -215,7 +221,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * timed out or have otherwise decided that it doesn't exist.
        */
       "step-not-found": ({ step }) => {
-        return { type: "step-not-found", step };
+        return { type: "step-not-found", ctx: this.fnArg, ops: this.ops, step };
       },
     };
   }
@@ -563,10 +569,21 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       const serializedError = minifyPrettyError(serializeError(error));
 
-      return { type: "function-rejected", error: serializedError, retriable };
+      return {
+        type: "function-rejected",
+        ctx: this.fnArg,
+        ops: this.ops,
+        error: serializedError,
+        retriable,
+      };
     }
 
-    return { type: "function-resolved", data: undefinedToNull(data) };
+    return {
+      type: "function-resolved",
+      ctx: this.fnArg,
+      ops: this.ops,
+      data: undefinedToNull(data),
+    };
   }
 
   private createExecutionState(): V1ExecutionState {
@@ -611,6 +628,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return state;
   }
 
+  get ops(): Record<string, MemoizedOp> {
+    return this.state.steps;
+  }
+
   private createFnArg(): Context.Any {
     const step = this.createStepTools();
 
@@ -633,7 +654,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       };
     }
 
-    return fnArg;
+    return this.options.transformCtx?.(fnArg) ?? fnArg;
   }
 
   private createStepTools(): ReturnType<typeof createStepTools> {
@@ -839,6 +860,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       const step: FoundStep = {
         ...opId,
+        rawArgs: args,
         hashedId,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         fn: opts?.fn ? () => opts.fn?.(...args) : undefined,

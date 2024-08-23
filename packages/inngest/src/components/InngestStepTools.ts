@@ -35,6 +35,7 @@ import { type InngestExecution } from "./execution/InngestExecution";
 export interface FoundStep extends HashedOp {
   hashedId: string;
   fn?: (...args: unknown[]) => unknown;
+  rawArgs: unknown[];
   fulfilled: boolean;
   handled: boolean;
 
