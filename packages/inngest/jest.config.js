@@ -2,7 +2,10 @@
 module.exports = {
   preset: "ts-jest",
   testEnvironment: "node",
-  testMatch: ["<rootDir>/src/**/*.test.ts", "!**/test/functions/**/*.test.ts"],
+  testMatch: [
+    "<rootDir>/src/**/*.test.ts",
+    "!**/__test__/functions/**/*.test.ts",
+  ],
   roots: ["<rootDir>/src"],
   moduleNameMapper: {
     inngest: "<rootDir>/src",

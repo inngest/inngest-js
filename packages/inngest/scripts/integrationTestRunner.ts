@@ -100,7 +100,7 @@ async function setupExample(examplePath: string): Promise<void> {
   await fsPromises.mkdir(exampleFunctionsPath, { recursive: true });
 
   await execAsync(
-    `cp -r ../../packages/inngest/src/test/functions/* ${exampleFunctionsPath}/`,
+    `cp -r ../../packages/inngest/src/__test__/functions/* ${exampleFunctionsPath}/`,
     { cwd: examplePath }
   );
 

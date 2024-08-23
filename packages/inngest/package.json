@@ -13,7 +13,7 @@
     "build": "pnpm run clean && tsc --project tsconfig.build.json",
     "test": "jest --silent --logHeapUsage --maxWorkers=8 --coverage --ci",
     "itest": "tsx scripts/integrationTestRunner.ts",
-    "test:examples": "jest --logHeapUsage --maxWorkers=8 --testMatch \"**/test/functions/**/*.test.ts\" --ci --verbose",
+    "test:examples": "jest --logHeapUsage --maxWorkers=8 --testMatch \"**/__test__/functions/**/*.test.ts\" --ci --verbose",
     "test:types": "tsc --noEmit --project tsconfig.types.json --listFiles",
     "test:dist": "tsc --noEmit dist/**/*.d.ts",
     "test:deps": "tsx scripts/checkDependencies.ts",
