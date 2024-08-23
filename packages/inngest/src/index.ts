@@ -99,4 +99,5 @@ export type {
   StepOptions,
   StepOptionsOrId,
   TimeStr,
+  JsonError
 } from "./types";
