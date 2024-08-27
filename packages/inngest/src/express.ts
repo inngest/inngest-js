@@ -74,7 +74,14 @@ export const serve = (options: ServeHandlerOptions): any => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         body: () => req.body,
         headers: (key) => {
-          const header = req.headers[key];
+          let header;
+          for (const [k, v] of Object.entries(req.headers)) {
+            if (k.toLowerCase() === key.toLowerCase()) {
+              header = v;
+              break;
+            }
+          }
+
           return Array.isArray(header) ? header[0] : header;
         },
         method: () => req.method || "GET",

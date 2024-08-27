@@ -82,7 +82,13 @@ export const serve = (
               : "{}"
           );
         },
-        headers: (key) => event.headers[key],
+        headers: (key) => {
+          for (const [k, v] of Object.entries(event.headers)) {
+            if (k.toLowerCase() === key.toLowerCase()) {
+              return v;
+            }
+          }
+        },
         method: () => event.httpMethod,
         url: () => {
           const scheme =

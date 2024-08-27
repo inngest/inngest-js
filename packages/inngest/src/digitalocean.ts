@@ -91,7 +91,13 @@ export const serve = (
 
       return {
         body: () => data || {},
-        headers: (key) => http?.headers?.[key],
+        headers: (key) => {
+          for (const [k, v] of Object.entries(http.headers)) {
+            if (k.toLowerCase() === key.toLowerCase()) {
+              return v;
+            }
+          }
+        },
         method: () => http.method,
         url: () => new URL(`${options.serveHost}${options.servePath || "/"}`),
         queryString: (key) => main[key] as string,

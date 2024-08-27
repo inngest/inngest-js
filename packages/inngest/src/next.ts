@@ -76,10 +76,17 @@ export const serve = (
       const req = expectedReq as Either<NextApiRequest, NextRequest>;
 
       const getHeader = (key: string): string | null | undefined => {
-        const header =
-          typeof req.headers.get === "function"
-            ? req.headers.get(key)
-            : req.headers[key];
+        let header;
+        if (typeof req.headers.get === "function") {
+          header = req.headers.get(key);
+        } else {
+          for (const [k, v] of Object.entries(req.headers)) {
+            if (k.toLowerCase() === key.toLowerCase()) {
+              header = v;
+              break;
+            }
+          }
+        }
 
         return Array.isArray(header) ? header[0] : header;
       };

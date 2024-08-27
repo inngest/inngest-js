@@ -73,7 +73,13 @@ export const serve = (
         body: () =>
           (ctx.request as unknown as { body: Record<string, unknown> }).body,
         headers: (key) => {
-          const header = ctx.headers[key];
+          let header;
+          for (const [k, v] of Object.entries(ctx.headers)) {
+            if (k.toLowerCase() === key.toLowerCase()) {
+              header = v;
+              break;
+            }
+          }
 
           if (Array.isArray(header)) {
             return header[0];
