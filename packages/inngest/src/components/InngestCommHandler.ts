@@ -1122,14 +1122,7 @@ export class InngestCommHandler<
           try {
             const validationResult = await signatureValidation;
             if (!validationResult.success) {
-              return {
-                status: 401,
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: stringify(serializeError(validationResult.err)),
-                version: undefined,
-              };
+              throw new Error("Signature validation failed");
             }
 
             introspection = {
