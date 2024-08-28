@@ -91,6 +91,7 @@ export type {
   FailureEventPayload,
   FinishedEventPayload,
   Handler,
+  JsonError,
   LogLevel,
   OutgoingOp,
   RegisterOptions,
@@ -99,5 +100,4 @@ export type {
   StepOptions,
   StepOptionsOrId,
   TimeStr,
-  JsonError
 } from "./types";
