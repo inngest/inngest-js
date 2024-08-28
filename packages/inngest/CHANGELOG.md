@@ -1,5 +1,11 @@
 # inngest
 
+## 3.22.6
+
+### Patch Changes
+
+- [#690](https://github.com/inngest/inngest-js/pull/690) [`6a97e1c`](https://github.com/inngest/inngest-js/commit/6a97e1c0d92920fb14392c7005a565d2557eabe2) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix 401 on missing sig header during inspection
+
 ## 3.22.5
 
 ### Patch Changes
