@@ -430,6 +430,29 @@ export const testFramework = (
           { [envKeys.InngestSigningKey]: "signing-key-123" }
         );
 
+        expect(ret.status).toEqual(200);
+
+        const body = JSON.parse(ret.body);
+
+        expect(body).toMatchObject({
+          has_signing_key: true,
+        });
+      });
+
+      test("#690 returns 200 if signature validation fails", async () => {
+        const ret = await run(
+          [
+            {
+              client: createClient({ id: "test", isDev: false }),
+              functions: [],
+            },
+          ],
+          [{ method: "GET" }],
+          { [envKeys.InngestSigningKey]: "signing-key-123" }
+        );
+
+        expect(ret.status).toEqual(200);
+
         const body = JSON.parse(ret.body);
 
         expect(body).toMatchObject({
