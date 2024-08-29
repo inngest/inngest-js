@@ -1,5 +1,11 @@
 # inngest
 
+## 3.22.7
+
+### Patch Changes
+
+- [#687](https://github.com/inngest/inngest-js/pull/687) [`9f0bdc6`](https://github.com/inngest/inngest-js/commit/9f0bdc60c920d222962e1305e62107ce6fd4c885) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Add exports for `JsonError` type to fix a TypeScript error when using Inngest in projects with `composite` setting in `tsconfig`.
+
 ## 3.22.6
 
 ### Patch Changes
