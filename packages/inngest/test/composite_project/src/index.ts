@@ -1,5 +1,8 @@
 import * as Inngest from "inngest";
 
+// Prove certain types are exported and can be used
+type CatchAll = Inngest.JsonError;
+
 export const inngest = new Inngest.Inngest({
   id: "me",
   schemas: new Inngest.EventSchemas().fromRecord<{
