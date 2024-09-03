@@ -664,7 +664,13 @@ export class InngestCommHandler<
         ),
       ]);
 
-      this.env = env ?? allProcessEnv();
+      // Always make sure to merge whatever env we've been given with
+      // `process.env`; some platforms may not provide all the necessary
+      // environment variables or may use two sources.
+      this.env = {
+        ...allProcessEnv(),
+        ...env,
+      };
 
       const getInngestHeaders = (): Record<string, string> =>
         inngestHeaders({
