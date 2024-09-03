@@ -1,5 +1,13 @@
 # inngest
 
+## 3.22.8
+
+### Patch Changes
+
+- [#697](https://github.com/inngest/inngest-js/pull/697) [`56ed5c1`](https://github.com/inngest/inngest-js/commit/56ed5c11081517db2a72ae27c83cbf4263d9b6ed) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Merge given env vars with `process.env` to support partial env shims like Hono in AWS Lambda
+
+- [#696](https://github.com/inngest/inngest-js/pull/696) [`9169d0e`](https://github.com/inngest/inngest-js/commit/9169d0ea246ef880fb60c7058b237fb72ef64efa) Thanks [@albertchae](https://github.com/albertchae)! - Fix typos in debounce documentation
+
 ## 3.22.7
 
 ### Patch Changes
