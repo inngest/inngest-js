@@ -40,7 +40,7 @@ jobs:
       - run: |
           node --version
           npm --version
-          npm run test --testPathIgnorePatterns "<rootDir>/src/hono.test.ts"
+          npm run test -- --testPathIgnorePatterns "<rootDir>/src/hono.test.ts"
         if: ${{ matrix.nodeVersion < 18 }}
       - run: |
           node --version
