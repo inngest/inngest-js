@@ -867,7 +867,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         fulfilled: Boolean(stepState),
         displayName: opId.displayName ?? opId.id,
         handled: false,
-        handle: () => {
+        handle: async () => {
           if (step.handled) {
             return false;
           }
@@ -876,6 +876,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
           if (stepState) {
             stepState.fulfilled = true;
+
+            // For some execution scenarios such as testing, `data` and/or
+            // `error` may be `Promises`. This could also be the case for future
+            // middleware applications. For this reason, we'll make sure the
+            // values are fully resolved before continuing.
+            await stepState.data;
+            await stepState.error;
 
             if (typeof stepState.data !== "undefined") {
               resolve(stepState.data);
