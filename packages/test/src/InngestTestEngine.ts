@@ -173,11 +173,9 @@ export class InngestTestEngine {
   /**
    * Create a new test engine with the given inline options merged with the
    * existing options.
-   *
-   * @TODO Should be called `.clone()`?
    */
-  public withDefaults(
-    inlineOpts: InngestTestEngine.InlineOptions
+  public clone(
+    inlineOpts?: InngestTestEngine.InlineOptions
   ): InngestTestEngine {
     return new InngestTestEngine({ ...this.options, ...inlineOpts });
   }
@@ -325,7 +323,7 @@ export class InngestTestEngine {
     });
 
     const run = new InngestTestRun({
-      testEngine: this.withDefaults(inlineOpts),
+      testEngine: this.clone(options),
     });
 
     return {
