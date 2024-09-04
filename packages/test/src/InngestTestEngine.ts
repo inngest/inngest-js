@@ -6,8 +6,10 @@ import {
 import { _internals } from "inngest/components/execution/v1";
 import type { InngestFunction } from "inngest/components/InngestFunction";
 import { internalEvents } from "inngest/helpers/consts";
+import { serializeError } from "inngest/helpers/errors";
+import { createDeferredPromise } from "inngest/helpers/promises";
 import { ServerTiming } from "inngest/helpers/ServerTiming";
-import type { Context, EventPayload, OpStack } from "inngest/types";
+import type { Context, EventPayload } from "inngest/types";
 import { ulid } from "ulid";
 import { InngestTestRun } from "./InngestTestRun.js";
 import { mockCtx } from "./util.js";
@@ -41,7 +43,7 @@ export namespace InngestTestEngine {
      * be used. It's recommended to use `run.waitFor()`, where this will be
      * filled automatically as the run progresses.
      */
-    steps?: OpStack;
+    steps?: MockedStep[];
 
     /**
      * The human-readable ID of the step that this execution is attempting to
@@ -86,6 +88,11 @@ export namespace InngestTestEngine {
      * ```
      */
     transformCtx?: (ctx: Context.Any) => Context.Any;
+  }
+
+  export interface MockedStep {
+    id: string;
+    handler: () => any;
   }
 
   /**
@@ -146,6 +153,11 @@ export namespace InngestTestEngine {
   }
 }
 
+interface InternalMemoizedOp extends MemoizedOp {
+  __lazyMockHandler?: (state: { data?: any; error?: any }) => Promise<void>;
+  __mockResult?: Promise<any>;
+}
+
 /**
  * A test engine for running Inngest functions in a test environment, providing
  * the ability to assert inputs, outputs, and step usage, as well as mocking
@@ -185,15 +197,61 @@ export class InngestTestEngine {
       { name: `${internalEvents.FunctionInvoked}`, data: {} },
     ];
 
-    const steps = (options.steps || []).map((step) => ({
-      ...step,
-      id: _internals.hashId(step.id),
-    }));
+    const steps = (options.steps || []).map((step) => {
+      return {
+        ...step,
+        id: _internals.hashId(step.id),
+      };
+    });
 
     const stepState: Record<string, MemoizedOp> = {};
 
     steps.forEach((step) => {
-      stepState[step.id] = step as MemoizedOp;
+      const { promise: data, resolve: resolveData } = createDeferredPromise();
+      const { promise: error, resolve: resolveError } = createDeferredPromise();
+
+      const mockHandler = {
+        ...(step as MemoizedOp),
+        data,
+        error,
+        __lazyMockHandler: async (state) => {
+          resolveError(state.error);
+          resolveData(state.data);
+        },
+      } satisfies InternalMemoizedOp;
+
+      stepState[step.id] = mockHandler;
+    });
+
+    // Track mock step accesses; if we attempt to get a particular step then
+    // assume we've found it and attempt to lazily run the handler to give us
+    // time to return smarter mocked data based on input and other outputs.
+    const mockStepState = new Proxy(stepState, {
+      get(target, prop) {
+        if (!(prop in target)) {
+          return undefined;
+        }
+
+        const mockStep = target[
+          prop as keyof typeof target
+        ] as InternalMemoizedOp;
+
+        // kick off the handler if we haven't already
+        mockStep.__mockResult ??= new Promise<void>(async (resolve) => {
+          try {
+            mockStep.__lazyMockHandler?.({
+              // TODO pass it a context then mate
+              data: await (mockStep as InngestTestEngine.MockedStep).handler(),
+            });
+          } catch (err) {
+            mockStep.__lazyMockHandler?.({ error: serializeError(err) });
+          } finally {
+            resolve();
+          }
+        });
+
+        return mockStep;
+      },
     });
 
     const runId = ulid();
@@ -211,7 +269,7 @@ export class InngestTestEngine {
         reqArgs: [], // TODO allow passing?
         headers: {},
         stepCompletionOrder: steps.map((step) => step.id),
-        stepState,
+        stepState: mockStepState,
         disableImmediateExecution: Boolean(options.disableImmediateExecution),
         isFailureHandler: false, // TODO need to allow hitting an `onFailure` handler - not dynamically, but choosing it
         timer: new ServerTiming(),
