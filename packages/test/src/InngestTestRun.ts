@@ -129,8 +129,13 @@ export class InngestTestRun {
           runningState.steps ??= [];
           runningState.steps.push({
             id: result.step.name as string, // TODO we need the non-hashed ID here, or a way to map it
-            data: result.step.data,
-            error: result.step.error,
+            handler: () => {
+              if (result.step.error) {
+                throw result.step.error;
+              }
+
+              return result.step.data;
+            },
           });
 
           processChain();
