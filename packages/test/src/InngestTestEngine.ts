@@ -260,6 +260,8 @@ export class InngestTestEngine {
     // Track mock step accesses; if we attempt to get a particular step then
     // assume we've found it and attempt to lazily run the handler to give us
     // time to return smarter mocked data based on input and other outputs.
+    //
+    // This gives us the ability for mocks be be async and return dynamic data.
     const mockStepState = new Proxy(stepState, {
       get(target, prop) {
         if (!(prop in target)) {
