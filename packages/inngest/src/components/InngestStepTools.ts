@@ -43,7 +43,7 @@ export interface FoundStep extends HashedOp {
    * Returns a boolean representing whether or not the step was handled on this
    * invocation.
    */
-  handle: () => boolean;
+  handle: () => Promise<boolean>;
 }
 
 export type MatchOpFn<
