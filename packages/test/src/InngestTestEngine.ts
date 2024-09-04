@@ -184,7 +184,7 @@ export class InngestTestEngine {
    * Execute the function with the given inline options.
    */
   public async execute(
-    inlineOpts: InngestTestEngine.InlineOptions
+    inlineOpts?: InngestTestEngine.InlineOptions
   ): Promise<InngestTestEngine.ExecutionOutput> {
     const options = {
       ...this.options,
