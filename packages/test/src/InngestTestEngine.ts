@@ -181,6 +181,37 @@ export class InngestTestEngine {
   }
 
   /**
+   * Start a run from the given state and keep executing the function until a
+   * specific checkpoint is reached.
+   *
+   * Is a shortcut for and uses `run.waitFor()`.
+   */
+  public async executeAndWaitFor<T extends InngestTestRun.CheckpointKey>(
+    /**
+     * Options and state to start the run with.
+     */
+    inlineOpts: InngestTestEngine.InlineOptions,
+
+    /**
+     * The checkpoint to wait for.
+     */
+    checkpoint: T,
+
+    /**
+     * An optional subset of the checkpoint to match against. Any checkpoint of
+     * this type will be matched.
+     *
+     * When providing a `subset`, use `expect` tooling such as
+     * `expect.stringContaining` to match partial values.
+     */
+    subset?: Partial<InngestTestRun.Checkpoint<T>>
+  ): Promise<InngestTestEngine.ExecutionOutput<T>> {
+    const { run } = await this.execute(inlineOpts);
+
+    return run.waitFor(checkpoint, subset);
+  }
+
+  /**
    * Execute the function with the given inline options.
    */
   public async execute(
