@@ -1,9 +1,10 @@
+import { expect } from "@jest/globals";
 import type {
   ExecutionResult,
   ExecutionResults,
-} from "../components/execution/InngestExecution";
-import { createDeferredPromise } from "../helpers/promises";
-import type { InngestTestEngine } from "./InngestTestEngine";
+} from "inngest/components/execution/InngestExecution";
+import { createDeferredPromise } from "inngest/helpers/promises";
+import type { InngestTestEngine } from "./InngestTestEngine.js";
 
 /**
  * A test run that allows you to wait for specific checkpoints in a run that

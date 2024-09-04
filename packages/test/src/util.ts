@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals";
-import { Context } from "../types";
+import { Context } from "inngest/types";
 
 /**
  * The default context transformation function that mocks all step tools. Use
