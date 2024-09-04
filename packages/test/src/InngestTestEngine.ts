@@ -74,7 +74,7 @@ export namespace InngestTestEngine {
      *
      * @example Transforming in addition to the defaults
      * ```ts
-     * import { mockCtx } from "inngest/test";
+     * import { mockCtx } from "@inngest/test";
      *
      * {
      *   transformCtx: (rawCtx) => {
