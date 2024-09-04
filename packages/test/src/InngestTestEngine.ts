@@ -194,7 +194,12 @@ export class InngestTestEngine {
     };
 
     const events = options.events || [
-      { name: `${internalEvents.FunctionInvoked}`, data: {} },
+      {
+        id: ulid(),
+        name: `${internalEvents.FunctionInvoked}`,
+        data: {},
+        ts: Date.now(),
+      },
     ];
 
     const steps = (options.steps || []).map((step) => {
