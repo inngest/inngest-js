@@ -664,7 +664,13 @@ export class InngestCommHandler<
         ),
       ]);
 
-      this.env = env ?? allProcessEnv();
+      // Always make sure to merge whatever env we've been given with
+      // `process.env`; some platforms may not provide all the necessary
+      // environment variables or may use two sources.
+      this.env = {
+        ...allProcessEnv(),
+        ...env,
+      };
 
       const getInngestHeaders = (): Record<string, string> =>
         inngestHeaders({
@@ -1122,14 +1128,7 @@ export class InngestCommHandler<
           try {
             const validationResult = await signatureValidation;
             if (!validationResult.success) {
-              return {
-                status: 401,
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: stringify(serializeError(validationResult.err)),
-                version: undefined,
-              };
+              throw new Error("Signature validation failed");
             }
 
             introspection = {
