@@ -2,14 +2,15 @@ import { jest } from "@jest/globals";
 import {
   ExecutionVersion,
   type MemoizedOp,
-} from "../components/execution/InngestExecution";
-import { _internals } from "../components/execution/v1";
-import type { InngestFunction } from "../components/InngestFunction";
-import { internalEvents } from "../helpers/consts";
-import { ServerTiming } from "../helpers/ServerTiming";
-import type { Context, EventPayload, OpStack } from "../types";
-import { InngestTestRun } from "./InngestTestRun";
-import { mockCtx } from "./util";
+} from "inngest/components/execution/InngestExecution";
+import { _internals } from "inngest/components/execution/v1";
+import type { InngestFunction } from "inngest/components/InngestFunction";
+import { internalEvents } from "inngest/helpers/consts";
+import { ServerTiming } from "inngest/helpers/ServerTiming";
+import type { Context, EventPayload, OpStack } from "inngest/types";
+import { ulid } from "ulid";
+import { InngestTestRun } from "./InngestTestRun.js";
+import { mockCtx } from "./util.js";
 
 /**
  * A test engine for running Inngest functions in a test environment, providing
@@ -195,13 +196,15 @@ export class InngestTestEngine {
       stepState[step.id] = step as MemoizedOp;
     });
 
+    const runId = ulid();
+
     const execution = options.function["createExecution"]({
       version: ExecutionVersion.V1,
       partialOptions: {
-        runId: "TODO_GENERATE_ME",
+        runId,
         data: {
-          runId: "TODO_GENERATE_ME",
-          attempt: 0,
+          runId,
+          attempt: 0, // TODO retries?
           event: events[0],
           events,
         },
@@ -210,7 +213,7 @@ export class InngestTestEngine {
         stepCompletionOrder: steps.map((step) => step.id),
         stepState,
         disableImmediateExecution: Boolean(options.disableImmediateExecution),
-        isFailureHandler: false, // TODO hm - need to allow hitting an `onFailure` handler
+        isFailureHandler: false, // TODO need to allow hitting an `onFailure` handler - not dynamically, but choosing it
         timer: new ServerTiming(),
         requestedRunStep: options.targetStepId,
         transformCtx: this.options.transformCtx ?? mockCtx,
