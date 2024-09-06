@@ -5,14 +5,13 @@ import {
 } from "inngest/components/execution/InngestExecution";
 import { _internals } from "inngest/components/execution/v1";
 import type { InngestFunction } from "inngest/components/InngestFunction";
-import { internalEvents } from "inngest/helpers/consts";
 import { serializeError } from "inngest/helpers/errors";
 import { createDeferredPromise } from "inngest/helpers/promises";
 import { ServerTiming } from "inngest/helpers/ServerTiming";
-import type { Context, EventPayload } from "inngest/types";
+import { Context, EventPayload } from "inngest/types";
 import { ulid } from "ulid";
 import { InngestTestRun } from "./InngestTestRun.js";
-import { mockCtx } from "./util.js";
+import { createMockEvent, mockCtx } from "./util.js";
 
 /**
  * A test engine for running Inngest functions in a test environment, providing
@@ -222,14 +221,13 @@ export class InngestTestEngine {
       ...inlineOpts,
     };
 
-    const events = options.events || [
-      {
-        id: ulid(),
-        name: `${internalEvents.FunctionInvoked}`,
-        data: {},
-        ts: Date.now(),
-      },
-    ];
+    const events = (options.events || [createMockEvent()]).map((event) => {
+      // Make sure every event has some basic mocked data
+      return {
+        ...createMockEvent(),
+        ...event,
+      };
+    }) as [EventPayload, ...EventPayload[]];
 
     const steps = (options.steps || []).map((step) => {
       return {
