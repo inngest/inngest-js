@@ -1,5 +1,7 @@
 import { jest } from "@jest/globals";
-import { Context } from "inngest/types";
+import { internalEvents } from "inngest";
+import type { Context, EventPayload } from "inngest/types";
+import { ulid } from "ulid";
 
 /**
  * The default context transformation function that mocks all step tools. Use
@@ -24,4 +26,17 @@ export const mockCtx = (ctx: Readonly<Context.Any>): Context.Any => {
     ...ctx,
     step,
   };
+};
+
+/**
+ * Creates a tiny mock invocation event used to replace or complement given
+ * event data.
+ */
+export const createMockEvent = () => {
+  return {
+    id: ulid(),
+    name: `${internalEvents.FunctionInvoked}`,
+    data: {},
+    ts: Date.now(),
+  } satisfies EventPayload;
 };
