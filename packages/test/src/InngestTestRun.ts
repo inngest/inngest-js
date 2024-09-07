@@ -75,11 +75,20 @@ export class InngestTestRun {
     let finished = false;
     const runningState: InngestTestEngine.InlineOptions = {};
 
-    const { promise, resolve } =
+    const { promise, resolve, reject } =
       createDeferredPromise<InngestTestEngine.ExecutionOutput<T>>();
 
     const finish = (output: InngestTestEngine.ExecutionOutput) => {
       finished = true;
+
+      if (output.result.type !== checkpoint) {
+        reject(
+          new Error(
+            `Expected checkpoint "${checkpoint}" but got "${output.result.type}"`
+          )
+        );
+      }
+
       resolve(output as InngestTestEngine.ExecutionOutput<T>);
     };
 
