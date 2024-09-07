@@ -122,6 +122,11 @@
       "import": "./hono.js",
       "types": "./hono.d.ts"
     },
+    "./types": {
+      "require": "./types.js",
+      "import": "./types.js",
+      "types": "./types.d.ts"
+    },
     "./api/*": "./api/*.js",
     "./components/*": "./components/*.js",
     "./deno/*": "./deno/*.js",
