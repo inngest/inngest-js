@@ -255,10 +255,8 @@ export namespace InngestFunction {
   export type Any = InngestFunction<
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    any,
+    Handler.Any,
+    Handler.Any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     any,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
