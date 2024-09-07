@@ -9,7 +9,6 @@
   },
   "scripts": {
     "test": "jest",
-    "build": "pnpm run build:clean && pnpm run build:tsc && pnpm run build:copy",
     "build:clean": "rm -rf ./dist",
     "build:tsc": "tsc --project tsconfig.build.json",
     "build:copy": "cp package.json LICENSE.md README.md dist",
