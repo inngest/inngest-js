@@ -1,5 +1,11 @@
 # inngest
 
+## 3.22.9
+
+### Patch Changes
+
+- [#688](https://github.com/inngest/inngest-js/pull/688) [`58549f3`](https://github.com/inngest/inngest-js/commit/58549f3ccb7dbe72d846b32ebde54928974a61d8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Expose some internal execution logic to make way for a new `@inngest/test` package
+
 ## 3.22.8
 
 ### Patch Changes
