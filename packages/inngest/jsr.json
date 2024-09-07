@@ -33,6 +33,7 @@
     "./remix": "./src/remix.ts",
     "./sveltekit": "./src/sveltekit.ts",
     "./deno/fresh": "./src/deno/fresh.ts",
-    "./hono": "./src/hono.ts"
+    "./hono": "./src/hono.ts",
+    "./types": "./src/types.ts"
   }
 }
