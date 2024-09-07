@@ -122,11 +122,6 @@
       "import": "./hono.js",
       "types": "./hono.d.ts"
     },
-    "./test": {
-      "require": "./test/index.js",
-      "import": "./test/index.js",
-      "types": "./test/index.d.ts"
-    },
     "./api/*": "./api/*.js",
     "./components/*": "./components/*.js",
     "./deno/*": "./deno/*.js",
