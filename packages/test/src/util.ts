@@ -40,3 +40,10 @@ export const createMockEvent = () => {
     ts: Date.now(),
   } satisfies EventPayload;
 };
+
+/**
+ * A deep partial, where every key of every object is optional.
+ */
+export type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K];
+};
