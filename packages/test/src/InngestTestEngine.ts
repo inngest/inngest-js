@@ -11,7 +11,7 @@ import { ServerTiming } from "inngest/helpers/ServerTiming";
 import { Context, EventPayload } from "inngest/types";
 import { ulid } from "ulid";
 import { InngestTestRun } from "./InngestTestRun.js";
-import { createMockEvent, mockCtx } from "./util.js";
+import { createMockEvent, mockCtx, type DeepPartial } from "./util.js";
 
 /**
  * A test engine for running Inngest functions in a test environment, providing
@@ -111,6 +111,23 @@ export namespace InngestTestEngine {
   export type InlineOptions = Omit<Options, "function">;
 
   /**
+   * Options that can be passed to an initial execution that then waits for a
+   * particular checkpoint to occur.
+   */
+  export type ExecuteAndWaitForOptions<
+    T extends InngestTestRun.CheckpointKey = InngestTestRun.CheckpointKey,
+  > = InlineOptions & {
+    /**
+     * An optional subset of the checkpoint to match against. Any checkpoint of
+     * this type will be matched.
+     *
+     * When providing a `subset`, use `expect` tooling such as
+     * `expect.stringContaining` to match partial values.
+     */
+    subset?: DeepPartial<InngestTestRun.Checkpoint<T>>;
+  };
+
+  /**
    * A mocked state object that allows you to assert step usage, input, and
    * output.
    */
@@ -187,27 +204,18 @@ export class InngestTestEngine {
    */
   public async executeAndWaitFor<T extends InngestTestRun.CheckpointKey>(
     /**
-     * Options and state to start the run with.
-     */
-    inlineOpts: InngestTestEngine.InlineOptions,
-
-    /**
      * The checkpoint to wait for.
      */
     checkpoint: T,
 
     /**
-     * An optional subset of the checkpoint to match against. Any checkpoint of
-     * this type will be matched.
-     *
-     * When providing a `subset`, use `expect` tooling such as
-     * `expect.stringContaining` to match partial values.
+     * Options and state to start the run with.
      */
-    subset?: Partial<InngestTestRun.Checkpoint<T>>
+    inlineOpts?: InngestTestEngine.ExecuteAndWaitForOptions<T>
   ): Promise<InngestTestEngine.ExecutionOutput<T>> {
     const { run } = await this.execute(inlineOpts);
 
-    return run.waitFor(checkpoint, subset);
+    return run.waitFor(checkpoint, inlineOpts?.subset);
   }
 
   /**
