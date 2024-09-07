@@ -5,6 +5,7 @@ import type {
 } from "inngest/components/execution/InngestExecution";
 import { createDeferredPromise } from "inngest/helpers/promises";
 import type { InngestTestEngine } from "./InngestTestEngine.js";
+import type { DeepPartial } from "./util";
 
 /**
  * A test run that allows you to wait for specific checkpoints in a run that
@@ -68,7 +69,7 @@ export class InngestTestRun {
      * When providing a `subset`, use `expect` tooling such as
      * `expect.stringContaining` to match partial values.
      */
-    subset?: Partial<InngestTestRun.Checkpoint<T>>
+    subset?: DeepPartial<InngestTestRun.Checkpoint<T>>
   ): Promise<InngestTestEngine.ExecutionOutput<T>> {
     let finished = false;
     const runningState: InngestTestEngine.InlineOptions = {};
