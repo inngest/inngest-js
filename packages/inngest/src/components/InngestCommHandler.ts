@@ -15,12 +15,12 @@ import {
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import { enumFromValue } from "../helpers/enum";
 import {
-  Mode,
   allProcessEnv,
   devServerHost,
   getFetch,
   getMode,
   inngestHeaders,
+  Mode,
   platformSupportsStreaming,
   type Env,
 } from "../helpers/env";
@@ -42,6 +42,7 @@ import {
   type AuthenticatedIntrospection,
   type EventPayload,
   type FunctionConfig,
+  type InBandRegisterRequest,
   type LogLevel,
   type OutgoingOp,
   type RegisterOptions,
@@ -1099,78 +1100,11 @@ export class InngestCommHandler<
       }
 
       if (method === "GET") {
-        const registerBody = this.registerBody({
-          url: this.reqUrl(url),
-          deployId: null,
-        });
-
-        if (!this._mode) {
-          throw new Error("No mode set; cannot introspect without mode");
-        }
-
-        let introspection:
-          | UnauthenticatedIntrospection
-          | AuthenticatedIntrospection = {
-          authentication_succeeded: null,
-          extra: {
-            is_mode_explicit: this._mode.isExplicit,
-          },
-          has_event_key: this.client["eventKeySet"](),
-          has_signing_key: Boolean(this.signingKey),
-          function_count: registerBody.functions.length,
-          mode: this._mode.type,
-          schema_version: "2024-05-24",
-        } satisfies UnauthenticatedIntrospection;
-
-        // Only allow authenticated introspection in Cloud mode, since Dev mode skips
-        // signature validation
-        if (this._mode.type === "cloud") {
-          try {
-            const validationResult = await signatureValidation;
-            if (!validationResult.success) {
-              throw new Error("Signature validation failed");
-            }
-
-            introspection = {
-              ...introspection,
-              authentication_succeeded: true,
-              api_origin: this.apiBaseUrl,
-              app_id: this.client.id,
-              capabilities: {
-                trust_probe: "v1",
-              },
-              env:
-                (await actions.headers(
-                  "fetching environment for introspection request",
-                  headerKeys.Environment
-                )) || null,
-              event_api_origin: this.eventApiBaseUrl,
-              event_key_hash: this.hashedEventKey ?? null,
-              extra: {
-                ...introspection.extra,
-                is_streaming: this.shouldStream(actions),
-              },
-              framework: this.frameworkName,
-              sdk_language: "js",
-              sdk_version: version,
-              serve_origin: this.serveHost ?? null,
-              serve_path: this.servePath ?? null,
-              signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
-              signing_key_hash: this.hashedSigningKey ?? null,
-            } satisfies AuthenticatedIntrospection;
-          } catch {
-            // Swallow signature validation error since we'll just return the
-            // unauthenticated introspection
-            introspection = {
-              ...introspection,
-              authentication_succeeded: false,
-            } satisfies UnauthenticatedIntrospection;
-          }
-        }
-
         return {
           status: 200,
-          body: stringify(introspection),
+          body: stringify(
+            await this.introspectionBody({ actions, signatureValidation, url })
+          ),
           headers: {
             "Content-Type": "application/json",
           },
@@ -1187,6 +1121,29 @@ export class InngestCommHandler<
           deployId = undefined;
         }
 
+        // Check for in-band syncs, which will be signed by the Inngest API
+        const validationResult = await signatureValidation;
+
+        if (validationResult.success) {
+          // This should be an in-band sync
+          const body = await this.inBandRegisterBody({
+            actions,
+            deployId,
+            signatureValidation,
+            url,
+          });
+
+          return {
+            status: 200,
+            body: stringify(body),
+            headers: {
+              "Content-Type": "application/json",
+            },
+            version: undefined,
+          };
+        }
+
+        // If we're here, this is a legacy out-of-band sync
         const { status, message, modified } = await this.register(
           this.reqUrl(url),
           deployId,
@@ -1429,6 +1386,129 @@ export class InngestCommHandler<
     };
 
     return body;
+  }
+
+  protected async inBandRegisterBody({
+    actions,
+    deployId,
+    signatureValidation,
+    url,
+  }: {
+    actions: HandlerResponseWithErrors;
+
+    /**
+     * Non-optional to ensure we always consider if we have a deploy ID
+     * available to us to use.
+     */
+    deployId: string | undefined | null;
+
+    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
+
+    url: URL;
+  }): Promise<InBandRegisterRequest> {
+    const registerBody = this.registerBody({ deployId, url });
+    const introspectionBody = await this.introspectionBody({
+      actions,
+      signatureValidation,
+      url,
+    });
+
+    if (!introspectionBody.authentication_succeeded) {
+      throw new Error("Cannot introspect without successful authentication");
+    }
+
+    const body: InBandRegisterRequest = {
+      app_id: this.client.id,
+      capabilities: registerBody.capabilities,
+      framework: registerBody.framework,
+      functions: registerBody.functions,
+      inspection: introspectionBody,
+      sdk: registerBody.sdk,
+      url: registerBody.url,
+    };
+
+    return body;
+  }
+
+  protected async introspectionBody({
+    actions,
+    signatureValidation,
+    url,
+  }: {
+    actions: HandlerResponseWithErrors;
+    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
+    url: URL;
+  }): Promise<UnauthenticatedIntrospection | AuthenticatedIntrospection> {
+    const registerBody = this.registerBody({
+      url: this.reqUrl(url),
+      deployId: null,
+    });
+
+    if (!this._mode) {
+      throw new Error("No mode set; cannot introspect without mode");
+    }
+
+    let introspection:
+      | UnauthenticatedIntrospection
+      | AuthenticatedIntrospection = {
+      authentication_succeeded: null,
+      extra: {
+        is_mode_explicit: this._mode.isExplicit,
+      },
+      has_event_key: this.client["eventKeySet"](),
+      has_signing_key: Boolean(this.signingKey),
+      function_count: registerBody.functions.length,
+      mode: this._mode.type,
+      schema_version: "2024-05-24",
+    } satisfies UnauthenticatedIntrospection;
+
+    // Only allow authenticated introspection in Cloud mode, since Dev mode skips
+    // signature validation
+    if (this._mode.type === "cloud") {
+      try {
+        const validationResult = await signatureValidation;
+        if (!validationResult.success) {
+          throw new Error("Signature validation failed");
+        }
+
+        introspection = {
+          ...introspection,
+          authentication_succeeded: true,
+          api_origin: this.apiBaseUrl,
+          app_id: this.client.id,
+          capabilities: {
+            trust_probe: "v1",
+          },
+          env:
+            (await actions.headers(
+              "fetching environment for introspection request",
+              headerKeys.Environment
+            )) || null,
+          event_api_origin: this.eventApiBaseUrl,
+          event_key_hash: this.hashedEventKey ?? null,
+          extra: {
+            ...introspection.extra,
+            is_streaming: this.shouldStream(actions),
+          },
+          framework: this.frameworkName,
+          sdk_language: "js",
+          sdk_version: version,
+          serve_origin: this.serveHost ?? null,
+          serve_path: this.servePath ?? null,
+          signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
+          signing_key_hash: this.hashedSigningKey ?? null,
+        } satisfies AuthenticatedIntrospection;
+      } catch {
+        // Swallow signature validation error since we'll just return the
+        // unauthenticated introspection
+        introspection = {
+          ...introspection,
+          authentication_succeeded: false,
+        } satisfies UnauthenticatedIntrospection;
+      }
+    }
+
+    return introspection;
   }
 
   protected async register(
