@@ -1012,6 +1012,22 @@ export interface Capabilities {
   trust_probe: "v1";
 }
 
+export interface InBandRegisterRequest
+  extends Pick<
+    RegisterRequest,
+    "capabilities" | "framework" | "functions" | "sdk" | "url"
+  > {
+  /**
+   * The ID of the app that this handler is associated with.
+   */
+  app_id: string;
+
+  /**
+   * The result of the introspection request.
+   */
+  inspection: AuthenticatedIntrospection;
+}
+
 /**
  * The response to send to the local SDK UI when an introspection request is
  * made.
