@@ -54,6 +54,7 @@ module.exports = {
         includeTypes: true,
       },
     ],
+    "import/extensions": ["error", "always"],
   },
   overrides: [
     {
@@ -61,6 +62,12 @@ module.exports = {
       excludedFiles: ["*.d.ts", "*.test.ts", "src/test/**/*", "src/init.ts"],
       rules: {
         "@inngest/internal/process-warn": "warn",
+      },
+    },
+    {
+      files: ["src/**/*.test.ts"],
+      rules: {
+        "import/extensions": "off",
       },
     },
   ],

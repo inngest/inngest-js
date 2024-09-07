@@ -16,8 +16,8 @@
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler";
-import { type SupportedFrameworkName } from "./types";
+} from "./components/InngestCommHandler.js";
+import { type SupportedFrameworkName } from "./types.js";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
