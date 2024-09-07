@@ -1,0 +1,44 @@
+{
+  "name": "@inngest/test",
+  "version": "0.0.0",
+  "description": "Tooling for testing Inngest functions.",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "test": "jest",
+    "build": "pnpm run build:clean && pnpm run build:tsc && pnpm run build:copy",
+    "build:clean": "rm -rf ./dist",
+    "build:tsc": "tsc --project tsconfig.build.json",
+    "build:copy": "cp package.json LICENSE.md README.md dist",
+    "pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest-test.tgz --cwd dist"
+  },
+  "exports": {
+    ".": {
+      "require": "./index.js",
+      "import": "./index.js",
+      "types": "./index.d.ts"
+    }
+  },
+  "keywords": [
+    "inngest",
+    "test",
+    "testing"
+  ],
+  "homepage": "https://github.com/inngest/inngest-js/tree/main/packages/test#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/test"
+  },
+  "author": "Jack Williams <jack@inngest.com>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@jest/globals": "^29.5.0"
+  },
+  "dependencies": {
+    "ulid": "^2.3.0"
+  }
+}
