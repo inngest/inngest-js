@@ -3,6 +3,7 @@ import type {
   ExecutionResult,
   ExecutionResults,
 } from "inngest/components/execution/InngestExecution";
+import { _internals } from "inngest/components/execution/v1";
 import { createDeferredPromise } from "inngest/helpers/promises";
 import type { InngestTestEngine } from "./InngestTestEngine.js";
 import type { DeepPartial } from "./util";
@@ -82,6 +83,22 @@ export class InngestTestRun {
       resolve(output as InngestTestEngine.ExecutionOutput<T>);
     };
 
+    /**
+     * Make sure we sanitize any given ID to prehash it for the user. This is
+     * abstracted from the user entirely so they shouldn't be expected to be
+     * providing hashes.
+     */
+    const sanitizedSubset: typeof subset = subset && {
+      ...subset,
+      ...("step" in subset &&
+        typeof subset.step === "object" &&
+        subset.step !== null &&
+        "id" in subset.step &&
+        typeof subset.step.id === "string" && {
+          step: { ...subset.step, id: _internals.hashId(subset.step.id) },
+        }),
+    };
+
     const processChain = async (targetStepId?: string) => {
       if (finished) {
         return;
@@ -94,8 +111,8 @@ export class InngestTestRun {
 
       if (exec.result.type === checkpoint) {
         try {
-          if (subset) {
-            expect(exec.result).toMatchObject(subset);
+          if (sanitizedSubset) {
+            expect(exec.result).toMatchObject(sanitizedSubset);
           }
 
           return finish(exec);
