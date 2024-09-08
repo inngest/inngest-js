@@ -1,5 +1,17 @@
 # inngest
 
+## 3.22.10
+
+### Patch Changes
+
+- [#705](https://github.com/inngest/inngest-js/pull/705) [`f229dea`](https://github.com/inngest/inngest-js/commit/f229dea99e63b94c3d7225936ae92ac1396ecb63) Thanks [@goszczynskip](https://github.com/goszczynskip)! - Fix required type annotation typescript errors; `inngest/types` is now exported with a warning within the module covering its usage
+
+## 3.22.9
+
+### Patch Changes
+
+- [#688](https://github.com/inngest/inngest-js/pull/688) [`58549f3`](https://github.com/inngest/inngest-js/commit/58549f3ccb7dbe72d846b32ebde54928974a61d8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Expose some internal execution logic to make way for a new `@inngest/test` package
+
 ## 3.22.8
 
 ### Patch Changes
