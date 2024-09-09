@@ -1124,7 +1124,10 @@ export class InngestCommHandler<
         // Check for in-band syncs, which will be signed by the Inngest API
         const validationResult = await signatureValidation;
 
-        if (validationResult.success) {
+        // Validation can be successful if we're in dev mode and did not
+        // actually validate a key. In this case, also check that we did indeed
+        // use a particular key to validate.
+        if (validationResult.success && validationResult.keyUsed !== "") {
           // This should be an in-band sync
           const body = await this.inBandRegisterBody({
             actions,
