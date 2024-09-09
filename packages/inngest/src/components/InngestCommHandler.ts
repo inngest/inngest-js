@@ -727,7 +727,7 @@ export class InngestCommHandler<
           }),
         methodP,
         methodP.then((method) => {
-          if (method === "POST") {
+          if (method === "POST" || method === "PUT") {
             return actions.body(
               `checking body for request signing as method is ${method}`
             );
