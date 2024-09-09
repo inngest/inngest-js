@@ -1127,7 +1127,7 @@ export class InngestCommHandler<
         // Validation can be successful if we're in dev mode and did not
         // actually validate a key. In this case, also check that we did indeed
         // use a particular key to validate.
-        if (validationResult.success && validationResult.keyUsed !== "") {
+        if (validationResult.success && validationResult.keyUsed) {
           // This should be an in-band sync
           const body = await this.inBandRegisterBody({
             actions,
