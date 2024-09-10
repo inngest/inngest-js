@@ -551,7 +551,28 @@ export class InngestCommHandler<
    * or not. Takes into account the user's preference and the platform's
    * capabilities.
    */
-  private shouldStream(actions: HandlerResponseWithErrors): boolean {
+  private async shouldStream(
+    actions: HandlerResponseWithErrors
+  ): Promise<boolean> {
+    const getQuerystring = async (
+      reason: string,
+      key: string
+    ): Promise<string | undefined> => {
+      const url = await actions.url("starting to handle request");
+
+      const ret =
+        (await actions.queryString?.(reason, key, url)) ||
+        url.searchParams.get(key) ||
+        undefined;
+
+      return ret;
+    };
+
+    const rawProbe = await getQuerystring("testing for probe", queryKeys.Probe);
+    if (rawProbe !== undefined) {
+      return false;
+    }
+
     // We must be able to stream responses to continue.
     if (!actions.transformStreamingResponse) {
       return false;
@@ -809,7 +830,7 @@ export class InngestCommHandler<
         };
       };
 
-      if (this.shouldStream(actions)) {
+      if (await this.shouldStream(actions)) {
         const method = await actions.method("starting streaming response");
 
         if (method === "POST") {
@@ -1148,7 +1169,7 @@ export class InngestCommHandler<
               event_key_hash: this.hashedEventKey ?? null,
               extra: {
                 ...introspection.extra,
-                is_streaming: this.shouldStream(actions),
+                is_streaming: await this.shouldStream(actions),
               },
               framework: this.frameworkName,
               sdk_language: "js",
