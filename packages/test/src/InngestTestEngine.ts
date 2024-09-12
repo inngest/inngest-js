@@ -7,10 +7,10 @@ import type { InngestFunction } from "inngest/components/InngestFunction";
 import { serializeError } from "inngest/helpers/errors";
 import { createDeferredPromise } from "inngest/helpers/promises";
 import { ServerTiming } from "inngest/helpers/ServerTiming";
-import { Context, EventPayload } from "inngest/types";
+import type { Context, EventPayload } from "inngest/types";
 import { ulid } from "ulid";
 import { InngestTestRun } from "./InngestTestRun.js";
-import { Mock, fn as mockFn } from "./spy.js";
+import type { Mock } from "./spy.js";
 import { createMockEvent, mockCtx, type DeepPartial } from "./util.js";
 
 /**
@@ -131,10 +131,7 @@ export namespace InngestTestEngine {
    * A mocked state object that allows you to assert step usage, input, and
    * output.
    */
-  export type MockState = Record<
-    string,
-    Mock<(...args: unknown[]) => Promise<unknown>>
-  >;
+  export type MockState = Record<string, Promise<unknown>>;
 
   /**
    * The output of an individual function execution.
@@ -328,40 +325,22 @@ export class InngestTestEngine {
       async (acc, stepId) => {
         const op = ops[stepId];
 
-        if (op?.seen === false || !op?.rawArgs) {
+        if (
+          op?.seen === false ||
+          !op?.rawArgs ||
+          !op?.fulfilled ||
+          !op?.promise
+        ) {
           return acc;
         }
 
-        const mock = await mockFn(async (...args: unknown[]) => {
-          if ("error" in op) {
-            throw op.error;
-          }
-
-          return op.data;
-        });
-
-        // execute it to show it was hit
-        mock(op.rawArgs);
-
         return {
           ...(await acc),
-          [stepId]: mock,
+          [stepId]: op.promise,
         };
       },
       Promise.resolve({}) as Promise<InngestTestEngine.MockState>
     );
-
-    // now proxy the mock state to always retrn some empty mock that hasn't been
-    // called for missing keys
-    const mockStateProxy = new Proxy(mockState, {
-      get(target, prop) {
-        if (prop in target) {
-          return target[prop as keyof typeof target];
-        }
-
-        return mockFn();
-      },
-    });
 
     const run = new InngestTestRun({
       testEngine: this.clone(options),
@@ -370,7 +349,7 @@ export class InngestTestEngine {
     return {
       result,
       ctx: ctx as InngestTestEngine.MockContext,
-      state: mockStateProxy,
+      state: mockState,
       run,
     };
   }
