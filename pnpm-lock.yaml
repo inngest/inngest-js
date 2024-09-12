@@ -303,8 +303,8 @@ importers:
   packages/test:
     dependencies:
       inngest:
-        specifier: ^3.22.9
-        version: 3.22.9(@sveltejs/kit@1.27.3)(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4)(typescript@5.5.2)
+        specifier: ^3.22.12
+        version: 3.22.12(@sveltejs/kit@1.27.3)(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4)(typescript@5.5.2)
       tinyspy:
         specifier: ^3.0.2
         version: 3.0.2
@@ -2997,8 +2997,8 @@ packages:
       typescript:
         optional: true
 
-  inngest@3.22.9:
-    resolution: {integrity: sha512-ZD/Q450EU7LYlkd24uixWlyhX1/lTkXrWiOhyDGAF5ahKaaVXECOTSW3gCSV/340T7UxNefcwZK5T4BAzxcADw==}
+  inngest@3.22.12:
+    resolution: {integrity: sha512-4OquNAvHvqoAKiZzC3bOJjOToOtDQACaLAAaNvpzMlHQxqYxuTCtrnrYulmSoWo7ueYXXHlE0cA/E9pHpv0vLg==}
     engines: {node: '>=14'}
     peerDependencies:
       '@sveltejs/kit': '>=1.27.3'
@@ -8107,7 +8107,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.22.9(@sveltejs/kit@1.27.3)(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4)(typescript@5.5.2):
+  inngest@3.22.12(@sveltejs/kit@1.27.3)(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4)(typescript@5.5.2):
     dependencies:
       '@types/debug': 4.1.12
       canonicalize: 1.0.8

@@ -43,7 +43,7 @@
     "ulid": "^2.3.0"
   },
   "peerDependencies": {
-    "inngest": "^3.22.9"
+    "inngest": "^3.22.12"
   },
   "devDependencies": {
     "prettier": "^3.1.0"
