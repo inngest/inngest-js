@@ -1,5 +1,11 @@
 # inngest
 
+## 3.22.11
+
+### Patch Changes
+
+- [#707](https://github.com/inngest/inngest-js/pull/707) [`8c4b9ce`](https://github.com/inngest/inngest-js/commit/8c4b9ceb70646afc585d3eabfb63fdbf8a7a9d1c) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix probe response sig with streaming
+
 ## 3.22.10
 
 ### Patch Changes
