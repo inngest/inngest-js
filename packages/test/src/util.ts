@@ -1,6 +1,7 @@
 import { internalEvents } from "inngest";
 import type { Context, EventPayload } from "inngest/types";
 import { ulid } from "ulid";
+import { fn as mockFn } from "./spy.js";
 
 /**
  * The default context transformation function that mocks all step tools. Use
@@ -8,33 +9,23 @@ import { ulid } from "ulid";
  * this functionality.
  */
 export const mockCtx = (ctx: Readonly<Context.Any>): Context.Any => {
-  // const step = Object.keys(ctx.step).reduce(
-  //   (acc, key) => {
-  //     const tool = ctx.step[key as keyof typeof ctx.step];
-  //     // const mock = mockFn(tool);
+  const step = Object.keys(ctx.step).reduce(
+    (acc, key) => {
+      const tool = ctx.step[key as keyof typeof ctx.step];
+      const mock = mockFn(tool);
 
-  //     class FunctionWrapper extends Function {
-  //       constructor(...args: any[]) {
-  //         return mockFn(tool).apply(this, args);
-  //       }
-  //     }
+      return {
+        ...acc,
+        [key]: mock,
+      };
+    },
+    {} as Context.Any["step"]
+  );
 
-  //     const mock = FunctionWrapper;
-  //     // const mock2 = jest.fn(tool);
-
-  //     return {
-  //       ...acc,
-  //       [key]: mock,
-  //     };
-  //   },
-  //   {} as Context.Any["step"]
-  // );
-
-  // return {
-  //   ...ctx,
-  //   step,
-  // };
-  return ctx;
+  return {
+    ...ctx,
+    step,
+  };
 };
 
 /**

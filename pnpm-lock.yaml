@@ -305,6 +305,9 @@ importers:
       inngest:
         specifier: ^3.22.9
         version: 3.22.9(@sveltejs/kit@1.27.3)(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4)(typescript@5.5.2)
+      tinyspy:
+        specifier: ^3.0.2
+        version: 3.0.2
       ulid:
         specifier: ^2.3.0
         version: 2.3.0
@@ -4515,6 +4518,10 @@ packages:
   tiny-lru@11.0.1:
     resolution: {integrity: sha512-iNgFugVuQgBKrqeO/mpiTTgmBsTP0WL6yeuLfLs/Ctf0pI/ixGqIRm8sDCwMcXGe9WWvt2sGXI5mNqZbValmJg==}
     engines: {node: '>=12'}
+
+  tinyspy@3.0.2:
+    resolution: {integrity: sha512-n1cw8k1k0x4pgA2+9XrOkFydTerNcJ1zWCO5Nn9scWHTD+5tp8dghT2x1uduQePZTZgd3Tupf+x9BxJjeJi77Q==}
+    engines: {node: '>=14.0.0'}
 
   titleize@3.0.0:
     resolution: {integrity: sha512-KxVu8EYHDPBdUYdKZdKtU2aj2XfEx9AfjXxE/Aj0vT06w2icA09Vus1rh6eSu1y01akYg6BjIK/hxyLJINoMLQ==}
@@ -9776,6 +9783,8 @@ snapshots:
       globrex: 0.1.2
 
   tiny-lru@11.0.1: {}
+
+  tinyspy@3.0.2: {}
 
   titleize@3.0.0: {}
 

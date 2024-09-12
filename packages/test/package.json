@@ -39,6 +39,7 @@
   "author": "Jack Williams <jack@inngest.com>",
   "license": "Apache-2.0",
   "dependencies": {
+    "tinyspy": "^3.0.2",
     "ulid": "^2.3.0"
   },
   "peerDependencies": {
