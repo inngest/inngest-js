@@ -117,8 +117,11 @@ export class InngestTestRun {
         targetStepId,
       });
 
-      if (exec.result.type === checkpoint && (!sanitizedSubset || isDeeplyEqual(sanitizedSubset, exec.result))) {
-        return finish(exec)
+      if (
+        exec.result.type === checkpoint &&
+        (!sanitizedSubset || isDeeplyEqual(sanitizedSubset, exec.result))
+      ) {
+        return finish(exec);
       }
 
       const resultHandlers: Record<keyof ExecutionResults, () => void> = {

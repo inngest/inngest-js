@@ -114,7 +114,7 @@ export namespace InngestTestEngine {
    * particular checkpoint to occur.
    */
   export type ExecuteAndWaitForOptions<
-    T extends InngestTestRun.CheckpointKey = InngestTestRun.CheckpointKey
+    T extends InngestTestRun.CheckpointKey = InngestTestRun.CheckpointKey,
   > = InlineOptions & {
     /**
      * An optional subset of the checkpoint to match against. Any checkpoint of
@@ -140,7 +140,7 @@ export namespace InngestTestEngine {
    * The output of an individual function execution.
    */
   export interface ExecutionOutput<
-    T extends InngestTestRun.CheckpointKey = InngestTestRun.CheckpointKey
+    T extends InngestTestRun.CheckpointKey = InngestTestRun.CheckpointKey,
   > {
     /**
      * The result of the execution.
