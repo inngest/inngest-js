@@ -43,6 +43,11 @@ export interface MemoizedOp extends IncomingOp {
    */
   rawArgs?: unknown[];
   fulfilled?: boolean;
+
+  /**
+   * The promise that has been returned to userland code.
+   */
+  promise?: Promise<unknown>;
   seen?: boolean;
 }
 
