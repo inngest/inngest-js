@@ -864,6 +864,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         hashedId,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
+        promise,
         fulfilled: Boolean(stepState),
         displayName: opId.displayName ?? opId.id,
         handled: false,
