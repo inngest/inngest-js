@@ -1221,7 +1221,7 @@ export const eventRunWithName = async (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let run: any;
 
-    for (let i = 0; i < data?.data?.stream?.length ?? 0; i++) {
+    for (let i = 0; i < (data?.data?.stream?.length ?? 0); i++) {
       const item = data?.data?.stream[i];
 
       if (item?.id !== eventId) {
