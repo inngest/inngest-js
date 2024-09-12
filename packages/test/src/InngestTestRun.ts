@@ -83,7 +83,9 @@ export class InngestTestRun {
       if (output.result.type !== checkpoint) {
         reject(
           new Error(
-            `Expected checkpoint "${checkpoint}" but got "${output.result.type}"`
+            `Expected checkpoint "${checkpoint}" but got "${
+              output.result.type
+            }": ${JSON.stringify(output.result, null, 2)}`
           )
         );
       }
