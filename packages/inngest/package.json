@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "3.22.9",
+  "version": "3.22.11",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -121,6 +121,11 @@
       "require": "./hono.js",
       "import": "./hono.js",
       "types": "./hono.d.ts"
+    },
+    "./types": {
+      "require": "./types.js",
+      "import": "./types.js",
+      "types": "./types.d.ts"
     },
     "./api/*": "./api/*.js",
     "./components/*": "./components/*.js",
