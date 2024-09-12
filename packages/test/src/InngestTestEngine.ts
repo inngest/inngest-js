@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import {
   ExecutionVersion,
   type MemoizedOp,
@@ -98,11 +97,11 @@ export namespace InngestTestEngine {
    * A mocked context object that allows you to assert step usage, input, and
    * output.
    */
-  export interface MockContext extends Omit<Context.Any, "step"> {
-    step: {
-      [K in keyof Context.Any["step"]]: jest.Mock<Context.Any["step"][K]>;
-    };
-  }
+  // export interface MockContext extends Omit<Context.Any, "step"> {
+  //   step: {
+  //     [K in keyof Context.Any["step"]]: MockedFunction<Context.Any["step"][K]>;
+  //   };
+  // }
 
   /**
    * Options that can be passed to an existing execution or run to continue
@@ -115,7 +114,7 @@ export namespace InngestTestEngine {
    * particular checkpoint to occur.
    */
   export type ExecuteAndWaitForOptions<
-    T extends InngestTestRun.CheckpointKey = InngestTestRun.CheckpointKey,
+    T extends InngestTestRun.CheckpointKey = InngestTestRun.CheckpointKey
   > = InlineOptions & {
     /**
      * An optional subset of the checkpoint to match against. Any checkpoint of
@@ -133,14 +132,15 @@ export namespace InngestTestEngine {
    */
   export type MockState = Record<
     string,
-    jest.Mock<(...args: unknown[]) => Promise<unknown>>
+    // MockedFunction<(...args: unknown[]) => Promise<unknown>>
+    unknown
   >;
 
   /**
    * The output of an individual function execution.
    */
   export interface ExecutionOutput<
-    T extends InngestTestRun.CheckpointKey = InngestTestRun.CheckpointKey,
+    T extends InngestTestRun.CheckpointKey = InngestTestRun.CheckpointKey
   > {
     /**
      * The result of the execution.
@@ -153,13 +153,14 @@ export namespace InngestTestEngine {
      *
      * @TODO This type may vary is `transformCtx` is given.
      */
-    ctx: InngestTestEngine.MockContext;
+    // ctx: InngestTestEngine.MockContext;
+    ctx: Context.Any;
 
     /**
      * The mocked state object that allows you to assert step usage, input, and
      * output.
      */
-    state: InngestTestEngine.MockState;
+    // state: InngestTestEngine.MockState;
 
     /**
      * An {@link InngestTestRun} instance that allows you to wait for specific
@@ -322,44 +323,44 @@ export class InngestTestEngine {
 
     const { ctx, ops, ...result } = await execution.start();
 
-    const mockState: InngestTestEngine.MockState = Object.keys(ops).reduce(
-      (acc, stepId) => {
-        const op = ops[stepId];
+    // const mockState: InngestTestEngine.MockState = Object.keys(ops).reduce(
+    //   (acc, stepId) => {
+    //     const op = ops[stepId];
 
-        if (op?.seen === false || !op?.rawArgs) {
-          return acc;
-        }
+    //     if (op?.seen === false || !op?.rawArgs) {
+    //       return acc;
+    //     }
 
-        const mock = jest.fn(async (...args: unknown[]) => {
-          if ("error" in op) {
-            throw op.error;
-          }
+    //     const mock = mockFn(async (...args: unknown[]) => {
+    //       if ("error" in op) {
+    //         throw op.error;
+    //       }
 
-          return op.data;
-        });
+    //       return op.data;
+    //     });
 
-        // execute it to show it was hit
-        mock(op.rawArgs);
+    //     // execute it to show it was hit
+    //     mock(op.rawArgs);
 
-        return {
-          ...acc,
-          [stepId]: mock,
-        };
-      },
-      {} as InngestTestEngine.MockState
-    );
+    //     return {
+    //       ...acc,
+    //       [stepId]: mock,
+    //     };
+    //   },
+    //   {} as InngestTestEngine.MockState
+    // );
 
-    // now proxy the mock state to always retrn some empty mock that hasn't been
-    // called for missing keys
-    const mockStateProxy = new Proxy(mockState, {
-      get(target, prop) {
-        if (prop in target) {
-          return target[prop as keyof typeof target];
-        }
+    // // now proxy the mock state to always retrn some empty mock that hasn't been
+    // // called for missing keys
+    // const mockStateProxy = new Proxy(mockState, {
+    //   get(target, prop) {
+    //     if (prop in target) {
+    //       return target[prop as keyof typeof target];
+    //     }
 
-        return jest.fn();
-      },
-    });
+    //     return mockFn();
+    //   },
+    // });
 
     const run = new InngestTestRun({
       testEngine: this.clone(options),
@@ -367,8 +368,9 @@ export class InngestTestEngine {
 
     return {
       result,
-      ctx: ctx as InngestTestEngine.MockContext,
-      state: mockStateProxy,
+      // ctx: ctx as InngestTestEngine.MockContext
+      ctx,
+      // state: mockStateProxy,
       run,
     };
   }

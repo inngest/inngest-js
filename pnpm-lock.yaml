@@ -44,7 +44,7 @@ importers:
         version: 29.5.0(@types/node@18.16.16)(ts-node@10.9.1(@types/node@18.16.16)(typescript@5.5.2))
       ts-jest:
         specifier: ^29.1.0
-        version: 29.1.0(@babel/core@7.23.6)(@jest/types@29.5.0)(babel-jest@29.5.0(@babel/core@7.23.6))(jest@29.5.0(@types/node@18.16.16)(ts-node@10.9.1(@types/node@18.16.16)(typescript@5.5.2)))(typescript@5.5.2)
+        version: 29.1.0(@babel/core@7.23.6)(@jest/types@29.6.3)(babel-jest@29.5.0(@babel/core@7.23.6))(jest@29.5.0(@types/node@18.16.16)(ts-node@10.9.1(@types/node@18.16.16)(typescript@5.5.2)))(typescript@5.5.2)
 
   packages/eslint-plugin-internal:
     dependencies:
@@ -225,7 +225,7 @@ importers:
         version: 0.3.4
       ts-jest:
         specifier: ^29.1.0
-        version: 29.1.0(@babel/core@7.23.6)(@jest/types@29.5.0)(babel-jest@29.5.0(@babel/core@7.23.6))(jest@29.5.0(@types/node@18.16.16)(ts-node@10.9.1(@types/node@18.16.16)(typescript@5.5.2)))(typescript@5.5.2)
+        version: 29.1.0(@babel/core@7.23.6)(@jest/types@29.6.3)(babel-jest@29.5.0(@babel/core@7.23.6))(jest@29.5.0(@types/node@18.16.16)(ts-node@10.9.1(@types/node@18.16.16)(typescript@5.5.2)))(typescript@5.5.2)
       tsx:
         specifier: ^3.12.7
         version: 3.12.7
@@ -277,7 +277,7 @@ importers:
         version: 29.5.0(@types/node@18.16.16)(ts-node@10.9.1(@types/node@18.16.16)(typescript@5.5.2))
       ts-jest:
         specifier: ^29.1.0
-        version: 29.1.0(@babel/core@7.23.6)(@jest/types@29.5.0)(babel-jest@29.5.0(@babel/core@7.23.6))(jest@29.5.0(@types/node@18.16.16)(ts-node@10.9.1(@types/node@18.16.16)(typescript@5.5.2)))(typescript@5.5.2)
+        version: 29.1.0(@babel/core@7.23.6)(@jest/types@29.6.3)(babel-jest@29.5.0(@babel/core@7.23.6))(jest@29.5.0(@types/node@18.16.16)(ts-node@10.9.1(@types/node@18.16.16)(typescript@5.5.2)))(typescript@5.5.2)
       typescript:
         specifier: ~5.5.2
         version: 5.5.2
@@ -308,10 +308,6 @@ importers:
       ulid:
         specifier: ^2.3.0
         version: 2.3.0
-    devDependencies:
-      '@jest/globals':
-        specifier: ^29.5.0
-        version: 29.5.0
 
 packages:
 
@@ -1011,6 +1007,10 @@ packages:
     resolution: {integrity: sha512-VLYKXQmtmuEz6IxJsrZwzG9NvtkQsWNnWMsKxqWNu3+CnfzJQhp0WDDKWLVV9hLKr0l3SLLFRqcYHjhtyuDVxg==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
 
+  '@jest/schemas@29.6.3':
+    resolution: {integrity: sha512-mo5j5X+jIZmJQveBKeS/clAueipV7KgiX1vMgCxam1RNYiqE1w62n0/tJJnHtjW8ZHcQco5gY85jA3mi0L+nSA==}
+    engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
+
   '@jest/source-map@29.4.3':
     resolution: {integrity: sha512-qyt/mb6rLyd9j1jUts4EQncvS6Yy3PM9HghnNv86QBlV+zdL2inCdK1tuVlL+J+lpiw2BI67qXOrX3UurBqQ1w==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
@@ -1029,6 +1029,10 @@ packages:
 
   '@jest/types@29.5.0':
     resolution: {integrity: sha512-qbu7kN6czmVRc3xWFQcAN03RAUamgppVUdXrvl1Wr3jlNF93o9mJbGcDWrwGB6ht44u7efB1qCFgVQmca24Uog==}
+    engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
+
+  '@jest/types@29.6.3':
+    resolution: {integrity: sha512-u3UPsIilWKOM3F9CXtrG8LEJmNxwoCQC/XVj4IKYXvvpx7QIi/Kg1LI5uDmDpKlac62NUtX7eLjRh+jVZcLOzw==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
 
   '@jridgewell/gen-mapping@0.3.3':
@@ -1202,6 +1206,9 @@ packages:
 
   '@sinclair/typebox@0.25.24':
     resolution: {integrity: sha512-XJfwUVUKDHF5ugKwIcxEgc9k8b7HbznCp6eUfWgu710hMPNIO4aw4/zB5RogDQz8nd6gyCDpU9O/m6qYEWY6yQ==}
+
+  '@sinclair/typebox@0.27.8':
+    resolution: {integrity: sha512-+Fj43pSMwJs4KRrH/938Uf+uAELIgVBmQzg/q1YG10djyfA3TnrU8N8XzqCh/okZdszqBQTZf96idMfE5lnwTA==}
 
   '@sinonjs/commons@2.0.0':
     resolution: {integrity: sha512-uLa0j859mMrg2slwQYdO/AkrOfmH+X6LTVmNTS9CqexuE2IvVORIkSpJLqePAbEnKJ77aMmCwr1NUZ57120Xcg==}
@@ -5724,6 +5731,11 @@ snapshots:
     dependencies:
       '@sinclair/typebox': 0.25.24
 
+  '@jest/schemas@29.6.3':
+    dependencies:
+      '@sinclair/typebox': 0.27.8
+    optional: true
+
   '@jest/source-map@29.4.3':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.20
@@ -5772,6 +5784,16 @@ snapshots:
       '@types/node': 18.16.16
       '@types/yargs': 17.0.23
       chalk: 4.1.2
+
+  '@jest/types@29.6.3':
+    dependencies:
+      '@jest/schemas': 29.6.3
+      '@types/istanbul-lib-coverage': 2.0.4
+      '@types/istanbul-reports': 3.0.1
+      '@types/node': 18.16.16
+      '@types/yargs': 17.0.23
+      chalk: 4.1.2
+    optional: true
 
   '@jridgewell/gen-mapping@0.3.3':
     dependencies:
@@ -5941,6 +5963,9 @@ snapshots:
       - supports-color
 
   '@sinclair/typebox@0.25.24': {}
+
+  '@sinclair/typebox@0.27.8':
+    optional: true
 
   '@sinonjs/commons@2.0.0':
     dependencies:
@@ -9788,7 +9813,7 @@ snapshots:
     dependencies:
       typescript: 5.5.2
 
-  ts-jest@29.1.0(@babel/core@7.23.6)(@jest/types@29.5.0)(babel-jest@29.5.0(@babel/core@7.23.6))(jest@29.5.0(@types/node@18.16.16)(ts-node@10.9.1(@types/node@18.16.16)(typescript@5.5.2)))(typescript@5.5.2):
+  ts-jest@29.1.0(@babel/core@7.23.6)(@jest/types@29.6.3)(babel-jest@29.5.0(@babel/core@7.23.6))(jest@29.5.0(@types/node@18.16.16)(ts-node@10.9.1(@types/node@18.16.16)(typescript@5.5.2)))(typescript@5.5.2):
     dependencies:
       bs-logger: 0.2.6
       fast-json-stable-stringify: 2.1.0
@@ -9802,7 +9827,7 @@ snapshots:
       yargs-parser: 21.1.1
     optionalDependencies:
       '@babel/core': 7.23.6
-      '@jest/types': 29.5.0
+      '@jest/types': 29.6.3
       babel-jest: 29.5.0(@babel/core@7.23.6)
 
   ts-morph@12.0.0:

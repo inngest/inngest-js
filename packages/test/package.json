@@ -38,9 +38,6 @@
   },
   "author": "Jack Williams <jack@inngest.com>",
   "license": "Apache-2.0",
-  "devDependencies": {
-    "@jest/globals": "^29.5.0"
-  },
   "dependencies": {
     "ulid": "^2.3.0"
   },

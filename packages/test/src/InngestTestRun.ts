@@ -1,4 +1,3 @@
-import { expect } from "@jest/globals";
 import type {
   ExecutionResult,
   ExecutionResults,
@@ -6,7 +5,7 @@ import type {
 import { _internals } from "inngest/components/execution/v1";
 import { createDeferredPromise } from "inngest/helpers/promises";
 import type { InngestTestEngine } from "./InngestTestEngine.js";
-import type { DeepPartial } from "./util";
+import { isDeeplyEqual, type DeepPartial } from "./util";
 
 /**
  * A test run that allows you to wait for specific checkpoints in a run that
@@ -118,16 +117,8 @@ export class InngestTestRun {
         targetStepId,
       });
 
-      if (exec.result.type === checkpoint) {
-        try {
-          if (sanitizedSubset) {
-            expect(exec.result).toMatchObject(sanitizedSubset);
-          }
-
-          return finish(exec);
-        } catch (err) {
-          // noop
-        }
+      if (exec.result.type === checkpoint && (!sanitizedSubset || isDeeplyEqual(sanitizedSubset, exec.result))) {
+        return finish(exec)
       }
 
       const resultHandlers: Record<keyof ExecutionResults, () => void> = {
