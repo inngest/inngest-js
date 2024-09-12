@@ -206,7 +206,7 @@
     "@types/koa": "^2.13.11",
     "@types/minimist": "^1.2.2",
     "@types/ms": "^0.7.31",
-    "@types/node": "^18.16.16",
+    "@types/node": "^18.19.50",
     "@types/sha.js": "^2.4.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
