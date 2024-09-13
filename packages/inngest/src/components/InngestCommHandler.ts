@@ -1993,9 +1993,9 @@ export type ActionHandlerResponseWithErrors = {
 export interface HandlerResponseWithErrors
   extends ActionHandlerResponseWithErrors {
   /**
-   * Fetch a query string value from the request. If no `querystring` action
-   * has been provided by the `serve()` handler, this will fall back to using
-   * the provided URL to fetch the query string instead.
+   * Fetch a query string value from the request. If no `querystring` action has
+   * been provided by the `serve()` handler, this will fall back to using the
+   * provided URL present in the request to parse the query string from instead.
    */
   queryStringWithDefaults: (
     reason: string,
