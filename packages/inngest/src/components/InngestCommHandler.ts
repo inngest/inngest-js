@@ -11,6 +11,7 @@ import {
   logPrefix,
   probe as probeEnum,
   queryKeys,
+  syncKind,
 } from "../helpers/consts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver";
 import { enumFromValue } from "../helpers/enum";
@@ -21,6 +22,7 @@ import {
   getMode,
   inngestHeaders,
   Mode,
+  parseAsBoolean,
   platformSupportsStreaming,
   type Env,
 } from "../helpers/env";
@@ -1133,21 +1135,47 @@ export class InngestCommHandler<
       }
 
       if (method === "PUT") {
-        let deployId = await actions.queryStringWithDefaults(
-          "processing deployment request",
-          queryKeys.DeployId
-        );
-        if (deployId === "undefined") {
-          deployId = undefined;
-        }
+        const [deployId, isInBandRequest] = await Promise.all([
+          actions
+            .queryStringWithDefaults(
+              "processing deployment request",
+              queryKeys.DeployId
+            )
+            .then((deployId) => {
+              return deployId === "undefined" ? undefined : deployId;
+            }),
 
-        // Check for in-band syncs, which will be signed by the Inngest API
-        const validationResult = await signatureValidation;
+          // In-band requests must be signed and be marked as in-band from the
+          // Inngest Server.
+          signatureValidation
+            .then((result) => {
+              // Validation can be successful if we're in dev mode and did not
+              // actually validate a key. In this case, also check that we did
+              // indeed use a particular key to validate.
+              if (!result.success || !result.keyUsed) {
+                return;
+              }
+
+              // Also skip if we haven't explicitly allowed in-band syncs.
+              // TODO This will be enabled by default in the future.
+              if (!parseAsBoolean(this.env[envKeys.InngestAllowInBandSync])) {
+                return;
+              }
+
+              return actions.headers(
+                "processing deployment request",
+                headerKeys.InngestSyncKind
+              );
+            })
+            .then((kind) => {
+              return kind === syncKind.InBand;
+            }),
+        ]);
 
         // Validation can be successful if we're in dev mode and did not
         // actually validate a key. In this case, also check that we did indeed
         // use a particular key to validate.
-        if (validationResult.success && validationResult.keyUsed) {
+        if (isInBandRequest) {
           // This should be an in-band sync
           const body = await this.inBandRegisterBody({
             actions,
