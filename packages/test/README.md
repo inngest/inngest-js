@@ -69,7 +69,7 @@ test("runs the price calculations", async () => {
 ```
 
 Assertions can also be made on steps in any part of a run, regardless of if
-that's the checkpoint we've waited for. See [Assertions -> State](#).
+that's the checkpoint we've waited for. See [Assertions -> State](#assertions).
 
 ## Assertions
 
@@ -241,11 +241,10 @@ rely on should be done outside of Inngest with the testing framework you're
 using. For convenience, here are some links to the major supported frameworks
 and their guidance for mocking imports:
 
-- `jest`
-- `vitest`
-- `bun:test` (Bun)
-- `@std/expect` (Deno)
-- `chai`/`expect`
+- [`jest`](https://jestjs.io/docs/mock-functions#mocking-modules)
+- [`vitest`](https://vitest.dev/guide/mocking#modules)
+- [`bun:test` (Bun)](https://bun.sh/docs/test/mocks#module-mocks-with-mock-module)
+- [`@std/testing` (Deno)](https://jsr.io/@std/testing/doc/mock/~)
 
 ### Custom
 
