@@ -1189,6 +1189,7 @@ export class InngestCommHandler<
             body: stringify(body),
             headers: {
               "Content-Type": "application/json",
+              [headerKeys.InngestSyncKind]: syncKind.InBand,
             },
             version: undefined,
           };
@@ -1206,6 +1207,7 @@ export class InngestCommHandler<
           body: stringify({ message, modified }),
           headers: {
             "Content-Type": "application/json",
+            [headerKeys.InngestSyncKind]: syncKind.OutOfBand,
           },
           version: undefined,
         };
@@ -1610,7 +1612,10 @@ export class InngestCommHandler<
         options: {
           method: "POST",
           body: stringify(body),
-          headers: getHeaders(),
+          headers: {
+            ...getHeaders(),
+            [headerKeys.InngestSyncKind]: syncKind.OutOfBand,
+          },
           redirect: "follow",
         },
       });
