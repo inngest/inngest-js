@@ -1,3 +1,4 @@
+import { OutgoingOp } from "inngest";
 import type {
   ExecutionResult,
   ExecutionResults,
@@ -36,6 +37,16 @@ export namespace InngestTestRun {
     Extract<ExecutionResult, { type: T }>,
     "ctx" | "ops"
   >;
+
+  export interface RunOutput
+    extends Pick<InngestTestEngine.ExecutionOutput, "ctx" | "state"> {
+    result?: Checkpoint<"function-resolved">["data"];
+    error?: Checkpoint<"function-rejected">["error"];
+  }
+
+  export interface RunStepOutput extends RunOutput {
+    step: OutgoingOp;
+  }
 }
 
 /**
@@ -72,7 +83,10 @@ export class InngestTestRun {
     subset?: DeepPartial<InngestTestRun.Checkpoint<T>>
   ): Promise<InngestTestEngine.ExecutionOutput<T>> {
     let finished = false;
-    const runningState: InngestTestEngine.InlineOptions = {};
+    const runningState: InngestTestEngine.InlineOptions = {
+      events: this.options.testEngine["options"].events,
+      steps: this.options.testEngine["options"].steps,
+    };
 
     const { promise, resolve, reject } =
       createDeferredPromise<InngestTestEngine.ExecutionOutput<T>>();
@@ -81,13 +95,7 @@ export class InngestTestRun {
       finished = true;
 
       if (output.result.type !== checkpoint) {
-        reject(
-          new Error(
-            `Expected checkpoint "${checkpoint}" but got "${
-              output.result.type
-            }": ${JSON.stringify(output.result, null, 2)}`
-          )
-        );
+        return reject(output);
       }
 
       resolve(output as InngestTestEngine.ExecutionOutput<T>);
@@ -100,12 +108,23 @@ export class InngestTestRun {
      */
     const sanitizedSubset: typeof subset = subset && {
       ...subset,
+
+      // "step" for "step-ran"
       ...("step" in subset &&
         typeof subset.step === "object" &&
         subset.step !== null &&
         "id" in subset.step &&
         typeof subset.step.id === "string" && {
           step: { ...subset.step, id: _internals.hashId(subset.step.id) },
+        }),
+
+      // "steps" for "steps-found"
+      ...("steps" in subset &&
+        Array.isArray(subset.steps) && {
+          steps: subset.steps.map((step) => ({
+            ...step,
+            id: _internals.hashId(step.id),
+          })),
         }),
     };
 
@@ -114,7 +133,7 @@ export class InngestTestRun {
         return;
       }
 
-      const exec = await this.options.testEngine.execute({
+      const exec = await this.options.testEngine["individualExecution"]({
         ...runningState,
         targetStepId,
       });
