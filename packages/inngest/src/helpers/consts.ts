@@ -133,6 +133,7 @@ export enum headerKeys {
   RetryAfter = "retry-after",
   InngestServerKind = "x-inngest-server-kind",
   InngestExpectedServerKind = "x-inngest-expected-server-kind",
+  InngestSyncKind = "x-inngest-sync-kind",
   TraceParent = "traceparent",
   TraceState = "tracestate",
 }
@@ -167,4 +168,9 @@ export const dummyEventKey = "NO_EVENT_KEY_SET";
 export enum serverKind {
   Dev = "dev",
   Cloud = "cloud",
+}
+
+export enum syncKind {
+  InBand = "in_band",
+  OutOfBand = "out_of_band",
 }
