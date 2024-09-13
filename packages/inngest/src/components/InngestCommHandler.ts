@@ -1443,9 +1443,14 @@ export class InngestCommHandler<
     const body: InBandRegisterRequest = {
       app_id: this.client.id,
       capabilities: registerBody.capabilities,
+      env: introspectionBody.env,
       framework: registerBody.framework,
       functions: registerBody.functions,
       inspection: introspectionBody,
+      platform: "?",
+      sdk_author: "inngest",
+      sdk_language: introspectionBody.sdk_language,
+      sdk_version: introspectionBody.sdk_version,
       sdk: registerBody.sdk,
       url: registerBody.url,
     };

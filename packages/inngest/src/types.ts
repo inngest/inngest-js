@@ -1025,9 +1025,10 @@ export interface Capabilities {
 
 export interface InBandRegisterRequest
   extends Pick<
-    RegisterRequest,
-    "capabilities" | "framework" | "functions" | "sdk" | "url"
-  > {
+      RegisterRequest,
+      "capabilities" | "framework" | "functions" | "sdk" | "url"
+    >,
+    Pick<AuthenticatedIntrospection, "sdk_language" | "sdk_version" | "env"> {
   /**
    * The ID of the app that this handler is associated with.
    */
@@ -1037,6 +1038,17 @@ export interface InBandRegisterRequest
    * The result of the introspection request.
    */
   inspection: AuthenticatedIntrospection;
+
+  /**
+   * ?
+   */
+  platform?: string;
+
+  /**
+   * The person or organization that authored this SDK. Ideally this is
+   * synonymous with a GitHub username or organization name.
+   */
+  sdk_author: "inngest";
 }
 
 /**
