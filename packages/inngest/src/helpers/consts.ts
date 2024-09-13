@@ -38,6 +38,7 @@ export enum envKeys {
   InngestLogLevel = "INNGEST_LOG_LEVEL",
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
+  InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",
 
   /**
    * @deprecated It's unknown what this env var was used for, but we do not
