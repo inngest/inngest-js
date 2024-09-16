@@ -11,6 +11,23 @@ runtimes, and libraries:
 - `@std/expect` (Deno)
 - `chai`/`expect`
 
+## Table of contents
+
+- [Installation](#installation)
+- [Running tests](#running-tests)
+  - [Running an entire function](#running-tests)
+  - [Running an individual step](#running-an-individual-step)
+- [Assertions](#assertions)
+  - [Function/step output](#assertions)
+  - [Function input](#assertions)
+  - [Step state](#assertions)
+- [Mocking](#mocking)
+  - [Events](#event-data)
+  - [Steps](#step-data)
+  - [Modules and imports](#modules-and-imports)
+  - [Custom](#custom)
+- [TODO](#known-issues--todo)
+
 ## Installation
 
 This package requires `inngest@>=3.22.12`.
