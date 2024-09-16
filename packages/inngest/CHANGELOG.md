@@ -1,5 +1,29 @@
 # inngest
 
+## 3.22.12
+
+### Patch Changes
+
+- [#710](https://github.com/inngest/inngest-js/pull/710) [`fc3f1e5`](https://github.com/inngest/inngest-js/commit/fc3f1e5fb457853c4eea7b6c88bab658e47b4fc8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow access to userland promises when executing for `@inngest/test`
+
+## 3.22.11
+
+### Patch Changes
+
+- [#707](https://github.com/inngest/inngest-js/pull/707) [`8c4b9ce`](https://github.com/inngest/inngest-js/commit/8c4b9ceb70646afc585d3eabfb63fdbf8a7a9d1c) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix probe response sig with streaming
+
+## 3.22.10
+
+### Patch Changes
+
+- [#705](https://github.com/inngest/inngest-js/pull/705) [`f229dea`](https://github.com/inngest/inngest-js/commit/f229dea99e63b94c3d7225936ae92ac1396ecb63) Thanks [@goszczynskip](https://github.com/goszczynskip)! - Fix required type annotation typescript errors; `inngest/types` is now exported with a warning within the module covering its usage
+
+## 3.22.9
+
+### Patch Changes
+
+- [#688](https://github.com/inngest/inngest-js/pull/688) [`58549f3`](https://github.com/inngest/inngest-js/commit/58549f3ccb7dbe72d846b32ebde54928974a61d8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Expose some internal execution logic to make way for a new `@inngest/test` package
+
 ## 3.22.8
 
 ### Patch Changes

@@ -1,3 +1,14 @@
+/**
+ * Internal types and schemas used throughout the Inngest SDK.
+ *
+ * Note that types intended to be imported and utilized in userland code will be
+ * exported from the main entrypoint of the SDK, `inngest`; importing types
+ * directly from this file may result in breaking changes in non-major bumps as
+ * only those exported from `inngest` are considered stable.
+ *
+ * @module
+ */
+
 import { z } from "zod";
 import { type EventSchemas } from "./components/EventSchemas";
 import {
