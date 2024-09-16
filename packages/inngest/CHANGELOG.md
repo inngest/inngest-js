@@ -1,5 +1,11 @@
 # inngest
 
+## 3.22.12
+
+### Patch Changes
+
+- [#710](https://github.com/inngest/inngest-js/pull/710) [`fc3f1e5`](https://github.com/inngest/inngest-js/commit/fc3f1e5fb457853c4eea7b6c88bab658e47b4fc8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow access to userland promises when executing for `@inngest/test`
+
 ## 3.22.11
 
 ### Patch Changes

@@ -40,6 +40,11 @@ export interface FoundStep extends HashedOp {
   handled: boolean;
 
   /**
+   * The promise that has been returned to userland code for this step.
+   */
+  promise: Promise<unknown>;
+
+  /**
    * Returns a boolean representing whether or not the step was handled on this
    * invocation.
    */
