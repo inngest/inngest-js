@@ -1,5 +1,13 @@
 # inngest
 
+## 3.22.13
+
+### Patch Changes
+
+- [#709](https://github.com/inngest/inngest-js/pull/709) [`3041afe`](https://github.com/inngest/inngest-js/commit/3041afe290c07a680f94918b4b00072847fd017d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure support for TypeScript 5.6
+
+  No changes to any runtime/user-facing code has been made, but TS upgrades often alter emitted files, so the package will be bumped for folks to take advantage of any performance/compatibility improvments there.
+
 ## 3.22.12
 
 ### Patch Changes
