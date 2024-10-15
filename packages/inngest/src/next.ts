@@ -20,7 +20,7 @@
  * @module
  */
 
-import { type NextApiRequest } from "next";
+import { type NextApiRequest, type NextApiResponse } from "next";
 import { type NextRequest } from "next/server.js";
 import {
   InngestCommHandler,
@@ -52,6 +52,23 @@ export type RequestHandler = (
   expectedReq: NextRequest,
   res: unknown
 ) => Promise<Response>;
+
+const isRecord = (val: unknown): val is Record<string, unknown> => {
+  return typeof val === "object" && val !== null;
+};
+
+const isFunction = (val: unknown): val is (...args: unknown[]) => unknown => {
+  return typeof val === "function";
+};
+
+const isNext12ApiResponse = (val: unknown): val is NextApiResponse => {
+  return (
+    isRecord(val) &&
+    isFunction(val.setHeader) &&
+    isFunction(val.status) &&
+    isFunction(val.send)
+  );
+};
 
 /**
  * In Next.js, serve and register any declared functions with Inngest, making
@@ -199,36 +216,23 @@ export const serve = (
            * type of this, though Next.js 12 had issues with this due to not
            * instantiating the response correctly.
            */
-          if (typeof res === "object") {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-            const unsafeRes = res as any;
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-            if (typeof unsafeRes?.setHeader === "function") {
-              for (const [key, value] of Object.entries(headers)) {
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-                unsafeRes.setHeader(key, value);
-              }
+          if (isNext12ApiResponse(res)) {
+            for (const [key, value] of Object.entries(headers)) {
+              res.setHeader(key, value);
             }
 
-            if (
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-              typeof unsafeRes?.status === "function" &&
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-              typeof unsafeRes?.send === "function"
-            ) {
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-              unsafeRes.status(status).send(body);
+            res.status(status);
+            res.send(body);
 
-              /**
-               * If we're here, we're in a serverless endpoint (not edge), so
-               * we've correctly sent the response and can return `undefined`.
-               *
-               * Next.js 13 edge requires that the return value is typed as
-               * `Response`, so we still enforce that as we cannot dynamically
-               * adjust typing based on the environment.
-               */
-              return undefined as unknown as Response;
-            }
+            /**
+             * If we're here, we're in a serverless endpoint (not edge), so
+             * we've correctly sent the response and can return `undefined`.
+             *
+             * Next.js 13 edge requires that the return value is typed as
+             * `Response`, so we still enforce that as we cannot dynamically
+             * adjust typing based on the environment.
+             */
+            return undefined as unknown as Response;
           }
 
           /**
