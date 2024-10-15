@@ -1136,7 +1136,7 @@ export class InngestCommHandler<
       }
 
       if (method === "PUT") {
-        const [deployId, isInBandRequest] = await Promise.all([
+        const [deployId, inBandSyncRequested] = await Promise.all([
           actions
             .queryStringWithDefaults(
               "processing deployment request",
@@ -1146,21 +1146,12 @@ export class InngestCommHandler<
               return deployId === "undefined" ? undefined : deployId;
             }),
 
-          // In-band requests must be signed and be marked as in-band from the
-          // Inngest Server.
-          signatureValidation
-            .then((result) => {
-              // Validation can be successful if we're in dev mode and did not
-              // actually validate a key. In this case, also check that we did
-              // indeed use a particular key to validate.
-              if (!result.success || !result.keyUsed) {
-                return;
-              }
-
-              // Also skip if we haven't explicitly allowed in-band syncs.
-              // TODO This will be enabled by default in the future.
-              if (!parseAsBoolean(this.env[envKeys.InngestAllowInBandSync])) {
-                return;
+          Promise.resolve(
+            parseAsBoolean(this.env[envKeys.InngestAllowInBandSync])
+          )
+            .then((allowInBandSync) => {
+              if (!allowInBandSync) {
+                return syncKind.OutOfBand;
               }
 
               return actions.headers(
@@ -1173,10 +1164,27 @@ export class InngestCommHandler<
             }),
         ]);
 
-        // Validation can be successful if we're in dev mode and did not
-        // actually validate a key. In this case, also check that we did indeed
-        // use a particular key to validate.
-        if (isInBandRequest) {
+        if (inBandSyncRequested) {
+          // Validation can be successful if we're in dev mode and did not
+          // actually validate a key. In this case, also check that we did indeed
+          // use a particular key to validate.
+          const sigCheck = await signatureValidation;
+
+          if (!sigCheck.success) {
+            return {
+              status: 401,
+              body: stringify({
+                code: "sig_verification_failed",
+                message: "",
+                name: "SigVerificationFailedError",
+              }),
+              headers: {
+                "Content-Type": "application/json",
+              },
+              version: undefined,
+            };
+          }
+
           // This should be an in-band sync
           const body = await this.inBandRegisterBody({
             actions,
@@ -1467,14 +1475,10 @@ export class InngestCommHandler<
       url,
     });
 
-    if (!introspectionBody.authentication_succeeded) {
-      throw new Error("Cannot introspect without successful authentication");
-    }
-
     const body: InBandRegisterRequest = {
       app_id: this.client.id,
       capabilities: registerBody.capabilities,
-      env: introspectionBody.env,
+      env: null,
       framework: registerBody.framework,
       functions: registerBody.functions,
       inspection: introspectionBody,
@@ -1483,11 +1487,17 @@ export class InngestCommHandler<
         ...this.env,
       }),
       sdk_author: "inngest",
-      sdk_language: introspectionBody.sdk_language,
-      sdk_version: introspectionBody.sdk_version,
+      sdk_language: "",
+      sdk_version: "",
       sdk: registerBody.sdk,
       url: registerBody.url,
     };
+
+    if (introspectionBody.authentication_succeeded) {
+      body.env = introspectionBody.env;
+      body.sdk_language = introspectionBody.sdk_language;
+      body.sdk_version = introspectionBody.sdk_version;
+    }
 
     return body;
   }

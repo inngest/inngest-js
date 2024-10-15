@@ -1037,7 +1037,7 @@ export interface InBandRegisterRequest
   /**
    * The result of the introspection request.
    */
-  inspection: AuthenticatedIntrospection;
+  inspection: AuthenticatedIntrospection | UnauthenticatedIntrospection;
 
   /**
    * ?
