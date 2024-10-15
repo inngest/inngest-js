@@ -49,7 +49,8 @@ export const frameworkName: SupportedFrameworkName = "nextjs";
  * environment used (edge vs serverless).
  */
 export type RequestHandler = (
-  ...args: [expectedReq: NextRequest, res: unknown]
+  expectedReq: NextRequest,
+  res: unknown
 ) => Promise<Response>;
 
 /**
