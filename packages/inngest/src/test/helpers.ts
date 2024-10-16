@@ -928,17 +928,19 @@ export const testFramework = (
         describe("env var disallow", () => {
           Object.values(serverKind).forEach((serverMode) => {
             Object.values(serverKind).forEach((sdkMode) => {
-              Object.values(syncKind).forEach((requestedSyncKind) => {
-                [undefined, false, true].forEach((validSignature) => {
-                  expectResponse(syncKind.OutOfBand, {
-                    serverMode,
-                    sdkMode,
-                    requestedSyncKind,
-                    validSignature,
-                    allowInBandSync: false,
+              [undefined, ...Object.values(syncKind)].forEach(
+                (requestedSyncKind) => {
+                  [undefined, false, true].forEach((validSignature) => {
+                    expectResponse(syncKind.OutOfBand, {
+                      serverMode,
+                      sdkMode,
+                      requestedSyncKind,
+                      validSignature,
+                      allowInBandSync: false,
+                    });
                   });
-                });
-              });
+                }
+              );
             });
           });
         });
