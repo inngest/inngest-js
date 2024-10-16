@@ -831,29 +831,20 @@ export const testFramework = (
       describe("sync type tests", () => {
         const expectResponse = async (
           expectedResponse: syncKind | number,
-          opts: {
-            serverMode?: serverKind;
-            sdkMode?: serverKind;
-            requestedSyncKind?: syncKind;
-            validSignature?: undefined | boolean;
-            allowInBandSync?: boolean;
-          }
-        ) => {
-          const {
+          {
             serverMode,
             sdkMode,
             requestedSyncKind,
             validSignature,
             allowInBandSync,
-          } = {
-            serverMode: serverKind.Dev,
-            sdkMode: serverKind.Dev,
-            requestedSyncKind: syncKind.OutOfBand,
-            validSignature: undefined,
-            allowInBandSync: false,
-            ...opts,
-          };
-
+          }: {
+            serverMode: serverKind;
+            sdkMode: serverKind;
+            requestedSyncKind: syncKind | undefined;
+            validSignature: boolean | undefined;
+            allowInBandSync: boolean;
+          }
+        ) => {
           const signingKey = "123";
           const body = {};
           const ts = Date.now().toString();
@@ -866,17 +857,21 @@ export const testFramework = (
 
           let name = `${
             serverMode === serverKind.Cloud ? "Cloud" : "Dev"
-          } Server requesting an ${requestedSyncKind} sync with ${
+          } Server -> ${
+            sdkMode === serverKind.Cloud ? "Cloud" : "Dev"
+          } SDK - requesting ${
+            requestedSyncKind
+              ? `requesting ${requestedSyncKind} sync`
+              : "no sync kind specified"
+          } with ${
             validSignature
               ? "a valid"
               : validSignature === false
                 ? "an invalid"
                 : "no"
-          } signature from an SDK in ${
-            sdkMode === serverKind.Cloud ? "Cloud" : "Dev"
-          } mode with in-band syncs ${
-            allowInBandSync ? "dis" : ""
-          }allowed should ${
+          } signature ${
+            allowInBandSync ? "" : "(in-band syncs disallowed in env var) "
+          }should ${
             typeof expectedResponse === "number" ? "return" : "perform"
           } ${expectedResponse}`;
 
@@ -929,107 +924,101 @@ export const testFramework = (
           nock.cleanAll();
         });
 
-        describe("out-of-band", () => {
-          // Always perform out-of-band syncs if the env var is falsey
-          describe("env var disallow", () => {
-            Object.values(serverKind).forEach((serverMode) => {
-              Object.values(serverKind).forEach((sdkMode) => {
-                Object.values(syncKind).forEach((requestedSyncKind) => {
-                  [undefined, false, true].forEach((validSignature) => {
-                    expectResponse(syncKind.OutOfBand, {
-                      serverMode,
-                      sdkMode,
-                      requestedSyncKind,
-                      validSignature,
-                      allowInBandSync: false,
-                    });
-                  });
-                });
-              });
-            });
-          });
-
-          // Always perform out-of-band syncs if requested
-          describe("out-of-band requested", () => {
-            Object.values(serverKind).forEach((serverMode) => {
-              Object.values(serverKind).forEach((sdkMode) => {
+        // Always perform out-of-band syncs if the env var is falsey
+        describe("env var disallow", () => {
+          Object.values(serverKind).forEach((serverMode) => {
+            Object.values(serverKind).forEach((sdkMode) => {
+              Object.values(syncKind).forEach((requestedSyncKind) => {
                 [undefined, false, true].forEach((validSignature) => {
                   expectResponse(syncKind.OutOfBand, {
                     serverMode,
                     sdkMode,
-                    requestedSyncKind: syncKind.OutOfBand,
+                    requestedSyncKind,
                     validSignature,
-                    allowInBandSync: true,
+                    allowInBandSync: false,
                   });
                 });
               });
             });
           });
+        });
 
-          // Perform in-band syncs if requested and allowed
-          describe("in-band requested", () => {
-            describe("with valid signature", () => {
-              Object.values(serverKind).forEach((serverMode) => {
-                Object.values(serverKind).forEach((sdkMode) => {
-                  expectResponse(syncKind.InBand, {
-                    serverMode,
-                    sdkMode,
-                    requestedSyncKind: syncKind.InBand,
-                    validSignature: true,
-                    allowInBandSync: true,
-                  });
+        describe("no sync kind requested", () => {
+          Object.values(serverKind).forEach((serverMode) => {
+            Object.values(serverKind).forEach((sdkMode) => {
+              [undefined, false, true].forEach((validSignature) => {
+                expectResponse(syncKind.OutOfBand, {
+                  serverMode,
+                  sdkMode,
+                  requestedSyncKind: undefined,
+                  validSignature,
+                  allowInBandSync: true,
                 });
               });
             });
+          });
+        });
 
-            describe("with invalid signature", () => {
-              describe("in cloud", () => {
-                Object.values(serverKind).forEach((serverMode) => {
-                  expectResponse(401, {
-                    serverMode,
-                    sdkMode: serverKind.Cloud,
-                    requestedSyncKind: syncKind.InBand,
-                    validSignature: false,
-                    allowInBandSync: true,
-                  });
-                });
-              });
-
-              describe("in dev", () => {
-                Object.values(serverKind).forEach((serverMode) => {
-                  expectResponse(syncKind.InBand, {
-                    serverMode,
-                    sdkMode: serverKind.Dev,
-                    requestedSyncKind: syncKind.InBand,
-                    validSignature: false,
-                    allowInBandSync: true,
-                  });
+        // Always perform out-of-band syncs if requested
+        describe("out-of-band requested", () => {
+          Object.values(serverKind).forEach((serverMode) => {
+            Object.values(serverKind).forEach((sdkMode) => {
+              [undefined, false, true].forEach((validSignature) => {
+                expectResponse(syncKind.OutOfBand, {
+                  serverMode,
+                  sdkMode,
+                  requestedSyncKind: syncKind.OutOfBand,
+                  validSignature,
+                  allowInBandSync: true,
                 });
               });
             });
+          });
+        });
 
-            describe("with no signature", () => {
-              describe("in cloud", () => {
-                Object.values(serverKind).forEach((serverMode) => {
-                  expectResponse(401, {
-                    serverMode,
-                    sdkMode: serverKind.Cloud,
-                    requestedSyncKind: syncKind.InBand,
-                    validSignature: undefined,
-                    allowInBandSync: true,
-                  });
+        // Perform in-band syncs if requested and allowed
+        describe("in-band requested", () => {
+          describe("with valid signature", () => {
+            Object.values(serverKind).forEach((serverMode) => {
+              Object.values(serverKind).forEach((sdkMode) => {
+                expectResponse(syncKind.InBand, {
+                  serverMode,
+                  sdkMode,
+                  requestedSyncKind: syncKind.InBand,
+                  validSignature: true,
+                  allowInBandSync: true,
                 });
               });
+            });
+          });
 
-              describe("in dev", () => {
-                Object.values(serverKind).forEach((serverMode) => {
-                  expectResponse(syncKind.InBand, {
-                    serverMode,
-                    sdkMode: serverKind.Dev,
-                    requestedSyncKind: syncKind.InBand,
-                    validSignature: undefined,
-                    allowInBandSync: true,
-                  });
+          describe("with invalid signature", () => {
+            Object.values(serverKind).forEach((serverMode) => {
+              Object.values(serverKind).forEach((sdkMode) => {
+                const res = sdkMode === serverKind.Dev ? syncKind.InBand : 401;
+
+                expectResponse(res, {
+                  serverMode,
+                  sdkMode,
+                  requestedSyncKind: syncKind.InBand,
+                  validSignature: false,
+                  allowInBandSync: true,
+                });
+              });
+            });
+          });
+
+          describe("with no signature", () => {
+            Object.values(serverKind).forEach((serverMode) => {
+              Object.values(serverKind).forEach((sdkMode) => {
+                const res = sdkMode === serverKind.Dev ? syncKind.InBand : 401;
+
+                expectResponse(res, {
+                  serverMode,
+                  sdkMode,
+                  requestedSyncKind: syncKind.InBand,
+                  validSignature: undefined,
+                  allowInBandSync: true,
                 });
               });
             });
