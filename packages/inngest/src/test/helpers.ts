@@ -857,9 +857,7 @@ export const testFramework = (
 
           let name = `${
             serverMode === serverKind.Cloud ? "Cloud" : "Dev"
-          } Server -> ${
-            sdkMode === serverKind.Cloud ? "Cloud" : "Dev"
-          } SDK - requesting ${
+          } Server -> ${sdkMode === serverKind.Cloud ? "Cloud" : "Dev"} SDK - ${
             requestedSyncKind
               ? `requesting ${requestedSyncKind} sync`
               : "no sync kind specified"
