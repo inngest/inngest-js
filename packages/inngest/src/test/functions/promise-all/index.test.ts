@@ -7,7 +7,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Promise.all",
+  name: "promise-all",
   triggers: [{ event: "demo/promise.all" }],
 });
 
@@ -20,40 +20,40 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/promise.all'", async () => {
-    runId = await eventRunWithName(eventId, "Promise.all");
+    runId = await eventRunWithName(eventId, "promise-all");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 
   test("ran Step 1", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "Step 1",
-        output: "1",
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "Step 1",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: 1 });
   }, 60000);
 
   test("ran Step 2", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "Step 2",
-        output: "2",
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "Step 2",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: 2 });
   }, 60000);
 
   test("ran Step 3", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "Step 3",
-        output: "3",
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "Step 3",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: 3 });
   }, 60000);
 });

@@ -1,34 +1,111 @@
-import canonicalize from "canonicalize";
-import { sha1 } from "hash.js";
-import { type Jsonify } from "type-fest";
-import {
-  ErrCode,
-  functionStoppedRunningErr,
-  prettyError,
-} from "../helpers/errors";
+import { z } from "zod";
+import { logPrefix } from "../helpers/consts";
+import { type Jsonify } from "../helpers/jsonify";
 import { timeStr } from "../helpers/strings";
 import {
-  type ObjectPaths,
-  type PartialK,
+  type ExclusiveKeys,
+  type ParametersExceptFirst,
   type SendEventPayload,
+  type SimplifyDeep,
+  type WithoutInternalStr,
 } from "../helpers/types";
 import {
   StepOpCode,
-  type ClientOptions,
   type EventPayload,
   type HashedOp,
-  type StepOpts,
+  type InvocationResult,
+  type InvokeTargetFunctionDefinition,
+  type MinimalEventPayload,
+  type SendEventOutput,
+  type StepOptions,
+  type StepOptionsOrId,
+  type TriggerEventFromFunction,
+  type TriggersFromClient,
 } from "../types";
-import { type EventsFromOpts, type Inngest } from "./Inngest";
-import { type ExecutionState } from "./InngestFunction";
-import { NonRetriableError } from "./NonRetriableError";
+import {
+  type ClientOptionsFromInngest,
+  type GetEvents,
+  type GetFunctionOutput,
+  type Inngest,
+} from "./Inngest";
+import { InngestFunction } from "./InngestFunction";
+import { InngestFunctionReference } from "./InngestFunctionReference";
+import { type InngestExecution } from "./execution/InngestExecution";
 
-export interface TickOp extends HashedOp {
+export interface FoundStep extends HashedOp {
+  hashedId: string;
   fn?: (...args: unknown[]) => unknown;
+  rawArgs: unknown[];
   fulfilled: boolean;
-  resolve: (value: unknown | PromiseLike<unknown>) => void;
-  reject: (reason?: unknown) => void;
+  handled: boolean;
+
+  /**
+   * The promise that has been returned to userland code for this step.
+   */
+  promise: Promise<unknown>;
+
+  /**
+   * Returns a boolean representing whether or not the step was handled on this
+   * invocation.
+   */
+  handle: () => Promise<boolean>;
 }
+
+export type MatchOpFn<
+  T extends (...args: unknown[]) => Promise<unknown> = (
+    ...args: unknown[]
+  ) => Promise<unknown>,
+> = (
+  stepOptions: StepOptions,
+  /**
+   * Arguments passed by the user.
+   */
+  ...args: ParametersExceptFirst<T>
+) => Omit<HashedOp, "data" | "error">;
+
+export type StepHandler = (info: {
+  matchOp: MatchOpFn;
+  opts?: StepToolOptions;
+  args: [StepOptionsOrId, ...unknown[]];
+}) => Promise<unknown>;
+
+export interface StepToolOptions<
+  T extends (...args: unknown[]) => Promise<unknown> = (
+    ...args: unknown[]
+  ) => Promise<unknown>,
+> {
+  /**
+   * Optionally, we can also provide a function that will be called when
+   * Inngest tells us to run this operation.
+   *
+   * If this function is defined, the first time the tool is used it will
+   * report the desired operation (including options) to the Inngest. Inngest
+   * will then call back to the function to tell it to run the step and then
+   * retrieve data.
+   *
+   * We do this in order to allow functionality such as per-step retries; this
+   * gives the SDK the opportunity to tell Inngest what it wants to do before
+   * it does it.
+   *
+   * This function is passed the arguments passed by the user. It will be run
+   * when we receive an operation matching this one that does not contain a
+   * `data` property.
+   */
+  fn?: (...args: Parameters<T>) => unknown;
+}
+
+export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
+  if (typeof options === "string") {
+    return { id: options };
+  }
+
+  return options;
+};
+
+/**
+ * Suffix used to namespace steps that are automatically indexed.
+ */
+export const STEP_INDEXING_SUFFIX = ":";
 
 /**
  * Create a new set of step function tools ready to be used in a step function.
@@ -38,58 +115,11 @@ export interface TickOp extends HashedOp {
  * An op stack (function state) is passed in as well as some mutable properties
  * that the tools can use to submit a new op.
  */
-export const createStepTools = <
-  TOpts extends ClientOptions,
-  Events extends EventsFromOpts<TOpts>,
-  TriggeringEvent extends keyof Events & string
->(
-  client: Inngest<TOpts>,
-  state: ExecutionState
+export const createStepTools = <TClient extends Inngest.Any>(
+  client: TClient,
+  execution: InngestExecution,
+  stepHandler: StepHandler
 ) => {
-  // Start referencing everything
-  state.tickOps = state.allFoundOps;
-
-  /**
-   * Create a unique hash of an operation using only a subset of the operation's
-   * properties; will never use `data` and will guarantee the order of the
-   * object so we don't rely on individual tools for that.
-   *
-   * If the operation already contains an ID, the current ID will be used
-   * instead, so that users can provide their own IDs.
-   */
-  const hashOp = (
-    /**
-     * The op to generate a hash from. We only use a subset of the op's
-     * properties when creating the hash.
-     */
-    op: PartialK<HashedOp, "id">
-  ): HashedOp => {
-    /**
-     * If the op already has an ID, we don't need to generate one. This allows
-     * users to specify their own IDs.
-     */
-    if (op.id) {
-      return op as HashedOp;
-    }
-
-    const obj = {
-      parent: state.currentOp?.id ?? null,
-      op: op.op,
-      name: op.name,
-      opts: op.opts ?? null,
-    };
-
-    const collisionHash = _internals.hashData(obj);
-
-    const pos = (state.tickOpHashes[collisionHash] =
-      (state.tickOpHashes[collisionHash] ?? -1) + 1);
-
-    return {
-      ...op,
-      id: _internals.hashData({ pos, ...obj }),
-    };
-  };
-
   /**
    * A local helper used to create tools that can be used to submit an op.
    *
@@ -107,84 +137,12 @@ export const createStepTools = <
      *
      * Most simple tools will likely only need to define this.
      */
-    matchOp: (
-      /**
-       * Arguments passed by the user.
-       */
-      ...args: Parameters<T>
-    ) => PartialK<Omit<HashedOp, "data" | "error">, "id">,
-
-    opts?: {
-      /**
-       * Optionally, we can also provide a function that will be called when
-       * Inngest tells us to run this operation.
-       *
-       * If this function is defined, the first time the tool is used it will
-       * report the desired operation (including options) to the Inngest. Inngest
-       * will then call back to the function to tell it to run the step and then
-       * retrieve data.
-       *
-       * We do this in order to allow functionality such as per-step retries; this
-       * gives the SDK the opportunity to tell Inngest what it wants to do before
-       * it does it.
-       *
-       * This function is passed the arguments passed by the user. It will be run
-       * when we receive an operation matching this one that does not contain a
-       * `data` property.
-       */
-      fn?: (...args: Parameters<T>) => unknown;
-
-      /**
-       * If `true` and we have detected that this is a  non-step function, the
-       * provided `fn` will be called and the result returned immediately
-       * instead of being executed later.
-       *
-       * If no `fn` is provided to the tool, this will throw the same error as
-       * if this setting was `false`.
-       */
-      nonStepExecuteInline?: boolean;
-    }
+    matchOp: MatchOpFn<T>,
+    opts?: StepToolOptions<T>
   ): T => {
-    return ((...args: Parameters<T>): Promise<unknown> => {
-      if (state.nonStepFnDetected) {
-        if (opts?.nonStepExecuteInline && opts.fn) {
-          return Promise.resolve(opts.fn(...args));
-        }
-
-        throw new NonRetriableError(
-          functionStoppedRunningErr(ErrCode.STEP_USED_AFTER_ASYNC)
-        );
-      }
-
-      if (state.executingStep) {
-        throw new NonRetriableError(
-          prettyError({
-            whatHappened: "Your function was stopped from running",
-            why: "We detected that you have nested `step.*` tooling.",
-            consequences: "Nesting `step.*` tooling is not supported.",
-            stack: true,
-            toFixNow:
-              "Make sure you're not using `step.*` tooling inside of other `step.*` tooling. If you need to compose steps together, you can create a new async function and call it from within your step function, or use promise chaining.",
-            otherwise:
-              "For more information on step functions with Inngest, see https://www.inngest.com/docs/functions/multi-step",
-            code: ErrCode.NESTING_STEPS,
-          })
-        );
-      }
-
-      state.hasUsedTools = true;
-
-      const opId = hashOp(matchOp(...args));
-
-      return new Promise<unknown>((resolve, reject) => {
-        state.tickOps[opId.id] = {
-          ...opId,
-          ...(opts?.fn ? { fn: () => opts.fn?.(...args) } : {}),
-          resolve,
-          reject,
-          fulfilled: false,
-        };
-      });
+    return (async (...args: Parameters<T>): Promise<unknown> => {
+      const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
+      return stepHandler({ args: parsedArgs, matchOp, opts });
     }) as T;
   };
 
@@ -202,11 +160,12 @@ export const createStepTools = <
      *
      * @example
      * ```ts
-     * await step.sendEvent("app/user.created", { data: { id: 123 } });
+     * await step.sendEvent("emit-user-creation", {
+     *   name: "app/user.created",
+     *   data: { id: 123 },
+     * });
      *
-     * await step.sendEvent({ name: "app/user.created", data: { id: 123 } });
-     *
-     * await step.sendEvent([
+     * await step.sendEvent("emit-user-updates", [
      *   {
      *     name: "app/user.created",
      *     data: { id: 123 },
@@ -221,22 +180,25 @@ export const createStepTools = <
      * Returns a promise that will resolve once the event has been sent.
      */
     sendEvent: createTool<{
-      <Payload extends SendEventPayload<EventsFromOpts<TOpts>>>(
-        payload: Payload,
-        opts?: StepOpts
-      ): Promise<void>;
+      <Payload extends SendEventPayload<GetEvents<TClient>>>(
+        idOrOptions: StepOptionsOrId,
+        payload: Payload
+      ): Promise<SendEventOutput<ClientOptionsFromInngest<TClient>>>;
     }>(
-      (_payload, opts) => {
+      ({ id, name }) => {
         return {
-          id: opts?.id,
+          id,
           op: StepOpCode.StepPlanned,
           name: "sendEvent",
+          displayName: name ?? id,
         };
       },
       {
-        nonStepExecuteInline: true,
-        fn: (payload) => {
-          return client.send(payload);
+        fn: (idOrOptions, payload) => {
+          return client["_send"]({
+            payload,
+            headers: execution["options"]["headers"],
+          });
         },
       }
     ),
@@ -251,55 +213,28 @@ export const createStepTools = <
      * returning `null` instead of any event data.
      */
     waitForEvent: createTool<
-      <IncomingEvent extends keyof Events | EventPayload>(
-        event: IncomingEvent extends keyof Events
-          ? IncomingEvent
-          : IncomingEvent extends EventPayload
-          ? IncomingEvent["name"]
-          : never,
-        opts:
-          | string
-          | ((IncomingEvent extends keyof Events
-              ? WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>
-              : IncomingEvent extends EventPayload
-              ? WaitForEventOpts<Events[TriggeringEvent], IncomingEvent>
-              : never) & {
-              if?: never;
-            })
-          | ((IncomingEvent extends keyof Events
-              ? WaitForEventOpts<Events[TriggeringEvent], Events[IncomingEvent]>
-              : IncomingEvent extends EventPayload
-              ? WaitForEventOpts<Events[TriggeringEvent], IncomingEvent>
-              : never) & {
-              match?: never;
-            })
+      <IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>>(
+        idOrOptions: StepOptionsOrId,
+        opts: WaitForEventOpts<GetEvents<TClient, true>, IncomingEvent>
       ) => Promise<
-        IncomingEvent extends keyof Events
-          ? Events[IncomingEvent] | null
+        IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>
+          ? GetEvents<TClient, false>[IncomingEvent] | null
           : IncomingEvent | null
       >
     >(
       (
-        /**
-         * The event name to wait for.
-         */
-        event,
+        { id, name },
 
         /**
          * Options to control the event we're waiting for.
          */
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        opts: WaitForEventOpts<any, any> | string
+        opts
       ) => {
         const matchOpts: { timeout: string; if?: string } = {
           timeout: timeStr(typeof opts === "string" ? opts : opts.timeout),
         };
 
-        let id: string | undefined;
-
         if (typeof opts !== "string") {
-          id = opts?.id;
-
           if (opts?.match) {
             matchOpts.if = `event.${opts.match} == async.${opts.match}`;
           } else if (opts?.if) {
@@ -310,8 +245,9 @@ export const createStepTools = <
         return {
           id,
           op: StepOpCode.WaitForEvent,
-          name: event as string,
+          name: opts.event,
           opts: matchOpts,
+          displayName: name ?? id,
         };
       }
     ),
@@ -330,12 +266,7 @@ export const createStepTools = <
      */
     run: createTool<
       <T extends () => unknown>(
-        /**
-         * The name of this step as it will appear in the Inngest Cloud UI. This
-         * is also used as a unique identifier for the step and should not match
-         * any other steps within this step function.
-         */
-        name: string,
+        idOrOptions: StepOptionsOrId,
 
         /**
          * The function to run when this step is executed. Can be synchronous or
@@ -345,30 +276,32 @@ export const createStepTools = <
          * call to `run`, meaning you can return and reason about return data
          * for next steps.
          */
-        fn: T,
-        opts?: StepOpts
+        fn: T
       ) => Promise<
         /**
          * TODO Middleware can affect this. If run input middleware has returned
          * new step data, do not Jsonify.
          */
-        Jsonify<
-          T extends () => Promise<infer U>
-            ? Awaited<U extends void ? null : U>
-            : ReturnType<T> extends void
-            ? null
-            : ReturnType<T>
+        SimplifyDeep<
+          Jsonify<
+            T extends () => Promise<infer U>
+              ? Awaited<U extends void ? null : U>
+              : ReturnType<T> extends void
+                ? null
+                : ReturnType<T>
+          >
         >
       >
     >(
-      (name, _fn, opts) => {
+      ({ id, name }) => {
         return {
-          id: opts?.id,
+          id,
           op: StepOpCode.StepPlanned,
-          name,
+          name: id,
+          displayName: name ?? id,
         };
       },
-      { fn: (_, fn) => fn() }
+      { fn: (stepOptions, fn) => fn() }
     ),
 
     /**
@@ -383,21 +316,23 @@ export const createStepTools = <
      */
     sleep: createTool<
       (
+        idOrOptions: StepOptionsOrId,
+
         /**
          * The amount of time to wait before continuing.
          */
-        time: number | string,
-        opts?: StepOpts
+        time: number | string
       ) => Promise<void>
-    >((time, opts) => {
+    >(({ id, name }, time) => {
       /**
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
       return {
-        id: opts?.id,
+        id,
         op: StepOpCode.Sleep,
         name: timeStr(time),
+        displayName: name ?? id,
       };
     }),
 
@@ -409,13 +344,14 @@ export const createStepTools = <
      */
     sleepUntil: createTool<
       (
+        idOrOptions: StepOptionsOrId,
+
         /**
          * The date to wait until before continuing.
          */
-        time: Date | string,
-        opts?: StepOpts
+        time: Date | string
       ) => Promise<void>
-    >((time, opts) => {
+    >(({ id, name }, time) => {
       const date = typeof time === "string" ? new Date(time) : time;
 
       /**
@@ -424,9 +360,10 @@ export const createStepTools = <
        */
       try {
         return {
-          id: opts?.id,
+          id,
           op: StepOpCode.Sleep,
           name: date.toISOString(),
+          displayName: name ?? id,
         };
       } catch (err) {
         /**
@@ -442,19 +379,139 @@ export const createStepTools = <
         );
       }
     }),
+
+    /**
+     * Invoke a passed Inngest `function` with the given `data`. Returns the
+     * result of the returned value of the function or `null` if the function
+     * does not return a value.
+     *
+     * A string ID can also be passed to reference functions outside of the
+     * current app.
+     */
+    invoke: createTool<
+      <TFunction extends InvokeTargetFunctionDefinition>(
+        idOrOptions: StepOptionsOrId,
+        opts: InvocationOpts<TFunction>
+      ) => InvocationResult<GetFunctionOutput<TFunction>>
+    >(({ id, name }, invokeOpts) => {
+      // Create a discriminated union to operate on based on the input types
+      // available for this tool.
+      const optsSchema = invokePayloadSchema.extend({
+        timeout: z.union([z.number(), z.string(), z.date()]).optional(),
+      });
+
+      const parsedFnOpts = optsSchema
+        .extend({
+          _type: z.literal("fullId").optional().default("fullId"),
+          function: z.string().min(1),
+        })
+        .or(
+          optsSchema.extend({
+            _type: z.literal("fnInstance").optional().default("fnInstance"),
+            function: z.instanceof(InngestFunction),
+          })
+        )
+        .or(
+          optsSchema.extend({
+            _type: z.literal("refInstance").optional().default("refInstance"),
+            function: z.instanceof(InngestFunctionReference),
+          })
+        )
+        .safeParse(invokeOpts);
+
+      if (!parsedFnOpts.success) {
+        throw new Error(
+          `Invalid invocation options passed to invoke; must include either a function or functionId.`
+        );
+      }
+
+      const { _type, function: fn, data, user, v, timeout } = parsedFnOpts.data;
+      const payload = { data, user, v } satisfies MinimalEventPayload;
+      const opts: {
+        payload: MinimalEventPayload;
+        function_id: string;
+        timeout?: string;
+      } = {
+        payload,
+        function_id: "",
+        timeout: typeof timeout === "undefined" ? undefined : timeStr(timeout),
+      };
+
+      switch (_type) {
+        case "fnInstance":
+          opts.function_id = fn.id(fn["client"].id);
+          break;
+
+        case "fullId":
+          console.warn(
+            `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`
+          );
+          opts.function_id = fn;
+          break;
+
+        case "refInstance":
+          opts.function_id = [fn.opts.appId || client.id, fn.opts.functionId]
+            .filter(Boolean)
+            .join("-");
+          break;
+      }
+
+      return {
+        id,
+        op: StepOpCode.InvokeFunction,
+        displayName: name ?? id,
+        opts,
+      };
+    }),
   };
 
   return tools;
 };
 
 /**
+ * The event payload portion of the options for `step.invoke()`. This does not
+ * include non-payload options like `timeout` or the function to invoke.
+ */
+export const invokePayloadSchema = z.object({
+  data: z.record(z.any()).optional(),
+  user: z.record(z.any()).optional(),
+  v: z.string().optional(),
+});
+
+type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {
+  function: TFunction;
+};
+
+type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
+  InvocationTargetOpts<TFunction> &
+    Omit<TriggerEventFromFunction<TFunction>, "id"> & {
+      /**
+       * The step function will wait for the invocation to finish for a maximum
+       * of this time, at which point the retured promise will be rejected
+       * instead of resolved with the output of the invoked function.
+       *
+       * Note that the invoked function will continue to run even if this step
+       * times out.
+       *
+       * The time to wait can be specified using a `number` of milliseconds, an
+       * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`,
+       * or a `Date` object.
+       *
+       * {@link https://npm.im/ms}
+       */
+      timeout?: number | string | Date;
+    };
+
+/**
  * A set of optional parameters given to a `waitForEvent` call to control how
  * the event is handled.
  */
-interface WaitForEventOpts<
-  TriggeringEvent extends EventPayload,
-  IncomingEvent extends EventPayload
-> extends StepOpts {
+type WaitForEventOpts<
+  Events extends Record<string, EventPayload>,
+  IncomingEvent extends keyof Events,
+> = {
+  event: IncomingEvent;
+
   /**
    * The step function will wait for the event for a maximum of this time, at
    * which point the event will be returned as `null` instead of any event data.
@@ -466,63 +523,47 @@ interface WaitForEventOpts<
    * {@link https://npm.im/ms}
    */
   timeout: number | string | Date;
+} & ExclusiveKeys<
+  {
+    /**
+     * If provided, the step function will wait for the incoming event to match
+     * particular criteria. If the event does not match, it will be ignored and
+     * the step function will wait for another event.
+     *
+     * It must be a string of a dot-notation field name within both events to
+     * compare, e.g. `"data.id"` or `"user.email"`.
+     *
+     * ```
+     * // Wait for an event where the `user.email` field matches
+     * match: "user.email"
+     * ```
+     *
+     * All of these are helpers for the `if` option, which allows you to specify
+     * a custom condition to check. This can be useful if you need to compare
+     * multiple fields or use a more complex condition.
+     *
+     * See the Inngest expressions docs for more information.
+     *
+     * {@link https://www.inngest.com/docs/functions/expressions}
+     *
+     * @deprecated Use `if` instead.
+     */
+    match?: string;
 
-  /**
-   * If provided, the step function will wait for the incoming event to match
-   * particular criteria. If the event does not match, it will be ignored and
-   * the step function will wait for another event.
-   *
-   * It must be a string of a dot-notation field name within both events to
-   * compare, e.g. `"data.id"` or `"user.email"`.
-   *
-   * ```
-   * // Wait for an event where the `user.email` field matches
-   * match: "user.email"
-   * ```
-   *
-   * All of these are helpers for the `if` option, which allows you to specify
-   * a custom condition to check. This can be useful if you need to compare
-   * multiple fields or use a more complex condition.
-   *
-   * See the Inngest expressions docs for more information.
-   *
-   * {@link https://www.inngest.com/docs/functions/expressions}
-   */
-  match?: ObjectPaths<TriggeringEvent> & ObjectPaths<IncomingEvent>;
-
-  /**
-   * If provided, the step function will wait for the incoming event to match
-   * the given condition. If the event does not match, it will be ignored and
-   * the step function will wait for another event.
-   *
-   * The condition is a string of Google's Common Expression Language. For most
-   * simple cases, you might prefer to use `match` instead.
-   *
-   * See the Inngest expressions docs for more information.
-   *
-   * {@link https://www.inngest.com/docs/functions/expressions}
-   */
-  if?: string;
-}
-
-/**
- * An operation ready to hash to be used to memoise step function progress.
- *
- * @internal
- */
-export type UnhashedOp = {
-  name: string;
-  op: StepOpCode;
-  opts: Record<string, unknown> | null;
-  parent: string | null;
-  pos?: number;
-};
-
-const hashData = (op: UnhashedOp): string => {
-  return sha1().update(canonicalize(op)).digest("hex");
-};
-
-/**
- * Exported for testing.
- */
-export const _internals = { hashData };
+    /**
+     * If provided, the step function will wait for the incoming event to match
+     * the given condition. If the event does not match, it will be ignored and
+     * the step function will wait for another event.
+     *
+     * The condition is a string of Google's Common Expression Language. For most
+     * simple cases, you might prefer to use `match` instead.
+     *
+     * See the Inngest expressions docs for more information.
+     *
+     * {@link https://www.inngest.com/docs/functions/expressions}
+     */
+    if?: string;
+  },
+  "match",
+  "if"
+>;

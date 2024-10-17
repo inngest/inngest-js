@@ -1,3 +1,5 @@
+import chalk from "chalk";
+
 /**
  * Keys for accessing query parameters included in requests from Inngest to run
  * functions.
@@ -8,19 +10,40 @@
  * @public
  */
 export enum queryKeys {
-  FnId = "fnId",
-  StepId = "stepId",
-  Introspect = "introspect",
   DeployId = "deployId",
+  FnId = "fnId",
+  Probe = "probe",
+  StepId = "stepId",
+}
+
+export enum probe {
+  Trust = "trust",
 }
 
 export enum envKeys {
-  SigningKey = "INNGEST_SIGNING_KEY",
-  EventKey = "INNGEST_EVENT_KEY",
-  DevServerUrl = "INNGEST_DEVSERVER_URL",
-  Environment = "INNGEST_ENV",
-  BranchName = "BRANCH_NAME",
+  InngestSigningKey = "INNGEST_SIGNING_KEY",
+  InngestSigningKeyFallback = "INNGEST_SIGNING_KEY_FALLBACK",
+  InngestEventKey = "INNGEST_EVENT_KEY",
+
+  /**
+   * @deprecated Removed in v3. Use {@link InngestBaseUrl} instead.
+   */
+  InngestDevServerUrl = "INNGEST_DEVSERVER_URL",
+  InngestEnvironment = "INNGEST_ENV",
+  InngestBaseUrl = "INNGEST_BASE_URL",
+  InngestEventApiBaseUrl = "INNGEST_EVENT_API_BASE_URL",
   InngestApiBaseUrl = "INNGEST_API_BASE_URL",
+  InngestServeHost = "INNGEST_SERVE_HOST",
+  InngestServePath = "INNGEST_SERVE_PATH",
+  InngestLogLevel = "INNGEST_LOG_LEVEL",
+  InngestStreaming = "INNGEST_STREAMING",
+  InngestDevMode = "INNGEST_DEV",
+
+  /**
+   * @deprecated It's unknown what this env var was used for, but we do not
+   * provide explicit support for it. Prefer using `INNGEST_ENV` instead.
+   */
+  BranchName = "BRANCH_NAME",
 
   /**
    * The git branch of the commit the deployment was triggered by. Example:
@@ -85,12 +108,8 @@ export enum envKeys {
    * {@link https://docs.railway.app/develop/variables#railway-provided-variables}
    */
   RailwayEnvironment = "RAILWAY_ENVIRONMENT",
-}
 
-export enum prodEnvKeys {
-  NodeEnvKey = "NODE_ENV",
   VercelEnvKey = "VERCEL_ENV",
-  NetlifyEnvKey = "CONTEXT",
 }
 
 /**
@@ -109,8 +128,16 @@ export enum headerKeys {
   Platform = "x-inngest-platform",
   Framework = "x-inngest-framework",
   NoRetry = "x-inngest-no-retry",
+  RequestVersion = "x-inngest-req-version",
+  RetryAfter = "retry-after",
+  InngestServerKind = "x-inngest-server-kind",
+  InngestExpectedServerKind = "x-inngest-expected-server-kind",
+  TraceParent = "traceparent",
+  TraceState = "tracestate",
 }
 
+export const defaultInngestApiBaseUrl = "https://api.inngest.com/";
+export const defaultInngestEventBaseUrl = "https://inn.gs/";
 export const defaultDevServerHost = "http://127.0.0.1:8288/";
 
 /**
@@ -125,4 +152,18 @@ export enum internalEvents {
    * will contain the original event and the error that caused the failure.
    */
   FunctionFailed = "inngest/function.failed",
+  FunctionInvoked = "inngest/function.invoked",
+  FunctionFinished = "inngest/function.finished",
+  ScheduledTimer = "inngest/scheduled.timer",
+}
+
+export const logPrefix: string = chalk.magenta.bold("[Inngest]");
+
+export const debugPrefix = "inngest";
+
+export const dummyEventKey = "NO_EVENT_KEY_SET";
+
+export enum serverKind {
+  Dev = "dev",
+  Cloud = "cloud",
 }

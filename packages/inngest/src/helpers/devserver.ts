@@ -1,4 +1,3 @@
-import { type FunctionConfig } from "../types";
 import { defaultDevServerHost } from "./consts";
 
 /**
@@ -50,43 +49,4 @@ export const devServerUrl = (
   pathname = ""
 ): URL => {
   return new URL(pathname, host.includes("://") ? host : `http://${host}`);
-};
-
-// InfoResponse is the API response for the dev server's /dev endpoint.
-export type InfoResponse = {
-  version: string; // Version of the dev server
-  startOpts: {
-    sdkURLs: string[]; // URLs the dev server was started with
-  };
-  // Account helpers
-  authed: boolean; // Are we logged in?
-  workspaces: {
-    prod: WorkspaceResponse; // To validate keys in test & prod.
-    test: WorkspaceResponse;
-  };
-  // SDK registration helpers
-  functions: FunctionConfig[];
-  handlers: SDKHandler[];
-};
-
-type WorkspaceResponse = {
-  signingKey: string;
-  eventKeys: Array<{
-    name: string;
-    key: string;
-  }>;
-};
-
-type SDKHandler = {
-  functionIDs: Array<string>;
-  createdAt: string;
-  updatedAt: string;
-  errors: Array<string>; // A list of errors from eg. function validation, or key validation.
-  sdk: {
-    url: string;
-    language: string;
-    version: string;
-    framework?: string;
-    app: string; // app name
-  };
 };

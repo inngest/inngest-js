@@ -1,11 +1,32 @@
+/**
+ * An adapter for any request that handles standard Web APIs such as `fetch`,
+ * `Request,` and `Response` to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * This is reused by many other adapters, but can be used directly.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/edge";
+ * import functions from "~/inngest";
+ *
+ * export const handler = serve({ id: "my-edge-app", functions });
+ * ```
+ *
+ * @module
+ */
+
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
-import { headerKeys, queryKeys } from "./helpers/consts";
 import { type SupportedFrameworkName } from "./types";
 
-export const name: SupportedFrameworkName = "edge";
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
+export const frameworkName: SupportedFrameworkName = "edge";
 
 /**
  * In an edge runtime, serve and register any declared functions with Inngest,
@@ -18,55 +39,33 @@ export const name: SupportedFrameworkName = "edge";
  * @example
  * ```ts
  * import { serve } from "inngest/edge";
- * import fns from "~/inngest";
+ * import functions from "~/inngest";
  *
- * export const handler = serve("My Edge App", fns);
+ * export const handler = serve({ id: "my-edge-app", functions });
  * ```
+ *
+ * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    {
-      fetch: fetch.bind(globalThis),
-      ...opts,
-    },
-    (req: Request) => {
-      const url = new URL(req.url, `https://${req.headers.get("host") || ""}`);
-
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((req: Request) => Promise<Response>) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    fetch: fetch.bind(globalThis),
+    ...options,
+    handler: (req: Request) => {
       return {
-        url,
-        register: () => {
-          if (req.method === "PUT") {
-            return {
-              deployId: url.searchParams.get(queryKeys.DeployId) as string,
-            };
-          }
-        },
-        run: async () => {
-          if (req.method === "POST") {
-            return {
-              data: (await req.json()) as Record<string, unknown>,
-              fnId: url.searchParams.get(queryKeys.FnId) as string,
-              stepId: url.searchParams.get(queryKeys.StepId) as string,
-              signature: req.headers.get(headerKeys.Signature) as string,
-            };
-          }
-        },
-        view: () => {
-          if (req.method === "GET") {
-            return {
-              isIntrospection: url.searchParams.has(queryKeys.Introspect),
-            };
-          }
+        body: () => req.json(),
+        headers: (key) => req.headers.get(key),
+        method: () => req.method,
+        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+        transformResponse: ({ body, status, headers }) => {
+          return new Response(body, { status, headers });
         },
       };
     },
-    ({ body, status, headers }): Response => {
-      return new Response(body, { status, headers });
-    }
-  );
+  });
 
   return handler.createHandler();
 };

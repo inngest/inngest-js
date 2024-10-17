@@ -1,3 +1,5 @@
+import { runAsPromise } from "./promises";
+
 interface Timing {
   description: string;
   timers: {
@@ -14,25 +16,24 @@ interface Timing {
  * fractions of a millisecond.
  */
 export class ServerTiming {
-  #timings: Record<string, Timing> = {};
+  private timings: Record<string, Timing> = {};
 
   /**
    * Start a timing. Returns a function that, when called, will stop the timing
    * and add it to the header.
    */
   public start(name: string, description?: string): () => void {
-    if (!this.#timings[name]) {
-      this.#timings[name] = {
+    if (!this.timings[name]) {
+      this.timings[name] = {
         description: description ?? "",
         timers: [],
       };
     }
 
-    const index =
-      (this.#timings[name] as Timing).timers.push({ start: Date.now() }) - 1;
+    const index = this.timings[name].timers.push({ start: Date.now() }) - 1;
 
     return (): void => {
-      const target = this.#timings[name];
+      const target = this.timings[name];
       if (!target) {
         return console.warn(`Timing "${name}" does not exist`);
       }
@@ -58,7 +59,7 @@ export class ServerTiming {
    * ```
    */
   public append(key: string, value: string): void {
-    this.#timings[key] = {
+    this.timings[key] = {
       description: value,
       timers: [],
     };
@@ -78,7 +79,7 @@ export class ServerTiming {
     const stop = this.start(name, description);
 
     try {
-      return (await Promise.resolve(fn())) as Awaited<ReturnType<T>>;
+      return (await runAsPromise(fn)) as Awaited<ReturnType<T>>;
     } finally {
       stop();
     }
@@ -88,7 +89,7 @@ export class ServerTiming {
    * Generate the `Server-Timing` header.
    */
   public getHeader(): string {
-    const entries = Object.entries(this.#timings).reduce<string[]>(
+    const entries = Object.entries(this.timings).reduce<string[]>(
       (acc, [name, { description, timers }]) => {
         /**
          * Ignore timers that had no end.

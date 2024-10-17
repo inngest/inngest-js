@@ -1,132 +1,174 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { EventSchemas, type EventsFromOpts } from "@local";
+import { EventSchemas } from "@local/components/EventSchemas";
+import { type Inngest } from "@local/components/Inngest";
+import { InngestFunction } from "@local/components/InngestFunction";
+import { referenceFunction } from "@local/components/InngestFunctionReference";
+import { type createStepTools } from "@local/components/InngestStepTools";
+import { type IsEqual } from "@local/helpers/types";
 import {
-  createExecutionState,
-  type ExecutionState,
-} from "@local/components/InngestFunction";
-import {
-  createStepTools,
-  type TickOp,
-} from "@local/components/InngestStepTools";
-import { StepOpCode, type ClientOptions } from "@local/types";
+  StepOpCode,
+  type ClientOptions,
+  type InvocationResult,
+} from "@local/types";
 import ms from "ms";
-import { assertType } from "type-plus";
-import { createClient } from "../test/helpers";
+import { z } from "zod";
+import {
+  assertType,
+  createClient,
+  getStepTools,
+  testClientId,
+  type StepTools,
+} from "../test/helpers";
 
 describe("waitForEvent", () => {
-  const client = createClient({ name: "test" });
-  let waitForEvent: ReturnType<typeof createStepTools>["waitForEvent"];
-  let state: ExecutionState;
-  let getOp: () => TickOp | undefined;
+  let step: StepTools;
 
   beforeEach(() => {
-    state = createExecutionState();
-    ({ waitForEvent } = createStepTools(client, state));
-    getOp = () => Object.values(state.tickOps)[0];
+    step = getStepTools();
   });
 
-  test("return WaitForEvent step op code", () => {
-    void waitForEvent("event", { timeout: "2h" });
-    expect(getOp()).toMatchObject({
+  test("return WaitForEvent step op code", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "2h" })
+    ).resolves.toMatchObject({
       op: StepOpCode.WaitForEvent,
     });
   });
 
-  test("returns `event` as ID", () => {
-    void waitForEvent("event", { timeout: "2h" });
-    expect(getOp()).toMatchObject({
+  test("returns `id` as ID", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "2h" })
+    ).resolves.toMatchObject({
+      id: "id",
+    });
+  });
+
+  test("returns ID by default", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "2h" })
+    ).resolves.toMatchObject({
+      displayName: "id",
+    });
+  });
+
+  test("returns specific name if given", async () => {
+    await expect(
+      step.waitForEvent(
+        { id: "id", name: "name" },
+        { event: "event", timeout: "2h" }
+      )
+    ).resolves.toMatchObject({
+      displayName: "name",
+    });
+  });
+
+  test("return event name as name", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "2h" })
+    ).resolves.toMatchObject({
       name: "event",
     });
   });
 
-  test("return blank opts if none given", () => {
-    void waitForEvent("event", { timeout: "2h" });
-    expect(getOp()).toMatchObject({
+  test("return blank opts if none given", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "2h" })
+    ).resolves.toMatchObject({
       opts: {},
     });
   });
 
-  test("return a hash of the op", () => {
-    void waitForEvent("event", { timeout: "2h" });
-    expect(getOp()).toMatchObject({
-      name: "event",
-      op: "WaitForEvent",
-      opts: {},
-    });
-  });
-
-  test("return TTL if string `timeout` given", () => {
-    void waitForEvent("event", { timeout: "1m" });
-    expect(getOp()).toMatchObject({
+  test("return TTL if string `timeout` given", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: "1m" })
+    ).resolves.toMatchObject({
       opts: {
         timeout: "1m",
       },
     });
   });
 
-  test("return TTL if date `timeout` given", () => {
+  test("return TTL if date `timeout` given", async () => {
     const upcoming = new Date();
     upcoming.setDate(upcoming.getDate() + 6);
     upcoming.setHours(upcoming.getHours() + 1);
 
-    void waitForEvent("event", { timeout: upcoming });
-    expect(getOp()).toMatchObject({
+    await expect(
+      step.waitForEvent("id", { event: "event", timeout: upcoming })
+    ).resolves.toMatchObject({
       opts: {
         timeout: expect.stringMatching(upcoming.toISOString()),
       },
     });
   });
 
-  test("return simple field match if `match` string given", () => {
-    void waitForEvent("event", { match: "name", timeout: "2h" });
-    expect(getOp()).toMatchObject({
+  test("return simple field match if `match` string given", async () => {
+    await expect(
+      step.waitForEvent("id", { event: "event", match: "name", timeout: "2h" })
+    ).resolves.toMatchObject({
       opts: {
         if: "event.name == async.name",
       },
     });
   });
 
-  test("return custom match statement if `if` given", () => {
-    void waitForEvent("event", { if: "name == 123", timeout: "2h" });
-    expect(getOp()).toMatchObject({
+  test("return custom match statement if `if` given", async () => {
+    await expect(
+      step.waitForEvent("id", {
+        event: "event",
+        if: "name == 123",
+        timeout: "2h",
+      })
+    ).resolves.toMatchObject({
       opts: {
         if: "name == 123",
       },
     });
   });
 
-  test("uses custom `id` if given", () => {
-    void waitForEvent("event", { id: "custom", timeout: "2h" });
-    expect(getOp()).toMatchObject({
-      id: "custom",
+  describe("type errors", () => {
+    test("does not allow both `match` and `if`", () => {
+      // @ts-expect-error `match` and `if` cannot be defined together
+      void step.waitForEvent("id", {
+        event: "event",
+        match: "name",
+        if: "name",
+        timeout: "2h",
+      });
     });
   });
 });
 
 describe("run", () => {
-  const client = createClient({ name: "test" });
-  let run: ReturnType<typeof createStepTools>["run"];
-  let state: ExecutionState;
-  let getOp: () => TickOp | undefined;
+  let step: StepTools;
 
   beforeEach(() => {
-    state = createExecutionState();
-    ({ run } = createStepTools(client, state));
-    getOp = () => Object.values(state.tickOps)[0];
+    step = getStepTools();
   });
 
-  test("return Step step op code", () => {
-    void run("step", () => undefined);
-    expect(getOp()).toMatchObject({
+  test("return Step step op code", async () => {
+    await expect(step.run("step", () => undefined)).resolves.toMatchObject({
       op: StepOpCode.StepPlanned,
     });
   });
 
-  test("return step name as name", () => {
-    void run("step", () => undefined);
-    expect(getOp()).toMatchObject({
-      name: "step",
+  test("returns `id` as ID", async () => {
+    await expect(step.run("id", () => undefined)).resolves.toMatchObject({
+      id: "id",
+    });
+  });
+
+  test("return ID by default", async () => {
+    await expect(step.run("id", () => undefined)).resolves.toMatchObject({
+      displayName: "id",
+    });
+  });
+
+  test("return specific name if given", async () => {
+    await expect(
+      step.run({ id: "id", name: "name" }, () => undefined)
+    ).resolves.toMatchObject({
+      displayName: "name",
     });
   });
 
@@ -149,187 +191,212 @@ describe("run", () => {
       symbol: Symbol("foo"),
       map: new Map(),
       set: new Set(),
+      bigint: BigInt(123),
+      typedArray: new Int8Array(2),
+      promise: Promise.resolve(),
+      weakMap: new WeakMap([[{}, "test"]]),
+      weakSet: new WeakSet([{}]),
     };
 
-    const output = run("step", () => input);
+    const output = step.run("step", () => input);
 
-    assertType<
-      Promise<{
+    type Expected = {
+      str: string;
+      num: number;
+      bool: boolean;
+      date: string;
+      obj: {
         str: string;
         num: number;
-        bool: boolean;
-        date: string;
-        obj: {
-          str: string;
-          num: number;
-        };
-        arr: (number | null | boolean)[];
-        infinity: number;
-        nan: number;
-        null: null;
-        map: Record<string, never>;
-        set: Record<string, never>;
-      }>
-    >(output);
-  });
+      };
+      arr: (number | null | boolean)[];
+      infinity: number;
+      nan: number;
+      null: null;
+      map: Record<string, never>;
+      set: Record<string, never>;
+      bigint: never;
+      typedArray: Record<string, number>;
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      promise: {};
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      weakMap: {};
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      weakSet: {};
+    };
 
-  test("uses custom `id` if given", () => {
-    void run("step", () => undefined, { id: "custom" });
-    expect(getOp()).toMatchObject({
-      id: "custom",
-    });
+    assertType<Promise<Expected>>(output);
+
+    /**
+     * Used to ensure that stripped base properties are also adhered to.
+     */
+    type KeysMatchExactly<T, U> = keyof T extends keyof U
+      ? keyof U extends keyof T
+        ? true
+        : false
+      : false;
+
+    assertType<KeysMatchExactly<Expected, Awaited<typeof output>>>(true);
   });
 });
 
 describe("sleep", () => {
-  const client = createClient({ name: "test" });
-  let sleep: ReturnType<typeof createStepTools>["sleep"];
-  let state: ExecutionState;
-  let getOp: () => TickOp | undefined;
+  let step: StepTools;
 
   beforeEach(() => {
-    state = createExecutionState();
-    ({ sleep } = createStepTools(client, state));
-    getOp = () => Object.values(state.tickOps)[0];
+    step = getStepTools();
   });
 
-  test("return Sleep step op code", () => {
-    void sleep("1m");
-    expect(getOp()).toMatchObject({
+  test("return id", async () => {
+    await expect(step.sleep("id", "1m")).resolves.toMatchObject({
+      id: "id",
+    });
+  });
+
+  test("return Sleep step op code", async () => {
+    await expect(step.sleep("id", "1m")).resolves.toMatchObject({
       op: StepOpCode.Sleep,
     });
   });
 
-  test("return time string as name", () => {
-    void sleep("1m");
-    expect(getOp()).toMatchObject({
-      name: "1m",
+  test("return ID by default", async () => {
+    await expect(step.sleep("id", "1m")).resolves.toMatchObject({
+      displayName: "id",
     });
   });
 
-  test("uses custom `id` if given", () => {
-    void sleep("1m", { id: "custom" });
-    expect(getOp()).toMatchObject({
-      id: "custom",
+  test("return specific name if given", async () => {
+    await expect(
+      step.sleep({ id: "id", name: "name" }, "1m")
+    ).resolves.toMatchObject({
+      displayName: "name",
     });
   });
 });
 
 describe("sleepUntil", () => {
-  const client = createClient({ name: "test" });
-  let sleepUntil: ReturnType<typeof createStepTools>["sleepUntil"];
-  let state: ExecutionState;
-  let getOp: () => TickOp | undefined;
+  let step: StepTools;
 
   beforeEach(() => {
-    state = createExecutionState();
-    ({ sleepUntil } = createStepTools(client, state));
-    getOp = () => Object.values(state.tickOps)[0];
+    step = getStepTools();
   });
 
-  test("return Sleep step op code", () => {
+  test("return id", async () => {
     const future = new Date();
     future.setDate(future.getDate() + 1);
 
-    void sleepUntil(future);
-    expect(getOp()).toMatchObject({
+    await expect(step.sleepUntil("id", future)).resolves.toMatchObject({
+      id: "id",
+    });
+  });
+
+  test("return ID by default", async () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 1);
+
+    await expect(step.sleepUntil("id", future)).resolves.toMatchObject({
+      displayName: "id",
+    });
+  });
+
+  test("return specific name if given", async () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 1);
+
+    await expect(
+      step.sleepUntil({ id: "id", name: "name" }, future)
+    ).resolves.toMatchObject({
+      displayName: "name",
+    });
+  });
+
+  test("return Sleep step op code", async () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 1);
+
+    await expect(step.sleepUntil("id", future)).resolves.toMatchObject({
       op: StepOpCode.Sleep,
     });
   });
 
-  test("parses dates", () => {
+  test("parses dates", async () => {
     const next = new Date();
 
-    void sleepUntil(next);
-    expect(getOp()).toMatchObject({
+    await expect(step.sleepUntil("id", next)).resolves.toMatchObject({
       name: next.toISOString(),
     });
   });
 
-  test("parses ISO strings", () => {
+  test("parses ISO strings", async () => {
     const next = new Date(new Date().valueOf() + ms("6d")).toISOString();
 
-    void sleepUntil(next);
-    expect(getOp()).toMatchObject({
+    await expect(step.sleepUntil("id", next)).resolves.toMatchObject({
       name: next,
     });
   });
 
-  test("throws if invalid date given", () => {
+  test("throws if invalid date given", async () => {
     const next = new Date("bad");
 
-    expect(() => sleepUntil(next)).toThrow(
+    await expect(() => step.sleepUntil("id", next)).rejects.toThrow(
       "Invalid date or date string passed"
     );
   });
 
-  test("throws if invalid time string given", () => {
+  test("throws if invalid time string given", async () => {
     const next = "bad";
 
-    expect(() => sleepUntil(next)).toThrow(
+    await expect(() => step.sleepUntil("id", next)).rejects.toThrow(
       "Invalid date or date string passed"
     );
-  });
-
-  test("uses custom `id` if given", () => {
-    void sleepUntil(new Date(), { id: "custom" });
-    expect(getOp()).toMatchObject({
-      id: "custom",
-    });
   });
 });
 
 describe("sendEvent", () => {
   describe("runtime", () => {
-    const fetchMock = jest.fn(() =>
-      Promise.resolve({ status: 200 })
-    ) as unknown as typeof fetch;
-
-    const client = createClient({
-      name: "test",
-      fetch: fetchMock,
-      eventKey: "123",
-    });
-    const sendSpy = jest.spyOn(client, "send");
-
-    let sendEvent: ReturnType<typeof createStepTools>["sendEvent"];
-    let state: ExecutionState;
-    let getOp: () => TickOp | undefined;
-
+    let step: StepTools;
     beforeEach(() => {
-      state = createExecutionState();
-      ({ sendEvent } = createStepTools(client, state));
-      getOp = () => Object.values(state.tickOps)[0];
+      step = getStepTools();
     });
 
-    test("return Step step op code", () => {
-      void sendEvent({ name: "step", data: "foo" });
-
-      expect(getOp()).toMatchObject({ op: StepOpCode.StepPlanned });
-      expect(sendSpy).not.toHaveBeenCalled();
-    });
-
-    test('return "sendEvent" as name', () => {
-      void sendEvent({ name: "step", data: "foo" });
-
-      expect(getOp()).toMatchObject({ name: "sendEvent" });
-      expect(sendSpy).not.toHaveBeenCalled();
-    });
-
-    test("execute inline if non-step fn", () => {
-      state.nonStepFnDetected = true;
-      void sendEvent({ name: "step", data: "foo" });
-
-      expect(getOp()).toBeUndefined();
-      expect(sendSpy).toHaveBeenCalledWith({ name: "step", data: "foo" });
-    });
-
-    test("uses custom `id` if given", () => {
-      void sendEvent({ name: "step", data: "foo" }, { id: "custom" });
-
-      expect(getOp()).toMatchObject({
-        id: "custom",
+    test("return id", async () => {
+      await expect(
+        step.sendEvent("id", { name: "step", data: "foo" })
+      ).resolves.toMatchObject({
+        id: "id",
       });
+    });
+
+    test("return Step step op code", async () => {
+      await expect(
+        step.sendEvent("id", { name: "step", data: "foo" })
+      ).resolves.toMatchObject({
+        op: StepOpCode.StepPlanned,
+      });
+    });
+
+    test("return ID by default", async () => {
+      await expect(
+        step.sendEvent("id", { name: "step", data: "foo" })
+      ).resolves.toMatchObject({ displayName: "id" });
+    });
+
+    test("return specific name if given", async () => {
+      await expect(
+        step.sendEvent(
+          { id: "id", name: "name" },
+          { name: "step", data: "foo" }
+        )
+      ).resolves.toMatchObject({ displayName: "name" });
+    });
+
+    test("retain legacy `name` field for backwards compatibility with <=v2", async () => {
+      await expect(
+        step.sendEvent(
+          { id: "id", name: "name" },
+          { name: "step", data: "foo" }
+        )
+      ).resolves.toMatchObject({ name: "sendEvent" });
     });
   });
 
@@ -340,15 +407,15 @@ describe("sendEvent", () => {
         (() => undefined) as any;
 
       test("allows sending a single event with a string", () => {
-        void sendEvent({ name: "anything", data: "foo" });
+        void sendEvent("id", { name: "anything", data: "foo" });
       });
 
       test("allows sending a single event with an object", () => {
-        void sendEvent({ name: "anything", data: "foo" });
+        void sendEvent("id", { name: "anything", data: "foo" });
       });
 
       test("allows sending multiple events", () => {
-        void sendEvent([
+        void sendEvent("id", [
           { name: "anything", data: "foo" },
           { name: "anything", data: "foo" },
         ]);
@@ -362,33 +429,36 @@ describe("sendEvent", () => {
           data: { foo: string };
         };
         bar: {
-          name: "bar";
           data: { bar: string };
         };
+        // eslint-disable-next-line @typescript-eslint/ban-types
+        baz: {};
       }>();
 
       const opts = (<T extends ClientOptions>(x: T): T => x)({
-        name: "",
+        id: "",
         schemas,
       });
 
+      type Client = Inngest<typeof opts>;
+
       const sendEvent: ReturnType<
-        typeof createStepTools<typeof opts, EventsFromOpts<typeof opts>, "foo">
+        typeof createStepTools<Client>
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       >["sendEvent"] = (() => undefined) as any;
 
       test("disallows sending a single unknown event with a string", () => {
         // @ts-expect-error Unknown event
-        void sendEvent({ name: "unknown", data: { foo: "" } });
+        void sendEvent("id", { name: "unknown", data: { foo: "" } });
       });
 
       test("disallows sending a single unknown event with an object", () => {
         // @ts-expect-error Unknown event
-        void sendEvent({ name: "unknown", data: { foo: "" } });
+        void sendEvent("id", { name: "unknown", data: { foo: "" } });
       });
 
       test("disallows sending multiple unknown events", () => {
-        void sendEvent([
+        void sendEvent("id", [
           // @ts-expect-error Unknown event
           { name: "unknown", data: { foo: "" } },
           // @ts-expect-error Unknown event
@@ -397,7 +467,7 @@ describe("sendEvent", () => {
       });
 
       test("disallows sending one unknown event with multiple known events", () => {
-        void sendEvent([
+        void sendEvent("id", [
           { name: "foo", data: { foo: "" } },
           // @ts-expect-error Unknown event
           { name: "unknown", data: { foo: "" } },
@@ -406,16 +476,16 @@ describe("sendEvent", () => {
 
       test("disallows sending a single known event with a string and invalid data", () => {
         // @ts-expect-error Invalid data
-        void sendEvent({ name: "foo", data: { foo: 1 } });
+        void sendEvent("id", { name: "foo", data: { foo: 1 } });
       });
 
       test("disallows sending a single known event with an object and invalid data", () => {
         // @ts-expect-error Invalid data
-        void sendEvent({ name: "foo", data: { foo: 1 } });
+        void sendEvent("id", { name: "foo", data: { foo: 1 } });
       });
 
       test("disallows sending multiple known events with invalid data", () => {
-        void sendEvent([
+        void sendEvent("id", [
           // @ts-expect-error Invalid data
           { name: "foo", data: { bar: "" } },
           // @ts-expect-error Invalid data
@@ -424,19 +494,465 @@ describe("sendEvent", () => {
       });
 
       test("allows sending a single known event with a string", () => {
-        void sendEvent({ name: "foo", data: { foo: "" } });
+        void sendEvent("id", { name: "foo", data: { foo: "" } });
       });
 
       test("allows sending a single known event with an object", () => {
-        void sendEvent({ name: "foo", data: { foo: "" } });
+        void sendEvent("id", { name: "foo", data: { foo: "" } });
       });
 
       test("allows sending multiple known events", () => {
-        void sendEvent([
+        void sendEvent("id", [
           { name: "foo", data: { foo: "" } },
           { name: "bar", data: { bar: "" } },
         ]);
       });
+    });
+  });
+});
+
+describe("invoke", () => {
+  let step: StepTools;
+  beforeEach(() => {
+    step = getStepTools();
+  });
+
+  describe("runtime", () => {
+    const fn = new InngestFunction(
+      createClient({ id: testClientId }),
+      { id: "test-fn", triggers: [{ event: "test-event" }] },
+      () => "test-return"
+    );
+
+    test("return id", async () => {
+      await expect(
+        step.invoke("id", { function: fn, data: { foo: "foo" } })
+      ).resolves.toMatchObject({
+        id: "id",
+      });
+    });
+
+    test("return Invoke step op code", async () => {
+      await expect(
+        step.invoke("id", { function: fn, data: { foo: "foo" } })
+      ).resolves.toMatchObject({
+        op: StepOpCode.InvokeFunction,
+      });
+    });
+
+    test("return ID by default", async () => {
+      await expect(
+        step.invoke("id", { function: fn, data: { foo: "foo" } })
+      ).resolves.toMatchObject({ displayName: "id" });
+    });
+
+    test("return specific name if given", async () => {
+      await expect(
+        step.invoke(
+          { id: "id", name: "name" },
+          { function: fn, data: { foo: "foo" } }
+        )
+      ).resolves.toMatchObject({ displayName: "name" });
+    });
+
+    describe("return function ID to run", () => {
+      test("with `function` instance", async () => {
+        await expect(
+          step.invoke("id", { function: fn, data: { foo: "foo" } })
+        ).resolves.toMatchObject({
+          opts: {
+            function_id: fn.id(testClientId),
+          },
+        });
+      });
+
+      test("with `function` string", async () => {
+        await expect(
+          step.invoke("id", {
+            function: "some-client-some-fn",
+            data: { foo: "foo" },
+          })
+        ).resolves.toMatchObject({
+          opts: {
+            function_id: "some-client-some-fn",
+          },
+        });
+      });
+
+      test("with `function` ref instance", async () => {
+        await expect(
+          step.invoke("id", {
+            function: referenceFunction<typeof fn>({ functionId: "test-fn" }),
+          })
+        ).resolves.toMatchObject({
+          opts: {
+            function_id: `${testClientId}-test-fn`,
+          },
+        });
+      });
+
+      test("with `function` ref instance with `appId`", async () => {
+        await expect(
+          step.invoke("id", {
+            function: referenceFunction({
+              functionId: "some-fn",
+              appId: "some-client",
+            }),
+            data: { foo: "foo" },
+          })
+        ).resolves.toMatchObject({
+          opts: {
+            function_id: "some-client-some-fn",
+          },
+        });
+      });
+    });
+
+    describe("timeouts", () => {
+      test("return correct timeout if string `timeout` given", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            timeout: "1m",
+          })
+        ).resolves.toMatchObject({
+          opts: {
+            timeout: "1m",
+          },
+        });
+      });
+
+      test("return correct timeout if date `timeout` given", async () => {
+        const upcoming = new Date();
+        upcoming.setDate(upcoming.getDate() + 6);
+        upcoming.setHours(upcoming.getHours() + 1);
+
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            timeout: upcoming,
+          })
+        ).resolves.toMatchObject({
+          opts: {
+            timeout: expect.stringMatching(upcoming.toISOString()),
+          },
+        });
+      });
+
+      test("return correct timeout if `number` `timeout` given", async () => {
+        await expect(
+          step.invoke("id", {
+            function: fn,
+            data: { foo: "foo" },
+            timeout: 60000,
+          })
+        ).resolves.toMatchObject({
+          opts: {
+            timeout: "1m",
+          },
+        });
+      });
+    });
+  });
+
+  describe("types", () => {
+    const schemas = new EventSchemas().fromRecord<{
+      foo: {
+        name: "foo";
+        data: { foo: string };
+      };
+      bar: {
+        data: { bar: string };
+      };
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      baz: {};
+    }>();
+
+    const opts = (<T extends ClientOptions>(x: T): T => x)({
+      id: "test-client",
+      schemas,
+    });
+
+    const client = createClient(opts);
+
+    const invoke = null as unknown as ReturnType<
+      typeof createStepTools<typeof client>
+    >["invoke"];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    type GetTestReturn<T extends () => InvocationResult<any>> = Awaited<
+      ReturnType<T>
+    >;
+
+    test("allows specifying function as a string", () => {
+      const _test = () => invoke("id", { function: "test-fn", data: "foo" });
+    });
+
+    test("allows specifying function as an instance", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return"
+      );
+
+      const _test = () => invoke("id", { function: fn, data: { foo: "" } });
+    });
+
+    test("allows specifying function as a string", () => {
+      const _test = () => invoke("id", { function: "fn", data: { foo: "" } });
+    });
+
+    test("allows specifying function as a reference function", () => {
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction({ functionId: "fn" }),
+          data: { foo: "" },
+        });
+    });
+
+    test("requires no payload if a cron", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { cron: "* * * * *" },
+        () => "return"
+      );
+
+      // Allowed
+      const _test = () => invoke("id", { function: fn });
+
+      // Disallowed
+      // @ts-expect-error No payload should be provided for a cron
+      const _test2 = () => invoke("id", { function: fn, data: { foo: "" } });
+    });
+
+    test("disallows no `function` given", () => {
+      // @ts-expect-error No function provided
+      const _test = () => invoke("id", { data: { foo: "" } });
+    });
+
+    test("disallows no payload if an event", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return"
+      );
+
+      // @ts-expect-error No payload provided
+      const _test = () => invoke("id", { function: fn });
+    });
+
+    test("disallows incorrect payload with an event", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return"
+      );
+
+      // @ts-expect-error Invalid payload provided
+      const _test = () => invoke("id", { function: fn, data: { bar: "" } });
+    });
+
+    test("disallows incorrect payload with a reference function", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return"
+      );
+
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction<typeof fn>({ functionId: "fn" }),
+          // @ts-expect-error Invalid payload provided
+          data: { bar: "" },
+        });
+    });
+
+    test("disallows missing payload with a reference function and schema", () => {
+      const _test = () =>
+        // @ts-expect-error No `data` provided
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              data: z.object({ wowza: z.string() }),
+            },
+          }),
+        });
+    });
+
+    test("disallows incorrect payload with a reference function and schema", () => {
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              data: z.object({ wowza: z.string() }),
+            },
+          }),
+          // @ts-expect-error Invalid payload provided
+          data: { bar: "" },
+        });
+    });
+
+    /**
+     * This test is a trade-off for not yet allowing local invocation schemas
+     * but adding multiple triggers.
+     *
+     * In the future, I foresee this being disallowed and requiring that either
+     * an invocation schema exists or that the user must provide a `name` to
+     * represent the payload they are trying to send.
+     */
+    test("allows any data shape when invoking a function with multiple triggers", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
+        () => "return"
+      );
+
+      const _test = () =>
+        invoke("id", {
+          function: fn,
+          data: {
+            foo: "",
+            bar: "",
+            cron: "",
+            // @ts-expect-error Make sure this still fails, so that we're
+            // definitely only picking up expected properties
+            boof: "",
+          },
+        });
+    });
+
+    test("returns correct output type for function", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return"
+      );
+
+      const _test = () => invoke("id", { function: fn, data: { foo: "" } });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, string>>(true);
+    });
+
+    test("returns correct output type for function with reference", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return"
+      );
+
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction<typeof fn>({ functionId: "fn" }),
+          data: { foo: "" },
+        });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, string>>(true);
+    });
+
+    test("returns correct output type for function with reference and schema", () => {
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              return: z.string(),
+            },
+          }),
+          data: { foo: "" },
+        });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, string>>(true);
+    });
+
+    test("returns correct input type for function with reference and schema", () => {
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              data: z.object({ wowza: z.string() }),
+            },
+          }),
+          data: { wowza: "" },
+        });
+    });
+
+    test("returns correct output const type for function", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return" as const
+      );
+
+      const _test = () => invoke("id", { function: fn, data: { foo: "" } });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, "return">>(true);
+    });
+
+    test("returns correct output const type for function with reference", () => {
+      const fn = client.createFunction(
+        { id: "fn" },
+        { event: "foo" },
+        () => "return" as const
+      );
+
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction<typeof fn>({ functionId: "fn" }),
+          data: { foo: "" },
+        });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, "return">>(true);
+    });
+
+    test("returns null if function returns undefined|void", () => {
+      const fn = client.createFunction({ id: "fn" }, { event: "foo" }, () => {
+        // no-op
+      });
+
+      const _test = () => invoke("id", { function: fn, data: { foo: "" } });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, null>>(true);
+    });
+
+    test("returns null if function returns undefined|void with reference", () => {
+      const fn = client.createFunction({ id: "fn" }, { event: "foo" }, () => {
+        // no-op
+      });
+
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction<typeof fn>({ functionId: "fn" }),
+          data: { foo: "" },
+        });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, null>>(true);
+    });
+
+    test("returns null if function returns undefined|void with reference and schema", () => {
+      const _test = () =>
+        invoke("id", {
+          function: referenceFunction({
+            functionId: "fn",
+            schemas: {
+              return: z.void(),
+            },
+          }),
+        });
+
+      type Actual = GetTestReturn<typeof _test>;
+      assertType<IsEqual<Actual, null>>(true);
     });
   });
 });

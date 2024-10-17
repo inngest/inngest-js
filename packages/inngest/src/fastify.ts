@@ -1,4 +1,56 @@
+/**
+ * An adapter for Fastify to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example Plugin (recommended)
+ * ```ts
+ * import Fastify from "fastify";
+ * import inngestFastify from "inngest/fastify";
+ * import { inngest, fnA } from "./inngest";
+ *
+ * const fastify = Fastify();
+ *
+ * fastify.register(inngestFastify, {
+ *   client: inngest,
+ *   functions: [fnA],
+ *   options: {},
+ * });
+ *
+ * fastify.listen({ port: 3000 }, function (err, address) {
+ *   if (err) {
+ *     fastify.log.error(err);
+ *     process.exit(1);
+ *   }
+ * });
+ * ```
+ *
+ * @example Route
+ * ```ts
+ * import Fastify from "fastify";
+ * import { serve } from "inngest/fastify";
+ * import { fnA, inngest } from "./inngest";
+ *
+ * const fastify = Fastify();
+ *
+ * fastify.route({
+ *   method: ["GET", "POST", "PUT"],
+ *   handler: serve({ client: inngest, functions: [fnA] }),
+ *   url: "/api/inngest",
+ * });
+ *
+ * fastify.listen({ port: 3000 }, function (err, address) {
+ *   if (err) {
+ *     fastify.log.error(err);
+ *     process.exit(1);
+ *   }
+ * });
+ * ```
+ *
+ * @module
+ */
+
 import {
+  type FastifyInstance,
   type FastifyPluginCallback,
   type FastifyReply,
   type FastifyRequest,
@@ -6,27 +58,20 @@ import {
 import { type Inngest } from "./components/Inngest";
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
 import { type InngestFunction } from "./components/InngestFunction";
-import { headerKeys, queryKeys } from "./helpers/consts";
 import { type RegisterOptions, type SupportedFrameworkName } from "./types";
 
-export const name: SupportedFrameworkName = "fastify";
-
-type QueryString = {
-  [key in queryKeys]: string;
-};
-
-type Headers = {
-  [key in headerKeys]: string;
-};
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
+export const frameworkName: SupportedFrameworkName = "fastify";
 
 type InngestPluginOptions = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: Inngest<any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  functions: InngestFunction<any, any, any, any>[];
+  client: Inngest.Any;
+  functions: InngestFunction.Any[];
   options?: RegisterOptions;
 };
 
@@ -34,61 +79,74 @@ type InngestPluginOptions = {
  * Serve and register any declared functions with Inngest, making them available
  * to be triggered by events.
  *
+ * It's recommended to use the Fastify plugin to serve your functions with
+ * Inngest instead of using this `serve()` function directly.
+ *
+ * @example
+ * ```ts
+ * import Fastify from "fastify";
+ * import { serve } from "inngest/fastify";
+ * import { fnA, inngest } from "./inngest";
+ *
+ * const fastify = Fastify();
+ *
+ * fastify.route({
+ *   method: ["GET", "POST", "PUT"],
+ *   handler: serve({ client: inngest, functions: [fnA] }),
+ *   url: "/api/inngest",
+ * });
+ *
+ * fastify.listen({ port: 3000 }, function (err, address) {
+ *   if (err) {
+ *     fastify.log.error(err);
+ *     process.exit(1);
+ *   }
+ * });
+ * ```
+ *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    opts,
-    (
-      req: FastifyRequest<{ Querystring: QueryString; Headers: Headers }>,
-      _reply: FastifyReply
+export const serve = (
+  options: ServeHandlerOptions
+): ((
+  req: FastifyRequest<{ Querystring: Record<string, string | undefined> }>,
+  reply: FastifyReply
+) => Promise<unknown>) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: (
+      req: FastifyRequest<{ Querystring: Record<string, string | undefined> }>,
+      reply: FastifyReply
     ) => {
-      const hostname = req.headers["host"];
-      const protocol = hostname?.includes("://") ? "" : `${req.protocol}://`;
-      const url = new URL(req.url, `${protocol}${hostname || ""}`);
-
       return {
-        url,
-        run: () => {
-          if (req.method === "POST") {
-            return {
-              fnId: req.query[queryKeys.FnId],
-              stepId: req.query[queryKeys.StepId],
-              data: req.body as Record<string, unknown>,
-              signature: req.headers[headerKeys.Signature],
-            };
-          }
+        body: () => req.body,
+        headers: (key) => {
+          const header = req.headers[key];
+          return Array.isArray(header) ? header[0] : header;
         },
-        register: () => {
-          if (req.method === "PUT") {
-            return {
-              deployId: req.query[queryKeys.DeployId]?.toString(),
-            };
-          }
+        method: () => req.method,
+        url: () => {
+          const hostname = req.headers["host"];
+          const protocol = hostname?.includes("://")
+            ? ""
+            : `${req.protocol}://`;
+
+          const url = new URL(req.url, `${protocol}${hostname || ""}`);
+
+          return url;
         },
-        view: () => {
-          if (req.method === "GET") {
-            return {
-              isIntrospection: Object.hasOwnProperty.call(
-                req.query,
-                queryKeys.Introspect
-              ),
-            };
+        queryString: (key) => req.query[key],
+        transformResponse: ({ body, status, headers }) => {
+          for (const [name, value] of Object.entries(headers)) {
+            void reply.header(name, value);
           }
+          void reply.code(status);
+          return reply.send(body);
         },
       };
     },
-    (actionRes, _req, reply) => {
-      for (const [name, value] of Object.entries(actionRes.headers)) {
-        void reply.header(name, value);
-      }
-      void reply.code(actionRes.status);
-      return reply.send(actionRes.body);
-    }
-  );
+  });
 
   return handler.createHandler();
 };
@@ -97,18 +155,58 @@ export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
  * Serve and register any declared functions with Inngest, making them available
  * to be triggered by events.
  *
+ * @example
+ * ```ts
+ * import Fastify from "fastify";
+ * import inngestFastify from "inngest/fastify";
+ * import { inngest, fnA } from "./inngest";
+ *
+ * const fastify = Fastify();
+ *
+ * fastify.register(inngestFastify, {
+ *   client: inngest,
+ *   functions: [fnA],
+ *   options: {},
+ * });
+ *
+ * fastify.listen({ port: 3000 }, function (err, address) {
+ *   if (err) {
+ *     fastify.log.error(err);
+ *     process.exit(1);
+ *   }
+ * });
+ * ```
+ *
  * @public
  */
-const fastifyPlugin = ((fastify, options, done) => {
+const fastifyPlugin: (
+  fastify: FastifyInstance,
+  options: InngestPluginOptions,
+  done: (err?: Error | undefined) => void
+) => void = ((fastify, options, done): void => {
+  if (!options?.client) {
+    throw new Error(
+      "Inngest `client` is required when serving with Fastify plugin"
+    );
+  }
+
+  if (!options?.functions) {
+    throw new Error(
+      "Inngest `functions` are required when serving with Fastify plugin"
+    );
+  }
+
   try {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const handler = serve(options.client, options.functions, options.options);
+    const handler = serve({
+      client: options?.client,
+      functions: options?.functions,
+      ...options?.options,
+    });
 
     fastify.route({
       method: ["GET", "POST", "PUT"],
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       handler,
-      url: options.options?.servePath || "/api/inngest",
+      url: options?.options?.servePath || "/api/inngest",
     });
 
     done();

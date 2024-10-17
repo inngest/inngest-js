@@ -7,7 +7,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Parallel Work",
+  name: "parallel-work",
   triggers: [{ event: "demo/parallel.work" }],
 });
 
@@ -20,53 +20,49 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/parallel.work'", async () => {
-    runId = await eventRunWithName(eventId, "Parallel Work");
+    runId = await eventRunWithName(eventId, "parallel-work");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 
   ["First", "Second", "Third"].forEach((scoreStep) => {
-    const name = `${scoreStep} score`;
+    const stepName = `${scoreStep} score`;
 
-    test(`ran "${name}" step`, async () => {
-      const step = await runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name,
+    test(`ran "${stepName}" step`, async () => {
+      const item = await runHasTimeline(runId, {
+        type: "StepCompleted",
+        stepName,
       });
+      expect(item).toBeDefined();
 
-      expect(step).toBeDefined();
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      expect(step.output).toEqual(expect.any(String));
+      const output = await item?.getOutput();
+      expect(output).toEqual({ data: expect.any(Number) });
     }, 60000);
   });
 
   const fruits = ["Apple", "Banana", "Orange"];
 
   fruits.forEach((fruit) => {
-    const name = `Get ${fruit.toLowerCase()}`;
+    const stepName = `Get ${fruit.toLowerCase()}`;
 
-    test(`ran "${name}" step`, async () => {
-      await expect(
-        runHasTimeline(runId, {
-          __typename: "StepEvent",
-          stepType: "COMPLETED",
-          name,
-          output: `"${fruit}"`,
-        })
-      ).resolves.toBeDefined();
+    test(`ran "${stepName}" step`, async () => {
+      const item = await runHasTimeline(runId, {
+        type: "StepCompleted",
+        stepName,
+      });
+      expect(item).toBeDefined();
+
+      const output = await item?.getOutput();
+      expect(output).toEqual({ data: fruit });
     }, 60000);
   });
 
   test("Returned correct data", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        output: JSON.stringify({
-          body: [6, `${fruits.join(", ")}`],
-          status: 200,
-        }),
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "FunctionCompleted",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual([6, `${fruits.join(", ")}`]);
   }, 60000);
 });

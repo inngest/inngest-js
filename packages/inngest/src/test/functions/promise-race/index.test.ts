@@ -9,7 +9,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Promise.race",
+  name: "promise-race",
   triggers: [{ event: "demo/promise.race" }],
 });
 
@@ -22,49 +22,49 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/promise.race'", async () => {
-    runId = await eventRunWithName(eventId, "Promise.race");
+    runId = await eventRunWithName(eventId, "promise-race");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 
   test("ran Step A", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "Step A",
-        output: '"A"',
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "Step A",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: "A" });
   }, 60000);
 
   test("ran Step B", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        name: "Step B",
-        output: '"B"',
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "Step B",
+    });
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual({ data: "B" });
   }, 60000);
 
   let winner: "A" | "B" | undefined;
 
   test("ran Step C", async () => {
-    const timelineItem = await runHasTimeline(runId, {
-      __typename: "StepEvent",
-      stepType: "COMPLETED",
-      name: "Step C",
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "Step C",
     });
 
-    expect(timelineItem).toBeDefined();
-    const output = JSON.parse(timelineItem.output);
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
     winner =
-      output === "A is the winner!"
+      output.data === "A is the winner!"
         ? "A"
-        : output === "B is the winner!"
-        ? "B"
-        : undefined;
+        : output.data === "B is the winner!"
+          ? "B"
+          : undefined;
     expect(["A", "B"]).toContain(winner);
   }, 60000);
 });

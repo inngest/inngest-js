@@ -1,11 +1,19 @@
 import { type fetch } from "cross-fetch";
-import { getFetch } from "../helpers/env";
+import { type ExecutionVersion } from "../components/execution/InngestExecution";
+import {
+  defaultDevServerHost,
+  defaultInngestApiBaseUrl,
+} from "../helpers/consts";
+import { devServerAvailable } from "../helpers/devserver";
+import { type Mode } from "../helpers/env";
+import { getErrorMessage } from "../helpers/errors";
+import { fetchWithAuthFallback } from "../helpers/net";
 import { hashSigningKey } from "../helpers/strings";
 import { err, ok, type Result } from "../types";
 import {
-  BatchSchema,
-  ErrorSchema,
-  StepsSchema,
+  batchSchema,
+  errorSchema,
+  stepsSchemas,
   type BatchResponse,
   type ErrorResponse,
   type StepsResponse,
@@ -13,29 +21,47 @@ import {
 
 type FetchT = typeof fetch;
 
-interface InngestApiConstructorOpts {
-  baseUrl?: string;
-  signingKey: string;
-  fetch?: FetchT;
+export namespace InngestApi {
+  export interface Options {
+    baseUrl?: string;
+    signingKey: string;
+    signingKeyFallback: string | undefined;
+    fetch: FetchT;
+    mode: Mode;
+  }
 }
 
 export class InngestApi {
-  public readonly baseUrl: string;
+  public apiBaseUrl?: string;
   private signingKey: string;
+  private signingKeyFallback: string | undefined;
   private readonly fetch: FetchT;
+  private mode: Mode;
 
   constructor({
-    baseUrl = "https://api.inngest.com",
+    baseUrl,
     signingKey,
+    signingKeyFallback,
     fetch,
-  }: InngestApiConstructorOpts) {
-    this.baseUrl = baseUrl;
+    mode,
+  }: InngestApi.Options) {
+    this.apiBaseUrl = baseUrl;
     this.signingKey = signingKey;
-    this.fetch = getFetch(fetch);
+    this.signingKeyFallback = signingKeyFallback;
+    this.fetch = fetch;
+    this.mode = mode;
   }
 
   private get hashedKey(): string {
     return hashSigningKey(this.signingKey);
+  }
+
+  private get hashedFallbackKey(): string | undefined {
+    if (!this.signingKeyFallback) {
+      return;
+    }
+
+    return hashSigningKey(this.signingKeyFallback);
   }
 
   // set the signing key in case it was not instantiated previously
@@ -45,47 +71,83 @@ export class InngestApi {
     }
   }
 
-  async getRunSteps(
-    runId: string
-  ): Promise<Result<StepsResponse, ErrorResponse>> {
-    const url = new URL(`/v0/runs/${runId}/actions`, this.baseUrl);
+  setSigningKeyFallback(key: string | undefined) {
+    if (typeof key === "string" && !this.signingKeyFallback) {
+      this.signingKeyFallback = key;
+    }
+  }
 
-    return this.fetch(url, {
-      headers: { Authorization: `Bearer ${this.hashedKey}` },
+  private async getTargetUrl(path: string): Promise<URL> {
+    if (this.apiBaseUrl) {
+      return new URL(path, this.apiBaseUrl);
+    }
+
+    let url = new URL(path, defaultInngestApiBaseUrl);
+
+    if (this.mode.isDev && this.mode.isInferred && !this.apiBaseUrl) {
+      const devAvailable = await devServerAvailable(
+        defaultDevServerHost,
+        this.fetch
+      );
+
+      if (devAvailable) {
+        url = new URL(path, defaultDevServerHost);
+      }
+    }
+
+    return url;
+  }
+
+  async getRunSteps(
+    runId: string,
+    version: ExecutionVersion
+  ): Promise<Result<StepsResponse, ErrorResponse>> {
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url: await this.getTargetUrl(`/v0/runs/${runId}/actions`),
     })
       .then(async (resp) => {
         const data: unknown = await resp.json();
 
         if (resp.ok) {
-          return ok(StepsSchema.parse(data));
+          return ok(stepsSchemas[version].parse(data));
         } else {
-          return err(ErrorSchema.parse(data));
+          return err(errorSchema.parse(data));
         }
       })
       .catch((error) => {
-        return err({ error: error as string, status: 500 });
+        return err({
+          error: getErrorMessage(error, "Unknown error retrieving step data"),
+          status: 500,
+        });
       });
   }
 
   async getRunBatch(
     runId: string
   ): Promise<Result<BatchResponse, ErrorResponse>> {
-    const url = new URL(`/v0/runs/${runId}/batch`, this.baseUrl);
-
-    return this.fetch(url, {
-      headers: { Authorization: `Bearer ${this.hashedKey}` },
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url: await this.getTargetUrl(`/v0/runs/${runId}/batch`),
     })
       .then(async (resp) => {
         const data: unknown = await resp.json();
 
         if (resp.ok) {
-          return ok(BatchSchema.parse(data));
+          return ok(batchSchema.parse(data));
         } else {
-          return err(ErrorSchema.parse(data));
+          return err(errorSchema.parse(data));
         }
       })
       .catch((error) => {
-        return err({ error: error as string, status: 500 });
+        return err({
+          error: getErrorMessage(error, "Unknown error retrieving event batch"),
+          status: 500,
+        });
       });
   }
 }

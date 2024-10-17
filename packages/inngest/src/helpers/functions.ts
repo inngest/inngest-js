@@ -1,6 +1,12 @@
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
 import { type InngestApi } from "../api/api";
-import { err, fnDataSchema, ok, type FnData, type Result } from "../types";
+import { stepsSchemas } from "../api/schema";
+import { type InngestFunction } from "../components/InngestFunction";
+import {
+  ExecutionVersion,
+  PREFERRED_EXECUTION_VERSION,
+} from "../components/execution/InngestExecution";
+import { err, ok, type Result } from "../types";
 import { prettyError } from "./errors";
 import { type Await } from "./types";
 
@@ -8,14 +14,14 @@ import { type Await } from "./types";
  * Wraps a function with a cache. When the returned function is run, it will
  * cache the result and return it on subsequent calls.
  */
-export const cacheFn = <T extends (...args: unknown[]) => unknown>(
-  fn: T
-): T => {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const cacheFn = <T extends (...args: any[]) => any>(fn: T): T => {
   const key = "value";
   const cache = new Map<typeof key, unknown>();
 
   return ((...args) => {
     if (!cache.has(key)) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       cache.set(key, fn(...args));
     }
 
@@ -33,8 +39,6 @@ export const cacheFn = <T extends (...args: unknown[]) => unknown>(
  *
  * Because this needs to support both sync and async functions, it only allows
  * functions that accept a single argument.
- *
- * TODO Add a second function that decides how to merge results from prev and current results.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const waterfall = <TFns extends ((arg?: any) => any)[]>(
@@ -55,23 +59,145 @@ export const waterfall = <TFns extends ((arg?: any) => any)[]>(
       const prev = await acc;
       const output = (await fn(prev)) as Promise<Await<TFns[number]>>;
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-      return transform ? await transform(prev, output) : output;
+      if (transform) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        return await transform(prev, output);
+      }
+
+      if (typeof output === "undefined") {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        return prev;
+      }
+
+      return output;
     }, Promise.resolve(args[0]));
 
     return chain;
   };
 };
 
-type ParseErr = string;
-export const parseFnData = async (
-  data: unknown,
-  api: InngestApi
-): Promise<Result<FnData, ParseErr>> => {
-  try {
-    const result = fnDataSchema.parse(data);
+/**
+ * Given a value `v`, return `v` if it's not undefined, otherwise return `null`.
+ */
+export const undefinedToNull = (v: unknown) => {
+  const isUndefined = typeof v === "undefined";
+  return isUndefined ? null : v;
+};
 
-    if (result.use_api) {
+const fnDataVersionSchema = z.object({
+  version: z
+    .literal(-1)
+    .or(z.literal(0))
+    .or(z.literal(1))
+    .optional()
+    .transform<ExecutionVersion>((v) => {
+      if (typeof v === "undefined") {
+        console.debug(
+          `No request version specified by executor; defaulting to v${PREFERRED_EXECUTION_VERSION}`
+        );
+
+        return PREFERRED_EXECUTION_VERSION;
+      }
+
+      return v === -1 ? PREFERRED_EXECUTION_VERSION : v;
+    }),
+});
+
+export const parseFnData = (fn: InngestFunction.Any, data: unknown) => {
+  let version: ExecutionVersion;
+
+  try {
+    ({ version } = fnDataVersionSchema.parse(data));
+
+    const versionHandlers = {
+      [ExecutionVersion.V0]: () =>
+        ({
+          version: ExecutionVersion.V0,
+          ...z
+            .object({
+              event: z.record(z.any()),
+              events: z.array(z.record(z.any())).default([]),
+              steps: stepsSchemas[ExecutionVersion.V0],
+              ctx: z
+                .object({
+                  run_id: z.string(),
+                  attempt: z.number().default(0),
+                  stack: z
+                    .object({
+                      stack: z
+                        .array(z.string())
+                        .nullable()
+                        .transform((v) => (Array.isArray(v) ? v : [])),
+                      current: z.number(),
+                    })
+                    .passthrough()
+                    .optional()
+                    .nullable(),
+                })
+                .optional()
+                .nullable(),
+              use_api: z.boolean().default(false),
+            })
+            .parse(data),
+        }) as const,
+
+      [ExecutionVersion.V1]: () =>
+        ({
+          version: ExecutionVersion.V1,
+          ...z
+            .object({
+              event: z.record(z.any()),
+              events: z.array(z.record(z.any())).default([]),
+              steps: stepsSchemas[ExecutionVersion.V1],
+              ctx: z
+                .object({
+                  run_id: z.string(),
+                  attempt: z.number().default(0),
+                  disable_immediate_execution: z.boolean().default(false),
+                  use_api: z.boolean().default(false),
+                  stack: z
+                    .object({
+                      stack: z
+                        .array(z.string())
+                        .nullable()
+                        .transform((v) => (Array.isArray(v) ? v : [])),
+                      current: z.number(),
+                    })
+                    .passthrough()
+                    .optional()
+                    .nullable(),
+                })
+                .optional()
+                .nullable(),
+            })
+            .parse(data),
+        }) as const,
+    } satisfies Record<ExecutionVersion, () => unknown>;
+
+    return versionHandlers[version]();
+  } catch (err) {
+    throw new Error(parseFailureErr(err));
+  }
+};
+export type FnData = ReturnType<typeof parseFnData>;
+
+type ParseErr = string;
+export const fetchAllFnData = async ({
+  data,
+  api,
+  version,
+}: {
+  data: FnData;
+  api: InngestApi;
+  version: ExecutionVersion;
+}): Promise<Result<FnData, ParseErr>> => {
+  const result = { ...data };
+
+  try {
+    if (
+      (result.version === ExecutionVersion.V0 && result.use_api) ||
+      (result.version === ExecutionVersion.V1 && result.ctx?.use_api)
+    ) {
       if (!result.ctx?.run_id) {
         return err(
           prettyError({
@@ -85,7 +211,7 @@ export const parseFnData = async (
 
       const [evtResp, stepResp] = await Promise.all([
         api.getRunBatch(result.ctx.run_id),
-        api.getRunSteps(result.ctx.run_id),
+        api.getRunSteps(result.ctx.run_id, version),
       ]);
 
       if (evtResp.ok) {
@@ -121,20 +247,22 @@ export const parseFnData = async (
     // move to something like protobuf so we don't have to deal with this
     console.error(error);
 
-    let why: string | undefined;
-    if (error instanceof ZodError) {
-      why = error.toString();
-    }
-
-    return err(
-      prettyError({
-        whatHappened: "Failed to parse data from executor.",
-        consequences: "Function execution can't continue.",
-        toFixNow:
-          "Make sure that your API is set up to parse incoming request bodies as JSON, like body-parser for Express (https://expressjs.com/en/resources/middleware/body-parser.html).",
-        stack: true,
-        why,
-      })
-    );
+    return err(parseFailureErr(error));
   }
+};
+
+const parseFailureErr = (err: unknown) => {
+  let why: string | undefined;
+  if (err instanceof ZodError) {
+    why = err.toString();
+  }
+
+  return prettyError({
+    whatHappened: "Failed to parse data from executor.",
+    consequences: "Function execution can't continue.",
+    toFixNow:
+      "Make sure that your API is set up to parse incoming request bodies as JSON, like body-parser for Express (https://expressjs.com/en/resources/middleware/body-parser.html).",
+    stack: true,
+    why,
+  });
 };

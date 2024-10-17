@@ -1,17 +1,36 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
-import { Inngest } from "@local";
-import { type ServeHandler } from "@local/components/InngestCommHandler";
-import { envKeys, headerKeys, queryKeys } from "@local/helpers/consts";
+import { Inngest, InngestFunction } from "@local";
+import { type ServeHandlerOptions } from "@local/components/InngestCommHandler";
+import {
+  createStepTools,
+  getStepOptions,
+} from "@local/components/InngestStepTools";
+import {
+  ExecutionVersion,
+  type IInngestExecution,
+  type InngestExecution,
+  type InngestExecutionOptions,
+  PREFERRED_EXECUTION_VERSION,
+} from "@local/components/execution/InngestExecution";
+import { ServerTiming } from "@local/helpers/ServerTiming";
+import {
+  envKeys,
+  headerKeys,
+  queryKeys,
+  serverKind,
+} from "@local/helpers/consts";
+import { type Env } from "@local/helpers/env";
 import { slugify } from "@local/helpers/strings";
-import { type FunctionTrigger } from "@local/types";
+import { type EventPayload, type FunctionConfig } from "@local/types";
+import { fromPartial } from "@total-typescript/shoehorn";
 import fetch from "cross-fetch";
 import { type Request, type Response } from "express";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
-import { ulid } from "ulid";
 import { z } from "zod";
 
 interface HandlerStandardReturn {
@@ -26,6 +45,23 @@ const createReqRes = (...args: Parameters<typeof httpMocks.createRequest>) => {
   const res = httpMocks.createResponse();
 
   return [req, res] as [typeof req, typeof res];
+};
+
+const retryFetch = async (
+  retries: number,
+  ...args: Parameters<typeof fetch>
+) => {
+  let lastError;
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fetch(...args);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError;
 };
 
 /**
@@ -43,7 +79,83 @@ export const createClient = <T extends ConstructorParameters<typeof Inngest>>(
   ) as unknown as Inngest<T["0"]>;
 };
 
-const inngest = createClient({ name: "test", eventKey: "event-key-123" });
+export const testClientId = "__test_client__";
+
+export const getStepTools = (
+  client: Inngest.Any = createClient({ id: testClientId }),
+  executionOptions: Partial<InngestExecutionOptions> = {}
+) => {
+  const execution = client
+    .createFunction({ id: "test" }, { event: "test" }, () => undefined)
+    ["createExecution"]({
+      version: PREFERRED_EXECUTION_VERSION,
+      partialOptions: {
+        data: fromPartial({
+          event: { name: "foo", data: {} },
+        }),
+        runId: "run",
+        stepState: {},
+        stepCompletionOrder: [],
+        isFailureHandler: false,
+        requestedRunStep: undefined,
+        timer: new ServerTiming(),
+        disableImmediateExecution: false,
+        reqArgs: [],
+        headers: {},
+        ...executionOptions,
+      },
+    }) as IInngestExecution & InngestExecution;
+
+  const step = createStepTools(client, execution, ({ args, matchOp }) => {
+    const stepOptions = getStepOptions(args[0]);
+    return Promise.resolve(matchOp(stepOptions, ...args.slice(1)));
+  });
+
+  return step;
+};
+
+export type StepTools = ReturnType<typeof getStepTools>;
+
+/**
+ * Given an Inngest function and the appropriate execution state, return the
+ * resulting data from this execution.
+ */
+export const runFnWithStack = async (
+  fn: InngestFunction.Any,
+  stepState: InngestExecutionOptions["stepState"],
+  opts?: {
+    executionVersion?: ExecutionVersion;
+    runStep?: string;
+    onFailure?: boolean;
+    event?: EventPayload;
+    stackOrder?: InngestExecutionOptions["stepCompletionOrder"];
+    disableImmediateExecution?: boolean;
+  }
+) => {
+  const execution = fn["createExecution"]({
+    version: opts?.executionVersion ?? PREFERRED_EXECUTION_VERSION,
+    partialOptions: {
+      data: fromPartial({
+        event: opts?.event || { name: "foo", data: {} },
+      }),
+      runId: "run",
+      stepState,
+      stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
+      isFailureHandler: Boolean(opts?.onFailure),
+      requestedRunStep: opts?.runStep,
+      timer: new ServerTiming(),
+      disableImmediateExecution: opts?.disableImmediateExecution,
+      reqArgs: [],
+      headers: {},
+    },
+  });
+
+  const { ctx: _ctx, ops: _ops, ...rest } = await execution.start();
+
+  return rest;
+};
+
+const inngest = createClient({ id: "test", eventKey: "event-key-123" });
 
 export const testFramework = (
   /**
@@ -55,7 +167,11 @@ export const testFramework = (
   /**
    * The serve handler exported by this handler.
    */
-  handler: { name: string; serve: ServeHandler },
+  handler: {
+    frameworkName: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    serve: (options: ServeHandlerOptions) => any;
+  },
 
   /**
    * Optional tests and changes to make to this test suite.
@@ -79,11 +195,7 @@ export const testFramework = (
      * Returning void is useful if you need to make environment changes but
      * are still fine with the default behaviour past that point.
      */
-    transformReq?: (
-      req: Request,
-      res: Response,
-      env: Record<string, string | undefined>
-    ) => unknown[] | void;
+    transformReq?: (req: Request, res: Response, env: Env) => unknown[] | void;
 
     /**
      * Specify a transformer for a given response, which will be used to
@@ -92,11 +204,11 @@ export const testFramework = (
      */
     transformRes?: (
       /**
-       * The Response object that was passed in to the handler. Depending on the
+       * The arguments that were passed in to the handler. Depending on the
        * handler, this may not be exposed to the handler, so you may need the
        * next option, which is the returned value from the handler.
        */
-      res: Response,
+      args: unknown[],
 
       /**
        * The returned value from the handler.
@@ -119,17 +231,13 @@ export const testFramework = (
     envTests?: () => void;
   }
 ) => {
-  /**
-   * Create a helper function for running tests against the given serve handler.
-   */
-  const run = async (
-    handlerOpts: Parameters<(typeof handler)["serve"]>,
-    reqOpts: Parameters<typeof httpMocks.createRequest>,
-    env: Record<string, string | undefined> = {}
-  ): Promise<HandlerStandardReturn> => {
-    const [nameOrInngest, functions, givenOpts] = handlerOpts;
-    const serveHandler = handler.serve(nameOrInngest, functions, {
-      ...givenOpts,
+  type ServeHandler = string & { __serveHandler: true };
+
+  const getServeHandler = (
+    handlerOpts: Parameters<(typeof handler)["serve"]>
+  ) => {
+    const serveHandler = handler.serve({
+      ...handlerOpts[0],
 
       /**
        * For testing, the fetch implementation has to be stable for us to
@@ -137,6 +245,21 @@ export const testFramework = (
        */
       fetch,
     });
+
+    return serveHandler;
+  };
+
+  /**
+   * Create a helper function for running tests against the given serve handler.
+   */
+  const run = async (
+    handlerOpts: Parameters<(typeof handler)["serve"]> | ServeHandler,
+    reqOpts: Parameters<typeof httpMocks.createRequest>,
+    env: Env = {}
+  ): Promise<HandlerStandardReturn> => {
+    const serveHandler = Array.isArray(handlerOpts)
+      ? getServeHandler(handlerOpts)
+      : handlerOpts;
 
     const host = "localhost:3000";
 
@@ -151,32 +274,18 @@ export const testFramework = (
       },
     };
 
-    if (mockReqOpts.method === "POST") {
-      const mockUrl = new URL(
-        `${mockReqOpts.protocol as string}://${host}${
-          mockReqOpts.url as string
-        }`
-      );
-
-      if (!mockUrl.searchParams.has(queryKeys.FnId)) {
-        mockUrl.searchParams.set(queryKeys.FnId, ulid());
-      }
-
-      if (!mockUrl.searchParams.has(queryKeys.StepId)) {
-        mockUrl.searchParams.set(queryKeys.StepId, "step");
-      }
-    }
-
     const [req, res] = createReqRes(mockReqOpts);
 
     let envToPass = { ...env };
+    let prevProcessEnv = undefined;
 
     /**
      * If we have `process` in this emulated environment, also mutate that to
      * account for common situations.
      */
     if (typeof process !== "undefined" && "env" in process) {
-      process.env = { ...process.env, ...envToPass };
+      prevProcessEnv = process.env;
+      process.env = { ...prevProcessEnv, ...envToPass };
       envToPass = { ...process.env };
     }
 
@@ -184,8 +293,12 @@ export const testFramework = (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ret = await (serveHandler as (...args: any[]) => any)(...args);
 
+    if (prevProcessEnv) {
+      process.env = prevProcessEnv;
+    }
+
     return (
-      opts?.transformRes?.(res, ret) ?? {
+      opts?.transformRes?.(args, ret) ?? {
         status: res.statusCode,
         body: res._getData(),
         headers: res.getHeaders() as Record<string, string>,
@@ -230,15 +343,49 @@ export const testFramework = (
       test("serve should be a function", () => {
         expect(handler.serve).toEqual(expect.any(Function));
       });
+
+      test("serve should return a function with a name", () => {
+        const actual = handler.serve({ client: inngest, functions: [] });
+
+        expect(actual.name).toEqual(expect.any(String));
+        expect(actual.name).toBeTruthy();
+      });
+
+      /**
+       * Some platforms check (at runtime) the length of the function being used
+       * to handle an endpoint. If this is a variadic function, it will fail
+       * that check.
+       *
+       * Therefore, we expect the arguments accepted to be the same length as
+       * the `handler` function passed internally.
+       */
+      test("serve should return a function with a non-variadic length", () => {
+        const actual = handler.serve({ client: inngest, functions: [] });
+
+        expect(actual.length).toBeGreaterThan(0);
+      });
     });
 
     if (opts?.handlerTests) {
       describe("Serve return", opts.handlerTests);
     }
 
-    describe("GET (landing page)", () => {
+    describe("GET", () => {
       test("shows introspection data", async () => {
-        const ret = await run([inngest, []], [{ method: "GET" }]);
+        const ret = await run(
+          [
+            {
+              client: createClient({ id: "test", isDev: true }),
+              functions: [],
+            },
+          ],
+          [
+            {
+              method: "GET",
+              headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
+            },
+          ]
+        );
 
         const body = JSON.parse(ret.body);
 
@@ -246,15 +393,72 @@ export const testFramework = (
           status: 200,
           headers: expect.objectContaining({
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
-            [headerKeys.Framework]: expect.stringMatching(handler.name),
+            [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
+            [headerKeys.Framework]: expect.stringMatching(
+              handler.frameworkName
+            ),
           }),
         });
 
         expect(body).toMatchObject({
-          message: "Inngest endpoint configured correctly.",
-          functionsFound: 0,
-          hasEventKey: true,
-          hasSigningKey: false,
+          function_count: 0,
+          has_event_key: false,
+          has_signing_key: false,
+          mode: "dev",
+          extra: expect.objectContaining({
+            is_mode_explicit: true,
+          }),
+        });
+      });
+
+      test("can pick up delayed event key from environment", async () => {
+        const ret = await run(
+          [{ client: createClient({ id: "test" }), functions: [] }],
+          [{ method: "GET" }],
+          { [envKeys.InngestEventKey]: "event-key-123" }
+        );
+
+        const body = JSON.parse(ret.body);
+
+        expect(body).toMatchObject({
+          has_event_key: true,
+        });
+      });
+
+      test("can pick up delayed signing key from environment", async () => {
+        const ret = await run(
+          [{ client: createClient({ id: "test" }), functions: [] }],
+          [{ method: "GET" }],
+          { [envKeys.InngestSigningKey]: "signing-key-123" }
+        );
+
+        expect(ret.status).toEqual(200);
+
+        const body = JSON.parse(ret.body);
+
+        expect(body).toMatchObject({
+          has_signing_key: true,
+        });
+      });
+
+      test("#690 returns 200 if signature validation fails", async () => {
+        const ret = await run(
+          [
+            {
+              client: createClient({ id: "test", isDev: false }),
+              functions: [],
+            },
+          ],
+          [{ method: "GET" }],
+          { [envKeys.InngestSigningKey]: "signing-key-123" }
+        );
+
+        expect(ret.status).toEqual(200);
+
+        const body = JSON.parse(ret.body);
+
+        expect(body).toMatchObject({
+          has_signing_key: true,
         });
       });
     });
@@ -275,7 +479,16 @@ export const testFramework = (
               status: 200,
             });
 
-          const ret = await run([inngest, []], [{ method: "PUT" }]);
+          const ret = await run(
+            [{ client: inngest, functions: [] }],
+            [
+              {
+                method: "PUT",
+                url: "/api/inngest",
+                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
+              },
+            ]
+          );
 
           const retBody = JSON.parse(ret.body);
 
@@ -283,7 +496,10 @@ export const testFramework = (
             status: 200,
             headers: expect.objectContaining({
               [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
-              [headerKeys.Framework]: expect.stringMatching(handler.name),
+              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
+              [headerKeys.Framework]: expect.stringMatching(
+                handler.frameworkName
+              ),
             }),
           });
 
@@ -301,13 +517,23 @@ export const testFramework = (
             status: 200,
           });
 
-          const ret = await run([inngest, []], [{ method: "PUT" }], {
-            [envKeys.IsNetlify]: "true",
-          });
+          const ret = await run(
+            [{ client: inngest, functions: [] }],
+            [
+              {
+                method: "PUT",
+                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
+              },
+            ],
+            {
+              [envKeys.IsNetlify]: "true",
+            }
+          );
 
           expect(ret).toMatchObject({
             headers: expect.objectContaining({
               [headerKeys.Platform]: "netlify",
+              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
             }),
           });
         });
@@ -328,8 +554,14 @@ export const testFramework = (
             });
 
           const ret = await run(
-            [inngest, []],
-            [{ method: "PUT", url: customUrl }]
+            [{ client: inngest, functions: [] }],
+            [
+              {
+                method: "PUT",
+                url: customUrl,
+                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
+              },
+            ]
           );
 
           const retBody = JSON.parse(ret.body);
@@ -338,7 +570,10 @@ export const testFramework = (
             status: 200,
             headers: expect.objectContaining({
               [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
-              [headerKeys.Framework]: expect.stringMatching(handler.name),
+              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
+              [headerKeys.Framework]: expect.stringMatching(
+                handler.frameworkName
+              ),
             }),
           });
 
@@ -366,14 +601,17 @@ export const testFramework = (
             });
 
           const fn1 = inngest.createFunction(
-            "fn1",
-            "demo/event.sent",
+            { id: "fn1" },
+            { event: "demo/event.sent" },
             () => "fn1"
           );
           const serveHost = "https://example.com";
           const stepId = "step";
 
-          await run([inngest, [fn1], { serveHost }], [{ method: "PUT" }]);
+          await run(
+            [{ client: inngest, functions: [fn1], serveHost }],
+            [{ method: "PUT" }]
+          );
 
           expect(reqToMock).toMatchObject({
             url: `${serveHost}/api/inngest`,
@@ -406,14 +644,17 @@ export const testFramework = (
             });
 
           const fn1 = inngest.createFunction(
-            "fn1",
-            "demo/event.sent",
+            { id: "fn1" },
+            { event: "demo/event.sent" },
             () => "fn1"
           );
           const servePath = "/foo/bar/inngest/endpoint";
           const stepId = "step";
 
-          await run([inngest, [fn1], { servePath }], [{ method: "PUT" }]);
+          await run(
+            [{ client: inngest, functions: [fn1], servePath }],
+            [{ method: "PUT" }]
+          );
 
           expect(reqToMock).toMatchObject({
             url: `https://localhost:3000${servePath}`,
@@ -430,41 +671,32 @@ export const testFramework = (
             ],
           });
         });
-
-        test("still access dev server if URL passed as environment variable", async () => {
-          const testDevServerHost = "https://exampledevserver.com";
-          let devServerCalled = false;
-
-          nock(testDevServerHost)
-            .get("/dev", (body) => {
-              devServerCalled = true;
-              return body;
-            })
-            .reply(500, { status: 500 });
-
-          await run([inngest, []], [{ method: "PUT" }], {
-            [envKeys.DevServerUrl]: testDevServerHost,
-            NODE_ENV: "production",
-            ENVIRONMENT: "production",
-          });
-
-          expect(devServerCalled).toBe(true);
-        });
       });
 
       describe("env detection and headers", () => {
         test("uses env headers from client", async () => {
-          nock("https://api.inngest.com").post("/fn/register").reply(200);
+          nock("https://api.inngest.com").post("/fn/register").reply(200, {});
 
           const ret = await run(
-            [new Inngest({ name: "Test", env: "FOO" }), []],
-            [{ method: "PUT" }]
+            [
+              {
+                client: new Inngest({ id: "Test", env: "FOO", isDev: false }),
+                functions: [],
+              },
+            ],
+            [
+              {
+                method: "PUT",
+                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
+              },
+            ]
           );
 
           expect(ret).toMatchObject({
             status: 200,
             headers: expect.objectContaining({
               [headerKeys.Environment]: expect.stringMatching("FOO"),
+              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
             }),
           });
         });
@@ -485,8 +717,8 @@ export const testFramework = (
           });
 
         const fn1 = inngest.createFunction(
-          "fn1",
-          "demo/event.sent",
+          { id: "fn1" },
+          { event: "demo/event.sent" },
           () => "fn1"
         );
         const serveHost = "https://example.com";
@@ -494,7 +726,7 @@ export const testFramework = (
         const stepId = "step";
 
         await run(
-          [inngest, [fn1], { serveHost, servePath }],
+          [{ client: inngest, functions: [fn1], serveHost, servePath }],
           [{ method: "PUT" }]
         );
 
@@ -514,13 +746,78 @@ export const testFramework = (
         });
       });
 
+      describe("#493", () => {
+        let serveHandler: ServeHandler;
+        let makeReqWithDeployId: (deployId: string) => Promise<any>;
+
+        beforeEach(() => {
+          serveHandler = getServeHandler([
+            { client: inngest, functions: [] },
+          ]) as ServeHandler;
+
+          makeReqWithDeployId = async (deployId: string) => {
+            let reqToMock;
+
+            const scope = nock("https://api.inngest.com")
+              .post("/fn/register", (b) => {
+                reqToMock = b;
+
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                return b;
+              })
+              .query((q) =>
+                deployId
+                  ? q[queryKeys.DeployId] === deployId
+                  : !(queryKeys.DeployId in q)
+              )
+              .reply(200, {
+                status: 200,
+              });
+
+            await run(serveHandler, [
+              {
+                method: "PUT",
+                url: `/api/inngest${
+                  deployId ? `?${queryKeys.DeployId}=${deployId}` : ""
+                }`,
+              },
+            ]);
+
+            // Asserts that the nock scope was used
+            scope.done();
+
+            return reqToMock;
+          };
+        });
+
+        test("across multiple executions, does not hold on to the deploy ID", async () => {
+          const req1 = await makeReqWithDeployId("1");
+          expect(req1).toMatchObject({
+            url: expect.stringMatching("^https://localhost:3000/api/inngest"),
+            deployId: "1",
+          });
+
+          const req2 = await makeReqWithDeployId("");
+          expect(req2).toMatchObject({
+            url: expect.stringMatching("^https://localhost:3000/api/inngest"),
+          });
+          expect(req2).not.toHaveProperty("deployId");
+
+          const req3 = await makeReqWithDeployId("3");
+          expect(req3).toMatchObject({
+            url: expect.stringMatching("^https://localhost:3000/api/inngest"),
+            deployId: "3",
+          });
+        });
+      });
+
       test.todo("register with dev server host from env if specified");
       test.todo("register with default dev server host if no env specified");
     });
 
     describe("POST (run function)", () => {
       describe("signature validation", () => {
-        const client = createClient({ name: "test" });
+        const client = createClient({ id: "test" });
 
         const fn = client.createFunction(
           { name: "Test", id: "test" },
@@ -531,16 +828,17 @@ export const testFramework = (
           DENO_DEPLOYMENT_ID: "1",
           NODE_ENV: "production",
           ENVIRONMENT: "production",
+          INNGEST_DEV: "0",
         };
         test("should throw an error in prod with no signature", async () => {
           const ret = await run(
-            [inngest, [fn], { signingKey: "test" }],
+            [{ client: inngest, functions: [fn], signingKey: "test" }],
+
             [{ method: "POST", headers: {} }],
             env
           );
-          expect(ret.status).toEqual(500);
+          expect(ret.status).toEqual(401);
           expect(JSON.parse(ret.body)).toMatchObject({
-            type: "internal",
             message: expect.stringContaining(
               `No ${headerKeys.Signature} provided`
             ),
@@ -548,13 +846,12 @@ export const testFramework = (
         });
         test("should throw an error with an invalid signature", async () => {
           const ret = await run(
-            [inngest, [fn], { signingKey: "test" }],
+            [{ client: inngest, functions: [fn], signingKey: "test" }],
             [{ method: "POST", headers: { [headerKeys.Signature]: "t=&s=" } }],
             env
           );
-          expect(ret.status).toEqual(500);
+          expect(ret.status).toEqual(401);
           expect(JSON.parse(ret.body)).toMatchObject({
-            type: "internal",
             message: expect.stringContaining(
               `Invalid ${headerKeys.Signature} provided`
             ),
@@ -564,7 +861,7 @@ export const testFramework = (
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
           const ret = await run(
-            [inngest, [fn], { signingKey: "test" }],
+            [{ client: inngest, functions: [fn], signingKey: "test" }],
             [
               {
                 method: "POST",
@@ -573,14 +870,14 @@ export const testFramework = (
                     yesterday.getTime() / 1000
                   )}&s=expired`,
                 },
-                url: "/api/inngest?fnId=test",
+                url: "/api/inngest?fnId=test-test",
                 body: { event: {}, events: [{}] },
               },
             ],
             env
           );
           expect(ret).toMatchObject({
-            status: 500,
+            status: 401,
             body: expect.stringContaining("Signature has expired"),
           });
         });
@@ -612,9 +909,9 @@ export const testFramework = (
           };
           const ret = await run(
             [
-              inngest,
-              [fn],
               {
+                client: inngest,
+                functions: [fn],
                 signingKey:
                   "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                 __testingAllowExpiredSignatures: true,
@@ -628,7 +925,7 @@ export const testFramework = (
                   [headerKeys.Signature]:
                     "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
                 },
-                url: "/api/inngest?fnId=test&stepId=step",
+                url: "/api/inngest?fnId=test-test&stepId=step",
                 body,
               },
             ],
@@ -636,32 +933,133 @@ export const testFramework = (
           );
           expect(ret).toMatchObject({
             status: 200,
-            body: '"fn"',
+            body: JSON.stringify("fn"),
+          });
+        });
+
+        describe("key rotation", () => {
+          test("should validate a signature with a fallback key successfully", async () => {
+            const event = {
+              data: {},
+              id: "",
+              name: "inngest/scheduled.timer",
+              ts: 1674082830001,
+              user: {},
+              v: "1",
+            };
+
+            const body = {
+              ctx: {
+                fn_id: "local-testing-local-cron",
+                run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+                step_id: "step",
+              },
+              event,
+              events: [event],
+              steps: {},
+              use_api: false,
+            };
+            const ret = await run(
+              [
+                {
+                  client: inngest,
+                  functions: [fn],
+                  signingKey: "fake",
+                  signingKeyFallback:
+                    "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+                  __testingAllowExpiredSignatures: true,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any,
+              ],
+              [
+                {
+                  method: "POST",
+                  headers: {
+                    [headerKeys.Signature]:
+                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                  },
+                  url: "/api/inngest?fnId=test-test&stepId=step",
+                  body,
+                },
+              ],
+              env
+            );
+            expect(ret).toMatchObject({
+              status: 200,
+              body: JSON.stringify("fn"),
+            });
+          });
+
+          test("should fail if validation fails with both keys", async () => {
+            const event = {
+              data: {},
+              id: "",
+              name: "inngest/scheduled.timer",
+              ts: 1674082830001,
+              user: {},
+              v: "1",
+            };
+
+            const body = {
+              ctx: {
+                fn_id: "local-testing-local-cron",
+                run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+                step_id: "step",
+              },
+              event,
+              events: [event],
+              steps: {},
+              use_api: false,
+            };
+            const ret = await run(
+              [
+                {
+                  client: inngest,
+                  functions: [fn],
+                  signingKey: "fake",
+                  signingKeyFallback: "another-fake",
+                  __testingAllowExpiredSignatures: true,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any,
+              ],
+              [
+                {
+                  method: "POST",
+                  headers: {
+                    [headerKeys.Signature]:
+                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                  },
+                  url: "/api/inngest?fnId=test-test&stepId=step",
+                  body,
+                },
+              ],
+              env
+            );
+            expect(ret).toMatchObject({
+              status: 401,
+              body: expect.stringContaining("Invalid signature"),
+            });
           });
         });
       });
 
       describe("malformed payloads", () => {
-        const client = createClient({ name: "test" });
-
-        const fn = client.createFunction(
+        const fn = inngest.createFunction(
           { name: "Test", id: "test" },
           { event: "demo/event.sent" },
           () => "fn"
         );
         const env = {
-          DENO_DEPLOYMENT_ID: undefined,
-          NODE_ENV: "development",
-          ENVIRONMENT: "development",
+          INNGEST_DEV: "1",
         };
 
         test("should throw an error with an invalid JSON body", async () => {
           const ret = await run(
-            [inngest, [fn], { signingKey: "test" }],
+            [{ client: inngest, functions: [fn], signingKey: "test" }],
             [
               {
                 method: "POST",
-                url: "/api/inngest?fnId=test",
+                url: "/api/inngest?fnId=test-test",
                 body: undefined,
               },
             ],
@@ -687,19 +1085,19 @@ export const sendEvent = async (
   data?: Record<string, unknown>,
   user?: Record<string, unknown>
 ): Promise<string> => {
-  const id = ulid();
-
   const res = await fetch("http://localhost:8288/e/key", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ id, name, data: data || {}, user, ts: Date.now() }),
+    body: JSON.stringify({ name, data: data || {}, user, ts: Date.now() }),
   });
 
   if (!res.ok) {
     throw new Error(await res.text());
   }
+
+  const id = (await res.json()).ids[0];
 
   return id;
 };
@@ -789,26 +1187,29 @@ export const eventRunWithName = async (
   for (let i = 0; i < 140; i++) {
     const start = new Date();
 
+    const body = {
+      query: `query GetEventStream {
+        stream(query: {limit: 999, includeInternalEvents: false}) {
+          id
+          trigger
+          runs {
+            id
+            function {
+              name
+            }
+          }
+        }
+      }`,
+      variables: {},
+      operationName: "GetEventStream",
+    };
+
     const res = await fetch("http://localhost:8288/v0/gql", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        query: `query GetEventRuns($eventId: ID!) {
-        event(query: {eventId: $eventId}) {
-          id
-          functionRuns {
-            id
-            name
-          }
-        }
-      }`,
-        variables: {
-          eventId,
-        },
-        operationName: "GetEventRuns",
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
@@ -817,10 +1218,25 @@ export const eventRunWithName = async (
 
     const data = await res.json();
 
-    const run = data?.data?.event?.functionRuns?.find(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let run: any;
+
+    for (let i = 0; i < (data?.data?.stream?.length ?? 0); i++) {
+      const item = data?.data?.stream[i];
+
+      if (item?.id !== eventId) {
+        continue;
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (run: any) => run.name === name
-    );
+      run = item?.runs?.find((run: any) => {
+        return run?.function?.name === name;
+      });
+
+      if (run) {
+        break;
+      }
+    }
 
     if (run) {
       return run.id;
@@ -832,6 +1248,74 @@ export const eventRunWithName = async (
   throw new Error("Event run not found");
 };
 
+type HistoryItemType =
+  | "FunctionScheduled"
+  | "FunctionStarted"
+  | "FunctionCompleted"
+  | "FunctionFailed"
+  | "FunctionCancelled"
+  | "FunctionStatusUpdated"
+  | "StepScheduled"
+  | "StepStarted"
+  | "StepCompleted"
+  | "StepErrored"
+  | "StepFailed"
+  | "StepWaiting"
+  | "StepSleeping"
+  | "StepInvoking";
+
+class TimelineItem {
+  public runId: string;
+  public id: string;
+  public type: string;
+  public stepName: string | null;
+  public createdAt: string;
+
+  // Unsafe, but fine for testing.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(runId: string, item: any) {
+    this.runId = runId;
+    this.id = item.id;
+    this.type = item.type;
+    this.stepName = item.stepName;
+    this.createdAt = item.createdAt;
+  }
+
+  public async getOutput() {
+    const res = await fetch("http://localhost:8288/v0/gql", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: `query GetRunTimelineOutput($runId: ID!, $historyItemId: ULID!) {
+            functionRun(query: {functionRunId: $runId}) {
+              historyItemOutput(id: $historyItemId)
+            }
+          }`,
+        variables: {
+          runId: this.runId,
+          historyItemId: this.id,
+        },
+        operationName: "GetRunTimelineOutput",
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(await res.text());
+    }
+
+    const data = await res.json();
+
+    const payload = data?.data?.functionRun?.historyItemOutput || "null";
+    if (typeof payload !== "string") {
+      throw new Error("Invalid payload");
+    }
+
+    return JSON.parse(payload);
+  }
+}
+
 /**
  * A test helper used to query a local, unsecured dev server to see if a given
  * run has a particular item in its timeline.
@@ -841,15 +1325,13 @@ export const eventRunWithName = async (
 export const runHasTimeline = async (
   runId: string,
   timeline: {
-    __typename: "StepEvent" | "FunctionEvent";
-    name?: string;
-    stepType?: string;
-    functionType?: string;
-    output?: string;
-  }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<any> => {
-  for (let i = 0; i < 140; i++) {
+    stepName?: string;
+    type: HistoryItemType;
+    attempt?: number;
+  },
+  attempts = 140
+): Promise<TimelineItem | undefined> => {
+  for (let i = 0; i < attempts; i++) {
     const start = new Date();
 
     const res = await fetch("http://localhost:8288/v0/gql", {
@@ -860,19 +1342,12 @@ export const runHasTimeline = async (
       body: JSON.stringify({
         query: `query GetRunTimeline($runId: ID!) {
           functionRun(query: {functionRunId: $runId}) {
-            timeline {
-              __typename
-              ... on StepEvent {
-                name
-                createdAt
-                stepType: type
-                output
-              }
-              ... on FunctionEvent {
-                createdAt
-                functionType: type
-                output
-              }
+            history {
+              id
+              type
+              stepName
+              createdAt
+              attempt
             }
           }
         }`,
@@ -890,7 +1365,7 @@ export const runHasTimeline = async (
     const data = await res.json();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const timelineItem = data?.data?.functionRun?.timeline?.find((entry: any) =>
+    const timelineItem = data?.data?.functionRun?.history?.find((entry: any) =>
       Object.keys(timeline).every(
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (key) => entry[key] === (timeline as any)[key]
@@ -898,7 +1373,7 @@ export const runHasTimeline = async (
     );
 
     if (timelineItem) {
-      return timelineItem;
+      return new TimelineItem(runId, timelineItem);
     }
 
     await waitUpTo(400, start);
@@ -909,24 +1384,20 @@ export const runHasTimeline = async (
 
 interface CheckIntrospection {
   name: string;
-  triggers: FunctionTrigger[];
+  triggers: FunctionConfig["triggers"];
 }
 
 export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
   describe("introspection", () => {
     it("should be registered in SDK UI", async () => {
-      const res = await fetch("http://127.0.0.1:3000/api/inngest");
+      const res = await retryFetch(5, "http://localhost:3000/api/inngest");
 
-      const { success } = z
-        .object({
-          message: z.string(),
-          hasSigningKey: z.boolean(),
-          hasEventKey: z.boolean(),
-          functionsFound: z.number(),
-        })
-        .safeParse(await res.json());
-
-      expect(success).toEqual(true);
+      await expect(res.json()).resolves.toMatchObject({
+        has_signing_key: expect.any(Boolean),
+        has_event_key: expect.any(Boolean),
+        function_count: expect.any(Number),
+        mode: expect.any(String),
+      });
     });
 
     it("should be registered in Dev Server UI", async () => {
@@ -975,3 +1446,9 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
     });
   });
 };
+
+/**
+ * assert the subject satisfies the specified type T
+ * @type T the type to check against.
+ */
+export function assertType<T>(subject: T): asserts subject is T {}

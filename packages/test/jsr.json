@@ -1,0 +1,11 @@
+{
+  "$schema": "https://jsr.io/schema/config-file.v1.json",
+  "name": "@inngest/test",
+  "description": "Tooling for testing Inngest functions.",
+  "version": "0.0.0",
+  "include": ["./src/**/*.ts"],
+  "exclude": [],
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

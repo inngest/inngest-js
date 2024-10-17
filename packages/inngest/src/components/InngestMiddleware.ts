@@ -1,18 +1,18 @@
-import { type Simplify } from "type-fest";
 import { cacheFn, waterfall } from "../helpers/functions";
 import {
   type Await,
   type MaybePromise,
   type ObjectAssign,
   type PartialK,
+  type Simplify,
 } from "../helpers/types";
 import {
   type BaseContext,
-  type ClientOptions,
   type EventPayload,
   type IncomingOp,
-  type MiddlewareStack,
   type OutgoingOp,
+  type SendEventBaseOutput,
+  type TriggersFromClient,
 } from "../types";
 import { type Inngest } from "./Inngest";
 import { type InngestFunction } from "./InngestFunction";
@@ -20,8 +20,6 @@ import { type InngestFunction } from "./InngestFunction";
 /**
  * A middleware that can be registered with Inngest to hook into various
  * lifecycles of the SDK and affect input and output of Inngest functionality.
- *
- * TODO Add docs and shortlink.
  *
  * See {@link https://innge.st/middleware}
  *
@@ -32,7 +30,7 @@ import { type InngestFunction } from "./InngestFunction";
  *   middleware: [
  *     new InngestMiddleware({
  *       name: "My Middleware",
- *       register: () => {
+ *       init: () => {
  *         // ...
  *       }
  *     })
@@ -72,22 +70,27 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
   }
 }
 
+export namespace InngestMiddleware {
+  export type Any = InngestMiddleware<MiddlewareOptions>;
+  export type Stack = [InngestMiddleware.Any, ...InngestMiddleware.Any[]];
+}
+
 type FnsWithSameInputAsOutput<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TRecord extends Record<string, (arg: any) => any>
+  TRecord extends Record<string, (arg: any) => any>,
 > = {
   [K in keyof TRecord as Await<TRecord[K]> extends Parameters<TRecord[K]>[0]
     ? K
     : Await<TRecord[K]> extends void | undefined
-    ? Parameters<TRecord[K]>[0] extends void | undefined
-      ? K
-      : never
-    : never]: TRecord[K];
+      ? Parameters<TRecord[K]>[0] extends void | undefined
+        ? K
+        : never
+      : never]: TRecord[K];
 };
 
 type PromisifiedFunctionRecord<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TRecord extends Record<string, (arg: any) => any>
+  TRecord extends Record<string, (arg: any) => any>,
 > = Pick<
   Partial<{
     [K in keyof TRecord]: (
@@ -109,6 +112,10 @@ export type RunHookStack = PromisifiedFunctionRecord<
   Await<MiddlewareRegisterReturn["onFunctionRun"]>
 >;
 
+export type SendEventHookStack = PromisifiedFunctionRecord<
+  Await<MiddlewareRegisterReturn["onSendEvent"]>
+>;
+
 /**
  * Given some middleware and an entrypoint, runs the initializer for the given
  * `key` and returns functions that will pass arguments through a stack of each
@@ -121,7 +128,8 @@ export const getHookStack = async <
   TMiddleware extends Record<string, (arg: any) => any>,
   TKey extends keyof TMiddleware,
   TResult extends Await<TMiddleware[TKey]>,
-  TRet extends PromisifiedFunctionRecord<TResult> = PromisifiedFunctionRecord<TResult>
+  TRet extends
+    PromisifiedFunctionRecord<TResult> = PromisifiedFunctionRecord<TResult>,
 >(
   /**
    * The stack of middleware that will be used to run hooks.
@@ -149,10 +157,8 @@ export const getHookStack = async <
       [K in keyof TResult as Await<TResult[K]> extends Parameters<TResult[K]>[0]
         ? K
         : Await<TResult[K]> extends void | undefined
-        ? Parameters<TResult[K]>[0] extends void | undefined
           ? K
-          : never
-        : never]: void;
+          : never]: void;
     }
   >
 ): Promise<TRet> => {
@@ -160,15 +166,18 @@ export const getHookStack = async <
   const mwStack = await middleware;
 
   // Step through each middleware and get the hook for the given key
-  const keyFns = mwStack.reduce((acc, mw) => {
-    const fn = mw[key];
+  const keyFns = mwStack.reduce(
+    (acc, mw) => {
+      const fn = mw[key];
 
-    if (fn) {
-      return [...acc, fn];
-    }
+      if (fn) {
+        return [...acc, fn];
+      }
 
-    return acc;
-  }, [] as NonNullable<TMiddleware[TKey]>[]);
+      return acc;
+    },
+    [] as NonNullable<TMiddleware[TKey]>[]
+  );
 
   // Run each hook found in sequence and collect the results
   const hooksRegistered = await keyFns.reduce<
@@ -313,9 +322,25 @@ export type MiddlewareRegisterReturn = {
     transformOutput?: MiddlewareRunOutput;
 
     /**
+     * The `finished` hook is called when the function has finished executing
+     * and has returned a final response that will end the run, either a
+     * successful or error response. In the case of an error response, further
+     * retries may be attempted and call this hook again.
+     *
+     * The output provided will be after `transformOutput` has been applied.
+     *
+     * This is not guaranteed to be called on every execution, and may be called
+     * multiple times if many parallel executions reach the end of the function;
+     * for a guaranteed single execution, create a function with an event
+     * trigger of `"inngest/function.finished"`.
+     */
+    finished?: MiddlewareRunFinished;
+
+    /**
      * The `beforeResponse` hook is called after the output has been set and
      * before the response is sent back to Inngest. This is where you can
-     * perform any final actions before the response is sent back to Inngest.
+     * perform any final actions before the response is sent back to Inngest and
+     * is the final hook called.
      */
     beforeResponse?: BlankHook;
   }>;
@@ -335,9 +360,6 @@ export type MiddlewareRegisterReturn = {
      * The `output` hook is called after the event has been sent to Inngest.
      * This is where you can perform any final actions after the event has
      * been sent to Inngest and can modify the output the SDK sees.
-     *
-     * TODO This needs to be a result object that we spread into, not just some
-     * unknown value.
      */
     transformOutput?: MiddlewareSendEventOutput;
   }>;
@@ -349,20 +371,14 @@ export type MiddlewareRegisterReturn = {
 export type MiddlewareRegisterFn = (ctx: {
   /**
    * The client this middleware is being registered on.
-   *
-   * TODO This should not use `any`, but the generic type expected.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  client: Inngest<any>;
+  client: Inngest.Any;
 
   /**
    * If defined, this middleware has been applied directly to an Inngest
    * function rather than on the client.
-   *
-   * TODO This should not use `any`, but the generic type expected.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fn?: InngestFunction<any, any, any, any>;
+  fn?: InngestFunction.Any;
 }) => MaybePromise<MiddlewareRegisterReturn>;
 
 /**
@@ -383,26 +399,23 @@ type MiddlewareRunArgs = Readonly<{
    * event data, some contextual data such as the run's ID, and step tooling.
    */
   ctx: Record<string, unknown> &
-    Readonly<
-      BaseContext<
-        ClientOptions,
-        string,
-        Record<string, (...args: unknown[]) => unknown>
-      >
-    >;
+    Readonly<BaseContext<Inngest.Any, TriggersFromClient<Inngest.Any>>>; // TODO Acceptable?
 
   /**
    * The step data that will be passed to the function.
    */
-  steps: Readonly<Omit<IncomingOp, "id">>[];
+  steps: Readonly<IncomingOp>[];
 
   /**
    * The function that is being executed.
-   *
-   * TODO This should not use `any`, but the generic type expected.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fn: InngestFunction<any, any, any, any>;
+  fn: InngestFunction.Any;
+
+  /**
+   * The raw arguments given to serve handler being used to execute the
+   * function.
+   */
+  reqArgs: Readonly<unknown[]>;
 }>;
 
 /**
@@ -419,7 +432,10 @@ type InitialRunInfo = Readonly<
        * A partial context object that will be passed to the function. Does not
        * necessarily contain all the data that will be passed to the function.
        */
-      ctx: Pick<MiddlewareRunArgs["ctx"], "event" | "runId">;
+      ctx: Readonly<{
+        event: EventPayload;
+        runId: string;
+      }>;
     }
   >
 >;
@@ -442,11 +458,11 @@ type MiddlewareRunInput = (ctx: MiddlewareRunArgs) => MaybePromise<{
 } | void>;
 
 /**
- * Arguments sent to some `sendEvent` lifecycle hooks of a middleware.
+ * Arguments for the SendEventInput hook
  *
  * @internal
  */
-type MiddlewareSendEventArgs = Readonly<{
+type MiddlewareSendEventInputArgs = Readonly<{
   payloads: ReadonlyArray<EventPayload>;
 }>;
 
@@ -456,17 +472,26 @@ type MiddlewareSendEventArgs = Readonly<{
  *
  * @internal
  */
-type MiddlewareSendEventInput = (ctx: MiddlewareSendEventArgs) => MaybePromise<{
+type MiddlewareSendEventInput = (
+  ctx: MiddlewareSendEventInputArgs
+) => MaybePromise<{
   payloads?: EventPayload[];
 } | void>;
+
+/**
+ * Arguments for the SendEventOutput hook
+ *
+ * @internal
+ */
+type MiddlewareSendEventOutputArgs = { result: Readonly<SendEventBaseOutput> };
 
 /**
  * The shape of an `output` hook within a `sendEvent`, optionally returning a
  * change to the result value.
  */
 type MiddlewareSendEventOutput = (
-  ctx: MiddlewareSendEventArgs
-) => MaybePromise<void>;
+  ctx: MiddlewareSendEventOutputArgs
+) => MaybePromise<{ result?: Record<string, unknown> } | void>;
 
 /**
  * @internal
@@ -474,13 +499,19 @@ type MiddlewareSendEventOutput = (
 type MiddlewareRunOutput = (ctx: {
   result: Readonly<Pick<OutgoingOp, "error" | "data">>;
   step?: Readonly<Omit<OutgoingOp, "id">>;
-}) => { result?: Partial<Pick<OutgoingOp, "data">> } | void;
+}) => MaybePromise<{
+  result?: Partial<Pick<OutgoingOp, "data" | "error">>;
+} | void>;
+
+type MiddlewareRunFinished = (ctx: {
+  result: Readonly<Pick<OutgoingOp, "error" | "data">>;
+}) => MaybePromise<void>;
 
 /**
  * @internal
  */
 type GetMiddlewareRunInputMutation<
-  TMiddleware extends InngestMiddleware<MiddlewareOptions>
+  TMiddleware extends InngestMiddleware<MiddlewareOptions>,
 > = TMiddleware extends InngestMiddleware<infer TOpts>
   ? TOpts["init"] extends MiddlewareRegisterFn
     ? Await<
@@ -501,13 +532,62 @@ type GetMiddlewareRunInputMutation<
 /**
  * @internal
  */
+type GetMiddlewareSendEventOutputMutation<
+  TMiddleware extends InngestMiddleware<MiddlewareOptions>,
+> = TMiddleware extends InngestMiddleware<infer TOpts>
+  ? TOpts["init"] extends MiddlewareRegisterFn
+    ? Await<
+        Await<Await<TOpts["init"]>["onSendEvent"]>["transformOutput"]
+      > extends {
+        result: infer TResult;
+      }
+      ? {
+          [K in keyof TResult]: TResult[K];
+        }
+      : // eslint-disable-next-line @typescript-eslint/ban-types
+        {}
+    : // eslint-disable-next-line @typescript-eslint/ban-types
+      {}
+  : // eslint-disable-next-line @typescript-eslint/ban-types
+    {};
+
+/**
+ * @internal
+ */
+export type MiddlewareStackSendEventOutputMutation<
+  TContext,
+  TMiddleware extends InngestMiddleware.Stack,
+> = ObjectAssign<
+  {
+    [K in keyof TMiddleware]: GetMiddlewareSendEventOutputMutation<
+      TMiddleware[K]
+    >;
+  },
+  TContext
+>;
+
 export type ExtendWithMiddleware<
-  TMiddlewareStacks extends MiddlewareStack[],
+  TMiddlewareStacks extends InngestMiddleware.Stack[],
   // eslint-disable-next-line @typescript-eslint/ban-types
-  TContext = {}
+  TContext = {},
 > = ObjectAssign<
   {
     [K in keyof TMiddlewareStacks]: MiddlewareStackRunInputMutation<
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      {},
+      TMiddlewareStacks[K]
+    >;
+  },
+  TContext
+>;
+
+export type ExtendSendEventWithMiddleware<
+  TMiddlewareStacks extends InngestMiddleware.Stack[],
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  TContext = {},
+> = ObjectAssign<
+  {
+    [K in keyof TMiddlewareStacks]: MiddlewareStackSendEventOutputMutation<
       // eslint-disable-next-line @typescript-eslint/ban-types
       {},
       TMiddlewareStacks[K]
@@ -521,7 +601,7 @@ export type ExtendWithMiddleware<
  */
 export type MiddlewareStackRunInputMutation<
   TContext,
-  TMiddleware extends MiddlewareStack
+  TMiddleware extends InngestMiddleware.Stack,
 > = ObjectAssign<
   {
     [K in keyof TMiddleware]: GetMiddlewareRunInputMutation<TMiddleware[K]>;

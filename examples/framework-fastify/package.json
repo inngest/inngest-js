@@ -12,11 +12,11 @@
   "license": "ISC",
   "dependencies": {
     "fastify": "^4.21.0",
-    "inngest": "^2.0.0"
+    "inngest": "^3.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.5.2",
-    "tsx": "^3.12.7",
+    "tsx": "^4.7.3",
     "typescript": "^5.1.6"
   }
 }

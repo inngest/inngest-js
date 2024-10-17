@@ -1,8 +1,35 @@
+/**
+ * An adapter for DigitalOcean Functions to serve and register any declared
+ * functions with Inngest, making them available to be triggered by events.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/digitalocean";
+ * import { inngest } from "./src/inngest/client";
+ * import fnA from "./src/inngest/fnA"; // Your own function
+ *
+ * const main = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ *   // Your digitalocean hostname.  This is required otherwise your functions won't work.
+ *   serveHost: "https://faas-sfo3-your-url.doserverless.co",
+ *   // And your DO path, also required.
+ *   servePath: "/api/v1/web/fn-your-uuid/inngest",
+ * });
+ *
+ * // IMPORTANT: Makes the function available as a module in the project.
+ * // This is required for any functions that require external dependencies.
+ * module.exports.main = main;
+ * ```
+ *
+ * @module
+ */
+
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ActionResponse,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
-import { headerKeys, queryKeys } from "./helpers/consts";
 import { type SupportedFrameworkName } from "./types";
 
 type HTTP = {
@@ -11,74 +38,67 @@ type HTTP = {
   path: string;
 };
 
-type Main = {
-  http: HTTP;
-  // data can include any JSON-decoded post-data, and query args/saerch params.
-  [data: string]: unknown;
-};
+type Main =
+  | {
+      http?: HTTP;
+      // data can include any JSON-decoded post-data, and query args/saerch params.
+      [data: string]: unknown;
+    }
+  | undefined;
 
-export const name: SupportedFrameworkName = "digitalocean";
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
+export const frameworkName: SupportedFrameworkName = "digitalocean";
 
+/**
+ * In DigitalOcean Functions, serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/digitalocean";
+ * import { inngest } from "./src/inngest/client";
+ * import fnA from "./src/inngest/fnA"; // Your own function
+ *
+ * const main = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ *   // Your digitalocean hostname.  This is required otherwise your functions won't work.
+ *   serveHost: "https://faas-sfo3-your-url.doserverless.co",
+ *   // And your DO path, also required.
+ *   servePath: "/api/v1/web/fn-your-uuid/inngest",
+ * });
+ *
+ * // IMPORTANT: Makes the function available as a module in the project.
+ * // This is required for any functions that require external dependencies.
+ * module.exports.main = main;
+ * ```
+ *
+ * @public
+ */
+// Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
-  nameOrInngest: Parameters<ServeHandler>[0],
-  fns: Parameters<ServeHandler>[1],
-  opts: Parameters<ServeHandler>[2] &
-    Required<Pick<NonNullable<Parameters<ServeHandler>[2]>, "serveHost">>
-) => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    opts,
-    (main: Main) => {
-      // Copy all params as data.
-      let { http, ...data } = main || {};
-
-      if (http === undefined) {
-        // This is an invocation from the DigitalOcean UI;  main is an empty object.
-        // In this case provide some defaults so that this doesn't run functions.
-        http = { method: "GET", headers: {}, path: "" };
-        data = {};
-      }
-
-      // serveHost and servePath must be defined when running in DigitalOcean in order
-      // for the SDK to properly register and run functions.
-      //
-      // DigitalOcean provides no hostname or path in its arguments during execution.
-      const url = new URL(`${opts.serveHost}${opts?.servePath || "/"}`);
+  options: ServeHandlerOptions &
+    Required<Pick<NonNullable<ServeHandlerOptions>, "serveHost">>
+): ((main?: Main) => Promise<ActionResponse<string>>) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: (main: Main = {}) => {
+      const { http = { method: "GET", headers: {}, path: "" }, ...data } = main;
 
       return {
-        url,
-        register: () => {
-          if (http.method === "PUT") {
-            return {
-              deployId: main[queryKeys.DeployId] as string,
-            };
-          }
-        },
-        run: () => {
-          if (http.method === "POST") {
-            return {
-              data: data as Record<string, unknown>,
-              fnId: (main[queryKeys.FnId] as string) || "",
-              stepId: (main[queryKeys.StepId] as string) || "",
-              signature: http.headers[headerKeys.Signature] as string,
-            };
-          }
-        },
-        view: () => {
-          if (http.method === "GET") {
-            return {
-              isIntrospection: Object.hasOwnProperty.call(
-                main,
-                queryKeys.Introspect
-              ),
-            };
-          }
-        },
+        body: () => data || {},
+        headers: (key) => http?.headers?.[key],
+        method: () => http.method,
+        url: () => new URL(`${options.serveHost}${options.servePath || "/"}`),
+        queryString: (key) => main[key] as string,
+        transformResponse: (res) => res,
       };
     },
-    (res) => res
-  );
+  });
+
   return handler.createHandler();
 };

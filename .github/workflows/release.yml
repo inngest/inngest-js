@@ -6,8 +6,6 @@ on:
       - main
       - 'v*.x'
 
-concurrency: release
-
 env:
   NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -24,6 +22,12 @@ jobs:
           # Used to fetch all history so that changesets doesn't attempt to
           # publish duplicate tags.
           fetch-depth: 0
+      # Replaces `concurrency` - never cancels any jobs
+      - uses: softprops/turnstyle@v1
+        with:
+          poll-interval-seconds: 30
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: ./.github/actions/setup-and-build
       - run: node scripts/generateReleaseConfig.js
         env:
@@ -31,7 +35,8 @@ jobs:
       - uses: changesets/action@v1
         id: changesets
         with:
-          publish: pnpm run --if-present --recursive release
+          version: pnpm run release:version
+          publish: pnpm run release:all
           title: ${{ github.ref_name == 'main' && 'Release @latest' || format('Release {0}', github.ref_name) }}
         env:
           GITHUB_TOKEN: ${{ secrets.CHANGESET_GITHUB_TOKEN }}

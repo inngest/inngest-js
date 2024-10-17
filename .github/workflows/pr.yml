@@ -4,9 +4,6 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
-  push:
-    branches:
-      - 'renovate/**'
 
 concurrency:
   group: pr-${{ github.ref }}
@@ -16,8 +13,8 @@ env:
   NODE_AUTH_TOKEN: nothing
 
 jobs:
-  test:
-    name: Runtime
+  inngest_test:
+    name: "inngest: Runtime tests"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,6 +27,7 @@ jobs:
           - 16
           - 18
           - 20
+          - 22
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
@@ -37,10 +35,21 @@ jobs:
         with:
           node-version: ${{ matrix.nodeVersion }}
       # Uses npm as pnpm doesn't support Node < 16
-      - run: node --version && npm --version && npm run test
+      # If we're on Node <18, restrict some framework tests that do not support
+      # Node on this version.
+      - run: |
+          node --version
+          npm --version
+          npm run test -- --testPathIgnorePatterns "<rootDir>/src/hono.test.ts"
+        if: ${{ matrix.nodeVersion < 18 }}
+      - run: |
+          node --version
+          npm --version
+          npm run test
+        if: ${{ matrix.nodeVersion >= 18 }}
 
-  types:
-    name: Types
+  inngest_types:
+    name: "inngest: Type tests"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -49,22 +58,26 @@ jobs:
       fail-fast: false
       matrix:
         tsVersion:
-         - 'latest'
-         - 'next'
-         - 'beta'
-         - '~5.1.0'
-         - '~5.0.0'
-         - '~4.9.0'
-         - '~4.8.0'
-         - "~4.7.0"
+          - "latest"
+          - "~5.6.0"
+          - "~5.5.0"
+          - "~5.4.0"
+          - "~5.3.0"
+          - "~5.2.0"
+          - "~5.1.0"
+          - "~5.0.0"
+          - "~4.9.0"
+          - "~4.8.0"
+          - "~4.7.0"
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
       - run: pnpm add -D typescript@${{ matrix.tsVersion }}
       - run: pnpm run test:types
+      - run: pnpm run test:dist
 
-  api_diff:
-    name: Local API diff
+  inngest_api_diff:
+    name: "inngest: Local API diff"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -72,10 +85,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
-      - run: pnpm run api-extractor run
 
-  lint:
-    name: Lint
+  inngest_lint:
+    name: "inngest: Lint"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -85,8 +97,71 @@ jobs:
       - uses: ./.github/actions/setup-and-build
       - run: pnpm run lint
 
-  package:
-    name: Package
+  inngest_test_dist:
+    name: "inngest: Dist tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:dist
+
+  inngest_test_deps:
+    name: "inngest: Dependency tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:deps
+
+  inngest_test_composite:
+    name: "inngest: Composite tests"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/inngest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+      - run: pnpm run test:composite
+
+  "eslint-plugin_test":
+    name: "eslint-plugin: Test"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/eslint-plugin
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+      - run: pnpm install
+      - run: pnpm test
+
+  "middleware-encryption_test":
+    name: "middleware-encryption: Test"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/middleware-encryption
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+      - run: pnpm install
+      - run: pnpm test
+
+  package_inngest:
+    name: "inngest: Package"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -112,7 +187,8 @@ jobs:
 
       - id: matrix
         run: |
-          echo "matrix=$(find examples -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+          blocklist=$(grep -v '^#' examples/.inngestignore | jq -R . | jq -s .)
+          echo "matrix=$(find examples -mindepth 1 -maxdepth 1 -type d \( -name 'framework-*' -or -name 'bun*' \) | grep -v -f <(echo $blocklist | jq -r '.[]') | xargs -n 1 basename | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
 
   examples:
     name: Test examples
@@ -120,11 +196,17 @@ jobs:
     defaults:
       run:
         working-directory: packages/inngest
-    needs: [examples-matrix, package]
+    needs: [examples-matrix, package_inngest]
     strategy:
       fail-fast: false
       matrix:
         example: ${{ fromJson(needs.examples-matrix.outputs.matrix) }}
+        streaming: [""]
+        include:
+          - example: framework-remix
+            streaming: force
+          - example: framework-nextjs-app-router
+            streaming: force
     steps:
       # Checkout the repo
       - name: Checkout SDK
@@ -136,86 +218,9 @@ jobs:
         uses: actions/download-artifact@v3
         with:
           name: inngestpkg
-          path: examples/${{ matrix.example }}
+          path: packages/inngest
 
-      # Install dependencies in the example repo
-      # Don't use "npm ci", "--immutable" etc., as example repos won't be
-      # shipped with lock files.
-      - name: Install example dependencies
-        run: npm install
-        working-directory: examples/${{ matrix.example }}
-
-      - name: Add local SDK to example
-        working-directory: examples/${{ matrix.example }}
-        run: npm install ./inngest.tgz
-
-      # Copy any SDK function examples to the example repo so that we're always
-      # testing many functions against many handlers.
-      - name: Find inngest functions path in example
-        id: inngest-functions-path
-        run: echo "dir=$(dirname $(echo \"$(git ls-files | grep inngest/index.ts)))\"" >> $GITHUB_OUTPUT
-        working-directory: examples/${{ matrix.example }}
-      - name: Remove any existing inngest functions
-        run: rm -rf ${{ steps.inngest-functions-path.outputs.dir }}
-        working-directory: examples/${{ matrix.example }}
-      - name: Copy functions to test to example
-        run: cp -Tr ../../packages/inngest/src/test/functions/ ${{ steps.inngest-functions-path.outputs.dir }}
-        working-directory: examples/${{ matrix.example }}
-
-      # Rules for every project can be different; ignore the example functions
-      # we've just added.
-      - name: Ignore ESLint in example functions
-        run: echo '**/inngest/**' >> .eslintignore
-        working-directory: examples/${{ matrix.example }}
-      # This also covers projects not using ESLint.
-      - name: Ignore TS checks in examples functions
-        run: find ${{ steps.inngest-functions-path.outputs.dir }} -type f -name "*.ts" -exec sed -i '1i // @ts-nocheck' {} \;
-        working-directory: examples/${{ matrix.example }}
-
-      # Try to build the example
-      - name: Build the example
-        run: npm run build
-        working-directory: examples/${{ matrix.example }}
-
-      - name: Run the Inngest dev server
-        run: npx inngest-cli@latest dev > cli.log 2>&1 &
-        working-directory: examples/${{ matrix.example }}
+      - name: Run integration tests
+        run: pnpm run itest ${{ matrix.example }}
         env:
-          DO_NOT_TRACK: 1
-      - name: Wait for the Inngest dev server to start
-        uses: mydea/action-wait-for-api@v1
-        with:
-          url: "http://localhost:8288"
-          timeout: "60"
-
-      # Run the example
-      - name: Run the example's dev server
-        run: (npm run dev > dev.log 2>&1 &)
-        working-directory: examples/${{ matrix.example }}
-        # Provide the example any env vars it might need
-        env:
-          HOST: "0.0.0.0"
-          PORT: 3000
-          DO_NOT_TRACK: 1
-      - name: Wait for the example to start
-        uses: mydea/action-wait-for-api@v1
-        with:
-          url: "http://localhost:3000/api/inngest"
-          timeout: "60"
-
-      # Give the dev server 5 seconds to register with the example
-      # TODO Check logs instead of sleeping
-      - name: Wait 5 seconds for dev server registration
-        run: sleep 5
-
-      # Run the examples test suite against the dev server
-      - name: Run integration test suite
-        run: pnpm run test:examples
-
-      - if: ${{ always() }}
-        run: cat dev.log
-        working-directory: examples/${{ matrix.example }}
-
-      - if: ${{ always() }}
-        run: cat cli.log
-        working-directory: examples/${{ matrix.example }}
+          INNGEST_STREAMING: ${{ matrix.streaming }}

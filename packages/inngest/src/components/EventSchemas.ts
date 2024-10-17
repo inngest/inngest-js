@@ -1,7 +1,17 @@
-import { type Simplify } from "type-fest";
-import { type z } from "zod";
-import { type IsStringLiteral } from "../helpers/types";
-import { type EventPayload } from "../types";
+import { type internalEvents } from "../helpers/consts";
+import {
+  type IsEmptyObject,
+  type IsStringLiteral,
+  type Simplify,
+} from "../helpers/types";
+import type * as z from "../helpers/validators/zod";
+import {
+  type EventPayload,
+  type FailureEventPayload,
+  type FinishedEventPayload,
+  type InvokedEventPayload,
+  type ScheduledTimerEventPayload,
+} from "../types";
 
 /**
  * Declares the shape of an event schema we expect from the user. This may be
@@ -11,8 +21,9 @@ import { type EventPayload } from "../types";
  * @internal
  */
 export type StandardEventSchema = {
+  name?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: Record<string, any>;
+  data?: Record<string, any>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   user?: Record<string, any>;
 };
@@ -25,20 +36,53 @@ export type StandardEventSchema = {
 export type StandardEventSchemas = Record<string, StandardEventSchema>;
 
 /**
- * A helper type that ensures users cannot declare a literal Zod schema with
- * an empty string as the event name.
+ * Asserts that the given type `T` contains a mapping for all internal events.
+ *
+ * Usage of this ensures that we never forget about an internal event in schemas
+ * when adding new ones.
+ *
+ * It also ensures that the mapped name is not the enum type, as this would
+ * require a user to use the enum type to access the event schema to declare
+ * triggers, where we want to allow them to use the string literal.
  *
  * @public
  */
-export type ExcludeEmptyZodLiterals<T> = T extends LiteralZodEventSchemas
-  ? {
-      [I in keyof T]: T[I] extends z.ZodObject<infer U extends z.ZodRawShape>
-        ? U extends { name: z.ZodLiteral<""> }
-          ? "ERROR: Empty event names are now allowed."
-          : T[I]
-        : never;
-    }
+export type AssertInternalEventPayloads<
+  T extends Record<internalEvents, EventPayload>,
+> = {
+  [K in keyof T as `${K & string}`]: Simplify<
+    Omit<T[K], "name"> & { name: `${K & string}` }
+  >;
+};
+
+/**
+ * A string error used to highlight to a user that they have a clashing name
+ * between the event name and the key of the event schema.
+ */
+type ClashingNameError =
+  "Error: Omit 'name' from event schemas or make sure it matches the key.";
+
+/**
+ * Given a type T, check if any of the keys in T are a clashing name. If they
+ * are, return the error type, otherwise return the original type.
+ */
+type CheckNever<T> = ClashingNameError extends T[keyof T]
+  ? IsEmptyObject<T[keyof T]> extends true
+    ? T
+    : ClashingNameError
   : T;
+
+/**
+ * Given a type T, check if any of the keys in T are a clashing name. If they
+ * are, return the error type for that key, otherwise return the original type.
+ */
+type PreventClashingNames<T> = CheckNever<{
+  [K in keyof T]: T[K] extends { name: infer N }
+    ? N extends K
+      ? T[K]
+      : ClashingNameError
+    : T[K];
+}>;
 
 /**
  * A literal Zod schema, which is a Zod schema that has a literal string as the
@@ -49,8 +93,8 @@ export type ExcludeEmptyZodLiterals<T> = T extends LiteralZodEventSchemas
  */
 export type LiteralZodEventSchema = z.ZodObject<{
   name: z.ZodLiteral<string>;
-  data: z.AnyZodObject | z.ZodAny;
-  user?: z.AnyZodObject | z.ZodAny;
+  data?: z.ValidZodValue;
+  user?: z.ValidZodValue;
 }>;
 
 /**
@@ -69,8 +113,8 @@ export type LiteralZodEventSchemas = LiteralZodEventSchema[];
 export type ZodEventSchemas = Record<
   string,
   {
-    data: z.AnyZodObject | z.ZodAny;
-    user?: z.AnyZodObject | z.ZodAny;
+    data?: z.ValidZodValue;
+    user?: z.ValidZodValue;
   }
 >;
 
@@ -90,7 +134,7 @@ export type PickLiterals<T> = {
  *
  * @public
  */
-export type GetName<T> = T extends z.ZodObject<infer U extends z.ZodRawShape>
+export type GetName<T> = T extends z.ZodObject<infer U>
   ? U extends { name: z.ZodLiteral<infer S extends string> }
     ? S
     : never
@@ -116,8 +160,8 @@ export type LiteralToRecordZodSchemas<T> = PickLiterals<
         [I in keyof T as GetName<T[I]>]: InferZodShape<T[I]>;
       }
     : T extends ZodEventSchemas
-    ? T
-    : never
+      ? T
+      : never
 >;
 
 /**
@@ -163,7 +207,7 @@ export type StandardEventSchemaToPayload<T> = Simplify<{
  */
 export type Combine<
   TCurr extends Record<string, EventPayload>,
-  TInc extends StandardEventSchemas
+  TInc extends StandardEventSchemas,
 > = IsStringLiteral<keyof TCurr & string> extends true
   ? Simplify<
       Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> &
@@ -182,7 +226,7 @@ export type Combine<
  *
  * ```ts
  * export const inngest = new Inngest({
- *   name: "My App",
+ *   id: "my-app",
  *   schemas: new EventSchemas().fromZod({
  *     "app/user.created": {
  *       data: z.object({
@@ -196,12 +240,21 @@ export type Combine<
  *
  * @public
  */
-export class EventSchemas<S extends Record<string, EventPayload>> {
+export class EventSchemas<
+  S extends Record<string, EventPayload> = AssertInternalEventPayloads<{
+    [internalEvents.FunctionFailed]: FailureEventPayload;
+    [internalEvents.FunctionFinished]: FinishedEventPayload;
+    [internalEvents.FunctionInvoked]: InvokedEventPayload;
+    [internalEvents.ScheduledTimer]: ScheduledTimerEventPayload;
+  }>,
+> {
   /**
    * Use generated Inngest types to type events.
    */
-  public fromGenerated<T extends StandardEventSchemas>() {
-    return new EventSchemas<Combine<S, T>>();
+  public fromGenerated<T extends StandardEventSchemas>(): EventSchemas<
+    Combine<S, T>
+  > {
+    return this;
   }
 
   /**
@@ -211,7 +264,7 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
    *
    * ```ts
    * export const inngest = new Inngest({
-   *   name: "My App",
+   *   id: "my-app",
    *   schemas: new EventSchemas().fromRecord<{
    *     "app/user.created": {
    *       data: {
@@ -223,8 +276,12 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
    * });
    * ```
    */
-  public fromRecord<T extends StandardEventSchemas>() {
-    return new EventSchemas<Combine<S, T>>();
+  public fromRecord<T extends StandardEventSchemas>(
+    ..._args: PreventClashingNames<T> extends ClashingNameError
+      ? [ClashingNameError]
+      : []
+  ): EventSchemas<Combine<S, T>> {
+    return this;
   }
 
   /**
@@ -248,20 +305,22 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
    * type Events = AccountCreated | AccountDeleted;
    *
    * export const inngest = new Inngest({
-   *   name: "My App",
+   *   id: "my-app",
    *   schemas: new EventSchemas().fromUnion<Events>(),
    * });
    * ```
    */
-  public fromUnion<T extends { name: string } & StandardEventSchema>() {
-    return new EventSchemas<
-      Combine<
-        S,
-        {
-          [K in T["name"]]: Extract<T, { name: K }>;
-        }
-      >
-    >();
+  public fromUnion<
+    T extends { name: string } & StandardEventSchema,
+  >(): EventSchemas<
+    Combine<
+      S,
+      {
+        [K in T["name"]]: Extract<T, { name: K }>;
+      }
+    >
+  > {
+    return this;
   }
 
   /**
@@ -271,7 +330,7 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
    *
    * ```ts
    * export const inngest = new Inngest({
-   *   name: "My App",
+   *   id: "my-app",
    *   schemas: new EventSchemas().fromZod({
    *     "app/user.created": {
    *       data: z.object({
@@ -285,15 +344,15 @@ export class EventSchemas<S extends Record<string, EventPayload>> {
    */
   public fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    schemas: ExcludeEmptyZodLiterals<T>
-  ) {
-    return new EventSchemas<
-      Combine<
-        S,
-        ZodToStandardSchema<
-          T extends ZodEventSchemas ? T : LiteralToRecordZodSchemas<T>
-        >
+    schemas: T
+  ): EventSchemas<
+    Combine<
+      S,
+      ZodToStandardSchema<
+        T extends ZodEventSchemas ? T : LiteralToRecordZodSchemas<T>
       >
-    >();
+    >
+  > {
+    return this;
   }
 }

@@ -6,6 +6,7 @@ import {
   errorConstructors,
   type SerializedError as CjsSerializedError,
 } from "serialize-error-cjs";
+import stripAnsi from "strip-ansi";
 import { z } from "zod";
 import { type Inngest } from "../components/Inngest";
 import { NonRetriableError } from "../components/NonRetriableError";
@@ -67,7 +68,11 @@ export const serializeError = (subject: unknown): SerializedError => {
       // map over the result here to ensure we have everything.
       // We'll just stringify the entire subject for the message, as this at
       // least provides some context for the user.
-      return {
+      const ret = {
+        // Ensure we spread to also capture additional properties such as
+        // `cause`.
+        ...serializedErr,
+
         name: serializedErr.name || "Error",
         message:
           serializedErr.message ||
@@ -76,6 +81,25 @@ export const serializeError = (subject: unknown): SerializedError => {
         stack: serializedErr.stack || "",
         [SERIALIZED_KEY]: SERIALIZED_VALUE,
       } as const;
+
+      // If we have a cause, make sure we recursively serialize them too.
+      let target: unknown = ret;
+      const maxDepth = 5;
+      for (let i = 0; i < maxDepth; i++) {
+        if (
+          typeof target === "object" &&
+          target !== null &&
+          "cause" in target &&
+          target.cause
+        ) {
+          target = target.cause = serializeError(target.cause);
+          continue;
+        }
+
+        break;
+      }
+
+      return ret;
     }
 
     // If it's not an object, it's hard to parse this as an Error. In this case,
@@ -90,6 +114,8 @@ export const serializeError = (subject: unknown): SerializedError => {
         ...serializeError(
           new Error(typeof subject === "string" ? subject : stringify(subject))
         ),
+        // Remove the stack; it's not relevant here
+        stack: "",
         [SERIALIZED_KEY]: SERIALIZED_VALUE,
       };
     } catch (err) {
@@ -118,7 +144,10 @@ export const isSerializedError = (
       const parsed = z
         .object({
           [SERIALIZED_KEY]: z.literal(SERIALIZED_VALUE),
-          name: z.enum([...errorConstructors.keys()] as [string, ...string[]]),
+          name: z.enum([...Array.from(errorConstructors.keys())] as [
+            string,
+            ...string[],
+          ]),
           message: z.string(),
           stack: z.string(),
         })
@@ -166,7 +195,15 @@ export const deserializeError = (subject: Partial<SerializedError>): Error => {
       throw new Error();
     }
 
-    return cjsDeserializeError(subject as SerializedError);
+    const deserializedErr = cjsDeserializeError(subject as SerializedError);
+
+    if ("cause" in deserializedErr) {
+      deserializedErr.cause = deserializeError(
+        deserializedErr.cause as Partial<SerializedError>
+      );
+    }
+
+    return deserializedErr;
   } catch {
     const err = new Error("Unknown error; could not reserialize");
 
@@ -181,10 +218,33 @@ export const deserializeError = (subject: Partial<SerializedError>): Error => {
 };
 
 export enum ErrCode {
-  NON_DETERMINISTIC_FUNCTION = "NON_DETERMINISTIC_FUNCTION",
-  ASYNC_DETECTED_AFTER_MEMOIZATION = "ASYNC_DETECTED_AFTER_MEMOIZATION",
-  STEP_USED_AFTER_ASYNC = "STEP_USED_AFTER_ASYNC",
   NESTING_STEPS = "NESTING_STEPS",
+
+  /**
+   * Legacy v0 execution error code for when a function has changed and no
+   * longer matches its in-progress state.
+   *
+   * @deprecated Not for use in latest execution method.
+   */
+  NON_DETERMINISTIC_FUNCTION = "NON_DETERMINISTIC_FUNCTION",
+
+  /**
+   * Legacy v0 execution error code for when a function is found to be using
+   * async actions after memoziation has occurred, which v0 doesn't support.
+   *
+   * @deprecated Not for use in latest execution method.
+   */
+  ASYNC_DETECTED_AFTER_MEMOIZATION = "ASYNC_DETECTED_AFTER_MEMOIZATION",
+
+  /**
+   * Legacy v0 execution error code for when a function is found to be using
+   * steps after a non-step async action has occurred.
+   *
+   * @deprecated Not for use in latest execution method.
+   */
+  STEP_USED_AFTER_ASYNC = "STEP_USED_AFTER_ASYNC",
+
+  AUTOMATIC_PARALLEL_INDEXING = "AUTOMATIC_PARALLEL_INDEXING",
 }
 
 export interface PrettyError {
@@ -251,6 +311,82 @@ export interface PrettyError {
   code?: ErrCode;
 }
 
+export const prettyErrorSplitter =
+  "=================================================";
+
+/**
+ * Given an unknown `err`, mutate it to minify any pretty errors that it
+ * contains.
+ */
+export const minifyPrettyError = <T>(err: T): T => {
+  try {
+    if (!isError(err)) {
+      return err;
+    }
+
+    const isPrettyError = err.message.includes(prettyErrorSplitter);
+    if (!isPrettyError) {
+      return err;
+    }
+
+    const sanitizedMessage = stripAnsi(err.message);
+
+    const message =
+      sanitizedMessage.split("  ")[1]?.split("\n")[0]?.trim() || err.message;
+    const code =
+      sanitizedMessage.split("\n\nCode: ")[1]?.split("\n\n")[0]?.trim() ||
+      undefined;
+
+    err.message = [code, message].filter(Boolean).join(" - ");
+
+    if (err.stack) {
+      const sanitizedStack = stripAnsi(err.stack);
+      const stackRest = sanitizedStack
+        .split(`${prettyErrorSplitter}\n`)
+        .slice(2)
+        .join("\n");
+
+      err.stack = `${err.name}: ${err.message}\n${stackRest}`;
+    }
+
+    return err;
+  } catch (noopErr) {
+    return err;
+  }
+};
+
+/**
+ * Given an `err`, return a boolean representing whether it is in the shape of
+ * an `Error` or not.
+ */
+const isError = (err: unknown): err is Error => {
+  try {
+    if (err instanceof Error) {
+      return true;
+    }
+
+    const hasName = Object.prototype.hasOwnProperty.call(err, "name");
+    const hasMessage = Object.prototype.hasOwnProperty.call(err, "message");
+
+    return hasName && hasMessage;
+  } catch (noopErr) {
+    return false;
+  }
+};
+
+/**
+ * Given an `unknown` object, retrieve the `message` property from it, or fall
+ * back to the `fallback` string if it doesn't exist or is empty.
+ */
+export const getErrorMessage = (err: unknown, fallback: string): string => {
+  const { message } = z
+    .object({ message: z.string().min(1) })
+    .catch({ message: fallback })
+    .parse(err);
+
+  return message;
+};
+
 /**
  * Given a {@link PrettyError}, return a nicely-formatted string ready to log
  * or throw.
@@ -279,7 +415,6 @@ export const prettyError = ({
     >
   )[type];
 
-  const splitter = "=================================================";
   let header = `${icon}  ${chalk.bold.underline(whatHappened.trim())}`;
   if (stack) {
     header +=
@@ -310,32 +445,17 @@ export const prettyError = ({
   const trailer = [otherwise?.trim()].filter(Boolean).join(" ");
 
   const message = [
-    splitter,
+    prettyErrorSplitter,
     header,
     body,
     trailer,
     code ? `Code: ${code}` : "",
-    splitter,
+    prettyErrorSplitter,
   ]
     .filter(Boolean)
     .join("\n\n");
 
   return colorFn(message);
-};
-
-export const functionStoppedRunningErr = (code: ErrCode) => {
-  return prettyError({
-    whatHappened: "Your function was stopped from running",
-    why: "We detected a mix of asynchronous logic, some using step tooling and some not.",
-    consequences:
-      "This can cause unexpected behaviour when a function is paused and resumed and is therefore strongly discouraged; we stopped your function to ensure nothing unexpected happened!",
-    stack: true,
-    toFixNow:
-      "Ensure that your function is either entirely step-based or entirely non-step-based, by either wrapping all asynchronous logic in `step.run()` calls or by removing all `step.*()` calls.",
-    otherwise:
-      "For more information on why step functions work in this manner, see https://www.inngest.com/docs/functions/multi-step#gotchas",
-    code,
-  });
 };
 
 export const fixEventKeyMissingSteps = [
@@ -363,3 +483,48 @@ export class OutgoingResultError extends Error {
     this.result = result;
   }
 }
+
+/**
+ * Create a function that will rethrow an error with a prefix added to the
+ * message.
+ *
+ * Useful for adding context to errors that are rethrown.
+ *
+ * @example
+ * ```ts
+ * await doSomeAction().catch(rethrowError("Failed to do some action"));
+ * ```
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const rethrowError = (prefix: string): ((err: any) => never) => {
+  return (err) => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/restrict-template-expressions
+      err.message &&= `${prefix}; ${err.message}`;
+    } catch (noopErr) {
+      // no-op
+    } finally {
+      // eslint-disable-next-line no-unsafe-finally
+      throw err;
+    }
+  };
+};
+
+/**
+ * Legacy v0 execution error for functions that don't support mixing steps and
+ * regular async actions.
+ */
+export const functionStoppedRunningErr = (code: ErrCode) => {
+  return prettyError({
+    whatHappened: "Your function was stopped from running",
+    why: "We detected a mix of asynchronous logic, some using step tooling and some not.",
+    consequences:
+      "This can cause unexpected behaviour when a function is paused and resumed and is therefore strongly discouraged; we stopped your function to ensure nothing unexpected happened!",
+    stack: true,
+    toFixNow:
+      "Ensure that your function is either entirely step-based or entirely non-step-based, by either wrapping all asynchronous logic in `step.run()` calls or by removing all `step.*()` calls.",
+    otherwise:
+      "For more information on why step functions work in this manner, see https://www.inngest.com/docs/functions/multi-step#gotchas",
+    code,
+  });
+};

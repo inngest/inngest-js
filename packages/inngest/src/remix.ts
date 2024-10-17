@@ -1,12 +1,34 @@
+/**
+ * An adapter for Remix to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/remix";
+ * import functions from "~/inngest";
+ *
+ * const handler = serve({ id: "my-remix-app", functions });
+ *
+ * export { handler as loader, handler as action };
+ * ```
+ *
+ * @module
+ */
+
+import { z } from "zod";
 import {
   InngestCommHandler,
   type ActionResponse,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
-import { headerKeys, queryKeys } from "./helpers/consts";
+import { type Env } from "./helpers/env";
 import { type SupportedFrameworkName } from "./types";
 
-export const name: SupportedFrameworkName = "remix";
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
+export const frameworkName: SupportedFrameworkName = "remix";
 
 const createNewResponse = ({
   body,
@@ -14,9 +36,9 @@ const createNewResponse = ({
   headers,
 }: ActionResponse<string | ReadableStream>): Response => {
   /**
-   * If `Response` isn't included in this environment, it's probably a Node
-   * env that isn't already polyfilling. In this case, we can polyfill it
-   * here to be safe.
+   * If `Response` isn't included in this environment, it's probably a Node env
+   * that isn't already polyfilling. In this case, we can polyfill it here to be
+   * safe.
    */
   let Res: typeof Response;
 
@@ -47,55 +69,50 @@ const createNewResponse = ({
  * @example
  * ```ts
  * import { serve } from "inngest/remix";
- * import fns from "~/inngest";
+ * import functions from "~/inngest";
  *
- * const handler = serve("My Remix App", fns);
+ * const handler = serve({ id: "my-remix-app", functions });
  *
  * export { handler as loader, handler as action };
  * ```
  *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    opts,
-    ({ request: req }: { request: Request }) => {
-      const url = new URL(req.url, `https://${req.headers.get("host") || ""}`);
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((ctx: { request: Request; context?: unknown }) => Promise<Response>) => {
+  const contextSchema = z.object({
+    env: z.record(z.string(), z.any()),
+  });
 
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: ({
+      request: req,
+      context,
+    }: {
+      request: Request;
+      context?: unknown;
+    }) => {
       return {
-        url,
-        register: () => {
-          if (req.method === "PUT") {
-            return {
-              deployId: url.searchParams.get(queryKeys.DeployId),
-            };
+        env: () => {
+          const ctxParse = contextSchema.safeParse(context);
+
+          if (ctxParse.success && Object.keys(ctxParse.data.env).length) {
+            return ctxParse.data.env as Env;
           }
         },
-        run: async () => {
-          if (req.method === "POST") {
-            return {
-              data: (await req.json()) as Record<string, unknown>,
-              fnId: url.searchParams.get(queryKeys.FnId) as string,
-              stepId: url.searchParams.get(queryKeys.StepId) as string,
-              signature: req.headers.get(headerKeys.Signature) || undefined,
-            };
-          }
-        },
-        view: () => {
-          if (req.method === "GET") {
-            return {
-              isIntrospection: url.searchParams.has(queryKeys.Introspect),
-            };
-          }
-        },
+        body: () => req.json(),
+        headers: (key) => req.headers.get(key),
+        method: () => req.method,
+        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+        transformResponse: createNewResponse,
+        transformStreamingResponse: createNewResponse,
       };
     },
-    createNewResponse,
-    createNewResponse
-  );
+  });
 
   return handler.createHandler();
 };

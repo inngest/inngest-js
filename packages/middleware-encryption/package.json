@@ -1,0 +1,80 @@
+{
+  "name": "@inngest/middleware-encryption",
+  "version": "1.0.0",
+  "description": "E2E encryption middleware for Inngest.",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "test": "jest",
+    "build": "pnpm run build:clean && pnpm run build:tsc && pnpm run build:copy",
+    "build:clean": "rm -rf ./dist",
+    "build:tsc": "tsc --project tsconfig.build.json",
+    "build:copy": "cp package.json LICENSE.md README.md CHANGELOG.md dist",
+    "postversion": "pnpm run build",
+    "release:version": "node ../../scripts/release/jsrVersion.js",
+    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty",
+    "pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest-middleware-encryption.tgz --cwd dist"
+  },
+  "exports": {
+    ".": {
+      "require": "./index.js",
+      "import": "./index.js",
+      "types": "./index.d.ts"
+    },
+    "./manual": {
+      "require": "./manual.js",
+      "import": "./manual.js",
+      "types": "./manual.d.ts"
+    },
+    "./strategies/aes": {
+      "require": "./strategies/aes.js",
+      "import": "./strategies/aes.js",
+      "types": "./strategies/aes.d.ts"
+    },
+    "./strategies/libsodium": {
+      "require": "./strategies/libsodium.js",
+      "import": "./strategies/libsodium.js",
+      "types": "./strategies/libsodium.d.ts"
+    }
+  },
+  "keywords": [
+    "inngest-middleware",
+    "inngest",
+    "middleware",
+    "encryption"
+  ],
+  "homepage": "https://github.com/inngest/inngest-js/tree/main/packages/middleware-encryption#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/middleware-encryption"
+  },
+  "author": "Jack Williams <jack@inngest.com>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@eslint/js": "^9.7.0",
+    "@total-typescript/shoehorn": "^0.1.1",
+    "@types/crypto-js": "^4.2.1",
+    "@types/eslint__js": "^8.42.3",
+    "@types/jest": "^27.4.1",
+    "@types/libsodium-wrappers": "^0.7.14",
+    "cross-fetch": "^4.0.0",
+    "eslint": "^8.30.0",
+    "fetch-mock-jest": "^1.5.1",
+    "inngest": "^3.21.0",
+    "jest": "^29.3.1",
+    "ts-jest": "^29.1.0",
+    "typescript": "~5.5.2",
+    "typescript-eslint": "^7.16.1"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "libsodium-wrappers": "^0.7.13"
+  },
+  "peerDependencies": {
+    "inngest": ">=3.0.0"
+  }
+}

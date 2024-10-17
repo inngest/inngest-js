@@ -7,7 +7,7 @@ import {
 } from "@local/test/helpers";
 
 checkIntrospection({
-  name: "Hello World",
+  name: "hello-world",
   triggers: [{ event: "demo/hello.world" }],
 });
 
@@ -20,17 +20,19 @@ describe("run", () => {
   });
 
   test("runs in response to 'demo/hello.world'", async () => {
-    runId = await eventRunWithName(eventId, "Hello World");
+    runId = await eventRunWithName(eventId, "hello-world");
     expect(runId).toEqual(expect.any(String));
   }, 60000);
 
   test("returns 'Hello, Inngest!'", async () => {
-    await expect(
-      runHasTimeline(runId, {
-        __typename: "StepEvent",
-        stepType: "COMPLETED",
-        output: JSON.stringify({ body: "Hello, Inngest!", status: 200 }),
-      })
-    ).resolves.toBeDefined();
+    const item = await runHasTimeline(runId, {
+      type: "StepCompleted",
+      stepName: "step",
+    });
+
+    expect(item).toBeDefined();
+
+    const output = await item?.getOutput();
+    expect(output).toEqual("Hello, Inngest!");
   }, 60000);
 });

@@ -1,62 +1,78 @@
+/**
+ * An adapter for Deno's Fresh to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "https://esm.sh/inngest/deno/fresh";
+ * import { inngest } from "./src/inngest/client.ts";
+ * import fnA from "./src/inngest/fnA"; // Your own function
+ *
+ * export const handler = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ * });
+ * ```
+ *
+ * @module
+ */
+
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "../components/InngestCommHandler";
-import { headerKeys, queryKeys } from "../helpers/consts";
 import { type SupportedFrameworkName } from "../types";
 
-export const name: SupportedFrameworkName = "deno/fresh";
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
+export const frameworkName: SupportedFrameworkName = "deno/fresh";
 
 /**
  * With Deno's Fresh framework, serve and register any declared functions with
  * Inngest, making them available to be triggered by events.
  *
+ * @example
+ * ```ts
+ * import { serve } from "https://esm.sh/inngest/deno/fresh";
+ * import { inngest } from "./src/inngest/client.ts";
+ * import fnA from "./src/inngest/fnA"; // Your own function
+ *
+ * export const handler = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ * });
+ * ```
+ *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts) => {
-  const handler = new InngestCommHandler(
-    name as string,
-    nameOrInngest,
-    fns,
-    opts,
-    (req: Request, env: { [index: string]: string }) => {
-      const url = new URL(req.url, `https://${req.headers.get("host") || ""}`);
-
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((req: Request) => Promise<Response>) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: (req: Request, env: Record<string, string>) => {
       return {
-        url,
-        env,
-        register: () => {
-          if (req.method === "PUT") {
-            return {
-              deployId: url.searchParams.get(queryKeys.DeployId),
-            };
-          }
-        },
-        run: async () => {
-          if (req.method === "POST") {
-            return {
-              data: (await req.json()) as Record<string, unknown>,
-              fnId: url.searchParams.get(queryKeys.FnId) as string,
-              stepId: url.searchParams.get(queryKeys.StepId) as string,
-              signature: req.headers.get(headerKeys.Signature) || undefined,
-            };
-          }
-        },
-        view: () => {
-          if (req.method === "GET") {
-            return {
-              isIntrospection: url.searchParams.has(queryKeys.Introspect),
-            };
-          }
+        body: () => req.json(),
+        headers: (key) => req.headers.get(key),
+        method: () => req.method,
+        env: () => env,
+        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+        transformResponse: ({ body, status, headers }) => {
+          return new Response(body, { status, headers });
         },
       };
     },
-    ({ body, status, headers }): Response => {
-      return new Response(body, { status, headers });
-    }
-  ).createHandler();
+  });
 
-  return (req: Request) => handler(req, Deno.env.toObject());
+  const fn = handler.createHandler();
+
+  return function handleRequest(req: Request) {
+    return fn(req, Deno.env.toObject());
+  };
 };
 
 declare const Deno: { env: { toObject: () => { [index: string]: string } } };

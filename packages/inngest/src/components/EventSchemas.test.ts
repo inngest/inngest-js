@@ -1,21 +1,65 @@
 import { EventSchemas } from "@local/components/EventSchemas";
-import { Inngest } from "@local/components/Inngest";
-import { type IsAny } from "@local/helpers/types";
-import { type EventPayload, type GetEvents } from "@local/types";
-import { assertType, type IsEqual } from "type-plus";
+import { Inngest, type GetEvents } from "@local/components/Inngest";
+import { type internalEvents } from "@local/helpers/consts";
+import { type IsAny, type IsEqual } from "@local/helpers/types";
+import { type FailureEventPayload } from "@local/types";
 import { z } from "zod";
+import { assertType } from "../test/helpers";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Schemas<T extends EventSchemas<any>> = GetEvents<
-  Inngest<{ name: "test"; schemas: T }>
+  Inngest<{ id: "test"; schemas: T }>,
+  true
 >;
 
 describe("EventSchemas", () => {
-  test("creates generic types by default", () => {
+  test("adds internal types by default", () => {
     const schemas = new EventSchemas();
 
-    assertType<IsEqual<Schemas<typeof schemas>, Record<string, EventPayload>>>(
-      true
+    type Expected =
+      | `${internalEvents.FunctionFailed}`
+      | `${internalEvents.FunctionFinished}`
+      | `${internalEvents.FunctionInvoked}`
+      | `${internalEvents.ScheduledTimer}`;
+
+    type Actual = Schemas<typeof schemas>[keyof Schemas<
+      typeof schemas
+    >]["name"];
+
+    assertType<IsEqual<Expected, Actual>>(true);
+  });
+
+  test("providing no schemas keeps all types generic", () => {
+    const inngest = new Inngest({
+      id: "test",
+      eventKey: "test-key-123",
+    });
+
+    inngest.createFunction({ id: "test" }, { event: "foo" }, ({ event }) => {
+      assertType<string>(event.name);
+      assertType<IsAny<typeof event.data>>(true);
+    });
+  });
+
+  test("can use internal string literal types as triggers if any event schemas are defined", () => {
+    const schemas = new EventSchemas();
+
+    const inngest = new Inngest({
+      id: "test",
+      schemas,
+      eventKey: "test-key-123",
+    });
+
+    inngest.createFunction(
+      { id: "test" },
+      { event: "inngest/function.failed" },
+      ({ event }) => {
+        assertType<
+          | `${internalEvents.FunctionInvoked}`
+          | `${internalEvents.FunctionFailed}`
+        >(event.name);
+        assertType<FailureEventPayload["data"]>(event.data);
+      }
     );
   });
 
@@ -73,6 +117,17 @@ describe("EventSchemas", () => {
       assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
     });
 
+    test("can set 'any' type for data alongside populated events", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        "test.event": { data: any };
+        "test.event2": { data: { foo: string } };
+      }>();
+
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
+      assertType<Schemas<typeof schemas>["test.event2"]["data"]>({ foo: "" });
+    });
+
     test("can set 'any' type for user", () => {
       const schemas = new EventSchemas().fromRecord<{
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -89,11 +144,114 @@ describe("EventSchemas", () => {
       }>();
     });
 
+    test("can set event with matching 'name'", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        "test.event": { name: "test.event"; data: { foo: string } };
+      }>();
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<Schemas<typeof schemas>["test.event"]["data"]>({ foo: "" });
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["ts"], number | undefined>
+      >(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["v"], string | undefined>
+      >(true);
+    });
+
+    test("cannot set event with clashing 'name'", () => {
+      // @ts-expect-error - name must match
+      new EventSchemas().fromRecord<{
+        "test.event": { name: "test.event2"; data: { foo: string } };
+      }>();
+    });
+
+    test("cannot set event with clashing 'name' alongside valid event", () => {
+      // @ts-expect-error - name must match
+      new EventSchemas().fromRecord<{
+        "test.event": { name: "test.event2"; data: { foo: string } };
+        "test.event2": { name: "test.event2"; data: { foo: string } };
+        "test.event3": { data: { foo: string } };
+      }>();
+    });
+
     test("cannot set non-object type for user", () => {
       // @ts-expect-error User must be object type or any
       new EventSchemas().fromRecord<{
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         "test.event": { data: any; user: string };
+      }>();
+    });
+
+    test("can set empty event", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        // eslint-disable-next-line @typescript-eslint/ban-types
+        "test.event": {};
+      }>();
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["ts"], number | undefined>
+      >(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["v"], string | undefined>
+      >(true);
+    });
+
+    test("can set empty event alongside populated event", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        // eslint-disable-next-line @typescript-eslint/ban-types
+        "test.event": {};
+        "test.event2": { data: { foo: string } };
+      }>();
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["ts"], number | undefined>
+      >(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["v"], string | undefined>
+      >(true);
+
+      assertType<Schemas<typeof schemas>["test.event2"]["name"]>("test.event2");
+      assertType<Schemas<typeof schemas>["test.event2"]["data"]>({ foo: "" });
+      assertType<IsAny<Schemas<typeof schemas>["test.event2"]["user"]>>(true);
+      assertType<
+        IsEqual<
+          Schemas<typeof schemas>["test.event2"]["ts"],
+          number | undefined
+        >
+      >(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event2"]["v"], string | undefined>
+      >(true);
+    });
+
+    test("can set empty event with matching 'name'", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        "test.event": { name: "test.event" };
+      }>();
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["ts"], number | undefined>
+      >(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["v"], string | undefined>
+      >(true);
+    });
+
+    test("cannot set empty event with clashing 'name'", () => {
+      // @ts-expect-error - name must match
+      new EventSchemas().fromRecord<{
+        "test.event": { name: "test.event2" };
       }>();
     });
 
@@ -338,6 +496,63 @@ describe("EventSchemas", () => {
           >
         >(true);
       });
+
+      test("can use a discriminated union", () => {
+        const schemas = new EventSchemas().fromZod({
+          "test.event": {
+            data: z.discriminatedUnion("shared", [
+              z.object({
+                shared: z.literal("foo"),
+                foo: z.string(),
+              }),
+              z.object({
+                shared: z.literal("bar"),
+                bar: z.number(),
+              }),
+            ]),
+          },
+        });
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "foo" as const,
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "bar" as const,
+          bar: 0,
+        });
+      });
+
+      test("can use a union with valid values", () => {
+        const schemas = new EventSchemas().fromZod({
+          "test.event": {
+            data: z.union([
+              z.object({
+                foo: z.string(),
+              }),
+              z.object({
+                bar: z.number(),
+              }),
+            ]),
+          },
+        });
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          bar: 0,
+        });
+      });
+
+      test("cannot use a union with invalid values", () => {
+        new EventSchemas().fromZod({
+          // @ts-expect-error - data must be object|any
+          "test.event": { data: z.union([z.string(), z.number()]) },
+        });
+      });
     });
 
     describe("literal array", () => {
@@ -382,18 +597,20 @@ describe("EventSchemas", () => {
 
       test("can overwrite types with multiple calls", () => {
         const schemas = new EventSchemas()
-          .fromZod({
-            "test.event": {
+          .fromZod([
+            z.object({
+              name: z.literal("test.event"),
               data: z.object({ a: z.string() }),
               user: z.object({ b: z.number() }),
-            },
-          })
-          .fromZod({
-            "test.event": {
+            }),
+          ])
+          .fromZod([
+            z.object({
+              name: z.literal("test.event"),
               data: z.object({ c: z.string() }),
               user: z.object({ d: z.number() }),
-            },
-          });
+            }),
+          ]);
 
         assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
         assertType<Schemas<typeof schemas>["test.event"]["data"]>({ c: "" });
@@ -470,6 +687,68 @@ describe("EventSchemas", () => {
           >
         >(true);
       });
+
+      test("can use a discriminated union", () => {
+        const schemas = new EventSchemas().fromZod([
+          z.object({
+            name: z.literal("test.event"),
+            data: z.discriminatedUnion("shared", [
+              z.object({
+                shared: z.literal("foo"),
+                foo: z.string(),
+              }),
+              z.object({
+                shared: z.literal("bar"),
+                bar: z.number(),
+              }),
+            ]),
+          }),
+        ]);
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "foo" as const,
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "bar" as const,
+          bar: 0,
+        });
+      });
+
+      test("can use a union with valid values", () => {
+        const schemas = new EventSchemas().fromZod([
+          z.object({
+            name: z.literal("test.event"),
+            data: z.union([
+              z.object({
+                foo: z.string(),
+              }),
+              z.object({
+                bar: z.number(),
+              }),
+            ]),
+          }),
+        ]);
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          bar: 0,
+        });
+      });
+
+      test("cannot use a union with invalid values", () => {
+        new EventSchemas().fromZod([
+          // @ts-expect-error - data must be object|any
+          z.object({
+            name: z.literal("test.event"),
+            data: z.union([z.string(), z.number()]),
+          }),
+        ]);
+      });
     });
   });
 
@@ -544,16 +823,18 @@ describe("EventSchemas", () => {
       }>();
 
       const inngest = new Inngest({
-        name: "test",
+        id: "test",
         schemas,
         eventKey: "test-key-123",
       });
 
       inngest.createFunction(
-        { name: "test" },
+        { id: "test" },
         { event: "test.event" },
         ({ event }) => {
-          assertType<"test.event">(event.name);
+          assertType<`${internalEvents.FunctionInvoked}` | "test.event">(
+            event.name
+          );
           assertType<{ a: string }>(event.data);
           assertType<IsAny<typeof event.user>>(true);
         }
@@ -567,103 +848,20 @@ describe("EventSchemas", () => {
       }>();
 
       const inngest = new Inngest({
-        name: "test",
+        id: "test",
         schemas,
         eventKey: "test-key-123",
       });
 
       inngest.createFunction(
-        { name: "test" },
+        { id: "test" },
         { event: "test.event" },
         ({ event }) => {
-          assertType<"test.event">(event.name);
+          assertType<`${internalEvents.FunctionInvoked}` | "test.event">(
+            event.name
+          );
           assertType<IsAny<typeof event.data>>(true);
           assertType<IsAny<typeof event.user>>(true);
-        }
-      );
-    });
-  });
-
-  describe("event matching expressions", () => {
-    test("can match between two events with shared properties", () => {
-      const schemas = new EventSchemas().fromRecord<{
-        "test.event": { data: { foo: string } };
-        "test.event2": { data: { foo: string } };
-      }>();
-
-      const inngest = new Inngest({
-        name: "test",
-        schemas,
-        eventKey: "test-key-123",
-      });
-
-      inngest.createFunction(
-        {
-          name: "test",
-          cancelOn: [{ event: "test.event2", match: "data.foo" }],
-        },
-        { event: "test.event" },
-        ({ step }) => {
-          void step.waitForEvent("test.event2", {
-            match: "data.foo",
-            timeout: "1h",
-          });
-        }
-      );
-    });
-
-    test("can match any property on typed event A when B is 'any'", () => {
-      const schemas = new EventSchemas().fromRecord<{
-        "test.event": { data: { foo: string } };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        "test.event2": { data: any };
-      }>();
-
-      const inngest = new Inngest({
-        name: "test",
-        schemas,
-        eventKey: "test-key-123",
-      });
-
-      inngest.createFunction(
-        {
-          name: "test",
-          cancelOn: [{ event: "test.event2", match: "data.foo" }],
-        },
-        { event: "test.event" },
-        ({ step }) => {
-          void step.waitForEvent("test.event2", {
-            match: "data.foo",
-            timeout: "1h",
-          });
-        }
-      );
-    });
-
-    test("can match any property on typed event B when A is 'any'", () => {
-      const schemas = new EventSchemas().fromRecord<{
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        "test.event": { data: any };
-        "test.event2": { data: { foo: string } };
-      }>();
-
-      const inngest = new Inngest({
-        name: "test",
-        schemas,
-        eventKey: "test-key-123",
-      });
-
-      inngest.createFunction(
-        {
-          name: "test",
-          cancelOn: [{ event: "test.event2", match: "data.foo" }],
-        },
-        { event: "test.event" },
-        ({ step }) => {
-          void step.waitForEvent("test.event2", {
-            match: "data.foo",
-            timeout: "1h",
-          });
         }
       );
     });

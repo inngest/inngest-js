@@ -5,6 +5,10 @@ inputs:
     description: 'The directory to run the action in.'
     required: false
     default: '.'
+  install-dependencies:
+    description: 'Whether dependencies should be installed.'
+    required: false
+    default: true
   build:
     description: 'Whether the build step should be run.'
     required: false
@@ -12,8 +16,9 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: pnpm/action-setup@v2
+    - uses: pnpm/action-setup@v4
       with:
+        version: "8.6.2"
         run_install: false
 
     - uses: actions/setup-node@v3
@@ -25,7 +30,10 @@ runs:
     - run: npm i -g @antfu/ni
       shell: bash
 
+    - uses: oven-sh/setup-bun@v1
+
     - name: Install dependencies
+      if: ${{ inputs.install-dependencies == 'true' }}
       run: pnpm install
       shell: bash
       working-directory: ${{ inputs.working-directory }}/packages/inngest

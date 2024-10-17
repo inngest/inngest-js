@@ -1,12 +1,31 @@
+/**
+ * An adapter for AWS Lambda to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/redwood";
+ * import { inngest } from "src/inngest/client";
+ * import fnA from "src/inngest/fnA"; // Your own function
+ *
+ * export const handler = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ *   servePath: "/api/inngest",
+ * });
+ * ```
+ *
+ * @module
+ */
+
 import {
   type APIGatewayProxyEvent,
   type Context as LambdaContext,
 } from "aws-lambda";
 import {
   InngestCommHandler,
-  type ServeHandler,
+  type ServeHandlerOptions,
 } from "./components/InngestCommHandler";
-import { headerKeys, queryKeys } from "./helpers/consts";
 import { processEnv } from "./helpers/env";
 import { type SupportedFrameworkName } from "./types";
 
@@ -16,79 +35,76 @@ export interface RedwoodResponse {
   headers?: Record<string, string>;
 }
 
-export const name: SupportedFrameworkName = "redwoodjs";
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
+export const frameworkName: SupportedFrameworkName = "redwoodjs";
 
 /**
  * In Redwood.js, serve and register any declared functions with Inngest, making
  * them available to be triggered by events.
  *
+ * @example
+ * ```ts
+ * import { serve } from "inngest/redwood";
+ * import { inngest } from "src/inngest/client";
+ * import fnA from "src/inngest/fnA"; // Your own function
+ *
+ * export const handler = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ *   servePath: "/api/inngest",
+ * });
+ * ```
+ *
  * @public
  */
-export const serve: ServeHandler = (nameOrInngest, fns, opts): unknown => {
-  const handler = new InngestCommHandler(
-    name,
-    nameOrInngest,
-    fns,
-    opts,
-    (event: APIGatewayProxyEvent, _context: LambdaContext) => {
-      const scheme =
-        processEnv("NODE_ENV") === "development" ? "http" : "https";
-      const url = new URL(
-        event.path,
-        `${scheme}://${event.headers.host || ""}`
-      );
-
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((
+  event: APIGatewayProxyEvent,
+  _context: LambdaContext
+) => Promise<RedwoodResponse>) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    ...options,
+    handler: (event: APIGatewayProxyEvent, _context: LambdaContext) => {
       return {
-        url,
-        register: () => {
-          if (event.httpMethod === "PUT") {
-            return {
-              deployId: event.queryStringParameters?.[queryKeys.DeployId],
-            };
-          }
+        body: () => {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+          return JSON.parse(
+            event.body
+              ? event.isBase64Encoded
+                ? Buffer.from(event.body, "base64").toString()
+                : event.body
+              : "{}"
+          );
         },
-        run: () => {
-          if (event.httpMethod === "POST") {
-            /**
-             * Some requests can be base64 encoded, requiring us to decode it
-             * first before parsing as JSON.
-             */
-            const data = JSON.parse(
-              event.body
-                ? event.isBase64Encoded
-                  ? Buffer.from(event.body, "base64").toString()
-                  : event.body
-                : "{}"
-            ) as Record<string, unknown>;
+        headers: (key) => event.headers[key],
+        method: () => event.httpMethod,
+        url: () => {
+          const scheme =
+            processEnv("NODE_ENV") === "development" ? "http" : "https";
+          const url = new URL(
+            event.path,
+            `${scheme}://${event.headers.host || ""}`
+          );
 
-            return {
-              data,
-              fnId: event.queryStringParameters?.[queryKeys.FnId] as string,
-              signature: event.headers[headerKeys.Signature] as string,
-              stepId: event.queryStringParameters?.[queryKeys.StepId] as string,
-            };
-          }
+          return url;
         },
-        view: () => {
-          if (event.httpMethod === "GET") {
-            return {
-              isIntrospection: Object.hasOwnProperty.call(
-                event.queryStringParameters,
-                queryKeys.Introspect
-              ),
-            };
-          }
+        queryString: (key) => event.queryStringParameters?.[key],
+        transformResponse: ({
+          body,
+          status: statusCode,
+          headers,
+        }): RedwoodResponse => {
+          return { body, statusCode, headers };
         },
       };
     },
-    (actionRes): RedwoodResponse => {
-      return {
-        statusCode: actionRes.status,
-        body: actionRes.body,
-        headers: actionRes.headers,
-      };
-    }
-  );
+  });
 
   return handler.createHandler();
 };
