@@ -1175,8 +1175,6 @@ export class InngestCommHandler<
               status: 401,
               body: stringify({
                 code: "sig_verification_failed",
-                message: "",
-                name: "SigVerificationFailedError",
               }),
               headers: {
                 "Content-Type": "application/json",
