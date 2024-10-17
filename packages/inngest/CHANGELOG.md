@@ -1,5 +1,11 @@
 # inngest
 
+## 3.22.14
+
+### Patch Changes
+
+- [#721](https://github.com/inngest/inngest-js/pull/721) [`59fa466`](https://github.com/inngest/inngest-js/commit/59fa466211dfe146ce2755601a5a32c49ad0fc88) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Support Next.js 15 in serve handler typing
+
 ## 3.22.13
 
 ### Patch Changes
