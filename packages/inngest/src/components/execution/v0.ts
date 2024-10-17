@@ -17,7 +17,7 @@ import {
 import { type MaybePromise, type PartialK } from "../../helpers/types";
 import {
   StepOpCode,
-  failureEventErrorSchema,
+  jsonErrorSchema,
   type BaseContext,
   type Context,
   type EventPayload,
@@ -43,6 +43,7 @@ import {
   type IInngestExecution,
   type InngestExecutionFactory,
   type InngestExecutionOptions,
+  type MemoizedOp,
 } from "./InngestExecution";
 
 export const createV0InngestExecution: InngestExecutionFactory = (options) => {
@@ -188,7 +189,12 @@ export class V0InngestExecution
 
         const { type: _type, ...rest } = result;
 
-        return { type: "step-ran", step: { ...outgoingUserFnOp, ...rest } };
+        return {
+          type: "step-ran",
+          ctx: this.fnArg,
+          ops: this.ops,
+          step: { ...outgoingUserFnOp, ...rest },
+        };
       }
 
       if (!discoveredOps.length) {
@@ -235,6 +241,8 @@ export class V0InngestExecution
 
       return {
         type: "steps-found",
+        ctx: this.fnArg,
+        ops: this.ops,
         steps: discoveredOps as [OutgoingOp, ...OutgoingOp[]],
       };
     } catch (error) {
@@ -310,6 +318,24 @@ export class V0InngestExecution
     };
 
     return state;
+  }
+
+  get ops(): Record<string, MemoizedOp> {
+    return Object.fromEntries(
+      Object.entries(this.state.allFoundOps).map<[string, MemoizedOp]>(
+        ([id, op]) => [
+          id,
+          {
+            id: op.id,
+            rawArgs: op.rawArgs,
+            data: op.data,
+            error: op.error,
+            fulfilled: op.fulfilled,
+            seen: true,
+          },
+        ]
+      )
+    );
   }
 
   private getUserFnToRun(): Handler.Any {
@@ -406,6 +432,7 @@ export class V0InngestExecution
         this.state.tickOps[opId.id] = {
           ...opId,
           ...(opts?.fn ? { fn: () => opts.fn?.(...args) } : {}),
+          rawArgs: args,
           resolve,
           reject,
           fulfilled: false,
@@ -422,7 +449,7 @@ export class V0InngestExecution
 
     if (this.options.isFailureHandler) {
       const eventData = z
-        .object({ error: failureEventErrorSchema })
+        .object({ error: jsonErrorSchema })
         .parse(fnArg.event?.data);
 
       (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
@@ -431,7 +458,7 @@ export class V0InngestExecution
       };
     }
 
-    return fnArg;
+    return this.options.transformCtx?.(fnArg) ?? fnArg;
   }
 
   /**
@@ -508,14 +535,26 @@ export class V0InngestExecution
 
       const serializedError = serializeError(error);
 
-      return { type: "function-rejected", error: serializedError, retriable };
+      return {
+        type: "function-rejected",
+        ctx: this.fnArg,
+        ops: this.ops,
+        error: serializedError,
+        retriable,
+      };
     }
 
-    return { type: "function-resolved", data: undefinedToNull(data) };
+    return {
+      type: "function-resolved",
+      ctx: this.fnArg,
+      ops: this.ops,
+      data: undefinedToNull(data),
+    };
   }
 }
 
 interface TickOp extends HashedOp {
+  rawArgs: unknown[];
   fn?: (...args: unknown[]) => unknown;
   fulfilled: boolean;
   resolve: (value: MaybePromise<unknown>) => void;

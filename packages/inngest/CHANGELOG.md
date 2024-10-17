@@ -1,5 +1,95 @@
 # inngest
 
+## 3.22.13
+
+### Patch Changes
+
+- [#709](https://github.com/inngest/inngest-js/pull/709) [`3041afe`](https://github.com/inngest/inngest-js/commit/3041afe290c07a680f94918b4b00072847fd017d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure support for TypeScript 5.6
+
+  No changes to any runtime/user-facing code has been made, but TS upgrades often alter emitted files, so the package will be bumped for folks to take advantage of any performance/compatibility improvments there.
+
+## 3.22.12
+
+### Patch Changes
+
+- [#710](https://github.com/inngest/inngest-js/pull/710) [`fc3f1e5`](https://github.com/inngest/inngest-js/commit/fc3f1e5fb457853c4eea7b6c88bab658e47b4fc8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow access to userland promises when executing for `@inngest/test`
+
+## 3.22.11
+
+### Patch Changes
+
+- [#707](https://github.com/inngest/inngest-js/pull/707) [`8c4b9ce`](https://github.com/inngest/inngest-js/commit/8c4b9ceb70646afc585d3eabfb63fdbf8a7a9d1c) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix probe response sig with streaming
+
+## 3.22.10
+
+### Patch Changes
+
+- [#705](https://github.com/inngest/inngest-js/pull/705) [`f229dea`](https://github.com/inngest/inngest-js/commit/f229dea99e63b94c3d7225936ae92ac1396ecb63) Thanks [@goszczynskip](https://github.com/goszczynskip)! - Fix required type annotation typescript errors; `inngest/types` is now exported with a warning within the module covering its usage
+
+## 3.22.9
+
+### Patch Changes
+
+- [#688](https://github.com/inngest/inngest-js/pull/688) [`58549f3`](https://github.com/inngest/inngest-js/commit/58549f3ccb7dbe72d846b32ebde54928974a61d8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Expose some internal execution logic to make way for a new `@inngest/test` package
+
+## 3.22.8
+
+### Patch Changes
+
+- [#697](https://github.com/inngest/inngest-js/pull/697) [`56ed5c1`](https://github.com/inngest/inngest-js/commit/56ed5c11081517db2a72ae27c83cbf4263d9b6ed) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Merge given env vars with `process.env` to support partial env shims like Hono in AWS Lambda
+
+- [#696](https://github.com/inngest/inngest-js/pull/696) [`9169d0e`](https://github.com/inngest/inngest-js/commit/9169d0ea246ef880fb60c7058b237fb72ef64efa) Thanks [@albertchae](https://github.com/albertchae)! - Fix typos in debounce documentation
+
+## 3.22.7
+
+### Patch Changes
+
+- [#687](https://github.com/inngest/inngest-js/pull/687) [`9f0bdc6`](https://github.com/inngest/inngest-js/commit/9f0bdc60c920d222962e1305e62107ce6fd4c885) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Add exports for `JsonError` type to fix a TypeScript error when using Inngest in projects with `composite` setting in `tsconfig`.
+
+## 3.22.6
+
+### Patch Changes
+
+- [#690](https://github.com/inngest/inngest-js/pull/690) [`6a97e1c`](https://github.com/inngest/inngest-js/commit/6a97e1c0d92920fb14392c7005a565d2557eabe2) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix 401 on missing sig header during inspection
+
+## 3.22.5
+
+### Patch Changes
+
+- [#682](https://github.com/inngest/inngest-js/pull/682) [`2019fe2`](https://github.com/inngest/inngest-js/commit/2019fe218bba7e82c85622d9b90b7eebaa305488) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix empty response body when streaming
+
+- [#684](https://github.com/inngest/inngest-js/pull/684) [`ae7ea5c`](https://github.com/inngest/inngest-js/commit/ae7ea5c66fc7a6829a7d843a5f7f90ab9936e8cd) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow passing `error` when transforming outputs in middleware
+
+## 3.22.4
+
+### Patch Changes
+
+- [#674](https://github.com/inngest/inngest-js/pull/674) [`4100172`](https://github.com/inngest/inngest-js/commit/410017219045c29c0155ecefaf1a1e157b413a41) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add trust probes and response signing for syncing validation
+
+## 3.22.3
+
+### Patch Changes
+
+- [#677](https://github.com/inngest/inngest-js/pull/677) [`f4c3dc4`](https://github.com/inngest/inngest-js/commit/f4c3dc4664ce0727769e7a284e5b1c22ef9c4018) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix wrong URL when INNGEST_DEV=1
+
+## 3.22.2
+
+### Patch Changes
+
+- [#671](https://github.com/inngest/inngest-js/pull/671) [`4f91d9c`](https://github.com/inngest/inngest-js/commit/4f91d9c302592ecc2228914469dd057ae148005b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add de(serialization) of `Error.cause`, meaning nested errors can now be correctly used with `StepError`
+
+## 3.22.1
+
+### Patch Changes
+
+- [#667](https://github.com/inngest/inngest-js/pull/667) [`7e0fd10`](https://github.com/inngest/inngest-js/commit/7e0fd10d742839fc3521cc46b33560be8f3d8dd9) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix event key hash exists when event key is not set
+
+## 3.22.0
+
+### Minor Changes
+
+- [#665](https://github.com/inngest/inngest-js/pull/665) [`1a4962d`](https://github.com/inngest/inngest-js/commit/1a4962dd1d1ba26f41fa8477f3099ad716c57f66) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `inngest.setEnvVars(env)` to set env vars late on the client
+
 ## 3.21.2
 
 ### Patch Changes
