@@ -1,4 +1,4 @@
-import { defaultDevServerHost } from "./consts";
+import { defaultDevServerHost } from "./consts.js";
 
 /**
  * A simple type map that we can transparently use `fetch` later without having

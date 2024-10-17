@@ -1,5 +1,5 @@
-import { deserializeError } from "../helpers/errors";
-import { jsonErrorSchema } from "../types";
+import { deserializeError } from "../helpers/errors.js";
+import { jsonErrorSchema } from "../types.js";
 
 /**
  * An error that represents a step exhausting all retries and failing. This is

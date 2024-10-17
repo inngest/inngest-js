@@ -1,17 +1,17 @@
-import { type internalEvents } from "../helpers/consts";
+import { type internalEvents } from "../helpers/consts.js";
 import {
   type IsEmptyObject,
   type IsStringLiteral,
   type Simplify,
-} from "../helpers/types";
-import type * as z from "../helpers/validators/zod";
+} from "../helpers/types.js";
+import type * as z from "../helpers/validators/zod.js";
 import {
   type EventPayload,
   type FailureEventPayload,
   type FinishedEventPayload,
   type InvokedEventPayload,
   type ScheduledTimerEventPayload,
-} from "../types";
+} from "../types.js";
 
 /**
  * Declares the shape of an event schema we expect from the user. This may be
