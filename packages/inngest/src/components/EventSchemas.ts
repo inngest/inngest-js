@@ -352,7 +352,6 @@ export class EventSchemas<
    * ```
    */
   public fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     schemas: T
   ): EventSchemas<
     Combine<
