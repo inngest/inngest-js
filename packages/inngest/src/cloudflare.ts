@@ -49,7 +49,7 @@ export const frameworkName: SupportedFrameworkName = "cloudflare-pages";
  * Expected arguments for a Cloudflare Pages Function.
  */
 export type PagesHandlerArgs = [
-  { request: Request; env: Record<string, string | undefined> },
+  { request: Request; env: Record<string, string | undefined> }
 ];
 
 /**
@@ -145,6 +145,12 @@ export const serve = (
         env: () => env,
         url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
         transformResponse: ({ body, status, headers }) => {
+          return new Response(body, {
+            status,
+            headers,
+          });
+        },
+        transformStreamingResponse: ({ body, status, headers }) => {
           return new Response(body, {
             status,
             headers,
