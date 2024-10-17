@@ -18,6 +18,7 @@
  */
 
 import { type Context } from "hono";
+import { env } from "hono/adapter";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
@@ -107,7 +108,7 @@ export const serve = (
         headers: (key) => c.req.header(key),
         method: () => c.req.method,
         body: () => c.req.json(),
-        env: () => c.env as Env,
+        env: () => env(c) as Env,
       };
     },
   });

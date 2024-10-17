@@ -464,7 +464,7 @@ describe("stacking and inference", () => {
               },
             }),
           ],
-        }).createFunction({ id: "" }, { event: "" }, ({ step }) => {
+        }).createFunction({ id: "" }, { event: "" }, () => {
           throw new Error("test error");
         });
 

@@ -54,7 +54,7 @@ module.exports = {
         includeTypes: true,
       },
     ],
-    "import/extensions": ["error", "always"],
+    "import/extensions": ["error", "ignorePackages"],
   },
   overrides: [
     {

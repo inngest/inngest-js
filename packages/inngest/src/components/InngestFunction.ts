@@ -424,7 +424,7 @@ export namespace InngestFunction {
      * the function will not run until at least `period` has elapsed.
      *
      * If any new events are received that match the same debounce `key`, the
-     * function is reshceduled for another `period` delay, and the triggering
+     * function is rescheduled for another `period` delay, and the triggering
      * event is replaced with the latest event received.
      *
      * See the [Debounce documentation](https://innge.st/debounce) for more
@@ -440,7 +440,7 @@ export namespace InngestFunction {
       key?: string;
 
       /**
-       * The period of time to after receiving the last trigger to run the
+       * The period of time to delay after receiving the last trigger to run the
        * function.
        *
        * See [Debounce documentation](https://innge.st/debounce) for more

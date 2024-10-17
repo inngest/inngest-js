@@ -1,5 +1,57 @@
 # inngest
 
+## 3.22.13
+
+### Patch Changes
+
+- [#709](https://github.com/inngest/inngest-js/pull/709) [`3041afe`](https://github.com/inngest/inngest-js/commit/3041afe290c07a680f94918b4b00072847fd017d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure support for TypeScript 5.6
+
+  No changes to any runtime/user-facing code has been made, but TS upgrades often alter emitted files, so the package will be bumped for folks to take advantage of any performance/compatibility improvments there.
+
+## 3.22.12
+
+### Patch Changes
+
+- [#710](https://github.com/inngest/inngest-js/pull/710) [`fc3f1e5`](https://github.com/inngest/inngest-js/commit/fc3f1e5fb457853c4eea7b6c88bab658e47b4fc8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow access to userland promises when executing for `@inngest/test`
+
+## 3.22.11
+
+### Patch Changes
+
+- [#707](https://github.com/inngest/inngest-js/pull/707) [`8c4b9ce`](https://github.com/inngest/inngest-js/commit/8c4b9ceb70646afc585d3eabfb63fdbf8a7a9d1c) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix probe response sig with streaming
+
+## 3.22.10
+
+### Patch Changes
+
+- [#705](https://github.com/inngest/inngest-js/pull/705) [`f229dea`](https://github.com/inngest/inngest-js/commit/f229dea99e63b94c3d7225936ae92ac1396ecb63) Thanks [@goszczynskip](https://github.com/goszczynskip)! - Fix required type annotation typescript errors; `inngest/types` is now exported with a warning within the module covering its usage
+
+## 3.22.9
+
+### Patch Changes
+
+- [#688](https://github.com/inngest/inngest-js/pull/688) [`58549f3`](https://github.com/inngest/inngest-js/commit/58549f3ccb7dbe72d846b32ebde54928974a61d8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Expose some internal execution logic to make way for a new `@inngest/test` package
+
+## 3.22.8
+
+### Patch Changes
+
+- [#697](https://github.com/inngest/inngest-js/pull/697) [`56ed5c1`](https://github.com/inngest/inngest-js/commit/56ed5c11081517db2a72ae27c83cbf4263d9b6ed) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Merge given env vars with `process.env` to support partial env shims like Hono in AWS Lambda
+
+- [#696](https://github.com/inngest/inngest-js/pull/696) [`9169d0e`](https://github.com/inngest/inngest-js/commit/9169d0ea246ef880fb60c7058b237fb72ef64efa) Thanks [@albertchae](https://github.com/albertchae)! - Fix typos in debounce documentation
+
+## 3.22.7
+
+### Patch Changes
+
+- [#687](https://github.com/inngest/inngest-js/pull/687) [`9f0bdc6`](https://github.com/inngest/inngest-js/commit/9f0bdc60c920d222962e1305e62107ce6fd4c885) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Add exports for `JsonError` type to fix a TypeScript error when using Inngest in projects with `composite` setting in `tsconfig`.
+
+## 3.22.6
+
+### Patch Changes
+
+- [#690](https://github.com/inngest/inngest-js/pull/690) [`6a97e1c`](https://github.com/inngest/inngest-js/commit/6a97e1c0d92920fb14392c7005a565d2557eabe2) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix 401 on missing sig header during inspection
+
 ## 3.22.5
 
 ### Patch Changes

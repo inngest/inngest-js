@@ -35,7 +35,18 @@ jobs:
         with:
           node-version: ${{ matrix.nodeVersion }}
       # Uses npm as pnpm doesn't support Node < 16
-      - run: node --version && npm --version && npm run test
+      # If we're on Node <18, restrict some framework tests that do not support
+      # Node on this version.
+      - run: |
+          node --version
+          npm --version
+          npm run test -- --testPathIgnorePatterns "<rootDir>/src/hono.test.ts"
+        if: ${{ matrix.nodeVersion < 18 }}
+      - run: |
+          node --version
+          npm --version
+          npm run test
+        if: ${{ matrix.nodeVersion >= 18 }}
 
   inngest_types:
     name: "inngest: Type tests"
@@ -48,6 +59,7 @@ jobs:
       matrix:
         tsVersion:
           - "latest"
+          - "~5.6.0"
           - "~5.5.0"
           - "~5.4.0"
           - "~5.3.0"

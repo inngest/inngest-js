@@ -11,9 +11,9 @@ import {
 } from "@local/components/InngestStepTools";
 import {
   ExecutionVersion,
-  IInngestExecution,
-  InngestExecution,
-  InngestExecutionOptions,
+  type IInngestExecution,
+  type InngestExecution,
+  type InngestExecutionOptions,
   PREFERRED_EXECUTION_VERSION,
 } from "@local/components/execution/InngestExecution";
 import { ServerTiming } from "@local/helpers/ServerTiming";
@@ -25,7 +25,7 @@ import {
 } from "@local/helpers/consts";
 import { type Env } from "@local/helpers/env";
 import { slugify } from "@local/helpers/strings";
-import { EventPayload, type FunctionConfig } from "@local/types";
+import { type EventPayload, type FunctionConfig } from "@local/types";
 import { fromPartial } from "@total-typescript/shoehorn";
 import fetch from "cross-fetch";
 import { type Request, type Response } from "express";
@@ -120,7 +120,7 @@ export type StepTools = ReturnType<typeof getStepTools>;
  * Given an Inngest function and the appropriate execution state, return the
  * resulting data from this execution.
  */
-export const runFnWithStack = (
+export const runFnWithStack = async (
   fn: InngestFunction.Any,
   stepState: InngestExecutionOptions["stepState"],
   opts?: {
@@ -150,7 +150,9 @@ export const runFnWithStack = (
     },
   });
 
-  return execution.start();
+  const { ctx: _ctx, ops: _ops, ...rest } = await execution.start();
+
+  return rest;
 };
 
 const inngest = createClient({ id: "test", eventKey: "event-key-123" });
@@ -429,6 +431,29 @@ export const testFramework = (
           [{ method: "GET" }],
           { [envKeys.InngestSigningKey]: "signing-key-123" }
         );
+
+        expect(ret.status).toEqual(200);
+
+        const body = JSON.parse(ret.body);
+
+        expect(body).toMatchObject({
+          has_signing_key: true,
+        });
+      });
+
+      test("#690 returns 200 if signature validation fails", async () => {
+        const ret = await run(
+          [
+            {
+              client: createClient({ id: "test", isDev: false }),
+              functions: [],
+            },
+          ],
+          [{ method: "GET" }],
+          { [envKeys.InngestSigningKey]: "signing-key-123" }
+        );
+
+        expect(ret.status).toEqual(200);
 
         const body = JSON.parse(ret.body);
 
@@ -1196,7 +1221,7 @@ export const eventRunWithName = async (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let run: any;
 
-    for (let i = 0; i < data?.data?.stream?.length ?? 0; i++) {
+    for (let i = 0; i < (data?.data?.stream?.length ?? 0); i++) {
       const item = data?.data?.stream[i];
 
       if (item?.id !== eventId) {
