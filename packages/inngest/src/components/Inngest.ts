@@ -221,6 +221,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
 
     this.schemas = schemas;
     this.loadModeEnvVars();
+
     this.logger = logger;
 
     this.middleware = this.initializeMiddleware([
