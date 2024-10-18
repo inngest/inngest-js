@@ -52,7 +52,7 @@
     "url": "git+https://github.com/inngest/inngest-js.git",
     "directory": "packages/middleware-encryption"
   },
-  "author": "Jack Williams <jack@inngest.com>",
+  "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "devDependencies": {
     "@eslint/js": "^9.7.0",

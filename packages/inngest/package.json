@@ -168,7 +168,7 @@
     "parallel processing",
     "flow control"
   ],
-  "author": "Dan Farrelly <dan@inngest.com>",
+  "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "private": false,
   "prettier": {
