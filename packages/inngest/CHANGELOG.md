@@ -1,5 +1,13 @@
 # inngest
 
+## 3.23.1
+
+### Patch Changes
+
+- [#657](https://github.com/inngest/inngest-js/pull/657) [`7ca9537`](https://github.com/inngest/inngest-js/commit/7ca9537e11a370b2b8b37ce57ec7d9892c911eac) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Expose `EventSchemas` in `Inngest` instances
+
+- [#311](https://github.com/inngest/inngest-js/pull/311) [`a53356a`](https://github.com/inngest/inngest-js/commit/a53356a68ecfff19a14652186c5840b3a3ed7d89) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add streaming capabilities to `"inngest/cloudflare"` handler
+
 ## 3.23.0
 
 ### Minor Changes
