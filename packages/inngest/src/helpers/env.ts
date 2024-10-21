@@ -452,7 +452,7 @@ const streamingChecks: Partial<
   "cloudflare-pages": () => true,
 };
 
-const getPlatformName = (env: Env) => {
+export const getPlatformName = (env: Env) => {
   return (Object.keys(platformChecks) as (keyof typeof platformChecks)[]).find(
     (key) => {
       return platformChecks[key](env);

@@ -29,7 +29,7 @@
     "url": "git+https://github.com/inngest/inngest-js.git",
     "directory": "packages/middleware-sentry"
   },
-  "author": "Jack Williams <jack@inngest.com>",
+  "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "devDependencies": {
     "@sentry/core": "^8.8.0",
