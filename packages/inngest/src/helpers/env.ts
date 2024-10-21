@@ -449,6 +449,7 @@ const streamingChecks: Partial<
    * See {@link https://vercel.com/docs/frameworks/nextjs#streaming}
    */
   vercel: (_framework, _env) => typeof EdgeRuntime === "string",
+  "cloudflare-pages": () => true,
 };
 
 export const getPlatformName = (env: Env) => {
