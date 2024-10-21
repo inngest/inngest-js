@@ -1,10 +1,12 @@
-import { expect } from "@jest/globals";
+import { OutgoingOp } from "inngest";
 import type {
   ExecutionResult,
   ExecutionResults,
 } from "inngest/components/execution/InngestExecution";
+import { _internals } from "inngest/components/execution/v1";
 import { createDeferredPromise } from "inngest/helpers/promises";
 import type { InngestTestEngine } from "./InngestTestEngine.js";
+import { isDeeplyEqual, type DeepPartial } from "./util";
 
 /**
  * A test run that allows you to wait for specific checkpoints in a run that
@@ -35,6 +37,16 @@ export namespace InngestTestRun {
     Extract<ExecutionResult, { type: T }>,
     "ctx" | "ops"
   >;
+
+  export interface RunOutput
+    extends Pick<InngestTestEngine.ExecutionOutput, "ctx" | "state"> {
+    result?: Checkpoint<"function-resolved">["data"];
+    error?: Checkpoint<"function-rejected">["error"];
+  }
+
+  export interface RunStepOutput extends RunOutput {
+    step: OutgoingOp;
+  }
 }
 
 /**
@@ -68,17 +80,52 @@ export class InngestTestRun {
      * When providing a `subset`, use `expect` tooling such as
      * `expect.stringContaining` to match partial values.
      */
-    subset?: Partial<InngestTestRun.Checkpoint<T>>
+    subset?: DeepPartial<InngestTestRun.Checkpoint<T>>
   ): Promise<InngestTestEngine.ExecutionOutput<T>> {
     let finished = false;
-    const runningState: InngestTestEngine.InlineOptions = {};
+    const runningState: InngestTestEngine.InlineOptions = {
+      events: this.options.testEngine["options"].events,
+      steps: this.options.testEngine["options"].steps,
+    };
 
-    const { promise, resolve } =
+    const { promise, resolve, reject } =
       createDeferredPromise<InngestTestEngine.ExecutionOutput<T>>();
 
     const finish = (output: InngestTestEngine.ExecutionOutput) => {
       finished = true;
+
+      if (output.result.type !== checkpoint) {
+        return reject(output);
+      }
+
       resolve(output as InngestTestEngine.ExecutionOutput<T>);
+    };
+
+    /**
+     * Make sure we sanitize any given ID to prehash it for the user. This is
+     * abstracted from the user entirely so they shouldn't be expected to be
+     * providing hashes.
+     */
+    const sanitizedSubset: typeof subset = subset && {
+      ...subset,
+
+      // "step" for "step-ran"
+      ...("step" in subset &&
+        typeof subset.step === "object" &&
+        subset.step !== null &&
+        "id" in subset.step &&
+        typeof subset.step.id === "string" && {
+          step: { ...subset.step, id: _internals.hashId(subset.step.id) },
+        }),
+
+      // "steps" for "steps-found"
+      ...("steps" in subset &&
+        Array.isArray(subset.steps) && {
+          steps: subset.steps.map((step) => ({
+            ...step,
+            id: _internals.hashId(step.id),
+          })),
+        }),
     };
 
     const processChain = async (targetStepId?: string) => {
@@ -86,21 +133,16 @@ export class InngestTestRun {
         return;
       }
 
-      const exec = await this.options.testEngine.execute({
+      const exec = await this.options.testEngine["individualExecution"]({
         ...runningState,
         targetStepId,
       });
 
-      if (exec.result.type === checkpoint) {
-        try {
-          if (subset) {
-            expect(exec.result).toMatchObject(subset);
-          }
-
-          return finish(exec);
-        } catch (err) {
-          // noop
-        }
+      if (
+        exec.result.type === checkpoint &&
+        (!sanitizedSubset || isDeeplyEqual(sanitizedSubset, exec.result))
+      ) {
+        return finish(exec);
       }
 
       const resultHandlers: Record<keyof ExecutionResults, () => void> = {

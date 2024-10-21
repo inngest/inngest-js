@@ -1023,6 +1023,34 @@ export interface Capabilities {
   trust_probe: "v1";
 }
 
+export interface InBandRegisterRequest
+  extends Pick<
+      RegisterRequest,
+      "capabilities" | "framework" | "functions" | "sdk" | "url"
+    >,
+    Pick<AuthenticatedIntrospection, "sdk_language" | "sdk_version" | "env"> {
+  /**
+   * The ID of the app that this handler is associated with.
+   */
+  app_id: string;
+
+  /**
+   * The result of the introspection request.
+   */
+  inspection: AuthenticatedIntrospection | UnauthenticatedIntrospection;
+
+  /**
+   * ?
+   */
+  platform?: string;
+
+  /**
+   * The person or organization that authored this SDK. Ideally this is
+   * synonymous with a GitHub username or organization name.
+   */
+  sdk_author: "inngest";
+}
+
 /**
  * The response to send to the local SDK UI when an introspection request is
  * made.

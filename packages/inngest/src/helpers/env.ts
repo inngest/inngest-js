@@ -451,7 +451,7 @@ const streamingChecks: Partial<
   vercel: (_framework, _env) => typeof EdgeRuntime === "string",
 };
 
-const getPlatformName = (env: Env) => {
+export const getPlatformName = (env: Env) => {
   return (Object.keys(platformChecks) as (keyof typeof platformChecks)[]).find(
     (key) => {
       return platformChecks[key](env);

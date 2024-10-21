@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import {
   ExecutionVersion,
   type MemoizedOp,
@@ -8,10 +7,11 @@ import type { InngestFunction } from "inngest/components/InngestFunction";
 import { serializeError } from "inngest/helpers/errors";
 import { createDeferredPromise } from "inngest/helpers/promises";
 import { ServerTiming } from "inngest/helpers/ServerTiming";
-import { Context, EventPayload } from "inngest/types";
+import { Context, EventPayload, StepOpCode } from "inngest/types";
 import { ulid } from "ulid";
 import { InngestTestRun } from "./InngestTestRun.js";
-import { createMockEvent, mockCtx } from "./util.js";
+import type { Mock } from "./spy.js";
+import { createMockEvent, mockCtx, type DeepPartial } from "./util.js";
 
 /**
  * A test engine for running Inngest functions in a test environment, providing
@@ -100,7 +100,7 @@ export namespace InngestTestEngine {
    */
   export interface MockContext extends Omit<Context.Any, "step"> {
     step: {
-      [K in keyof Context.Any["step"]]: jest.Mock<Context.Any["step"][K]>;
+      [K in keyof Context.Any["step"]]: Mock<Context.Any["step"][K]>;
     };
   }
 
@@ -111,13 +111,31 @@ export namespace InngestTestEngine {
   export type InlineOptions = Omit<Options, "function">;
 
   /**
+   * Options that can be passed to an initial execution that then waits for a
+   * particular checkpoint to occur.
+   */
+  export type ExecuteOptions<
+    T extends InngestTestRun.CheckpointKey = InngestTestRun.CheckpointKey,
+  > = InlineOptions & {
+    /**
+     * An optional subset of the checkpoint to match against. Any checkpoint of
+     * this type will be matched.
+     *
+     * When providing a `subset`, use `expect` tooling such as
+     * `expect.stringContaining` to match partial values.
+     */
+    subset?: DeepPartial<InngestTestRun.Checkpoint<T>>;
+  };
+
+  export type ExecuteStepOptions = InlineOptions & {
+    subset?: DeepPartial<InngestTestRun.Checkpoint<"steps-found">>;
+  };
+
+  /**
    * A mocked state object that allows you to assert step usage, input, and
    * output.
    */
-  export type MockState = Record<
-    string,
-    jest.Mock<(...args: unknown[]) => Promise<unknown>>
-  >;
+  export type MockState = Record<string, Promise<unknown>>;
 
   /**
    * The output of an individual function execution.
@@ -185,35 +203,156 @@ export class InngestTestEngine {
    *
    * Is a shortcut for and uses `run.waitFor()`.
    */
-  public async executeAndWaitFor<T extends InngestTestRun.CheckpointKey>(
+  public async execute<T extends InngestTestRun.CheckpointKey>(
     /**
      * Options and state to start the run with.
      */
-    inlineOpts: InngestTestEngine.InlineOptions,
+    inlineOpts?: InngestTestEngine.ExecuteOptions<T>
+  ): Promise<InngestTestRun.RunOutput> {
+    const { run } = await this.individualExecution(inlineOpts);
 
+    return run
+      .waitFor("function-resolved")
+      .then<InngestTestRun.RunOutput>((output) => {
+        return {
+          ctx: output.ctx,
+          state: output.state,
+          result: output.result.data,
+        };
+      })
+      .catch<InngestTestRun.RunOutput>((rejectedOutput) => {
+        if (
+          typeof rejectedOutput === "object" &&
+          rejectedOutput !== null &&
+          "ctx" in rejectedOutput &&
+          "state" in rejectedOutput
+        ) {
+          return {
+            ctx: rejectedOutput.ctx,
+            state: rejectedOutput.state,
+            error: rejectedOutput.error,
+          };
+        }
+
+        throw rejectedOutput;
+      });
+  }
+
+  /**
+   * Start a run from the given state and keep executing the function until the
+   * given step has run.
+   */
+  public async executeStep(
+    /**
+     * The ID of the step to execute.
+     */
+    stepId: string,
+
+    /**
+     * Options and state to start the run with.
+     */
+    inlineOpts?: InngestTestEngine.ExecuteOptions
+  ): Promise<InngestTestRun.RunStepOutput> {
+    const { run, result: resultaaa } = await this.individualExecution({
+      ...inlineOpts,
+      // always overwrite this so it's easier to capture non-runnable steps in
+      // the same flow.
+      disableImmediateExecution: true,
+    });
+
+    const foundSteps = await run.waitFor("steps-found", {
+      steps: [{ id: stepId }],
+    });
+
+    const hashedStepId = _internals.hashId(stepId);
+
+    const step = foundSteps.result.steps.find(
+      (step) => step.id === hashedStepId
+    );
+
+    // never found the step? Unexpected.
+    if (!step) {
+      throw new Error(
+        `Step "${stepId}" not found, but execution was still paused. This is a bug.`
+      );
+    }
+
+    // if this is not a runnable step, return it now
+    // runnable steps should return void
+    //
+    // some of these ops are nonsensical for the checkpoint we're waiting for,
+    // but we consider them anyway to ensure that this type requires attention
+    // if we add more opcodes
+    const baseRet: InngestTestRun.RunStepOutput = {
+      ctx: foundSteps.ctx,
+      state: foundSteps.state,
+      step,
+    };
+
+    const opHandlers: Record<
+      StepOpCode,
+      () => InngestTestRun.RunStepOutput | void
+    > = {
+      // runnable, so do nothing now
+      [StepOpCode.StepPlanned]: () => {},
+
+      [StepOpCode.InvokeFunction]: () => baseRet,
+      [StepOpCode.Sleep]: () => baseRet,
+      [StepOpCode.StepError]: () => ({ ...baseRet, error: step.error }),
+      [StepOpCode.StepNotFound]: () => baseRet,
+      [StepOpCode.StepRun]: () => ({ ...baseRet, result: step.data }),
+      [StepOpCode.WaitForEvent]: () => baseRet,
+      [StepOpCode.Step]: () => ({ ...baseRet, result: step.data }),
+    };
+
+    const result = opHandlers[step.op]();
+    if (result) {
+      return result;
+    }
+
+    // otherwise, run the step and return the output
+    const runOutput = await run.waitFor("step-ran", {
+      step: { id: stepId },
+    });
+
+    return {
+      ctx: runOutput.ctx,
+      state: runOutput.state,
+      result: runOutput.result.step.data,
+      error: runOutput.result.step.error,
+      step: runOutput.result.step,
+    };
+  }
+
+  /**
+   * Start a run from the given state and keep executing the function until a
+   * specific checkpoint is reached.
+   *
+   * Is a shortcut for and uses `run.waitFor()`.
+   *
+   * @TODO This is a duplicate of `execute` and will probably be removed; it's a
+   * very minor convenience method that deals too much with the internals.
+   */
+  protected async executeAndWaitFor<T extends InngestTestRun.CheckpointKey>(
     /**
      * The checkpoint to wait for.
      */
     checkpoint: T,
 
     /**
-     * An optional subset of the checkpoint to match against. Any checkpoint of
-     * this type will be matched.
-     *
-     * When providing a `subset`, use `expect` tooling such as
-     * `expect.stringContaining` to match partial values.
+     * Options and state to start the run with.
      */
-    subset?: Partial<InngestTestRun.Checkpoint<T>>
+    inlineOpts?: InngestTestEngine.ExecuteOptions<T>
   ): Promise<InngestTestEngine.ExecutionOutput<T>> {
-    const { run } = await this.execute(inlineOpts);
+    const { run } = await this.individualExecution(inlineOpts);
 
-    return run.waitFor(checkpoint, subset);
+    return run.waitFor(checkpoint, inlineOpts?.subset);
   }
 
   /**
    * Execute the function with the given inline options.
    */
-  public async execute(
+  protected async individualExecution(
     inlineOpts?: InngestTestEngine.InlineOptions
   ): Promise<InngestTestEngine.ExecutionOutput> {
     const options = {
@@ -314,44 +453,28 @@ export class InngestTestEngine {
 
     const { ctx, ops, ...result } = await execution.start();
 
-    const mockState: InngestTestEngine.MockState = Object.keys(ops).reduce(
-      (acc, stepId) => {
+    const mockState: InngestTestEngine.MockState = await Object.keys(
+      ops
+    ).reduce(
+      async (acc, stepId) => {
         const op = ops[stepId];
 
-        if (op?.seen === false || !op?.rawArgs) {
+        if (
+          op?.seen === false ||
+          !op?.rawArgs ||
+          !op?.fulfilled ||
+          !op?.promise
+        ) {
           return acc;
         }
 
-        const mock = jest.fn(async (...args: unknown[]) => {
-          if ("error" in op) {
-            throw op.error;
-          }
-
-          return op.data;
-        });
-
-        // execute it to show it was hit
-        mock(op.rawArgs);
-
         return {
-          ...acc,
-          [stepId]: mock,
+          ...(await acc),
+          [stepId]: op.promise,
         };
       },
-      {} as InngestTestEngine.MockState
+      Promise.resolve({}) as Promise<InngestTestEngine.MockState>
     );
-
-    // now proxy the mock state to always retrn some empty mock that hasn't been
-    // called for missing keys
-    const mockStateProxy = new Proxy(mockState, {
-      get(target, prop) {
-        if (prop in target) {
-          return target[prop as keyof typeof target];
-        }
-
-        return jest.fn();
-      },
-    });
 
     const run = new InngestTestRun({
       testEngine: this.clone(options),
@@ -360,7 +483,7 @@ export class InngestTestEngine {
     return {
       result,
       ctx: ctx as InngestTestEngine.MockContext,
-      state: mockStateProxy,
+      state: mockState,
       run,
     };
   }
