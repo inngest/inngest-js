@@ -155,6 +155,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
    */
   private _mode!: Mode;
 
+  protected readonly schemas?: NonNullable<TClientOpts["schemas"]>;
+
   get apiBaseUrl(): string | undefined {
     return this._apiBaseUrl;
   }
@@ -196,6 +198,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       logger = new DefaultLogger(),
       middleware,
       isDev,
+      schemas,
     } = this.options;
 
     if (!id) {
@@ -220,6 +223,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       mode: this.mode,
     });
 
+    this.schemas = schemas;
     this.loadModeEnvVars();
 
     this.logger = logger;
