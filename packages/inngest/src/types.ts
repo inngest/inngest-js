@@ -1248,7 +1248,8 @@ export type SupportedFrameworkName =
   | "sveltekit"
   | "fastify"
   | "koa"
-  | "hono";
+  | "hono"
+  | "nitro";
 
 /**
  * A set of options that can be passed to any step to configure it.

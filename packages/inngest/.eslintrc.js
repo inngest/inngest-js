@@ -49,6 +49,7 @@ module.exports = {
           "src/redwood.ts",
           "src/remix.ts",
           "src/sveltekit.ts",
+          "src/nitro.ts",
         ],
         includeInternal: true,
         includeTypes: true,
