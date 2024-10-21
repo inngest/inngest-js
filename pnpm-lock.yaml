@@ -270,7 +270,7 @@ importers:
         specifier: ^1.5.1
         version: 1.5.1(node-fetch@2.7.0)
       inngest:
-        specifier: ^3.21.0
+        specifier: 3.21.0
         version: 3.21.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@20.14.8)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.5.2)
       jest:
         specifier: ^29.3.1
