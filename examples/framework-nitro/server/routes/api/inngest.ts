@@ -1,4 +1,4 @@
-import { serve } from "inngest/h3";
+import { serve } from "inngest/nitro";
 import { functions, inngest } from "~~/inngest";
 
 export default eventHandler(
