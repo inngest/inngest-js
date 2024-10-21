@@ -1,5 +1,15 @@
 # inngest
 
+## 3.23.0
+
+### Minor Changes
+
+- [#702](https://github.com/inngest/inngest-js/pull/702) [`4df5a01`](https://github.com/inngest/inngest-js/commit/4df5a010fab833af254615098433a61846e878bc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for in-band syncing
+
+### Patch Changes
+
+- [#721](https://github.com/inngest/inngest-js/pull/721) [`59fa466`](https://github.com/inngest/inngest-js/commit/59fa466211dfe146ce2755601a5a32c49ad0fc88) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Support Next.js 15 in serve handler typing
+
 ## 3.22.13
 
 ### Patch Changes
