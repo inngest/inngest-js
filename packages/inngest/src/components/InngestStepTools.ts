@@ -4,6 +4,7 @@ import { type Jsonify } from "../helpers/jsonify.js";
 import { timeStr } from "../helpers/strings.js";
 import {
   type ExclusiveKeys,
+  type IsNever,
   type ParametersExceptFirst,
   type SendEventPayload,
   type SimplifyDeep,
@@ -146,6 +147,70 @@ export const createStepTools = <TClient extends Inngest.Any>(
     }) as T;
   };
 
+  const stepRun = createTool<
+    <
+      TFn extends (
+        ...args: IsNever<TInput> extends true ? [] : [TInput]
+      ) => unknown,
+      TInput = never,
+    >(
+      idOrOptions: StepOptionsOrId,
+
+      /**
+       * The function to run when this step is executed. Can be synchronous or
+       * asynchronous.
+       *
+       * The return value of this function will be the return value of this
+       * call to `run`, meaning you can return and reason about return data
+       * for next steps.
+       */
+      fn: TFn,
+
+      /**
+       * Optional input to pass to the function. If this is specified, Inngest
+       * will keep track of the input for this step and be able to display it
+       * in the UI.
+       */
+      input?: TInput
+    ) => Promise<
+      /**
+       * TODO Middleware can affect this. If run input middleware has returned
+       * new step data, do not Jsonify.
+       */
+      SimplifyDeep<
+        Jsonify<
+          TFn extends (arg?: TInput) => Promise<infer U>
+            ? Awaited<U extends void ? null : U>
+            : ReturnType<TFn> extends void
+              ? null
+              : ReturnType<TFn>
+        >
+      >
+    >
+  >(
+    ({ id, name }, _fn, input) => {
+      return {
+        id,
+        op: StepOpCode.StepPlanned,
+        name: id,
+        displayName: name ?? id,
+        input,
+      };
+    },
+    {
+      fn: (...stepArgs) => {
+        const fn = stepArgs[1];
+
+        const fnArgs = [] as unknown as [unknown];
+        if (stepArgs.length > 2) {
+          fnArgs.push(stepArgs[2]);
+        }
+
+        return fn(...fnArgs);
+      },
+    }
+  );
+
   /**
    * Define the set of tools the user has access to for their step functions.
    *
@@ -264,45 +329,43 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * of the `run` tool, meaning you can return and reason about return data
      * for next steps.
      */
-    run: createTool<
-      <T extends () => unknown>(
-        idOrOptions: StepOptionsOrId,
+    run: stepRun,
 
-        /**
-         * The function to run when this step is executed. Can be synchronous or
-         * asynchronous.
-         *
-         * The return value of this function will be the return value of this
-         * call to `run`, meaning you can return and reason about return data
-         * for next steps.
-         */
-        fn: T
-      ) => Promise<
-        /**
-         * TODO Middleware can affect this. If run input middleware has returned
-         * new step data, do not Jsonify.
-         */
-        SimplifyDeep<
-          Jsonify<
-            T extends () => Promise<infer U>
-              ? Awaited<U extends void ? null : U>
-              : ReturnType<T> extends void
-                ? null
-                : ReturnType<T>
-          >
-        >
-      >
-    >(
-      ({ id, name }) => {
-        return {
-          id,
-          op: StepOpCode.StepPlanned,
-          name: id,
-          displayName: name ?? id,
-        };
-      },
-      { fn: (stepOptions, fn) => fn() }
-    ),
+    /**
+     * Experimental step.ai.
+     */
+    ai: async (
+      idOrOptions: StepOptionsOrId,
+      input: AiRequest
+    ): Promise<AiResponse> => {
+      return stepRun(
+        idOrOptions,
+        (): AiResponse => {
+          return {
+            id: "123",
+            object: "chat.completion",
+            created: Date.now(),
+            model: "gpt-4",
+            choices: [
+              {
+                index: 0,
+                message: {
+                  role: "assistant",
+                  content: "Hello, how can I help you today?",
+                },
+                finishReason: "stop",
+              },
+            ],
+            usage: {
+              promptTokens: 0,
+              completionTokens: 0,
+              totalTokens: 0,
+            },
+          };
+        },
+        input
+      );
+    },
 
     /**
      * Wait a specified amount of time before continuing.
@@ -567,3 +630,107 @@ type WaitForEventOpts<
   "match",
   "if"
 >;
+
+export type AiRequest = {
+  /**
+   * The model used for generating the response, e.g., "gpt-4".
+   */
+  model: "gpt-4";
+
+  /**
+   * An array of message objects representing the conversation so far, typically including the user's prompt and possibly system instructions.
+   */
+  messages: {
+    /**
+     * The role of the message sender. Can be "system", "user", or "assistant".
+     */
+    role: "system" | "user" | "assistant";
+
+    /**
+     * The actual content of the message. This is the text input or instruction.
+     */
+    content: string;
+  }[];
+
+  /**
+   * Controls the randomness of the output. A higher temperature (closer to 1) makes the output more creative, while a lower value (closer to 0) makes it more deterministic.
+   */
+  temperature?: number;
+
+  /**
+   * The maximum number of tokens to generate in the response. Token count includes both input and output tokens.
+   */
+  maxTokens?: number;
+};
+
+export type AiResponse = {
+  /**
+   * The unique identifier for the API response.
+   */
+  id: string;
+
+  /**
+   * The type of object, which is typically "chat.completion" for completion responses.
+   */
+  object: string;
+
+  /**
+   * A Unix timestamp indicating when the response was created.
+   */
+  created: number;
+
+  /**
+   * The model used to generate the response (e.g., "gpt-4").
+   */
+  model: string;
+
+  /**
+   * An array of choices returned by the model. Typically, there is only one choice.
+   */
+  choices: {
+    /**
+     * The index of this particular choice in the list of choices.
+     */
+    index: number;
+
+    /**
+     * The message content generated by the assistant.
+     */
+    message: {
+      /**
+       * The role of the message sender. For the assistant's response, this will be "assistant".
+       */
+      role: "assistant";
+
+      /**
+       * The actual response text/content generated by the model.
+       */
+      content: string;
+    };
+
+    /**
+     * The reason the model stopped generating a response. Typically "stop" when it completes normally.
+     */
+    finishReason: string;
+  }[];
+
+  /**
+   * A summary of token usage for this request.
+   */
+  usage: {
+    /**
+     * The number of tokens used for the input prompt.
+     */
+    promptTokens: number;
+
+    /**
+     * The number of tokens used for the completion (response).
+     */
+    completionTokens: number;
+
+    /**
+     * The total number of tokens used for both input and completion.
+     */
+    totalTokens: number;
+  };
+};
