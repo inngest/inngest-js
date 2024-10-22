@@ -39,11 +39,9 @@
   "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "dependencies": {
+    "inngest": "^3.22.12",
     "tinyspy": "^3.0.2",
     "ulid": "^2.3.0"
-  },
-  "peerDependencies": {
-    "inngest": "^3.22.12"
   },
   "devDependencies": {
     "prettier": "^3.1.0"
