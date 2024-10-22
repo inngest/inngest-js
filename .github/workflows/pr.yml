@@ -35,7 +35,18 @@ jobs:
         with:
           node-version: ${{ matrix.nodeVersion }}
       # Uses npm as pnpm doesn't support Node < 16
-      - run: node --version && npm --version && npm run test
+      # If we're on Node <18, restrict some framework tests that do not support
+      # Node on this version.
+      - run: |
+          node --version
+          npm --version
+          npm run test -- --testPathIgnorePatterns "<rootDir>/src/hono.test.ts"
+        if: ${{ matrix.nodeVersion < 18 }}
+      - run: |
+          node --version
+          npm --version
+          npm run test
+        if: ${{ matrix.nodeVersion >= 18 }}
 
   inngest_types:
     name: "inngest: Type tests"
@@ -48,6 +59,7 @@ jobs:
       matrix:
         tsVersion:
           - "latest"
+          - "~5.6.0"
           - "~5.5.0"
           - "~5.4.0"
           - "~5.3.0"
@@ -133,6 +145,21 @@ jobs:
       - run: pnpm install
       - run: pnpm test
 
+  "middleware-encryption_test":
+    name: "middleware-encryption: Test"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/middleware-encryption
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+      - run: pnpm install
+      - run: pnpm test
+
   package_inngest:
     name: "inngest: Package"
     runs-on: ubuntu-latest
@@ -174,6 +201,12 @@ jobs:
       fail-fast: false
       matrix:
         example: ${{ fromJson(needs.examples-matrix.outputs.matrix) }}
+        streaming: [""]
+        include:
+          - example: framework-remix
+            streaming: force
+          - example: framework-nextjs-app-router
+            streaming: force
     steps:
       # Checkout the repo
       - name: Checkout SDK
@@ -189,3 +222,5 @@ jobs:
 
       - name: Run integration tests
         run: pnpm run itest ${{ matrix.example }}
+        env:
+          INNGEST_STREAMING: ${{ matrix.streaming }}

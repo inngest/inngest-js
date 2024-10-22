@@ -10,9 +10,14 @@ import chalk from "chalk";
  * @public
  */
 export enum queryKeys {
-  FnId = "fnId",
-  StepId = "stepId",
   DeployId = "deployId",
+  FnId = "fnId",
+  Probe = "probe",
+  StepId = "stepId",
+}
+
+export enum probe {
+  Trust = "trust",
 }
 
 export enum envKeys {
@@ -33,6 +38,7 @@ export enum envKeys {
   InngestLogLevel = "INNGEST_LOG_LEVEL",
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
+  InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",
 
   /**
    * @deprecated It's unknown what this env var was used for, but we do not
@@ -127,6 +133,7 @@ export enum headerKeys {
   RetryAfter = "retry-after",
   InngestServerKind = "x-inngest-server-kind",
   InngestExpectedServerKind = "x-inngest-expected-server-kind",
+  InngestSyncKind = "x-inngest-sync-kind",
   TraceParent = "traceparent",
   TraceState = "tracestate",
 }
@@ -161,4 +168,9 @@ export const dummyEventKey = "NO_EVENT_KEY_SET";
 export enum serverKind {
   Dev = "dev",
   Cloud = "cloud",
+}
+
+export enum syncKind {
+  InBand = "in_band",
+  OutOfBand = "out_of_band",
 }

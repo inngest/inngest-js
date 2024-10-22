@@ -1,5 +1,21 @@
 # @inngest/middleware-encryption
 
+## 1.0.0
+
+### Major Changes
+
+- [#555](https://github.com/inngest/inngest-js/pull/555) [`4469bff`](https://github.com/inngest/inngest-js/commit/4469bffda77a0f3dce614816f1dd79a81ca6f098) Thanks [@goodoldneon](https://github.com/goodoldneon)! - ## Breaking changes
+
+  - Default to using [LibSodium](https://libsodium.gitbook.io/doc)
+  - Changed field-level event encryption
+  - Custom encryption services now require identifiers
+
+  ## Features
+
+  - Added strategies for AES and LibSodium
+
+  For information on how to migrate, see [MIGRATION.md](https://github.com/inngest/inngest-js/blob/main/packages/middleware-encryption/MIGRATION.md).
+
 ## 0.1.7
 
 ### Patch Changes
