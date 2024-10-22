@@ -27,9 +27,9 @@
 import {
   type InternalServeHandlerOptions,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler";
-import { serve as serveEdge } from "./edge";
-import { type SupportedFrameworkName } from "./types";
+} from "./components/InngestCommHandler.js";
+import { serve as serveEdge } from "./edge.js";
+import { type SupportedFrameworkName } from "./types.js";
 
 /**
  * The name of the framework, used to identify the framework in Inngest

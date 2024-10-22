@@ -1,15 +1,15 @@
-import { type IsAny, type Simplify } from "../helpers/types";
+import { type IsAny, type Simplify } from "../helpers/types.js";
 import {
   type ResolveSchema,
   type ValidSchemaInput,
   type ValidSchemaOutput,
-} from "../helpers/validators";
+} from "../helpers/validators/index.js";
 import {
   type MinimalEventPayload,
   type PayloadForAnyInngestFunction,
-} from "../types";
-import { type GetFunctionOutput } from "./Inngest";
-import { type InngestFunction } from "./InngestFunction";
+} from "../types.js";
+import { type GetFunctionOutput } from "./Inngest.js";
+import { type InngestFunction } from "./InngestFunction.js";
 
 /**
  * A reference to an `InngestFunction` that can be used to represent both local

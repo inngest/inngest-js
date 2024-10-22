@@ -1,13 +1,12 @@
-import { cacheFn, waterfall } from "../helpers/functions";
+import { cacheFn, waterfall } from "../helpers/functions.js";
 import { type Jsonify } from "../helpers/jsonify";
 import {
   type Await,
   type MaybePromise,
   type ObjectAssign,
   type PartialK,
-  type Simplify,
   type SimplifyDeep,
-} from "../helpers/types";
+} from "../helpers/types.js";
 import {
   type BaseContext,
   type EventPayload,
@@ -15,9 +14,9 @@ import {
   type OutgoingOp,
   type SendEventBaseOutput,
   type TriggersFromClient,
-} from "../types";
-import { Inngest } from "./Inngest";
-import { type InngestFunction } from "./InngestFunction";
+} from "../types.js";
+import { type Inngest } from "./Inngest.js";
+import { type InngestFunction } from "./InngestFunction.js";
 
 /**
  * A middleware that can be registered with Inngest to hook into various
@@ -627,10 +626,10 @@ export type MiddlewareStackRunInputMutation<
 
 export type MiddlewareStackRunDataTransform<
   TInput,
-  TMiddleware extends MiddlewareStack,
+  TMiddleware extends InngestMiddleware.Stack,
 > = TMiddleware extends [
   infer IFirst extends InngestMiddleware<MiddlewareOptions>,
-  ...infer IRest extends MiddlewareStack,
+  ...infer IRest extends InngestMiddleware.Stack,
 ]
   ? MiddlewareStackRunDataTransform<
       GetOutput<TInput, GetMiddlewareRunDataTransform<IFirst>>,
