@@ -122,6 +122,11 @@
       "import": "./hono.js",
       "types": "./hono.d.ts"
     },
+    "./nitro": {
+      "require": "./nitro.js",
+      "import": "./nitro.js",
+      "types": "./nitro.d.ts"
+    },
     "./types": {
       "require": "./types.js",
       "import": "./types.js",

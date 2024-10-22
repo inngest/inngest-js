@@ -1,5 +1,5 @@
 /**
- * An adapter for Nuxt to serve and register any declared functions with
+ * An adapter for Nitro to serve and register any declared functions with
  * Inngest, making them available to be triggered by events.
  *
  * @module
@@ -16,11 +16,11 @@ import { type SupportedFrameworkName } from "./types.js";
  * The name of the framework, used to identify the framework in Inngest
  * dashboards and during testing.
  */
-export const frameworkName: SupportedFrameworkName = "nuxt";
+export const frameworkName: SupportedFrameworkName = "nitro";
 
 /**
- * In Nuxt 3, serve and register any declared functions with Inngest, making
- * them available to be triggered by events.
+ * In Nitro, serve and register any declared functions with Inngest, making them
+ * available to be triggered by events.
  *
  * @public
  */

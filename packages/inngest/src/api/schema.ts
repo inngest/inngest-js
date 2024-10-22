@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ExecutionVersion } from "../components/execution/InngestExecution";
-import { jsonErrorSchema, type EventPayload } from "../types";
+import { ExecutionVersion } from "../components/execution/InngestExecution.js";
+import { jsonErrorSchema, type EventPayload } from "../types.js";
 
 export const errorSchema = z.object({
   error: z.string(),

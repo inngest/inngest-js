@@ -3,11 +3,11 @@
 // along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
 // string in order to read variables.
 
-import { type Inngest } from "../components/Inngest";
-import { type SupportedFrameworkName } from "../types";
-import { version } from "../version";
-import { defaultDevServerHost, envKeys, headerKeys } from "./consts";
-import { stringifyUnknown } from "./strings";
+import { type Inngest } from "../components/Inngest.js";
+import { type SupportedFrameworkName } from "../types.js";
+import { version } from "../version.js";
+import { defaultDevServerHost, envKeys, headerKeys } from "./consts.js";
+import { stringifyUnknown } from "./strings.js";
 
 /**
  * @public

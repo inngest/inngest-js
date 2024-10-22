@@ -49,11 +49,13 @@ module.exports = {
           "src/redwood.ts",
           "src/remix.ts",
           "src/sveltekit.ts",
+          "src/nitro.ts",
         ],
         includeInternal: true,
         includeTypes: true,
       },
     ],
+    "import/extensions": ["error", "ignorePackages"],
   },
   overrides: [
     {
@@ -61,6 +63,12 @@ module.exports = {
       excludedFiles: ["*.d.ts", "*.test.ts", "src/test/**/*", "src/init.ts"],
       rules: {
         "@inngest/internal/process-warn": "warn",
+      },
+    },
+    {
+      files: ["src/**/*.test.ts"],
+      rules: {
+        "import/extensions": "off",
       },
     },
   ],

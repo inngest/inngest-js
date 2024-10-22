@@ -1,6 +1,6 @@
 import debug from "debug";
 import { z } from "zod";
-import { ServerTiming } from "../helpers/ServerTiming";
+import { ServerTiming } from "../helpers/ServerTiming.js";
 import {
   debugPrefix,
   defaultInngestApiBaseUrl,
@@ -12,9 +12,9 @@ import {
   probe as probeEnum,
   queryKeys,
   syncKind,
-} from "../helpers/consts";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver";
-import { enumFromValue } from "../helpers/enum";
+} from "../helpers/consts.js";
+import { devServerAvailable, devServerUrl } from "../helpers/devserver.js";
+import { enumFromValue } from "../helpers/enum.js";
 import {
   allProcessEnv,
   devServerHost,
@@ -26,19 +26,19 @@ import {
   parseAsBoolean,
   platformSupportsStreaming,
   type Env,
-} from "../helpers/env";
-import { rethrowError, serializeError } from "../helpers/errors";
+} from "../helpers/env.js";
+import { rethrowError, serializeError } from "../helpers/errors.js";
 import {
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
   type FnData,
-} from "../helpers/functions";
-import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net";
-import { runAsPromise } from "../helpers/promises";
-import { createStream } from "../helpers/stream";
-import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings";
-import { type MaybePromise } from "../helpers/types";
+} from "../helpers/functions.js";
+import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.js";
+import { runAsPromise } from "../helpers/promises.js";
+import { createStream } from "../helpers/stream.js";
+import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.js";
+import { type MaybePromise } from "../helpers/types.js";
 import {
   functionConfigSchema,
   logLevels,
@@ -52,13 +52,13 @@ import {
   type RegisterRequest,
   type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
-} from "../types";
-import { version } from "../version";
-import { type Inngest } from "./Inngest";
+} from "../types.js";
+import { version } from "../version.js";
+import { type Inngest } from "./Inngest.js";
 import {
   type CreateExecutionOptions,
   type InngestFunction,
-} from "./InngestFunction";
+} from "./InngestFunction.js";
 import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
@@ -66,7 +66,7 @@ import {
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
-} from "./execution/InngestExecution";
+} from "./execution/InngestExecution.js";
 
 /**
  * A set of options that can be passed to a serve handler, intended to be used
@@ -432,7 +432,19 @@ export class InngestCommHandler<
       .parse(options.logLevel || this.env[envKeys.InngestLogLevel]);
 
     if (this.logLevel === "debug") {
-      debug.enable(`${debugPrefix}:*`);
+      /**
+       * `debug` is an old library; sometimes its runtime detection doesn't work
+       * for newer pairings of framework/runtime.
+       *
+       * One silly symptom of this is that `Debug()` returns an anonymous
+       * function with no extra properties instead of a `Debugger` instance if
+       * the wrong code is consumed following a bad detection. This results in
+       * the following `.enable()` call failing, so we just try carefully to
+       * enable it here.
+       */
+      if (debug.enable && typeof debug.enable === "function") {
+        debug.enable(`${debugPrefix}:*`);
+      }
     }
 
     const defaultStreamingOption: typeof this.streaming = false;
