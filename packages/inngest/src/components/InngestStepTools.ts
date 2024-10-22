@@ -336,16 +336,16 @@ export const createStepTools = <TClient extends Inngest.Any>(
      */
     ai: async (
       idOrOptions: StepOptionsOrId,
-      input: AiRequest
+      req: AiRequest
     ): Promise<AiResponse> => {
       return stepRun(
         idOrOptions,
-        (): AiResponse => {
+        (req): AiResponse => {
           return {
             id: "123",
             object: "chat.completion",
             created: Date.now(),
-            model: "gpt-4",
+            model: req.model,
             choices: [
               {
                 index: 0,
@@ -363,7 +363,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
             },
           };
         },
-        input
+        req
       );
     },
 
