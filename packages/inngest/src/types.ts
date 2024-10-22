@@ -24,12 +24,14 @@ import {
 } from "./components/InngestMiddleware";
 import { type createStepTools } from "./components/InngestStepTools";
 import { type internalEvents } from "./helpers/consts";
+import { type Jsonify } from "./helpers/jsonify";
 import {
   type AsTuple,
   type IsEqual,
   type IsNever,
   type Public,
   type Simplify,
+  type SimplifyDeep,
   type WithoutInternal,
 } from "./helpers/types";
 import { type Logger } from "./middleware/logger";
@@ -360,8 +362,10 @@ export type BaseContext<
   /**
    * The event data present in the payload.
    */
-  event: GetContextEvents<TClient, TTriggers>;
-  events: AsTuple<GetContextEvents<TClient, TTriggers, true>>;
+  event: SimplifyDeep<Jsonify<GetContextEvents<TClient, TTriggers>>>;
+  events: AsTuple<
+    SimplifyDeep<Jsonify<GetContextEvents<TClient, TTriggers, true>>>
+  >;
 
   /**
    * The run ID for the current function execution

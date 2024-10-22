@@ -824,7 +824,7 @@ describe("createFunction", () => {
         schemas: new EventSchemas().fromRecord<{
           foo: {
             name: "foo";
-            data: { title: string };
+            data: { title: string; date: Date };
           };
           bar: {
             name: "bar";
@@ -845,6 +845,17 @@ describe("createFunction", () => {
         inngest.createFunction("test", "unknown", ({ event }) => {
           assertType<unknown>(event);
         });
+      });
+
+      test("JSONifies known event data", () => {
+        inngest.createFunction(
+          { id: "test" },
+          { event: "foo" },
+          ({ event, events }) => {
+            assertType<string>(event.data.date);
+            assertType<string>(events[0].data.date);
+          }
+        );
       });
 
       test("allows name to be an object", () => {
