@@ -10,7 +10,12 @@ import {
   type GetStepTools,
 } from "@local";
 import { type createStepTools } from "@local/components/InngestStepTools";
-import { envKeys, headerKeys, internalEvents } from "@local/helpers/consts";
+import {
+  dummyEventKey,
+  envKeys,
+  headerKeys,
+  internalEvents,
+} from "@local/helpers/consts";
 import { type IsAny, type IsEqual, type IsNever } from "@local/helpers/types";
 import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
@@ -1024,6 +1029,50 @@ describe("createFunction", () => {
         );
       });
     });
+  });
+});
+
+describe("setEnvVars", () => {
+  test("overwrites existing env vars", () => {
+    const inngest = createClient({ id: "test" });
+
+    expect(inngest["_mode"]).toMatchObject({
+      type: "dev",
+      isExplicit: false,
+    });
+    expect(inngest["mode"]["explicitDevUrl"]).toBeUndefined();
+    expect(inngest["_apiBaseUrl"]).toBeUndefined();
+    expect(inngest["_eventBaseUrl"]).toBeUndefined();
+    expect(inngest["eventKey"]).toBe(dummyEventKey);
+    expect(inngest["inngestApi"]["apiBaseUrl"]).toBeUndefined();
+    expect(inngest["inngestApi"]["mode"]).toMatchObject({
+      type: "dev",
+      isExplicit: false,
+    });
+    expect(inngest["inngestApi"]["mode"]["explicitDevUrl"]).toBeUndefined();
+
+    const devUrl = "http://example.com:5000/";
+    const devEventKey = "dev-event-key";
+
+    inngest.setEnvVars({
+      [envKeys.InngestDevMode]: devUrl,
+      [envKeys.InngestEventKey]: devEventKey,
+    });
+
+    expect(inngest["_mode"]).toMatchObject({
+      type: "dev",
+      isExplicit: true,
+    });
+    expect(inngest["_mode"]["explicitDevUrl"]?.href).toBe(devUrl);
+    expect(inngest["_apiBaseUrl"]).toBe(devUrl);
+    expect(inngest["_eventBaseUrl"]).toBe(devUrl);
+    expect(inngest["eventKey"]).toBe(devEventKey);
+    expect(inngest["inngestApi"]["apiBaseUrl"]).toBe(devUrl);
+    expect(inngest["inngestApi"]["mode"]).toMatchObject({
+      type: "dev",
+      isExplicit: true,
+    });
+    expect(inngest["inngestApi"]["mode"]["explicitDevUrl"]?.href).toBe(devUrl);
   });
 });
 

@@ -1,59 +1,64 @@
-import canonicalize from "canonicalize";
 import debug from "debug";
-import { hmac, sha256 } from "hash.js";
 import { z } from "zod";
-import { ServerTiming } from "../helpers/ServerTiming";
+import { ServerTiming } from "../helpers/ServerTiming.js";
 import {
   debugPrefix,
   defaultInngestApiBaseUrl,
   defaultInngestEventBaseUrl,
+  dummyEventKey,
   envKeys,
   headerKeys,
   logPrefix,
+  probe as probeEnum,
   queryKeys,
-} from "../helpers/consts";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+  syncKind,
+} from "../helpers/consts.js";
+import { devServerAvailable, devServerUrl } from "../helpers/devserver.js";
+import { enumFromValue } from "../helpers/enum.js";
 import {
-  Mode,
   allProcessEnv,
   devServerHost,
   getFetch,
   getMode,
+  getPlatformName,
   inngestHeaders,
+  Mode,
+  parseAsBoolean,
   platformSupportsStreaming,
   type Env,
-} from "../helpers/env";
-import { rethrowError, serializeError } from "../helpers/errors";
+} from "../helpers/env.js";
+import { rethrowError, serializeError } from "../helpers/errors.js";
 import {
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
   type FnData,
-} from "../helpers/functions";
-import { fetchWithAuthFallback } from "../helpers/net";
-import { runAsPromise } from "../helpers/promises";
-import { createStream } from "../helpers/stream";
-import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings";
-import { type MaybePromise } from "../helpers/types";
+} from "../helpers/functions.js";
+import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.js";
+import { runAsPromise } from "../helpers/promises.js";
+import { createStream } from "../helpers/stream.js";
+import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.js";
+import { type MaybePromise } from "../helpers/types.js";
 import {
   functionConfigSchema,
   logLevels,
   type AuthenticatedIntrospection,
   type EventPayload,
   type FunctionConfig,
+  type InBandRegisterRequest,
   type LogLevel,
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
   type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
-} from "../types";
-import { version } from "../version";
-import { type Inngest } from "./Inngest";
+} from "../types.js";
+import { version } from "../version.js";
+import { type Inngest } from "./Inngest.js";
 import {
   type CreateExecutionOptions,
   type InngestFunction,
-} from "./InngestFunction";
+} from "./InngestFunction.js";
 import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
@@ -61,7 +66,7 @@ import {
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
-} from "./execution/InngestExecution";
+} from "./execution/InngestExecution.js";
 
 /**
  * A set of options that can be passed to a serve handler, intended to be used
@@ -427,7 +432,19 @@ export class InngestCommHandler<
       .parse(options.logLevel || this.env[envKeys.InngestLogLevel]);
 
     if (this.logLevel === "debug") {
-      debug.enable(`${debugPrefix}:*`);
+      /**
+       * `debug` is an old library; sometimes its runtime detection doesn't work
+       * for newer pairings of framework/runtime.
+       *
+       * One silly symptom of this is that `Debug()` returns an anonymous
+       * function with no extra properties instead of a `Debugger` instance if
+       * the wrong code is consumed following a bad detection. This results in
+       * the following `.enable()` call failing, so we just try carefully to
+       * enable it here.
+       */
+      if (debug.enable && typeof debug.enable === "function") {
+        debug.enable(`${debugPrefix}:*`);
+      }
     }
 
     const defaultStreamingOption: typeof this.streaming = false;
@@ -523,7 +540,7 @@ export class InngestCommHandler<
   }
 
   private get hashedEventKey(): string | undefined {
-    if (!this.client["eventKey"]) {
+    if (!this.client["eventKey"] || this.client["eventKey"] === dummyEventKey) {
       return undefined;
     }
     return hashEventKey(this.client["eventKey"]);
@@ -550,7 +567,17 @@ export class InngestCommHandler<
    * or not. Takes into account the user's preference and the platform's
    * capabilities.
    */
-  private shouldStream(actions: HandlerResponseWithErrors): boolean {
+  private async shouldStream(
+    actions: HandlerResponseWithErrors
+  ): Promise<boolean> {
+    const rawProbe = await actions.queryStringWithDefaults(
+      "testing for probe",
+      queryKeys.Probe
+    );
+    if (rawProbe !== undefined) {
+      return false;
+    }
+
     // We must be able to stream responses to continue.
     if (!actions.transformStreamingResponse) {
       return false;
@@ -625,35 +652,55 @@ export class InngestCommHandler<
        * This helps us provide high quality errors about what's going wrong for
        * each access without having to wrap every access in a try/catch.
        */
-      const actions: HandlerResponseWithErrors = Object.entries(
-        rawActions
-      ).reduce((acc, [key, value]) => {
-        if (typeof value !== "function") {
-          return acc;
-        }
+      const promisifiedActions: ActionHandlerResponseWithErrors =
+        Object.entries(rawActions).reduce((acc, [key, value]) => {
+          if (typeof value !== "function") {
+            return acc;
+          }
 
-        return {
-          ...acc,
-          [key]: (reason: string, ...args: unknown[]) => {
-            const errMessage = [
-              `Failed calling \`${key}\` from serve handler`,
-              reason,
-            ]
-              .filter(Boolean)
-              .join(" when ");
+          return {
+            ...acc,
+            [key]: (reason: string, ...args: unknown[]) => {
+              const errMessage = [
+                `Failed calling \`${key}\` from serve handler`,
+                reason,
+              ]
+                .filter(Boolean)
+                .join(" when ");
 
-            const fn = () =>
-              (value as (...args: unknown[]) => unknown)(...args);
+              const fn = () =>
+                (value as (...args: unknown[]) => unknown)(...args);
 
-            return runAsPromise(fn)
-              .catch(rethrowError(errMessage))
-              .catch((err) => {
-                this.log("error", err);
-                throw err;
-              });
-          },
-        };
-      }, {} as HandlerResponseWithErrors);
+              return runAsPromise(fn)
+                .catch(rethrowError(errMessage))
+                .catch((err) => {
+                  this.log("error", err);
+                  throw err;
+                });
+            },
+          };
+        }, {} as ActionHandlerResponseWithErrors);
+
+      /**
+       * Mapped promisified handlers from userland `serve()` function mixed in
+       * with some helpers.
+       */
+      const actions: HandlerResponseWithErrors = {
+        ...promisifiedActions,
+        queryStringWithDefaults: async (
+          reason: string,
+          key: string
+        ): Promise<string | undefined> => {
+          const url = await actions.url(reason);
+
+          const ret =
+            (await actions.queryString?.(reason, key, url)) ||
+            url.searchParams.get(key) ||
+            undefined;
+
+          return ret;
+        },
+      };
 
       const [env, expectedServerKind] = await Promise.all([
         actions.env?.("starting to handle request"),
@@ -663,7 +710,13 @@ export class InngestCommHandler<
         ),
       ]);
 
-      this.env = env ?? allProcessEnv();
+      // Always make sure to merge whatever env we've been given with
+      // `process.env`; some platforms may not provide all the necessary
+      // environment variables or may use two sources.
+      this.env = {
+        ...allProcessEnv(),
+        ...env,
+      };
 
       const getInngestHeaders = (): Record<string, string> =>
         inngestHeaders({
@@ -676,33 +729,133 @@ export class InngestCommHandler<
           },
         });
 
+      const assumedMode = getMode({ env: this.env, client: this.client });
+
+      if (assumedMode.isExplicit) {
+        this._mode = assumedMode;
+      } else {
+        const serveIsProd = await actions.isProduction?.(
+          "starting to handle request"
+        );
+        if (typeof serveIsProd === "boolean") {
+          this._mode = new Mode({
+            type: serveIsProd ? "cloud" : "dev",
+            isExplicit: false,
+          });
+        } else {
+          this._mode = assumedMode;
+        }
+      }
+
+      this.upsertKeysFromEnv();
+
+      const methodP = actions.method("starting to handle request");
+
+      const headerPromises = [
+        headerKeys.TraceParent,
+        headerKeys.TraceState,
+      ].map(async (header) => {
+        const value = await actions.headers(
+          `fetching ${header} for forwarding`,
+          header
+        );
+
+        return { header, value };
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      const [signature, method, body] = await Promise.all([
+        actions
+          .headers("checking signature for request", headerKeys.Signature)
+          .then((headerSignature) => {
+            return headerSignature ?? undefined;
+          }),
+        methodP,
+        methodP.then((method) => {
+          if (method === "POST" || method === "PUT") {
+            return actions.body(
+              `checking body for request signing as method is ${method}`
+            );
+          }
+
+          return "";
+        }),
+      ]);
+
+      const signatureValidation = this.validateSignature(signature, body);
+
+      const headersToForwardP = Promise.all(headerPromises).then(
+        (fetchedHeaders) => {
+          return fetchedHeaders.reduce<Record<string, string>>(
+            (acc, { header, value }) => {
+              if (value) {
+                acc[header] = value;
+              }
+
+              return acc;
+            },
+            {}
+          );
+        }
+      );
+
       const actionRes = timer.wrap("action", () =>
-        this.handleAction({ actions, timer, getInngestHeaders, reqArgs: args })
+        this.handleAction({
+          actions,
+          timer,
+          getInngestHeaders,
+          reqArgs: args,
+          signatureValidation,
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          body,
+          method,
+          headers: headersToForwardP,
+        })
       );
 
       /**
        * Prepares an action response by merging returned data to provide
        * trailing information such as `Server-Timing` headers.
        *
-       * It should always prioritize the headers returned by the action, as
-       * they may contain important information such as `Content-Type`.
+       * It should always prioritize the headers returned by the action, as they
+       * may contain important information such as `Content-Type`.
        */
-      const prepareActionRes = (res: ActionResponse): ActionResponse => ({
-        ...res,
-        headers: {
-          ...getInngestHeaders(),
-          ...res.headers,
-          ...(res.version === null
-            ? {}
-            : {
-                [headerKeys.RequestVersion]: (
-                  res.version ?? PREFERRED_EXECUTION_VERSION
-                ).toString(),
-              }),
-        },
-      });
+      const prepareActionRes = async (
+        res: ActionResponse
+      ): Promise<ActionResponse> => {
+        const signature = await signatureValidation
+          .then((result) => {
+            if (!result.success || !result.keyUsed) {
+              return undefined;
+            }
 
-      if (this.shouldStream(actions)) {
+            return this.getResponseSignature(result.keyUsed, res.body);
+          })
+          .catch((_err) => {
+            // no-op; only sign responses if we have successfully validated the
+            // request
+            return undefined;
+          });
+
+        return {
+          ...res,
+          headers: {
+            ...getInngestHeaders(),
+            ...(await headersToForwardP),
+            ...res.headers,
+            ...(res.version === null
+              ? {}
+              : {
+                  [headerKeys.RequestVersion]: (
+                    res.version ?? PREFERRED_EXECUTION_VERSION
+                  ).toString(),
+                }),
+            ...(signature ? { [headerKeys.Signature]: signature } : {}),
+          },
+        };
+      };
+
+      if (await this.shouldStream(actions)) {
         const method = await actions.method("starting streaming response");
 
         if (method === "POST") {
@@ -740,11 +893,11 @@ export class InngestCommHandler<
 
     /**
      * Some platforms check (at runtime) the length of the function being used
-     * to handle an endpoint. If this is a variadic function, it will fail
-     * that check.
+     * to handle an endpoint. If this is a variadic function, it will fail that
+     * check.
      *
-     * Therefore, we expect the arguments accepted to be the same length as
-     * the `handler` function passed internally.
+     * Therefore, we expect the arguments accepted to be the same length as the
+     * `handler` function passed internally.
      *
      * We also set a name to avoid a common useless name in tracing such as
      * `"anonymous"` or `"bound function"`.
@@ -791,59 +944,77 @@ export class InngestCommHandler<
     timer,
     getInngestHeaders,
     reqArgs,
+    signatureValidation,
+    body,
+    method,
+    headers,
   }: {
     actions: HandlerResponseWithErrors;
     timer: ServerTiming;
     getInngestHeaders: () => Record<string, string>;
     reqArgs: unknown[];
+    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    body: any;
+    method: string;
+    headers: Promise<Record<string, string>>;
   }): Promise<ActionResponse> {
-    const assumedMode = getMode({ env: this.env, client: this.client });
-
-    if (assumedMode.isExplicit) {
-      this._mode = assumedMode;
-    } else {
-      const serveIsProd = await actions.isProduction?.(
-        "starting to handle request"
-      );
-      if (typeof serveIsProd === "boolean") {
-        this._mode = new Mode({
-          type: serveIsProd ? "cloud" : "dev",
-          isExplicit: false,
-        });
-      } else {
-        this._mode = assumedMode;
-      }
-    }
-
-    this.upsertKeysFromEnv();
-
     try {
       const url = await actions.url("starting to handle request");
-      const method = await actions.method("starting to handle request");
-
-      const getQuerystring = async (
-        reason: string,
-        key: string
-      ): Promise<string | undefined> => {
-        const ret =
-          (await actions.queryString?.(reason, key, url)) ||
-          url.searchParams.get(key) ||
-          undefined;
-
-        return ret;
-      };
 
       if (method === "POST") {
-        const signature = await actions.headers(
-          "checking signature for run request",
-          headerKeys.Signature
+        const validationResult = await signatureValidation;
+        if (!validationResult.success) {
+          return {
+            status: 401,
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: stringify(serializeError(validationResult.err)),
+            version: undefined,
+          };
+        }
+
+        const rawProbe = await actions.queryStringWithDefaults(
+          "testing for probe",
+          queryKeys.Probe
         );
+        if (rawProbe) {
+          const probe = enumFromValue(probeEnum, rawProbe);
+          if (!probe) {
+            // If we're here, we've received a probe that we don't recognize.
+            // Fail.
+            return {
+              status: 400,
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: stringify(
+                serializeError(new Error(`Unknown probe "${rawProbe}"`))
+              ),
+              version: undefined,
+            };
+          }
 
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const body = await actions.body("processing run request");
-        this.validateSignature(signature ?? undefined, body);
+          // Provide actions for every probe available.
+          const probeActions: Record<
+            probeEnum,
+            () => MaybePromise<ActionResponse>
+          > = {
+            [probeEnum.Trust]: () => ({
+              status: 200,
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: "",
+              version: undefined,
+            }),
+          };
 
-        const fnId = await getQuerystring(
+          return probeActions[probe]();
+        }
+
+        const fnId = await actions.queryStringWithDefaults(
           "processing run request",
           queryKeys.FnId
         );
@@ -853,32 +1024,10 @@ export class InngestCommHandler<
         }
 
         const stepId =
-          (await getQuerystring("processing run request", queryKeys.StepId)) ||
-          null;
-
-        const headersToFetch = [headerKeys.TraceParent, headerKeys.TraceState];
-
-        const headerPromises = headersToFetch.map(async (header) => {
-          const value = await actions.headers(
-            `fetching ${header} for forwarding`,
-            header
-          );
-
-          return { header, value };
-        });
-
-        const fetchedHeaders = await Promise.all(headerPromises);
-
-        const headersToForward = fetchedHeaders.reduce<Record<string, string>>(
-          (acc, { header, value }) => {
-            if (value) {
-              acc[header] = value;
-            }
-
-            return acc;
-          },
-          {}
-        );
+          (await actions.queryStringWithDefaults(
+            "processing run request",
+            queryKeys.StepId
+          )) || null;
 
         const { version, result } = this.runStep({
           functionId: fnId,
@@ -886,7 +1035,7 @@ export class InngestCommHandler<
           stepId,
           timer,
           reqArgs,
-          headers: headersToForward,
+          headers: await headers,
         });
         const stepOutput = await result;
 
@@ -905,7 +1054,6 @@ export class InngestCommHandler<
               status: result.retriable ? 500 : 400,
               headers: {
                 "Content-Type": "application/json",
-                ...headersToForward,
                 [headerKeys.NoRetry]: result.retriable ? "false" : "true",
                 ...(typeof result.retriable === "string"
                   ? { [headerKeys.RetryAfter]: result.retriable }
@@ -920,7 +1068,6 @@ export class InngestCommHandler<
               status: 200,
               headers: {
                 "Content-Type": "application/json",
-                ...headersToForward,
               },
               body: stringify(undefinedToNull(result.data)),
               version,
@@ -931,7 +1078,6 @@ export class InngestCommHandler<
               status: 500,
               headers: {
                 "Content-Type": "application/json",
-                ...headersToForward,
                 [headerKeys.NoRetry]: "false",
               },
               body: stringify({
@@ -949,7 +1095,6 @@ export class InngestCommHandler<
               status: 206,
               headers: {
                 "Content-Type": "application/json",
-                ...headersToForward,
                 ...(typeof result.retriable !== "undefined"
                   ? {
                       [headerKeys.NoRetry]: result.retriable ? "false" : "true",
@@ -970,7 +1115,6 @@ export class InngestCommHandler<
               status: 206,
               headers: {
                 "Content-Type": "application/json",
-                ...headersToForward,
               },
               body: stringify(steps),
               version,
@@ -991,73 +1135,11 @@ export class InngestCommHandler<
       }
 
       if (method === "GET") {
-        const registerBody = this.registerBody({
-          url: this.reqUrl(url),
-          deployId: null,
-        });
-
-        const signature = await actions.headers(
-          "checking signature for run request",
-          headerKeys.Signature
-        );
-
-        let introspection:
-          | UnauthenticatedIntrospection
-          | AuthenticatedIntrospection = {
-          authentication_succeeded: null,
-          extra: {
-            is_mode_explicit: this._mode.isExplicit,
-          },
-          has_event_key: this.client["eventKeySet"](),
-          has_signing_key: Boolean(this.signingKey),
-          function_count: registerBody.functions.length,
-          mode: this._mode.type,
-          schema_version: "2024-05-24",
-        } satisfies UnauthenticatedIntrospection;
-
-        // Only allow authenticated introspection in Cloud mode, since Dev mode skips
-        // signature validation
-        if (this._mode.type === "cloud") {
-          try {
-            this.validateSignature(signature ?? undefined, "");
-
-            introspection = {
-              ...introspection,
-              authentication_succeeded: true,
-              api_origin: this.apiBaseUrl,
-              app_id: this.client.id,
-              env:
-                (await actions.headers(
-                  "fetching environment for introspection request",
-                  headerKeys.Environment
-                )) || null,
-              event_api_origin: this.eventApiBaseUrl,
-              event_key_hash: this.hashedEventKey ?? null,
-              extra: {
-                ...introspection.extra,
-                is_streaming: this.shouldStream(actions),
-              },
-              framework: this.frameworkName,
-              sdk_language: "js",
-              sdk_version: version,
-              serve_origin: this.serveHost ?? null,
-              serve_path: this.servePath ?? null,
-              signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
-              signing_key_hash: this.hashedSigningKey ?? null,
-            } satisfies AuthenticatedIntrospection;
-          } catch {
-            // Swallow signature validation error since we'll just return the
-            // unauthenticated introspection
-            introspection = {
-              ...introspection,
-              authentication_succeeded: false,
-            } satisfies UnauthenticatedIntrospection;
-          }
-        }
-
         return {
           status: 200,
-          body: stringify(introspection),
+          body: stringify(
+            await this.introspectionBody({ actions, signatureValidation, url })
+          ),
           headers: {
             "Content-Type": "application/json",
           },
@@ -1066,14 +1148,73 @@ export class InngestCommHandler<
       }
 
       if (method === "PUT") {
-        let deployId = await getQuerystring(
-          "processing deployment request",
-          queryKeys.DeployId
-        );
-        if (deployId === "undefined") {
-          deployId = undefined;
+        const [deployId, inBandSyncRequested] = await Promise.all([
+          actions
+            .queryStringWithDefaults(
+              "processing deployment request",
+              queryKeys.DeployId
+            )
+            .then((deployId) => {
+              return deployId === "undefined" ? undefined : deployId;
+            }),
+
+          Promise.resolve(
+            parseAsBoolean(this.env[envKeys.InngestAllowInBandSync])
+          )
+            .then((allowInBandSync) => {
+              if (!allowInBandSync) {
+                return syncKind.OutOfBand;
+              }
+
+              return actions.headers(
+                "processing deployment request",
+                headerKeys.InngestSyncKind
+              );
+            })
+            .then((kind) => {
+              return kind === syncKind.InBand;
+            }),
+        ]);
+
+        if (inBandSyncRequested) {
+          // Validation can be successful if we're in dev mode and did not
+          // actually validate a key. In this case, also check that we did indeed
+          // use a particular key to validate.
+          const sigCheck = await signatureValidation;
+
+          if (!sigCheck.success) {
+            return {
+              status: 401,
+              body: stringify({
+                code: "sig_verification_failed",
+              }),
+              headers: {
+                "Content-Type": "application/json",
+              },
+              version: undefined,
+            };
+          }
+
+          // This should be an in-band sync
+          const body = await this.inBandRegisterBody({
+            actions,
+            deployId,
+            signatureValidation,
+            url,
+          });
+
+          return {
+            status: 200,
+            body: stringify(body),
+            headers: {
+              "Content-Type": "application/json",
+              [headerKeys.InngestSyncKind]: syncKind.InBand,
+            },
+            version: undefined,
+          };
         }
 
+        // If we're here, this is a legacy out-of-band sync
         const { status, message, modified } = await this.register(
           this.reqUrl(url),
           deployId,
@@ -1085,6 +1226,7 @@ export class InngestCommHandler<
           body: stringify({ message, modified }),
           headers: {
             "Content-Type": "application/json",
+            [headerKeys.InngestSyncKind]: syncKind.OutOfBand,
           },
           version: undefined,
         };
@@ -1310,9 +1452,145 @@ export class InngestCommHandler<
       sdk: `js:v${version}`,
       v: "0.1",
       deployId: deployId || undefined,
+      capabilities: {
+        trust_probe: "v1",
+      },
     };
 
     return body;
+  }
+
+  protected async inBandRegisterBody({
+    actions,
+    deployId,
+    signatureValidation,
+    url,
+  }: {
+    actions: HandlerResponseWithErrors;
+
+    /**
+     * Non-optional to ensure we always consider if we have a deploy ID
+     * available to us to use.
+     */
+    deployId: string | undefined | null;
+
+    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
+
+    url: URL;
+  }): Promise<InBandRegisterRequest> {
+    const registerBody = this.registerBody({ deployId, url });
+    const introspectionBody = await this.introspectionBody({
+      actions,
+      signatureValidation,
+      url,
+    });
+
+    const body: InBandRegisterRequest = {
+      app_id: this.client.id,
+      capabilities: registerBody.capabilities,
+      env: null,
+      framework: registerBody.framework,
+      functions: registerBody.functions,
+      inspection: introspectionBody,
+      platform: getPlatformName({
+        ...allProcessEnv(),
+        ...this.env,
+      }),
+      sdk_author: "inngest",
+      sdk_language: "",
+      sdk_version: "",
+      sdk: registerBody.sdk,
+      url: registerBody.url,
+    };
+
+    if (introspectionBody.authentication_succeeded) {
+      body.env = introspectionBody.env;
+      body.sdk_language = introspectionBody.sdk_language;
+      body.sdk_version = introspectionBody.sdk_version;
+    }
+
+    return body;
+  }
+
+  protected async introspectionBody({
+    actions,
+    signatureValidation,
+    url,
+  }: {
+    actions: HandlerResponseWithErrors;
+    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
+    url: URL;
+  }): Promise<UnauthenticatedIntrospection | AuthenticatedIntrospection> {
+    const registerBody = this.registerBody({
+      url: this.reqUrl(url),
+      deployId: null,
+    });
+
+    if (!this._mode) {
+      throw new Error("No mode set; cannot introspect without mode");
+    }
+
+    let introspection:
+      | UnauthenticatedIntrospection
+      | AuthenticatedIntrospection = {
+      authentication_succeeded: null,
+      extra: {
+        is_mode_explicit: this._mode.isExplicit,
+      },
+      has_event_key: this.client["eventKeySet"](),
+      has_signing_key: Boolean(this.signingKey),
+      function_count: registerBody.functions.length,
+      mode: this._mode.type,
+      schema_version: "2024-05-24",
+    } satisfies UnauthenticatedIntrospection;
+
+    // Only allow authenticated introspection in Cloud mode, since Dev mode skips
+    // signature validation
+    if (this._mode.type === "cloud") {
+      try {
+        const validationResult = await signatureValidation;
+        if (!validationResult.success) {
+          throw new Error("Signature validation failed");
+        }
+
+        introspection = {
+          ...introspection,
+          authentication_succeeded: true,
+          api_origin: this.apiBaseUrl,
+          app_id: this.client.id,
+          capabilities: {
+            trust_probe: "v1",
+          },
+          env:
+            (await actions.headers(
+              "fetching environment for introspection request",
+              headerKeys.Environment
+            )) || null,
+          event_api_origin: this.eventApiBaseUrl,
+          event_key_hash: this.hashedEventKey ?? null,
+          extra: {
+            ...introspection.extra,
+            is_streaming: await this.shouldStream(actions),
+          },
+          framework: this.frameworkName,
+          sdk_language: "js",
+          sdk_version: version,
+          serve_origin: this.serveHost ?? null,
+          serve_path: this.servePath ?? null,
+          signing_key_fallback_hash: this.hashedSigningKeyFallback ?? null,
+          signing_key_hash: this.hashedSigningKey ?? null,
+        } satisfies AuthenticatedIntrospection;
+      } catch {
+        // Swallow signature validation error since we'll just return the
+        // unauthenticated introspection
+        introspection = {
+          ...introspection,
+          authentication_succeeded: false,
+        } satisfies UnauthenticatedIntrospection;
+      }
+    }
+
+    return introspection;
   }
 
   protected async register(
@@ -1358,7 +1636,10 @@ export class InngestCommHandler<
         options: {
           method: "POST",
           body: stringify(body),
-          headers: getHeaders(),
+          headers: {
+            ...getHeaders(),
+            [headerKeys.InngestSyncKind]: syncKind.OutOfBand,
+          },
           redirect: "follow",
         },
       });
@@ -1475,39 +1756,59 @@ export class InngestCommHandler<
     }
   }
 
-  protected validateSignature(sig: string | undefined, body: unknown) {
-    // Never validate signatures outside of prod. Make sure to check the mode
-    // exists here instead of using nullish coalescing to confirm that the check
-    // has been completed.
-    if (this._mode && !this._mode.isCloud) {
-      return;
-    }
+  /**
+   * Validate the signature of a request and return the signing key used to
+   * validate it.
+   */
+  // eslint-disable-next-line @typescript-eslint/require-await
+  protected async validateSignature(
+    sig: string | undefined,
+    body: unknown
+  ): Promise<
+    { success: true; keyUsed: string } | { success: false; err: Error }
+  > {
+    try {
+      // Never validate signatures outside of prod. Make sure to check the mode
+      // exists here instead of using nullish coalescing to confirm that the check
+      // has been completed.
+      if (this._mode && !this._mode.isCloud) {
+        return { success: true, keyUsed: "" };
+      }
 
-    // If we're here, we're in production; lack of a signing key is an error.
-    if (!this.signingKey) {
-      // TODO PrettyError
-      throw new Error(
-        `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`
-      );
-    }
+      // If we're here, we're in production; lack of a signing key is an error.
+      if (!this.signingKey) {
+        // TODO PrettyError
+        throw new Error(
+          `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`
+        );
+      }
 
-    // If we're here, we're in production; lack of a req signature is an error.
-    if (!sig) {
-      // TODO PrettyError
-      throw new Error(`No ${headerKeys.Signature} provided`);
-    }
+      // If we're here, we're in production; lack of a req signature is an error.
+      if (!sig) {
+        // TODO PrettyError
+        throw new Error(`No ${headerKeys.Signature} provided`);
+      }
 
-    // Validate the signature
-    new RequestSignature(sig).verifySignature({
-      body,
-      allowExpiredSignatures: this.allowExpiredSignatures,
-      signingKey: this.signingKey,
-      signingKeyFallback: this.signingKeyFallback,
-    });
+      // Validate the signature
+      return {
+        success: true,
+        keyUsed: new RequestSignature(sig).verifySignature({
+          body,
+          allowExpiredSignatures: this.allowExpiredSignatures,
+          signingKey: this.signingKey,
+          signingKeyFallback: this.signingKeyFallback,
+        }),
+      };
+    } catch (err) {
+      return { success: false, err: err as Error };
+    }
   }
 
-  protected signResponse(): string {
-    return "";
+  protected getResponseSignature(key: string, body: string): string {
+    const now = Date.now();
+    const mac = signDataWithKey(body, key, now.toString());
+
+    return `t=${now}&s=${mac}`;
   }
 
   /**
@@ -1582,19 +1883,7 @@ class RequestSignature {
       throw new Error("Signature has expired");
     }
 
-    // Calculate the HMAC of the request body ourselves.
-    // We make the assumption here that a stringified body is the same as the
-    // raw bytes; it may be pertinent in the future to always parse, then
-    // canonicalize the body to ensure it's consistent.
-    const encoded = typeof body === "string" ? body : canonicalize(body);
-    // Remove the `/signkey-[test|prod]-/` prefix from our signing key to calculate the HMAC.
-    const key = signingKey.replace(/signkey-\w+-/, "");
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
-    const mac = hmac(sha256 as any, key)
-      .update(encoded)
-      .update(this.timestamp)
-      .digest("hex");
-
+    const mac = signDataWithKey(body, signingKey, this.timestamp);
     if (mac !== this.signature) {
       // TODO PrettyError
       throw new Error("Invalid signature");
@@ -1611,9 +1900,11 @@ class RequestSignature {
     signingKey: string;
     signingKeyFallback: string | undefined;
     allowExpiredSignatures: boolean;
-  }): void {
+  }): string {
     try {
       this.#verifySignature({ body, signingKey, allowExpiredSignatures });
+
+      return signingKey;
     } catch (err) {
       if (!signingKeyFallback) {
         throw err;
@@ -1624,6 +1915,8 @@ class RequestSignature {
         signingKey: signingKeyFallback,
         allowExpiredSignatures,
       });
+
+      return signingKeyFallback;
     }
   }
 }
@@ -1744,7 +2037,7 @@ export interface ActionResponse<
  * This enables us to provide accurate errors for each access without having to
  * wrap every access in a try/catch.
  */
-export type HandlerResponseWithErrors = {
+export type ActionHandlerResponseWithErrors = {
   [K in keyof HandlerResponse]: NonNullable<HandlerResponse[K]> extends (
     ...args: infer Args
   ) => infer R
@@ -1753,3 +2046,21 @@ export type HandlerResponseWithErrors = {
       : (errMessage: string, ...args: Args) => Promise<R>
     : HandlerResponse[K];
 };
+
+/**
+ * A version of {@link ActionHandlerResponseWithErrors} that includes helper
+ * functions that provide sensible defaults on top of the direct access given
+ * from the bare response.
+ */
+export interface HandlerResponseWithErrors
+  extends ActionHandlerResponseWithErrors {
+  /**
+   * Fetch a query string value from the request. If no `querystring` action has
+   * been provided by the `serve()` handler, this will fall back to using the
+   * provided URL present in the request to parse the query string from instead.
+   */
+  queryStringWithDefaults: (
+    reason: string,
+    key: string
+  ) => Promise<string | undefined>;
+}

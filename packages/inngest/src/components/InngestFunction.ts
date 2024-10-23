@@ -1,6 +1,6 @@
-import { internalEvents, queryKeys } from "../helpers/consts";
-import { timeStr } from "../helpers/strings";
-import { type RecursiveTuple, type StrictUnion } from "../helpers/types";
+import { internalEvents, queryKeys } from "../helpers/consts.js";
+import { timeStr } from "../helpers/strings.js";
+import { type RecursiveTuple, type StrictUnion } from "../helpers/types.js";
 import {
   type Cancellation,
   type ConcurrencyOption,
@@ -9,19 +9,19 @@ import {
   type TimeStr,
   type TimeStrBatch,
   type TriggersFromClient,
-} from "../types";
-import { type GetEvents, type Inngest } from "./Inngest";
+} from "../types.js";
+import { type GetEvents, type Inngest } from "./Inngest.js";
 import {
   type InngestMiddleware,
   type MiddlewareRegisterReturn,
-} from "./InngestMiddleware";
+} from "./InngestMiddleware.js";
 import {
   ExecutionVersion,
   type IInngestExecution,
   type InngestExecutionOptions,
-} from "./execution/InngestExecution";
-import { createV0InngestExecution } from "./execution/v0";
-import { createV1InngestExecution } from "./execution/v1";
+} from "./execution/InngestExecution.js";
+import { createV0InngestExecution } from "./execution/v0.js";
+import { createV1InngestExecution } from "./execution/v1.js";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -424,7 +424,7 @@ export namespace InngestFunction {
      * the function will not run until at least `period` has elapsed.
      *
      * If any new events are received that match the same debounce `key`, the
-     * function is reshceduled for another `period` delay, and the triggering
+     * function is rescheduled for another `period` delay, and the triggering
      * event is replaced with the latest event received.
      *
      * See the [Debounce documentation](https://innge.st/debounce) for more
@@ -440,7 +440,7 @@ export namespace InngestFunction {
       key?: string;
 
       /**
-       * The period of time to after receiving the last trigger to run the
+       * The period of time to delay after receiving the last trigger to run the
        * function.
        *
        * See [Debounce documentation](https://innge.st/debounce) for more

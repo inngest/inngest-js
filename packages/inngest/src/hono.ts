@@ -18,12 +18,13 @@
  */
 
 import { type Context } from "hono";
+import { env } from "hono/adapter";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler";
-import { type Env } from "./helpers/env";
-import { type SupportedFrameworkName } from "./types";
+} from "./components/InngestCommHandler.js";
+import { type Env } from "./helpers/env.js";
+import { type SupportedFrameworkName } from "./types.js";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -107,7 +108,7 @@ export const serve = (
         headers: (key) => c.req.header(key),
         method: () => c.req.method,
         body: () => c.req.json(),
-        env: () => c.env as Env,
+        env: () => env(c) as Env,
       };
     },
   });

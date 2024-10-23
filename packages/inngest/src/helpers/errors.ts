@@ -8,9 +8,9 @@ import {
 } from "serialize-error-cjs";
 import stripAnsi from "strip-ansi";
 import { z } from "zod";
-import { type Inngest } from "../components/Inngest";
-import { NonRetriableError } from "../components/NonRetriableError";
-import { type ClientOptions, type OutgoingOp } from "../types";
+import { type Inngest } from "../components/Inngest.js";
+import { NonRetriableError } from "../components/NonRetriableError.js";
+import { type ClientOptions, type OutgoingOp } from "../types.js";
 
 const SERIALIZED_KEY = "__serialized";
 const SERIALIZED_VALUE = true;
@@ -68,7 +68,11 @@ export const serializeError = (subject: unknown): SerializedError => {
       // map over the result here to ensure we have everything.
       // We'll just stringify the entire subject for the message, as this at
       // least provides some context for the user.
-      return {
+      const ret = {
+        // Ensure we spread to also capture additional properties such as
+        // `cause`.
+        ...serializedErr,
+
         name: serializedErr.name || "Error",
         message:
           serializedErr.message ||
@@ -77,6 +81,25 @@ export const serializeError = (subject: unknown): SerializedError => {
         stack: serializedErr.stack || "",
         [SERIALIZED_KEY]: SERIALIZED_VALUE,
       } as const;
+
+      // If we have a cause, make sure we recursively serialize them too.
+      let target: unknown = ret;
+      const maxDepth = 5;
+      for (let i = 0; i < maxDepth; i++) {
+        if (
+          typeof target === "object" &&
+          target !== null &&
+          "cause" in target &&
+          target.cause
+        ) {
+          target = target.cause = serializeError(target.cause);
+          continue;
+        }
+
+        break;
+      }
+
+      return ret;
     }
 
     // If it's not an object, it's hard to parse this as an Error. In this case,
@@ -91,6 +114,8 @@ export const serializeError = (subject: unknown): SerializedError => {
         ...serializeError(
           new Error(typeof subject === "string" ? subject : stringify(subject))
         ),
+        // Remove the stack; it's not relevant here
+        stack: "",
         [SERIALIZED_KEY]: SERIALIZED_VALUE,
       };
     } catch (err) {
@@ -170,7 +195,15 @@ export const deserializeError = (subject: Partial<SerializedError>): Error => {
       throw new Error();
     }
 
-    return cjsDeserializeError(subject as SerializedError);
+    const deserializedErr = cjsDeserializeError(subject as SerializedError);
+
+    if ("cause" in deserializedErr) {
+      deserializedErr.cause = deserializeError(
+        deserializedErr.cause as Partial<SerializedError>
+      );
+    }
+
+    return deserializedErr;
   } catch {
     const err = new Error("Unknown error; could not reserialize");
 

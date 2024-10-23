@@ -3,6 +3,7 @@
 import { Inngest } from "@local/components/Inngest";
 import { referenceFunction } from "@local/components/InngestFunctionReference";
 import { InngestMiddleware } from "@local/components/InngestMiddleware";
+import { NonRetriableError } from "@local/components/NonRetriableError";
 import { ExecutionVersion } from "@local/components/execution/InngestExecution";
 import { type IsEqual, type IsUnknown } from "@local/helpers/types";
 import { StepOpCode } from "@local/types";
@@ -437,6 +438,130 @@ describe("stacking and inference", () => {
               assertType<IsEqual<(typeof ctx)["foo"], number>>(true);
             }
           );
+        });
+      });
+    });
+
+    describe("transformOutput", () => {
+      test("can see an error in output context", async () => {
+        let error: Error | undefined;
+
+        const fn = new Inngest({
+          id: "test",
+          middleware: [
+            new InngestMiddleware({
+              name: "mw",
+              init() {
+                return {
+                  onFunctionRun() {
+                    return {
+                      transformOutput({ result }) {
+                        error = result.error as Error;
+                      },
+                    };
+                  },
+                };
+              },
+            }),
+          ],
+        }).createFunction({ id: "" }, { event: "" }, () => {
+          throw new Error("test error");
+        });
+
+        await runFnWithStack(fn, {}, { executionVersion: ExecutionVersion.V1 });
+
+        expect(error).toBeInstanceOf(Error);
+      });
+
+      test("can overwrite an existing error in output context", async () => {
+        const fn = new Inngest({
+          id: "test",
+          middleware: [
+            new InngestMiddleware({
+              name: "mw1",
+              init() {
+                return {
+                  onFunctionRun() {
+                    return {
+                      transformOutput() {
+                        return {
+                          result: { error: new Error("foo") },
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            }),
+            new InngestMiddleware({
+              name: "mw2",
+              init() {
+                return {
+                  onFunctionRun() {
+                    return {
+                      transformOutput() {
+                        return {
+                          result: { error: new Error("bar") },
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            }),
+          ],
+        }).createFunction({ id: "" }, { event: "" }, () => {
+          throw new Error("test error");
+        });
+
+        const res = await runFnWithStack(
+          fn,
+          {},
+          { executionVersion: ExecutionVersion.V1 }
+        );
+
+        expect(res).toMatchObject({
+          type: "function-rejected",
+          error: { message: "bar" },
+          retriable: true,
+        });
+      });
+
+      test("can set a NonRetriableError", async () => {
+        const fn = new Inngest({
+          id: "test",
+          middleware: [
+            new InngestMiddleware({
+              name: "mw1",
+              init() {
+                return {
+                  onFunctionRun() {
+                    return {
+                      transformOutput() {
+                        return {
+                          result: { error: new NonRetriableError("foo") },
+                        };
+                      },
+                    };
+                  },
+                };
+              },
+            }),
+          ],
+        }).createFunction({ id: "" }, { event: "" }, () => {
+          throw new Error("test error");
+        });
+
+        const res = await runFnWithStack(
+          fn,
+          {},
+          { executionVersion: ExecutionVersion.V1 }
+        );
+
+        expect(res).toMatchObject({
+          type: "function-rejected",
+          error: { message: "foo" },
+          retriable: false,
         });
       });
     });

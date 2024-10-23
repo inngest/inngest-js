@@ -21,20 +21,54 @@
  */
 
 import { type NextApiRequest, type NextApiResponse } from "next";
-import { type NextRequest } from "next/server.js";
+import { type NextRequest } from "next/server";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler";
-import { getResponse } from "./helpers/env";
-import { type Either } from "./helpers/types";
-import { type SupportedFrameworkName } from "./types";
+} from "./components/InngestCommHandler.js";
+import { getResponse } from "./helpers/env.js";
+import { type Either } from "./helpers/types.js";
+import { type SupportedFrameworkName } from "./types.js";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
  * dashboards and during testing.
  */
 export const frameworkName: SupportedFrameworkName = "nextjs";
+
+/**
+ * The shape of a request handler, supporting Next.js 12+.
+ *
+ * We are intentionally abstract with the arguments here, as Next.js's type
+ * checking when building varies wildly between major versions; specifying
+ * different types (even optional types) here can cause issues with the build.
+ *
+ * This change was initially made for Next.js 15, which specifies the second
+ * argument as `RouteContext`, whereas Next.js 13 and 14 omit it and Next.js 12
+ * provides a `NextApiResponse`, which is varies based on the execution
+ * environment used (edge vs serverless).
+ */
+export type RequestHandler = (
+  expectedReq: NextRequest,
+  res: unknown
+) => Promise<Response>;
+
+const isRecord = (val: unknown): val is Record<string, unknown> => {
+  return typeof val === "object" && val !== null;
+};
+
+const isFunction = (val: unknown): val is (...args: unknown[]) => unknown => {
+  return typeof val === "function";
+};
+
+const isNext12ApiResponse = (val: unknown): val is NextApiResponse => {
+  return (
+    isRecord(val) &&
+    isFunction(val.setHeader) &&
+    isFunction(val.status) &&
+    isFunction(val.send)
+  );
+};
 
 /**
  * In Next.js, serve and register any declared functions with Inngest, making
@@ -60,19 +94,19 @@ export const frameworkName: SupportedFrameworkName = "nextjs";
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
   options: ServeHandlerOptions
-): ((expectedReq: NextRequest, res: NextApiResponse) => Promise<Response>) & {
-  GET: (expectedReq: NextRequest, res: NextApiResponse) => Promise<Response>;
-  POST: (expectedReq: NextRequest, res: NextApiResponse) => Promise<Response>;
-  PUT: (expectedReq: NextRequest, res: NextApiResponse) => Promise<Response>;
+): RequestHandler & {
+  GET: RequestHandler;
+  POST: RequestHandler;
+  PUT: RequestHandler;
 } => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
     handler: (
       reqMethod: "GET" | "POST" | "PUT" | undefined,
-      expectedReq: NextRequest,
-      res: NextApiResponse
+      ...args: Parameters<RequestHandler>
     ) => {
+      const [expectedReq, res] = args;
       const req = expectedReq as Either<NextApiRequest, NextRequest>;
 
       const getHeader = (key: string): string | null | undefined => {
@@ -173,18 +207,22 @@ export const serve = (
           /**
            * Carefully attempt to set headers and data on the response object
            * for Next.js 12 support.
+           *
+           * This also assumes that we're not using Next.js 15, where the `res`
+           * object is repopulated as a `RouteContext` object. We expect these
+           * methods to NOT be defined in Next.js 15.
+           *
+           * We could likely use `instanceof ServerResponse` to better check the
+           * type of this, though Next.js 12 had issues with this due to not
+           * instantiating the response correctly.
            */
-          if (typeof res?.setHeader === "function") {
+          if (isNext12ApiResponse(res)) {
             for (const [key, value] of Object.entries(headers)) {
               res.setHeader(key, value);
             }
-          }
 
-          if (
-            typeof res?.status === "function" &&
-            typeof res?.send === "function"
-          ) {
-            res.status(status).send(body);
+            res.status(status);
+            res.send(body);
 
             /**
              * If we're here, we're in a serverless endpoint (not edge), so
@@ -238,6 +276,13 @@ export const serve = (
   const baseFn = handler.createHandler();
 
   const fn = baseFn.bind(null, undefined);
+
+  /**
+   * Ensure we have a non-variadic length to avoid issues with forced type
+   * checking.
+   */
+  Object.defineProperty(fn, "length", { value: 1 });
+
   type Fn = typeof fn;
 
   const handlerFn = Object.defineProperties(fn, {

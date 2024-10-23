@@ -39,9 +39,9 @@ import {
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler";
-import { processEnv } from "./helpers/env";
-import { type SupportedFrameworkName } from "./types";
+} from "./components/InngestCommHandler.js";
+import { processEnv } from "./helpers/env.js";
+import { type SupportedFrameworkName } from "./types.js";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -96,7 +96,12 @@ export const serve = (
               processEnv("NODE_ENV") === "development" ? "http" : "https"
             }://${String(getHeader(event, "host"))}`
           ),
-        queryString: (key) => String(getQuery(event)[key]),
+        queryString: (key) => {
+          const param = getQuery(event)[key];
+          if (param) {
+            return String(param);
+          }
+        },
         transformResponse: (actionRes) => {
           const { res } = event.node;
           res.statusCode = actionRes.status;

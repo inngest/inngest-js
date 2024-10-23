@@ -1,17 +1,17 @@
-import { type internalEvents } from "../helpers/consts";
+import { type internalEvents } from "../helpers/consts.js";
 import {
   type IsEmptyObject,
   type IsStringLiteral,
   type Simplify,
-} from "../helpers/types";
-import type * as z from "../helpers/validators/zod";
+} from "../helpers/types.js";
+import type * as z from "../helpers/validators/zod.js";
 import {
   type EventPayload,
   type FailureEventPayload,
   type FinishedEventPayload,
   type InvokedEventPayload,
   type ScheduledTimerEventPayload,
-} from "../types";
+} from "../types.js";
 
 /**
  * Declares the shape of an event schema we expect from the user. This may be
@@ -23,9 +23,9 @@ import {
 export type StandardEventSchema = {
   name?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data?: Record<string, unknown>;
+  data?: Record<string, any>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  user?: Record<string, unknown>;
+  user?: Record<string, any>;
 };
 
 /**
@@ -248,6 +248,15 @@ export class EventSchemas<
     [internalEvents.ScheduledTimer]: ScheduledTimerEventPayload;
   }>,
 > {
+  protected runtimeSchemas: Record<string, unknown> = {};
+
+  private addRuntimeSchemas(schemas: Record<string, unknown>) {
+    this.runtimeSchemas = {
+      ...this.runtimeSchemas,
+      ...schemas,
+    };
+  }
+
   /**
    * Use generated Inngest types to type events.
    */
@@ -343,7 +352,6 @@ export class EventSchemas<
    * ```
    */
   public fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     schemas: T
   ): EventSchemas<
     Combine<
@@ -353,6 +361,26 @@ export class EventSchemas<
       >
     >
   > {
+    let runtimeSchemas: Record<string, unknown>;
+
+    if (Array.isArray(schemas)) {
+      runtimeSchemas = schemas.reduce((acc, schema) => {
+        const {
+          name: { value: name },
+          ...rest
+        } = schema.shape;
+
+        return {
+          ...acc,
+          [name]: rest,
+        };
+      }, {});
+    } else {
+      runtimeSchemas = schemas;
+    }
+
+    this.addRuntimeSchemas(runtimeSchemas);
+
     return this;
   }
 }

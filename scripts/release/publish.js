@@ -89,13 +89,39 @@ const exec = async (...args) => {
   });
 
   console.log("publishing", tag, "to dist tag:", distTag);
-  await exec(
+  const {
+    exitCode: publishExitCode,
+    stdout: publishStdout,
+    stderr: publishStderr,
+  } = await getExecOutput(
     "npm",
     ["publish", "--tag", distTag, "--access", "public", "--provenance"],
     {
       cwd: distDir,
+      ignoreReturnCode: true,
     }
   );
+
+  if (publishExitCode !== 0) {
+    // It could be a non-zero code if the package was already published by
+    // another action or human. If this is the case, we should not fail the
+    // action.
+    const duplicatePublishMsg =
+      "cannot publish over the previously published versions";
+
+    if (
+      publishStdout.includes(duplicatePublishMsg) ||
+      publishStderr.includes(duplicatePublishMsg)
+    ) {
+      console.log("npm publish failed but it's okay; it's already published");
+
+      return;
+    }
+
+    throw new Error(`npm publish exited with ${publishExitCode}`);
+  }
+
+  console.log("Publish successful");
 
   // If this was a backport release, republish the "latest" tag at the actual latest version
   if (branch !== "main" && distTag === "latest") {

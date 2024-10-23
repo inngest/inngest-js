@@ -1,11 +1,11 @@
-import { cacheFn, waterfall } from "../helpers/functions";
+import { cacheFn, waterfall } from "../helpers/functions.js";
 import {
   type Await,
   type MaybePromise,
   type ObjectAssign,
   type PartialK,
   type Simplify,
-} from "../helpers/types";
+} from "../helpers/types.js";
 import {
   type BaseContext,
   type EventPayload,
@@ -13,9 +13,9 @@ import {
   type OutgoingOp,
   type SendEventBaseOutput,
   type TriggersFromClient,
-} from "../types";
-import { type Inngest } from "./Inngest";
-import { type InngestFunction } from "./InngestFunction";
+} from "../types.js";
+import { type Inngest } from "./Inngest.js";
+import { type InngestFunction } from "./InngestFunction.js";
 
 /**
  * A middleware that can be registered with Inngest to hook into various
@@ -499,7 +499,9 @@ type MiddlewareSendEventOutput = (
 type MiddlewareRunOutput = (ctx: {
   result: Readonly<Pick<OutgoingOp, "error" | "data">>;
   step?: Readonly<Omit<OutgoingOp, "id">>;
-}) => MaybePromise<{ result?: Partial<Pick<OutgoingOp, "data">> } | void>;
+}) => MaybePromise<{
+  result?: Partial<Pick<OutgoingOp, "data" | "error">>;
+} | void>;
 
 type MiddlewareRunFinished = (ctx: {
   result: Readonly<Pick<OutgoingOp, "error" | "data">>;

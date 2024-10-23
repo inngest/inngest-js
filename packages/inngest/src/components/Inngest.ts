@@ -1,4 +1,4 @@
-import { InngestApi } from "../api/api";
+import { InngestApi } from "../api/api.js";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
@@ -7,18 +7,19 @@ import {
   envKeys,
   headerKeys,
   logPrefix,
-} from "../helpers/consts";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+} from "../helpers/consts.js";
+import { devServerAvailable, devServerUrl } from "../helpers/devserver.js";
 import {
+  allProcessEnv,
   getFetch,
   getMode,
   inngestHeaders,
   processEnv,
   type Mode,
-} from "../helpers/env";
-import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
-import { type Jsonify } from "../helpers/jsonify";
-import { stringify } from "../helpers/strings";
+} from "../helpers/env.js";
+import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.js";
+import { type Jsonify } from "../helpers/jsonify.js";
+import { stringify } from "../helpers/strings.js";
 import {
   type AsArray,
   type IsNever,
@@ -26,8 +27,12 @@ import {
   type SimplifyDeep,
   type SingleOrArray,
   type WithoutInternal,
-} from "../helpers/types";
-import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
+} from "../helpers/types.js";
+import {
+  DefaultLogger,
+  ProxyLogger,
+  type Logger,
+} from "../middleware/logger.js";
 import {
   sendEventResponseSchema,
   type ClientOptions,
@@ -39,10 +44,10 @@ import {
   type SendEventOutput,
   type SendEventResponse,
   type TriggersFromClient,
-} from "../types";
-import { type EventSchemas } from "./EventSchemas";
-import { InngestFunction } from "./InngestFunction";
-import { type InngestFunctionReference } from "./InngestFunctionReference";
+} from "../types.js";
+import { type EventSchemas } from "./EventSchemas.js";
+import { InngestFunction } from "./InngestFunction.js";
+import { type InngestFunctionReference } from "./InngestFunctionReference.js";
 import {
   InngestMiddleware,
   getHookStack,
@@ -51,7 +56,7 @@ import {
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
-} from "./InngestMiddleware";
+} from "./InngestMiddleware.js";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -103,12 +108,18 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
   public readonly id: string;
 
   /**
+   * Stores the options so we can remember explicit settings the user has
+   * provided.
+   */
+  private readonly options: TClientOpts;
+
+  /**
    * Inngest event key, used to send events to Inngest Cloud.
    */
   private eventKey = "";
 
-  private readonly _apiBaseUrl: string | undefined;
-  private readonly _eventBaseUrl: string | undefined;
+  private _apiBaseUrl: string | undefined;
+  private _eventBaseUrl: string | undefined;
 
   private readonly inngestApi: InngestApi;
 
@@ -120,7 +131,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     defaultInngestEventBaseUrl
   );
 
-  private readonly headers: Record<string, string>;
+  private headers!: Record<string, string>;
 
   private readonly fetch: FetchT;
 
@@ -142,7 +153,9 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
    * settings, but should still check for the presence of an environment
    * variable if it is not set.
    */
-  private _mode: Mode;
+  private _mode!: Mode;
+
+  protected readonly schemas?: NonNullable<TClientOpts["schemas"]>;
 
   get apiBaseUrl(): string | undefined {
     return this._apiBaseUrl;
@@ -176,16 +189,18 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
    * });
    * ```
    */
-  constructor({
-    id,
-    eventKey,
-    baseUrl,
-    fetch,
-    env,
-    logger = new DefaultLogger(),
-    middleware,
-    isDev,
-  }: TClientOpts) {
+  constructor(options: TClientOpts) {
+    this.options = options;
+
+    const {
+      id,
+      fetch,
+      logger = new DefaultLogger(),
+      middleware,
+      isDev,
+      schemas,
+    } = this.options;
+
     if (!id) {
       // TODO PrettyError
       throw new Error("An `id` must be passed to create an Inngest instance.");
@@ -198,24 +213,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
         typeof isDev === "boolean" ? (isDev ? "dev" : "cloud") : undefined,
     });
 
-    this._apiBaseUrl =
-      baseUrl ||
-      processEnv(envKeys.InngestApiBaseUrl) ||
-      processEnv(envKeys.InngestBaseUrl) ||
-      this.mode.getExplicitUrl(defaultInngestApiBaseUrl);
-
-    this._eventBaseUrl =
-      baseUrl ||
-      processEnv(envKeys.InngestEventApiBaseUrl) ||
-      processEnv(envKeys.InngestBaseUrl) ||
-      this.mode.getExplicitUrl(defaultInngestEventBaseUrl);
-
-    this.setEventKey(eventKey || processEnv(envKeys.InngestEventKey) || "");
-
-    this.headers = inngestHeaders({
-      inngestEnv: env,
-    });
-
     this.fetch = getFetch(fetch);
 
     this.inngestApi = new InngestApi({
@@ -226,12 +223,54 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       mode: this.mode,
     });
 
+    this.schemas = schemas;
+    this.loadModeEnvVars();
+
     this.logger = logger;
 
     this.middleware = this.initializeMiddleware([
       ...builtInMiddleware,
       ...(middleware || []),
     ]);
+  }
+
+  /**
+   * Set the environment variables for this client. This is useful if you are
+   * passed environment variables at runtime instead of as globals and need to
+   * update the client with those values as requests come in.
+   */
+  public setEnvVars(
+    env: Record<string, string | undefined> = allProcessEnv()
+  ): this {
+    this.mode = getMode({ env, client: this });
+
+    return this;
+  }
+
+  private loadModeEnvVars(): void {
+    this._apiBaseUrl =
+      this.options.baseUrl ||
+      this.mode["env"][envKeys.InngestApiBaseUrl] ||
+      this.mode["env"][envKeys.InngestBaseUrl] ||
+      this.mode.getExplicitUrl(defaultInngestApiBaseUrl);
+
+    this._eventBaseUrl =
+      this.options.baseUrl ||
+      this.mode["env"][envKeys.InngestEventApiBaseUrl] ||
+      this.mode["env"][envKeys.InngestBaseUrl] ||
+      this.mode.getExplicitUrl(defaultInngestEventBaseUrl);
+
+    this.setEventKey(
+      this.options.eventKey || this.mode["env"][envKeys.InngestEventKey] || ""
+    );
+
+    this.headers = inngestHeaders({
+      inngestEnv: this.options.env,
+      env: this.mode["env"],
+    });
+
+    this.inngestApi["mode"] = this.mode;
+    this.inngestApi["apiBaseUrl"] = this._apiBaseUrl;
   }
 
   /**
@@ -271,7 +310,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
 
   private set mode(m) {
     this._mode = m;
-    this.inngestApi["mode"] = m;
+    this.loadModeEnvVars();
   }
 
   /**

@@ -29,8 +29,8 @@ import {
   InngestCommHandler,
   type ActionResponse,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler";
-import { type SupportedFrameworkName } from "./types";
+} from "./components/InngestCommHandler.js";
+import { type SupportedFrameworkName } from "./types.js";
 
 type HTTP = {
   headers: Record<string, string>;

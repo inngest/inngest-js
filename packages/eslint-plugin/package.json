@@ -1,6 +1,6 @@
 {
   "name": "@inngest/eslint-plugin",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "",
   "main": "dist/index.js",
   "publishConfig": {
@@ -27,7 +27,7 @@
     "url": "git+https://github.com/inngest/inngest-js.git",
     "directory": "packages/eslint-plugin"
   },
-  "author": "Jack Williams <jack@inngest.com>",
+  "author": "Inngest Inc. <hello@inngest.com>",
   "license": "ISC",
   "dependencies": {
     "@typescript-eslint/utils": "^6.11.0",

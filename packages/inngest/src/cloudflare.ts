@@ -35,9 +35,9 @@
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler";
-import { type Either } from "./helpers/types";
-import { type SupportedFrameworkName } from "./types";
+} from "./components/InngestCommHandler.js";
+import { type Either } from "./helpers/types.js";
+import { type SupportedFrameworkName } from "./types.js";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -49,7 +49,7 @@ export const frameworkName: SupportedFrameworkName = "cloudflare-pages";
  * Expected arguments for a Cloudflare Pages Function.
  */
 export type PagesHandlerArgs = [
-  { request: Request; env: Record<string, string | undefined> },
+  { request: Request; env: Record<string, string | undefined> }
 ];
 
 /**
@@ -145,6 +145,12 @@ export const serve = (
         env: () => env,
         url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
         transformResponse: ({ body, status, headers }) => {
+          return new Response(body, {
+            status,
+            headers,
+          });
+        },
+        transformStreamingResponse: ({ body, status, headers }) => {
           return new Response(body, {
             status,
             headers,
