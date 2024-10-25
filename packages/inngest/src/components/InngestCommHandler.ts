@@ -763,6 +763,15 @@ export class InngestCommHandler<
         return { header, value };
       });
 
+      const contentLength = await actions
+        .headers("checking signature for request", headerKeys.ContentLength)
+        .then((value) => {
+          if (!value) {
+            return undefined;
+          }
+          return parseInt(value, 10);
+        });
+
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const [signature, method, body] = await Promise.all([
         actions
@@ -773,6 +782,11 @@ export class InngestCommHandler<
         methodP,
         methodP.then((method) => {
           if (method === "POST" || method === "PUT") {
+            if (!contentLength) {
+              // Return empty string because req.json() will throw an error.
+              return "";
+            }
+
             return actions.body(
               `checking body for request signing as method is ${method}`
             );
