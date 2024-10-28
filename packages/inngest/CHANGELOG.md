@@ -1,5 +1,17 @@
 # inngest
 
+## 3.24.0
+
+### Minor Changes
+
+- [#685](https://github.com/inngest/inngest-js/pull/685) [`801946b`](https://github.com/inngest/inngest-js/commit/801946b349f20cdb9d0b5e77539ba253aab8348a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `"inngest/nitro"` serve handler
+
+### Patch Changes
+
+- [#729](https://github.com/inngest/inngest-js/pull/729) [`511c2a1`](https://github.com/inngest/inngest-js/commit/511c2a1e37db88b62f236247849199c1701fecfb) Thanks [@amh4r](https://github.com/amh4r)! - Fix crash when receiving a PUT without a body
+
+- [#685](https://github.com/inngest/inngest-js/pull/685) [`801946b`](https://github.com/inngest/inngest-js/commit/801946b349f20cdb9d0b5e77539ba253aab8348a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix imports requiring internal extensions when being consumed by true ESM
+
 ## 3.23.1
 
 ### Patch Changes
