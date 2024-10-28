@@ -263,7 +263,14 @@ export const testFramework = (
       ? getServeHandler(handlerOpts)
       : handlerOpts;
 
-    const host = "localhost:3000";
+    const headers: Record<string, string> = {
+      host: "localhost:3000",
+    };
+
+    if (reqOpts[0]?.body !== undefined) {
+      headers["content-type"] = "application/json";
+      headers["content-length"] = `${JSON.stringify(reqOpts[0].body).length}`;
+    }
 
     const mockReqOpts: httpMocks.RequestOptions = {
       hostname: "localhost",
@@ -272,7 +279,7 @@ export const testFramework = (
       ...reqOpts[0],
       headers: {
         ...reqOpts[0]?.headers,
-        host,
+        ...headers,
       },
     };
 
