@@ -279,28 +279,32 @@ describe("ai", () => {
 
   test("single input", async () => {
     await expect(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       step.ai("", (flag: boolean) => {}, true)
     ).resolves.toMatchObject({});
   });
 
   test("multiple input", async () => {
     await expect(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       step.ai("", (flag: boolean, value: number) => {}, true, 10)
     ).resolves.toMatchObject({});
   });
 
-  test("disallow missing step inputs when function expects them", async () => {
+  test("disallow missing step inputs when function expects them", () => {
     // @ts-expect-error Invalid data
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     step.ai("", (flag: boolean, value: number) => {});
   });
 
-  test("disallow step inputs when function does not expect them", async () => {
+  test("disallow step inputs when function does not expect them", () => {
     // @ts-expect-error Invalid data
     step.ai("", () => {}, true);
   });
 
-  test("disallow step inputs that don't match what function expects", async () => {
+  test("disallow step inputs that don't match what function expects", () => {
     // @ts-expect-error Invalid data
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     step.ai("", (flag: boolean, value: number) => {}, 10, true);
   });
 
@@ -308,6 +312,7 @@ describe("ai", () => {
     await expect(
       step.run(
         "",
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         (flag: boolean, value?: number) => {
           // valid - enough arguments given - missing arg is optional
         },
