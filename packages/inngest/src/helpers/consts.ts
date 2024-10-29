@@ -123,6 +123,7 @@ export enum envKeys {
  * @public
  */
 export enum headerKeys {
+  ContentLength = "content-length",
   Signature = "x-inngest-signature",
   SdkVersion = "x-inngest-sdk",
   Environment = "x-inngest-env",

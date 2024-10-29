@@ -1169,6 +1169,18 @@ export const functionConfigSchema = z.strictObject({
         .optional(),
     })
     .optional(),
+  timeouts: z
+    .strictObject({
+      start: z
+        .string()
+        .transform((x) => x as TimeStr)
+        .optional(),
+      finish: z
+        .string()
+        .transform((x) => x as TimeStr)
+        .optional(),
+    })
+    .optional(),
   priority: z
     .strictObject({
       run: z.string().optional(),
