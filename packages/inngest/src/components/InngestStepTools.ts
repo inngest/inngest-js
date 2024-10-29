@@ -4,7 +4,6 @@ import { type Jsonify } from "../helpers/jsonify.js";
 import { timeStr } from "../helpers/strings.js";
 import {
   type ExclusiveKeys,
-  type IsNever,
   type ParametersExceptFirst,
   type SendEventPayload,
   type SimplifyDeep,
@@ -148,7 +147,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
   };
 
   const stepRun = createTool<
-    <TFn extends (...args: any[]) => unknown>(
+    <TFn extends (...args: Parameters<TFn>) => unknown>(
       idOrOptions: StepOptionsOrId,
 
       /**
