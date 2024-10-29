@@ -1,5 +1,11 @@
 # inngest
 
+## 3.25.0
+
+### Minor Changes
+
+- [#733](https://github.com/inngest/inngest-js/pull/733) [`96f5965`](https://github.com/inngest/inngest-js/commit/96f59653decff658bbd8c604767ed20e3c0a4c4f) Thanks [@tonyhb](https://github.com/tonyhb)! - Add timeouts as function config
+
 ## 3.24.0
 
 ### Minor Changes
