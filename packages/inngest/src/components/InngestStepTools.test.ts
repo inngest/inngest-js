@@ -294,18 +294,18 @@ describe("ai", () => {
   test("disallow missing step inputs when function expects them", () => {
     // @ts-expect-error Invalid data
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    step.ai("", (flag: boolean, value: number) => {});
+    void step.ai("", (flag: boolean, value: number) => {});
   });
 
   test("disallow step inputs when function does not expect them", () => {
     // @ts-expect-error Invalid data
-    step.ai("", () => {}, true);
+    void step.ai("", () => {}, true);
   });
 
   test("disallow step inputs that don't match what function expects", () => {
     // @ts-expect-error Invalid data
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    step.ai("", (flag: boolean, value: number) => {}, 10, true);
+    void step.ai("", (flag: boolean, value: number) => {}, 10, true);
   });
 
   test("optional input", async () => {
