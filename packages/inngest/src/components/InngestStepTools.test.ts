@@ -289,6 +289,21 @@ describe("ai", () => {
     ).resolves.toMatchObject({});
   });
 
+  test("disallow missing step inputs when function expects them", async () => {
+    // @ts-expect-error Invalid data
+    step.ai("", (flag: boolean, value: number) => {});
+  });
+
+  test("disallow step inputs when function does not expect them", async () => {
+    // @ts-expect-error Invalid data
+    step.ai("", () => {}, true);
+  });
+
+  test("disallow step inputs that don't match what function expects", async () => {
+    // @ts-expect-error Invalid data
+    step.ai("", (flag: boolean, value: number) => {}, 10, true);
+  });
+
   test("optional input", async () => {
     await expect(
       step.run(
