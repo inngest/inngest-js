@@ -501,17 +501,19 @@ export namespace InngestFunction {
       start?: TimeStr;
 
       /**
-       * Finish represents the time between a function starting and the function finishing.
-       * If a function takes longer than this time to finish, the function is marked as cancelled.
+       * Finish represents the time between a function starting and the function
+       * finishing. If a function takes longer than this time to finish, the
+       * function is marked as cancelled.
        *
-       * The start time is taken from the time that the first successful function request begins,
-       * and does not include the time spent in the queue before the function starts.
+       * The start time is taken from the time that the first successful
+       * function request begins, and does not include the time spent in the
+       * queue before the function starts.
        *
-       * Note that if the final request to a function begins before this timeout, and completes
-       * after this timeout, the function will succeed.
+       * Note that if the final request to a function begins before this
+       * timeout, and completes after this timeout, the function will succeed.
        */
       finish?: TimeStr;
-    },
+    };
 
     cancelOn?: Cancellation<GetEvents<TClient, true>>[];
 
