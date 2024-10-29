@@ -123,6 +123,7 @@ export class InngestFunction<
       throttle,
       concurrency,
       debounce,
+      timeouts,
       priority,
     } = this.opts;
 
@@ -165,6 +166,7 @@ export class InngestFunction<
       concurrency,
       debounce,
       priority,
+      timeouts,
     };
 
     if (cancelOn) {
@@ -478,6 +480,39 @@ export namespace InngestFunction {
        * information.
        */
       run?: string;
+    };
+
+    /**
+     * Configure timeouts for the function.  If any of the timeouts are hit, the
+     * function run will be cancelled.
+     */
+    timeouts?: {
+      /**
+       * Start represents the timeout for starting a function.  If the time
+       * between scheduling and starting a function exceeds this value, the
+       * function will be cancelled.
+       *
+       * This is, essentially, the amount of time that a function sits in the
+       * queue before starting.
+       *
+       * A function may exceed this duration because of concurrency limits,
+       * throttling, etc.
+       */
+      start?: TimeStr;
+
+      /**
+       * Finish represents the time between a function starting and the function
+       * finishing. If a function takes longer than this time to finish, the
+       * function is marked as cancelled.
+       *
+       * The start time is taken from the time that the first successful
+       * function request begins, and does not include the time spent in the
+       * queue before the function starts.
+       *
+       * Note that if the final request to a function begins before this
+       * timeout, and completes after this timeout, the function will succeed.
+       */
+      finish?: TimeStr;
     };
 
     cancelOn?: Cancellation<GetEvents<TClient, true>>[];
