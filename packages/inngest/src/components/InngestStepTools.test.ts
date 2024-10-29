@@ -277,26 +277,26 @@ describe("ai", () => {
     await expect(step.ai("", () => {})).resolves.toMatchObject({});
   });
 
-  test("unused input", async () => {
+  test("single input", async () => {
     await expect(
       step.ai("", (flag: boolean) => {}, true)
     ).resolves.toMatchObject({});
   });
 
-  test("unused input", async () => {
+  test("multiple input", async () => {
     await expect(
-      step.ai("", (flag: boolean, value: number) => {}, [true, 10])
+      step.ai("", (flag: boolean, value: number) => {}, true, 10)
     ).resolves.toMatchObject({});
   });
 
-  test("unused input", async () => {
+  test("optional input", async () => {
     await expect(
       step.run(
         "",
         (flag: boolean, value?: number) => {
           // valid - enough arguments given - missing arg is optional
         },
-        [true]
+        true
       )
     ).resolves.toMatchObject({});
   });
