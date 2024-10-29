@@ -243,33 +243,65 @@ describe("run", () => {
 describe("ai", () => {
   let step: StepTools;
 
+  beforeEach(() => {
+    step = getStepTools();
+  });
+
   test("return Step step op code", async () => {
-    await expect(step.run("step", () => undefined)).resolves.toMatchObject({
+    await expect(step.ai("step", () => undefined)).resolves.toMatchObject({
       op: StepOpCode.StepPlanned,
     });
   });
 
   test("returns `id` as ID", async () => {
-    await expect(step.run("id", () => undefined)).resolves.toMatchObject({
+    await expect(step.ai("id", () => undefined)).resolves.toMatchObject({
       id: "id",
     });
   });
 
   test("return ID by default", async () => {
-    await expect(step.run("id", () => undefined)).resolves.toMatchObject({
+    await expect(step.ai("id", () => undefined)).resolves.toMatchObject({
       displayName: "id",
     });
   });
 
   test("return specific name if given", async () => {
     await expect(
-      step.run({ id: "id", name: "name" }, () => undefined)
+      step.ai({ id: "id", name: "name" }, () => undefined)
     ).resolves.toMatchObject({
       displayName: "name",
     });
   });
 
-  test("types returned from run are the result of (de)serialization", () => {
+  test("no input", async () => {
+    await expect(step.ai("", () => {})).resolves.toMatchObject({});
+  });
+
+  test("unused input", async () => {
+    await expect(
+      step.ai("", (flag: boolean) => {}, true)
+    ).resolves.toMatchObject({});
+  });
+
+  test("unused input", async () => {
+    await expect(
+      step.ai("", (flag: boolean, value: number) => {}, [true, 10])
+    ).resolves.toMatchObject({});
+  });
+
+  test("unused input", async () => {
+    await expect(
+      step.run(
+        "",
+        (flag: boolean, value?: number) => {
+          // valid - enough arguments given - missing arg is optional
+        },
+        [true]
+      )
+    ).resolves.toMatchObject({});
+  });
+
+  test("types returned from ai are the result of (de)serialization", () => {
     const input = {
       str: "",
       num: 0,
@@ -295,7 +327,7 @@ describe("ai", () => {
       weakSet: new WeakSet([{}]),
     };
 
-    const output = step.run("step", () => input);
+    const output = step.ai("step", () => input);
 
     type Expected = {
       str: string;

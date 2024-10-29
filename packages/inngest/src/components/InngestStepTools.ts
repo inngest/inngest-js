@@ -148,12 +148,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
   };
 
   const stepRun = createTool<
-    <
-      TFn extends (
-        ...args: IsNever<TInput> extends true ? [] : [TInput]
-      ) => unknown,
-      TInput = never,
-    >(
+    <TFn extends (...args: any[]) => unknown, TArgs extends Parameters<TFn>>(
       idOrOptions: StepOptionsOrId,
 
       /**
@@ -171,7 +166,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
        * will keep track of the input for this step and be able to display it
        * in the UI.
        */
-      input?: TInput
+      ...input: Parameters<TFn>["length"] extends 0
+        ? []
+        : [TArgs extends [infer Single] ? Single : TArgs]
     ) => Promise<
       /**
        * TODO Middleware can affect this. If run input middleware has returned
@@ -179,7 +176,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
        */
       SimplifyDeep<
         Jsonify<
-          TFn extends (arg?: TInput) => Promise<infer U>
+          TFn extends (arg?: TArgs) => Promise<infer U>
             ? Awaited<U extends void ? null : U>
             : ReturnType<TFn> extends void
               ? null
