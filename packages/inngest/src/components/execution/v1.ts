@@ -413,6 +413,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     opts,
     fn,
     displayName,
+    input,
   }: FoundStep): Promise<OutgoingOp> {
     this.timeout?.clear();
     await this.state.hooks?.afterMemoization?.();
@@ -428,8 +429,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     this.state.executingStep = outgoingOp;
     this.debug(`executing step "${id}"`);
 
+    // TODO This should be handled before now
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    const fnToRun = Array.isArray(input) ? () => fn?.(...input) : fn;
+
     return (
-      runAsPromise(fn)
+      runAsPromise(fnToRun)
         // eslint-disable-next-line @typescript-eslint/no-misused-promises
         .finally(async () => {
           await this.state.hooks?.afterExecution?.();
@@ -854,18 +859,37 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       const { promise, resolve, reject } = createDeferredPromise();
       const hashedId = _internals.hashId(opId.id);
       const stepState = this.state.stepState[hashedId];
+      let isFulfilled = false;
       if (stepState) {
         stepState.seen = true;
+
+        if (typeof stepState.input === "undefined") {
+          isFulfilled = true;
+        }
+      }
+
+      let fnArgs = [...args];
+      console.log("FNARGS ARE:", fnArgs);
+
+      // TODO Rocky solution - if this is a run and we have input, use it
+      if (
+        opId.op === StepOpCode.StepPlanned &&
+        typeof stepState?.input !== "undefined"
+      ) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        fnArgs = [...args.slice(0, 2), ...stepState.input];
+        console.log("ARGS ARE NOW:", fnArgs);
       }
 
       const step: FoundStep = {
         ...opId,
-        rawArgs: args,
+        rawArgs: fnArgs, // TODO What is the right value here? Should this be raw args without affected input?
         hashedId,
+        input: stepState?.input,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
+        fn: opts?.fn ? () => opts.fn?.(...fnArgs) : undefined,
         promise,
-        fulfilled: Boolean(stepState),
+        fulfilled: isFulfilled,
         displayName: opId.displayName ?? opId.id,
         handled: false,
         handle: async () => {
@@ -875,7 +899,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
           step.handled = true;
 
-          if (stepState) {
+          // TODO same as isfulfilled
+          if (stepState && typeof stepState.input === "undefined") {
+            // TODO If we have input, blindly assume that we're running this
+            // step and it's not a memoized step.
             stepState.fulfilled = true;
 
             // For some execution scenarios such as testing, `data` and/or
@@ -884,6 +911,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             // values are fully resolved before continuing.
             await stepState.data;
             await stepState.error;
+            // TODO Probably need to await stepState.input wherever it's
 
             if (typeof stepState.data !== "undefined") {
               resolve(stepState.data);

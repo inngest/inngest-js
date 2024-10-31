@@ -49,6 +49,10 @@ export interface FoundStep extends HashedOp {
    * invocation.
    */
   handle: () => Promise<boolean>;
+
+  // TODO This is used to track the input we want for this step. Might be
+  // present in ctx from Executor.
+  input?: unknown;
 }
 
 export type MatchOpFn<
@@ -192,16 +196,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       };
     },
     {
-      fn: (...stepArgs) => {
-        const fn = stepArgs[1];
-
-        const fnArgs = [] as unknown as [unknown];
-        if (stepArgs.length > 2) {
-          fnArgs.push(stepArgs[2]);
-        }
-
-        return fn(...fnArgs);
-      },
+      fn: (_, fn, ...fnArgs) => fn(...fnArgs),
     }
   );
 
