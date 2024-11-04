@@ -837,19 +837,13 @@ export class InngestCommHandler<
       const prepareActionRes = async (
         res: ActionResponse
       ): Promise<ActionResponse> => {
-        const signature = await signatureValidation
-          .then((result) => {
-            if (!result.success || !result.keyUsed) {
-              return undefined;
-            }
-
-            return this.getResponseSignature(result.keyUsed, res.body);
-          })
-          .catch((_err) => {
-            // no-op; only sign responses if we have successfully validated the
-            // request
+        const signature = await signatureValidation.then((result) => {
+          if (!result.success || !result.keyUsed) {
             return undefined;
-          });
+          }
+
+          return this.getResponseSignature(result.keyUsed, res.body);
+        });
 
         return {
           ...res,
