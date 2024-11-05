@@ -186,13 +186,13 @@ export const createStepTools = <TClient extends Inngest.Any>(
       >
     >
   >(
-    ({ id, name }, _fn, input) => {
+    ({ id, name }, _fn, ...input) => {
       return {
         id,
         op: StepOpCode.StepPlanned,
         name: id,
         displayName: name ?? id,
-        input,
+        ...(input ? { opts: { input } } : {}),
       };
     },
     {
