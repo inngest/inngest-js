@@ -837,35 +837,46 @@ export class InngestCommHandler<
       const prepareActionRes = async (
         res: ActionResponse
       ): Promise<ActionResponse> => {
-        const signature = await signatureValidation
-          .then((result) => {
+        const headers: Record<string, string> = {
+          ...getInngestHeaders(),
+          ...(await headersToForwardP),
+          ...res.headers,
+          ...(res.version === null
+            ? {}
+            : {
+                [headerKeys.RequestVersion]: (
+                  res.version ?? PREFERRED_EXECUTION_VERSION
+                ).toString(),
+              }),
+        };
+
+        let signature: string | undefined;
+
+        try {
+          signature = await signatureValidation.then((result) => {
             if (!result.success || !result.keyUsed) {
               return undefined;
             }
 
             return this.getResponseSignature(result.keyUsed, res.body);
-          })
-          .catch((_err) => {
-            // no-op; only sign responses if we have successfully validated the
-            // request
-            return undefined;
           });
+        } catch (err) {
+          // If we fail to sign, retun a 500 with the error.
+          return {
+            ...res,
+            headers,
+            body: stringify(serializeError(err)),
+            status: 500,
+          };
+        }
+
+        if (signature) {
+          headers[headerKeys.Signature] = signature;
+        }
 
         return {
           ...res,
-          headers: {
-            ...getInngestHeaders(),
-            ...(await headersToForwardP),
-            ...res.headers,
-            ...(res.version === null
-              ? {}
-              : {
-                  [headerKeys.RequestVersion]: (
-                    res.version ?? PREFERRED_EXECUTION_VERSION
-                  ).toString(),
-                }),
-            ...(signature ? { [headerKeys.Signature]: signature } : {}),
-          },
+          headers,
         };
       };
 
