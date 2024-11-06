@@ -868,21 +868,26 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         }
       }
 
+      let extraOpts: Record<string, unknown> | undefined;
       let fnArgs = [...args];
       console.log("FNARGS ARE:", fnArgs);
 
       // TODO Rocky solution - if this is a run and we have input, use it
       if (
         opId.op === StepOpCode.StepPlanned &&
-        typeof stepState?.input !== "undefined"
+        typeof stepState?.input !== "undefined" &&
+        Array.isArray(stepState.input)
       ) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         fnArgs = [...args.slice(0, 2), ...stepState.input];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        extraOpts = { input: [...stepState.input] };
         console.log("ARGS ARE NOW:", fnArgs);
       }
 
       const step: FoundStep = {
         ...opId,
+        opts: { ...opId.opts, ...extraOpts },
         rawArgs: fnArgs, // TODO What is the right value here? Should this be raw args without affected input?
         hashedId,
         input: stepState?.input,
