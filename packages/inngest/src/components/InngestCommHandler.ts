@@ -41,6 +41,7 @@ import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.js";
 import { type MaybePromise } from "../helpers/types.js";
 import {
   functionConfigSchema,
+  inBandSyncRequestBodySchema,
   logLevels,
   type AuthenticatedIntrospection,
   type EventPayload,
@@ -985,7 +986,7 @@ export class InngestCommHandler<
     headers: Promise<Record<string, string>>;
   }): Promise<ActionResponse> {
     try {
-      const url = await actions.url("starting to handle request");
+      let url = await actions.url("starting to handle request");
 
       if (method === "POST") {
         const validationResult = await signatureValidation;
@@ -1220,8 +1221,27 @@ export class InngestCommHandler<
             };
           }
 
+          const res = inBandSyncRequestBodySchema.safeParse(body);
+          if (!res.success) {
+            return {
+              status: 400,
+              body: stringify({
+                code: "invalid_request",
+                message: res.error.message,
+              }),
+              headers: {
+                "Content-Type": "application/json",
+              },
+              version: undefined,
+            };
+          }
+
+          // We can trust the URL here because it's coming from
+          // signature-verified request.
+          url = this.reqUrl(new URL(res.data.url));
+
           // This should be an in-band sync
-          const body = await this.inBandRegisterBody({
+          const respBody = await this.inBandRegisterBody({
             actions,
             deployId,
             signatureValidation,
@@ -1230,7 +1250,7 @@ export class InngestCommHandler<
 
           return {
             status: 200,
-            body: stringify(body),
+            body: stringify(respBody),
             headers: {
               "Content-Type": "application/json",
               [headerKeys.InngestSyncKind]: syncKind.InBand,
