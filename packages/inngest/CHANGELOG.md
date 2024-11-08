@@ -1,5 +1,13 @@
 # inngest
 
+## 3.25.1
+
+### Patch Changes
+
+- [#737](https://github.com/inngest/inngest-js/pull/737) [`aff2a3c`](https://github.com/inngest/inngest-js/commit/aff2a3c96e1037184c5daa7aae2714b2ac5ab0c0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix response signing being able to fail silently
+
+- [#739](https://github.com/inngest/inngest-js/pull/739) [`9a2043d`](https://github.com/inngest/inngest-js/commit/9a2043de3e4b6589590a55c757b126c0c170676b) Thanks [@amh4r](https://github.com/amh4r)! - Fix in-band sync URL
+
 ## 3.25.0
 
 ### Minor Changes
