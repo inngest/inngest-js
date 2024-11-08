@@ -856,7 +856,7 @@ export const testFramework = (
           }
         ) => {
           const signingKey = "123";
-          const body = {};
+          const body = { url: "https://example.com/api/inngest" };
           const ts = Date.now().toString();
 
           const signature = validSignature
