@@ -41,6 +41,7 @@ import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.js";
 import { type MaybePromise } from "../helpers/types.js";
 import {
   functionConfigSchema,
+  inBandSyncRequestBodySchema,
   logLevels,
   type AuthenticatedIntrospection,
   type EventPayload,
@@ -837,35 +838,46 @@ export class InngestCommHandler<
       const prepareActionRes = async (
         res: ActionResponse
       ): Promise<ActionResponse> => {
-        const signature = await signatureValidation
-          .then((result) => {
+        const headers: Record<string, string> = {
+          ...getInngestHeaders(),
+          ...(await headersToForwardP),
+          ...res.headers,
+          ...(res.version === null
+            ? {}
+            : {
+                [headerKeys.RequestVersion]: (
+                  res.version ?? PREFERRED_EXECUTION_VERSION
+                ).toString(),
+              }),
+        };
+
+        let signature: string | undefined;
+
+        try {
+          signature = await signatureValidation.then((result) => {
             if (!result.success || !result.keyUsed) {
               return undefined;
             }
 
             return this.getResponseSignature(result.keyUsed, res.body);
-          })
-          .catch((_err) => {
-            // no-op; only sign responses if we have successfully validated the
-            // request
-            return undefined;
           });
+        } catch (err) {
+          // If we fail to sign, retun a 500 with the error.
+          return {
+            ...res,
+            headers,
+            body: stringify(serializeError(err)),
+            status: 500,
+          };
+        }
+
+        if (signature) {
+          headers[headerKeys.Signature] = signature;
+        }
 
         return {
           ...res,
-          headers: {
-            ...getInngestHeaders(),
-            ...(await headersToForwardP),
-            ...res.headers,
-            ...(res.version === null
-              ? {}
-              : {
-                  [headerKeys.RequestVersion]: (
-                    res.version ?? PREFERRED_EXECUTION_VERSION
-                  ).toString(),
-                }),
-            ...(signature ? { [headerKeys.Signature]: signature } : {}),
-          },
+          headers,
         };
       };
 
@@ -974,7 +986,7 @@ export class InngestCommHandler<
     headers: Promise<Record<string, string>>;
   }): Promise<ActionResponse> {
     try {
-      const url = await actions.url("starting to handle request");
+      let url = await actions.url("starting to handle request");
 
       if (method === "POST") {
         const validationResult = await signatureValidation;
@@ -1209,8 +1221,27 @@ export class InngestCommHandler<
             };
           }
 
+          const res = inBandSyncRequestBodySchema.safeParse(body);
+          if (!res.success) {
+            return {
+              status: 400,
+              body: stringify({
+                code: "invalid_request",
+                message: res.error.message,
+              }),
+              headers: {
+                "Content-Type": "application/json",
+              },
+              version: undefined,
+            };
+          }
+
+          // We can trust the URL here because it's coming from
+          // signature-verified request.
+          url = this.reqUrl(new URL(res.data.url));
+
           // This should be an in-band sync
-          const body = await this.inBandRegisterBody({
+          const respBody = await this.inBandRegisterBody({
             actions,
             deployId,
             signatureValidation,
@@ -1219,7 +1250,7 @@ export class InngestCommHandler<
 
           return {
             status: 200,
-            body: stringify(body),
+            body: stringify(respBody),
             headers: {
               "Content-Type": "application/json",
               [headerKeys.InngestSyncKind]: syncKind.InBand,

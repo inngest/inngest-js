@@ -1398,3 +1398,7 @@ export const ok = <T>(data: T): Result<T, never> => {
 export const err = <E>(error?: E): Result<never, E> => {
   return { ok: false, error };
 };
+
+export const inBandSyncRequestBodySchema = z.strictObject({
+  url: z.string(),
+});
