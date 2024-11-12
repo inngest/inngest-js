@@ -145,20 +145,16 @@ export class InngestTestRun {
         return finish(exec);
       }
 
+      InngestTestRun.updateState(runningState, exec.result);
+
       const resultHandlers: Record<keyof ExecutionResults, () => void> = {
         "function-resolved": () => finish(exec),
         "function-rejected": () => finish(exec),
-        "step-not-found": () => {
-          processChain();
-        },
+        "step-not-found": () => processChain(),
         "steps-found": () => {
           // run all
           const result =
             exec.result as InngestTestRun.Checkpoint<"steps-found">;
-
-          if (result.steps.length > 1) {
-            runningState.disableImmediateExecution = true;
-          }
 
           result.steps.forEach((step) => {
             processChain(step.id);
@@ -172,20 +168,6 @@ export class InngestTestRun {
             return finish(exec);
           }
 
-          // add to our running state
-          runningState.steps ??= [];
-          runningState.steps.push({
-            id: result.step.id,
-            idIsHashed: true,
-            handler: () => {
-              if (result.step.error) {
-                throw result.step.error;
-              }
-
-              return result.step.data;
-            },
-          });
-
           processChain();
         },
       };
@@ -197,5 +179,37 @@ export class InngestTestRun {
     processChain();
 
     return promise;
+  }
+
+  /**
+   * Given existing state and an execution result, mutate the state.
+   */
+  protected static updateState(
+    options: InngestTestEngine.InlineOptions,
+    checkpoint: InngestTestRun.Checkpoint<InngestTestRun.CheckpointKey>
+  ): void {
+    if (checkpoint.type === "steps-found") {
+      const steps = (checkpoint as InngestTestRun.Checkpoint<"steps-found">)
+        .steps;
+
+      if (steps.length > 1) {
+        options.disableImmediateExecution = true;
+      }
+    } else if (checkpoint.type === "step-ran") {
+      const step = (checkpoint as InngestTestRun.Checkpoint<"step-ran">).step;
+
+      options.steps ??= [];
+      options.steps.push({
+        id: step.id,
+        idIsHashed: true,
+        handler: () => {
+          if (step.error) {
+            throw step.error;
+          }
+
+          return step.data;
+        },
+      });
+    }
   }
 }

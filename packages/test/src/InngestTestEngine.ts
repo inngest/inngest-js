@@ -508,6 +508,8 @@ export class InngestTestEngine {
       Promise.resolve({}) as Promise<InngestTestEngine.MockState>
     );
 
+    InngestTestRun["updateState"](options, result);
+
     const run = new InngestTestRun({
       testEngine: this.clone(options),
     });
