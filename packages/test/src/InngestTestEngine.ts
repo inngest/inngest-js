@@ -209,33 +209,69 @@ export class InngestTestEngine {
      */
     inlineOpts?: InngestTestEngine.ExecuteOptions<T>
   ): Promise<InngestTestRun.RunOutput> {
-    const { run } = await this.individualExecution(inlineOpts);
+    const output = await this.individualExecution(inlineOpts);
 
-    return run
-      .waitFor("function-resolved")
-      .then<InngestTestRun.RunOutput>((output) => {
+    const resolutionHandler = (
+      output: InngestTestEngine.ExecutionOutput<"function-resolved">
+    ) => {
+      return {
+        ctx: output.ctx,
+        state: output.state,
+        result: output.result.data,
+      };
+    };
+
+    const rejectionHandler = (
+      output: InngestTestEngine.ExecutionOutput<"function-rejected">,
+      error: unknown = output.result.error
+    ) => {
+      if (
+        typeof output === "object" &&
+        output !== null &&
+        "ctx" in output &&
+        "state" in output
+      ) {
         return {
           ctx: output.ctx,
           state: output.state,
-          result: output.result.data,
+          error,
         };
-      })
-      .catch<InngestTestRun.RunOutput>((rejectedOutput) => {
-        if (
-          typeof rejectedOutput === "object" &&
-          rejectedOutput !== null &&
-          "ctx" in rejectedOutput &&
-          "state" in rejectedOutput
-        ) {
-          return {
-            ctx: rejectedOutput.ctx,
-            state: rejectedOutput.state,
-            error: rejectedOutput.error,
-          };
-        }
+      }
 
-        throw rejectedOutput;
-      });
+      throw output;
+    };
+
+    if (output.result.type === "function-resolved") {
+      return resolutionHandler(
+        output as InngestTestEngine.ExecutionOutput<"function-resolved">
+      );
+    } else if (output.result.type === "function-rejected") {
+      return rejectionHandler(
+        output as InngestTestEngine.ExecutionOutput<"function-rejected">
+      );
+    } else if (output.result.type === "step-ran") {
+      try {
+        if (
+          (
+            (output as InngestTestEngine.ExecutionOutput<"step-ran">).result
+              .step.error as any
+          ).name === "NonRetriableError"
+        ) {
+          return rejectionHandler(
+            output as InngestTestEngine.ExecutionOutput<"function-rejected">,
+            (output as InngestTestEngine.ExecutionOutput<"step-ran">).result
+              .step.error
+          );
+        }
+      } catch (err) {
+        // no-op
+      }
+    }
+
+    return output.run
+      .waitFor("function-resolved")
+      .then<InngestTestRun.RunOutput>(resolutionHandler)
+      .catch<InngestTestRun.RunOutput>(rejectionHandler);
   }
 
   /**
