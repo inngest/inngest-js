@@ -29,7 +29,7 @@ export namespace InngestTestEngine {
      * TODO Potentially later allow many functions such that we can invoke and
      * send events.
      */
-    function: InngestFunction.Any;
+    function: InngestFunction<any, any, any, any, any, any>;
 
     /**
      * The event payloads to send to the function. If none is given, an
