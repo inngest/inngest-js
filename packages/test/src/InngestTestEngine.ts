@@ -91,6 +91,7 @@ export namespace InngestTestEngine {
 
   export interface MockedStep {
     id: string;
+    idIsHashed?: boolean;
     handler: () => any;
   }
 
@@ -251,11 +252,10 @@ export class InngestTestEngine {
       );
     } else if (output.result.type === "step-ran") {
       try {
+        // Any error halts execution until retries are modelled
         if (
-          (
-            (output as InngestTestEngine.ExecutionOutput<"step-ran">).result
-              .step.error as any
-          ).name === "NonRetriableError"
+          (output as InngestTestEngine.ExecutionOutput<"step-ran">).result.step
+            .error
         ) {
           return rejectionHandler(
             output as InngestTestEngine.ExecutionOutput<"function-rejected">,
@@ -407,7 +407,7 @@ export class InngestTestEngine {
     const steps = (options.steps || []).map((step) => {
       return {
         ...step,
-        id: _internals.hashId(step.id),
+        id: step.idIsHashed ? step.id : _internals.hashId(step.id),
       };
     });
 

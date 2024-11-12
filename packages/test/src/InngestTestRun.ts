@@ -167,10 +167,16 @@ export class InngestTestRun {
         "step-ran": () => {
           const result = exec.result as InngestTestRun.Checkpoint<"step-ran">;
 
+          // if this is an error, we should stop. Later we model retries.
+          if (result.step.error) {
+            return finish(exec);
+          }
+
           // add to our running state
           runningState.steps ??= [];
           runningState.steps.push({
-            id: result.step.name as string, // TODO we need the non-hashed ID here, or a way to map it
+            id: result.step.id,
+            idIsHashed: true,
             handler: () => {
               if (result.step.error) {
                 throw result.step.error;
