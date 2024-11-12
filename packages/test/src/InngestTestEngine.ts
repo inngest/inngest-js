@@ -251,20 +251,16 @@ export class InngestTestEngine {
         output as InngestTestEngine.ExecutionOutput<"function-rejected">
       );
     } else if (output.result.type === "step-ran") {
-      try {
-        // Any error halts execution until retries are modelled
-        if (
+      // Any error halts execution until retries are modelled
+      if (
+        (output as InngestTestEngine.ExecutionOutput<"step-ran">).result.step
+          .error
+      ) {
+        return rejectionHandler(
+          output as InngestTestEngine.ExecutionOutput<"function-rejected">,
           (output as InngestTestEngine.ExecutionOutput<"step-ran">).result.step
             .error
-        ) {
-          return rejectionHandler(
-            output as InngestTestEngine.ExecutionOutput<"function-rejected">,
-            (output as InngestTestEngine.ExecutionOutput<"step-ran">).result
-              .step.error
-          );
-        }
-      } catch (err) {
-        // no-op
+        );
       }
     }
 
