@@ -29,7 +29,7 @@ export namespace InngestTestEngine {
      * TODO Potentially later allow many functions such that we can invoke and
      * send events.
      */
-    function: InngestFunction.Any;
+    function: InngestFunction<any, any, any, any, any, any>;
 
     /**
      * The event payloads to send to the function. If none is given, an
@@ -91,6 +91,7 @@ export namespace InngestTestEngine {
 
   export interface MockedStep {
     id: string;
+    idIsHashed?: boolean;
     handler: () => any;
   }
 
@@ -209,33 +210,64 @@ export class InngestTestEngine {
      */
     inlineOpts?: InngestTestEngine.ExecuteOptions<T>
   ): Promise<InngestTestRun.RunOutput> {
-    const { run } = await this.individualExecution(inlineOpts);
+    const output = await this.individualExecution(inlineOpts);
 
-    return run
-      .waitFor("function-resolved")
-      .then<InngestTestRun.RunOutput>((output) => {
+    const resolutionHandler = (
+      output: InngestTestEngine.ExecutionOutput<"function-resolved">
+    ) => {
+      return {
+        ctx: output.ctx,
+        state: output.state,
+        result: output.result.data,
+      };
+    };
+
+    const rejectionHandler = (
+      output: InngestTestEngine.ExecutionOutput<"function-rejected">,
+      error: unknown = output.result.error
+    ) => {
+      if (
+        typeof output === "object" &&
+        output !== null &&
+        "ctx" in output &&
+        "state" in output
+      ) {
         return {
           ctx: output.ctx,
           state: output.state,
-          result: output.result.data,
+          error,
         };
-      })
-      .catch<InngestTestRun.RunOutput>((rejectedOutput) => {
-        if (
-          typeof rejectedOutput === "object" &&
-          rejectedOutput !== null &&
-          "ctx" in rejectedOutput &&
-          "state" in rejectedOutput
-        ) {
-          return {
-            ctx: rejectedOutput.ctx,
-            state: rejectedOutput.state,
-            error: rejectedOutput.error,
-          };
-        }
+      }
 
-        throw rejectedOutput;
-      });
+      throw output;
+    };
+
+    if (output.result.type === "function-resolved") {
+      return resolutionHandler(
+        output as InngestTestEngine.ExecutionOutput<"function-resolved">
+      );
+    } else if (output.result.type === "function-rejected") {
+      return rejectionHandler(
+        output as InngestTestEngine.ExecutionOutput<"function-rejected">
+      );
+    } else if (output.result.type === "step-ran") {
+      // Any error halts execution until retries are modelled
+      if (
+        (output as InngestTestEngine.ExecutionOutput<"step-ran">).result.step
+          .error
+      ) {
+        return rejectionHandler(
+          output as InngestTestEngine.ExecutionOutput<"function-rejected">,
+          (output as InngestTestEngine.ExecutionOutput<"step-ran">).result.step
+            .error
+        );
+      }
+    }
+
+    return output.run
+      .waitFor("function-resolved")
+      .then<InngestTestRun.RunOutput>(resolutionHandler)
+      .catch<InngestTestRun.RunOutput>(rejectionHandler);
   }
 
   /**
@@ -371,7 +403,7 @@ export class InngestTestEngine {
     const steps = (options.steps || []).map((step) => {
       return {
         ...step,
-        id: _internals.hashId(step.id),
+        id: step.idIsHashed ? step.id : _internals.hashId(step.id),
       };
     });
 
@@ -475,6 +507,8 @@ export class InngestTestEngine {
       },
       Promise.resolve({}) as Promise<InngestTestEngine.MockState>
     );
+
+    InngestTestRun["updateState"](options, result);
 
     const run = new InngestTestRun({
       testEngine: this.clone(options),
