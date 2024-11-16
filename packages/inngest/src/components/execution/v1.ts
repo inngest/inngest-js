@@ -356,10 +356,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             JSON.stringify(step, null, 2)
           );
 
-          // Start with a fresh headers object
-          const headers: Record<string, string> = {
-            "content-type": "application/json",
-          };
+          // Get existing headers from opts
+          const headers = { ...(step.opts?.headers || {}) } as Record<
+            string,
+            string
+          >;
+
+          // Add content-type
+          headers["content-type"] = "application/json";
 
           // Handle auth based on format
           switch (step.opts?.format) {
@@ -383,14 +387,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           console.log("AIGateway Request:", {
             url: step.opts?.url,
             headers,
-            data: step.data, // Log data instead of opts.raw
+            data: step.data,
           });
 
           return {
             ...step,
             opts: {
               ...step.opts,
-              // Only use our newly constructed headers
               headers,
             },
             data: step.data,
