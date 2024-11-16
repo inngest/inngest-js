@@ -557,7 +557,12 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       ...headers,
     }).reduce(
       (acc, [key, value]) => {
-        acc[key.toLowerCase()] = value;
+        // If the value is an array, take the last non-empty value
+        const headerValue = Array.isArray(value)
+          ? value.filter(Boolean).pop() || ""
+          : value;
+
+        acc[key.toLowerCase()] = headerValue;
         return acc;
       },
       {} as Record<string, string>
