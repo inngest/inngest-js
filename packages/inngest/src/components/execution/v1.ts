@@ -331,7 +331,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       id: step.hashedId,
       name: step.name,
       opts: step.opts,
-      data: step.data,
     })) as [OutgoingOp, ...OutgoingOp[]];
 
     /**
@@ -350,56 +349,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   ): Promise<T> {
     return Promise.all(
       steps.map(async (step) => {
-        if (step.op === StepOpCode.AIGateway) {
-          console.log(
-            "Full step before transformation:",
-            JSON.stringify(step, null, 2)
-          );
-
-          // Get existing headers from opts
-          const headers = { ...(step.opts?.headers || {}) } as Record<
-            string,
-            string
-          >;
-
-          // Add content-type
-          headers["content-type"] = "application/json";
-
-          // Handle auth based on format
-          switch (step.opts?.format) {
-            case "gemini":
-              // TODO:
-              break;
-            case "bedrock":
-              // TODO:
-              break;
-            case "anthropic":
-              break;
-            default:
-              if (step?.opts?.authKey) {
-                headers["Authorization"] = `Bearer ${
-                  step.opts.authKey as string
-                }`;
-              }
-              break;
-          }
-
-          console.log("AIGateway Request:", {
-            url: step.opts?.url,
-            headers,
-            data: step.data,
-          });
-
-          return {
-            ...step,
-            opts: {
-              ...step.opts,
-              headers,
-            },
-            data: step.data,
-          };
-        }
-
         if (step.op !== StepOpCode.InvokeFunction) {
           return step;
         }

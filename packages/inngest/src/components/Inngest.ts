@@ -552,26 +552,10 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
 
     // We don't need to do fallback auth here because this uses event keys and
     // not signing keys
-    const mergedHeaders = Object.entries({
-      ...this.headers,
-      ...headers,
-    }).reduce(
-      (acc, [key, value]) => {
-        // If the value is an array, take the last non-empty value
-        const headerValue = Array.isArray(value)
-          ? value.filter(Boolean).pop() || ""
-          : value;
-
-        acc[key.toLowerCase()] = headerValue;
-        return acc;
-      },
-      {} as Record<string, string>
-    );
-
     const response = await this.fetch(url, {
       method: "POST",
       body: stringify(payloads),
-      headers: mergedHeaders,
+      headers: { ...this.headers, ...headers },
     });
 
     let body: SendEventResponse | undefined;
