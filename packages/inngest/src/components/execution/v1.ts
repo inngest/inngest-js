@@ -375,6 +375,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               break;
           }
 
+          console.log("AIGateway Request:", {
+            url: step.opts?.url,
+            headers,
+            body: step.opts?.raw,
+          });
+
           return {
             ...step,
             opts: {
