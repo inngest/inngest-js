@@ -240,6 +240,155 @@ describe("run", () => {
   });
 });
 
+describe("ai.wrap", () => {
+  let step: StepTools;
+
+  beforeEach(() => {
+    step = getStepTools();
+  });
+
+  test("return Step step op code", async () => {
+    await expect(step.ai.wrap("step", () => undefined)).resolves.toMatchObject({
+      op: StepOpCode.StepPlanned,
+    });
+  });
+
+  test("returns `id` as ID", async () => {
+    await expect(step.ai.wrap("id", () => undefined)).resolves.toMatchObject({
+      id: "id",
+    });
+  });
+
+  test("return ID by default", async () => {
+    await expect(step.ai.wrap("id", () => undefined)).resolves.toMatchObject({
+      displayName: "id",
+    });
+  });
+
+  test("return specific name if given", async () => {
+    await expect(
+      step.ai.wrap({ id: "id", name: "name" }, () => undefined)
+    ).resolves.toMatchObject({
+      displayName: "name",
+    });
+  });
+
+  test("no input", async () => {
+    await expect(step.ai.wrap("", () => {})).resolves.toMatchObject({});
+  });
+
+  test("single input", async () => {
+    await expect(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      step.ai.wrap("", (flag: boolean) => {}, true)
+    ).resolves.toMatchObject({});
+  });
+
+  test("multiple input", async () => {
+    await expect(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      step.ai.wrap("", (flag: boolean, value: number) => {}, true, 10)
+    ).resolves.toMatchObject({});
+  });
+
+  test("disallow missing step inputs when function expects them", () => {
+    // @ts-expect-error Invalid data
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    void step.ai.wrap("", (flag: boolean, value: number) => {});
+  });
+
+  test("disallow step inputs when function does not expect them", () => {
+    // @ts-expect-error Invalid data
+    void step.ai.wrap("", () => {}, true);
+  });
+
+  test("disallow step inputs that don't match what function expects", () => {
+    // @ts-expect-error Invalid data
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    void step.ai.wrap("", (flag: boolean, value: number) => {}, 10, true);
+  });
+
+  test("optional input", async () => {
+    await expect(
+      step.run(
+        "",
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        (flag: boolean, value?: number) => {
+          // valid - enough arguments given - missing arg is optional
+        },
+        true
+      )
+    ).resolves.toMatchObject({});
+  });
+
+  test("types returned from ai are the result of (de)serialization", () => {
+    const input = {
+      str: "",
+      num: 0,
+      bool: false,
+      date: new Date(),
+      fn: () => undefined,
+      obj: {
+        str: "",
+        num: 0,
+      },
+      arr: [0, 1, 2, () => undefined, true],
+      infinity: Infinity,
+      nan: NaN,
+      undef: undefined,
+      null: null,
+      symbol: Symbol("foo"),
+      map: new Map(),
+      set: new Set(),
+      bigint: BigInt(123),
+      typedArray: new Int8Array(2),
+      promise: Promise.resolve(),
+      weakMap: new WeakMap([[{}, "test"]]),
+      weakSet: new WeakSet([{}]),
+    };
+
+    const output = step.ai.wrap("step", () => input);
+
+    type Expected = {
+      str: string;
+      num: number;
+      bool: boolean;
+      date: string;
+      obj: {
+        str: string;
+        num: number;
+      };
+      arr: (number | null | boolean)[];
+      infinity: number;
+      nan: number;
+      null: null;
+      map: Record<string, never>;
+      set: Record<string, never>;
+      bigint: never;
+      typedArray: Record<string, number>;
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      promise: {};
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      weakMap: {};
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      weakSet: {};
+    };
+
+    assertType<Promise<Expected>>(output);
+
+    /**
+     * Used to ensure that stripped base properties are also adhered to.
+     */
+    type KeysMatchExactly<T, U> = keyof T extends keyof U
+      ? keyof U extends keyof T
+        ? true
+        : false
+      : false;
+
+    assertType<KeysMatchExactly<Expected, Awaited<typeof output>>>(true);
+  });
+});
+
 describe("sleep", () => {
   let step: StepTools;
 

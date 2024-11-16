@@ -31,6 +31,7 @@ import {
 import { InngestFunction } from "./InngestFunction.js";
 import { InngestFunctionReference } from "./InngestFunctionReference.js";
 import { type InngestExecution } from "./execution/InngestExecution.js";
+import { AIInferenceOptions, InferOpts } from "./ai/providers/provider.js";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -49,6 +50,10 @@ export interface FoundStep extends HashedOp {
    * invocation.
    */
   handle: () => Promise<boolean>;
+
+  // TODO This is used to track the input we want for this step. Might be
+  // present in ctx from Executor.
+  input?: unknown;
 }
 
 export type MatchOpFn<
@@ -265,7 +270,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * for next steps.
      */
     run: createTool<
-      <T extends () => unknown>(
+      <TFn extends (...args: Parameters<TFn>) => unknown>(
         idOrOptions: StepOptionsOrId,
 
         /**
@@ -276,7 +281,14 @@ export const createStepTools = <TClient extends Inngest.Any>(
          * call to `run`, meaning you can return and reason about return data
          * for next steps.
          */
-        fn: T
+        fn: TFn,
+
+        /**
+         * Optional input to pass to the function. If this is specified, Inngest
+         * will keep track of the input for this step and be able to display it
+         * in the UI.
+         */
+        ...input: Parameters<TFn>
       ) => Promise<
         /**
          * TODO Middleware can affect this. If run input middleware has returned
@@ -284,25 +296,121 @@ export const createStepTools = <TClient extends Inngest.Any>(
          */
         SimplifyDeep<
           Jsonify<
-            T extends () => Promise<infer U>
+            TFn extends (...args: Parameters<TFn>) => Promise<infer U>
               ? Awaited<U extends void ? null : U>
-              : ReturnType<T> extends void
+              : ReturnType<TFn> extends void
                 ? null
-                : ReturnType<T>
+                : ReturnType<TFn>
           >
         >
       >
     >(
-      ({ id, name }) => {
+      ({ id, name }, _fn, ...input) => {
         return {
           id,
           op: StepOpCode.StepPlanned,
           name: id,
           displayName: name ?? id,
+          ...(input.length ? { opts: { input } } : {}),
         };
       },
-      { fn: (stepOptions, fn) => fn() }
+      {
+        fn: (_, fn, ...fnArgs) => fn(...fnArgs),
+      }
     ),
+
+    /**
+     * AI tooling for running AI models and other AI-related tasks.
+     */
+    ai: {
+      /**
+       * Use this tool to have Inngest make your AI calls. Useful for agentic workflows.
+       *
+       * Input is also tracked for this tool, meaning you can pass input to the
+       * function and it will be displayed and editable in the UI.
+       */
+      infer: createTool<
+        <TInput = unknown, TOutput = unknown>(
+          idOrOptions: StepOptionsOrId,
+          options: InferOpts<TInput>
+        ) => Promise<TOutput>
+      >(({ id, name }, options) => {
+        return {
+          id,
+          op: StepOpCode.AIGateway,
+          name: id,
+          displayName: name ?? id,
+          opts: {
+            type: "step.ai.infer",
+            url: options.opts.url,
+            headers: options.opts.headers,
+            authKey: options.opts.authKey,
+            format: options.opts.format,
+          },
+          data: options.body,
+        };
+      }),
+      /**
+       * Use this tool to wrap AI models and other AI-related tasks. Each call
+       * to `wrap` will be retried individually, meaning you can compose complex
+       * workflows that safely retry dependent asynchronous actions.
+       *
+       * Input is also tracked for this tool, meaning you can pass input to the
+       * function and it will be displayed and editable in the UI.
+       */
+      wrap: createTool<
+        <TFn extends (...args: Parameters<TFn>) => unknown>(
+          idOrOptions: StepOptionsOrId,
+
+          /**
+           * The function to run when this step is executed. Can be synchronous
+           * or asynchronous.
+           *
+           * The return value of this function will be the return value of this
+           * call to `run`, meaning you can return and reason about return data
+           * for next steps.
+           */
+          fn: TFn,
+
+          /**
+           * Optional input to pass to the function. If this is specified,
+           * Inngest will keep track of the input for this step and be able to
+           * display it in the UI.
+           */
+          ...input: Parameters<TFn>
+        ) => Promise<
+          /**
+           * TODO Middleware can affect this. If run input middleware has
+           * returned new step data, do not Jsonify.
+           */
+          SimplifyDeep<
+            Jsonify<
+              TFn extends (...args: Parameters<TFn>) => Promise<infer U>
+                ? Awaited<U extends void ? null : U>
+                : ReturnType<TFn> extends void
+                  ? null
+                  : ReturnType<TFn>
+            >
+          >
+        >
+      >(
+        ({ id, name }, _fn, ...input) => {
+          return {
+            id,
+            op: StepOpCode.StepPlanned,
+            name: id,
+            displayName: name ?? id,
+            opts: {
+              type: "step.ai.wrap",
+              ...(input.length ? { input } : {}),
+            },
+          };
+        },
+        {
+          fn: (_, fn, ...fnArgs) => fn(...fnArgs),
+        }
+      ),
+    },
 
     /**
      * Wait a specified amount of time before continuing.
