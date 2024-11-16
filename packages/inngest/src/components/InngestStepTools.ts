@@ -347,7 +347,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
             authKey: options.opts.authKey,
             format: options.opts.format,
           },
-          data: options.body,
+          data: JSON.stringify(options.body),
         };
 
         console.log("infer response", response);
