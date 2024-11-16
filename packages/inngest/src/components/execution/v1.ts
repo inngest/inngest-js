@@ -331,6 +331,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       id: step.hashedId,
       name: step.name,
       opts: step.opts,
+      data: step.data,
     })) as [OutgoingOp, ...OutgoingOp[]];
 
     /**
