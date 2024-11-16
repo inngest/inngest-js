@@ -30,8 +30,8 @@ import {
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { InngestFunctionReference } from "./InngestFunctionReference.js";
+import { type InferOpts } from "./ai/providers/provider.js";
 import { type InngestExecution } from "./execution/InngestExecution.js";
-import { AIInferenceOptions, InferOpts } from "./ai/providers/provider.js";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
