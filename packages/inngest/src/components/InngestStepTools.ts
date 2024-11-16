@@ -335,7 +335,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
           options: InferOpts<TInput>
         ) => Promise<TOutput>
       >(({ id, name }, options) => {
-        return {
+        const response = {
           id,
           op: StepOpCode.AIGateway,
           name: id,
@@ -349,6 +349,10 @@ export const createStepTools = <TClient extends Inngest.Any>(
           },
           data: options.body,
         };
+
+        console.log("infer response", response);
+
+        return response;
       }),
       /**
        * Use this tool to wrap AI models and other AI-related tasks. Each call

@@ -27,17 +27,13 @@ export interface InferOpts<TRequest> {
   body: TRequest;
 }
 
-export function openai(key?: string, baseURL?: string): InferRequestOpts {
-  const api = key ?? process.env.OPENAI_API_KEY ?? "";
+export function openai(apiKey?: string, baseURL?: string): InferRequestOpts {
+  const authKey = apiKey ?? process.env.OPENAI_API_KEY ?? "";
   const base = baseURL ?? "https://api.openai.com";
 
   return {
     url: `${base}/v1/chat/completions`,
-    headers: {
-      Authorization: `Bearer ${api}`,
-      "Content-Type": "application/json",
-    },
-    authKey: api,
+    authKey: authKey,
     format: "openai-chat",
   };
 }

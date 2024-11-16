@@ -1402,3 +1402,12 @@ export const err = <E>(error?: E): Result<never, E> => {
 export const inBandSyncRequestBodySchema = z.strictObject({
   url: z.string(),
 });
+
+export type AIGatewayFormat = "gemini" | "bedrock" | "anthropic" | "openai";
+
+export interface AIGatewayOpts {
+  url: string;
+  format: AIGatewayFormat;
+  authKey: string;
+  headers?: Record<string, string>;
+}

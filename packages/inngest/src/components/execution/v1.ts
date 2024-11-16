@@ -349,6 +349,41 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   ): Promise<T> {
     return Promise.all(
       steps.map(async (step) => {
+        if (step.op === StepOpCode.AIGateway) {
+          const headers: Record<string, string> = {
+            "content-type": "application/json",
+            ...(step.opts?.headers ?? {}),
+          };
+
+          // Handle auth based on format
+          switch (step.opts?.format) {
+            case "gemini":
+              // TODO:
+              break;
+            case "bedrock":
+              // TODO:
+              break;
+            case "anthropic":
+              break;
+            default:
+              if (step?.opts?.authKey) {
+                headers["Authorization"] = `Bearer ${
+                  step.opts.authKey as string
+                }`;
+              }
+
+              break;
+          }
+
+          return {
+            ...step,
+            opts: {
+              ...step.opts,
+              headers,
+            },
+          };
+        }
+
         if (step.op !== StepOpCode.InvokeFunction) {
           return step;
         }
