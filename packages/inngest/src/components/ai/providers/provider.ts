@@ -33,6 +33,10 @@ export function openai(key?: string, baseURL?: string): InferRequestOpts {
 
   return {
     url: `${base}/v1/chat/completions`,
+    headers: {
+      Authorization: `Bearer ${api}`,
+      "Content-Type": "application/json",
+    },
     authKey: api,
     format: "openai-chat",
   };
