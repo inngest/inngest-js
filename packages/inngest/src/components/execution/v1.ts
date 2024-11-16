@@ -392,6 +392,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               ...step.opts,
               headers,
             },
+            data: step.data,
           };
         }
 
