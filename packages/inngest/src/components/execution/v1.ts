@@ -350,6 +350,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return Promise.all(
       steps.map(async (step) => {
         if (step.op === StepOpCode.AIGateway) {
+          console.log(
+            "Full step before transformation:",
+            JSON.stringify(step, null, 2)
+          );
           const headers: Record<string, string> = {
             "content-type": "application/json",
             ...(step.opts?.headers ?? {}),
