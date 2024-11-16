@@ -355,9 +355,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             "Full step before transformation:",
             JSON.stringify(step, null, 2)
           );
+
+          // Start with a fresh headers object
           const headers: Record<string, string> = {
             "content-type": "application/json",
-            ...(step.opts?.headers ?? {}),
           };
 
           // Handle auth based on format
@@ -376,20 +377,20 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                   step.opts.authKey as string
                 }`;
               }
-
               break;
           }
 
           console.log("AIGateway Request:", {
             url: step.opts?.url,
             headers,
-            body: step.opts?.raw,
+            data: step.data, // Log data instead of opts.raw
           });
 
           return {
             ...step,
             opts: {
               ...step.opts,
+              // Only use our newly constructed headers
               headers,
             },
             data: step.data,
