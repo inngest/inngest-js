@@ -370,6 +370,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
        * function and it will be displayed and editable in the UI.
        */
       wrap: stepRun,
+    },
 
     /**
      * Wait a specified amount of time before continuing.
