@@ -344,7 +344,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
             type: "step.ai.infer",
             url: options.opts.url,
             headers: options.opts.headers,
-            authKey: options.opts.authKey,
+            auth_key: options.opts.authKey,
             format: options.opts.format,
           },
           data: options.body,
