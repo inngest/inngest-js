@@ -151,6 +151,65 @@ export const createStepTools = <TClient extends Inngest.Any>(
     }) as T;
   };
 
+  const stepRun = createTool<
+    <TFn extends (...args: Parameters<TFn>) => unknown>(
+      idOrOptions: StepOptionsOrId,
+
+      /**
+       * The function to run when this step is executed. Can be synchronous or
+       * asynchronous.
+       *
+       * The return value of this function will be the return value of this
+       * call to `run`, meaning you can return and reason about return data
+       * for next steps.
+       */
+      fn: TFn,
+
+      /**
+       * Optional input to pass to the function. If this is specified, Inngest
+       * will keep track of the input for this step and be able to display it
+       * in the UI.
+       */
+      ...input: Parameters<TFn>
+    ) => Promise<
+      /**
+       * TODO Middleware can affect this. If run input middleware has returned
+       * new step data, do not Jsonify.
+       */
+      SimplifyDeep<
+        Jsonify<
+          TFn extends (...args: Parameters<TFn>) => Promise<infer U>
+            ? Awaited<U extends void ? null : U>
+            : ReturnType<TFn> extends void
+              ? null
+              : ReturnType<TFn>
+        >
+      >
+    >
+  >(
+    ({ id, name }, _fn, ...input) => {
+      return {
+        id,
+        op: StepOpCode.StepPlanned,
+        name: id,
+        displayName: name ?? id,
+        ...(input ? { opts: { input } } : {}),
+      };
+    },
+    {
+      fn: (...stepArgs) => {
+        const fn = stepArgs[1];
+
+        const fnArgs = [] as unknown as [unknown];
+        if (stepArgs.length > 2) {
+          fnArgs.push(stepArgs[2]);
+        }
+
+        return fn(...fnArgs);
+      },
+    }
+  );
+
   /**
    * Define the set of tools the user has access to for their step functions.
    *
@@ -269,55 +328,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * of the `run` tool, meaning you can return and reason about return data
      * for next steps.
      */
-    run: createTool<
-      <TFn extends (...args: Parameters<TFn>) => unknown>(
-        idOrOptions: StepOptionsOrId,
-
-        /**
-         * The function to run when this step is executed. Can be synchronous or
-         * asynchronous.
-         *
-         * The return value of this function will be the return value of this
-         * call to `run`, meaning you can return and reason about return data
-         * for next steps.
-         */
-        fn: TFn,
-
-        /**
-         * Optional input to pass to the function. If this is specified, Inngest
-         * will keep track of the input for this step and be able to display it
-         * in the UI.
-         */
-        ...input: Parameters<TFn>
-      ) => Promise<
-        /**
-         * TODO Middleware can affect this. If run input middleware has returned
-         * new step data, do not Jsonify.
-         */
-        SimplifyDeep<
-          Jsonify<
-            TFn extends (...args: Parameters<TFn>) => Promise<infer U>
-              ? Awaited<U extends void ? null : U>
-              : ReturnType<TFn> extends void
-                ? null
-                : ReturnType<TFn>
-          >
-        >
-      >
-    >(
-      ({ id, name }, _fn, ...input) => {
-        return {
-          id,
-          op: StepOpCode.StepPlanned,
-          name: id,
-          displayName: name ?? id,
-          ...(input.length ? { opts: { input } } : {}),
-        };
-      },
-      {
-        fn: (_, fn, ...fnArgs) => fn(...fnArgs),
-      }
-    ),
+    run: stepRun,
 
     /**
      * AI tooling for running AI models and other AI-related tasks.
@@ -335,7 +346,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
           options: InferOpts<TInput>
         ) => Promise<TOutput>
       >(({ id, name }, options) => {
-        const response = {
+        return {
           id,
           op: StepOpCode.AIGateway,
           name: id,
@@ -349,10 +360,6 @@ export const createStepTools = <TClient extends Inngest.Any>(
           },
           data: options.body,
         };
-
-        console.log("infer response", response);
-
-        return response;
       }),
       /**
        * Use this tool to wrap AI models and other AI-related tasks. Each call
@@ -362,59 +369,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
        * Input is also tracked for this tool, meaning you can pass input to the
        * function and it will be displayed and editable in the UI.
        */
-      wrap: createTool<
-        <TFn extends (...args: Parameters<TFn>) => unknown>(
-          idOrOptions: StepOptionsOrId,
-
-          /**
-           * The function to run when this step is executed. Can be synchronous
-           * or asynchronous.
-           *
-           * The return value of this function will be the return value of this
-           * call to `run`, meaning you can return and reason about return data
-           * for next steps.
-           */
-          fn: TFn,
-
-          /**
-           * Optional input to pass to the function. If this is specified,
-           * Inngest will keep track of the input for this step and be able to
-           * display it in the UI.
-           */
-          ...input: Parameters<TFn>
-        ) => Promise<
-          /**
-           * TODO Middleware can affect this. If run input middleware has
-           * returned new step data, do not Jsonify.
-           */
-          SimplifyDeep<
-            Jsonify<
-              TFn extends (...args: Parameters<TFn>) => Promise<infer U>
-                ? Awaited<U extends void ? null : U>
-                : ReturnType<TFn> extends void
-                  ? null
-                  : ReturnType<TFn>
-            >
-          >
-        >
-      >(
-        ({ id, name }, _fn, ...input) => {
-          return {
-            id,
-            op: StepOpCode.StepPlanned,
-            name: id,
-            displayName: name ?? id,
-            opts: {
-              type: "step.ai.wrap",
-              ...(input.length ? { input } : {}),
-            },
-          };
-        },
-        {
-          fn: (_, fn, ...fnArgs) => fn(...fnArgs),
-        }
-      ),
-    },
+      wrap: stepRun,
 
     /**
      * Wait a specified amount of time before continuing.
