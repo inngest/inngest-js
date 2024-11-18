@@ -414,7 +414,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     opts,
     fn,
     displayName,
-    input,
   }: FoundStep): Promise<OutgoingOp> {
     this.timeout?.clear();
     await this.state.hooks?.afterMemoization?.();
@@ -430,12 +429,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     this.state.executingStep = outgoingOp;
     this.debug(`executing step "${id}"`);
 
-    // TODO This should be handled before now
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    const fnToRun = Array.isArray(input) ? () => fn?.(...input) : fn;
-
     return (
-      runAsPromise(fnToRun)
+      runAsPromise(fn)
         // eslint-disable-next-line @typescript-eslint/no-misused-promises
         .finally(async () => {
           await this.state.hooks?.afterExecution?.();
@@ -871,9 +866,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       let extraOpts: Record<string, unknown> | undefined;
       let fnArgs = [...args];
-      console.log("FNARGS ARE:", fnArgs);
 
-      // TODO Rocky solution - if this is a run and we have input, use it
       if (
         opId.op === StepOpCode.StepPlanned &&
         typeof stepState?.input !== "undefined" &&
@@ -883,7 +876,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         fnArgs = [...args.slice(0, 2), ...stepState.input];
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         extraOpts = { input: [...stepState.input] };
-        console.log("ARGS ARE NOW:", fnArgs);
       }
 
       const step: FoundStep = {
@@ -905,19 +897,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
           step.handled = true;
 
-          // TODO same as isfulfilled
-          if (stepState && typeof stepState.input === "undefined") {
-            // TODO If we have input, blindly assume that we're running this
-            // step and it's not a memoized step.
+          if (isFulfilled && stepState) {
             stepState.fulfilled = true;
 
-            // For some execution scenarios such as testing, `data` and/or
-            // `error` may be `Promises`. This could also be the case for future
-            // middleware applications. For this reason, we'll make sure the
-            // values are fully resolved before continuing.
+            // For some execution scenarios such as testing, `data`, `error`,
+            // and `input` may be `Promises`. This could also be the case for
+            // future middleware applications. For this reason, we'll make sure
+            // the values are fully resolved before continuing.
             await stepState.data;
             await stepState.error;
-            // TODO Probably need to await stepState.input wherever it's
+            await stepState.input;
 
             if (typeof stepState.data !== "undefined") {
               resolve(stepState.data);

@@ -1323,9 +1323,6 @@ export class InngestCommHandler<
     }
 
     const immediateFnData = parseFnData(fn.fn, data);
-
-    console.log(immediateFnData);
-
     const { version } = immediateFnData;
 
     const result = runAsPromise(async () => {
