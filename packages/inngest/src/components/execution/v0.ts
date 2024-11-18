@@ -386,7 +386,13 @@ export class V0InngestExecution
         parent: this.state.currentOp?.id ?? null,
         op: op.op,
         name: op.name as string,
-        opts: op.opts ?? null,
+
+        // Historically, no v0 runs could have options for `step.run()` call,
+        // but this object can be specified in future versions.
+        //
+        // For this purpose, we change this to always use `null` if the op is
+        // that of a `step.run()`.
+        opts: op.op === StepOpCode.StepPlanned ? null : op.opts ?? null,
       };
 
       const collisionHash = _internals.hashData(obj);
@@ -488,8 +494,11 @@ export class V0InngestExecution
 
     if (
       op &&
-      op.op === StepOpCode.StepPlanned &&
-      typeof op.opts === "undefined"
+      op.op === StepOpCode.StepPlanned
+      // TODO We must individually check properties here that we do not want to
+      // execute on, such as retry counts. Nothing exists here that falls in to
+      // this case, but should be accounted for when we add them.
+      // && typeof op.opts === "undefined"
     ) {
       return op.id;
     }
