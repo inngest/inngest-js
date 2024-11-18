@@ -231,6 +231,7 @@ export const incomingOpSchema = z.object({
   id: z.string().min(1),
   data: z.any().optional(),
   error: z.any().optional(),
+  input: z.any().optional(),
 });
 
 export type IncomingOp = z.output<typeof incomingOpSchema>;

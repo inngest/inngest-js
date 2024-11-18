@@ -190,7 +190,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
     >(
       ({ id, name }, _fn, ...input) => {
         const opts: HashedOp["opts"] = {
-          ...(input ? { input } : {}),
+          ...(input.length ? { input } : {}),
           ...(type ? { type } : {}),
         };
 

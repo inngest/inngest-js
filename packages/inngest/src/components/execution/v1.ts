@@ -858,18 +858,39 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       const { promise, resolve, reject } = createDeferredPromise();
       const hashedId = _internals.hashId(opId.id);
       const stepState = this.state.stepState[hashedId];
+      let isFulfilled = false;
       if (stepState) {
         stepState.seen = true;
+
+        if (typeof stepState.input === "undefined") {
+          isFulfilled = true;
+        }
+      }
+
+      let extraOpts: Record<string, unknown> | undefined;
+      let fnArgs = [...args];
+
+      if (
+        opId.op === StepOpCode.StepPlanned &&
+        typeof stepState?.input !== "undefined" &&
+        Array.isArray(stepState.input)
+      ) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        fnArgs = [...args.slice(0, 2), ...stepState.input];
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        extraOpts = { input: [...stepState.input] };
       }
 
       const step: FoundStep = {
         ...opId,
-        rawArgs: args,
+        opts: { ...opId.opts, ...extraOpts },
+        rawArgs: fnArgs, // TODO What is the right value here? Should this be raw args without affected input?
         hashedId,
+        input: stepState?.input,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
+        fn: opts?.fn ? () => opts.fn?.(...fnArgs) : undefined,
         promise,
-        fulfilled: Boolean(stepState),
+        fulfilled: isFulfilled,
         displayName: opId.displayName ?? opId.id,
         handled: false,
         handle: async () => {
@@ -879,15 +900,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
           step.handled = true;
 
-          if (stepState) {
+          if (isFulfilled && stepState) {
             stepState.fulfilled = true;
 
-            // For some execution scenarios such as testing, `data` and/or
-            // `error` may be `Promises`. This could also be the case for future
-            // middleware applications. For this reason, we'll make sure the
-            // values are fully resolved before continuing.
+            // For some execution scenarios such as testing, `data`, `error`,
+            // and `input` may be `Promises`. This could also be the case for
+            // future middleware applications. For this reason, we'll make sure
+            // the values are fully resolved before continuing.
             await stepState.data;
             await stepState.error;
+            await stepState.input;
 
             if (typeof stepState.data !== "undefined") {
               resolve(stepState.data);
