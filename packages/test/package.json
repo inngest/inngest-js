@@ -1,6 +1,6 @@
 {
   "name": "@inngest/test",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Tooling for testing Inngest functions.",
   "main": "./index.js",
   "types": "./index.d.ts",
