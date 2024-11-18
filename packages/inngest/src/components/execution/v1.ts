@@ -272,8 +272,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     if (
       op &&
-      op.op === StepOpCode.StepPlanned &&
-      typeof op.opts === "undefined"
+      op.op === StepOpCode.StepPlanned
+      // TODO We must individually check properties here that we do not want to
+      // execute on, such as retry counts. Nothing exists here that falls in to
+      // this case, but should be accounted for when we add them.
+      // && typeof op.opts === "undefined"
     ) {
       return op.hashedId;
     }
