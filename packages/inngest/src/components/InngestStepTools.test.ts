@@ -240,7 +240,7 @@ describe("run", () => {
   });
 });
 
-describe("ai", () => {
+describe("ai.wrap", () => {
   let step: StepTools;
 
   beforeEach(() => {
@@ -248,64 +248,64 @@ describe("ai", () => {
   });
 
   test("return Step step op code", async () => {
-    await expect(step.ai("step", () => undefined)).resolves.toMatchObject({
+    await expect(step.ai.wrap("step", () => undefined)).resolves.toMatchObject({
       op: StepOpCode.StepPlanned,
     });
   });
 
   test("returns `id` as ID", async () => {
-    await expect(step.ai("id", () => undefined)).resolves.toMatchObject({
+    await expect(step.ai.wrap("id", () => undefined)).resolves.toMatchObject({
       id: "id",
     });
   });
 
   test("return ID by default", async () => {
-    await expect(step.ai("id", () => undefined)).resolves.toMatchObject({
+    await expect(step.ai.wrap("id", () => undefined)).resolves.toMatchObject({
       displayName: "id",
     });
   });
 
   test("return specific name if given", async () => {
     await expect(
-      step.ai({ id: "id", name: "name" }, () => undefined)
+      step.ai.wrap({ id: "id", name: "name" }, () => undefined)
     ).resolves.toMatchObject({
       displayName: "name",
     });
   });
 
   test("no input", async () => {
-    await expect(step.ai("", () => {})).resolves.toMatchObject({});
+    await expect(step.ai.wrap("", () => {})).resolves.toMatchObject({});
   });
 
   test("single input", async () => {
     await expect(
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      step.ai("", (flag: boolean) => {}, true)
+      step.ai.wrap("", (flag: boolean) => {}, true)
     ).resolves.toMatchObject({});
   });
 
   test("multiple input", async () => {
     await expect(
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      step.ai("", (flag: boolean, value: number) => {}, true, 10)
+      step.ai.wrap("", (flag: boolean, value: number) => {}, true, 10)
     ).resolves.toMatchObject({});
   });
 
   test("disallow missing step inputs when function expects them", () => {
     // @ts-expect-error Invalid data
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    void step.ai("", (flag: boolean, value: number) => {});
+    void step.ai.wrap("", (flag: boolean, value: number) => {});
   });
 
   test("disallow step inputs when function does not expect them", () => {
     // @ts-expect-error Invalid data
-    void step.ai("", () => {}, true);
+    void step.ai.wrap("", () => {}, true);
   });
 
   test("disallow step inputs that don't match what function expects", () => {
     // @ts-expect-error Invalid data
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    void step.ai("", (flag: boolean, value: number) => {}, 10, true);
+    void step.ai.wrap("", (flag: boolean, value: number) => {}, 10, true);
   });
 
   test("optional input", async () => {
@@ -347,7 +347,7 @@ describe("ai", () => {
       weakSet: new WeakSet([{}]),
     };
 
-    const output = step.ai("step", () => input);
+    const output = step.ai.wrap("step", () => input);
 
     type Expected = {
       str: string;
