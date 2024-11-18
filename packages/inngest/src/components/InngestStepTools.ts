@@ -354,8 +354,8 @@ export const createStepTools = <TClient extends Inngest.Any>(
             headers: options.opts.headers,
             auth_key: options.opts.authKey,
             format: options.opts.format,
+            body: options.body,
           },
-          data: options.body,
         };
       }),
 
