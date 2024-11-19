@@ -30,6 +30,7 @@ import {
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { InngestFunctionReference } from "./InngestFunctionReference.js";
+import { openai } from "./ai/providers/index.js";
 import {
   type InferOptions,
   type InferOutput,
@@ -387,6 +388,16 @@ export const createStepTools = <TClient extends Inngest.Any>(
        * function and it will be displayed and editable in the UI.
        */
       wrap: createStepRun("step.ai.wrap"),
+
+      /**
+       * TODO
+       */
+      providers: {
+        /**
+         * TODO
+         */
+        openai,
+      },
     },
 
     /**
