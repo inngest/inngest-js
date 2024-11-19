@@ -1,93 +1,114 @@
 /**
- * TODO
+ * A symbol used internally to define the types for a provider whilst keeping
+ * generics clean. Must not be exported outside of this module.
  */
 export declare const types: unique symbol;
 export type types = typeof types;
 
 /**
- * TODO
+ * Supported I/O formats for AI providers.
  */
 export type InferFormat = "openai-chat"; // | "anthropic" | "gemini" | "bedrock";
 
 /**
- * TODO
+ * Options for `step.ai.infer()`.
  */
 export interface InferOptions<TProvider extends Provider> {
   /**
-   * TODO
+   * The provider to use for the inference. Create a provider by importing from
+   * `"inngest"` or by using `step.ai.providers.*`.
+   *
+   * @example Import `openai()`
+   * ```ts
+   * import { openai } from "inngest";
+   *
+   * const provider = openai({ model: "gpt-4" });
+   * ```
+   *
+   * @example Use a provider from `step.ai.providers`
+   * ```ts
+   * async ({ step }) => {
+   *            const provider = step.ai.providers.openai({ model: "gpt-4" });
+   * }
+   * ```
    */
   provider: TProvider;
 
   /**
-   * TODO
+   * The input to pass to the provider.
    */
   body: InferInput<TProvider>;
 }
 
 /**
- * TODO
+ * A helper used to infer the input type of a provider.
  */
 export type InferInput<TProvider extends Provider> = TProvider[types]["input"];
 
 /**
- * TODO
+ * A helper used to infer the output type of a provider.
  */
 export type InferOutput<TProvider extends Provider> =
   TProvider[types]["output"];
 
 /**
- * TODO
+ * An AI inference provider, defining the I/O format and typing.
+ *
+ * Providers should extend this interface to define their own input and output
+ * types.
  */
 export interface Provider {
   /**
-   * TODO
+   * The input and output types for the provider.
+   *
+   * This is not accessible externally, and is only used internally to define
+   * the user-facing types for each provider in a way that avoids using
+   * generics.
    */
   [types]: {
     /**
-     * TODO
+     * The input typing for the provider.
      */
     input: unknown;
     /**
-     * TODO
+     * The output typing for the provider.
      */
     output: unknown;
   };
 
   /**
-   * TODO
+   * The URL to use for the provider.
    */
   url?: string;
 
   /**
-   * TODO
+   * Headers to pass to the provider.
    */
   headers?: Record<string, string>;
 
   /**
-   * TODO
+   * The authentication key to use for the provider.
    */
   authKey: string;
 
   /**
-   * TODO
+   * The format of the provider.
    */
   format: InferFormat;
 
   /**
-   * TODO
-   *
    * Given the provider and a body, mutate them as needed. This is useful for
    * addressing any dynamic changes to the provider options or body based on
    * each other, such as the target URL changing based on a model.
    */
   onCall?: (
     /**
-     * TODO
+     * The provider to use for the inference.
      */
     provider: this,
 
     /**
-     * TODO
+     * The input to pass to the provider.
      */
     body: this[types]["input"]
   ) => void;

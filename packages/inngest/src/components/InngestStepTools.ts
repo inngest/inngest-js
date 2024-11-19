@@ -391,11 +391,13 @@ export const createStepTools = <TClient extends Inngest.Any>(
       wrap: createStepRun("step.ai.wrap"),
 
       /**
-       * TODO
+       * Providers for AI inference and other AI-related tasks.
        */
       providers: {
         /**
-         * TODO
+         * Create an OpenAI provider using the OpenAI chat format.
+         *
+         * By default it targets the `https://api.openai.com` base URL.
          */
         openai,
       },
