@@ -1,5 +1,11 @@
 # @inngest/test
 
+## 0.1.2
+
+### Patch Changes
+
+- [#749](https://github.com/inngest/inngest-js/pull/749) [`d61a8a2`](https://github.com/inngest/inngest-js/commit/d61a8a2beb8eb9f99d916215365b00a20498f1b8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `error` sometimes being `undefined` when a step rejects mid-run
+
 ## 0.1.1
 
 ### Patch Changes
