@@ -223,8 +223,7 @@ export class InngestTestEngine {
     };
 
     const rejectionHandler = (
-      output: InngestTestEngine.ExecutionOutput<"function-rejected">,
-      error: unknown = output.result.error
+      output: InngestTestEngine.ExecutionOutput<"function-rejected">
     ) => {
       if (
         typeof output === "object" &&
@@ -232,6 +231,23 @@ export class InngestTestEngine {
         "ctx" in output &&
         "state" in output
       ) {
+        let error = output.result.error;
+        if (!error) {
+          if (
+            "step" in output.result &&
+            typeof output.result.step === "object" &&
+            output.result.step !== null &&
+            "error" in output.result.step &&
+            output.result.step.error
+          ) {
+            error = output.result.step.error;
+          } else {
+            error = new Error(
+              "Function rejected without a visible error; this is a bug"
+            );
+          }
+        }
+
         return {
           ctx: output.ctx,
           state: output.state,
@@ -257,9 +273,7 @@ export class InngestTestEngine {
           .error
       ) {
         return rejectionHandler(
-          output as InngestTestEngine.ExecutionOutput<"function-rejected">,
-          (output as InngestTestEngine.ExecutionOutput<"step-ran">).result.step
-            .error
+          output as InngestTestEngine.ExecutionOutput<"function-rejected">
         );
       }
     }
