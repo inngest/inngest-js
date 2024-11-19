@@ -30,7 +30,11 @@ import {
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { InngestFunctionReference } from "./InngestFunctionReference.js";
-import { type InferOpts } from "./ai/providers/provider.js";
+import {
+  type InferOptions,
+  type InferOutput,
+  type Provider,
+} from "./ai/providers/provider.js";
 import { type InngestExecution } from "./execution/InngestExecution.js";
 
 export interface FoundStep extends HashedOp {
@@ -151,8 +155,18 @@ export const createStepTools = <TClient extends Inngest.Any>(
     }) as T;
   };
 
-  const createStepRun = (type?: string) =>
-    createTool<
+  /**
+   * Create a new step run tool that can be used to run a step function using
+   * `step.run()` as a shim.
+   */
+  const createStepRun = (
+    /**
+     * The sub-type of this step tool, exposed via `opts.type` when the op is
+     * reported.
+     */
+    type?: string
+  ) => {
+    return createTool<
       <TFn extends (...args: Parameters<TFn>) => unknown>(
         idOrOptions: StepOptionsOrId,
 
@@ -206,6 +220,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         fn: (_, fn, ...input) => fn(...input),
       }
     );
+  };
 
   /**
    * Define the set of tools the user has access to for their step functions.
@@ -338,22 +353,26 @@ export const createStepTools = <TClient extends Inngest.Any>(
        * function and it will be displayed and editable in the UI.
        */
       infer: createTool<
-        <TInput = unknown, TOutput = unknown>(
+        <TProvider extends Provider>(
           idOrOptions: StepOptionsOrId,
-          options: InferOpts<TInput>
-        ) => Promise<TOutput>
+          options: InferOptions<TProvider>
+        ) => Promise<InferOutput<TProvider>>
       >(({ id, name }, options) => {
+        const providerCopy = { ...options.provider };
+
+        // Allow the provider to mutate options and body for this call
+        options.provider.onCall?.(providerCopy, options.body);
+
         return {
           id,
-          op: StepOpCode.AIGateway,
-          name: id,
+          op: StepOpCode.AiGateway,
           displayName: name ?? id,
           opts: {
             type: "step.ai.infer",
-            url: options.opts.url,
-            headers: options.opts.headers,
-            auth_key: options.opts.authKey,
-            format: options.opts.format,
+            url: providerCopy.url,
+            headers: providerCopy.headers,
+            auth_key: providerCopy.authKey,
+            format: providerCopy.format,
             body: options.body,
           },
         };

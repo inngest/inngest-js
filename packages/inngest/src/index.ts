@@ -38,6 +38,7 @@
  * @module
  */
 
+export * from "./components/ai/providers/index.js";
 export {
   EventSchemas,
   type AssertInternalEventPayloads,
@@ -55,13 +56,6 @@ export type {
   GetFunctionOutput,
   GetStepTools,
 } from "./components/Inngest";
-
-export type {
-  InferOpts,
-  InferRequestOpts,
-} from "./components/ai/providers/provider.js";
-
-export { openai } from "./components/ai/providers/provider.js";
 export { Inngest } from "./components/Inngest.js";
 export type { ServeHandlerOptions } from "./components/InngestCommHandler";
 export { InngestCommHandler } from "./components/InngestCommHandler.js";

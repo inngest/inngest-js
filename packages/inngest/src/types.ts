@@ -175,7 +175,7 @@ export enum StepOpCode {
   StepNotFound = "StepNotFound",
 
   InvokeFunction = "InvokeFunction",
-  AIGateway = "AIGateway",
+  AiGateway = "AIGateway",
 }
 
 /**

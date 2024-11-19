@@ -1,39 +1,94 @@
-export type ProviderType = "openai" | "anthropic";
+/**
+ * TODO
+ */
+export declare const types: unique symbol;
+export type types = typeof types;
 
-export interface AIInferenceOptions<TInput = unknown, TOutput = unknown> {
-  opts?: {
-    baseURL?: string;
-    authorization?: Record<string, string>;
-    auto_tool_call?: boolean;
-    headers?: Record<string, string>[];
-    format?: string;
-  };
-  model?: string;
-  messages: Array<{ role: string; content: string }>;
-  tools?: unknown[];
+/**
+ * TODO
+ */
+export type InferFormat = "openai-chat"; // | "anthropic" | "gemini" | "bedrock";
+
+/**
+ * TODO
+ */
+export interface InferOptions<TProvider extends Provider> {
+  /**
+   * TODO
+   */
+  provider: TProvider;
+
+  /**
+   * TODO
+   */
+  body: InferInput<TProvider>;
 }
 
-export type InferFormat = "openai-chat" | "anthropic" | "gemini" | "bedrock";
+/**
+ * TODO
+ */
+export type InferInput<TProvider extends Provider> = TProvider[types]["input"];
 
-export interface InferRequestOpts {
+/**
+ * TODO
+ */
+export type InferOutput<TProvider extends Provider> =
+  TProvider[types]["output"];
+
+/**
+ * TODO
+ */
+export interface Provider {
+  /**
+   * TODO
+   */
+  [types]: {
+    /**
+     * TODO
+     */
+    input: unknown;
+    /**
+     * TODO
+     */
+    output: unknown;
+  };
+
+  /**
+   * TODO
+   */
   url?: string;
+
+  /**
+   * TODO
+   */
   headers?: Record<string, string>;
+
+  /**
+   * TODO
+   */
   authKey: string;
+
+  /**
+   * TODO
+   */
   format: InferFormat;
-}
 
-export interface InferOpts<TRequest> {
-  opts: InferRequestOpts;
-  body: TRequest;
-}
+  /**
+   * TODO
+   *
+   * Given the provider and a body, mutate them as needed. This is useful for
+   * addressing any dynamic changes to the provider options or body based on
+   * each other, such as the target URL changing based on a model.
+   */
+  onCall?: (
+    /**
+     * TODO
+     */
+    provider: this,
 
-export function openai(apiKey?: string, baseURL?: string): InferRequestOpts {
-  const authKey = apiKey ?? process.env.OPENAI_API_KEY ?? "";
-  const base = baseURL ?? "https://api.openai.com";
-
-  return {
-    url: `${base}/v1/chat/completions`,
-    authKey: authKey,
-    format: "openai-chat",
-  };
+    /**
+     * TODO
+     */
+    body: this[types]["input"]
+  ) => void;
 }
