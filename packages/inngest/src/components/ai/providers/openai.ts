@@ -1,6 +1,6 @@
 import { envKeys } from "../../../helpers/consts.js";
 import { processEnv } from "../../../helpers/env.js";
-import { type Provider, type types } from "./provider.js";
+import { type Provider, type types } from "../provider.js";
 
 /**
  * TODO

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { openai } from "@local/components/ai/providers";
+import { openai } from "@local/components/ai";
 import { EventSchemas } from "@local/components/EventSchemas";
 import { type Inngest } from "@local/components/Inngest";
 import { InngestFunction } from "@local/components/InngestFunction";

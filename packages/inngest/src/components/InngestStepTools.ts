@@ -30,12 +30,13 @@ import {
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { InngestFunctionReference } from "./InngestFunctionReference.js";
-import { openai } from "./ai/providers/index.js";
 import {
+  openai,
   type InferOptions,
   type InferOutput,
   type Provider,
-} from "./ai/providers/provider.js";
+} from "./ai/index.js";
+
 import { type InngestExecution } from "./execution/InngestExecution.js";
 
 export interface FoundStep extends HashedOp {

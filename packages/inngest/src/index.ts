@@ -38,7 +38,7 @@
  * @module
  */
 
-export * from "./components/ai/providers/index.js";
+export * from "./components/ai/index.js";
 export {
   EventSchemas,
   type AssertInternalEventPayloads,
