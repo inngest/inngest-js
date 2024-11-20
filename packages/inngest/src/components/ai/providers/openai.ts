@@ -414,8 +414,8 @@ export interface OpenAiProvider extends Provider {
                * before calling your function.
                */
               arguments: string;
-            }[];
-          };
+            };
+          }[];
 
           /**
            * If the audio output modality is requested, this object contains
