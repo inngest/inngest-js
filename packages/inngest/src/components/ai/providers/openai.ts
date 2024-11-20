@@ -167,8 +167,11 @@ export interface OpenAiProvider extends Provider {
 
             /**
              * Tool call that this message is responding to.
+             *
+             * This is not technically optional if the `role` is `"tool"`, but
+             * it remains optional here for easy typing.
              */
-            tool_call_id: string;
+            tool_call_id?: string;
           }
       )[];
 
