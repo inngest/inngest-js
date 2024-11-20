@@ -69,11 +69,13 @@ export interface Provider {
     /**
      * The input typing for the provider.
      */
-    input: unknown;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    input: any;
     /**
      * The output typing for the provider.
      */
-    output: unknown;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    output: any;
   };
 
   /**
