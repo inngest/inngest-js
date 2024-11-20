@@ -275,9 +275,47 @@ export interface OpenAiProvider extends Provider {
         | { type: "function"; function: { name: string } };
 
       /**
-       * A list of tools the model can use for generating responses.
+       * A list of tools the model may call. Currently, only functions are
+       * supported as a tool. Use this to provide a list of functions the model
+       * may generate JSON inputs for. A max of 128 functions are supported.
        */
-      tools?: { name: string; description?: string }[];
+      tools?: {
+        /**
+         * The name of the function to be called. Must be a-z, A-Z, 0-9, or
+         * contain underscores and dashes, with a maximum length of 64.
+         */
+        name: string;
+
+        /**
+         * A description of what the function does, used by the model to choose
+         * when and how to call the function.
+         */
+        description?: string;
+
+        /**
+         * The parameters the functions accepts, described as a JSON Schema
+         * object. See the
+         * [guide](https://platform.openai.com/docs/guides/function-calling) for
+         * examples, and the [JSON Schema
+         * reference](https://json-schema.org/understanding-json-schema/) for
+         * documentation about the format.
+         *
+         * Omitting `parameters` defines a function with an empty parameter
+         * list.
+         */
+        parameters?: Record<string, unknown>;
+
+        /**
+         * Whether to enable strict schema adherence when generating the
+         * function call. If set to true, the model will follow the exact schema
+         * defined in the `parameters field`. Only a subset of JSON Schema is
+         * supported when `strict` is `true`. Learn more about Structured
+         * Outputs in the function calling guide.
+         *
+         * @default false
+         */
+        strict?: boolean;
+      }[];
 
       /**
        * Specifies whether parallel tool calls are enabled. Defaults to `true`.
