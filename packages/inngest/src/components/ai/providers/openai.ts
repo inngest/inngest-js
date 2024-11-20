@@ -445,7 +445,7 @@ export interface OpenAiProvider extends Provider {
              */
             transcript: string;
           } | null;
-        }[];
+        };
 
         /**
          * Log probability information for the choice.
