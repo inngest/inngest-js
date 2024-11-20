@@ -529,7 +529,7 @@ export interface OpenAiProvider extends Provider {
               }[]
             | null;
         };
-      };
+      }[];
 
       /**
        * The Unix timestamp (in seconds) of when the chat completion was

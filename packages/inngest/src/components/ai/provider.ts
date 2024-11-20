@@ -74,8 +74,7 @@ export interface Provider {
     /**
      * The output typing for the provider.
      */
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    output: any;
+    output: unknown;
   };
 
   /**
