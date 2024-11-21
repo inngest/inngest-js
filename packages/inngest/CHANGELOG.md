@@ -1,5 +1,11 @@
 # inngest
 
+## 3.26.0
+
+### Minor Changes
+
+- [#747](https://github.com/inngest/inngest-js/pull/747) [`871a958`](https://github.com/inngest/inngest-js/commit/871a958bc990216d974b30adc3512672514af912) Thanks [@jacobheric](https://github.com/jacobheric)! - Add `step.ai.*()` tooling, allowing users to leverage AI workflows within Inngest functions
+
 ## 3.25.1
 
 ### Patch Changes
