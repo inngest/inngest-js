@@ -1,5 +1,11 @@
 # inngest
 
+## 3.26.1
+
+### Patch Changes
+
+- [#752](https://github.com/inngest/inngest-js/pull/752) [`290ad29`](https://github.com/inngest/inngest-js/commit/290ad29d26696c9dac8cb5ab50ca75e0b3d903fc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow editing `step.ai.infer()`
+
 ## 3.26.0
 
 ### Minor Changes
