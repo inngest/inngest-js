@@ -870,14 +870,32 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       let fnArgs = [...args];
 
       if (
-        opId.op === StepOpCode.StepPlanned &&
         typeof stepState?.input !== "undefined" &&
         Array.isArray(stepState.input)
       ) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        fnArgs = [...args.slice(0, 2), ...stepState.input];
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        extraOpts = { input: [...stepState.input] };
+        switch (opId.op) {
+          // `step.run()` has its function input affected
+          case StepOpCode.StepPlanned: {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            fnArgs = [...args.slice(0, 2), ...stepState.input];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            extraOpts = { input: [...stepState.input] };
+            break;
+          }
+
+          // `step.ai.infer()` has its body affected
+          case StepOpCode.AiGateway: {
+            extraOpts = {
+              body: {
+                ...(typeof opId.opts?.body === "object"
+                  ? { ...opId.opts.body }
+                  : {}),
+                ...stepState.input[0],
+              },
+            };
+            break;
+          }
+        }
       }
 
       const step: FoundStep = {
