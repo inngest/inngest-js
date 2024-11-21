@@ -30,6 +30,13 @@ import {
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { InngestFunctionReference } from "./InngestFunctionReference.js";
+import {
+  openai,
+  type InferOptions,
+  type InferOutput,
+  type Provider,
+} from "./ai/index.js";
+
 import { type InngestExecution } from "./execution/InngestExecution.js";
 
 export interface FoundStep extends HashedOp {
@@ -49,6 +56,10 @@ export interface FoundStep extends HashedOp {
    * invocation.
    */
   handle: () => Promise<boolean>;
+
+  // TODO This is used to track the input we want for this step. Might be
+  // present in ctx from Executor.
+  input?: unknown;
 }
 
 export type MatchOpFn<
@@ -144,6 +155,73 @@ export const createStepTools = <TClient extends Inngest.Any>(
       const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
       return stepHandler({ args: parsedArgs, matchOp, opts });
     }) as T;
+  };
+
+  /**
+   * Create a new step run tool that can be used to run a step function using
+   * `step.run()` as a shim.
+   */
+  const createStepRun = (
+    /**
+     * The sub-type of this step tool, exposed via `opts.type` when the op is
+     * reported.
+     */
+    type?: string
+  ) => {
+    return createTool<
+      <TFn extends (...args: Parameters<TFn>) => unknown>(
+        idOrOptions: StepOptionsOrId,
+
+        /**
+         * The function to run when this step is executed. Can be synchronous or
+         * asynchronous.
+         *
+         * The return value of this function will be the return value of this
+         * call to `run`, meaning you can return and reason about return data
+         * for next steps.
+         */
+        fn: TFn,
+
+        /**
+         * Optional input to pass to the function. If this is specified, Inngest
+         * will keep track of the input for this step and be able to display it
+         * in the UI.
+         */
+        ...input: Parameters<TFn>
+      ) => Promise<
+        /**
+         * TODO Middleware can affect this. If run input middleware has returned
+         * new step data, do not Jsonify.
+         */
+        SimplifyDeep<
+          Jsonify<
+            TFn extends (...args: Parameters<TFn>) => Promise<infer U>
+              ? Awaited<U extends void ? null : U>
+              : ReturnType<TFn> extends void
+                ? null
+                : ReturnType<TFn>
+          >
+        >
+      >
+    >(
+      ({ id, name }, _fn, ...input) => {
+        const opts: HashedOp["opts"] = {
+          ...(input.length ? { input } : {}),
+          ...(type ? { type } : {}),
+        };
+
+        return {
+          id,
+          op: StepOpCode.StepPlanned,
+          name: id,
+          displayName: name ?? id,
+          ...(Object.keys(opts).length ? { opts } : {}),
+        };
+      },
+      {
+        fn: (_, fn, ...input) => fn(...input),
+      }
+    );
   };
 
   /**
@@ -264,45 +342,66 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * of the `run` tool, meaning you can return and reason about return data
      * for next steps.
      */
-    run: createTool<
-      <T extends () => unknown>(
-        idOrOptions: StepOptionsOrId,
+    run: createStepRun(),
 
-        /**
-         * The function to run when this step is executed. Can be synchronous or
-         * asynchronous.
-         *
-         * The return value of this function will be the return value of this
-         * call to `run`, meaning you can return and reason about return data
-         * for next steps.
-         */
-        fn: T
-      ) => Promise<
-        /**
-         * TODO Middleware can affect this. If run input middleware has returned
-         * new step data, do not Jsonify.
-         */
-        SimplifyDeep<
-          Jsonify<
-            T extends () => Promise<infer U>
-              ? Awaited<U extends void ? null : U>
-              : ReturnType<T> extends void
-                ? null
-                : ReturnType<T>
-          >
-        >
-      >
-    >(
-      ({ id, name }) => {
+    /**
+     * AI tooling for running AI models and other AI-related tasks.
+     */
+    ai: {
+      /**
+       * Use this tool to have Inngest make your AI calls. Useful for agentic workflows.
+       *
+       * Input is also tracked for this tool, meaning you can pass input to the
+       * function and it will be displayed and editable in the UI.
+       */
+      infer: createTool<
+        <TProvider extends Provider>(
+          idOrOptions: StepOptionsOrId,
+          options: InferOptions<TProvider>
+        ) => Promise<InferOutput<TProvider>>
+      >(({ id, name }, options) => {
+        const providerCopy = { ...options.provider };
+
+        // Allow the provider to mutate options and body for this call
+        options.provider.onCall?.(providerCopy, options.body);
+
         return {
           id,
-          op: StepOpCode.StepPlanned,
-          name: id,
+          op: StepOpCode.AiGateway,
           displayName: name ?? id,
+          opts: {
+            type: "step.ai.infer",
+            url: providerCopy.url,
+            headers: providerCopy.headers,
+            auth_key: providerCopy.authKey,
+            format: providerCopy.format,
+            body: options.body,
+          },
         };
+      }),
+
+      /**
+       * Use this tool to wrap AI models and other AI-related tasks. Each call
+       * to `wrap` will be retried individually, meaning you can compose complex
+       * workflows that safely retry dependent asynchronous actions.
+       *
+       * Input is also tracked for this tool, meaning you can pass input to the
+       * function and it will be displayed and editable in the UI.
+       */
+      wrap: createStepRun("step.ai.wrap"),
+
+      /**
+       * Providers for AI inference and other AI-related tasks.
+       */
+      providers: {
+        /**
+         * Create an OpenAI provider using the OpenAI chat format.
+         *
+         * By default it targets the `https://api.openai.com` base URL.
+         */
+        openai,
       },
-      { fn: (stepOptions, fn) => fn() }
-    ),
+    },
 
     /**
      * Wait a specified amount of time before continuing.

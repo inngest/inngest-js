@@ -111,6 +111,8 @@ export enum envKeys {
   RailwayEnvironment = "RAILWAY_ENVIRONMENT",
 
   VercelEnvKey = "VERCEL_ENV",
+
+  OpenAiApiKey = "OPENAI_API_KEY",
 }
 
 /**

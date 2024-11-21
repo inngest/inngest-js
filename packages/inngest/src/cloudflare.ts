@@ -49,7 +49,7 @@ export const frameworkName: SupportedFrameworkName = "cloudflare-pages";
  * Expected arguments for a Cloudflare Pages Function.
  */
 export type PagesHandlerArgs = [
-  { request: Request; env: Record<string, string | undefined> }
+  { request: Request; env: Record<string, string | undefined> },
 ];
 
 /**

@@ -1394,7 +1394,10 @@ export class InngestCommHandler<
                 result.type === "data"
                   ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
                     { id, data: result.data }
-                  : { id, error: result.error },
+                  : result.type === "input"
+                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                      { id, input: result.input }
+                    : { id, error: result.error },
             };
           }, {});
 
