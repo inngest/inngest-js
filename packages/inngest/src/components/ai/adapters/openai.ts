@@ -1,25 +1,11 @@
-import { envKeys } from "../../../helpers/consts.js";
-import { processEnv } from "../../../helpers/env.js";
-import { type Provider, type types } from "../provider.js";
+import { type AiAdapter, type types } from "../adapter.js";
 
 /**
- * IDs of models to use. See the [model endpoint
- * compatibility](https://platform.openai.com/docs/models#model-endpoint-compatibility)
- * table for details on which models work with the Chat API.
+ * An OpenAI model using the OpenAI format for I/O.
  */
-export type OpenAiModel =
-  | "gpt-4o"
-  | "chatgpt-4o-latest"
-  | "gpt-4o-mini"
-  | "gpt-4"
-  | "gpt-3.5-turbo";
-
-/**
- * An OpenAI provider for the OpenAI Chat Completions API.
- */
-export interface OpenAiProvider extends Provider {
+export interface OpenAiAiAdapter extends AiAdapter {
   /**
-   * The format of the I/O for this provider.
+   * The format of the I/O for this model.
    */
   format: "openai-chat";
 
@@ -671,51 +657,3 @@ export interface OpenAiProvider extends Provider {
     };
   };
 }
-
-/**
- * Options for creating an OpenAI provider.
- */
-export interface OpenAiProviderOptions {
-  /**
-   * ID of the model to use. See the [model endpoint
-   * compatibility](https://platform.openai.com/docs/models#model-endpoint-compatibility)
-   * table for details on which models work with the Chat API.
-   */
-  model: OpenAiModel;
-
-  /**
-   * The OpenAI API key to use for authenticating your request. By default we'll
-   * search for and use the `OPENAI_API_KEY` environment variable.
-   */
-  apiKey?: string;
-
-  /**
-   * The base URL for the OpenAI API.
-   *
-   * @default "https://api.openai.com"
-   */
-  baseURL?: string;
-}
-
-/**
- * Create an OpenAI provider using the OpenAI chat format.
- *
- * By default it targets the `https://api.openai.com` base URL.
- */
-export const openai = (options: OpenAiProviderOptions): OpenAiProvider => {
-  const authKey = options.apiKey || processEnv(envKeys.OpenAiApiKey) || "";
-
-  const url = new URL(
-    "/v1/chat/completions",
-    options.baseURL || "https://api.openai.com"
-  );
-
-  return {
-    url: url.href,
-    authKey,
-    format: "openai-chat",
-    onCall(provider, body) {
-      body.model ||= options.model;
-    },
-  } as OpenAiProvider;
-};

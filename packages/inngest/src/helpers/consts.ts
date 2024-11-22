@@ -113,6 +113,7 @@ export enum envKeys {
   VercelEnvKey = "VERCEL_ENV",
 
   OpenAiApiKey = "OPENAI_API_KEY",
+  GeminiApiKey = "GEMINI_API_KEY",
 }
 
 /**

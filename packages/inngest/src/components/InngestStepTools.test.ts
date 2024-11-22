@@ -252,7 +252,7 @@ describe("ai", () => {
     test("return Step step op code", async () => {
       await expect(
         step.ai.infer("step", {
-          provider: openai({ model: "gpt-3.5-turbo" }),
+          model: openai({ model: "gpt-3.5-turbo" }),
           body: {
             messages: [],
           },
@@ -265,7 +265,7 @@ describe("ai", () => {
     test("returns `id` as ID", async () => {
       await expect(
         step.ai.infer("id", {
-          provider: openai({ model: "gpt-3.5-turbo" }),
+          model: openai({ model: "gpt-3.5-turbo" }),
           body: {
             messages: [],
           },
@@ -278,7 +278,7 @@ describe("ai", () => {
     test("return ID by default", async () => {
       await expect(
         step.ai.infer("id", {
-          provider: openai({ model: "gpt-3.5-turbo" }),
+          model: openai({ model: "gpt-3.5-turbo" }),
           body: {
             messages: [],
           },
@@ -293,7 +293,7 @@ describe("ai", () => {
         step.ai.infer(
           { id: "id", name: "name" },
           {
-            provider: openai({ model: "gpt-3.5-turbo" }),
+            model: openai({ model: "gpt-3.5-turbo" }),
             body: {
               messages: [],
             },
@@ -304,8 +304,8 @@ describe("ai", () => {
       });
     });
 
-    test("requires a provider", () => {
-      // @ts-expect-error Missing provider
+    test("requires a model", () => {
+      // @ts-expect-error Missing model
       () => step.ai.infer("id", { body: { messages: [] } });
     });
 
@@ -313,14 +313,14 @@ describe("ai", () => {
       () =>
         // @ts-expect-error Missing body
         step.ai.infer("id", {
-          provider: openai({ model: "gpt-3.5-turbo" }),
+          model: openai({ model: "gpt-3.5-turbo" }),
         });
     });
 
-    test("provider requires the correct body", () => {
+    test("model requires the correct body", () => {
       () =>
         step.ai.infer("id", {
-          provider: openai({ model: "gpt-3.5-turbo" }),
+          model: openai({ model: "gpt-3.5-turbo" }),
           // @ts-expect-error Invalid body
           body: {},
         });
@@ -329,7 +329,7 @@ describe("ai", () => {
     test("accepts the correct body", () => {
       () =>
         step.ai.infer("id", {
-          provider: openai({ model: "gpt-3.5-turbo" }),
+          model: openai({ model: "gpt-3.5-turbo" }),
           body: {
             messages: [],
           },
@@ -339,7 +339,7 @@ describe("ai", () => {
     test("uses default model if none given", async () => {
       await expect(
         step.ai.infer("id", {
-          provider: openai({ model: "gpt-3.5-turbo" }),
+          model: openai({ model: "gpt-3.5-turbo" }),
           body: {
             messages: [],
           },
@@ -356,7 +356,7 @@ describe("ai", () => {
     test("can overwrite model", async () => {
       await expect(
         step.ai.infer("id", {
-          provider: openai({ model: "gpt-3.5-turbo" }),
+          model: openai({ model: "gpt-3.5-turbo" }),
           body: {
             model: "gpt-3.5-something-else",
             messages: [],
