@@ -1,3 +1,5 @@
+import { type OpenAiAiAdapter } from "./adapters/openai.js";
+
 /**
  * A symbol used internally to define the types for a model whilst keeping
  * generics clean. Must not be exported outside of this module.
@@ -60,7 +62,7 @@ export interface AiAdapter {
     /**
      * The model to use for the inference.
      */
-    model: this,
+    model: AiAdapter,
 
     /**
      * The input to pass to the model.
@@ -100,3 +102,15 @@ export namespace AiAdapter {
     TOutput extends AiAdapter,
   > = (...args: TInput) => TOutput;
 }
+
+/**
+ * A cheeky hack to ensure we account for all AI adapters.
+ */
+const adapters = {
+  "openai-chat": null as unknown as OpenAiAiAdapter,
+} satisfies Record<AiAdapter.Format, AiAdapter>;
+
+/**
+ * All AI adapters available for use.
+ */
+export type AiAdapters = typeof adapters;
