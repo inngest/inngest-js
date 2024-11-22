@@ -1,5 +1,11 @@
 # inngest
 
+## 3.26.2
+
+### Patch Changes
+
+- [#754](https://github.com/inngest/inngest-js/pull/754) [`2e42438`](https://github.com/inngest/inngest-js/commit/2e42438e42954286e81080a7c6870dbe9882353c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Move AI providers to instead be adapters and models
+
 ## 3.26.1
 
 ### Patch Changes
