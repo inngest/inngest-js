@@ -1,9 +1,8 @@
-export type {
-  InferFormat,
-  InferInput,
-  InferOptions,
-  InferOutput,
-  Provider,
-} from "./provider.js";
+export type { AiAdapter } from "./adapter.js";
 
-export * from "./providers/openai.js";
+// Adapters
+export * from "./adapters/openai.js";
+
+// Models
+export * from "./models/gemini.js";
+export * from "./models/openai.js";

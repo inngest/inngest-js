@@ -30,12 +30,7 @@ import {
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { InngestFunctionReference } from "./InngestFunctionReference.js";
-import {
-  openai,
-  type InferOptions,
-  type InferOutput,
-  type Provider,
-} from "./ai/index.js";
+import { gemini, openai, type AiAdapter } from "./ai/index.js";
 
 import { type InngestExecution } from "./execution/InngestExecution.js";
 
@@ -355,15 +350,15 @@ export const createStepTools = <TClient extends Inngest.Any>(
        * function and it will be displayed and editable in the UI.
        */
       infer: createTool<
-        <TProvider extends Provider>(
+        <TAdapter extends AiAdapter>(
           idOrOptions: StepOptionsOrId,
-          options: InferOptions<TProvider>
-        ) => Promise<InferOutput<TProvider>>
+          options: AiInferOpts<TAdapter>
+        ) => Promise<AiAdapter.Output<TAdapter>>
       >(({ id, name }, options) => {
-        const providerCopy = { ...options.provider };
+        const modelCopy = { ...options.model };
 
-        // Allow the provider to mutate options and body for this call
-        options.provider.onCall?.(providerCopy, options.body);
+        // Allow the model to mutate options and body for this call
+        options.model.onCall?.(modelCopy, options.body);
 
         return {
           id,
@@ -371,10 +366,10 @@ export const createStepTools = <TClient extends Inngest.Any>(
           displayName: name ?? id,
           opts: {
             type: "step.ai.infer",
-            url: providerCopy.url,
-            headers: providerCopy.headers,
-            auth_key: providerCopy.authKey,
-            format: providerCopy.format,
+            url: modelCopy.url,
+            headers: modelCopy.headers,
+            auth_key: modelCopy.authKey,
+            format: modelCopy.format,
             body: options.body,
           },
         };
@@ -391,15 +386,23 @@ export const createStepTools = <TClient extends Inngest.Any>(
       wrap: createStepRun("step.ai.wrap"),
 
       /**
-       * Providers for AI inference and other AI-related tasks.
+       * Models for AI inference and other AI-related tasks.
        */
-      providers: {
+      models: {
         /**
-         * Create an OpenAI provider using the OpenAI chat format.
+         * Create an OpenAI model using the OpenAI chat format.
          *
-         * By default it targets the `https://api.openai.com` base URL.
+         * By default it targets the `https://api.openai.com/v1/` base URL.
          */
         openai,
+
+        /**
+         * Create a Gemini model using the OpenAI chat format.
+         *
+         * By default it targets the `https://generativelanguage.googleapis.com/v1beta/`
+         * base URL.
+         */
+        gemini,
       },
     },
 
@@ -666,3 +669,33 @@ type WaitForEventOpts<
   "match",
   "if"
 >;
+
+/**
+ * Options for `step.ai.infer()`.
+ */
+type AiInferOpts<TModel extends AiAdapter> = {
+  /**
+   * The model to use for the inference. Create a model by importing from
+   * `"inngest"` or by using `step.ai.models.*`.
+   *
+   * @example Import `openai()`
+   * ```ts
+   * import { openai } from "inngest";
+   *
+   * const model = openai({ model: "gpt-4" });
+   * ```
+   *
+   * @example Use a model from `step.ai.models`
+   * ```ts
+   * async ({ step }) => {
+   *            const model = step.ai.models.openai({ model: "gpt-4" });
+   * }
+   * ```
+   */
+  model: TModel;
+
+  /**
+   * The input to pass to the model.
+   */
+  body: AiAdapter.Input<TModel>;
+};
