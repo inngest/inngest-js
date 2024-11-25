@@ -35,6 +35,16 @@ export const stepsSchemas = {
             })
             .strict()
         )
+        .or(
+          z
+            .object({
+              type: z.literal("input").optional().default("input"),
+              input: z.any().refine((v) => typeof v !== "undefined", {
+                message: "If input is present it must not be `undefined`",
+              }),
+            })
+            .strict()
+        )
 
         /**
          * If the result isn't a distcint `data` or `error` object, then it's
