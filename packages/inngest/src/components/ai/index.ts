@@ -1,4 +1,4 @@
-export type { AiAdapter } from "./adapter.ts";
+export type { AiAdapter, AiAdapters } from "./adapter.ts";
 
 // Adapters
 export * from "./adapters/openai.ts";
