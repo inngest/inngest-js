@@ -1,4 +1,4 @@
-import { type EventPayload } from "../types.ts";
+import { type EventPayload } from "../types.js";
 
 /**
  * Returns the given generic as either itself or an array of itself.

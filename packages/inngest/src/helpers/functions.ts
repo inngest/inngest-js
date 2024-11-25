@@ -1,14 +1,14 @@
 import { ZodError, z } from "zod";
-import { type InngestApi } from "../api/api.ts";
-import { stepsSchemas } from "../api/schema.ts";
-import { type InngestFunction } from "../components/InngestFunction.ts";
+import { type InngestApi } from "../api/api.js";
+import { stepsSchemas } from "../api/schema.js";
+import { type InngestFunction } from "../components/InngestFunction.js";
 import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
-} from "../components/execution/InngestExecution.ts";
-import { err, ok, type Result } from "../types.ts";
-import { prettyError } from "./errors.ts";
-import { type Await } from "./types.ts";
+} from "../components/execution/InngestExecution.js";
+import { err, ok, type Result } from "../types.js";
+import { prettyError } from "./errors.js";
+import { type Await } from "./types.js";
 
 /**
  * Wraps a function with a cache. When the returned function is run, it will

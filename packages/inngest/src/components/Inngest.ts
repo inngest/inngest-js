@@ -1,4 +1,4 @@
-import { InngestApi } from "../api/api.ts";
+import { InngestApi } from "../api/api.js";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
@@ -7,8 +7,8 @@ import {
   envKeys,
   headerKeys,
   logPrefix,
-} from "../helpers/consts.ts";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
+} from "../helpers/consts.js";
+import { devServerAvailable, devServerUrl } from "../helpers/devserver.js";
 import {
   allProcessEnv,
   getFetch,
@@ -16,10 +16,10 @@ import {
   inngestHeaders,
   processEnv,
   type Mode,
-} from "../helpers/env.ts";
-import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.ts";
-import { type Jsonify } from "../helpers/jsonify.ts";
-import { stringify } from "../helpers/strings.ts";
+} from "../helpers/env.js";
+import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.js";
+import { type Jsonify } from "../helpers/jsonify.js";
+import { stringify } from "../helpers/strings.js";
 import {
   type AsArray,
   type IsNever,
@@ -27,12 +27,12 @@ import {
   type SimplifyDeep,
   type SingleOrArray,
   type WithoutInternal,
-} from "../helpers/types.ts";
+} from "../helpers/types.js";
 import {
   DefaultLogger,
   ProxyLogger,
   type Logger,
-} from "../middleware/logger.ts";
+} from "../middleware/logger.js";
 import {
   sendEventResponseSchema,
   type ClientOptions,
@@ -44,10 +44,10 @@ import {
   type SendEventOutput,
   type SendEventResponse,
   type TriggersFromClient,
-} from "../types.ts";
-import { type EventSchemas } from "./EventSchemas.ts";
-import { InngestFunction } from "./InngestFunction.ts";
-import { type InngestFunctionReference } from "./InngestFunctionReference.ts";
+} from "../types.js";
+import { type EventSchemas } from "./EventSchemas.js";
+import { InngestFunction } from "./InngestFunction.js";
+import { type InngestFunctionReference } from "./InngestFunctionReference.js";
 import {
   InngestMiddleware,
   getHookStack,
@@ -56,7 +56,7 @@ import {
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
-} from "./InngestMiddleware.ts";
+} from "./InngestMiddleware.js";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.

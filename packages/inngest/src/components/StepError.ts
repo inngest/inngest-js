@@ -1,5 +1,5 @@
-import { deserializeError } from "../helpers/errors.ts";
-import { jsonErrorSchema } from "../types.ts";
+import { deserializeError } from "../helpers/errors.js";
+import { jsonErrorSchema } from "../types.js";
 
 /**
  * An error that represents a step exhausting all retries and failing. This is

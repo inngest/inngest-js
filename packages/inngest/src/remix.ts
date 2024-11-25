@@ -20,9 +20,9 @@ import {
   InngestCommHandler,
   type ActionResponse,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.ts";
-import { type Env } from "./helpers/env.ts";
-import { type SupportedFrameworkName } from "./types.ts";
+} from "./components/InngestCommHandler.js";
+import { type Env } from "./helpers/env.js";
+import { type SupportedFrameworkName } from "./types.js";
 
 /**
  * The name of the framework, used to identify the framework in Inngest

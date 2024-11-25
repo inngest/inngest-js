@@ -1,6 +1,6 @@
-import { internalEvents, queryKeys } from "../helpers/consts.ts";
-import { timeStr } from "../helpers/strings.ts";
-import { type RecursiveTuple, type StrictUnion } from "../helpers/types.ts";
+import { internalEvents, queryKeys } from "../helpers/consts.js";
+import { timeStr } from "../helpers/strings.js";
+import { type RecursiveTuple, type StrictUnion } from "../helpers/types.js";
 import {
   type Cancellation,
   type ConcurrencyOption,
@@ -9,19 +9,19 @@ import {
   type TimeStr,
   type TimeStrBatch,
   type TriggersFromClient,
-} from "../types.ts";
-import { type GetEvents, type Inngest } from "./Inngest.ts";
+} from "../types.js";
+import { type GetEvents, type Inngest } from "./Inngest.js";
 import {
   type InngestMiddleware,
   type MiddlewareRegisterReturn,
-} from "./InngestMiddleware.ts";
+} from "./InngestMiddleware.js";
 import {
   ExecutionVersion,
   type IInngestExecution,
   type InngestExecutionOptions,
-} from "./execution/InngestExecution.ts";
-import { createV0InngestExecution } from "./execution/v0.ts";
-import { createV1InngestExecution } from "./execution/v1.ts";
+} from "./execution/InngestExecution.js";
+import { createV0InngestExecution } from "./execution/v0.js";
+import { createV1InngestExecution } from "./execution/v1.js";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any

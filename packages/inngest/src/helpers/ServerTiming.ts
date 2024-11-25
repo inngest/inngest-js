@@ -1,4 +1,4 @@
-import { runAsPromise } from "./promises.ts";
+import { runAsPromise } from "./promises.js";
 
 interface Timing {
   description: string;

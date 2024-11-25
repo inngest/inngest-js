@@ -1,11 +1,11 @@
-import { cacheFn, waterfall } from "../helpers/functions.ts";
+import { cacheFn, waterfall } from "../helpers/functions.js";
 import {
   type Await,
   type MaybePromise,
   type ObjectAssign,
   type PartialK,
   type Simplify,
-} from "../helpers/types.ts";
+} from "../helpers/types.js";
 import {
   type BaseContext,
   type EventPayload,
@@ -13,9 +13,9 @@ import {
   type OutgoingOp,
   type SendEventBaseOutput,
   type TriggersFromClient,
-} from "../types.ts";
-import { type Inngest } from "./Inngest.ts";
-import { type InngestFunction } from "./InngestFunction.ts";
+} from "../types.js";
+import { type Inngest } from "./Inngest.js";
+import { type InngestFunction } from "./InngestFunction.js";
 
 /**
  * A middleware that can be registered with Inngest to hook into various

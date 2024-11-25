@@ -1,4 +1,4 @@
-import { stringify } from "./strings.ts";
+import { stringify } from "./strings.js";
 
 /**
  * Creates a {@link ReadableStream} that sends a `value` every `interval`

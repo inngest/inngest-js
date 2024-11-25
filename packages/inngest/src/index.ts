@@ -38,7 +38,7 @@
  * @module
  */
 
-export * from "./components/ai/index.ts";
+export * from "./components/ai/index.js";
 export {
   EventSchemas,
   type AssertInternalEventPayloads,
@@ -47,7 +47,7 @@ export {
   type StandardEventSchemaToPayload,
   type StandardEventSchemas,
   type ZodEventSchemas,
-} from "./components/EventSchemas.ts";
+} from "./components/EventSchemas.js";
 export type {
   ClientOptionsFromInngest,
   EventsFromOpts,
@@ -56,23 +56,23 @@ export type {
   GetFunctionOutput,
   GetStepTools,
 } from "./components/Inngest";
-export { Inngest } from "./components/Inngest.ts";
+export { Inngest } from "./components/Inngest.js";
 export type { ServeHandlerOptions } from "./components/InngestCommHandler";
-export { InngestCommHandler } from "./components/InngestCommHandler.ts";
+export { InngestCommHandler } from "./components/InngestCommHandler.js";
 export type { InngestFunction } from "./components/InngestFunction";
 export type { InngestFunctionReference } from "./components/InngestFunctionReference";
-export { referenceFunction } from "./components/InngestFunctionReference.ts";
+export { referenceFunction } from "./components/InngestFunctionReference.js";
 export type {
   MiddlewareOptions,
   MiddlewareRegisterFn,
   MiddlewareRegisterReturn,
 } from "./components/InngestMiddleware";
-export { InngestMiddleware } from "./components/InngestMiddleware.ts";
-export { NonRetriableError } from "./components/NonRetriableError.ts";
-export { RetryAfterError } from "./components/RetryAfterError.ts";
-export { StepError } from "./components/StepError.ts";
-export { headerKeys, internalEvents, queryKeys } from "./helpers/consts.ts";
-export { slugify } from "./helpers/strings.ts";
+export { InngestMiddleware } from "./components/InngestMiddleware.js";
+export { NonRetriableError } from "./components/NonRetriableError.js";
+export { RetryAfterError } from "./components/RetryAfterError.js";
+export { StepError } from "./components/StepError.js";
+export { headerKeys, internalEvents, queryKeys } from "./helpers/consts.js";
+export { slugify } from "./helpers/strings.js";
 export type {
   IsStringLiteral,
   StrictUnion,
@@ -81,7 +81,7 @@ export type {
   WithoutInternal,
 } from "./helpers/types";
 export type { LogArg } from "./middleware/logger";
-export { ProxyLogger } from "./middleware/logger.ts";
+export { ProxyLogger } from "./middleware/logger.js";
 export type {
   BaseContext,
   ClientOptions,

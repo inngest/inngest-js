@@ -10,20 +10,20 @@
  */
 
 import { z } from "zod";
-import { type EventSchemas } from "./components/EventSchemas.ts";
+import { type EventSchemas } from "./components/EventSchemas.js";
 import {
   type builtInMiddleware,
   type GetEvents,
   type Inngest,
-} from "./components/Inngest.ts";
-import { type InngestFunction } from "./components/InngestFunction.ts";
-import { type InngestFunctionReference } from "./components/InngestFunctionReference.ts";
+} from "./components/Inngest.js";
+import { type InngestFunction } from "./components/InngestFunction.js";
+import { type InngestFunctionReference } from "./components/InngestFunctionReference.js";
 import {
   type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
-} from "./components/InngestMiddleware.ts";
-import { type createStepTools } from "./components/InngestStepTools.ts";
-import { type internalEvents } from "./helpers/consts.ts";
+} from "./components/InngestMiddleware.js";
+import { type createStepTools } from "./components/InngestStepTools.js";
+import { type internalEvents } from "./helpers/consts.js";
 import {
   type AsTuple,
   type IsEqual,
@@ -31,8 +31,8 @@ import {
   type Public,
   type Simplify,
   type WithoutInternal,
-} from "./helpers/types.ts";
-import { type Logger } from "./middleware/logger.ts";
+} from "./helpers/types.js";
+import { type Logger } from "./middleware/logger.js";
 
 const baseJsonErrorSchema = z.object({
   name: z.string().trim().optional(),
