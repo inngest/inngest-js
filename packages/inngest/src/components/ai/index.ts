@@ -1,4 +1,4 @@
-export type { AiAdapter } from "./adapter.js";
+export type { AiAdapter, AiAdapters } from "./adapter.js";
 
 // Adapters
 export * from "./adapters/openai.js";
