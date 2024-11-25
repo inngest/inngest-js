@@ -21,14 +21,14 @@
  */
 
 import { type NextApiRequest, type NextApiResponse } from "next";
-import { type NextRequest } from "next/server.js";
+import { type NextRequest } from "next/server.ts";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { getResponse } from "./helpers/env.js";
-import { type Either } from "./helpers/types.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import { getResponse } from "./helpers/env.ts";
+import { type Either } from "./helpers/types.ts";
+import { type SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest

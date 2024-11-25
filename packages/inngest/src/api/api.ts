@@ -1,15 +1,15 @@
 import { type fetch } from "cross-fetch";
-import { type ExecutionVersion } from "../components/execution/InngestExecution.js";
+import { type ExecutionVersion } from "../components/execution/InngestExecution.ts";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
-} from "../helpers/consts.js";
-import { devServerAvailable } from "../helpers/devserver.js";
-import { type Mode } from "../helpers/env.js";
-import { getErrorMessage } from "../helpers/errors.js";
-import { fetchWithAuthFallback } from "../helpers/net.js";
-import { hashSigningKey } from "../helpers/strings.js";
-import { err, ok, type Result } from "../types.js";
+} from "../helpers/consts.ts";
+import { devServerAvailable } from "../helpers/devserver.ts";
+import { type Mode } from "../helpers/env.ts";
+import { getErrorMessage } from "../helpers/errors.ts";
+import { fetchWithAuthFallback } from "../helpers/net.ts";
+import { hashSigningKey } from "../helpers/strings.ts";
+import { err, ok, type Result } from "../types.ts";
 import {
   batchSchema,
   errorSchema,
@@ -17,7 +17,7 @@ import {
   type BatchResponse,
   type ErrorResponse,
   type StepsResponse,
-} from "./schema.js";
+} from "./schema.ts";
 
 type FetchT = typeof fetch;
 

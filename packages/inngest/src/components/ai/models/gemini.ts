@@ -1,7 +1,7 @@
-import { envKeys } from "../../../helpers/consts.js";
-import { processEnv } from "../../../helpers/env.js";
-import { type AiAdapter } from "../adapter.js";
-import { type OpenAi, openai } from "./openai.js";
+import { envKeys } from "../../../helpers/consts.ts";
+import { processEnv } from "../../../helpers/env.ts";
+import { type AiAdapter } from "../adapter.ts";
+import { type OpenAi, openai } from "./openai.ts";
 
 /**
  * Create a Gemini model using the OpenAI chat format.

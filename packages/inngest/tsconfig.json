@@ -17,6 +17,8 @@
     "noImplicitOverride": true,
     "resolveJsonModule": true,
     "noUncheckedIndexedAccess": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "strictNullChecks": true,
     "paths": {
       "inngest": ["./src"],

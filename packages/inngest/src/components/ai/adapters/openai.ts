@@ -1,4 +1,4 @@
-import { type AiAdapter, type types } from "../adapter.js";
+import { type AiAdapter, type types } from "../adapter.ts";
 
 /**
  * An OpenAI model using the OpenAI format for I/O.

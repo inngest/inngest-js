@@ -8,9 +8,9 @@ import {
 } from "serialize-error-cjs";
 import stripAnsi from "strip-ansi";
 import { z } from "zod";
-import { type Inngest } from "../components/Inngest.js";
-import { NonRetriableError } from "../components/NonRetriableError.js";
-import { type ClientOptions, type OutgoingOp } from "../types.js";
+import { type Inngest } from "../components/Inngest.ts";
+import { NonRetriableError } from "../components/NonRetriableError.ts";
+import { type ClientOptions, type OutgoingOp } from "../types.ts";
 
 const SERIALIZED_KEY = "__serialized";
 const SERIALIZED_VALUE = true;

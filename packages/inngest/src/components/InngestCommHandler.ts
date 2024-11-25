@@ -1,6 +1,6 @@
 import debug from "debug";
 import { z } from "zod";
-import { ServerTiming } from "../helpers/ServerTiming.js";
+import { ServerTiming } from "../helpers/ServerTiming.ts";
 import {
   debugPrefix,
   defaultInngestApiBaseUrl,
@@ -12,9 +12,9 @@ import {
   probe as probeEnum,
   queryKeys,
   syncKind,
-} from "../helpers/consts.js";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver.js";
-import { enumFromValue } from "../helpers/enum.js";
+} from "../helpers/consts.ts";
+import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
+import { enumFromValue } from "../helpers/enum.ts";
 import {
   allProcessEnv,
   devServerHost,
@@ -26,19 +26,19 @@ import {
   parseAsBoolean,
   platformSupportsStreaming,
   type Env,
-} from "../helpers/env.js";
-import { rethrowError, serializeError } from "../helpers/errors.js";
+} from "../helpers/env.ts";
+import { rethrowError, serializeError } from "../helpers/errors.ts";
 import {
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
   type FnData,
-} from "../helpers/functions.js";
-import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.js";
-import { runAsPromise } from "../helpers/promises.js";
-import { createStream } from "../helpers/stream.js";
-import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.js";
-import { type MaybePromise } from "../helpers/types.js";
+} from "../helpers/functions.ts";
+import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
+import { runAsPromise } from "../helpers/promises.ts";
+import { createStream } from "../helpers/stream.ts";
+import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
+import { type MaybePromise } from "../helpers/types.ts";
 import {
   functionConfigSchema,
   inBandSyncRequestBodySchema,
@@ -53,13 +53,13 @@ import {
   type RegisterRequest,
   type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
-} from "../types.js";
-import { version } from "../version.js";
-import { type Inngest } from "./Inngest.js";
+} from "../types.ts";
+import { version } from "../version.ts";
+import { type Inngest } from "./Inngest.ts";
 import {
   type CreateExecutionOptions,
   type InngestFunction,
-} from "./InngestFunction.js";
+} from "./InngestFunction.ts";
 import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
@@ -67,7 +67,7 @@ import {
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
-} from "./execution/InngestExecution.js";
+} from "./execution/InngestExecution.ts";
 
 /**
  * A set of options that can be passed to a serve handler, intended to be used

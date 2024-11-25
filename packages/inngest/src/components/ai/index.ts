@@ -1,8 +1,8 @@
-export type { AiAdapter } from "./adapter.js";
+export type { AiAdapter } from "./adapter.ts";
 
 // Adapters
-export * from "./adapters/openai.js";
+export * from "./adapters/openai.ts";
 
 // Models
-export * from "./models/gemini.js";
-export * from "./models/openai.js";
+export * from "./models/gemini.ts";
+export * from "./models/openai.ts";
