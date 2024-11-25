@@ -283,7 +283,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   private async filterNewSteps(
-    steps: FoundStep[]
+    foundSteps: FoundStep[]
   ): Promise<[OutgoingOp, ...OutgoingOp[]] | void> {
     if (this.options.requestedRunStep) {
       return;
@@ -292,7 +292,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     /**
      * Gather any steps that aren't memoized and report them.
      */
-    const newSteps = steps.filter((step) => !step.fulfilled);
+    const newSteps = foundSteps.filter((step) => !step.fulfilled);
 
     if (!newSteps.length) {
       return;
@@ -303,8 +303,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * steps. This may indicate that step presence isn't determinate.
      */
     const stepsToFulfil = Object.keys(this.state.stepState).length;
-    const fulfilledSteps = steps.filter((step) => step.fulfilled).length;
-    const foundAllCompletedSteps = stepsToFulfil === fulfilledSteps;
+    const knownSteps = foundSteps.filter((step) => step.hasStepState).length;
+    const foundAllCompletedSteps = stepsToFulfil === knownSteps;
 
     if (!foundAllCompletedSteps) {
       // TODO Tag
@@ -908,6 +908,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         fn: opts?.fn ? () => opts.fn?.(...fnArgs) : undefined,
         promise,
         fulfilled: isFulfilled,
+        hasStepState: Boolean(stepState),
         displayName: opId.displayName ?? opId.id,
         handled: false,
         handle: async () => {

@@ -38,7 +38,29 @@ export interface FoundStep extends HashedOp {
   hashedId: string;
   fn?: (...args: unknown[]) => unknown;
   rawArgs: unknown[];
+
+  /**
+   * A boolean representing whether the step has been fulfilled, either
+   * resolving or rejecting the `Promise` returned to userland code.
+   *
+   * Note that this is distinct from {@link hasStepState}, which instead tracks
+   * whether the step has been given some state from the Executor. State from
+   * the Executor could be data other than a resolution or rejection, such as
+   * inputs.
+   */
   fulfilled: boolean;
+
+  /**
+   * A boolean representing whether the step has been given some state from the
+   * Executor. State from the Executor could be data other than a resolution or
+   * rejection, such as inputs.
+   *
+   * This is distinct from {@link fulfilled}, which instead tracks whether the
+   * step has been fulfilled, either resolving or rejecting the `Promise`
+   * returned to userland code.
+   */
+  hasStepState: boolean;
+
   handled: boolean;
 
   /**
