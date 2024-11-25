@@ -1,5 +1,15 @@
 # inngest
 
+## 3.26.3
+
+### Patch Changes
+
+- [#758](https://github.com/inngest/inngest-js/pull/758) [`8af4c25`](https://github.com/inngest/inngest-js/commit/8af4c25f96c30a7617774e7d117d7435fe2723f3) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix OpenAI `tools` types - not properly scoped
+
+- [#757](https://github.com/inngest/inngest-js/pull/757) [`36b61f0`](https://github.com/inngest/inngest-js/commit/36b61f0f4af477196482eee6a0c86061c481e2b2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix false indeterminate function warning
+
+- [#756](https://github.com/inngest/inngest-js/pull/756) [`7916c06`](https://github.com/inngest/inngest-js/commit/7916c066296a858e3b65cfddd0af4ba51689a3ef) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Expose a type that lists the `AiAdapter` for each format
+
 ## 3.26.2
 
 ### Patch Changes
