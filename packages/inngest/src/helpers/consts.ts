@@ -114,6 +114,7 @@ export enum envKeys {
 
   OpenAiApiKey = "OPENAI_API_KEY",
   GeminiApiKey = "GEMINI_API_KEY",
+  AnthropicApiKey = "ANTHROPIC_API_KEY",
 }
 
 /**
