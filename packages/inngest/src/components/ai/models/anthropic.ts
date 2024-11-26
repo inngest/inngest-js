@@ -1,7 +1,7 @@
 import { envKeys } from "../../../helpers/consts.js";
 import { processEnv } from "../../../helpers/env.js";
 import { type AiAdapter } from "../adapter.js";
-import { type OpenAiAiAdapter } from "../adapters/openai.js";
+import { type AnthropicAdapter, AnthropicModel } from "../adapters/anthropic.js";
 
 /**
  * Create an OpenAI model using the OpenAI chat format.
@@ -9,42 +9,37 @@ import { type OpenAiAiAdapter } from "../adapters/openai.js";
  * By default it targets the `https://api.openai.com/v1/` base URL.
  */
 export const openai: AiAdapter.ModelCreator<
-  [options: OpenAi.AiModelOptions],
-  OpenAi.AiModel
+  [options: Anthropic.AiModelOptions],
+  Anthropic.AiModel
 > = (options) => {
-  const authKey = options.apiKey || processEnv(envKeys.OpenAiApiKey) || "";
+  const authKey = options.apiKey || processEnv(envKeys.AnthropicApiKey) || "";
 
   // Ensure we add a trailing slash to our base URL if it doesn't have one,
   // otherwise we'll replace the path instead of appending it.
-  let baseUrl = options.baseUrl || "https://api.openai.com/v1/";
+  let baseUrl = options.baseUrl || "https://api.anthropic.com/v1/";
   if (!baseUrl.endsWith("/")) {
     baseUrl += "/";
   }
 
-  const url = new URL("chat/completions", baseUrl);
+  const url = new URL("messages", baseUrl);
 
   return {
     url: url.href,
     authKey,
-    format: "openai-chat",
+    format: "anthropic",
     onCall(_, body) {
       body.model ||= options.model;
     },
-  } as OpenAi.AiModel;
+  } as Anthropic.AiModel;
 };
 
-export namespace OpenAi {
+export namespace Anthropic {
   /**
    * IDs of models to use. See the [model endpoint
-   * compatibility](https://platform.openai.com/docs/models#model-endpoint-compatibility)
-   * table for details on which models work with the Chat API.
+   * compatibility](https://docs.anthropic.com/en/docs/about-claude/models)
+   * table for details on which models work with the Anthropic API.
    */
-  export type Model =
-    | "gpt-4o"
-    | "chatgpt-4o-latest"
-    | "gpt-4o-mini"
-    | "gpt-4"
-    | "gpt-3.5-turbo";
+  export type Model = AnthropicModel;
 
   /**
    * Options for creating an OpenAI model.
@@ -52,27 +47,28 @@ export namespace OpenAi {
   export interface AiModelOptions {
     /**
      * ID of the model to use. See the [model endpoint
-     * compatibility](https://platform.openai.com/docs/models#model-endpoint-compatibility)
-     * table for details on which models work with the Chat API.
+     * compatibility](https://docs.anthropic.com/en/docs/about-claude/models)
+     * table for details on which models work with the Anthropic API.
      */
     model: Model;
 
     /**
      * The OpenAI API key to use for authenticating your request. By default we'll
-     * search for and use the `OPENAI_API_KEY` environment variable.
+     * search for and use the `ANTHROPIC_API_KEY` environment variable.
      */
     apiKey?: string;
 
     /**
-     * The base URL for the OpenAI API.
+     * The base URL for the Anthropic API.
      *
-     * @default "https://api.openai.com/v1/"
+     * @default "https://api.anthropic.com/v1/"
      */
     baseUrl?: string;
   }
 
   /**
-   * An OpenAI model using the OpenAI format for I/O.
+   * An Anthropic model using the Anthropic format for I/O.
    */
-  export type AiModel = OpenAiAiAdapter;
+  export type AiModel = AnthropicAdapter;
 }
+
