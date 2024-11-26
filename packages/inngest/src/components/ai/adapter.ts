@@ -1,3 +1,4 @@
+import { AnthropicAdapter } from "./adapters/anthropic.js";
 import { type OpenAiAiAdapter } from "./adapters/openai.js";
 
 /**
@@ -91,7 +92,7 @@ export namespace AiAdapter {
   /**
    * Supported I/O formats for AI models.
    */
-  export type Format = "openai-chat"; // | "anthropic" | "gemini" | "bedrock";
+  export type Format = "openai-chat" | "anthropic";
 
   /**
    * A function that creates a model that adheres to an existng AI adapter
@@ -108,6 +109,7 @@ export namespace AiAdapter {
  */
 const adapters = {
   "openai-chat": null as unknown as OpenAiAiAdapter,
+  "anthropic": null as unknown as AnthropicAdapter,
 } satisfies Record<AiAdapter.Format, AiAdapter>;
 
 /**
