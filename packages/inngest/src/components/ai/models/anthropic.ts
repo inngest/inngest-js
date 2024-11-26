@@ -1,7 +1,7 @@
 import { envKeys } from "../../../helpers/consts.js";
 import { processEnv } from "../../../helpers/env.js";
 import { type AiAdapter } from "../adapter.js";
-import { type AnthropicAdapter, AnthropicModel } from "../adapters/anthropic.js";
+import { type AnthropicAdapter, AnthropicModel, AnthropicBeta } from "../adapters/anthropic.js";
 
 /**
  * Create an OpenAI model using the OpenAI chat format.
@@ -23,6 +23,14 @@ export const openai: AiAdapter.ModelCreator<
 
   const url = new URL("messages", baseUrl);
 
+  const headers: Record<string, string> = {
+    'anthropic-version': '2023-06-01',
+  };
+
+  if ((options.betaHeaders?.length || 0) > 0) {
+    headers["anthropic-beta"] = options.betaHeaders?.join(",") || "";
+  }
+
   return {
     url: url.href,
     authKey,
@@ -30,6 +38,7 @@ export const openai: AiAdapter.ModelCreator<
     onCall(_, body) {
       body.model ||= options.model;
     },
+    headers,
   } as Anthropic.AiModel;
 };
 
@@ -57,6 +66,11 @@ export namespace Anthropic {
      * search for and use the `ANTHROPIC_API_KEY` environment variable.
      */
     apiKey?: string;
+
+    /**
+     * The beta headers to enable, eg. for computer use, prompt caching, and so on
+     */
+    betaHeaders?: AnthropicBeta[];
 
     /**
      * The base URL for the Anthropic API.
