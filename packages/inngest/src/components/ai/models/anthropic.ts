@@ -1,11 +1,7 @@
 import { envKeys } from "../../../helpers/consts.js";
 import { processEnv } from "../../../helpers/env.js";
 import { type AiAdapter } from "../adapter.js";
-import {
-  type AnthropicAdapter,
-  type AnthropicBeta,
-  type AnthropicModel,
-} from "../adapters/anthropic.js";
+import { type AnthropicAiAdapter } from "../adapters/anthropic.js";
 
 /**
  * Create an Anthropic model using the Anthropic chat format.
@@ -53,7 +49,7 @@ export namespace Anthropic {
    * compatibility](https://docs.anthropic.com/en/docs/about-claude/models)
    * table for details on which models work with the Anthropic API.
    */
-  export type Model = AnthropicModel;
+  export type Model = AnthropicAiAdapter.Model;
 
   /**
    * Options for creating an Anthropic model.
@@ -67,15 +63,16 @@ export namespace Anthropic {
     model: Model;
 
     /**
-     * The Anthropic API key to use for authenticating your request. By default we'll
-     * search for and use the `ANTHROPIC_API_KEY` environment variable.
+     * The Anthropic API key to use for authenticating your request. By default
+     * we'll search for and use the `ANTHROPIC_API_KEY` environment variable.
      */
     apiKey?: string;
 
     /**
-     * The beta headers to enable, eg. for computer use, prompt caching, and so on
+     * The beta headers to enable, eg. for computer use, prompt caching, and so
+     * on
      */
-    betaHeaders?: AnthropicBeta[];
+    betaHeaders?: AnthropicAiAdapter.Beta[];
 
     /**
      * The base URL for the Anthropic API.
@@ -88,5 +85,5 @@ export namespace Anthropic {
   /**
    * An Anthropic model using the Anthropic format for I/O.
    */
-  export type AiModel = AnthropicAdapter;
+  export type AiModel = AnthropicAiAdapter;
 }

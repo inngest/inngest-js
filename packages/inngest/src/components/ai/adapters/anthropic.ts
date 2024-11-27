@@ -1,22 +1,21 @@
+import { type Anthropic } from "@anthropic-ai/sdk";
 import { type AiAdapter, type types } from "../adapter.js";
 
-import type { MessageCreateParamsNonStreaming, Message, Model } from "@anthropic-ai/sdk/resources/messages.js";
-import type { AnthropicBeta as AnthropicBetaSDK } from "@anthropic-ai/sdk/resources/index.js";
-
-interface AnthropicInput extends MessageCreateParamsNonStreaming {};
-interface AnthropicOutput extends Message {};
-export type AnthropicModel = Model;
-export type AnthropicBeta = AnthropicBetaSDK;
-
-export interface AnthropicAdapter extends AiAdapter {
-
+export interface AnthropicAiAdapter extends AiAdapter {
   /**
    * Format of the IO for this model
    */
   format: "anthropic";
 
   [types]: {
-    input: AnthropicInput ,
-    output: AnthropicOutput,
-  }
+    input: AnthropicAiAdapter.Input;
+    output: AnthropicAiAdapter.Output;
+  };
+}
+
+export namespace AnthropicAiAdapter {
+  export interface Input extends Anthropic.MessageCreateParamsNonStreaming {}
+  export interface Output extends Anthropic.Message {}
+  export type Model = Anthropic.Model;
+  export type Beta = Anthropic.AnthropicBeta;
 }

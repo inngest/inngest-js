@@ -1,4 +1,4 @@
-import { type AnthropicAdapter } from "./adapters/anthropic.js";
+import { type AnthropicAiAdapter } from "./adapters/anthropic.js";
 import { type OpenAiAiAdapter } from "./adapters/openai.js";
 
 /**
@@ -109,7 +109,7 @@ export namespace AiAdapter {
  */
 const adapters = {
   "openai-chat": null as unknown as OpenAiAiAdapter,
-  anthropic: null as unknown as AnthropicAdapter,
+  anthropic: null as unknown as AnthropicAiAdapter,
 } satisfies Record<AiAdapter.Format, AiAdapter>;
 
 /**
