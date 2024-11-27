@@ -66,7 +66,7 @@ export namespace OpenAi {
     /**
      * The base URL for the OpenAI API.
      *
-     * @default "https://api.openai.com"
+     * @default "https://api.openai.com/v1/"
      */
     baseUrl?: string;
   }
