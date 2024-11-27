@@ -4,7 +4,7 @@
   "description": "Schema validation middleware for Inngest.",
   "version": "0.0.0",
   "include": ["./src/**/*.ts"],
-  "exclude": [],
+  "exclude": ["**/*.test.*", "*.js", "**/tsconfig.*"],
   "exports": {
     ".": "./src/index.ts"
   }
