@@ -1,7 +1,11 @@
 import { envKeys } from "../../../helpers/consts.js";
 import { processEnv } from "../../../helpers/env.js";
 import { type AiAdapter } from "../adapter.js";
-import type { AnthropicAdapter, AnthropicModel, AnthropicBeta } from "../adapters/anthropic.js";
+import {
+  type AnthropicAdapter,
+  type AnthropicBeta,
+  type AnthropicModel,
+} from "../adapters/anthropic.js";
 
 /**
  * Create an Anthropic model using the Anthropic chat format.
@@ -25,7 +29,7 @@ export const anthropic: AiAdapter.ModelCreator<
   const url = new URL("messages", baseUrl);
 
   const headers: Record<string, string> = {
-    'anthropic-version': '2023-06-01',
+    "anthropic-version": "2023-06-01",
   };
 
   if ((options.betaHeaders?.length || 0) > 0) {
@@ -86,4 +90,3 @@ export namespace Anthropic {
    */
   export type AiModel = AnthropicAdapter;
 }
-
