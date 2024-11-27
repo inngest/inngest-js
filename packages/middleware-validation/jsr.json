@@ -2,9 +2,15 @@
   "$schema": "https://jsr.io/schema/config-file.v1.json",
   "name": "@inngest/middleware-validation",
   "description": "Schema validation middleware for Inngest.",
-  "version": "0.0.0",
-  "include": ["./src/**/*.ts"],
-  "exclude": ["**/*.test.*", "*.js", "**/tsconfig.*"],
+  "version": "0.0.1",
+  "include": [
+    "./src/**/*.ts"
+  ],
+  "exclude": [
+    "**/*.test.*",
+    "*.js",
+    "**/tsconfig.*"
+  ],
   "exports": {
     ".": "./src/index.ts"
   }
