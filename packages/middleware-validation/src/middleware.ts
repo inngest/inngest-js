@@ -4,8 +4,9 @@ import {
   NonRetriableError,
   type EventPayload,
   type InngestFunction,
+  type MiddlewareOptions,
 } from "inngest";
-import { z, ZodType } from "zod";
+import { ZodType, type ZodObject } from "zod";
 
 /**
  * Middleware that validates events using Zod schemas passed using
@@ -41,7 +42,7 @@ export const validationMiddleware = (opts?: {
    * @default false
    */
   disableOutgoingValidation?: boolean;
-}) => {
+}): InngestMiddleware<MiddlewareOptions> => {
   const mw = new InngestMiddleware({
     name: "Inngest: Runtime schema validation",
     init({ client }) {
@@ -230,7 +231,7 @@ export const validationMiddleware = (opts?: {
 };
 
 const helpers = {
-  isZodObject: (value: unknown): value is z.ZodObject<any> => {
+  isZodObject: (value: unknown): value is ZodObject<any> => {
     return value instanceof ZodType && value._def.typeName === "ZodObject";
   },
 
