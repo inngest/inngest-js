@@ -3,6 +3,7 @@
   "include": ["./**/*.test.ts"],
   "exclude": ["src/test/functions/**/*"],
   "compilerOptions": {
+    "noEmit": true,
     "paths": {
       "@local": ["./dist"],
       "@local/*": ["./dist/*"]
