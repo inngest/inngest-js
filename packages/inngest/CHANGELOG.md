@@ -1,5 +1,17 @@
 # inngest
 
+## 3.27.0
+
+### Minor Changes
+
+- [#762](https://github.com/inngest/inngest-js/pull/762) [`255416c`](https://github.com/inngest/inngest-js/commit/255416c4478ac367381da0c166b6762056d94e1d) Thanks [@tonyhb](https://github.com/tonyhb)! - Add `anthropic()` model for `step.ai.*()`
+
+### Patch Changes
+
+- [#760](https://github.com/inngest/inngest-js/pull/760) [`efc6c79`](https://github.com/inngest/inngest-js/commit/efc6c79d5a1baf7a011396b8406aea4982f03778) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure support for `typescript@~5.7.0`
+
+  No notable changes have been made, though minor TypeScript versions often affect transpiled outputs.
+
 ## 3.26.3
 
 ### Patch Changes
