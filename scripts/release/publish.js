@@ -60,6 +60,8 @@ const exec = async (...args) => {
   }
 
   // Get current latest version
+  let latestVersion;
+
   const {
     exitCode: latestCode,
     stdout: latestStdout,
@@ -67,21 +69,41 @@ const exec = async (...args) => {
   } = await getExecOutput("npm", ["dist-tag", "ls"]);
 
   if (latestCode !== 0) {
-    throw new Error(
-      `npm dist-tag ls exited with ${latestCode}:\n${latestStderr}`
-    );
-  }
+    // It could be a non-zero code if the package was never published before
+    const notFoundMsg = "is not in this registry";
 
-  const latestVersion = latestStdout
-    .split("\n")
-    .find((line) => line.startsWith("latest: "))
-    ?.split(" ")[1];
+    if (
+      latestStdout.includes(notFoundMsg) ||
+      latestStderr.includes(notFoundMsg)
+    ) {
+      console.log(
+        "npm dist-tag ls failed but it's okay; package hasn't been published yet"
+      );
+    } else {
+      throw new Error(
+        `npm dist-tag ls exited with ${latestCode}:\n${latestStderr}`
+      );
+    }
+  } else {
+    latestVersion = latestStdout
+      ?.split("\n")
+      ?.find((line) => line.startsWith("latest: "))
+      ?.split(" ")[1];
 
-  if (!latestVersion) {
-    throw new Error(`Could not find "latest" dist-tag in:\n${latestStdout}`);
+    if (!latestVersion) {
+      throw new Error(`Could not find "latest" dist-tag in:\n${latestStdout}`);
+    }
   }
 
   console.log("latestVersion:", latestVersion);
+
+  // If this is going to be backport release, don't allow us to continue if we
+  // have no latest version to reset to
+  if (branch !== "main" && !latestVersion) {
+    throw new Error(
+      "Cannot continue with backport release; no latest version found"
+    );
+  }
 
   // Release to npm
   await exec("npm", ["config", "set", "git-tag-version", "false"], {
