@@ -1,14 +1,15 @@
 import { envKeys } from "../../../helpers/consts.js";
 import { processEnv } from "../../../helpers/env.js";
 import { type AiAdapter } from "../adapter.js";
-import { type AnthropicAdapter, AnthropicModel, AnthropicBeta } from "../adapters/anthropic.js";
+import type { AnthropicAdapter, AnthropicModel, AnthropicBeta } from "../adapters/anthropic.js";
 
 /**
- * Create an OpenAI model using the OpenAI chat format.
+ * Create an Anthropic model using the Anthropic chat format.
  *
- * By default it targets the `https://api.openai.com/v1/` base URL.
+ * By default it targets the `https://api.anthropic.com/v1/` base URL, with the
+ * "2023-06-01" anthropic-version header.
  */
-export const openai: AiAdapter.ModelCreator<
+export const anthropic: AiAdapter.ModelCreator<
   [options: Anthropic.AiModelOptions],
   Anthropic.AiModel
 > = (options) => {
@@ -51,7 +52,7 @@ export namespace Anthropic {
   export type Model = AnthropicModel;
 
   /**
-   * Options for creating an OpenAI model.
+   * Options for creating an Anthropic model.
    */
   export interface AiModelOptions {
     /**
@@ -62,7 +63,7 @@ export namespace Anthropic {
     model: Model;
 
     /**
-     * The OpenAI API key to use for authenticating your request. By default we'll
+     * The Anthropic API key to use for authenticating your request. By default we'll
      * search for and use the `ANTHROPIC_API_KEY` environment variable.
      */
     apiKey?: string;

@@ -1,7 +1,7 @@
 import { type AiAdapter, type types } from "../adapter.js";
 
-import { MessageCreateParamsNonStreaming, Message, Model } from "@anthropic-ai/sdk/resources/messages.js";
-import { AnthropicBeta as AnthropicBetaSDK } from "@anthropic-ai/sdk/resources/index.js";
+import type { MessageCreateParamsNonStreaming, Message, Model } from "@anthropic-ai/sdk/resources/messages.js";
+import type { AnthropicBeta as AnthropicBetaSDK } from "@anthropic-ai/sdk/resources/index.js";
 
 interface AnthropicInput extends MessageCreateParamsNonStreaming {};
 interface AnthropicOutput extends Message {};
