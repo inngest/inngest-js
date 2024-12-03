@@ -30,6 +30,7 @@ export const openai: AiAdapter.ModelCreator<
     onCall(_, body) {
       body.model ||= options.model;
     },
+    options,
   } as OpenAi.AiModel;
 };
 
@@ -74,5 +75,5 @@ export namespace OpenAi {
   /**
    * An OpenAI model using the OpenAI format for I/O.
    */
-  export type AiModel = OpenAiAiAdapter;
+  export type AiModel = OpenAiAiAdapter & { options: AiModelOptions };
 }

@@ -38,8 +38,10 @@ export const anthropic: AiAdapter.ModelCreator<
     format: "anthropic",
     onCall(_, body) {
       body.model ||= options.model;
+      body.max_tokens ||= options.max_tokens;
     },
     headers,
+    options,
   } as Anthropic.AiModel;
 };
 
@@ -61,6 +63,11 @@ export namespace Anthropic {
      * table for details on which models work with the Anthropic API.
      */
     model: Model;
+
+    /**
+     * The maximum number of tokens to generate before stopping.
+     */
+    max_tokens: number;
 
     /**
      * The Anthropic API key to use for authenticating your request. By default
@@ -85,5 +92,5 @@ export namespace Anthropic {
   /**
    * An Anthropic model using the Anthropic format for I/O.
    */
-  export type AiModel = AnthropicAiAdapter;
+  export type AiModel = AnthropicAiAdapter & { options: AiModelOptions };
 }
