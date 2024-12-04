@@ -1,5 +1,11 @@
 # inngest
 
+## 3.27.1
+
+### Patch Changes
+
+- [#764](https://github.com/inngest/inngest-js/pull/764) [`1358b80`](https://github.com/inngest/inngest-js/commit/1358b80c758e85bc61e3f9aaa38e72af4bd1b44e) Thanks [@tonyhb](https://github.com/tonyhb)! - Add max_tokens as a param for anthropic model providers
+
 ## 3.27.0
 
 ### Minor Changes
