@@ -1,5 +1,11 @@
 # inngest
 
+## 3.27.2
+
+### Patch Changes
+
+- [#766](https://github.com/inngest/inngest-js/pull/766) [`fa74c6a`](https://github.com/inngest/inngest-js/commit/fa74c6aefdd3c129ad0e5000e1b869f3507980f1) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add missing `finish_reason` to OpenAI output types
+
 ## 3.27.1
 
 ### Patch Changes
