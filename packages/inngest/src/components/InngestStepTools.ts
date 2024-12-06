@@ -198,13 +198,34 @@ export const createStepTools = <TClient extends Inngest.Any>(
          * for next steps.
          */
         fn: TFn,
-
         /**
-         * Optional input to pass to the function. If this is specified, Inngest
-         * will keep track of the input for this step and be able to display it
-         * in the UI.
+         * Where there are multiple input type overloads, Parameters<TFn>
+         * will infer the type from the last overload. This breaks vercel's
+         * ai sdk generateObject for instance. Here patch in infer support
+         * for up to 4 overloads. I have not found a way to do this generically
+         * for n overloads.
          */
-        ...input: Parameters<TFn>
+        ...input: TFn extends {
+          (...args: infer A): unknown;
+          (...args: infer B): unknown;
+          (...args: infer C): unknown;
+          (...args: infer D): unknown;
+        }
+          ? A | B | C | D
+          : TFn extends {
+                (...args: infer A): unknown;
+                (...args: infer B): unknown;
+                (...args: infer C): unknown;
+              }
+            ? A | B | C
+            : TFn extends {
+                  (...args: infer A): unknown;
+                  (...args: infer B): unknown;
+                }
+              ? A | B
+              : TFn extends (...args: infer A) => unknown
+                ? A
+                : never
       ) => Promise<
         /**
          * TODO Middleware can affect this. If run input middleware has returned
