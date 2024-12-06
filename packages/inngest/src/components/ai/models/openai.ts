@@ -77,5 +77,7 @@ export namespace OpenAi {
   /**
    * An OpenAI model using the OpenAI format for I/O.
    */
-  export type AiModel = OpenAiAiAdapter & { options: AiModelOptions };
+  export interface AiModel extends OpenAiAiAdapter {
+    options: AiModelOptions;
+  }
 }
