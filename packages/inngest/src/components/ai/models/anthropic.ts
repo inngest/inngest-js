@@ -92,5 +92,7 @@ export namespace Anthropic {
   /**
    * An Anthropic model using the Anthropic format for I/O.
    */
-  export type AiModel = AnthropicAiAdapter & { options: AiModelOptions };
+  export interface AiModel extends AnthropicAiAdapter {
+    options: AiModelOptions;
+  }
 }
