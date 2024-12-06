@@ -1,5 +1,11 @@
 # inngest
 
+## 3.27.4
+
+### Patch Changes
+
+- [#770](https://github.com/inngest/inngest-js/pull/770) [`3aab141`](https://github.com/inngest/inngest-js/commit/3aab1410e5d45d71404694bef0067a978b1fceae) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Widen the `AiAdapter` types to allow for easy overrides
+
 ## 3.27.3
 
 ### Patch Changes
