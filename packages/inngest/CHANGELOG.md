@@ -1,5 +1,11 @@
 # inngest
 
+## 3.27.3
+
+### Patch Changes
+
+- [#768](https://github.com/inngest/inngest-js/pull/768) [`af66ad5`](https://github.com/inngest/inngest-js/commit/af66ad5552dc93d41756ab3b913ceafb72739f77) Thanks [@charlypoly](https://github.com/charlypoly)! - Add `o1-preview` and `o1-mini` to possible OpenAI models
+
 ## 3.27.2
 
 ### Patch Changes
