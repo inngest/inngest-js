@@ -1,5 +1,29 @@
 # inngest
 
+## 3.27.4
+
+### Patch Changes
+
+- [#770](https://github.com/inngest/inngest-js/pull/770) [`3aab141`](https://github.com/inngest/inngest-js/commit/3aab1410e5d45d71404694bef0067a978b1fceae) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Widen the `AiAdapter` types to allow for easy overrides
+
+## 3.27.3
+
+### Patch Changes
+
+- [#768](https://github.com/inngest/inngest-js/pull/768) [`af66ad5`](https://github.com/inngest/inngest-js/commit/af66ad5552dc93d41756ab3b913ceafb72739f77) Thanks [@charlypoly](https://github.com/charlypoly)! - Add `o1-preview` and `o1-mini` to possible OpenAI models
+
+## 3.27.2
+
+### Patch Changes
+
+- [#766](https://github.com/inngest/inngest-js/pull/766) [`fa74c6a`](https://github.com/inngest/inngest-js/commit/fa74c6aefdd3c129ad0e5000e1b869f3507980f1) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add missing `finish_reason` to OpenAI output types
+
+## 3.27.1
+
+### Patch Changes
+
+- [#764](https://github.com/inngest/inngest-js/pull/764) [`1358b80`](https://github.com/inngest/inngest-js/commit/1358b80c758e85bc61e3f9aaa38e72af4bd1b44e) Thanks [@tonyhb](https://github.com/tonyhb)! - Add max_tokens as a param for anthropic model providers
+
 ## 3.27.0
 
 ### Minor Changes

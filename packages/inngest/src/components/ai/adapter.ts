@@ -21,6 +21,12 @@ export interface AiAdapter {
   format: AiAdapter.Format;
 
   /**
+   * The constructor options for the adapter.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  options: any;
+
+  /**
    * The input and output types for this AI I/O format.
    *
    * This is not accessible externally, and is only used internally to define
@@ -79,6 +85,17 @@ export interface AiAdapter {
  * types.
  */
 export namespace AiAdapter {
+  export interface Any extends Omit<AiAdapter, "format"> {
+    /**
+     * The I/O format for the adapter.
+     *
+     * Allows any value, such that this type can be easily used with any
+     * adapter.
+     */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    format: any;
+  }
+
   /**
    * A helper used to infer the input type of an adapter.
    */

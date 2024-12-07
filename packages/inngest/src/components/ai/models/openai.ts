@@ -30,6 +30,7 @@ export const openai: AiAdapter.ModelCreator<
     onCall(_, body) {
       body.model ||= options.model;
     },
+    options,
   } as OpenAi.AiModel;
 };
 
@@ -44,6 +45,8 @@ export namespace OpenAi {
     | "chatgpt-4o-latest"
     | "gpt-4o-mini"
     | "gpt-4"
+    | "o1-preview"
+    | "o1-mini"
     | "gpt-3.5-turbo";
 
   /**
@@ -74,5 +77,7 @@ export namespace OpenAi {
   /**
    * An OpenAI model using the OpenAI format for I/O.
    */
-  export type AiModel = OpenAiAiAdapter;
+  export interface AiModel extends OpenAiAiAdapter {
+    options: AiModelOptions;
+  }
 }
