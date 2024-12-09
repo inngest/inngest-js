@@ -1,5 +1,11 @@
 # inngest
 
+## 3.27.5
+
+### Patch Changes
+
+- [#773](https://github.com/inngest/inngest-js/pull/773) [`fb745ef`](https://github.com/inngest/inngest-js/commit/fb745ef749d851031c494f602ff8611a6b1dab14) Thanks [@amh4r](https://github.com/amh4r)! - Fix Nuxt and H3 uses https in dev
+
 ## 3.27.4
 
 ### Patch Changes
