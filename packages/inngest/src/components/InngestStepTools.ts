@@ -142,7 +142,7 @@ export const STEP_INDEXING_SUFFIX = ":";
  * Each key is the function name and is expected to run `createTool` and pass a
  * generic type for that function as it will appear in the user's code.
  */
-class StepTools<TClient extends Inngest.Any> {
+export class StepTools<TClient extends Inngest.Any> {
   _disabled = false;
 
   /**
