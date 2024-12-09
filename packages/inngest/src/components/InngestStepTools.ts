@@ -143,10 +143,7 @@ export const STEP_INDEXING_SUFFIX = ":";
  * generic type for that function as it will appear in the user's code.
  */
 class StepTools<TClient extends Inngest.Any> {
-  #client: TClient;
-  #execution: InngestExecution;
-  #stepHandler: StepHandler;
-  #disabled = false;
+  _disabled = false;
 
   /**
    * Define the set of tools the user has access to for their step functions.
@@ -155,14 +152,10 @@ class StepTools<TClient extends Inngest.Any> {
    * a generic type for that function as it will appear in the user's code.
    */
   constructor(
-    client: TClient,
-    execution: InngestExecution,
-    stepHandler: StepHandler
-  ) {
-    this.#client = client;
-    this.#execution = execution;
-    this.#stepHandler = stepHandler;
-  }
+    private _client: TClient,
+    private _execution: InngestExecution,
+    private _stepHandler: StepHandler
+  ) {}
 
   /**
    * Send one or many events to Inngest. Should always be used in place of
@@ -190,7 +183,7 @@ class StepTools<TClient extends Inngest.Any> {
    *
    * Returns a promise that will resolve once the event has been sent.
    */
-  public sendEvent = this.#createTool<{
+  public sendEvent = this._createTool<{
     <Payload extends SendEventPayload<GetEvents<TClient>>>(
       idOrOptions: StepOptionsOrId,
       payload: Payload
@@ -206,9 +199,9 @@ class StepTools<TClient extends Inngest.Any> {
     },
     {
       fn: (idOrOptions, payload) => {
-        return this.#client["_send"]({
+        return this._client["_send"]({
           payload,
-          headers: this.#execution["options"]["headers"],
+          headers: this._execution["options"]["headers"],
         });
       },
     }
@@ -223,7 +216,7 @@ class StepTools<TClient extends Inngest.Any> {
    * or to only wait a maximum amount of time before giving up and returning
    * `null` instead of any event data.
    */
-  public waitForEvent = this.#createTool<
+  public waitForEvent = this._createTool<
     <IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>>(
       idOrOptions: StepOptionsOrId,
       opts: WaitForEventOpts<GetEvents<TClient, true>, IncomingEvent>
@@ -275,7 +268,7 @@ class StepTools<TClient extends Inngest.Any> {
    * of the `run` tool, meaning you can return and reason about return data for
    * next steps.
    */
-  public run = this.#createStepRun();
+  public run = this._createStepRun();
 
   /**
    * AI tooling for running AI models and other AI-related tasks.
@@ -288,7 +281,7 @@ class StepTools<TClient extends Inngest.Any> {
      * Input is also tracked for this tool, meaning you can pass input to the
      * function and it will be displayed and editable in the UI.
      */
-    infer: this.#createTool<
+    infer: this._createTool<
       <TAdapter extends AiAdapter>(
         idOrOptions: StepOptionsOrId,
         options: AiInferOpts<TAdapter>
@@ -322,7 +315,7 @@ class StepTools<TClient extends Inngest.Any> {
      * Input is also tracked for this tool, meaning you can pass input to the
      * function and it will be displayed and editable in the UI.
      */
-    wrap: this.#createStepRun("step.ai.wrap"),
+    wrap: this._createStepRun("step.ai.wrap"),
 
     /**
      * Models for AI inference and other AI-related tasks.
@@ -355,7 +348,7 @@ class StepTools<TClient extends Inngest.Any> {
    *
    * To wait until a particular date, use `sleepUntil` instead.
    */
-  public sleep = this.#createTool<
+  public sleep = this._createTool<
     (
       idOrOptions: StepOptionsOrId,
 
@@ -383,7 +376,7 @@ class StepTools<TClient extends Inngest.Any> {
    * To wait for a particular amount of time from now, always use `sleep`
    * instead.
    */
-  public sleepUntil = this.#createTool<
+  public sleepUntil = this._createTool<
     (
       idOrOptions: StepOptionsOrId,
 
@@ -429,7 +422,7 @@ class StepTools<TClient extends Inngest.Any> {
    * A string ID can also be passed to reference functions outside of the
    * current app.
    */
-  public invoke = this.#createTool<
+  public invoke = this._createTool<
     <TFunction extends InvokeTargetFunctionDefinition>(
       idOrOptions: StepOptionsOrId,
       opts: InvocationOpts<TFunction>
@@ -492,7 +485,7 @@ class StepTools<TClient extends Inngest.Any> {
 
       case "refInstance":
         opts.function_id = [
-          fn.opts.appId || this.#client.id,
+          fn.opts.appId || this._client.id,
           fn.opts.functionId,
         ]
           .filter(Boolean)
@@ -512,7 +505,7 @@ class StepTools<TClient extends Inngest.Any> {
    * Disable the tools once the execution is complete.
    */
   private _disable() {
-    this.#disabled = true;
+    this._disabled = true;
   }
 
   /**
@@ -522,7 +515,7 @@ class StepTools<TClient extends Inngest.Any> {
    * function signature exposed to the user.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  #createTool<T extends (...args: any[]) => Promise<unknown>>(
+  private _createTool<T extends (...args: any[]) => Promise<unknown>>(
     /**
      * A function that returns an ID for this op. This is used to ensure that
      * the op stack is correctly filled, submitted, and retrieved with the same
@@ -536,7 +529,7 @@ class StepTools<TClient extends Inngest.Any> {
     opts?: StepToolOptions<T>
   ): T {
     return (async (...args: Parameters<T>): Promise<unknown> => {
-      if (this.#disabled) {
+      if (this._disabled) {
         console.warn(
           prettyError({
             type: "warn",
@@ -548,7 +541,7 @@ class StepTools<TClient extends Inngest.Any> {
       }
 
       const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
-      return this.#stepHandler({ args: parsedArgs, matchOp, opts });
+      return this._stepHandler({ args: parsedArgs, matchOp, opts });
     }) as T;
   }
 
@@ -556,14 +549,14 @@ class StepTools<TClient extends Inngest.Any> {
    * Create a new step run tool that can be used to run a step function using
    * `step.run()` as a shim.
    */
-  #createStepRun(
+  private _createStepRun(
     /**
      * The sub-type of this step tool, exposed via `opts.type` when the op is
      * reported.
      */
     type?: string
   ) {
-    return this.#createTool<
+    return this._createTool<
       <TFn extends (...args: Parameters<TFn>) => unknown>(
         idOrOptions: StepOptionsOrId,
 
