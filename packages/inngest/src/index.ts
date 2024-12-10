@@ -82,6 +82,7 @@ export type {
 } from "./helpers/types";
 export type { LogArg } from "./middleware/logger";
 export { ProxyLogger } from "./middleware/logger.js";
+export { getAsyncCtx } from "./components/execution/als.js";
 export type {
   BaseContext,
   ClientOptions,

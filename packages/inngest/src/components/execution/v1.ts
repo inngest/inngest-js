@@ -48,6 +48,7 @@ import {
   type InngestExecutionOptions,
   type MemoizedOp,
 } from "./InngestExecution.js";
+import { als } from "./als.js";
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
@@ -459,44 +460,46 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * and middleware hooks where appropriate.
    */
   private async startExecution(): Promise<void> {
-    /**
-     * Mutate input as neccessary based on middleware.
-     */
-    await this.transformInput();
+    return als.run({ ctx: this.fnArg }, async (): Promise<void> => {
+      /**
+       * Mutate input as neccessary based on middleware.
+       */
+      await this.transformInput();
 
-    /**
-     * Start the timer to time out the run if needed.
-     */
-    void this.timeout?.start();
+      /**
+       * Start the timer to time out the run if needed.
+       */
+      void this.timeout?.start();
 
-    await this.state.hooks?.beforeMemoization?.();
+      await this.state.hooks?.beforeMemoization?.();
 
-    /**
-     * If we had no state to begin with, immediately end the memoization phase.
-     */
-    if (this.state.allStateUsed()) {
-      await this.state.hooks?.afterMemoization?.();
-      await this.state.hooks?.beforeExecution?.();
-    }
-
-    /**
-     * Trigger the user's function.
-     */
-    runAsPromise(() => this.userFnToRun(this.fnArg))
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises
-      .finally(async () => {
+      /**
+       * If we had no state to begin with, immediately end the memoization phase.
+       */
+      if (this.state.allStateUsed()) {
         await this.state.hooks?.afterMemoization?.();
         await this.state.hooks?.beforeExecution?.();
-        await this.state.hooks?.afterExecution?.();
-      })
-      .then((data) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        this.state.setCheckpoint({ type: "function-resolved", data });
-      })
-      .catch((error) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        this.state.setCheckpoint({ type: "function-rejected", error });
-      });
+      }
+
+      /**
+       * Trigger the user's function.
+       */
+      runAsPromise(() => this.userFnToRun(this.fnArg))
+        // eslint-disable-next-line @typescript-eslint/no-misused-promises
+        .finally(async () => {
+          await this.state.hooks?.afterMemoization?.();
+          await this.state.hooks?.beforeExecution?.();
+          await this.state.hooks?.afterExecution?.();
+        })
+        .then((data) => {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          this.state.setCheckpoint({ type: "function-resolved", data });
+        })
+        .catch((error) => {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          this.state.setCheckpoint({ type: "function-rejected", error });
+        });
+    });
   }
 
   /**
