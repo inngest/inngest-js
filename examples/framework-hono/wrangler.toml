@@ -1,6 +1,5 @@
 name = "framework-hono"
-compatibility_date = "2024-09-23"
-compatibility_flags = [ "nodejs_compat_v2" ]
+compatibility_date = "2023-12-01"
 
 # [vars]
 # MY_VAR = "my-variable"
