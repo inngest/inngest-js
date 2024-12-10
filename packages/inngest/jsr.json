@@ -17,6 +17,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
+    "./experimental": "./src/experimental.ts",
     "./astro": "./src/astro.ts",
     "./bun": "./src/bun.ts",
     "./cloudflare": "./src/cloudflare.ts",

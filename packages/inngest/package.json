@@ -37,6 +37,11 @@
       "import": "./index.js",
       "types": "./index.d.ts"
     },
+    "./experimental": {
+      "require": "./experimental.js",
+      "import": "./experimental.js",
+      "types": "./experimental.d.ts"
+    },
     "./astro": {
       "require": "./astro.js",
       "import": "./astro.js",
