@@ -34,6 +34,40 @@ import { gemini, openai, type AiAdapter } from "./ai/index.js";
 
 import { type InngestExecution } from "./execution/InngestExecution.js";
 
+//
+// This gnarly type allows us to infer the types of the arguments for a function
+// with up to 4 overloads.
+//
+// This make step.ai.wrap work with, among other things,  the vercel ai sdk generateObject function.
+//
+type UnionToIntersection<U> = (U extends any ? (k: U) => void : never) extends (
+  k: infer I
+) => void
+  ? I
+  : never;
+
+type GetOverloadArgs<T> = T extends {
+  (...args: infer A1): any;
+  (...args: infer A2): any;
+  (...args: infer A3): any;
+  (...args: infer A4): any;
+}
+  ? A1 | A2 | A3 | A4
+  : T extends {
+        (...args: infer A1): any;
+        (...args: infer A2): any;
+        (...args: infer A3): any;
+      }
+    ? A1 | A2 | A3
+    : T extends {
+          (...args: infer A1): any;
+          (...args: infer A2): any;
+        }
+      ? A1 | A2
+      : T extends (...args: infer A) => any
+        ? A
+        : never;
+
 export interface FoundStep extends HashedOp {
   hashedId: string;
   fn?: (...args: unknown[]) => unknown;
@@ -188,44 +222,8 @@ export const createStepTools = <TClient extends Inngest.Any>(
     return createTool<
       <TFn extends (...args: Parameters<TFn>) => unknown>(
         idOrOptions: StepOptionsOrId,
-
-        /**
-         * The function to run when this step is executed. Can be synchronous or
-         * asynchronous.
-         *
-         * The return value of this function will be the return value of this
-         * call to `run`, meaning you can return and reason about return data
-         * for next steps.
-         */
         fn: TFn,
-        /**
-         * Where there are multiple input type overloads, Parameters<TFn>
-         * will infer the type from the last overload. This breaks vercel's
-         * ai sdk generateObject for instance. Here patch in infer support
-         * for up to 4 overloads. I have not found a way to do this generically
-         * for n overloads.
-         */
-        ...input: TFn extends {
-          (...args: infer A): unknown;
-          (...args: infer B): unknown;
-          (...args: infer C): unknown;
-          (...args: infer D): unknown;
-        }
-          ? A | B | C | D
-          : TFn extends {
-                (...args: infer A): unknown;
-                (...args: infer B): unknown;
-                (...args: infer C): unknown;
-              }
-            ? A | B | C
-            : TFn extends {
-                  (...args: infer A): unknown;
-                  (...args: infer B): unknown;
-                }
-              ? A | B
-              : TFn extends (...args: infer A) => unknown
-                ? A
-                : never
+        ...input: GetOverloadArgs<TFn>
       ) => Promise<
         /**
          * TODO Middleware can affect this. If run input middleware has returned
