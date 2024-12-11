@@ -1,5 +1,11 @@
 # @inngest/test
 
+## 0.1.3
+
+### Patch Changes
+
+- [#777](https://github.com/inngest/inngest-js/pull/777) [`325ef79`](https://github.com/inngest/inngest-js/commit/325ef7925a040090ae7990ae16731bd84a9b3431) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `@inngest/test` automatic spying not accounting for `step.**`
+
 ## 0.1.2
 
 ### Patch Changes
