@@ -49,9 +49,3 @@ runs:
       run: pnpm run build
       shell: bash
       working-directory: ${{ inputs.working-directory }}/packages/inngest
-
-    - name: Install dependencies to link
-      if: ${{ inputs.install-dependencies == 'true' }}
-      run: pnpm install
-      shell: bash
-      working-directory: ${{ inputs.working-directory }}
