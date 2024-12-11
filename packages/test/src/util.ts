@@ -1,7 +1,7 @@
 import { internalEvents } from "inngest";
 import type { Context, EventPayload } from "inngest/types";
 import { ulid } from "ulid";
-import { fn as mockFn } from "./spy.js";
+import { mockAny } from "./spy.js";
 
 /**
  * The default context transformation function that mocks all step tools. Use
@@ -9,22 +9,9 @@ import { fn as mockFn } from "./spy.js";
  * this functionality.
  */
 export const mockCtx = (ctx: Readonly<Context.Any>): Context.Any => {
-  const step = Object.keys(ctx.step).reduce(
-    (acc, key) => {
-      const tool = ctx.step[key as keyof typeof ctx.step];
-      const mock = mockFn(tool);
-
-      return {
-        ...acc,
-        [key]: mock,
-      };
-    },
-    {} as Context.Any["step"]
-  );
-
   return {
     ...ctx,
-    step,
+    step: mockAny(ctx.step),
   };
 };
 
