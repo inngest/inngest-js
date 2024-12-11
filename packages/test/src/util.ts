@@ -9,11 +9,9 @@ import { mockAny } from "./spy.js";
  * this functionality.
  */
 export const mockCtx = (ctx: Readonly<Context.Any>): Context.Any => {
-  const step = mockAny(ctx.step) as Context.Any["step"];
-
   return {
     ...ctx,
-    step,
+    step: mockAny(ctx.step),
   };
 };
 

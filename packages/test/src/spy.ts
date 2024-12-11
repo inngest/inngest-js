@@ -624,9 +624,9 @@ export function fn<T extends Procedure = Procedure>(
   return enhancedSpy as any;
 }
 
-export const mockAny = (obj: unknown) => {
+export const mockAny = <T>(obj: T): T => {
   if (typeof obj === "function") {
-    return fn(obj as (...args: any[]) => any);
+    return fn(obj as (...args: any[]) => any) as T;
   }
 
   if (typeof obj === "object" && obj !== null) {

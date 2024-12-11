@@ -98,8 +98,8 @@ importers:
         specifier: workspace:^
         version: link:../eslint-plugin-internal
       '@inngest/test':
-        specifier: 0.1.3-pr-777.0
-        version: 0.1.3-pr-777.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@20.14.8)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.7.2)
+        specifier: workspace:^
+        version: link:../test
       '@jest/globals':
         specifier: ^29.5.0
         version: 29.5.0
@@ -316,8 +316,8 @@ importers:
         specifier: ^9.7.0
         version: 9.7.0
       '@inngest/test':
-        specifier: 0.1.3-pr-777.0
-        version: 0.1.3-pr-777.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@20.14.8)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.6.3)
+        specifier: ^0.1.3
+        version: 0.1.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@20.14.8)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.6.3)
       '@types/eslint__js':
         specifier: ^8.42.3
         version: 8.42.3
@@ -1006,8 +1006,8 @@ packages:
     resolution: {integrity: sha512-dvuCeX5fC9dXgJn9t+X5atfmgQAzUOWqS1254Gh0m6i8wKd10ebXkfNKiRK+1GWi/yTvvLDHpoxLr0xxxeslWw==}
     deprecated: Use @eslint/object-schema instead
 
-  '@inngest/test@0.1.3-pr-777.0':
-    resolution: {integrity: sha512-xF3sm+5Nowx9t5KK2qsEDRv5BH/xnHLczbqzlWSHy0RXzl2I5QD18BrR4VPsedsqQuyEMHD6+BzcTK/8gZNyfg==}
+  '@inngest/test@0.1.3':
+    resolution: {integrity: sha512-3iwhqXs4Z8reWMmbOMObZ9nIfIDzTwpkDPf6L86746hs/rkOy+OZpagKosQZLc0JxxiSFzQhrgCBDtrYJoMIBg==}
 
   '@isaacs/cliui@8.0.2':
     resolution: {integrity: sha512-O8jcjabXaleOG9DQ0+ARXWZBTfnP4WNAqzuiJK7ll44AmxGKv/J2M4TPjxjY3znBCfvBXFzucm1twdyFybFqEA==}
@@ -5747,28 +5747,9 @@ snapshots:
 
   '@humanwhocodes/object-schema@2.0.1': {}
 
-  '@inngest/test@0.1.3-pr-777.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@20.14.8)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.6.3)':
+  '@inngest/test@0.1.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@20.14.8)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.6.3)':
     dependencies:
       inngest: 3.25.1(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@20.14.8)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.6.3)
-      tinyspy: 3.0.2
-      ulid: 2.3.0
-    transitivePeerDependencies:
-      - '@sveltejs/kit'
-      - '@vercel/node'
-      - aws-lambda
-      - encoding
-      - express
-      - fastify
-      - h3
-      - hono
-      - koa
-      - next
-      - supports-color
-      - typescript
-
-  '@inngest/test@0.1.3-pr-777.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@20.14.8)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.7.2)':
-    dependencies:
-      inngest: 3.25.1(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@20.14.8)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.7.2)
       tinyspy: 3.0.2
       ulid: 2.3.0
     transitivePeerDependencies:
@@ -8463,34 +8444,6 @@ snapshots:
       koa: 2.14.2
       next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
       typescript: 5.6.3
-    transitivePeerDependencies:
-      - encoding
-      - supports-color
-
-  inngest@3.25.1(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@20.14.8)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.7.2):
-    dependencies:
-      '@types/debug': 4.1.12
-      canonicalize: 1.0.8
-      chalk: 4.1.2
-      cross-fetch: 4.0.0
-      debug: 4.3.4
-      hash.js: 1.1.7
-      json-stringify-safe: 5.0.1
-      ms: 2.1.3
-      serialize-error-cjs: 0.1.3
-      strip-ansi: 5.2.0
-      zod: 3.22.3
-    optionalDependencies:
-      '@sveltejs/kit': 1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@20.14.8))
-      '@vercel/node': 2.15.9
-      aws-lambda: 1.0.7
-      express: 4.19.2
-      fastify: 4.21.0
-      h3: 1.8.1
-      hono: 4.2.7
-      koa: 2.14.2
-      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
-      typescript: 5.7.2
     transitivePeerDependencies:
       - encoding
       - supports-color
