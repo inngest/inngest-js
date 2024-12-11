@@ -21,7 +21,7 @@ describe("validationMiddleware", () => {
         { id: "test" },
         { event: "test" },
         () => "success"
-      ),
+      ) as any,
       events: [{ name: "test" }],
     });
 
@@ -49,7 +49,7 @@ describe("validationMiddleware", () => {
         { id: "test" },
         { event: "test" },
         () => "success"
-      ),
+      ) as any,
       events: [{ name: "test" }],
     });
 
@@ -77,7 +77,7 @@ describe("validationMiddleware", () => {
         { id: "test" },
         { event: "test" },
         () => "success"
-      ),
+      ) as any,
       events: [{ name: "test", data: { message: "hello" } }],
     });
 
@@ -105,7 +105,7 @@ describe("validationMiddleware", () => {
         { id: "test" },
         { event: "test" },
         () => "success"
-      ),
+      ) as any,
       events: [{ name: "test", data: { message: 123 } }],
     });
 
@@ -139,7 +139,7 @@ describe("validationMiddleware", () => {
           { id: "test" },
           { event: "b" },
           () => "success"
-        ),
+        ) as any,
         events: [{ name: "inngest/function.invoked", data: { b: true } }],
       });
 
@@ -162,7 +162,7 @@ describe("validationMiddleware", () => {
           { id: "test" },
           { event: "test" },
           () => "success"
-        ),
+        ) as any,
         events: [{ name: "test" }],
       });
 
@@ -190,7 +190,7 @@ describe("validationMiddleware", () => {
           { id: "test" },
           { event: "test" },
           () => "success"
-        ),
+        ) as any,
         events: [{ name: "test" }],
       });
 
@@ -218,7 +218,7 @@ describe("validationMiddleware", () => {
           { id: "test" },
           { event: "test" },
           () => "success"
-        ),
+        ) as any,
         events: [{ name: "test", data: { message: "hello" } }],
       });
 
@@ -246,7 +246,7 @@ describe("validationMiddleware", () => {
           { id: "test" },
           { event: "test" },
           () => "success"
-        ),
+        ) as any,
         events: [
           { name: "inngest/function.invoked", data: { message: "hello" } },
         ],
@@ -278,7 +278,7 @@ describe("validationMiddleware", () => {
         { id: "test" },
         { event: "test" },
         () => "success"
-      ),
+      ) as any,
       events: [{ name: "test", data: { message: "hello" } }],
     });
 
@@ -308,7 +308,7 @@ describe("validationMiddleware", () => {
         { id: "test" },
         { event: "test" },
         () => "success"
-      ),
+      ) as any,
       events: [{ name: "test", data: { message: { content: "hello" } } }],
     });
 
@@ -336,7 +336,7 @@ describe("validationMiddleware", () => {
         { id: "test" },
         { event: "test" },
         () => "success"
-      ),
+      ) as any,
       events: [
         { name: "test", data: { message: "hello" } },
         { name: "test", data: { message: 123 } },
@@ -377,7 +377,7 @@ describe("validationMiddleware", () => {
                 name: "test",
                 data: { message: 123 as unknown as string },
               })
-          ),
+          ) as any,
           events: [{ name: "test", data: { message: "hello" } }],
         });
 
@@ -450,7 +450,7 @@ describe("validationMiddleware", () => {
         );
 
         const t = new InngestTestEngine({
-          function: fn,
+          function: fn as any,
           events: [{ name: "test", data: { message: "hello" } }],
         });
 
@@ -495,7 +495,7 @@ describe("validationMiddleware", () => {
         );
 
         const t = new InngestTestEngine({
-          function: fn,
+          function: fn as any,
           events: [{ name: "test", data: { message: "hello" } }],
         });
 
