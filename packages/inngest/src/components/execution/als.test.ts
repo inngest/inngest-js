@@ -1,5 +1,5 @@
 import { InngestTestEngine } from "@inngest/test";
-import { type AsyncContext } from "./als";
+import { type AsyncContext } from "@local/components/execution/als";
 
 describe("getAsyncLocalStorage", () => {
   const warningSpy = jest.spyOn(console, "warn");
@@ -10,7 +10,7 @@ describe("getAsyncLocalStorage", () => {
   });
 
   test("should return an `AsyncLocalStorageIsh`", async () => {
-    const mod = await import("./als");
+    const mod = await import("@local/components/execution/als");
     const als = await mod.getAsyncLocalStorage();
 
     expect(als).toBeDefined();
@@ -19,7 +19,7 @@ describe("getAsyncLocalStorage", () => {
   });
 
   test("should return the same instance of `AsyncLocalStorageIsh`", async () => {
-    const mod = await import("./als");
+    const mod = await import("@local/components/execution/als");
 
     const als1p = mod.getAsyncLocalStorage();
     const als2p = mod.getAsyncLocalStorage();
@@ -35,7 +35,7 @@ describe("getAsyncLocalStorage", () => {
       throw new Error("import failed");
     });
 
-    const mod = await import("./als");
+    const mod = await import("@local/components/execution/als");
     const als = await mod.getAsyncLocalStorage();
 
     expect(warningSpy).toHaveBeenCalledWith(
@@ -62,7 +62,7 @@ describe("getAsyncCtx", () => {
   });
 
   test("should return `undefined` outside of an Inngest async context", async () => {
-    const mod = await import("./als");
+    const mod = await import("@local/components/execution/als");
     const store = await mod.getAsyncCtx();
 
     expect(store).toBeUndefined();
