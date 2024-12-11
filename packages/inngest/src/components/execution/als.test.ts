@@ -74,7 +74,8 @@ describe("getAsyncCtx", () => {
 
     const inngest = new Inngest({ id: "test" });
 
-    let resolve: (value: AsyncContext | undefined) => void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let resolve: (value: any) => void | PromiseLike<void>;
     const externalP = new Promise<AsyncContext | undefined>((r) => {
       resolve = r;
     });
@@ -95,7 +96,8 @@ describe("getAsyncCtx", () => {
       }
     );
 
-    const t = new InngestTestEngine({ function: fn });
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+    const t = new InngestTestEngine({ function: fn as any });
 
     const { result } = await t.execute();
 
@@ -117,7 +119,8 @@ describe("getAsyncCtx", () => {
 
     const inngest = new Inngest({ id: "test" });
 
-    let resolve: (value: AsyncContext | undefined) => void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let resolve: (value: any) => void | PromiseLike<void>;
     const externalP = new Promise<AsyncContext | undefined>((r) => {
       resolve = r;
     });
@@ -138,7 +141,8 @@ describe("getAsyncCtx", () => {
       }
     );
 
-    const t = new InngestTestEngine({ function: fn });
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+    const t = new InngestTestEngine({ function: fn as any });
 
     const { result } = await t.execute();
 
