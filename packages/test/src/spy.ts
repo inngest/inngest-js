@@ -623,3 +623,18 @@ export function fn<T extends Procedure = Procedure>(
 
   return enhancedSpy as any;
 }
+
+export const mockAny = (obj: unknown) => {
+  if (typeof obj === "function") {
+    return fn(obj as (...args: any[]) => any);
+  }
+
+  if (typeof obj === "object" && obj !== null) {
+    return Object.keys(obj).reduce((acc, key) => {
+      (acc as any)[key] = mockAny(obj[key as keyof typeof obj]);
+      return acc;
+    }, obj);
+  }
+
+  return obj;
+};
