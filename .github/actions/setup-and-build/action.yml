@@ -36,7 +36,13 @@ runs:
       if: ${{ inputs.install-dependencies == 'true' }}
       run: pnpm install
       shell: bash
-      working-directory: ${{ inputs.working-directory }}/packages/inngest
+      working-directory: ${{ inputs.working-directory }}
+
+    - name: Build test dependencies
+      if: ${{ inputs.install-dependencies == 'true' }}
+      run: pnpm run build
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}/packages/test
 
     - name: Build
       if: ${{ inputs.build == 'true' }}

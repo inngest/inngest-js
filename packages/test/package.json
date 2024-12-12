@@ -2,27 +2,26 @@
   "name": "@inngest/test",
   "version": "0.1.3",
   "description": "Tooling for testing Inngest functions.",
-  "main": "./index.js",
-  "types": "./index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
     "test": "jest",
-    "build": "pnpm run build:clean && pnpm run build:tsc && pnpm run build:copy",
+    "build": "pnpm run build:clean && pnpm run build:tsc",
     "build:clean": "rm -rf ./dist",
     "build:tsc": "tsc --project tsconfig.build.json",
-    "build:copy": "cp package.json LICENSE.md README.md CHANGELOG.md dist",
     "pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest-test.tgz --cwd dist",
-    "postversion": "pnpm run build && pnpm run build:copy",
+    "postversion": "pnpm run build",
     "release": "DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
     "release:version": "node ../../scripts/release/jsrVersion.js"
   },
   "exports": {
     ".": {
-      "require": "./index.js",
-      "import": "./index.js",
-      "types": "./index.d.ts"
+      "require": "./dist/index.js",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
     }
   },
   "keywords": [

@@ -37,6 +37,11 @@
       "import": "./index.js",
       "types": "./index.d.ts"
     },
+    "./experimental": {
+      "require": "./experimental.js",
+      "import": "./experimental.js",
+      "types": "./experimental.d.ts"
+    },
     "./astro": {
       "require": "./astro.js",
       "import": "./astro.js",
@@ -199,6 +204,7 @@
     "@actions/core": "^1.10.0",
     "@actions/exec": "^1.1.1",
     "@inngest/eslint-plugin-internal": "workspace:^",
+    "@inngest/test": "workspace:^",
     "@jest/globals": "^29.5.0",
     "@shopify/jest-koa-mocks": "^5.1.1",
     "@sveltejs/kit": "^1.27.3",
