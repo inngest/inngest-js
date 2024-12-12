@@ -1,5 +1,21 @@
 # inngest
 
+## 3.28.0
+
+### Minor Changes
+
+- [#776](https://github.com/inngest/inngest-js/pull/776) [`0dbcc87`](https://github.com/inngest/inngest-js/commit/0dbcc874206d8d87c2c1da1773e5390968dfa527) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add experimental `getAsyncCtx()`, allowing the retrieval of a run's input (`event`, `step`, `runId`, etc) from the relevant async chain.
+
+  ```ts
+  import { getAsyncCtx } from "inngest/experimental";
+
+  const ctx = await getAsyncCtx();
+  ```
+
+### Patch Changes
+
+- [#776](https://github.com/inngest/inngest-js/pull/776) [`0dbcc87`](https://github.com/inngest/inngest-js/commit/0dbcc874206d8d87c2c1da1773e5390968dfa527) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Use `@inngest/test@workspace:^` internally for testing
+
 ## 3.27.5
 
 ### Patch Changes
