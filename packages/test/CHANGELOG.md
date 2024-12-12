@@ -1,5 +1,14 @@
 # @inngest/test
 
+## 0.1.4
+
+### Patch Changes
+
+- [#776](https://github.com/inngest/inngest-js/pull/776) [`0dbcc87`](https://github.com/inngest/inngest-js/commit/0dbcc874206d8d87c2c1da1773e5390968dfa527) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Altered exports to now be namespaced by `./dist/`; if you have directly imported files from `@inngest/test`, you may need to change the imports
+
+- Updated dependencies [[`0dbcc87`](https://github.com/inngest/inngest-js/commit/0dbcc874206d8d87c2c1da1773e5390968dfa527), [`0dbcc87`](https://github.com/inngest/inngest-js/commit/0dbcc874206d8d87c2c1da1773e5390968dfa527)]:
+  - inngest@3.28.0
+
 ## 0.1.3
 
 ### Patch Changes
