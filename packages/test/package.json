@@ -14,7 +14,7 @@
     "build:tsc": "tsc --project tsconfig.build.json",
     "pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest-test.tgz --cwd dist",
     "postversion": "pnpm run build",
-    "release": "DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
+    "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
     "release:version": "node ../../scripts/release/jsrVersion.js"
   },
   "exports": {
