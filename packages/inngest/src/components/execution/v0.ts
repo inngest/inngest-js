@@ -70,10 +70,16 @@ export class V0InngestExecution
   public start() {
     this.debug("starting V0 execution");
 
-    return (this.execution ??= this._start().then((result) => {
-      this.debug("result:", result);
-      return result;
-    }));
+    return (this.execution ??= this._start()
+      .then((result) => {
+        this.debug("result:", result);
+        return result;
+      })
+      .finally(() => {
+        // Disable step tools after execution; only needed to produce warnings
+        // for if something is keeping hold of these references.
+        this.fnArg?.step?.["_disable"]?.();
+      }));
   }
 
   private async _start(): Promise<ExecutionResult> {
