@@ -1,5 +1,11 @@
 # @inngest/test
 
+## 0.1.5
+
+### Patch Changes
+
+- [#786](https://github.com/inngest/inngest-js/pull/786) [`1f3bd4b`](https://github.com/inngest/inngest-js/commit/1f3bd4bac38ebdfa6181609f63dc95a162299201) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `@inngest/test` not shipping `dist/` files
+
 ## 0.1.4
 
 ### Patch Changes
