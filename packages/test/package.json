@@ -24,6 +24,9 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "files": [
+    "dist"
+  ],
   "keywords": [
     "inngest",
     "test",
