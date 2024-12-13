@@ -93,7 +93,7 @@ The interesting bit is the `processJsonFile()` function that takes each dataset�
 You can now run the datasets indexing command by running:
 
 ```bash
-npm run index
+npm run index-vector-store
 ```
 
 This script takes up to 5 minutes to index the 20k records.
@@ -302,7 +302,7 @@ Use the following suggestions to improve your project for the demo part!
 
 The [https://huggingface.co/Thefoodprocessor](https://huggingface.co/Thefoodprocessor) project lists multiple other datasets, such as allergy and ingredient alternatives. You can download an additional `.parcel` file into the `data/` folder and run the `npm run generate-jsons` script to generate new JSON files.
 
-Then, you can run the `npm run index` script again and integrate the new Neon vector database into your Inngest workflow! 🚀
+Then, you can run the `npm run index-vector-store` script again and integrate the new Neon vector database into your Inngest workflow! 🚀
 
 **Add more parameters to the `"meal.generate"` Inngest event and leverage Inngest step parallelism**
 
