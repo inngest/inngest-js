@@ -132,6 +132,11 @@
       "import": "./nitro.js",
       "types": "./nitro.d.ts"
     },
+    "./node": {
+      "require": "./node.js",
+      "import": "./node.js",
+      "types": "./node.d.ts"
+    },
     "./types": {
       "require": "./types.js",
       "import": "./types.js",
