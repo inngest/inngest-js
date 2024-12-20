@@ -25,10 +25,6 @@ testFramework("Node", NodeHandler, {
     // Mock the body data
     const bodyData = Buffer.from(JSON.stringify(req.body));
 
-    nodeReq.on("end", () => {
-      console.log("END!");
-    });
-
     // Override the read methods to return the body data
     nodeReq.push(bodyData);
     nodeReq.push(null); // Signals the end of the stream
