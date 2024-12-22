@@ -797,6 +797,22 @@ export class InngestCommHandler<
         }),
       ]);
 
+      // This is when the request body is completely missing; it does not
+      // include an empty body. This commonly happens when the HTTP framework
+      // doesn't have body parsing middleware.
+      const isMissingBody = body === undefined;
+
+      if (isMissingBody) {
+        this.log(
+          "error",
+          "Missing body, possibly due to missing request body middleware"
+        );
+        return {
+          headers: getInngestHeaders(),
+          status: 500,
+        };
+      }
+
       const signatureValidation = this.validateSignature(signature, body);
 
       const headersToForwardP = Promise.all(headerPromises).then(
