@@ -797,22 +797,6 @@ export class InngestCommHandler<
         }),
       ]);
 
-      // This is when the request body is completely missing; it does not
-      // include an empty body. This commonly happens when the HTTP framework
-      // doesn't have body parsing middleware.
-      const isMissingBody = body === undefined;
-
-      if (isMissingBody) {
-        this.log(
-          "error",
-          "Missing body, possibly due to missing request body middleware"
-        );
-        return {
-          headers: getInngestHeaders(),
-          status: 500,
-        };
-      }
-
       const signatureValidation = this.validateSignature(signature, body);
 
       const headersToForwardP = Promise.all(headerPromises).then(
@@ -1001,10 +985,37 @@ export class InngestCommHandler<
     method: string;
     headers: Promise<Record<string, string>>;
   }): Promise<ActionResponse> {
+    // This is when the request body is completely missing; it does not
+    // include an empty body. This commonly happens when the HTTP framework
+    // doesn't have body parsing middleware.
+    const isMissingBody = body === undefined;
+
     try {
       let url = await actions.url("starting to handle request");
 
       if (method === "POST") {
+        if (isMissingBody) {
+          this.log(
+            "error",
+            "Missing body when executing, possibly due to missing request body middleware"
+          );
+
+          return {
+            status: 500,
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: stringify(
+              serializeError(
+                new Error(
+                  "Missing request body when executing, possibly due to missing request body middleware"
+                )
+              )
+            ),
+            version: undefined,
+          };
+        }
+
         const validationResult = await signatureValidation;
         if (!validationResult.success) {
           return {
@@ -1219,6 +1230,28 @@ export class InngestCommHandler<
         ]);
 
         if (inBandSyncRequested) {
+          if (isMissingBody) {
+            this.log(
+              "error",
+              "Missing body when syncing, possibly due to missing request body middleware"
+            );
+
+            return {
+              status: 500,
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: stringify(
+                serializeError(
+                  new Error(
+                    "Missing request body when syncing, possibly due to missing request body middleware"
+                  )
+                )
+              ),
+              version: undefined,
+            };
+          }
+
           // Validation can be successful if we're in dev mode and did not
           // actually validate a key. In this case, also check that we did indeed
           // use a particular key to validate.
@@ -2086,7 +2119,8 @@ export interface ActionResponse<
    * The version of the execution engine that was used to run this action.
    *
    * If the action didn't use the execution engine (for example, a GET request
-   * as a health check), this will be `undefined`.
+   * as a health check) or would have but errored before reaching it, this will
+   * be `undefined`.
    *
    * If the version should be entirely omitted from the response (for example,
    * when sending preliminary headers when streaming), this will be `null`.
