@@ -1,5 +1,11 @@
 # inngest
 
+## 3.29.0
+
+### Minor Changes
+
+- [#788](https://github.com/inngest/inngest-js/pull/788) [`bf1c0d1`](https://github.com/inngest/inngest-js/commit/bf1c0d1fb260bcc1846d2188748227243ce8cb6a) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Add vanilla Node.js serve handler
+
 ## 3.28.0
 
 ### Minor Changes
