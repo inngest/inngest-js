@@ -36,6 +36,7 @@
     "./deno/fresh": "./src/deno/fresh.ts",
     "./hono": "./src/hono.ts",
     "./nitro": "./src/nitro.ts",
+    "./node": "./src/node.ts",
     "./types": "./src/types.ts"
   }
 }

@@ -223,6 +223,7 @@ jobs:
             streaming: force
           - example: framework-nextjs-app-router
             streaming: force
+          - example: node
     steps:
       # Checkout the repo
       - name: Checkout SDK
