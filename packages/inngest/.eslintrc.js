@@ -50,6 +50,7 @@ module.exports = {
           "src/remix.ts",
           "src/sveltekit.ts",
           "src/nitro.ts",
+          "src/node.ts",
         ],
         includeInternal: true,
         includeTypes: true,
