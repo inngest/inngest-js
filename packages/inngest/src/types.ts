@@ -1254,6 +1254,7 @@ export type SupportedFrameworkName =
   | "express"
   | "aws-lambda"
   | "nextjs"
+  | "nodejs"
   | "nuxt"
   | "h3"
   | "redwoodjs"
