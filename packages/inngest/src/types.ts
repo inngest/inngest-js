@@ -1264,7 +1264,8 @@ export type SupportedFrameworkName =
   | "fastify"
   | "koa"
   | "hono"
-  | "nitro";
+  | "nitro"
+  | "tanstack";
 
 /**
  * A set of options that can be passed to any step to configure it.

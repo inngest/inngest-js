@@ -213,6 +213,7 @@
     "@jest/globals": "^29.5.0",
     "@shopify/jest-koa-mocks": "^5.1.1",
     "@sveltejs/kit": "^1.27.3",
+    "@tanstack/start": "^1.94.1",
     "@total-typescript/shoehorn": "^0.1.1",
     "@types/aws-lambda": "^8.10.140",
     "@types/express": "^4.17.21",
