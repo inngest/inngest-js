@@ -81,11 +81,11 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
  * To provide event typing, see {@link EventSchemas}.
  *
  * ```ts
- * const inngest = new Inngest({ name: "My App" });
+ * const inngest = new Inngest({ id: "my-app" });
  *
  * // or to provide event typing too
  * const inngest = new Inngest({
- *   name: "My App",
+ *   id: "my-app",
  *   schemas: new EventSchemas().fromRecord<{
  *     "app/user.created": {
  *       data: { userId: string };
