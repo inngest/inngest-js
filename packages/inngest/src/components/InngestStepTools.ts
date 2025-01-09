@@ -186,7 +186,8 @@ export const createStepTools = <TClient extends Inngest.Any>(
     type?: string
   ) => {
     return createTool<
-      <TFn extends (...args: Parameters<TFn>) => unknown>(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <TFn extends (...args: any[]) => unknown>(
         idOrOptions: StepOptionsOrId,
 
         /**
@@ -236,6 +237,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         };
       },
       {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         fn: (_, fn, ...input) => fn(...input),
       }
     );
