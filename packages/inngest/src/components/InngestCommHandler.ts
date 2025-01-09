@@ -638,12 +638,29 @@ export class InngestCommHandler<
       const timer = new ServerTiming();
 
       /**
+       * Used for testing, allow setting action overrides externally when
+       * calling the handler. Always search the final argument.
+       */
+      const lastArg = args[args.length - 1] as unknown;
+      const actionOverrides =
+        typeof lastArg === "object" &&
+        lastArg !== null &&
+        "actionOverrides" in lastArg &&
+        typeof lastArg["actionOverrides"] === "object" &&
+        lastArg["actionOverrides"] !== null
+          ? lastArg["actionOverrides"]
+          : {};
+
+      /**
        * We purposefully `await` the handler, as it could be either sync or
        * async.
        */
-      const rawActions = await timer
-        .wrap("handler", () => this.handler(...args))
-        .catch(rethrowError("Serve handler failed to run"));
+      const rawActions = {
+        ...(await timer
+          .wrap("handler", () => this.handler(...args))
+          .catch(rethrowError("Serve handler failed to run"))),
+        ...actionOverrides,
+      };
 
       /**
        * Map over every `action` in `rawActions` and create a new `actions`
@@ -701,6 +718,7 @@ export class InngestCommHandler<
 
           return ret;
         },
+        ...actionOverrides,
       };
 
       const [env, expectedServerKind] = await Promise.all([
