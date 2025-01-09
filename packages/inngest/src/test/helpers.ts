@@ -5,6 +5,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Inngest, InngestFunction } from "@local";
 import {
+  HandlerResponse,
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "@local/components/InngestCommHandler";
@@ -260,7 +261,16 @@ export const testFramework = (
   const run = async (
     handlerOpts: Parameters<(typeof handler)["serve"]> | ServeHandler,
     reqOpts: Parameters<typeof httpMocks.createRequest>,
-    env: Env = {}
+    env: Env = {},
+
+    /**
+     * Forced action overrides, directly overwriting any fields returned by the
+     * handler.
+     *
+     * This is useful to produce specific scenarios where actions like body
+     * parsing may be missing from a framework.
+     */
+    actionOverrides?: Partial<HandlerResponse>
   ): Promise<HandlerStandardReturn> => {
     const serveHandler = Array.isArray(handlerOpts)
       ? getServeHandler(handlerOpts)
@@ -302,6 +312,10 @@ export const testFramework = (
     }
 
     const args = opts?.transformReq?.(req, res, envToPass) ?? [req, res];
+    if (actionOverrides) {
+      args.push({ actionOverrides });
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ret = await (serveHandler as (...args: any[]) => any)(...args);
 
@@ -847,12 +861,14 @@ export const testFramework = (
             requestedSyncKind,
             validSignature,
             allowInBandSync,
+            actionOverrides,
           }: {
             serverMode: serverKind;
             sdkMode: serverKind;
             requestedSyncKind: syncKind | undefined;
             validSignature: boolean | undefined;
             allowInBandSync: boolean;
+            actionOverrides?: Partial<HandlerResponse>;
           }
         ) => {
           const signingKey = "123";
@@ -905,7 +921,8 @@ export const testFramework = (
                 [envKeys.InngestAllowInBandSync]: allowInBandSync
                   ? "true"
                   : "false",
-              }
+              },
+              actionOverrides
             );
 
             if (typeof expectedResponse === "number") {
@@ -1033,11 +1050,47 @@ export const testFramework = (
               });
             });
           });
+
+          describe("#789 with no body", () => {
+            Object.values(serverKind).forEach((serverMode) => {
+              Object.values(serverKind).forEach((sdkMode) => {
+                expectResponse(500, {
+                  actionOverrides: { body: () => undefined },
+                  serverMode,
+                  sdkMode,
+                  requestedSyncKind: syncKind.InBand,
+                  validSignature: true,
+                  allowInBandSync: true,
+                });
+              });
+            });
+          });
         });
       });
     });
 
     describe("POST (run function)", () => {
+      describe("#789 missing body", () => {
+        test("returns 500", async () => {
+          const client = createClient({ id: "test" });
+
+          const fn = client.createFunction(
+            { name: "Test", id: "test" },
+            { event: "demo/event.sent" },
+            () => "fn"
+          );
+
+          const ret = await run(
+            [{ client, functions: [fn] }],
+            [{ method: "POST" }],
+            {},
+            { body: () => undefined }
+          );
+
+          expect(ret.status).toEqual(500);
+        });
+      });
+
       describe("signature validation", () => {
         const client = createClient({ id: "test" });
 
