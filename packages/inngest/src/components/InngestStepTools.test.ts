@@ -173,6 +173,10 @@ describe("run", () => {
     });
   });
 
+  test("types allow named function", () => {
+    void step.run("", function named() {});
+  });
+
   test("types returned from run are the result of (de)serialization", () => {
     const input = {
       str: "",
@@ -429,17 +433,33 @@ describe("ai", () => {
       // @ts-expect-error Invalid data
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       void step.ai.wrap("", (flag: boolean, value: number) => {});
+
+      // @ts-expect-error Invalid data
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      void step.ai.wrap("", function (flag: boolean, value: number) {});
     });
 
     test("disallow step inputs when function does not expect them", () => {
       // @ts-expect-error Invalid data
       void step.ai.wrap("", () => {}, true);
+
+      // @ts-expect-error Invalid data
+      void step.ai.wrap("", function () {}, true);
     });
 
     test("disallow step inputs that don't match what function expects", () => {
       // @ts-expect-error Invalid data
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       void step.ai.wrap("", (flag: boolean, value: number) => {}, 10, true);
+
+      void step.ai.wrap(
+        "",
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        function (flag: boolean, value: number) {},
+        // @ts-expect-error Invalid data
+        10,
+        true
+      );
     });
 
     test("optional input", async () => {
@@ -448,6 +468,17 @@ describe("ai", () => {
           "",
           // eslint-disable-next-line @typescript-eslint/no-unused-vars
           (flag: boolean, value?: number) => {
+            // valid - enough arguments given - missing arg is optional
+          },
+          true
+        )
+      ).resolves.toMatchObject({});
+
+      await expect(
+        step.run(
+          "",
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          function (flag: boolean, value?: number) {
             // valid - enough arguments given - missing arg is optional
           },
           true
