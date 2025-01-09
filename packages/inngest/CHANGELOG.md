@@ -1,5 +1,17 @@
 # inngest
 
+## 3.29.1
+
+### Patch Changes
+
+- [#794](https://github.com/inngest/inngest-js/pull/794) [`6ffe983`](https://github.com/inngest/inngest-js/commit/6ffe98342cb1b2749047a84a188d287e91fd2307) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Fix inline example to match v3
+
+## 3.29.0
+
+### Minor Changes
+
+- [#788](https://github.com/inngest/inngest-js/pull/788) [`bf1c0d1`](https://github.com/inngest/inngest-js/commit/bf1c0d1fb260bcc1846d2188748227243ce8cb6a) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Add vanilla Node.js serve handler
+
 ## 3.28.0
 
 ### Minor Changes
