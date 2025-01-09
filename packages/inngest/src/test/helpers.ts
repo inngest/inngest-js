@@ -911,7 +911,7 @@ export const testFramework = (
                     [headerKeys.InngestServerKind]: serverMode,
                     [headerKeys.InngestSyncKind]: requestedSyncKind,
                     [headerKeys.Signature]: signature,
-                  }
+                  },
                 },
               ],
               {
@@ -1064,12 +1064,33 @@ export const testFramework = (
                 });
               });
             });
-          })
+          });
         });
       });
     });
 
     describe("POST (run function)", () => {
+      describe("#789 missing body", () => {
+        test("returns 500", async () => {
+          const client = createClient({ id: "test" });
+
+          const fn = client.createFunction(
+            { name: "Test", id: "test" },
+            { event: "demo/event.sent" },
+            () => "fn"
+          );
+
+          const ret = await run(
+            [{ client, functions: [fn] }],
+            [{ method: "POST" }],
+            {},
+            { body: () => undefined }
+          );
+
+          expect(ret.status).toEqual(500);
+        });
+      });
+
       describe("signature validation", () => {
         const client = createClient({ id: "test" });
 
