@@ -1,5 +1,11 @@
 # inngest
 
+## 3.29.2
+
+### Patch Changes
+
+- [#789](https://github.com/inngest/inngest-js/pull/789) [`56067cd`](https://github.com/inngest/inngest-js/commit/56067cd66fa691c398b4a02d2fbfd64d8335ccd1) Thanks [@amh4r](https://github.com/amh4r)! - Better handle missing request body
+
 ## 3.29.1
 
 ### Patch Changes
