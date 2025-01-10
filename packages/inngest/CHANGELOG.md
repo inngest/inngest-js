@@ -1,5 +1,16 @@
 # inngest
 
+## 3.29.3
+
+### Patch Changes
+
+- [#798](https://github.com/inngest/inngest-js/pull/798) [`f426ba6`](https://github.com/inngest/inngest-js/commit/f426ba69f5b6ac40b77a837868cbec06f5846dfc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix named functions returning `never[]` for their parameters when passed to `step.run()`
+
+  ```ts
+  // This now works
+  step.run("", function named() {});
+  ```
+
 ## 3.29.2
 
 ### Patch Changes
