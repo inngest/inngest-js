@@ -1,0 +1,27 @@
+{
+  "name": "framework-tanstack",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "dev": "vinxi dev",
+    "build": "vinxi build",
+    "start": "vinxi start"
+  },
+  "devDependencies": {
+    "@tanstack/router-plugin": "^1.94.1",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "vite-tsconfig-paths": "^5.1.4"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "^1.94.1",
+    "@tanstack/router-devtools": "^1.94.1",
+    "@tanstack/start": "^1.94.1",
+    "inngest": "^3.28.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vinxi": "^0.5.1"
+  }
+}
