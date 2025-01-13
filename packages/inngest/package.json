@@ -193,6 +193,7 @@
     "trailingComma": "es5"
   },
   "dependencies": {
+    "@inngest/ai": "^0.0.0",
     "@types/debug": "^4.1.12",
     "canonicalize": "^1.0.8",
     "chalk": "^4.1.2",
