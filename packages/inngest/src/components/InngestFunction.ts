@@ -91,6 +91,14 @@ export class InngestFunction<
   }
 
   /**
+   * The generated or given ID for this function, prefixed with the app ID. This
+   * is used for routing invokes and identifying the function across apps.
+   */
+  protected get absoluteId(): string {
+    return this.id(this.client.id);
+  }
+
+  /**
    * The name of this function as it will appear in the Inngest Cloud UI.
    */
   public get name(): string {
