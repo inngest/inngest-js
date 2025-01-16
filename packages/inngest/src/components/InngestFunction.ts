@@ -98,6 +98,13 @@ export class InngestFunction<
   }
 
   /**
+   * The description of this function.
+   */
+  public get description(): string | undefined {
+    return this.opts.description;
+  }
+
+  /**
    * Retrieve the Inngest config for this function.
    */
   private getConfig(
@@ -315,6 +322,11 @@ export namespace InngestFunction {
      * A name for the function as it will appear in the Inngest Cloud UI.
      */
     name?: string;
+
+    /**
+     * A description of the function.
+     */
+    description?: string;
 
     /**
      * Concurrency specifies a limit on the total number of concurrent steps that
