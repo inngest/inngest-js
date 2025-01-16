@@ -43,7 +43,7 @@
     "directory": "packages/ai"
   },
   "author": "Inngest Inc. <hello@inngest.com>",
-  "license": "ISC",
+  "license": "Apache-2.0",
   "dependencies": {
     "@types/node": "^22.10.5",
     "typescript": "^5.7.3"
