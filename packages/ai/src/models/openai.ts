@@ -1,7 +1,6 @@
-import { envKeys } from "../../../helpers/consts.js";
-import { processEnv } from "../../../helpers/env.js";
 import { type AiAdapter } from "../adapter.js";
 import { type OpenAiAiAdapter } from "../adapters/openai.js";
+import { envKeys, processEnv } from "../env";
 
 /**
  * Create an OpenAI model using the OpenAI chat format.

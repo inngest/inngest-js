@@ -1,3 +1,4 @@
+import { gemini, openai, type AiAdapter } from "@inngest/ai";
 import { z } from "zod";
 import { logPrefix } from "../helpers/consts.js";
 import { type Jsonify } from "../helpers/jsonify.js";
@@ -30,7 +31,6 @@ import {
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { InngestFunctionReference } from "./InngestFunctionReference.js";
-import { gemini, openai, type AiAdapter } from "./ai/index.js";
 
 import { type InngestExecution } from "./execution/InngestExecution.js";
 
