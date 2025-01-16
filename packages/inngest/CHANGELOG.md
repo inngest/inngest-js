@@ -1,5 +1,22 @@
 # inngest
 
+## 3.30.0
+
+### Minor Changes
+
+- [#805](https://github.com/inngest/inngest-js/pull/805) [`9f4244f`](https://github.com/inngest/inngest-js/commit/9f4244f6f62f30624121e66a656a7a23ac4e5f9a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - You can now add a `description` when creating an Inngest function
+
+- [#804](https://github.com/inngest/inngest-js/pull/804) [`7459239`](https://github.com/inngest/inngest-js/commit/74592390bd120ecd82cb686a4bf5f7b82bc5cbbb) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `InngestFunction#absoluteId()` to get the absolute ID of an `InngestFunction`
+
+### Patch Changes
+
+- [#803](https://github.com/inngest/inngest-js/pull/803) [`008d971`](https://github.com/inngest/inngest-js/commit/008d9719024cf0f31e04f1160296052023dc55fa) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `myFn["client"]` is now typed
+
+- [#802](https://github.com/inngest/inngest-js/pull/802) [`32518bf`](https://github.com/inngest/inngest-js/commit/32518bf6558090379b367c1b8c1540c05755b657) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Use `@inngest/ai` to expose AI models, adapters, and types
+
+- Updated dependencies [[`32518bf`](https://github.com/inngest/inngest-js/commit/32518bf6558090379b367c1b8c1540c05755b657)]:
+  - @inngest/ai@0.0.1
+
 ## 3.29.3
 
 ### Patch Changes
