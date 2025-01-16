@@ -65,7 +65,7 @@ export const sentryMiddleware = (
   /**
    * Options used to configure the Sentry middleware.
    */
-  opts?: SentryMiddlewareOptions
+  opts?: SentryMiddlewareOptions,
 ): SentryMiddleware => {
   const mw = new InngestMiddleware({
     name: "@inngest/middleware-sentry",
@@ -120,7 +120,7 @@ export const sentryMiddleware = (
                         },
                         (_memoSpan) => {
                           memoSpan = _memoSpan;
-                        }
+                        },
                       );
                     });
                   },
@@ -140,7 +140,7 @@ export const sentryMiddleware = (
                         },
                         (_execSpan) => {
                           execSpan = _execSpan;
-                        }
+                        },
                       );
                     });
                   },
@@ -184,7 +184,7 @@ export const sentryMiddleware = (
                     }
                   },
                 };
-              }
+              },
             );
           });
         },
