@@ -2,8 +2,10 @@
   "$schema": "https://jsr.io/schema/config-file.v1.json",
   "name": "@inngest/ai",
   "description": "",
-  "version": "0.0.0",
-  "include": ["./src/**/*.ts"],
+  "version": "0.0.1",
+  "include": [
+    "./src/**/*.ts"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./models": "./src/models/index.ts",
