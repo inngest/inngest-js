@@ -72,7 +72,7 @@ export const sentryMiddleware = (
     init({ client }) {
       return {
         onFunctionRun({ ctx, fn, steps }) {
-          return Sentry.withScope((scope) => {
+          return Sentry.withIsolationScope((scope) => {
             const sharedTags: Record<string, string | undefined> = {
               "inngest.client.id": client.id,
               "inngest.function.id": fn.id(client.id),
