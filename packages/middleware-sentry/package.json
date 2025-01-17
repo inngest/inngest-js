@@ -10,6 +10,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "tsc",
+    "lint": "eslint",
     "postversion": "pnpm run build",
     "release:version": "node ../../scripts/release/jsrVersion.js",
     "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty"
@@ -32,10 +33,15 @@
   "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "devDependencies": {
+    "@eslint/js": "^9.7.0",
     "@sentry/core": "^8.8.0",
     "@sentry/types": "^8.8.0",
+    "eslint": "^9.18.0",
+    "eslint-plugin-prettier": "^5.2.2",
+    "globals": "^15.14.0",
     "inngest": "^3.19.11",
-    "typescript": "~5.4.0"
+    "typescript": "~5.4.0",
+    "typescript-eslint": "^7.16.1"
   },
   "peerDependencies": {
     "@sentry/core": ">=8.0.0",
