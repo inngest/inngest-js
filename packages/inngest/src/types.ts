@@ -708,6 +708,12 @@ export interface ClientOptions {
    * running in a production-like environment.
    */
   isDev?: boolean;
+
+  /**
+   * The application-specific build identifier. This can be an arbitrary value
+   * such as a version string, a Git commit SHA, or any other unique identifier.
+   */
+  buildId?: string;
 }
 
 /**
@@ -1023,6 +1029,7 @@ export interface RegisterRequest {
 
 export interface Capabilities {
   trust_probe: "v1";
+  connect: "v1";
 }
 
 export interface InBandRegisterRequest

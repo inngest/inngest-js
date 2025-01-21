@@ -1569,6 +1569,7 @@ export class InngestCommHandler<
       deployId: deployId || undefined,
       capabilities: {
         trust_probe: "v1",
+        connect: "v1",
       },
     };
 
@@ -1675,6 +1676,7 @@ export class InngestCommHandler<
           app_id: this.client.id,
           capabilities: {
             trust_probe: "v1",
+            connect: "v1",
           },
           env:
             (await actions.headers(
