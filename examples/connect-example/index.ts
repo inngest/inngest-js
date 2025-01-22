@@ -8,6 +8,8 @@ const inngest = new Inngest({
 
 const abort = new AbortController();
 
+console.log("Connecting...");
+
 inngest
   .connect({
     functions: [
@@ -26,8 +28,8 @@ inngest
     signingKey: "signkey-test-12345678",
     signingKeyFallback: "signkey-test-00000000",
     abortSignal: abort.signal,
-//     baseUrl: "http://127.0.0.1:8288",
+    //     baseUrl: "http://127.0.0.1:8288",
   })
   .then((conn) => {
-    console.log("Connected!", conn);
+    console.log("Connected!", conn.connectionId);
   });

@@ -13,7 +13,6 @@ import {
 import {
   ConnectMessage,
   GatewayMessageType,
-  type StartResponse,
   WorkerConnectRequestData,
 } from "./protobuf/src/protobuf/connect.js";
 import { type ConnectHandlerOptions, type WorkerConnection } from "./types.js";
@@ -35,6 +34,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
   private ctx: AbortController;
   private _cleanup: (() => void)[] = [];
   private inProgress: Promise<unknown>[] = [];
+
+  private setupState = {
+    receivedGatewayHello: false,
+    sentWorkerConnect: false,
+    receivedConnectionReady: false,
+  };
 
   private options: ConnectHandlerOptions;
 
@@ -126,42 +131,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
     this._cleanup.push(() => clearInterval(cancel));
   }
 
-  private async readLoop(iterator: AsyncIterator<Uint8Array | undefined>) {
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      if (this.isCanceled()) {
-        // TODO Handle abort closure
-        break;
-      }
-
-      const next = await iterator.next();
-      if (next.done || !next.value) {
-        break;
-      }
-
-      const message = await parseConnectMessage(next.value);
-
-      console.log(`Received message: ${message.kind}`);
-
-      if (message.kind === GatewayMessageType.GATEWAY_CLOSING) {
-        // TODO Handle draining
-        break;
-      }
-
-      if (message.kind === GatewayMessageType.GATEWAY_EXECUTOR_REQUEST) {
-        // TODO Handle executor request
-        continue;
-      }
-    }
-  }
-
   private async prepareConnection(
     hashedSigningKey: string,
     data: connectionEstablishData
-  ): Promise<{
-    ws: WebSocket;
-    iterator: AsyncIterator<Uint8Array | undefined>;
-  }> {
+  ): Promise<void> {
     const startedAt = new Date();
     const msg = createStartRequest();
 
@@ -203,162 +176,123 @@ class WebSocketWorkerConnection implements WorkerConnection {
     ]);
     ws.binaryType = "arraybuffer";
 
-    const result = await new Promise<{
-      ws: WebSocket;
-      iterator: AsyncIterator<Uint8Array | undefined>;
-    }>((resolve, reject) => {
-      ws.onopen = () => {
-        const stream = createMessageStream(ws);
-        this.performConnectHandshake(
-          connectionId,
-          ws,
-          startResp,
-          data,
-          stream,
-          startedAt
-        )
-          .then(resolve)
-          .catch(reject);
-      };
+    let websocketConnectedPromise: Promise<void> | undefined;
+    let resolveWebsocketConnected:
+      | ((value: void | PromiseLike<void>) => void)
+      | undefined;
+    let rejectWebsocketConnected: ((reason?: any) => void) | undefined;
+
+    websocketConnectedPromise = new Promise((resolve, reject) => {
+      resolveWebsocketConnected = resolve;
+      rejectWebsocketConnected = reject;
     });
 
-    this.setupHeartbeat(result.ws);
-    this.inProgress.push(this.readLoop(result.iterator));
+    ws.onmessage = async (event) => {
+      const messageBytes = new Uint8Array(event.data);
 
-    return result;
-  }
-
-  private async performConnectHandshake(
-    connectionId: string,
-    ws: WebSocket,
-    startRes: StartResponse,
-    data: connectionEstablishData,
-    stream: AsyncIterable<Uint8Array | undefined>,
-    startedAt: Date
-  ) {
-    const iterator = stream[Symbol.asyncIterator]();
-
-    const next = await iterator.next();
-    if (next.done || !next.value) {
-      throw new Error("Stream closed");
-    }
-
-    const helloMessage = await parseConnectMessage(next.value);
-    if (helloMessage.kind !== GatewayMessageType.GATEWAY_HELLO) {
-      throw new Error("Expected hello message");
-    }
-
-    {
-      const workerConnectRequestMsg = WorkerConnectRequestData.create({
-        appName: this.inngest.id,
-        environment: this.inngest.env || undefined,
-        platform: getPlatformName({
-          ...allProcessEnv(),
-        }),
-        sdkVersion: `v${version}`,
-        sdkLanguage: "typescript",
-        framework: "connect",
-        workerManualReadinessAck: data.manualReadinessAck,
-        systemAttributes: {
-          cpuCores: data.numCpuCores,
-          memBytes: data.totalMem,
-          os: data.os,
-        },
-        authData: {
-          sessionToken: startRes.sessionToken,
-          syncToken: startRes.syncToken,
-        },
-        config: {
-          capabilities: new TextEncoder().encode(data.marshaledCapabilities),
-          functions: new TextEncoder().encode(data.marshaledFunctions),
-        },
-        startedAt: startedAt,
-        sessionId: {
-          connectionId: connectionId,
-          buildId: this.inngest.buildId,
-          instanceId: this.options.instanceId,
-        },
-      });
-
-      const workerConnectRequestMsgBytes = WorkerConnectRequestData.encode(
-        workerConnectRequestMsg
-      ).finish();
-
-      ws.send(
-        ConnectMessage.encode(
-          ConnectMessage.create({
-            kind: GatewayMessageType.WORKER_CONNECT,
-            payload: workerConnectRequestMsgBytes,
-          })
-        ).finish()
-      );
-    }
-
-    {
-      const next = await iterator.next();
-      if (next.done || !next.value) {
-        throw new Error("Stream closed");
-      }
-      const readyMessage = await parseConnectMessage(next.value);
-      if (readyMessage.kind !== GatewayMessageType.GATEWAY_CONNECTION_READY) {
-        throw new Error("Expected ready message");
-      }
-    }
-
-    return {
-      ws,
-      iterator,
-    };
-  }
-}
-
-function createMessageStream(
-  socket: WebSocket
-): AsyncIterable<Uint8Array | undefined> {
-  return {
-    [Symbol.asyncIterator]() {
-      const messageQueue: Uint8Array[] = [];
-      let waitingResolve:
-        | ((value: IteratorResult<Uint8Array, unknown>) => void)
-        | null = null;
-      let done = false;
-
-      socket.addEventListener("message", (event) => {
-        const message = new Uint8Array(event.data);
-
-        if (waitingResolve) {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          waitingResolve({ value: message, done: false });
-          waitingResolve = null;
-        } else {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-          messageQueue.push(message);
+      {
+        if (!this.setupState.receivedGatewayHello) {
+          const helloMessage = await parseConnectMessage(messageBytes);
+          if (helloMessage.kind !== GatewayMessageType.GATEWAY_HELLO) {
+            throw new Error(`Expected hello message, got ${helloMessage.kind}`);
+          }
+          this.setupState.receivedGatewayHello = true;
         }
-      });
 
-      socket.addEventListener("close", () => {
-        done = true;
-        waitingResolve?.({ value: undefined, done: true });
-      });
-
-      return {
-        async next() {
-          if (messageQueue.length > 0) {
-            const message = messageQueue.shift();
-            return { value: message, done: false };
-          }
-
-          if (done) {
-            return { value: undefined, done: true };
-          }
-
-          return new Promise((resolve) => {
-            waitingResolve = resolve;
+        if (!this.setupState.sentWorkerConnect) {
+          const workerConnectRequestMsg = WorkerConnectRequestData.create({
+            appName: this.inngest.id,
+            environment: this.inngest.env || undefined,
+            platform: getPlatformName({
+              ...allProcessEnv(),
+            }),
+            sdkVersion: `v${version}`,
+            sdkLanguage: "typescript",
+            framework: "connect",
+            workerManualReadinessAck: data.manualReadinessAck,
+            systemAttributes: {
+              cpuCores: data.numCpuCores,
+              memBytes: data.totalMem,
+              os: data.os,
+            },
+            authData: {
+              sessionToken: startResp.sessionToken,
+              syncToken: startResp.syncToken,
+            },
+            config: {
+              capabilities: new TextEncoder().encode(
+                data.marshaledCapabilities
+              ),
+              functions: new TextEncoder().encode(data.marshaledFunctions),
+            },
+            startedAt: startedAt,
+            sessionId: {
+              connectionId: connectionId,
+              buildId: this.inngest.buildId,
+              instanceId: this.options.instanceId,
+            },
           });
-        },
-      };
-    },
-  };
+
+          const workerConnectRequestMsgBytes = WorkerConnectRequestData.encode(
+            workerConnectRequestMsg
+          ).finish();
+
+          ws.send(
+            ConnectMessage.encode(
+              ConnectMessage.create({
+                kind: GatewayMessageType.WORKER_CONNECT,
+                payload: workerConnectRequestMsgBytes,
+              })
+            ).finish()
+          );
+
+          this.setupState.sentWorkerConnect = true;
+          return;
+        }
+
+        if (!this.setupState.receivedConnectionReady) {
+          const readyMessage = await parseConnectMessage(messageBytes);
+          if (
+            readyMessage.kind !== GatewayMessageType.GATEWAY_CONNECTION_READY
+          ) {
+            throw new Error("Expected ready message");
+          }
+
+          this.setupState.receivedConnectionReady = true;
+
+          resolveWebsocketConnected?.();
+        }
+      }
+
+      // Run loop
+      if (this.isCanceled()) {
+        // TODO Handle abort closure
+        return;
+      }
+
+      const connectMessage = await parseConnectMessage(messageBytes);
+
+      console.log(`Received message: ${connectMessage.kind}`);
+
+      if (connectMessage.kind === GatewayMessageType.GATEWAY_CLOSING) {
+        // TODO Handle draining
+        return;
+      }
+
+      if (connectMessage.kind === GatewayMessageType.GATEWAY_EXECUTOR_REQUEST) {
+        // TODO Handle executor request
+        return;
+      }
+
+      console.error("Unknown message type", connectMessage.kind);
+    };
+
+    await websocketConnectedPromise;
+
+    this.setupHeartbeat(ws);
+
+    return;
+  }
 }
 
 export const connect = async (
