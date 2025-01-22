@@ -182,7 +182,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this._connectionId = connectionId;
 
-    const ws = new WebSocket(startResp.gatewayEndpoint);
+    const ws = new WebSocket(startResp.gatewayEndpoint, [
+      "v0.connect.inngest.com",
+    ]);
 
     return new Promise((resolve, reject) => {
       ws.onopen = () => {
