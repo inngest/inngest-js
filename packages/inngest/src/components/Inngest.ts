@@ -648,7 +648,10 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     return triggers as AsArray<T>;
   }
 
-  public async connect(opts: ConnectHandlerOptions) {
+  /**
+   * `connect()` is experimental! It is not yet stable and will change.
+   */
+  protected async connect(opts: ConnectHandlerOptions) {
     return connect(this, opts);
   }
 }
