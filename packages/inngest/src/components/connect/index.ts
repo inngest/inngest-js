@@ -300,8 +300,7 @@ function createMessageStream(
       let done = false;
 
       socket.addEventListener("message", (event) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const message = event.data;
+        const message = new Uint8Array(event.data);
 
         if (waitingResolve) {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
