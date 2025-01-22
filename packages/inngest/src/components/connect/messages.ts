@@ -2,7 +2,7 @@ import {
   ConnectMessage,
   StartRequest,
   StartResponse,
-} from "./protobuf/src/protobuf/connect";
+} from "./protobuf/src/protobuf/connect.js";
 
 export function createStartRequest() {
   return StartRequest.encode(StartRequest.create({})).finish();
@@ -13,6 +13,7 @@ export async function parseStartResponse(r: Response) {
   return startResp;
 }
 
+// eslint-disable-next-line @typescript-eslint/require-await
 export async function parseConnectMessage(r: Uint8Array) {
   const connectMessage = ConnectMessage.decode(r);
   return connectMessage;

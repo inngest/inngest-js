@@ -1,4 +1,4 @@
-import type { Inngest, InngestFunction, RegisterOptions } from "inngest";
+import { type InngestFunction, type RegisterOptions } from "inngest";
 
 export interface ConnectHandlerOptions extends RegisterOptions {
   /**

@@ -46,7 +46,7 @@ import {
   type TriggersFromClient,
 } from "../types.js";
 import { connect } from "./connect/index.js";
-import { ConnectHandlerOptions } from "./connect/types.js";
+import { type ConnectHandlerOptions } from "./connect/types.js";
 import { type EventSchemas } from "./EventSchemas.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { type InngestFunctionReference } from "./InngestFunctionReference.js";
