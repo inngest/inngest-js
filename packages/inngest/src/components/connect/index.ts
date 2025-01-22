@@ -1,21 +1,22 @@
 import { ulid } from "ulid";
-import { WorkerConnection, ConnectHandlerOptions } from "./types";
+import { headerKeys } from "../../helpers/consts.js";
+import { allProcessEnv, getPlatformName } from "../../helpers/env.js";
+import { hashSigningKey } from "../../helpers/strings.js";
+import { type Capabilities, type FunctionConfig } from "../../types.js";
+import { version } from "../../version.js";
+import { type Inngest } from "../Inngest.js";
 import {
   createStartRequest,
   parseConnectMessage,
   parseStartResponse,
-} from "./messages";
+} from "./messages.js";
 import {
   ConnectMessage,
   GatewayMessageType,
-  StartResponse,
+  type StartResponse,
   WorkerConnectRequestData,
-} from "./protobuf/src/protobuf/connect";
-import { hashSigningKey } from "inngest/helpers/strings";
-import { Capabilities, FunctionConfig } from "inngest/types";
-import { allProcessEnv, getPlatformName } from "inngest/helpers/env";
-import { version } from "inngest/version";
-import { Inngest } from "inngest";
+} from "./protobuf/src/protobuf/connect.js";
+import { type ConnectHandlerOptions, type WorkerConnection } from "./types.js";
 
 interface connectionEstablishData {
   numCpuCores: number;
@@ -46,6 +47,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     });
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async close(): Promise<void> {
     this.resolveClosed();
     return;
@@ -63,14 +65,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
   }
 
   public async connect() {
-    if (!this.options.baseUrl) {
-      throw new Error("Base URL is required");
-    }
-
-    if (!this.inngest.apiBaseUrl) {
-      throw new Error("Inngest API base URL is required");
-    }
-
     if (!this.options.signingKey) {
       throw new Error("Signing key is required");
     }
@@ -87,15 +81,18 @@ class WebSocketWorkerConnection implements WorkerConnection {
       connect: "v1",
     };
 
-    const functions: Array<FunctionConfig> = this.options.functions.map(
-      (f) => f.opts
+    const functions: Array<FunctionConfig> = this.options.functions.flatMap(
+      (f) => f["getConfig"](new URL("http://example.com")) // refactor; base URL shouldn't be optional here; we likely need to fetch a different kind of config
     );
 
     const data: connectionEstablishData = {
       manualReadinessAck: false,
+
+      // "os" for these with optional import
       numCpuCores: 0,
       totalMem: 0,
       os: "linux", // TODO Retrieve this
+
       marshaledCapabilities: JSON.stringify(capabilities),
       marshaledFunctions: JSON.stringify(functions),
     };
@@ -116,8 +113,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     cleanup.push(() => clearInterval(cancel));
 
+    // eslint-disable-next-line no-constant-condition
     while (true) {
-      if (this.options.abortSignal && this.options.abortSignal.aborted) {
+      if (this.options.abortSignal?.aborted) {
         // TODO Handle abort closure
         break;
       }
@@ -161,14 +159,18 @@ class WebSocketWorkerConnection implements WorkerConnection {
     };
 
     if (this.inngest.env) {
-      headers["X-Inngest-Env"] = this.inngest.env;
+      headers[headerKeys.Environment] = this.inngest.env;
     }
 
-    const resp = await fetch(this.inngest.apiBaseUrl!, {
-      method: "POST",
-      body: msg,
-      headers: headers,
-    });
+    const resp = await fetch(
+      // refactor this to a more universal spot
+      await this.inngest["inngestApi"]["getTargetUrl"]("/v0/connect/start"),
+      {
+        method: "POST",
+        body: msg,
+        headers: headers,
+      }
+    );
 
     if (!resp.ok) {
       throw new Error("Failed to prepare connection");
@@ -180,9 +182,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this._connectionId = connectionId;
 
-    const ws = new WebSocket(startResp.gatewayEndpoint, [
-      "v0.connect.inngest.com",
-    ]);
+    const ws = new WebSocket(startResp.gatewayEndpoint);
 
     return new Promise((resolve, reject) => {
       ws.onopen = () => {
@@ -211,15 +211,14 @@ class WebSocketWorkerConnection implements WorkerConnection {
   ) {
     const iterator = stream[Symbol.asyncIterator]();
 
-    {
-      const next = await iterator.next();
-      if (next.done || !next.value) {
-        throw new Error("Stream closed");
-      }
-      const helloMessage = await parseConnectMessage(next.value);
-      if (helloMessage.kind !== GatewayMessageType.GATEWAY_HELLO) {
-        throw new Error("Expected hello message");
-      }
+    const next = await iterator.next();
+    if (next.done || !next.value) {
+      throw new Error("Stream closed");
+    }
+
+    const helloMessage = await parseConnectMessage(next.value);
+    if (helloMessage.kind !== GatewayMessageType.GATEWAY_HELLO) {
+      throw new Error("Expected hello message");
     }
 
     {
@@ -298,20 +297,22 @@ function createMessageStream(
       let done = false;
 
       socket.addEventListener("message", (event) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const message = event.data;
+
         if (waitingResolve) {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
           waitingResolve({ value: message, done: false });
           waitingResolve = null;
         } else {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
           messageQueue.push(message);
         }
       });
 
       socket.addEventListener("close", () => {
         done = true;
-        if (waitingResolve) {
-          waitingResolve({ value: undefined, done: true });
-        }
+        waitingResolve?.({ value: undefined, done: true });
       });
 
       return {
@@ -337,7 +338,11 @@ function createMessageStream(
 export const connect = async (
   inngest: Inngest.Any,
   options: ConnectHandlerOptions
+  // eslint-disable-next-line @typescript-eslint/require-await
 ): Promise<WorkerConnection> => {
   const conn = new WebSocketWorkerConnection(inngest, options);
+
+  await conn.connect();
+
   return conn;
 };
