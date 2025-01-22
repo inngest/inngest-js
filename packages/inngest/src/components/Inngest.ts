@@ -45,6 +45,8 @@ import {
   type SendEventResponse,
   type TriggersFromClient,
 } from "../types.js";
+import { connect } from "./connect/index.js";
+import { type ConnectHandlerOptions } from "./connect/types.js";
 import { type EventSchemas } from "./EventSchemas.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { type InngestFunctionReference } from "./InngestFunctionReference.js";
@@ -157,6 +159,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
 
   protected readonly schemas?: NonNullable<TClientOpts["schemas"]>;
 
+  private _buildId: string | undefined;
+
   get apiBaseUrl(): string | undefined {
     return this._apiBaseUrl;
   }
@@ -167,6 +171,10 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
 
   get env(): string | null {
     return this.headers[headerKeys.Environment] ?? null;
+  }
+
+  get buildId(): string | undefined {
+    return this._buildId;
   }
 
   /**
@@ -199,6 +207,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       middleware,
       isDev,
       schemas,
+      buildId,
     } = this.options;
 
     if (!id) {
@@ -232,6 +241,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       ...builtInMiddleware,
       ...(middleware || []),
     ]);
+
+    this._buildId = buildId;
   }
 
   /**
@@ -635,6 +646,13 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     }
 
     return triggers as AsArray<T>;
+  }
+
+  /**
+   * `connect()` is experimental! It is not yet stable and will change.
+   */
+  protected async connect(opts: ConnectHandlerOptions) {
+    return connect(this, opts);
   }
 }
 

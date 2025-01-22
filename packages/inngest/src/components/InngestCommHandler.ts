@@ -157,6 +157,8 @@ interface InngestCommHandlerOptions<
    * See any existing handler for a full example.
    */
   handler: Handler<Input, Output, StreamOutput>;
+
+  skipSignatureValidation?: boolean;
 }
 
 /**
@@ -343,6 +345,8 @@ export class InngestCommHandler<
     StreamOutput
   >;
 
+  private readonly skipSignatureValidation: boolean;
+
   constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>) {
     // Set input options directly so we can reference them later
     this._options = options;
@@ -415,6 +419,8 @@ export class InngestCommHandler<
     this.signingKeyFallback = options.signingKeyFallback;
     this._serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
     this._servePath = options.servePath || this.env[envKeys.InngestServePath];
+
+    this.skipSignatureValidation = options.skipSignatureValidation || false;
 
     const defaultLogLevel: typeof this.logLevel = "info";
     this.logLevel = z
@@ -1389,7 +1395,7 @@ export class InngestCommHandler<
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
 
-    const immediateFnData = parseFnData(fn.fn, data);
+    const immediateFnData = parseFnData(data);
     const { version } = immediateFnData;
 
     const result = runAsPromise(async () => {
@@ -1569,6 +1575,7 @@ export class InngestCommHandler<
       deployId: deployId || undefined,
       capabilities: {
         trust_probe: "v1",
+        connect: "v1",
       },
     };
 
@@ -1675,6 +1682,7 @@ export class InngestCommHandler<
           app_id: this.client.id,
           capabilities: {
             trust_probe: "v1",
+            connect: "v1",
           },
           env:
             (await actions.headers(
@@ -1883,6 +1891,11 @@ export class InngestCommHandler<
     { success: true; keyUsed: string } | { success: false; err: Error }
   > {
     try {
+      // Skip signature validation if requested (used by connect)
+      if (this.skipSignatureValidation) {
+        return { success: true, keyUsed: "" };
+      }
+
       // Never validate signatures outside of prod. Make sure to check the mode
       // exists here instead of using nullish coalescing to confirm that the check
       // has been completed.

@@ -80,9 +80,9 @@ describe("#parseFnData", () => {
   specs.forEach((test) => {
     it(test.name, () => {
       if (test.isOk) {
-        return expect(() => parseFnData(fn, test.data)).not.toThrow();
+        return expect(() => parseFnData(test.data)).not.toThrow();
       } else {
-        return expect(() => parseFnData(fn, test.data)).toThrow();
+        return expect(() => parseFnData(test.data)).toThrow();
       }
     });
   });

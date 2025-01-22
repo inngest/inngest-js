@@ -1,2 +1,5 @@
 pnpm-lock.yaml linguist-generated=true
 .changeset linguist-generated=true
+
+# inngest
+packages/inngest/src/components/connect/protobuf/**/*.ts linguist-generated=true
