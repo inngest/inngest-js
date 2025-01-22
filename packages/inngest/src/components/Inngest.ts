@@ -649,7 +649,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
   }
 
   public async connect(opts: ConnectHandlerOptions) {
-    await connect(this, opts);
+    return connect(this, opts);
   }
 }
 
