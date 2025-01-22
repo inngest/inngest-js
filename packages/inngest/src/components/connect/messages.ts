@@ -14,13 +14,12 @@ export async function parseStartResponse(r: Response) {
   return startResp;
 }
 
-// eslint-disable-next-line @typescript-eslint/require-await
-export async function parseConnectMessage(r: Uint8Array) {
+export function parseConnectMessage(r: Uint8Array) {
   const connectMessage = ConnectMessage.decode(r);
   return connectMessage;
 }
 
-export async function parseGatewayExecutorRequest(r: Uint8Array) {
+export function parseGatewayExecutorRequest(r: Uint8Array) {
   const gatewayExecutorRequest = GatewayExecutorRequestData.decode(r);
   return gatewayExecutorRequest;
 }

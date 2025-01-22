@@ -1,13 +1,21 @@
+import { InngestCommHandler } from "inngest";
 import { ulid } from "ulid";
 import { headerKeys, queryKeys } from "../../helpers/consts.js";
-import {
-  allProcessEnv,
-  getPlatformName,
-  getResponse,
-} from "../../helpers/env.js";
+import { allProcessEnv, getPlatformName } from "../../helpers/env.js";
+import { parseFnData } from "../../helpers/functions.js";
 import { hashSigningKey } from "../../helpers/strings.js";
+import {
+  ConnectMessage,
+  type GatewayExecutorRequestData,
+  GatewayMessageType,
+  SDKResponse,
+  SDKResponseStatus,
+  WorkerConnectRequestData,
+  WorkerRequestAckData,
+} from "../../proto/src/components/connect/protobuf/connect.js";
 import { type Capabilities, type FunctionConfig } from "../../types.js";
 import { version } from "../../version.js";
+import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.js";
 import { type Inngest } from "../Inngest.js";
 import {
   createStartRequest,
@@ -15,19 +23,7 @@ import {
   parseGatewayExecutorRequest,
   parseStartResponse,
 } from "./messages.js";
-import {
-  ConnectMessage,
-  GatewayExecutorRequestData,
-  GatewayMessageType,
-  SDKResponse,
-  SDKResponseStatus,
-  WorkerConnectRequestData,
-  WorkerRequestAckData,
-} from "../../proto/src/components/connect/protobuf/connect.js";
 import { type ConnectHandlerOptions, type WorkerConnection } from "./types.js";
-import { InngestCommHandler } from "inngest";
-import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.js";
-import { parseFnData } from "../../helpers/functions.js";
 
 interface connectionEstablishData {
   numCpuCores: number;
@@ -41,6 +37,7 @@ interface connectionEstablishData {
 type ConnectCommHandler = InngestCommHandler<
   [GatewayExecutorRequestData],
   SDKResponse,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any
 >;
 
@@ -139,31 +136,28 @@ class WebSocketWorkerConnection implements WorkerConnection {
       skipSignatureValidation: true,
       handler: (msg: GatewayExecutorRequestData) => {
         const asString = new TextDecoder().decode(msg.requestPayload);
-        const unmarshaled = JSON.parse(asString);
-        const parsed = parseFnData(unmarshaled);
-
-        console.log("unamrshaled", unmarshaled);
+        const parsed = parseFnData(JSON.parse(asString));
 
         return {
           body() {
-            return unmarshaled;
+            return parsed;
           },
           method() {
             return "POST";
           },
           headers(key) {
             switch (key) {
-              case headerKeys.ContentLength:
+              case headerKeys.ContentLength.toString():
                 return asString.length.toString();
-              case headerKeys.InngestExpectedServerKind:
+              case headerKeys.InngestExpectedServerKind.toString():
                 return "connect";
-              case headerKeys.RequestVersion:
+              case headerKeys.RequestVersion.toString():
                 return parsed.version.toString();
-              case headerKeys.Signature:
+              case headerKeys.Signature.toString():
                 // Note: Signature is disabled for connect
                 return null;
-              case headerKeys.TraceParent:
-              case headerKeys.TraceState:
+              case headerKeys.TraceParent.toString():
+              case headerKeys.TraceState.toString():
                 return null;
               default:
                 return null;
@@ -300,25 +294,27 @@ class WebSocketWorkerConnection implements WorkerConnection {
     ]);
     ws.binaryType = "arraybuffer";
 
-    let websocketConnectedPromise: Promise<void> | undefined;
     let resolveWebsocketConnected:
       | ((value: void | PromiseLike<void>) => void)
       | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let rejectWebsocketConnected: ((reason?: any) => void) | undefined;
 
-    websocketConnectedPromise = new Promise((resolve, reject) => {
+    const websocketConnectedPromise = new Promise((resolve, reject) => {
       resolveWebsocketConnected = resolve;
       rejectWebsocketConnected = reject;
     });
 
     ws.onmessage = async (event) => {
-      const messageBytes = new Uint8Array(event.data);
+      const messageBytes = new Uint8Array<ArrayBuffer>(
+        event.data as ArrayBuffer
+      );
 
       console.debug("Received WebSocket message");
 
       {
         if (!this.setupState.receivedGatewayHello) {
-          const helloMessage = await parseConnectMessage(messageBytes);
+          const helloMessage = parseConnectMessage(messageBytes);
           if (helloMessage.kind !== GatewayMessageType.GATEWAY_HELLO) {
             throw new Error(`Expected hello message, got ${helloMessage.kind}`);
           }
@@ -377,7 +373,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         }
 
         if (!this.setupState.receivedConnectionReady) {
-          const readyMessage = await parseConnectMessage(messageBytes);
+          const readyMessage = parseConnectMessage(messageBytes);
           if (
             readyMessage.kind !== GatewayMessageType.GATEWAY_CONNECTION_READY
           ) {
@@ -399,7 +395,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         return;
       }
 
-      const connectMessage = await parseConnectMessage(messageBytes);
+      const connectMessage = parseConnectMessage(messageBytes);
 
       console.log(`Received message: ${connectMessage.kind}`);
 
@@ -409,7 +405,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_EXECUTOR_REQUEST) {
-        const gatewayExecutorRequest = await parseGatewayExecutorRequest(
+        const gatewayExecutorRequest = parseGatewayExecutorRequest(
           connectMessage.payload
         );
 
