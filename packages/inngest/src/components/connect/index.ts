@@ -1,6 +1,10 @@
 import { ulid } from "ulid";
-import { headerKeys } from "../../helpers/consts.js";
-import { allProcessEnv, getPlatformName } from "../../helpers/env.js";
+import { headerKeys, queryKeys } from "../../helpers/consts.js";
+import {
+  allProcessEnv,
+  getPlatformName,
+  getResponse,
+} from "../../helpers/env.js";
 import { hashSigningKey } from "../../helpers/strings.js";
 import { type Capabilities, type FunctionConfig } from "../../types.js";
 import { version } from "../../version.js";
@@ -8,14 +12,20 @@ import { type Inngest } from "../Inngest.js";
 import {
   createStartRequest,
   parseConnectMessage,
+  parseGatewayExecutorRequest,
   parseStartResponse,
 } from "./messages.js";
 import {
   ConnectMessage,
+  GatewayExecutorRequestData,
   GatewayMessageType,
+  SDKResponse,
+  SDKResponseStatus,
   WorkerConnectRequestData,
+  WorkerRequestAckData,
 } from "./protobuf/src/protobuf/connect.js";
 import { type ConnectHandlerOptions, type WorkerConnection } from "./types.js";
+import { InngestCommHandler } from "inngest";
 
 interface connectionEstablishData {
   numCpuCores: number;
@@ -25,6 +35,12 @@ interface connectionEstablishData {
   marshaledCapabilities: string;
   manualReadinessAck: boolean;
 }
+
+type ConnectCommHandler = InngestCommHandler<
+  [GatewayExecutorRequestData],
+  SDKResponse,
+  any
+>;
 
 class WebSocketWorkerConnection implements WorkerConnection {
   public _connectionId: string | undefined;
@@ -74,7 +90,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     if (this.options.abortSignal) {
       signals.push(this.options.abortSignal);
     }
-    return AbortSignal.any(signals);
+    return AbortSignal.any(signals).aborted;
   }
 
   public async connect() {
@@ -110,8 +126,73 @@ class WebSocketWorkerConnection implements WorkerConnection {
       marshaledFunctions: JSON.stringify(functions),
     };
 
+    const inngestCommHandler: ConnectCommHandler = new InngestCommHandler({
+      client: this.inngest,
+      functions: this.options.functions,
+      frameworkName: "connect",
+      skipSignatureValidation: true,
+      handler: (msg: GatewayExecutorRequestData) => {
+        return {
+          body() {
+            const asString = new TextDecoder().decode(msg.requestPayload);
+            const unmarshaled = JSON.parse(asString);
+            return unmarshaled;
+          },
+          method() {
+            return "POST";
+          },
+          headers(key) {
+            return null;
+          },
+          transformResponse({ body, headers, status }) {
+            let sdkResponseStatus: SDKResponseStatus = SDKResponseStatus.DONE;
+            switch (status) {
+              case 200:
+                sdkResponseStatus = SDKResponseStatus.DONE;
+                break;
+              case 206:
+                sdkResponseStatus = SDKResponseStatus.NOT_COMPLETED;
+                break;
+              case 500:
+                sdkResponseStatus = SDKResponseStatus.ERROR;
+                break;
+            }
+
+            return SDKResponse.create({
+              body: new TextEncoder().encode(body),
+              status: sdkResponseStatus,
+              noRetry: headers[headerKeys.NoRetry] === "true",
+              retryAfter: headers[headerKeys.RetryAfter],
+              requestId: msg.requestId,
+              sdkVersion: `v${version}`,
+            });
+          },
+          url() {
+            const baseUrl = new URL("http://connect.inngest.com");
+            baseUrl.searchParams.set(queryKeys.FnId, msg.functionSlug);
+
+            if (msg.stepId) {
+              baseUrl.searchParams.set(queryKeys.StepId, msg.stepId);
+            }
+
+            return baseUrl;
+          },
+          isProduction: () => {
+            try {
+              // eslint-disable-next-line @inngest/internal/process-warn
+              const isProd = process.env.NODE_ENV === "production";
+              return isProd;
+            } catch (err) {
+              // no-op
+            }
+          },
+        };
+      },
+    });
+    const requestHandler = inngestCommHandler.createHandler();
+
     try {
-      await this.prepareConnection(hashedSigningKey, data);
+      await this.prepareConnection(requestHandler, hashedSigningKey, data);
     } catch (err) {
       this.onConnectionError(err);
     }
@@ -132,6 +213,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
   }
 
   private async prepareConnection(
+    requestHandler: (msg: GatewayExecutorRequestData) => Promise<SDKResponse>,
     hashedSigningKey: string,
     data: connectionEstablishData
   ): Promise<void> {
@@ -189,6 +271,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     ws.onmessage = async (event) => {
       const messageBytes = new Uint8Array(event.data);
+
+      console.debug("Received WebSocket message");
 
       {
         if (!this.setupState.receivedGatewayHello) {
@@ -261,11 +345,14 @@ class WebSocketWorkerConnection implements WorkerConnection {
           this.setupState.receivedConnectionReady = true;
 
           resolveWebsocketConnected?.();
+
+          return;
         }
       }
 
       // Run loop
       if (this.isCanceled()) {
+        console.log("Connection is canceled, returning early");
         // TODO Handle abort closure
         return;
       }
@@ -280,11 +367,60 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_EXECUTOR_REQUEST) {
-        // TODO Handle executor request
+        const gatewayExecutorRequest = await parseGatewayExecutorRequest(
+          connectMessage.payload
+        );
+
+        console.log(
+          "Received gateway executor request",
+          gatewayExecutorRequest.requestId
+        );
+
+        // Ack received request
+        ws.send(
+          ConnectMessage.encode(
+            ConnectMessage.create({
+              kind: GatewayMessageType.WORKER_REQUEST_ACK,
+              payload: WorkerRequestAckData.encode(
+                WorkerRequestAckData.create({
+                  appId: gatewayExecutorRequest.appId,
+                  functionSlug: gatewayExecutorRequest.functionSlug,
+                  requestId: gatewayExecutorRequest.requestId,
+                  stepId: gatewayExecutorRequest.stepId,
+                })
+              ).finish(),
+            })
+          ).finish()
+        );
+
+        const res = await requestHandler(gatewayExecutorRequest);
+
+        console.log("Sending worker reply");
+
+        // Send reply back to gateway
+        ws.send(
+          ConnectMessage.encode(
+            ConnectMessage.create({
+              kind: GatewayMessageType.WORKER_REPLY,
+              payload: SDKResponse.encode(res).finish(),
+            })
+          ).finish()
+        );
+
         return;
       }
 
       console.error("Unknown message type", connectMessage.kind);
+    };
+
+    ws.onclose = () => {
+      // TODO Properly handle close, reconnect
+      console.error("Connection closed!");
+    };
+
+    ws.onerror = (err) => {
+      // TODO Handle failed connections
+      console.error("Connection error", err);
     };
 
     await websocketConnectedPromise;

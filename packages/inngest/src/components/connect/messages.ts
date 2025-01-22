@@ -1,5 +1,6 @@
 import {
   ConnectMessage,
+  GatewayExecutorRequestData,
   StartRequest,
   StartResponse,
 } from "./protobuf/src/protobuf/connect.js";
@@ -17,4 +18,9 @@ export async function parseStartResponse(r: Response) {
 export async function parseConnectMessage(r: Uint8Array) {
   const connectMessage = ConnectMessage.decode(r);
   return connectMessage;
+}
+
+export async function parseGatewayExecutorRequest(r: Uint8Array) {
+  const gatewayExecutorRequest = GatewayExecutorRequestData.decode(r);
+  return gatewayExecutorRequest;
 }
