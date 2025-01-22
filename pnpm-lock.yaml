@@ -115,9 +115,6 @@ importers:
       strip-ansi:
         specifier: ^5.2.0
         version: 5.2.0
-      ts-proto:
-        specifier: ^2.6.1
-        version: 2.6.1
       ulid:
         specifier: ^2.3.0
         version: 2.3.0
@@ -266,6 +263,9 @@ importers:
       ts-jest:
         specifier: ^29.1.0
         version: 29.1.0(@babel/core@7.23.6)(@jest/types@29.5.0)(babel-jest@29.5.0(@babel/core@7.23.6))(jest@29.5.0(@types/node@20.14.8)(ts-node@10.9.1(@types/node@20.14.8)(typescript@5.7.2)))(typescript@5.7.2)
+      ts-proto:
+        specifier: ^2.6.1
+        version: 2.6.1
       tsx:
         specifier: ^3.12.7
         version: 3.12.7
