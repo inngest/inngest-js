@@ -34,6 +34,10 @@
             nodePackages.vscode-json-languageserver
             nodePackages.yaml-language-server
           ];
+
+          shellHook = ''
+            export COREPACK_ENABLE_AUTO_PIN=0
+          '';
         };
       });
 }
