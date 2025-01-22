@@ -96,11 +96,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
   }
 
   public async connect() {
-    if (!this.options.signingKey) {
+    if (this.inngest["mode"].isCloud && !this.options.signingKey) {
       throw new Error("Signing key is required");
     }
 
-    const hashedSigningKey = hashSigningKey(this.options.signingKey);
+    const hashedSigningKey = this.options.signingKey
+      ? hashSigningKey(this.options.signingKey)
+      : undefined;
 
     let hashedFallbackKey = undefined;
     if (this.options.signingKeyFallback) {
@@ -252,7 +254,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
   private async prepareConnection(
     requestHandler: (msg: GatewayExecutorRequestData) => Promise<SDKResponse>,
-    hashedSigningKey: string,
+    hashedSigningKey: string | undefined,
     data: connectionEstablishData
   ): Promise<void> {
     const startedAt = new Date();
@@ -260,7 +262,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     const headers: Record<string, string> = {
       "Content-Type": "application/protobuf",
-      Authorization: `Bearer ${hashedSigningKey}`,
+      ...(hashedSigningKey
+        ? { Authorization: `Bearer ${hashedSigningKey}` }
+        : {}),
     };
 
     if (this.inngest.env) {
