@@ -85,9 +85,6 @@ importers:
       '@inngest/ai':
         specifier: ^0.0.0
         version: 0.0.0
-      '@jpwilliams/waitgroup':
-        specifier: ^2.1.1
-        version: 2.1.1
       '@types/debug':
         specifier: ^4.1.12
         version: 4.1.12
@@ -1194,9 +1191,6 @@ packages:
   '@jest/types@29.5.0':
     resolution: {integrity: sha512-qbu7kN6czmVRc3xWFQcAN03RAUamgppVUdXrvl1Wr3jlNF93o9mJbGcDWrwGB6ht44u7efB1qCFgVQmca24Uog==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
-
-  '@jpwilliams/waitgroup@2.1.1':
-    resolution: {integrity: sha512-0CxRhNfkvFCTLZBKGvKxY2FYtYW1yWhO2McLqBL0X5UWvYjIf9suH8anKW/DNutl369A75Ewyoh2iJMwBZ2tRg==}
 
   '@jridgewell/gen-mapping@0.3.3':
     resolution: {integrity: sha512-HLhSWOLRi875zjjMG/r+Nv0oCW8umGb0BgEhyX3dDX3egwZtB8PqLnjz3yedt8R5StBrzcg4aBpnh8UA9D1BoQ==}
@@ -6301,8 +6295,6 @@ snapshots:
       '@types/node': 22.10.5
       '@types/yargs': 17.0.23
       chalk: 4.1.2
-
-  '@jpwilliams/waitgroup@2.1.1': {}
 
   '@jridgewell/gen-mapping@0.3.3':
     dependencies:
