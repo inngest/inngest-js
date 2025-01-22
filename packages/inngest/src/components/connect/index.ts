@@ -185,6 +185,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     const ws = new WebSocket(startResp.gatewayEndpoint, [
       "v0.connect.inngest.com",
     ]);
+    ws.binaryType = "arraybuffer";
 
     return new Promise((resolve, reject) => {
       ws.onopen = () => {
