@@ -126,25 +126,49 @@ class WebSocketWorkerConnection implements WorkerConnection {
       marshaledFunctions: JSON.stringify(functions),
     };
 
+    const appName = this.inngest.id;
+
     const inngestCommHandler: ConnectCommHandler = new InngestCommHandler({
       client: this.inngest,
       functions: this.options.functions,
       frameworkName: "connect",
       skipSignatureValidation: true,
       handler: (msg: GatewayExecutorRequestData) => {
+        const asString = new TextDecoder().decode(msg.requestPayload);
+        const unmarshaled = JSON.parse(asString);
+
         return {
           body() {
-            const asString = new TextDecoder().decode(msg.requestPayload);
-            const unmarshaled = JSON.parse(asString);
             return unmarshaled;
           },
           method() {
             return "POST";
           },
           headers(key) {
-            return null;
+            switch (key) {
+              case headerKeys.ContentLength:
+                return asString.length.toString();
+              case headerKeys.InngestExpectedServerKind:
+                return "connect";
+              case headerKeys.RequestVersion:
+                return null;
+              case headerKeys.Signature:
+                // Note: Signature is disabled for connect
+                return null;
+              case headerKeys.TraceParent:
+              case headerKeys.TraceState:
+                return null;
+              default:
+                return null;
+            }
           },
           transformResponse({ body, headers, status }) {
+            console.log("Received response", {
+              status,
+              headers,
+              body,
+            });
+
             let sdkResponseStatus: SDKResponseStatus = SDKResponseStatus.DONE;
             switch (status) {
               case 200:
@@ -169,11 +193,15 @@ class WebSocketWorkerConnection implements WorkerConnection {
           },
           url() {
             const baseUrl = new URL("http://connect.inngest.com");
-            baseUrl.searchParams.set(queryKeys.FnId, msg.functionSlug);
+
+            const functionId = `${appName}-${msg.functionSlug}`;
+            baseUrl.searchParams.set(queryKeys.FnId, functionId);
 
             if (msg.stepId) {
               baseUrl.searchParams.set(queryKeys.StepId, msg.stepId);
             }
+
+            console.log("baseUrl", baseUrl.toString());
 
             return baseUrl;
           },
