@@ -1,4 +1,5 @@
-import { type InngestFunction, type RegisterOptions } from "inngest";
+import { type RegisterOptions } from "../../types.js";
+import { type InngestFunction } from "../InngestFunction.js";
 
 export interface ConnectHandlerOptions extends RegisterOptions {
   /**
