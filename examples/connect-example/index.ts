@@ -1,15 +1,15 @@
-import { Inngest } from "../Inngest";
+import { Inngest } from "inngest";
 
-(async function main() {
-  const inngest = new Inngest({
-    id: "my-connect-js-app",
-    eventKey: "abc123",
-    buildId: "v1.0",
-  });
+const inngest = new Inngest({
+  id: "my-connect-js-app",
+  eventKey: "abc123",
+  buildId: "v1.0",
+});
 
-  const abort = new AbortController();
+const abort = new AbortController();
 
-  const connection = await inngest.connect({
+inngest
+  .connect({
     functions: [
       inngest.createFunction(
         { id: "test-function" },
@@ -26,6 +26,8 @@ import { Inngest } from "../Inngest";
     signingKey: "signkey-test-12345678",
     signingKeyFallback: "signkey-test-00000000",
     abortSignal: abort.signal,
-    baseUrl: "http://127.0.0.1:8288",
+//     baseUrl: "http://127.0.0.1:8288",
+  })
+  .then((conn) => {
+    console.log("Connected!", conn);
   });
-})();
