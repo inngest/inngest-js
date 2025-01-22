@@ -31,30 +31,30 @@ class WebSocketWorkerConnection implements WorkerConnection {
   public _connectionId: string | undefined;
 
   private inngest: Inngest.Any;
-  private _closed: Promise<void>;
-  private resolveClosed!: (value: void | PromiseLike<void>) => void;
-  private rejectClosed!: (reason?: unknown) => void;
+
+  private ctx: AbortController;
+  private _cleanup: (() => void)[] = [];
+  private inProgress: Promise<unknown>[] = [];
 
   private options: ConnectHandlerOptions;
 
   constructor(inngest: Inngest.Any, options: ConnectHandlerOptions) {
     this.inngest = inngest;
     this.options = options;
-
-    this._closed = new Promise((resolve, reject) => {
-      this.resolveClosed = resolve;
-      this.rejectClosed = reject;
-    });
+    this.ctx = new AbortController();
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async close(): Promise<void> {
-    this.resolveClosed();
-    return;
+    this.ctx.abort();
+    for (const cleanup of this._cleanup) {
+      cleanup();
+    }
+    return this.closed;
   }
 
   get closed(): Promise<void> {
-    return this._closed;
+    return Promise.allSettled(this.inProgress).then(() => {});
   }
 
   get connectionId(): string {
@@ -62,6 +62,14 @@ class WebSocketWorkerConnection implements WorkerConnection {
       throw new Error("Connection not prepared");
     }
     return this._connectionId;
+  }
+
+  private isCanceled() {
+    const signals: AbortSignal[] = [this.ctx.signal];
+    if (this.options.abortSignal) {
+      signals.push(this.options.abortSignal);
+    }
+    return AbortSignal.any(signals);
   }
 
   public async connect() {
@@ -97,25 +105,31 @@ class WebSocketWorkerConnection implements WorkerConnection {
       marshaledFunctions: JSON.stringify(functions),
     };
 
-    const { ws, iterator } = await this.prepareConnection(
-      hashedSigningKey,
-      data
-    );
+    try {
+      await this.prepareConnection(hashedSigningKey, data);
+    } catch (err) {
+      this.onConnectionError(err);
+    }
 
-    const cleanup: (() => void)[] = [];
+    return this;
+  }
 
+  private onConnectionError(error: unknown) {}
+
+  private setupHeartbeat(ws: WebSocket) {
     const cancel = setInterval(() => {
       const pingMsg = ConnectMessage.create({
         kind: GatewayMessageType.WORKER_HEARTBEAT,
       });
       ws.send(ConnectMessage.encode(pingMsg).finish());
     }, 10_000);
+    this._cleanup.push(() => clearInterval(cancel));
+  }
 
-    cleanup.push(() => clearInterval(cancel));
-
+  private async readLoop(iterator: AsyncIterator<Uint8Array | undefined>) {
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      if (this.options.abortSignal?.aborted) {
+      if (this.isCanceled()) {
         // TODO Handle abort closure
         break;
       }
@@ -139,8 +153,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
         continue;
       }
     }
-
-    return { cleanup };
   }
 
   private async prepareConnection(
@@ -191,7 +203,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
     ]);
     ws.binaryType = "arraybuffer";
 
-    return new Promise((resolve, reject) => {
+    const result = await new Promise<{
+      ws: WebSocket;
+      iterator: AsyncIterator<Uint8Array | undefined>;
+    }>((resolve, reject) => {
       ws.onopen = () => {
         const stream = createMessageStream(ws);
         this.performConnectHandshake(
@@ -206,6 +221,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
           .catch(reject);
       };
     });
+
+    this.setupHeartbeat(result.ws);
+    this.inProgress.push(this.readLoop(result.iterator));
+
+    return result;
   }
 
   private async performConnectHandshake(
