@@ -182,6 +182,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this._connectionId = connectionId;
 
+    if (typeof WebSocket === "undefined") {
+      throw new Error("WebSockets not supported in current environment");
+    }
+
     const ws = new WebSocket(startResp.gatewayEndpoint, [
       "v0.connect.inngest.com",
     ]);
