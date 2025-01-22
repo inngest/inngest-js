@@ -2,11 +2,11 @@
 // versions:
 //   protoc-gen-ts_proto  v2.6.1
 //   protoc               v5.29.3
-// source: src/protobuf/connect.proto
+// source: src/components/connect/protobuf/connect.proto
 
 /* eslint-disable */
 import { BinaryReader, BinaryWriter } from "@bufbuild/protobuf/wire";
-import { Timestamp } from "../../google/protobuf/timestamp";
+import { Timestamp } from "../../../../google/protobuf/timestamp";
 
 export const protobufPackage = "connect.v1";
 
@@ -276,6 +276,7 @@ export interface SDKResponse {
   noRetry: boolean;
   retryAfter?: string | undefined;
   sdkVersion: string;
+  requestVersion: number;
 }
 
 /** Connection metadata */
@@ -1288,7 +1289,15 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
 };
 
 function createBaseSDKResponse(): SDKResponse {
-  return { requestId: "", status: 0, body: new Uint8Array(0), noRetry: false, retryAfter: undefined, sdkVersion: "" };
+  return {
+    requestId: "",
+    status: 0,
+    body: new Uint8Array(0),
+    noRetry: false,
+    retryAfter: undefined,
+    sdkVersion: "",
+    requestVersion: 0,
+  };
 }
 
 export const SDKResponse: MessageFns<SDKResponse> = {
@@ -1310,6 +1319,9 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     }
     if (message.sdkVersion !== "") {
       writer.uint32(50).string(message.sdkVersion);
+    }
+    if (message.requestVersion !== 0) {
+      writer.uint32(56).uint32(message.requestVersion);
     }
     return writer;
   },
@@ -1369,6 +1381,14 @@ export const SDKResponse: MessageFns<SDKResponse> = {
           message.sdkVersion = reader.string();
           continue;
         }
+        case 7: {
+          if (tag !== 56) {
+            break;
+          }
+
+          message.requestVersion = reader.uint32();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1386,6 +1406,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
       noRetry: isSet(object.noRetry) ? globalThis.Boolean(object.noRetry) : false,
       retryAfter: isSet(object.retryAfter) ? globalThis.String(object.retryAfter) : undefined,
       sdkVersion: isSet(object.sdkVersion) ? globalThis.String(object.sdkVersion) : "",
+      requestVersion: isSet(object.requestVersion) ? globalThis.Number(object.requestVersion) : 0,
     };
   },
 
@@ -1409,6 +1430,9 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     if (message.sdkVersion !== "") {
       obj.sdkVersion = message.sdkVersion;
     }
+    if (message.requestVersion !== 0) {
+      obj.requestVersion = Math.round(message.requestVersion);
+    }
     return obj;
   },
 
@@ -1423,6 +1447,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     message.noRetry = object.noRetry ?? false;
     message.retryAfter = object.retryAfter ?? undefined;
     message.sdkVersion = object.sdkVersion ?? "";
+    message.requestVersion = object.requestVersion ?? 0;
     return message;
   },
 };

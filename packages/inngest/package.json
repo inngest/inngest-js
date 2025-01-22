@@ -10,7 +10,7 @@
   "scripts": {
     "prebuild": "pnpm run pb:version",
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
-    "proto": "protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/components/connect/protobuf ./src/components/connect/protobuf/connect.proto",
+    "proto": "protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/proto ./src/components/connect/protobuf/connect.proto",
     "build": "pnpm run clean && tsc --project tsconfig.build.json",
     "test": "jest --silent --logHeapUsage --maxWorkers=8 --coverage --ci",
     "itest": "tsx scripts/integrationTestRunner.ts",

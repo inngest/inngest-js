@@ -23,9 +23,11 @@ import {
   SDKResponseStatus,
   WorkerConnectRequestData,
   WorkerRequestAckData,
-} from "./protobuf/src/protobuf/connect.js";
+} from "../../proto/src/components/connect/protobuf/connect.js";
 import { type ConnectHandlerOptions, type WorkerConnection } from "./types.js";
 import { InngestCommHandler } from "inngest";
+import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.js";
+import { parseFnData } from "../../helpers/functions.js";
 
 interface connectionEstablishData {
   numCpuCores: number;
@@ -136,6 +138,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
       handler: (msg: GatewayExecutorRequestData) => {
         const asString = new TextDecoder().decode(msg.requestPayload);
         const unmarshaled = JSON.parse(asString);
+        const parsed = parseFnData(unmarshaled);
+
+        console.log("unamrshaled", unmarshaled);
 
         return {
           body() {
@@ -151,7 +156,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
               case headerKeys.InngestExpectedServerKind:
                 return "connect";
               case headerKeys.RequestVersion:
-                return null;
+                return parsed.version.toString();
               case headerKeys.Signature:
                 // Note: Signature is disabled for connect
                 return null;
@@ -189,6 +194,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
               retryAfter: headers[headerKeys.RetryAfter],
               requestId: msg.requestId,
               sdkVersion: `v${version}`,
+              requestVersion: parseInt(
+                headers[headerKeys.RequestVersion] ??
+                  PREFERRED_EXECUTION_VERSION.toString(),
+                10
+              ),
             });
           },
           url() {

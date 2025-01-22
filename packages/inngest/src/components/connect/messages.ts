@@ -3,7 +3,7 @@ import {
   GatewayExecutorRequestData,
   StartRequest,
   StartResponse,
-} from "./protobuf/src/protobuf/connect.js";
+} from "../../proto/src/components/connect/protobuf/connect.js";
 
 export function createStartRequest() {
   return StartRequest.encode(StartRequest.create({})).finish();

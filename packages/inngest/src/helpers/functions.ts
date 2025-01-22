@@ -103,7 +103,7 @@ const fnDataVersionSchema = z.object({
     }),
 });
 
-export const parseFnData = (fn: InngestFunction.Any, data: unknown) => {
+export const parseFnData = (data: unknown) => {
   let version: ExecutionVersion;
 
   try {

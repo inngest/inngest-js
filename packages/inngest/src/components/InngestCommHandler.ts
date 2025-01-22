@@ -1395,7 +1395,7 @@ export class InngestCommHandler<
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
 
-    const immediateFnData = parseFnData(fn.fn, data);
+    const immediateFnData = parseFnData(data);
     const { version } = immediateFnData;
 
     const result = runAsPromise(async () => {
