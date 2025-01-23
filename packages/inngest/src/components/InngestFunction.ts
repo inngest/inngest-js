@@ -51,10 +51,10 @@ export class InngestFunction<
   static failureSuffix = "-failure";
 
   public readonly opts: TFnOpts;
-  private readonly fn: THandler;
-  private readonly onFailureFn?: TFailureHandler;
+  protected readonly fn: THandler;
+  protected readonly onFailureFn?: TFailureHandler;
   protected readonly client: TClient;
-  private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
+  protected readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
   /**
    * A stateless Inngest function, wrapping up function configuration and any
