@@ -46,7 +46,8 @@ export class InngestFunction<
   TTriggers extends InngestFunction.Trigger<
     TriggersFromClient<TClient>
   >[] = InngestFunction.Trigger<TriggersFromClient<TClient>>[],
-> {
+> implements InngestFunction.Like
+{
   static stepId = "step";
   static failureSuffix = "-failure";
 
@@ -281,6 +282,13 @@ export namespace InngestFunction {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     any
   >;
+
+  export interface Like {
+    opts: Options;
+    id(prefix?: string): string;
+    name: string;
+    description?: string;
+  }
 
   /**
    * A user-friendly method of specifying a trigger for an Inngest function.

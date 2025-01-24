@@ -84,7 +84,7 @@ export interface ServeHandlerOptions extends RegisterOptions {
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly InngestFunction.Any[];
+  functions: readonly InngestFunction.Like[];
 }
 
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
