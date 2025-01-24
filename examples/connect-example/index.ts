@@ -19,7 +19,7 @@ inngest["connect"]({
         await step.run("test", async () => {
           console.log("via connect!");
           await new Promise((resolve) => setTimeout(resolve, 10000));
-          console.log("done");
+          console.log("function done");
           return "this works";
         });
       }
