@@ -1,8 +1,6 @@
-import { InngestFunction } from "@local/components/InngestFunction";
 import { ExecutionVersion } from "@local/components/execution/InngestExecution";
 import { parseFnData, type FnData } from "@local/helpers/functions";
 import { type EventPayload } from "@local/types";
-import { createClient } from "../test/helpers";
 
 const randomstr = (): string => {
   return (Math.random() + 1).toString(36).substring(2);
@@ -70,12 +68,6 @@ describe("#parseFnData", () => {
       isOk: false,
     },
   ];
-
-  const fn = new InngestFunction(
-    createClient({ id: "test-client" }),
-    { id: "test-fn", triggers: [{ event: "test-event" }] },
-    () => "test-return"
-  );
 
   specs.forEach((test) => {
     it(test.name, () => {
