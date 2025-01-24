@@ -127,7 +127,7 @@ interface InngestCommHandlerOptions<
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly InngestFunction.Any[];
+  functions: readonly InngestFunction.Like[];
 
   /**
    * The `handler` is the function that will be called with your framework's
@@ -380,7 +380,7 @@ export class InngestCommHandler<
     );
 
     // Ensure we filter any undefined functions in case of missing imports.
-    this.rawFns = options.functions.filter(Boolean);
+    this.rawFns = options.functions.filter(Boolean) as InngestFunction.Any[];
 
     if (this.rawFns.length !== options.functions.length) {
       // TODO PrettyError

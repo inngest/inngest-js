@@ -1,4 +1,4 @@
-import { InngestCommHandler } from "inngest";
+import { InngestCommHandler, type InngestFunction } from "inngest";
 import { ulid } from "ulid";
 import { headerKeys, queryKeys } from "../../helpers/consts.js";
 import { allProcessEnv, getPlatformName } from "../../helpers/env.js";
@@ -112,7 +112,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
     };
 
     const functions: Array<FunctionConfig> = this.options.functions.flatMap(
-      (f) => f["getConfig"](new URL("http://example.com")) // refactor; base URL shouldn't be optional here; we likely need to fetch a different kind of config
+      (f) =>
+        (f as InngestFunction.Any)["getConfig"](new URL("http://example.com")) // refactor; base URL shouldn't be optional here; we likely need to fetch a different kind of config
     );
 
     const data: connectionEstablishData = {
