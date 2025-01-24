@@ -3,6 +3,7 @@ import {
   GatewayExecutorRequestData,
   StartRequest,
   StartResponse,
+  WorkerReplyAckData,
 } from "../../proto/src/components/connect/protobuf/connect.js";
 
 export function createStartRequest() {
@@ -22,4 +23,9 @@ export function parseConnectMessage(r: Uint8Array) {
 export function parseGatewayExecutorRequest(r: Uint8Array) {
   const gatewayExecutorRequest = GatewayExecutorRequestData.decode(r);
   return gatewayExecutorRequest;
+}
+
+export function parseWorkerReplyAck(r: Uint8Array) {
+  const workerReplyAck = WorkerReplyAckData.decode(r);
+  return workerReplyAck;
 }
