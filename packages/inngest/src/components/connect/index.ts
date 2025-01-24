@@ -41,6 +41,13 @@ type ConnectCommHandler = InngestCommHandler<
   any
 >;
 
+class ReconnectError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReconnectError";
+  }
+}
+
 class WebSocketWorkerConnection implements WorkerConnection {
   public _connectionId: string | undefined;
 
@@ -164,12 +171,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
             }
           },
           transformResponse({ body, headers, status }) {
-            console.log("Received response", {
-              status,
-              headers,
-              body,
-            });
-
             let sdkResponseStatus: SDKResponseStatus = SDKResponseStatus.DONE;
             switch (status) {
               case 200:
@@ -207,8 +208,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
               baseUrl.searchParams.set(queryKeys.StepId, msg.stepId);
             }
 
-            console.log("baseUrl", baseUrl.toString());
-
             return baseUrl;
           },
           isProduction: () => {
@@ -225,16 +224,39 @@ class WebSocketWorkerConnection implements WorkerConnection {
     });
     const requestHandler = inngestCommHandler.createHandler();
 
-    try {
-      await this.prepareConnection(requestHandler, hashedSigningKey, data);
-    } catch (err) {
-      this.onConnectionError(err);
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        await this.prepareConnection(requestHandler, hashedSigningKey, data);
+        return this;
+      } catch (err) {
+        if (!(err instanceof ReconnectError)) {
+          throw err;
+        }
+
+        await new Promise((resolve) =>
+          setTimeout(resolve, this.expBackoff(attempt))
+        );
+        continue;
+      }
     }
 
-    return this;
+    throw new Error(`Failed to connect after ${maxAttempts} attempts`);
   }
 
-  private onConnectionError(error: unknown) {}
+  private expBackoff(attempt: number) {
+    const backoffTimes = [
+      1000, 2000, 5000, 10000, 20000, 30000, 60000, 120000, 300000,
+    ];
+    // If attempt exceeds array length, use the last (maximum) value
+    return backoffTimes[Math.min(attempt, backoffTimes.length - 1)];
+  }
+
+  private onConnectionError(error: unknown) {
+    console.error("Connection error", error);
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    this.connect();
+  }
 
   private setupHeartbeat(ws: WebSocket) {
     const cancel = setInterval(() => {
@@ -276,7 +298,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     );
 
     if (!resp.ok) {
-      throw new Error("Failed to prepare connection");
+      throw new ReconnectError("Failed to prepare connection");
     }
 
     const startResp = await parseStartResponse(resp);
@@ -289,26 +311,30 @@ class WebSocketWorkerConnection implements WorkerConnection {
       throw new Error("WebSockets not supported in current environment");
     }
 
-    const ws = new WebSocket(startResp.gatewayEndpoint, [
-      "v0.connect.inngest.com",
-    ]);
-    ws.binaryType = "arraybuffer";
-
     let resolveWebsocketConnected:
       | ((value: void | PromiseLike<void>) => void)
       | undefined;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let rejectWebsocketConnected: ((reason?: any) => void) | undefined;
-
     const websocketConnectedPromise = new Promise((resolve, reject) => {
       resolveWebsocketConnected = resolve;
       rejectWebsocketConnected = reject;
     });
 
+    const connectTimeout = setTimeout(() => {
+      rejectWebsocketConnected?.(new Error("Connection timed out"));
+    }, 10_000);
+
+    const ws = new WebSocket(startResp.gatewayEndpoint, [
+      "v0.connect.inngest.com",
+    ]);
+    ws.binaryType = "arraybuffer";
+    ws.onerror = (err) => this.onConnectionError(err);
+    ws.onclose = (ev) =>
+      this.onConnectionError(new Error(`Connection closed: ${ev.reason}`));
+
     ws.onmessage = async (event) => {
-      const messageBytes = new Uint8Array<ArrayBuffer>(
-        event.data as ArrayBuffer
-      );
+      const messageBytes = new Uint8Array(event.data as ArrayBuffer);
 
       console.debug("Received WebSocket message");
 
@@ -382,6 +408,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
           this.setupState.receivedConnectionReady = true;
 
+          clearTimeout(connectTimeout);
           resolveWebsocketConnected?.();
 
           return;
@@ -401,6 +428,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_CLOSING) {
         // TODO Handle draining
+        return;
+      }
+
+      if (connectMessage.kind === GatewayMessageType.GATEWAY_HEARTBEAT) {
+        // TODO Handle heartbeat
+        console.log("Received heartbeat");
         return;
       }
 
@@ -448,17 +481,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
         return;
       }
 
+      if (connectMessage.kind === GatewayMessageType.WORKER_REPLY_ACK) {
+        // TODO Handle reply ack
+        console.log("Received reply ack");
+        return;
+      }
+
       console.error("Unknown message type", connectMessage.kind);
-    };
-
-    ws.onclose = () => {
-      // TODO Properly handle close, reconnect
-      console.error("Connection closed!");
-    };
-
-    ws.onerror = (err) => {
-      // TODO Handle failed connections
-      console.error("Connection error", err);
     };
 
     await websocketConnectedPromise;
