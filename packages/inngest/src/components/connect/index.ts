@@ -470,11 +470,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
 }
 
 export const connect = async (
-  inngest: Inngest.Any,
+  inngest: Inngest.Like,
   options: ConnectHandlerOptions
   // eslint-disable-next-line @typescript-eslint/require-await
 ): Promise<WorkerConnection> => {
-  const conn = new WebSocketWorkerConnection(inngest, options);
+  const conn = new WebSocketWorkerConnection(inngest as Inngest.Any, options);
 
   await conn.connect();
 

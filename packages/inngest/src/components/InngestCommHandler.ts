@@ -79,7 +79,7 @@ export interface ServeHandlerOptions extends RegisterOptions {
   /**
    * The `Inngest` instance used to declare all functions.
    */
-  client: Inngest.Any;
+  client: Inngest.Like;
 
   /**
    * An array of the functions to serve and register with Inngest.
@@ -122,7 +122,7 @@ interface InngestCommHandlerOptions<
    * receiving events from the same service, as you can reuse a single
    * definition of Inngest.
    */
-  client: Inngest.Any;
+  client: Inngest.Like;
 
   /**
    * An array of the functions to serve and register with Inngest.
@@ -365,7 +365,7 @@ export class InngestCommHandler<
     }
 
     this.frameworkName = options.frameworkName;
-    this.client = options.client;
+    this.client = options.client as Inngest.Any;
     this.id = options.id || this.client.id;
 
     this.handler = options.handler as Handler;

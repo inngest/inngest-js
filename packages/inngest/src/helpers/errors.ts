@@ -463,7 +463,7 @@ export const fixEventKeyMissingSteps = [
   `Pass a key to the \`new Inngest()\` constructor using the \`${
     "eventKey" satisfies keyof ClientOptions
   }\` option`,
-  `Use \`inngest.${"setEventKey" satisfies keyof Inngest}()\` at runtime`,
+  `Use \`inngest.${"setEventKey" satisfies keyof Inngest.Like}()\` at runtime`,
 ];
 
 /**

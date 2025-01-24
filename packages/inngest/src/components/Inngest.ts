@@ -98,7 +98,9 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
  *
  * @public
  */
-export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
+export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
+  implements Inngest.Like
+{
   /**
    * The ID of this instance, most commonly a reference to the application it
    * resides in.
@@ -757,10 +759,31 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
  */
 export namespace Inngest {
   /**
-   * Represents any `Inngest` instance, regardless of generics and
-   * inference.
+   * Represents any `Inngest` instance, regardless of generics and inference.
+   *
+   * Prefer use of `Inngest.Like` where possible to ensure compatibility with
+   * multiple versions.
    */
   export type Any = Inngest;
+
+  /**
+   * References any `Inngest` instance across library versions, useful for use
+   * in public APIs to ensure compatibility with multiple versions.
+   *
+   * Prefer use of `Inngest.Any` internally and `Inngest.Like` for public APIs.
+   */
+  export interface Like {
+    readonly id: string;
+    apiBaseUrl: string | undefined;
+    eventBaseUrl: string | undefined;
+    env: string | null;
+    buildId?: string | undefined;
+
+    setEnvVars(env?: Record<string, string | undefined>): this;
+    setEventKey(eventKey: string): void;
+    send(payload: unknown, options?: { env?: string }): Promise<unknown>;
+    createFunction: Inngest.CreateFunction<Inngest.Any>;
+  }
 
   export type CreateFunction<TClient extends Inngest.Any> = <
     TMiddleware extends InngestMiddleware.Stack,
@@ -843,7 +866,7 @@ export namespace Inngest {
  */
 export type GetStepTools<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TInngest extends Inngest<any>,
+  TInngest extends Inngest.Any,
   TTrigger extends keyof GetEvents<TInngest> &
     string = keyof GetEvents<TInngest> & string,
 > = GetFunctionInput<TInngest, TTrigger> extends { step: infer TStep }
@@ -989,5 +1012,5 @@ export type GetEvents<
  * @public
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ClientOptionsFromInngest<TInngest extends Inngest<any>> =
+export type ClientOptionsFromInngest<TInngest extends Inngest.Any> =
   TInngest extends Inngest<infer U> ? U : ClientOptions;
