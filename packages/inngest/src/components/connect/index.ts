@@ -415,10 +415,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
 
       // Send worker heartbeat
-      const pingMsg = ConnectMessage.create({
-        kind: GatewayMessageType.WORKER_HEARTBEAT,
-      });
-      ws.send(ConnectMessage.encode(pingMsg).finish());
+      ws.send(
+        ConnectMessage.encode(
+          ConnectMessage.create({
+            kind: GatewayMessageType.WORKER_HEARTBEAT,
+          })
+        ).finish()
+      );
 
       // Wait for gateway to respond
       setTimeout(() => {
@@ -472,7 +475,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
     );
 
     if (!resp.ok) {
-      throw new ReconnectError("Failed to prepare connection");
+      throw new ReconnectError(
+        `Failed to prepare connection, ${await resp.text()}`
+      );
     }
 
     const startResp = await parseStartResponse(resp);
@@ -496,7 +501,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     });
 
     const connectTimeout = setTimeout(() => {
-      rejectWebsocketConnected?.(new Error("Connection timed out"));
+      rejectWebsocketConnected?.(new ReconnectError("Connection timed out"));
     }, 10_000);
 
     const ws = new WebSocket(startResp.gatewayEndpoint, [
@@ -505,7 +510,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
     ws.binaryType = "arraybuffer";
     ws.onerror = (err) => this.onConnectionError(err);
     ws.onclose = (ev) => {
-      this.onConnectionError(new Error(`Connection closed: ${ev.reason}`));
+      this.onConnectionError(
+        new ReconnectError(`Connection closed: ${ev.reason}`)
+      );
     };
 
     ws.onmessage = async (event) => {
@@ -517,7 +524,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
         if (!this.setupState.receivedGatewayHello) {
           const helloMessage = parseConnectMessage(messageBytes);
           if (helloMessage.kind !== GatewayMessageType.GATEWAY_HELLO) {
-            throw new Error(`Expected hello message, got ${helloMessage.kind}`);
+            rejectWebsocketConnected?.(
+              new ReconnectError(
+                `Expected hello message, got ${helloMessage.kind}`
+              )
+            );
+            return;
           }
           this.setupState.receivedGatewayHello = true;
         }
@@ -578,7 +590,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
           if (
             readyMessage.kind !== GatewayMessageType.GATEWAY_CONNECTION_READY
           ) {
-            throw new Error("Expected ready message");
+            rejectWebsocketConnected?.(
+              new ReconnectError(
+                `Expected ready message, got ${readyMessage.kind}`
+              )
+            );
+            return;
           }
 
           this.setupState.receivedConnectionReady = true;
