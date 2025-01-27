@@ -9,6 +9,7 @@ import {
   FlushResponse,
   type GatewayExecutorRequestData,
   GatewayMessageType,
+  gatewayMessageTypeToJSON,
   SDKResponse,
   SDKResponseStatus,
   WorkerConnectRequestData,
@@ -53,15 +54,18 @@ type ConnectCommHandler = InngestCommHandler<
 >;
 
 class ReconnectError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    public attempt: number
+  ) {
     super(message);
     this.name = "ReconnectError";
   }
 }
 
 class AuthError extends ReconnectError {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, attempt: number) {
+    super(message, attempt);
     this.name = "AuthError";
   }
 }
@@ -231,26 +235,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
     for (const cleanup of this._cleanup) {
       await cleanup();
     }
+    this._cleanup = [];
   }
 
-  public async connect() {
+  public async connect(attempt = 0) {
     if (typeof WebSocket === "undefined") {
       throw new Error("WebSockets not supported in current environment");
-    }
-
-    // Clean up any previous connection state
-    // Note: Never reset the message buffer, as there may be pending/unsent messages
-    {
-      this.setupState = {
-        receivedGatewayHello: false,
-        sentWorkerConnect: false,
-        receivedConnectionReady: false,
-      };
-      this._connectionId = undefined;
-      this.lastGatewayHeartbeatAt = undefined;
-
-      // Run all cleanup functions to stop heartbeats, etc.
-      await this.cleanup();
     }
 
     this.debug("Establishing connection");
@@ -388,11 +378,15 @@ class WebSocketWorkerConnection implements WorkerConnection {
     });
     const requestHandler = inngestCommHandler.createHandler();
 
-    let attempt = 0;
     let useSigningKey = hashedSigningKey;
     while (!this.isCanceled()) {
       try {
-        await this.prepareConnection(requestHandler, useSigningKey, data);
+        await this.prepareConnection(
+          requestHandler,
+          useSigningKey,
+          data,
+          attempt
+        );
         return this;
       } catch (err) {
         this.debug("Failed to connect", err);
@@ -400,6 +394,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
         if (!(err instanceof ReconnectError)) {
           throw err;
         }
+
+        attempt = err.attempt;
 
         if (err instanceof AuthError) {
           const switchToFallback = useSigningKey === hashedSigningKey;
@@ -419,15 +415,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
   }
 
-  private onConnectionError(error: unknown) {
-    this.state = ConnectionState.RECONNECTING;
-
-    this.debug("Connection error", error);
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    this.connect();
-  }
-
-  private setupHeartbeat(ws: WebSocket, hashedSigningKey: string | undefined) {
+  private setupHeartbeat(
+    ws: WebSocket,
+    hashedSigningKey: string | undefined,
+    onConnectionError: (error: unknown) => void
+  ) {
     const currentConnId = this._connectionId;
 
     const cancel = setInterval(() => {
@@ -450,14 +442,14 @@ class WebSocketWorkerConnection implements WorkerConnection {
       setTimeout(() => {
         if (!this.lastGatewayHeartbeatAt) {
           this.debug("Gateway heartbeat missed");
-          this.onConnectionError(new Error("Gateway heartbeat missed"));
+          onConnectionError(new Error("Gateway heartbeat missed"));
           return;
         }
         const timeSinceLastHeartbeat =
           new Date().getTime() - this.lastGatewayHeartbeatAt.getTime();
         if (timeSinceLastHeartbeat > WorkerHeartbeatInterval * 2) {
           this.debug("Gateway heartbeat missed");
-          this.onConnectionError(new Error("Gateway heartbeat missed"));
+          onConnectionError(new Error("Gateway heartbeat missed"));
           return;
         }
 
@@ -475,8 +467,28 @@ class WebSocketWorkerConnection implements WorkerConnection {
   private async prepareConnection(
     requestHandler: (msg: GatewayExecutorRequestData) => Promise<SDKResponse>,
     hashedSigningKey: string | undefined,
-    data: connectionEstablishData
+    data: connectionEstablishData,
+    attempt: number
   ): Promise<void> {
+    this.debug("Preparing connection", {
+      attempt,
+    });
+
+    // Clean up any previous connection state
+    // Note: Never reset the message buffer, as there may be pending/unsent messages
+    {
+      this.setupState = {
+        receivedGatewayHello: false,
+        sentWorkerConnect: false,
+        receivedConnectionReady: false,
+      };
+      this._connectionId = undefined;
+      this.lastGatewayHeartbeatAt = undefined;
+
+      // Run all cleanup functions to stop heartbeats, etc.
+      await this.cleanup();
+    }
+
     const startedAt = new Date();
     const msg = createStartRequest();
 
@@ -505,19 +517,22 @@ class WebSocketWorkerConnection implements WorkerConnection {
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : "Unknown error";
       throw new ReconnectError(
-        `Failed initial API handshake request to ${targetUrl.toString()}, ${errMsg}`
+        `Failed initial API handshake request to ${targetUrl.toString()}, ${errMsg}`,
+        attempt
       );
     }
 
     if (!resp.ok) {
       if (resp.status === 401) {
         throw new AuthError(
-          `Failed initial API handshake request to ${targetUrl.toString()}, ${await resp.text()}`
+          `Failed initial API handshake request to ${targetUrl.toString()}, ${await resp.text()}`,
+          attempt
         );
       }
 
       throw new ReconnectError(
-        `Failed initial API handshake request to ${targetUrl.toString()}, ${await resp.text()}`
+        `Failed initial API handshake request to ${targetUrl.toString()}, ${await resp.text()}`,
+        attempt
       );
     }
 
@@ -538,32 +553,56 @@ class WebSocketWorkerConnection implements WorkerConnection {
     });
 
     const connectTimeout = setTimeout(() => {
-      rejectWebsocketConnected?.(new ReconnectError("Connection timed out"));
+      rejectWebsocketConnected?.(
+        new ReconnectError("Connection timed out", attempt)
+      );
     }, 10_000);
+
+    let errored = false;
+    const onConnectionError = (error: unknown) => {
+      if (errored) {
+        return;
+      }
+      errored = true;
+      this.state = ConnectionState.RECONNECTING;
+
+      this.debug("Connection error", error);
+      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+      this.connect(attempt + 1);
+    };
 
     const ws = new WebSocket(startResp.gatewayEndpoint, [
       "v0.connect.inngest.com",
     ]);
     ws.binaryType = "arraybuffer";
-    ws.onerror = (err) => this.onConnectionError(err);
+    ws.onerror = (err) => onConnectionError(err);
     ws.onclose = (ev) => {
-      this.onConnectionError(
-        new ReconnectError(`Connection closed: ${ev.reason}`)
+      onConnectionError(
+        new ReconnectError(`Connection closed: ${ev.reason}`, attempt)
       );
     };
 
     ws.onmessage = async (event) => {
       const messageBytes = new Uint8Array(event.data as ArrayBuffer);
 
-      this.debug("Received WebSocket message");
+      const connectMessage = parseConnectMessage(messageBytes);
+
+      this.debug(
+        `Received message: ${gatewayMessageTypeToJSON(connectMessage.kind)}`,
+        {
+          connectionId,
+        }
+      );
 
       {
         if (!this.setupState.receivedGatewayHello) {
-          const helloMessage = parseConnectMessage(messageBytes);
-          if (helloMessage.kind !== GatewayMessageType.GATEWAY_HELLO) {
+          if (connectMessage.kind !== GatewayMessageType.GATEWAY_HELLO) {
             rejectWebsocketConnected?.(
               new ReconnectError(
-                `Expected hello message, got ${helloMessage.kind}`
+                `Expected hello message, got ${gatewayMessageTypeToJSON(
+                  connectMessage.kind
+                )}`,
+                attempt
               )
             );
             return;
@@ -623,13 +662,15 @@ class WebSocketWorkerConnection implements WorkerConnection {
         }
 
         if (!this.setupState.receivedConnectionReady) {
-          const readyMessage = parseConnectMessage(messageBytes);
           if (
-            readyMessage.kind !== GatewayMessageType.GATEWAY_CONNECTION_READY
+            connectMessage.kind !== GatewayMessageType.GATEWAY_CONNECTION_READY
           ) {
             rejectWebsocketConnected?.(
               new ReconnectError(
-                `Expected ready message, got ${readyMessage.kind}`
+                `Expected ready message, got ${gatewayMessageTypeToJSON(
+                  connectMessage.kind
+                )}`,
+                attempt
               )
             );
             return;
@@ -641,6 +682,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           resolveWebsocketConnected?.();
           this.currentWs = ws;
           this.debug("Connection ready");
+          attempt = 0;
 
           return;
         }
@@ -652,10 +694,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
         // TODO Handle abort closure
         return;
       }
-
-      const connectMessage = parseConnectMessage(messageBytes);
-
-      this.debug(`Received message: ${connectMessage.kind}`);
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_CLOSING) {
         try {
@@ -675,7 +713,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_HEARTBEAT) {
         this.lastGatewayHeartbeatAt = new Date();
-        this.debug("Received heartbeat");
+        this.debug("Handled gateway heartbeat");
         return;
       }
 
@@ -746,12 +784,22 @@ class WebSocketWorkerConnection implements WorkerConnection {
         return;
       }
 
-      this.debug("Unknown message type", connectMessage.kind);
+      this.debug("Unexpected message type", {
+        kind: gatewayMessageTypeToJSON(connectMessage.kind),
+        rawKind: connectMessage.kind,
+        attempt,
+        setupState: this.setupState,
+        state: this.state,
+      });
     };
 
     await websocketConnectedPromise;
 
-    const heartbeatCleanup = this.setupHeartbeat(ws, hashedSigningKey);
+    const heartbeatCleanup = this.setupHeartbeat(
+      ws,
+      hashedSigningKey,
+      onConnectionError
+    );
     this._cleanup.push(heartbeatCleanup);
 
     const closeConnectionCleanup = async () => {
