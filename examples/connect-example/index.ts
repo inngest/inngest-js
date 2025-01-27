@@ -32,4 +32,8 @@ inngest["connect"]({
   //     baseUrl: "http://127.0.0.1:8288",
 }).then((conn) => {
   console.log("Connected!", conn.connectionId);
+
+  setInterval(() => {
+    console.log("State:", conn.state);
+  }, 1000);
 });
