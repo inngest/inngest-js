@@ -59,6 +59,13 @@ class ReconnectError extends Error {
   }
 }
 
+class AuthError extends ReconnectError {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthError";
+  }
+}
+
 class MessageBuffer {
   private buffered: Record<string, SDKResponse> = {};
   private pending: Record<string, SDKResponse> = {};
@@ -227,6 +234,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
   }
 
   public async connect() {
+    if (typeof WebSocket === "undefined") {
+      throw new Error("WebSockets not supported in current environment");
+    }
+
     // Clean up any previous connection state
     // Note: Never reset the message buffer, as there may be pending/unsent messages
     {
@@ -378,15 +389,26 @@ class WebSocketWorkerConnection implements WorkerConnection {
     const requestHandler = inngestCommHandler.createHandler();
 
     let attempt = 0;
+    let useSigningKey = hashedSigningKey;
     while (!this.isCanceled()) {
       try {
-        await this.prepareConnection(requestHandler, hashedSigningKey, data);
+        await this.prepareConnection(requestHandler, useSigningKey, data);
         return this;
       } catch (err) {
         this.debug("Failed to connect", err);
 
         if (!(err instanceof ReconnectError)) {
           throw err;
+        }
+
+        if (err instanceof AuthError) {
+          const switchToFallback = useSigningKey === hashedSigningKey;
+          if (switchToFallback) {
+            this.debug("Switching to fallback signing key");
+          }
+          useSigningKey = switchToFallback
+            ? hashedFallbackKey
+            : hashedSigningKey;
         }
 
         const delay = expBackoff(attempt);
@@ -407,6 +429,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
   private setupHeartbeat(ws: WebSocket, hashedSigningKey: string | undefined) {
     const currentConnId = this._connectionId;
+
     const cancel = setInterval(() => {
       if (currentConnId !== this._connectionId) {
         this.debug("Connection ID changed, stopping heartbeat");
@@ -442,7 +465,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
         this.messageBuffer.flush(hashedSigningKey);
       }, WorkerHeartbeatInterval / 2);
     }, WorkerHeartbeatInterval);
-    this._cleanup.push(() => clearInterval(cancel));
+
+    return () => {
+      this.debug("Clearing heartbeat interval");
+      clearInterval(cancel);
+    };
   }
 
   private async prepareConnection(
@@ -464,19 +491,33 @@ class WebSocketWorkerConnection implements WorkerConnection {
       headers[headerKeys.Environment] = this.inngest.env;
     }
 
-    const resp = await fetch(
-      // refactor this to a more universal spot
-      await this.inngest["inngestApi"]["getTargetUrl"]("/v0/connect/start"),
-      {
+    // refactor this to a more universal spot
+    const targetUrl =
+      await this.inngest["inngestApi"]["getTargetUrl"]("/v0/connect/start");
+
+    let resp;
+    try {
+      resp = await fetch(targetUrl, {
         method: "POST",
         body: msg,
         headers: headers,
-      }
-    );
+      });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : "Unknown error";
+      throw new ReconnectError(
+        `Failed initial API handshake request to ${targetUrl.toString()}, ${errMsg}`
+      );
+    }
 
     if (!resp.ok) {
+      if (resp.status === 401) {
+        throw new AuthError(
+          `Failed initial API handshake request to ${targetUrl.toString()}, ${await resp.text()}`
+        );
+      }
+
       throw new ReconnectError(
-        `Failed to prepare connection, ${await resp.text()}`
+        `Failed initial API handshake request to ${targetUrl.toString()}, ${await resp.text()}`
       );
     }
 
@@ -485,10 +526,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
     const connectionId = ulid();
 
     this._connectionId = connectionId;
-
-    if (typeof WebSocket === "undefined") {
-      throw new Error("WebSockets not supported in current environment");
-    }
 
     let resolveWebsocketConnected:
       | ((value: void | PromiseLike<void>) => void)
@@ -714,10 +751,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     await websocketConnectedPromise;
 
-    this.setupHeartbeat(ws, hashedSigningKey);
+    const heartbeatCleanup = this.setupHeartbeat(ws, hashedSigningKey);
+    this._cleanup.push(heartbeatCleanup);
 
     const closeConnectionCleanup = async () => {
       if (ws.readyState !== WebSocket.OPEN) {
+        this.debug("WebSocket is not open, skipping graceful shutdown cleanup");
         return;
       }
 
