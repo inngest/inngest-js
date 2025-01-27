@@ -1,5 +1,3 @@
-import type { Inngest } from "inngest";
-import { SDKResponse } from "inngest/proto/src/components/connect/protobuf/connect.js";
 import { type RegisterOptions } from "../../types.js";
 import { type InngestFunction } from "../InngestFunction.js";
 
