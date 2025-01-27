@@ -379,8 +379,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     let useSigningKey = hashedSigningKey;
     while (
-      this.state !== ConnectionState.CLOSING &&
-      this.state !== ConnectionState.CLOSED
+      ![ConnectionState.CLOSING, ConnectionState.CLOSED].includes(this.state)
     ) {
       try {
         await this.prepareConnection(
