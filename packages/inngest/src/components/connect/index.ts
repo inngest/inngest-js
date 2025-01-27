@@ -33,14 +33,12 @@ import {
 } from "./types.js";
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
+import { retrieveSystemAttributes } from "./os.js";
 
 const ResponseAcknowlegeDeadline = 5_000;
 const WorkerHeartbeatInterval = 10_000;
 
 interface connectionEstablishData {
-  numCpuCores: number;
-  totalMem: number;
-  os: string;
   marshaledFunctions: string;
   marshaledCapabilities: string;
   manualReadinessAck: boolean;
@@ -278,11 +276,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     const data: connectionEstablishData = {
       manualReadinessAck: false,
-
-      // "os" for these with optional import
-      numCpuCores: 0,
-      totalMem: 0,
-      os: "linux", // TODO Retrieve this
 
       marshaledCapabilities: JSON.stringify(capabilities),
       marshaledFunctions: JSON.stringify(functions),
@@ -629,11 +622,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
             sdkLanguage: "typescript",
             framework: "connect",
             workerManualReadinessAck: data.manualReadinessAck,
-            systemAttributes: {
-              cpuCores: data.numCpuCores,
-              memBytes: data.totalMem,
-              os: data.os,
-            },
+            systemAttributes: await retrieveSystemAttributes(),
             authData: {
               sessionToken: startResp.sessionToken,
               syncToken: startResp.syncToken,
