@@ -1,3 +1,5 @@
+import type { Inngest } from "inngest";
+import { SDKResponse } from "inngest/proto/src/components/connect/protobuf/connect.js";
 import { type RegisterOptions } from "../../types.js";
 import { type InngestFunction } from "../InngestFunction.js";
 
@@ -16,4 +18,13 @@ export interface WorkerConnection {
   connectionId: string;
   closed: Promise<void>;
   close: () => Promise<void>;
+  state: ConnectionState;
+}
+
+export enum ConnectionState {
+  CONNECTING = "CONNECTING",
+  ACTIVE = "ACTIVE",
+  PAUSED = "PAUSED",
+  RECONNECTING = "RECONNECTING",
+  CLOSED = "CLOSED",
 }

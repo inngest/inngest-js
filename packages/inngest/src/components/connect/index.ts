@@ -25,7 +25,11 @@ import {
   parseStartResponse,
   parseWorkerReplyAck,
 } from "./messages.js";
-import { type ConnectHandlerOptions, type WorkerConnection } from "./types.js";
+import {
+  ConnectionState,
+  type ConnectHandlerOptions,
+  type WorkerConnection,
+} from "./types.js";
 import { WaitGroup } from "@jpwilliams/waitgroup";
 
 const ResponseAcknowlegeDeadline = 5_000;
@@ -52,14 +56,6 @@ class ReconnectError extends Error {
     super(message);
     this.name = "ReconnectError";
   }
-}
-
-enum ConnectionState {
-  CONNECTING,
-  ACTIVE,
-  PAUSED,
-  RECONNECTING,
-  CLOSED,
 }
 
 class MessageBuffer {
@@ -164,7 +160,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
   private ctx: AbortController;
   private _cleanup: (() => void | Promise<void>)[] = [];
 
-  private state: ConnectionState = ConnectionState.CONNECTING;
+  public state: ConnectionState = ConnectionState.CONNECTING;
   private inProgressRequests = new WaitGroup();
   private closingPromise: Promise<void> | undefined;
   private currentWs: WebSocket | undefined;
