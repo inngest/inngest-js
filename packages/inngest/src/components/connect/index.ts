@@ -169,12 +169,16 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
   private inngest: Inngest.Any;
 
-  private ctx: AbortController;
   private _cleanup: (() => void | Promise<void>)[] = [];
 
   public state: ConnectionState = ConnectionState.CONNECTING;
   private inProgressRequests = new WaitGroup();
+
   private closingPromise: Promise<void> | undefined;
+  private resolveClosingPromise:
+    | ((value: void | PromiseLike<void>) => void)
+    | undefined;
+
   private currentWs: WebSocket | undefined;
 
   private lastGatewayHeartbeatAt: Date | undefined;
@@ -196,16 +200,20 @@ class WebSocketWorkerConnection implements WorkerConnection {
   constructor(inngest: Inngest.Any, options: ConnectHandlerOptions) {
     this.inngest = inngest;
     this.options = options;
-    this.ctx = new AbortController();
     this.messageBuffer = new MessageBuffer(inngest);
     this.debug = debug("inngest:connect");
+
+    this.closingPromise = new Promise((resolve) => {
+      this.resolveClosingPromise = resolve;
+    });
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async close(): Promise<void> {
-    this.ctx.abort();
+    this.state = ConnectionState.CLOSING;
     await this.cleanup();
     this.state = ConnectionState.CLOSED;
+    this.resolveClosingPromise?.();
     return this.closed;
   }
 
@@ -223,14 +231,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
     return this._connectionId;
   }
 
-  private isCanceled() {
-    const signals: AbortSignal[] = [this.ctx.signal];
-    if (this.options.abortSignal) {
-      signals.push(this.options.abortSignal);
-    }
-    return AbortSignal.any(signals).aborted;
-  }
-
   private async cleanup() {
     for (const cleanup of this._cleanup) {
       await cleanup();
@@ -241,6 +241,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
   public async connect(attempt = 0) {
     if (typeof WebSocket === "undefined") {
       throw new Error("WebSockets not supported in current environment");
+    }
+
+    if (this.state === ConnectionState.CLOSED) {
+      this.state = ConnectionState.CONNECTING;
     }
 
     this.debug("Establishing connection");
@@ -374,7 +378,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
     const requestHandler = inngestCommHandler.createHandler();
 
     let useSigningKey = hashedSigningKey;
-    while (!this.isCanceled()) {
+    while (
+      this.state !== ConnectionState.CLOSING &&
+      this.state !== ConnectionState.CLOSED
+    ) {
       try {
         await this.prepareConnection(
           requestHandler,
@@ -687,13 +694,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
         }
       }
 
-      // Run loop
-      if (this.isCanceled()) {
-        this.debug("Connection is canceled, returning early");
-        // TODO Handle abort closure
-        return;
-      }
-
       if (connectMessage.kind === GatewayMessageType.GATEWAY_CLOSING) {
         try {
           // Wait for new conn to be successfully established
@@ -717,6 +717,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_EXECUTOR_REQUEST) {
+        if (this.state !== ConnectionState.ACTIVE) {
+          this.debug("Received request while not active, skipping");
+          return;
+        }
+
         const gatewayExecutorRequest = parseGatewayExecutorRequest(
           connectMessage.payload
         );
@@ -802,18 +807,15 @@ class WebSocketWorkerConnection implements WorkerConnection {
     this._cleanup.push(heartbeatCleanup);
 
     const closeConnectionCleanup = async () => {
-      if (ws.readyState !== WebSocket.OPEN) {
-        this.debug("WebSocket is not open, skipping graceful shutdown cleanup");
-        return;
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          ConnectMessage.encode(
+            ConnectMessage.create({
+              kind: GatewayMessageType.WORKER_PAUSE,
+            })
+          ).finish()
+        );
       }
-
-      ws.send(
-        ConnectMessage.encode(
-          ConnectMessage.create({
-            kind: GatewayMessageType.WORKER_PAUSE,
-          })
-        ).finish()
-      );
 
       // Wait for remaining messages to be processed
       await this.inProgressRequests.wait();

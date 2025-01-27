@@ -24,5 +24,6 @@ export enum ConnectionState {
   ACTIVE = "ACTIVE",
   PAUSED = "PAUSED",
   RECONNECTING = "RECONNECTING",
+  CLOSING = "CLOSING",
   CLOSED = "CLOSED",
 }
