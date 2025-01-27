@@ -183,6 +183,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
   private messageBuffer: MessageBuffer;
 
+  private _excludeGateways: Set<string> = new Set();
+
   private setupState = {
     receivedGatewayHello: false,
     sentWorkerConnect: false,
@@ -493,7 +495,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
 
     const startedAt = new Date();
-    const msg = createStartRequest();
+    const msg = createStartRequest(Array.from(this._excludeGateways));
 
     const headers: Record<string, string> = {
       "Content-Type": "application/protobuf",
@@ -556,6 +558,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     });
 
     const connectTimeout = setTimeout(() => {
+      this._excludeGateways.add(startResp.gatewayGroup);
       rejectWebsocketConnected?.(
         new ReconnectError("Connection timed out", attempt)
       );
@@ -568,6 +571,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
       errored = true;
       this.state = ConnectionState.RECONNECTING;
+      this._excludeGateways.add(startResp.gatewayGroup);
 
       this.debug("Connection error", error);
       // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -600,6 +604,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       {
         if (!this.setupState.receivedGatewayHello) {
           if (connectMessage.kind !== GatewayMessageType.GATEWAY_HELLO) {
+            this._excludeGateways.add(startResp.gatewayGroup);
             rejectWebsocketConnected?.(
               new ReconnectError(
                 `Expected hello message, got ${gatewayMessageTypeToJSON(
@@ -668,6 +673,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           if (
             connectMessage.kind !== GatewayMessageType.GATEWAY_CONNECTION_READY
           ) {
+            this._excludeGateways.add(startResp.gatewayGroup);
             rejectWebsocketConnected?.(
               new ReconnectError(
                 `Expected ready message, got ${gatewayMessageTypeToJSON(
@@ -686,6 +692,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           this.currentWs = ws;
           this.debug("Connection ready");
           attempt = 0;
+          this._excludeGateways.delete(startResp.gatewayGroup);
 
           return;
         }

@@ -6,8 +6,12 @@ import {
   WorkerReplyAckData,
 } from "../../proto/src/components/connect/protobuf/connect.js";
 
-export function createStartRequest() {
-  return StartRequest.encode(StartRequest.create({})).finish();
+export function createStartRequest(excludeGateways: string[]) {
+  return StartRequest.encode(
+    StartRequest.create({
+      excludeGateways,
+    })
+  ).finish();
 }
 
 export async function parseStartResponse(r: Response) {
