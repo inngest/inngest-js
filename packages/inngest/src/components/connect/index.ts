@@ -485,6 +485,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
       this._connectionId = undefined;
       this.lastGatewayHeartbeatAt = undefined;
 
+      // Flush any pending messages
+      await this.messageBuffer.flush(hashedSigningKey);
+
       // Run all cleanup functions to stop heartbeats, etc.
       await this.cleanup();
     }
