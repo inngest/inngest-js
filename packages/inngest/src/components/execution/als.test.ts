@@ -7,6 +7,11 @@ describe("getAsyncLocalStorage", () => {
   afterEach(() => {
     jest.unmock("node:async_hooks");
     jest.resetModules();
+
+    // kill the global used for storing ALS state
+    delete (globalThis as Record<string | symbol | number, unknown>)[
+      Symbol.for("inngest:als")
+    ];
   });
 
   test("should return an `AsyncLocalStorageIsh`", async () => {
@@ -59,6 +64,11 @@ describe("getAsyncCtx", () => {
   afterEach(() => {
     jest.unmock("node:async_hooks");
     jest.resetModules();
+
+    // kill the global used for storing ALS state
+    delete (globalThis as Record<string | symbol | number, unknown>)[
+      Symbol.for("inngest:als")
+    ];
   });
 
   test("should return `undefined` outside of an Inngest async context", async () => {
