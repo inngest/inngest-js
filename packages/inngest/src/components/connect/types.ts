@@ -16,4 +16,14 @@ export interface WorkerConnection {
   connectionId: string;
   closed: Promise<void>;
   close: () => Promise<void>;
+  state: ConnectionState;
+}
+
+export enum ConnectionState {
+  CONNECTING = "CONNECTING",
+  ACTIVE = "ACTIVE",
+  PAUSED = "PAUSED",
+  RECONNECTING = "RECONNECTING",
+  CLOSING = "CLOSING",
+  CLOSED = "CLOSED",
 }

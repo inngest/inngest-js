@@ -16,8 +16,10 @@ inngest["connect"]({
       { id: "test-function" },
       { event: "connect-demo/test" },
       async ({ step }) => {
-        await step.run("test", () => {
+        await step.run("test", async () => {
           console.log("via connect!");
+          await new Promise((resolve) => setTimeout(resolve, 10000));
+          console.log("function done");
           return "this works";
         });
       }
@@ -30,4 +32,8 @@ inngest["connect"]({
   //     baseUrl: "http://127.0.0.1:8288",
 }).then((conn) => {
   console.log("Connected!", conn.connectionId);
+
+  setInterval(() => {
+    console.log("State:", conn.state);
+  }, 1000);
 });
