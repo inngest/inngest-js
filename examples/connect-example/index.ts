@@ -1,12 +1,12 @@
 import { Inngest } from "inngest";
 
+console.log("Starting up worker with pid", process.pid);
+
 const inngest = new Inngest({
   id: "my-connect-js-app",
   eventKey: "abc123",
   buildId: "v1.0",
 });
-
-const abort = new AbortController();
 
 console.log("Connecting...");
 
@@ -28,7 +28,6 @@ inngest["connect"]({
   instanceId: "my-worker",
   signingKey: "signkey-test-12345678",
   signingKeyFallback: "signkey-test-00000000",
-  abortSignal: abort.signal,
   //     baseUrl: "http://127.0.0.1:8288",
 }).then((conn) => {
   console.log("Connected!", conn.connectionId);

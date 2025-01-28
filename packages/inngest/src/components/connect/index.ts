@@ -1,4 +1,4 @@
-import { InngestCommHandler } from "inngest";
+import { InngestCommHandler } from "../InngestCommHandler.js";
 import { ulid } from "ulid";
 import { headerKeys, queryKeys } from "../../helpers/consts.js";
 import { allProcessEnv, getPlatformName } from "../../helpers/env.js";
@@ -6,7 +6,6 @@ import { parseFnData } from "../../helpers/functions.js";
 import { hashSigningKey } from "../../helpers/strings.js";
 import {
   ConnectMessage,
-  FlushResponse,
   type GatewayExecutorRequestData,
   GatewayMessageType,
   gatewayMessageTypeToJSON,
@@ -28,12 +27,15 @@ import {
 } from "./messages.js";
 import {
   ConnectionState,
+  DEFAULT_SHUTDOWN_SIGNALS,
   type ConnectHandlerOptions,
   type WorkerConnection,
 } from "./types.js";
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
-import { retrieveSystemAttributes } from "./os.js";
+import { onShutdown, retrieveSystemAttributes } from "./os.js";
+import { MessageBuffer } from "./buffer.js";
+import { expBackoff, AuthError, ReconnectError } from "./util.js";
 
 const ResponseAcknowlegeDeadline = 5_000;
 const WorkerHeartbeatInterval = 10_000;
@@ -51,142 +53,77 @@ type ConnectCommHandler = InngestCommHandler<
   any
 >;
 
-class ReconnectError extends Error {
-  constructor(
-    message: string,
-    public attempt: number
-  ) {
-    super(message);
-    this.name = "ReconnectError";
-  }
-}
-
-class AuthError extends ReconnectError {
-  constructor(message: string, attempt: number) {
-    super(message, attempt);
-    this.name = "AuthError";
-  }
-}
-
-class MessageBuffer {
-  private buffered: Record<string, SDKResponse> = {};
-  private pending: Record<string, SDKResponse> = {};
-  private inngest: Inngest.Any;
-  private debug: Debugger;
-
-  constructor(inngest: Inngest.Any) {
-    this.inngest = inngest;
-    this.debug = debug("inngest:connect:message-buffer");
-  }
-
-  public append(response: SDKResponse) {
-    this.buffered[response.requestId] = response;
-    delete this.pending[response.requestId];
-  }
-
-  public addPending(response: SDKResponse, deadline: number) {
-    this.pending[response.requestId] = response;
-    setTimeout(() => {
-      if (this.pending[response.requestId]) {
-        this.debug("Message not acknowledged in time", response.requestId);
-        this.append(response);
-      }
-    }, deadline);
-  }
-
-  public acknowledgePending(requestId: string) {
-    delete this.pending[requestId];
-  }
-
-  private async sendFlushRequest(
-    hashedSigningKey: string | undefined,
-    msg: SDKResponse
-  ) {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/protobuf",
-      ...(hashedSigningKey
-        ? { Authorization: `Bearer ${hashedSigningKey}` }
-        : {}),
-    };
-
-    if (this.inngest.env) {
-      headers[headerKeys.Environment] = this.inngest.env;
-    }
-
-    const resp = await fetch(
-      // refactor this to a more universal spot
-      await this.inngest["inngestApi"]["getTargetUrl"]("/v0/connect/flush"),
-      {
-        method: "POST",
-        body: SDKResponse.encode(msg).finish(),
-        headers: headers,
-      }
-    );
-
-    if (!resp.ok) {
-      this.debug("Failed to flush messages", await resp.text());
-      throw new Error("Failed to flush messages");
-    }
-
-    const flushResp = FlushResponse.decode(
-      new Uint8Array(await resp.arrayBuffer())
-    );
-
-    return flushResp;
-  }
-
-  public async flush(hashedSigningKey: string | undefined) {
-    if (Object.keys(this.buffered).length === 0) {
-      return;
-    }
-
-    this.debug(`Flushing ${Object.keys(this.buffered).length} messages`);
-
-    for (let attempt = 0; attempt < 5; attempt++) {
-      for (const [k, v] of Object.entries(this.buffered)) {
-        try {
-          await this.sendFlushRequest(hashedSigningKey, v);
-          delete this.buffered[k];
-        } catch (err) {
-          this.debug("Failed to flush message", k, err);
-          break;
-        }
-      }
-
-      if (Object.keys(this.buffered).length === 0) {
-        return;
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, expBackoff(attempt)));
-    }
-
-    throw new Error("Failed to flush messages");
-  }
-}
-
 class WebSocketWorkerConnection implements WorkerConnection {
+  /**
+   * The current connection ID of the worker.
+   *
+   * Will be updated for every new connection attempt.
+   */
   public _connectionId: string | undefined;
 
   private inngest: Inngest.Any;
 
+  /**
+   * The cleanup functions to be run when the connection is closed.
+   *
+   * These are specific to each connection attempt.
+   */
   private _cleanup: (() => void | Promise<void>)[] = [];
 
+  /**
+   * Function to remove the shutdown signal handler.
+   */
+  private cleanupShutdownSignal: (() => void) | undefined;
+
+  /**
+   * The cleanup function to be run when initiating shutdown.
+   *
+   * This should always run in case the previous connection was already shut down.
+   */
+  private cleanupBeforeClose: (() => void | Promise<void>) | undefined;
+
+  /**
+   * The current state of the connection.
+   */
   public state: ConnectionState = ConnectionState.CONNECTING;
+
+  /**
+   * A wait group to track in-flight requests.
+   */
   private inProgressRequests = new WaitGroup();
 
+  /**
+   * A promise that resolves when the connection is closed on behalf of the
+   * user by calling `close()` or when a shutdown signal is received.
+   */
   private closingPromise: Promise<void> | undefined;
   private resolveClosingPromise:
     | ((value: void | PromiseLike<void>) => void)
     | undefined;
 
+  /**
+   * The current WebSocket connection.
+   */
   private currentWs: WebSocket | undefined;
 
+  /**
+   * The last time the gateway heartbeat was received.
+   */
   private lastGatewayHeartbeatAt: Date | undefined;
 
+  /**
+   * The buffer of messages to be sent to the gateway.
+   */
   private messageBuffer: MessageBuffer;
 
+  /**
+   * A set of gateways to exclude from the connection.
+   */
   private _excludeGateways: Set<string> = new Set();
 
+  /**
+   * The current setup state of the connection.
+   */
   private setupState = {
     receivedGatewayHello: false,
     sentWorkerConnect: false,
@@ -199,7 +136,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
   constructor(inngest: Inngest.Any, options: ConnectHandlerOptions) {
     this.inngest = inngest;
-    this.options = options;
+
+    this.options = this.applyDefaults(options);
+
     this.messageBuffer = new MessageBuffer(inngest);
     this.debug = debug("inngest:connect");
 
@@ -208,15 +147,50 @@ class WebSocketWorkerConnection implements WorkerConnection {
     });
   }
 
+  private applyDefaults(opts: ConnectHandlerOptions): ConnectHandlerOptions {
+    const options = { ...opts };
+    if (!Array.isArray(options.handleShutdownSignals)) {
+      options.handleShutdownSignals = DEFAULT_SHUTDOWN_SIGNALS;
+    }
+    return options;
+  }
+
   // eslint-disable-next-line @typescript-eslint/require-await
   async close(): Promise<void> {
+    // Remove the shutdown signal handler
+    if (this.cleanupShutdownSignal) {
+      this.cleanupShutdownSignal();
+      this.cleanupShutdownSignal = undefined;
+    }
+
     this.state = ConnectionState.CLOSING;
+
+    this.debug("Cleaning up connection resources");
+
+    // Run all cleanup functions to stop heartbeats, etc.
+    // If the previous connection was already closed, this will be a no-op.
     await this.cleanup();
+
+    // In case the previous connection disconnected, we still need to wait for all
+    // in-flight requests to complete and flush buffered messages.
+    if (this.cleanupBeforeClose) {
+      this.debug("Running cleanup before close");
+      await this.cleanupBeforeClose();
+      this.cleanupBeforeClose = undefined;
+    }
+
     this.state = ConnectionState.CLOSED;
+
+    this.debug("Connection closed");
+
     this.resolveClosingPromise?.();
     return this.closed;
   }
 
+  /**
+   * A promise that resolves when the connection is closed on behalf of the
+   * user by calling `close()` or when a shutdown signal is received.
+   */
   get closed(): Promise<void> {
     if (!this.closingPromise) {
       throw new Error("No connection established");
@@ -224,6 +198,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
     return this.closingPromise;
   }
 
+  /**
+   * The current connection ID of the worker.
+   */
   get connectionId(): string {
     if (!this._connectionId) {
       throw new Error("Connection not prepared");
@@ -231,6 +208,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
     return this._connectionId;
   }
 
+  /**
+   * Run all cleanup functions to stop heartbeats, etc.
+   */
   private async cleanup() {
     for (const cleanup of this._cleanup) {
       await cleanup();
@@ -238,13 +218,19 @@ class WebSocketWorkerConnection implements WorkerConnection {
     this._cleanup = [];
   }
 
+  /**
+   * Establish a persistent connection to the gateway.
+   */
   public async connect(attempt = 0) {
     if (typeof WebSocket === "undefined") {
       throw new Error("WebSockets not supported in current environment");
     }
 
-    if (this.state === ConnectionState.CLOSED) {
-      this.state = ConnectionState.CONNECTING;
+    if (
+      this.state === ConnectionState.CLOSING ||
+      this.state === ConnectionState.CLOSED
+    ) {
+      throw new Error("Connection already closed");
     }
 
     this.debug("Establishing connection");
@@ -376,6 +362,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
       },
     });
     const requestHandler = inngestCommHandler.createHandler();
+
+    if (
+      this.options.handleShutdownSignals &&
+      this.options.handleShutdownSignals.length > 0
+    ) {
+      this.setupShutdownSignal(this.options.handleShutdownSignals);
+    }
 
     let useSigningKey = hashedSigningKey;
     while (
@@ -565,10 +558,20 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     let errored = false;
     const onConnectionError = (error: unknown) => {
+      // Don't attempt to reconnect if we're already closing or closed
+      if (
+        this.state === ConnectionState.CLOSING ||
+        this.state === ConnectionState.CLOSED
+      ) {
+        return;
+      }
+
+      // Only process the first error per connection
       if (errored) {
         return;
       }
       errored = true;
+
       this.state = ConnectionState.RECONNECTING;
       this._excludeGateways.add(startResp.gatewayGroup);
 
@@ -806,7 +809,16 @@ class WebSocketWorkerConnection implements WorkerConnection {
     this._cleanup.push(heartbeatCleanup);
 
     const closeConnectionCleanup = async () => {
+      const isShutdown =
+        this.state === ConnectionState.CLOSING ||
+        this.state === ConnectionState.CLOSED;
+
+      if (isShutdown) {
+        this.debug("Running graceful shutdown");
+      }
+
       if (ws.readyState === WebSocket.OPEN) {
+        this.debug("Sending pause message");
         ws.send(
           ConnectMessage.encode(
             ConnectMessage.create({
@@ -816,16 +828,40 @@ class WebSocketWorkerConnection implements WorkerConnection {
         );
       }
 
-      // Wait for remaining messages to be processed
-      await this.inProgressRequests.wait();
+      if (isShutdown) {
+        this.debug("Waiting for remaining messages to be processed");
 
-      await this.messageBuffer.flush(hashedSigningKey);
+        // Wait for remaining messages to be processed
+        await this.inProgressRequests.wait();
 
+        await this.messageBuffer.flush(hashedSigningKey);
+      }
+
+      this.debug("Closing connection");
       ws.close();
     };
     this._cleanup.push(closeConnectionCleanup);
+    this.cleanupBeforeClose = closeConnectionCleanup;
 
     return;
+  }
+
+  private setupShutdownSignal(signals: string[]) {
+    if (this.cleanupShutdownSignal) {
+      return;
+    }
+
+    this.debug(`Setting up shutdown signal handler for ${signals.join(", ")}`);
+
+    const cleanupShutdownHandlers = onShutdown(signals, () => {
+      this.debug("Received shutdown signal, closing connection");
+      void this.close();
+    });
+
+    this.cleanupShutdownSignal = () => {
+      this.debug("Cleaning up shutdown signal handler");
+      cleanupShutdownHandlers();
+    };
   }
 }
 
@@ -840,11 +876,3 @@ export const connect = async (
 
   return conn;
 };
-
-function expBackoff(attempt: number) {
-  const backoffTimes = [
-    1000, 2000, 5000, 10000, 20000, 30000, 60000, 120000, 300000,
-  ];
-  // If attempt exceeds array length, use the last (maximum) value
-  return backoffTimes[Math.min(attempt, backoffTimes.length - 1)];
-}
