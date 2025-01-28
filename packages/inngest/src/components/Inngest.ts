@@ -19,6 +19,7 @@ import {
 } from "../helpers/env.js";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.js";
 import { type Jsonify } from "../helpers/jsonify.js";
+import { retryWithBackoff } from "../helpers/promises.js";
 import { stringify } from "../helpers/strings.js";
 import {
   type AsArray,
@@ -561,26 +562,36 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       }
     }
 
-    // We don't need to do fallback auth here because this uses event keys and
-    // not signing keys
-    const response = await this.fetch(url, {
-      method: "POST",
-      body: stringify(payloads),
-      headers: { ...this.headers, ...headers },
-    });
+    const body = await retryWithBackoff(
+      async () => {
+        let body: SendEventResponse | undefined;
 
-    let body: SendEventResponse | undefined;
+        // We don't need to do fallback auth here because this uses event keys and
+      // not signing keys
+      const response = await this.fetch(url, {
+        method: "POST",
+        body: stringify(payloads),
+        headers: { ...this.headers, ...headers },
+      });
 
-    try {
-      const rawBody: unknown = await response.json();
-      body = await sendEventResponseSchema.parseAsync(rawBody);
+      try {
+        const rawBody: unknown = await response.json();
+        body = await sendEventResponseSchema.parseAsync(rawBody);
     } catch (err) {
       throw await this.getResponseError(response);
     }
 
     if (body.status / 100 !== 2 || body.error) {
-      throw await this.getResponseError(response, body.error);
-    }
+        throw await this.getResponseError(response, body.error);
+        }
+
+        return body;
+      },
+      {
+        maxAttempts: 5,
+        baseDelay: 100,
+      }
+    );
 
     return await applyHookToOutput({ result: { ids: body.ids } });
   }
