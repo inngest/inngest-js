@@ -13,6 +13,8 @@ declare const Deno: {
   systemMemoryInfo: () => {
     total: number;
   };
+  addSignalListener: (signal: string, fn: () => void) => void;
+  removeSignalListener: (signal: string, fn: () => void) => void;
 };
 
 async function retrieveCpuCores() {
@@ -76,4 +78,40 @@ async function retrieveOs() {
   }
 
   return "unknown";
+}
+
+export function onShutdown(fn: () => void) {
+  // Deno
+  try {
+    if (Deno) {
+      Deno.addSignalListener("SIGINT", fn);
+      Deno.addSignalListener("SIGTERM", fn);
+      return () => {
+        Deno.removeSignalListener("SIGINT", fn);
+        Deno.removeSignalListener("SIGTERM", fn);
+      };
+    }
+  } catch (err) {
+    // no-op
+  }
+
+  // Node, Bun
+  try {
+    if (process) {
+      // eslint-disable-next-line @inngest/internal/process-warn
+      process.on("SIGINT", fn);
+      // eslint-disable-next-line @inngest/internal/process-warn
+      process.on("SIGTERM", fn);
+      return () => {
+        // eslint-disable-next-line @inngest/internal/process-warn
+        process.removeListener("SIGINT", fn);
+        // eslint-disable-next-line @inngest/internal/process-warn
+        process.removeListener("SIGTERM", fn);
+      };
+    }
+  } catch (err) {
+    // no-op
+  }
+
+  return () => {};
 }

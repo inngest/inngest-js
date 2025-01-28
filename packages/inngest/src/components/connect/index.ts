@@ -33,7 +33,7 @@ import {
 } from "./types.js";
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
-import { retrieveSystemAttributes } from "./os.js";
+import { onShutdown, retrieveSystemAttributes } from "./os.js";
 
 const ResponseAcknowlegeDeadline = 5_000;
 const WorkerHeartbeatInterval = 10_000;
@@ -211,8 +211,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
   // eslint-disable-next-line @typescript-eslint/require-await
   async close(): Promise<void> {
     this.state = ConnectionState.CLOSING;
+
+    this.debug("Cleaning up");
     await this.cleanup();
     this.state = ConnectionState.CLOSED;
+
+    this.debug("Connection closed");
+
     this.resolveClosingPromise?.();
     return this.closed;
   }
@@ -243,8 +248,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
       throw new Error("WebSockets not supported in current environment");
     }
 
-    if (this.state === ConnectionState.CLOSED) {
-      this.state = ConnectionState.CONNECTING;
+    if (
+      this.state === ConnectionState.CLOSING ||
+      this.state === ConnectionState.CLOSED
+    ) {
+      throw new Error("Connection already closed");
     }
 
     this.debug("Establishing connection");
@@ -565,10 +573,20 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     let errored = false;
     const onConnectionError = (error: unknown) => {
+      // Don't attempt to reconnect if we're already closing or closed
+      if (
+        this.state === ConnectionState.CLOSING ||
+        this.state === ConnectionState.CLOSED
+      ) {
+        return;
+      }
+
+      // Only process the first error per connection
       if (errored) {
         return;
       }
       errored = true;
+
       this.state = ConnectionState.RECONNECTING;
       this._excludeGateways.add(startResp.gatewayGroup);
 
@@ -806,7 +824,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
     this._cleanup.push(heartbeatCleanup);
 
     const closeConnectionCleanup = async () => {
+      this.debug("Running graceful shutdown");
+
       if (ws.readyState === WebSocket.OPEN) {
+        this.debug("Sending pause message");
         ws.send(
           ConnectMessage.encode(
             ConnectMessage.create({
@@ -816,16 +837,32 @@ class WebSocketWorkerConnection implements WorkerConnection {
         );
       }
 
+      this.debug("Waiting for remaining messages to be processed");
+
       // Wait for remaining messages to be processed
       await this.inProgressRequests.wait();
 
       await this.messageBuffer.flush(hashedSigningKey);
 
+      this.debug("Closing connection");
       ws.close();
     };
     this._cleanup.push(closeConnectionCleanup);
 
+    if (!this.options.disableShutdownSignalHandling) {
+      this.debug("Setting up shutdown signal");
+      this.setupShutdownSignal();
+    }
+
     return;
+  }
+
+  private setupShutdownSignal() {
+    const cleanupShutdownHandlers = onShutdown(() => {
+      this.debug("Received shutdown signal, closing connection");
+      void this.close();
+    });
+    this._cleanup.push(cleanupShutdownHandlers);
   }
 }
 

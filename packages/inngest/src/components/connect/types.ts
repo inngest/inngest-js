@@ -9,7 +9,12 @@ export interface ConnectHandlerOptions extends RegisterOptions {
 
   instanceId: string;
   maxConcurrency?: number;
-  abortSignal?: AbortSignal;
+
+  /**
+   * By default, connections will be gracefully shut down when the current
+   * process is terminated. Set this to true to disable this behavior.
+   */
+  disableShutdownSignalHandling?: boolean;
 }
 
 export interface WorkerConnection {
