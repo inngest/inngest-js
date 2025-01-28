@@ -54,30 +54,76 @@ type ConnectCommHandler = InngestCommHandler<
 >;
 
 class WebSocketWorkerConnection implements WorkerConnection {
+  /**
+   * The current connection ID of the worker.
+   *
+   * Will be updated for every new connection attempt.
+   */
   public _connectionId: string | undefined;
 
   private inngest: Inngest.Any;
 
+  /**
+   * The cleanup functions to be run when the connection is closed.
+   *
+   * These are specific to each connection attempt.
+   */
   private _cleanup: (() => void | Promise<void>)[] = [];
+
+  /**
+   * Function to remove the shutdown signal handler.
+   */
   private cleanupShutdownSignal: (() => void) | undefined;
+
+  /**
+   * The cleanup function to be run when initiating shutdown.
+   *
+   * This should always run in case the previous connection was already shut down.
+   */
   private cleanupBeforeClose: (() => void | Promise<void>) | undefined;
 
+  /**
+   * The current state of the connection.
+   */
   public state: ConnectionState = ConnectionState.CONNECTING;
+
+  /**
+   * A wait group to track in-flight requests.
+   */
   private inProgressRequests = new WaitGroup();
 
+  /**
+   * A promise that resolves when the connection is closed on behalf of the
+   * user by calling `close()` or when a shutdown signal is received.
+   */
   private closingPromise: Promise<void> | undefined;
   private resolveClosingPromise:
     | ((value: void | PromiseLike<void>) => void)
     | undefined;
 
+  /**
+   * The current WebSocket connection.
+   */
   private currentWs: WebSocket | undefined;
 
+  /**
+   * The last time the gateway heartbeat was received.
+   */
   private lastGatewayHeartbeatAt: Date | undefined;
 
+  /**
+   * The buffer of messages to be sent to the gateway.
+   */
   private messageBuffer: MessageBuffer;
 
+  /**
+   * A set of gateways to exclude from the connection.
+   */
   private _excludeGateways: Set<string> = new Set();
 
+  /**
+   * The current setup state of the connection.
+   */
   private setupState = {
     receivedGatewayHello: false,
     sentWorkerConnect: false,
@@ -119,21 +165,32 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this.state = ConnectionState.CLOSING;
 
-    this.debug("Cleaning up");
+    this.debug("Cleaning up connection resources");
+
+    // Run all cleanup functions to stop heartbeats, etc.
+    // If the previous connection was already closed, this will be a no-op.
     await this.cleanup();
-    this.state = ConnectionState.CLOSED;
 
-    this.debug("Connection closed");
-
+    // In case the previous connection disconnected, we still need to wait for all
+    // in-flight requests to complete and flush buffered messages.
     if (this.cleanupBeforeClose) {
+      this.debug("Running cleanup before close");
       await this.cleanupBeforeClose();
       this.cleanupBeforeClose = undefined;
     }
+
+    this.state = ConnectionState.CLOSED;
+
+    this.debug("Connection closed");
 
     this.resolveClosingPromise?.();
     return this.closed;
   }
 
+  /**
+   * A promise that resolves when the connection is closed on behalf of the
+   * user by calling `close()` or when a shutdown signal is received.
+   */
   get closed(): Promise<void> {
     if (!this.closingPromise) {
       throw new Error("No connection established");
@@ -141,6 +198,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
     return this.closingPromise;
   }
 
+  /**
+   * The current connection ID of the worker.
+   */
   get connectionId(): string {
     if (!this._connectionId) {
       throw new Error("Connection not prepared");
@@ -148,6 +208,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
     return this._connectionId;
   }
 
+  /**
+   * Run all cleanup functions to stop heartbeats, etc.
+   */
   private async cleanup() {
     for (const cleanup of this._cleanup) {
       await cleanup();
@@ -155,6 +218,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
     this._cleanup = [];
   }
 
+  /**
+   * Establish a persistent connection to the gateway.
+   */
   public async connect(attempt = 0) {
     if (typeof WebSocket === "undefined") {
       throw new Error("WebSockets not supported in current environment");
