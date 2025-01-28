@@ -171,6 +171,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
   private inngest: Inngest.Any;
 
   private _cleanup: (() => void | Promise<void>)[] = [];
+  private cleanupShutdownSignal: (() => void) | undefined;
 
   public state: ConnectionState = ConnectionState.CONNECTING;
   private inProgressRequests = new WaitGroup();
@@ -221,6 +222,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async close(): Promise<void> {
+    // Remove the shutdown signal handler
+    if (this.cleanupShutdownSignal) {
+      this.cleanupShutdownSignal();
+      this.cleanupShutdownSignal = undefined;
+    }
+
     this.state = ConnectionState.CLOSING;
 
     this.debug("Cleaning up");
@@ -395,6 +402,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
       },
     });
     const requestHandler = inngestCommHandler.createHandler();
+
+    if (
+      this.options.handleShutdownSignals &&
+      this.options.handleShutdownSignals.length > 0
+    ) {
+      this.setupShutdownSignal(this.options.handleShutdownSignals);
+    }
 
     let useSigningKey = hashedSigningKey;
     while (
@@ -860,27 +874,25 @@ class WebSocketWorkerConnection implements WorkerConnection {
     };
     this._cleanup.push(closeConnectionCleanup);
 
-    if (
-      this.options.handleShutdownSignals &&
-      this.options.handleShutdownSignals.length > 0
-    ) {
-      this.debug(
-        `Setting up shutdown signal handler for ${this.options.handleShutdownSignals.join(
-          ", "
-        )}`
-      );
-      this.setupShutdownSignal(this.options.handleShutdownSignals);
-    }
-
     return;
   }
 
   private setupShutdownSignal(signals: string[]) {
+    if (this.cleanupShutdownSignal) {
+      return;
+    }
+
+    this.debug(`Setting up shutdown signal handler for ${signals.join(", ")}`);
+
     const cleanupShutdownHandlers = onShutdown(signals, () => {
       this.debug("Received shutdown signal, closing connection");
       void this.close();
     });
-    this._cleanup.push(cleanupShutdownHandlers);
+
+    this.cleanupShutdownSignal = () => {
+      this.debug("Cleaning up shutdown signal handler");
+      cleanupShutdownHandlers();
+    };
   }
 }
 
