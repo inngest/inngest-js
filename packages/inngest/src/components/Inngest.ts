@@ -1,3 +1,4 @@
+import { ulid } from "ulid";
 import { InngestApi } from "../api/api.js";
 import {
   defaultDevServerHost,
@@ -488,6 +489,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     payloads = payloads.map((p) => {
       return {
         ...p,
+        // Always generate an idempotency ID for an event for retries
+        id: p.id || ulid(),
         ts: p.ts || new Date().getTime(),
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: p.data || {},
@@ -567,22 +570,22 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
         let body: SendEventResponse | undefined;
 
         // We don't need to do fallback auth here because this uses event keys and
-      // not signing keys
-      const response = await this.fetch(url, {
-        method: "POST",
-        body: stringify(payloads),
-        headers: { ...this.headers, ...headers },
-      });
+        // not signing keys
+        const response = await this.fetch(url, {
+          method: "POST",
+          body: stringify(payloads),
+          headers: { ...this.headers, ...headers },
+        });
 
-      try {
-        const rawBody: unknown = await response.json();
-        body = await sendEventResponseSchema.parseAsync(rawBody);
-    } catch (err) {
-      throw await this.getResponseError(response);
-    }
+        try {
+          const rawBody: unknown = await response.json();
+          body = await sendEventResponseSchema.parseAsync(rawBody);
+        } catch (err) {
+          throw await this.getResponseError(response);
+        }
 
-    if (body.status / 100 !== 2 || body.error) {
-        throw await this.getResponseError(response, body.error);
+        if (body.status / 100 !== 2 || body.error) {
+          throw await this.getResponseError(response, body.error);
         }
 
         return body;
