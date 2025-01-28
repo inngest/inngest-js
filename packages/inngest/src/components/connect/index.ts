@@ -28,6 +28,7 @@ import {
 } from "./messages.js";
 import {
   ConnectionState,
+  DEFAULT_SHUTDOWN_SIGNALS,
   type ConnectHandlerOptions,
   type WorkerConnection,
 } from "./types.js";
@@ -199,13 +200,23 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
   constructor(inngest: Inngest.Any, options: ConnectHandlerOptions) {
     this.inngest = inngest;
-    this.options = options;
+
+    this.options = this.applyDefaults(options);
+
     this.messageBuffer = new MessageBuffer(inngest);
     this.debug = debug("inngest:connect");
 
     this.closingPromise = new Promise((resolve) => {
       this.resolveClosingPromise = resolve;
     });
+  }
+
+  private applyDefaults(opts: ConnectHandlerOptions): ConnectHandlerOptions {
+    const options = { ...opts };
+    if (!Array.isArray(options.handleShutdownSignals)) {
+      options.handleShutdownSignals = DEFAULT_SHUTDOWN_SIGNALS;
+    }
+    return options;
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
@@ -849,16 +860,23 @@ class WebSocketWorkerConnection implements WorkerConnection {
     };
     this._cleanup.push(closeConnectionCleanup);
 
-    if (!this.options.disableShutdownSignalHandling) {
-      this.debug("Setting up shutdown signal");
-      this.setupShutdownSignal();
+    if (
+      this.options.handleShutdownSignals &&
+      this.options.handleShutdownSignals.length > 0
+    ) {
+      this.debug(
+        `Setting up shutdown signal handler for ${this.options.handleShutdownSignals.join(
+          ", "
+        )}`
+      );
+      this.setupShutdownSignal(this.options.handleShutdownSignals);
     }
 
     return;
   }
 
-  private setupShutdownSignal() {
-    const cleanupShutdownHandlers = onShutdown(() => {
+  private setupShutdownSignal(signals: string[]) {
+    const cleanupShutdownHandlers = onShutdown(signals, () => {
       this.debug("Received shutdown signal, closing connection");
       void this.close();
     });

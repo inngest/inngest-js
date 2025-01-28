@@ -80,15 +80,17 @@ async function retrieveOs() {
   return "unknown";
 }
 
-export function onShutdown(fn: () => void) {
+export function onShutdown(signals: string[], fn: () => void) {
   // Deno
   try {
     if (Deno) {
-      Deno.addSignalListener("SIGINT", fn);
-      Deno.addSignalListener("SIGTERM", fn);
+      signals.forEach((signal) => {
+        Deno.addSignalListener(signal, fn);
+      });
       return () => {
-        Deno.removeSignalListener("SIGINT", fn);
-        Deno.removeSignalListener("SIGTERM", fn);
+        signals.forEach((signal) => {
+          Deno.removeSignalListener(signal, fn);
+        });
       };
     }
   } catch (err) {
@@ -98,15 +100,15 @@ export function onShutdown(fn: () => void) {
   // Node, Bun
   try {
     if (process) {
-      // eslint-disable-next-line @inngest/internal/process-warn
-      process.on("SIGINT", fn);
-      // eslint-disable-next-line @inngest/internal/process-warn
-      process.on("SIGTERM", fn);
+      signals.forEach((signal) => {
+        // eslint-disable-next-line @inngest/internal/process-warn
+        process.on(signal, fn);
+      });
       return () => {
-        // eslint-disable-next-line @inngest/internal/process-warn
-        process.removeListener("SIGINT", fn);
-        // eslint-disable-next-line @inngest/internal/process-warn
-        process.removeListener("SIGTERM", fn);
+        signals.forEach((signal) => {
+          // eslint-disable-next-line @inngest/internal/process-warn
+          process.removeListener(signal, fn);
+        });
       };
     }
   } catch (err) {
