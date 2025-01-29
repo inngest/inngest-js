@@ -17,6 +17,8 @@ export interface ConnectHandlerOptions extends RegisterOptions {
    * process receives a SIGINT or SIGTERM signal. Set this to an empty array to disable this behavior.
    */
   handleShutdownSignals?: string[];
+
+  rewriteGatewayEndpoint?: (endpoint: string) => string;
 }
 
 export interface WorkerConnection {

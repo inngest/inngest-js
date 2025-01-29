@@ -556,13 +556,24 @@ class WebSocketWorkerConnection implements WorkerConnection {
       );
     }, 10_000);
 
+    let finalEndpoint = startResp.gatewayEndpoint;
+    if (this.options.rewriteGatewayEndpoint) {
+      const rewritten = this.options.rewriteGatewayEndpoint(
+        startResp.gatewayEndpoint
+      );
+      this.debug("Rewriting gateway endpoint", {
+        original: startResp.gatewayEndpoint,
+        rewritten,
+      });
+      finalEndpoint = rewritten;
+    }
+
     this.debug("Connecting to gateway", {
-      gatewayEndpoint: startResp.gatewayEndpoint,
+      endpoint: finalEndpoint,
       gatewayGroup: startResp.gatewayGroup,
     });
-    const ws = new WebSocket(startResp.gatewayEndpoint, [
-      "v0.connect.inngest.com",
-    ]);
+
+    const ws = new WebSocket(finalEndpoint, ["v0.connect.inngest.com"]);
     ws.binaryType = "arraybuffer";
 
     let errored = false;
