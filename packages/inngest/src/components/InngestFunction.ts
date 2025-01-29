@@ -122,7 +122,8 @@ export class InngestFunction<
      * relies on an outside method providing context.
      */
     baseUrl: URL,
-    appPrefix?: string
+    appPrefix?: string,
+    isConnect?: boolean
   ): FunctionConfig[] {
     const fnId = this.id(appPrefix);
     const stepUrl = new URL(baseUrl.href);
@@ -168,7 +169,7 @@ export class InngestFunction<
           id: InngestFunction.stepId,
           name: InngestFunction.stepId,
           runtime: {
-            type: "http",
+            type: isConnect ? "ws" : "http",
             url: stepUrl.href,
           },
           retries,
