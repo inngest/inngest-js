@@ -556,8 +556,36 @@ class WebSocketWorkerConnection implements WorkerConnection {
       );
     }, 10_000);
 
+    const ws = new WebSocket(startResp.gatewayEndpoint, [
+      "v0.connect.inngest.com",
+    ]);
+    ws.binaryType = "arraybuffer";
+
     let errored = false;
     const onConnectionError = (error: unknown) => {
+      // If connection is still in the connecting state, we need to reject the promise
+      // and attempt to reconnect
+      if (
+        this.state === ConnectionState.CONNECTING ||
+        this.state === ConnectionState.RECONNECTING
+      ) {
+        clearTimeout(connectTimeout);
+
+        // Make sure to close the WebSocket if it's still open
+        ws.close();
+
+        rejectWebsocketConnected?.(
+          new ReconnectError(
+            `Connection error: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`,
+            attempt
+          )
+        );
+
+        return;
+      }
+
       // Don't attempt to reconnect if we're already closing or closed
       if (
         this.state === ConnectionState.CLOSING ||
@@ -580,10 +608,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
       this.connect(attempt + 1);
     };
 
-    const ws = new WebSocket(startResp.gatewayEndpoint, [
-      "v0.connect.inngest.com",
-    ]);
-    ws.binaryType = "arraybuffer";
     ws.onerror = (err) => onConnectionError(err);
     ws.onclose = (ev) => {
       onConnectionError(
