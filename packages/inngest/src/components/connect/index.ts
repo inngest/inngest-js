@@ -556,6 +556,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
       );
     }, 10_000);
 
+    this.debug("Connecting to gateway", {
+      gatewayEndpoint: startResp.gatewayEndpoint,
+      gatewayGroup: startResp.gatewayGroup,
+    });
     const ws = new WebSocket(startResp.gatewayEndpoint, [
       "v0.connect.inngest.com",
     ]);
@@ -569,6 +573,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
         this.state === ConnectionState.CONNECTING ||
         this.state === ConnectionState.RECONNECTING
       ) {
+        this.debug("Connection error in connecting state, rejecting promise");
+
         clearTimeout(connectTimeout);
 
         // Make sure to close the WebSocket if it's still open
@@ -576,7 +582,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
         rejectWebsocketConnected?.(
           new ReconnectError(
-            `Connection error: ${
+            `Error while connecting: ${
               error instanceof Error ? error.message : "Unknown error"
             }`,
             attempt
