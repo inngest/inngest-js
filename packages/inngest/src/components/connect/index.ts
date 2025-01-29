@@ -578,6 +578,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     let errored = false;
     const onConnectionError = (error: unknown) => {
+      // Only process the first error per connection
+      if (errored) {
+        return;
+      }
+      errored = true;
+
       // If connection is still in the connecting state, we need to reject the promise
       // and attempt to reconnect
       if (
@@ -610,12 +616,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
       ) {
         return;
       }
-
-      // Only process the first error per connection
-      if (errored) {
-        return;
-      }
-      errored = true;
 
       this.state = ConnectionState.RECONNECTING;
       this._excludeGateways.add(startResp.gatewayGroup);
