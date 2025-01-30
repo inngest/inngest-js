@@ -1,5 +1,58 @@
 # inngest
 
+## 3.31.1
+
+### Patch Changes
+
+- [#817](https://github.com/inngest/inngest-js/pull/817) [`446be1b`](https://github.com/inngest/inngest-js/commit/446be1b5f1aa5c30328e95d0aa23260b586f04d0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `serve()` and `connect()` now have looser typing for `client` and `functions`, resulting in easier use of multiple `inngest` packages in a single process
+
+- [#823](https://github.com/inngest/inngest-js/pull/823) [`f1d2385`](https://github.com/inngest/inngest-js/commit/f1d23855bc412c0c255dc108e4edefffb203af04) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow wildcard event typing with `.fromRecord()`
+
+  The following schema is now valid:
+
+  ```ts
+  export const schemas = new EventSchemas().fromRecord<{
+    "app/blog.post.*":
+      | {
+          name: "app/blog.post.created";
+          data: {
+            postId: string;
+            authorId: string;
+            createdAt: string;
+          };
+        }
+      | {
+          name: "app/blog.post.published";
+          data: {
+            postId: string;
+            authorId: string;
+            publishedAt: string;
+          };
+        };
+  }>();
+  ```
+
+  When creating a function, this allows you to appropriately type narrow the event to pull out the correct data:
+
+  ```ts
+  inngest.createFunction(
+    { id: "my-fn" },
+    { event: "app/blog.post.*" },
+    async ({ event }) => {
+      if (event.name === "app/blog.post.created") {
+        console.log("Blog post created at:", event.data.createdAt);
+      } else if (event.name === "app/blog.post.published") {
+        console.log("Blog post published at:", event.data.publishedAt);
+      }
+    },
+  );
+  ```
+
+- [#825](https://github.com/inngest/inngest-js/pull/825) [`661ed7b`](https://github.com/inngest/inngest-js/commit/661ed7b278b017958b38e9add6987e35d1a8c616) Thanks [@jpwilliams](https://github.com/jpwilliams)! - If no `functions` are provided to `inngest.connect()`, it will now use any functions that have been created with the client instead
+
+- Updated dependencies [[`fadd94a`](https://github.com/inngest/inngest-js/commit/fadd94a998ae1e996941e88830d0f468fc649a85)]:
+  - @inngest/ai@0.0.3
+
 ## 3.31.0
 
 ### Minor Changes
