@@ -70,7 +70,7 @@ import { type RegisterOptions, type SupportedFrameworkName } from "./types.js";
 export const frameworkName: SupportedFrameworkName = "fastify";
 
 type InngestPluginOptions = {
-  client: Inngest.Any;
+  client: Inngest.Like;
   functions: InngestFunction.Any[];
   options?: RegisterOptions;
 };
