@@ -1,4 +1,5 @@
-import { InngestCommHandler } from "../InngestCommHandler.js";
+import { WaitGroup } from "@jpwilliams/waitgroup";
+import debug, { type Debugger } from "debug";
 import { ulid } from "ulid";
 import { headerKeys, queryKeys } from "../../helpers/consts.js";
 import { allProcessEnv, getPlatformName } from "../../helpers/env.js";
@@ -6,18 +7,21 @@ import { parseFnData } from "../../helpers/functions.js";
 import { hashSigningKey } from "../../helpers/strings.js";
 import {
   ConnectMessage,
-  type GatewayExecutorRequestData,
   GatewayMessageType,
   gatewayMessageTypeToJSON,
   SDKResponse,
   SDKResponseStatus,
   WorkerConnectRequestData,
   WorkerRequestAckData,
+  type GatewayExecutorRequestData,
 } from "../../proto/src/components/connect/protobuf/connect.js";
 import { type Capabilities, type FunctionConfig } from "../../types.js";
 import { version } from "../../version.js";
 import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.js";
 import { type Inngest } from "../Inngest.js";
+import { InngestCommHandler } from "../InngestCommHandler.js";
+import { type InngestFunction } from "../InngestFunction.js";
+import { MessageBuffer } from "./buffer.js";
 import {
   createStartRequest,
   parseConnectMessage,
@@ -25,19 +29,16 @@ import {
   parseStartResponse,
   parseWorkerReplyAck,
 } from "./messages.js";
+import { onShutdown, retrieveSystemAttributes, getHostname } from "./os.js";
 import {
   ConnectionState,
   DEFAULT_SHUTDOWN_SIGNALS,
   type ConnectHandlerOptions,
   type WorkerConnection,
 } from "./types.js";
-import { WaitGroup } from "@jpwilliams/waitgroup";
-import debug, { type Debugger } from "debug";
-import { getHostname, onShutdown, retrieveSystemAttributes } from "./os.js";
-import { MessageBuffer } from "./buffer.js";
 import {
-  expBackoff,
   AuthError,
+  expBackoff,
   ReconnectError,
   ConnectionLimitError,
 } from "./util.js";
@@ -124,6 +125,14 @@ class WebSocketWorkerConnection implements WorkerConnection {
     this.closingPromise = new Promise((resolve) => {
       this.resolveClosingPromise = resolve;
     });
+  }
+
+  private get functions(): InngestFunction.Any[] {
+    return (
+      (this.options.functions as InngestFunction.Any[]) ??
+      this.inngest["localFns"] ??
+      []
+    );
   }
 
   private applyDefaults(opts: ConnectHandlerOptions): ConnectHandlerOptions {
@@ -234,13 +243,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
       connect: "v1",
     };
 
-    const functions: Array<FunctionConfig> = this.options.functions.flatMap(
-      (f) =>
-        f["getConfig"]({
-          baseUrl: new URL("wss://connect"),
-          appPrefix: this.inngest.id,
-          isConnect: true,
-        })
+    const functions: Array<FunctionConfig> = this.functions.flatMap((f) =>
+      f["getConfig"]({
+        baseUrl: new URL("wss://connect"),
+        appPrefix: this.inngest.id,
+        isConnect: true,
+      })
     );
 
     const data: connectionEstablishData = {
@@ -254,7 +262,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     const inngestCommHandler: ConnectCommHandler = new InngestCommHandler({
       client: this.inngest,
-      functions: this.options.functions,
+      functions: this.functions,
       frameworkName: "connect",
       skipSignatureValidation: true,
       handler: (msg: GatewayExecutorRequestData) => {
@@ -978,11 +986,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
 }
 
 export const connect = async (
-  inngest: Inngest.Any,
+  inngest: Inngest.Like,
   options: ConnectHandlerOptions
   // eslint-disable-next-line @typescript-eslint/require-await
 ): Promise<WorkerConnection> => {
-  const conn = new WebSocketWorkerConnection(inngest, options);
+  const conn = new WebSocketWorkerConnection(inngest as Inngest.Any, options);
 
   await conn.connect();
 

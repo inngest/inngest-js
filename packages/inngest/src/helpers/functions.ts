@@ -1,7 +1,6 @@
 import { ZodError, z } from "zod";
 import { type InngestApi } from "../api/api.js";
 import { stepsSchemas } from "../api/schema.js";
-import { type InngestFunction } from "../components/InngestFunction.js";
 import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,

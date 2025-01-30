@@ -270,6 +270,52 @@ describe("EventSchemas", () => {
         IsEqual<Schemas<typeof schemas>["test.event"]["v"], string | undefined>
       >(true);
     });
+
+    test("can provide a type-narrowing-compatible wildcard", () => {
+      const schemas = new EventSchemas().fromRecord<{
+        "app/blog.post.*":
+          | {
+              name: "app/blog.post.created";
+              data: { postId: string; createdAt: string };
+            }
+          | {
+              name: "app/blog.post.published";
+              data: { postId: string; publishedAt: string };
+            };
+      }>();
+
+      assertType<
+        IsEqual<
+          Schemas<typeof schemas>["app/blog.post.*"]["name"],
+          "app/blog.post.created" | "app/blog.post.published"
+        >
+      >(true);
+
+      assertType<
+        IsEqual<
+          Schemas<typeof schemas>["app/blog.post.*"]["data"],
+          | { postId: string; createdAt: string }
+          | { postId: string; publishedAt: string }
+        >
+      >(true);
+
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+      const t0: Schemas<typeof schemas>["app/blog.post.*"] = null as any;
+      const _fnToCheckTypesOnly = () => {
+        if (t0.name === "app/blog.post.created") {
+          assertType<string>(t0.data.createdAt);
+          // @ts-expect-error - missing property
+          t0.data.publishedAt;
+        } else if (t0.name === "app/blog.post.published") {
+          assertType<string>(t0.data.publishedAt);
+          // @ts-expect-error - missing property
+          t0.data.createdAt;
+          // @ts-expect-error - name will not be the wildcard itself
+        } else if (t0.name === "app/blog.post.*") {
+          // This is an invalid name for a wildcard
+        }
+      };
+    });
   });
 
   describe("fromUnion", () => {

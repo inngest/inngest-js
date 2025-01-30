@@ -79,12 +79,12 @@ export interface ServeHandlerOptions extends RegisterOptions {
   /**
    * The `Inngest` instance used to declare all functions.
    */
-  client: Inngest.Any;
+  client: Inngest.Like;
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly InngestFunction.Any[];
+  functions: readonly InngestFunction.Like[];
 }
 
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
@@ -122,12 +122,12 @@ interface InngestCommHandlerOptions<
    * receiving events from the same service, as you can reuse a single
    * definition of Inngest.
    */
-  client: Inngest.Any;
+  client: Inngest.Like;
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly InngestFunction.Any[];
+  functions: readonly InngestFunction.Like[];
 
   /**
    * The `handler` is the function that will be called with your framework's
@@ -365,7 +365,7 @@ export class InngestCommHandler<
     }
 
     this.frameworkName = options.frameworkName;
-    this.client = options.client;
+    this.client = options.client as Inngest.Any;
     this.id = options.id || this.client.id;
 
     this.handler = options.handler as Handler;
@@ -380,7 +380,7 @@ export class InngestCommHandler<
     );
 
     // Ensure we filter any undefined functions in case of missing imports.
-    this.rawFns = options.functions.filter(Boolean);
+    this.rawFns = options.functions.filter(Boolean) as InngestFunction.Any[];
 
     if (this.rawFns.length !== options.functions.length) {
       // TODO PrettyError
