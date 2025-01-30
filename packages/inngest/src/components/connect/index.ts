@@ -260,7 +260,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
     };
 
     const functions: Array<FunctionConfig> = this.options.functions.flatMap(
-      (f) => f["getConfig"](new URL("wss://connect"), undefined, true)
+      (f) =>
+        f["getConfig"]({
+          baseUrl: new URL("wss://connect"),
+          appPrefix: this.inngest.id,
+          isConnect: true,
+        })
     );
 
     const data: connectionEstablishData = {

@@ -2577,10 +2577,10 @@ describe("runFn", () => {
 
       expect(fn).toBeInstanceOf(InngestFunction);
 
-      const [fnConfig, failureFnConfig] = fn["getConfig"](
-        new URL("https://example.com"),
-        clientId
-      );
+      const [fnConfig, failureFnConfig] = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: clientId,
+      });
 
       expect(fnConfig).toMatchObject({
         id: "testclient-testfn",
@@ -2736,10 +2736,10 @@ describe("runFn", () => {
         }
       );
 
-      const [fnConfig] = fn["getConfig"](
-        new URL("https://example.com"),
-        clientId
-      );
+      const [fnConfig] = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: clientId,
+      });
 
       expect(fnConfig).toMatchObject({
         id: "testclient-testfn",
