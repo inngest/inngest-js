@@ -909,6 +909,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
     };
 
     const heartbeatInterval = setInterval(() => {
+      this.debug("Sending worker heartbeat", {
+        connectionId,
+      });
+
       // Send worker heartbeat
       ws.send(
         ConnectMessage.encode(
@@ -949,6 +953,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }, WorkerHeartbeatInterval);
 
     conn.cleanup = () => {
+      this.debug("Cleaning up worker heartbeat", {
+        connectionId,
+      });
+
       clearInterval(heartbeatInterval);
 
       if (closed) {
