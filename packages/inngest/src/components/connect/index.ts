@@ -809,9 +809,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
       };
     }
 
-    let isDraining = false;
-    const connectionCleanups: (() => void | Promise<void>)[] = [];
-
     ws.onmessage = async (event) => {
       const messageBytes = new Uint8Array(event.data as ArrayBuffer);
 
@@ -819,7 +816,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_CLOSING) {
         this.debug("Received draining message", { connectionId });
-        isDraining = true;
         try {
           this.debug(
             "Setting up new connection while keeping previous connection open",
@@ -828,12 +824,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
           // Wait for new conn to be successfully established
           await this.connect();
-
-          isDraining = false;
-
-          for (const cleanup of connectionCleanups) {
-            await cleanup();
-          }
         } catch (err) {
           this.debug("Failed to reconnect after receiving draining message", {
             connectionId,
@@ -959,7 +949,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           )
         )
     );
-    connectionCleanups.push(heartbeatCleanup);
+    this._cleanup.push(heartbeatCleanup);
 
     let closed = false;
     const closeConnectionCleanup = () => {
@@ -988,9 +978,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         this.currentWs = undefined;
       }
     };
-    connectionCleanups.push(closeConnectionCleanup);
-
-    this._cleanup.push(...connectionCleanups);
+    this._cleanup.push(closeConnectionCleanup);
 
     return;
   }
