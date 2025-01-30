@@ -715,6 +715,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this.debug(`Connection ready (${connectionId})`);
 
+    // Flag to prevent connecting twice in draining scenario:
+    // 1. We're already draining and repeatedly trying to connect while keeping the old connection open
+    // 2. The gateway closes the old connection after a timeout, causing a connection error (which would also trigger a new connection)
+    let isDraining = false;
     {
       onConnectionError = async (error: unknown) => {
         // Only process the first error per connection
@@ -742,9 +746,17 @@ class WebSocketWorkerConnection implements WorkerConnection {
         this.state = ConnectionState.RECONNECTING;
         this.excludeGateways.add(startResp.gatewayGroup);
 
+        // If this connection is draining and got closed unexpectedly, there's already a new connection being established
+        if (isDraining) {
+          this.debug(
+            `Connection error (${connectionId}) but already draining, skipping`
+          );
+          return;
+        }
+
         this.debug(`Connection error (${connectionId})`, error);
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.connect(attempt + 1, [...path]);
+        this.connect(attempt + 1, [...path, "onConnectionError"]);
       };
 
       ws.onerror = (err) => onConnectionError(err);
@@ -761,6 +773,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       const connectMessage = parseConnectMessage(messageBytes);
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_CLOSING) {
+        isDraining = true;
         this.debug("Received draining message", { connectionId });
         try {
           this.debug(
