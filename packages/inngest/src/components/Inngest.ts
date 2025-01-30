@@ -143,6 +143,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private readonly logger: Logger;
 
+  private localFns: InngestFunction.Any[] = [];
+
   /**
    * A promise that resolves when the middleware stack has been initialized and
    * the client is ready to be used.
@@ -602,6 +604,18 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   }
 
   public createFunction: Inngest.CreateFunction<this> = (
+    rawOptions,
+    rawTrigger,
+    handler
+  ) => {
+    const fn = this._createFunction(rawOptions, rawTrigger, handler);
+
+    this.localFns.push(fn);
+
+    return fn;
+  };
+
+  private _createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
     rawTrigger,
     handler
