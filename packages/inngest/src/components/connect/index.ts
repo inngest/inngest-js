@@ -196,7 +196,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
   /**
    * Establish a persistent connection to the gateway.
    */
-  public async connect(attempt = 0) {
+  public async connect(attempt = 0, path: string[] = []) {
     if (typeof WebSocket === "undefined") {
       throw new Error("WebSockets not supported in current environment");
     }
@@ -365,7 +365,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
           requestHandler,
           useSigningKey,
           data,
-          attempt
+          attempt,
+          path
         );
         return;
       } catch (err) {
@@ -467,15 +468,18 @@ class WebSocketWorkerConnection implements WorkerConnection {
     requestHandler: (msg: GatewayExecutorRequestData) => Promise<SDKResponse>,
     hashedSigningKey: string | undefined,
     data: connectionEstablishData,
-    attempt: number
+    attempt: number,
+    path: string[] = []
   ): Promise<{ cleanup: () => void }> {
     const connectionId = ulid();
+    path.push(connectionId);
 
     let closed = false;
 
     this.debug("Preparing connection", {
       attempt,
       connectionId,
+      path,
     });
 
     const startedAt = new Date();
@@ -732,7 +736,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
         this.debug(`Connection error (${connectionId})`, error);
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.connect(attempt + 1);
+        this.connect(attempt + 1, path);
       };
 
       ws.onerror = (err) => onConnectionError(err);
@@ -757,7 +761,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           );
 
           // Wait for new conn to be successfully established
-          await this.connect();
+          await this.connect(0, path);
 
           // Clean up the old connection
           await conn.cleanup();
