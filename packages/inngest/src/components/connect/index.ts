@@ -233,7 +233,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       throw new Error("Connection already closed");
     }
 
-    this.debug("Establishing connection");
+    this.debug("Establishing connection", { attempt });
 
     if (this.inngest["mode"].isCloud && !this.options.signingKey) {
       throw new Error("Signing key is required");
@@ -462,7 +462,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }, WorkerHeartbeatInterval / 2);
     }, WorkerHeartbeatInterval);
 
+    let closed = false;
     return () => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+
       this.debug("Clearing heartbeat interval", { connectionId });
       clearInterval(cancel);
     };
@@ -798,20 +804,31 @@ class WebSocketWorkerConnection implements WorkerConnection {
       };
     }
 
+    let isDraining = false;
+    const connectionCleanups: (() => void | Promise<void>)[] = [];
+
     ws.onmessage = async (event) => {
       const messageBytes = new Uint8Array(event.data as ArrayBuffer);
 
       const connectMessage = parseConnectMessage(messageBytes);
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_CLOSING) {
+        this.debug("Received draining message", { connectionId });
+        isDraining = true;
         try {
+          this.debug(
+            "Setting up new connection while keeping previous connection open",
+            { connectionId }
+          );
+
           // Wait for new conn to be successfully established
           await this.connect();
 
-          await this.cleanup();
+          isDraining = false;
 
-          // Close original connection once new conn is established
-          ws.close();
+          for (const cleanup of connectionCleanups) {
+            await cleanup();
+          }
         } catch (err) {
           this.debug("Failed to reconnect after receiving draining message", {
             connectionId,
@@ -937,9 +954,15 @@ class WebSocketWorkerConnection implements WorkerConnection {
           )
         )
     );
-    this._cleanup.push(heartbeatCleanup);
+    connectionCleanups.push(heartbeatCleanup);
 
+    let closed = false;
     const closeConnectionCleanup = () => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+
       this.debug("Cleaning up connection", { connectionId });
       if (ws.readyState === WebSocket.OPEN) {
         this.debug("Sending pause message", { connectionId });
@@ -960,7 +983,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
         this.currentWs = undefined;
       }
     };
-    this._cleanup.push(closeConnectionCleanup);
+    connectionCleanups.push(closeConnectionCleanup);
+
+    this._cleanup.push(...connectionCleanups);
 
     return;
   }
