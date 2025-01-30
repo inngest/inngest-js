@@ -1,4 +1,5 @@
-import { InngestCommHandler } from "../InngestCommHandler.js";
+import { WaitGroup } from "@jpwilliams/waitgroup";
+import debug, { type Debugger } from "debug";
 import { ulid } from "ulid";
 import { headerKeys, queryKeys } from "../../helpers/consts.js";
 import { allProcessEnv, getPlatformName } from "../../helpers/env.js";
@@ -6,18 +7,21 @@ import { parseFnData } from "../../helpers/functions.js";
 import { hashSigningKey } from "../../helpers/strings.js";
 import {
   ConnectMessage,
-  type GatewayExecutorRequestData,
   GatewayMessageType,
   gatewayMessageTypeToJSON,
   SDKResponse,
   SDKResponseStatus,
   WorkerConnectRequestData,
   WorkerRequestAckData,
+  type GatewayExecutorRequestData,
 } from "../../proto/src/components/connect/protobuf/connect.js";
 import { type Capabilities, type FunctionConfig } from "../../types.js";
 import { version } from "../../version.js";
 import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.js";
 import { type Inngest } from "../Inngest.js";
+import { InngestCommHandler } from "../InngestCommHandler.js";
+import { type InngestFunction } from "../InngestFunction.js";
+import { MessageBuffer } from "./buffer.js";
 import {
   createStartRequest,
   parseConnectMessage,
@@ -25,17 +29,14 @@ import {
   parseStartResponse,
   parseWorkerReplyAck,
 } from "./messages.js";
+import { onShutdown, retrieveSystemAttributes } from "./os.js";
 import {
   ConnectionState,
   DEFAULT_SHUTDOWN_SIGNALS,
   type ConnectHandlerOptions,
   type WorkerConnection,
 } from "./types.js";
-import { WaitGroup } from "@jpwilliams/waitgroup";
-import debug, { type Debugger } from "debug";
-import { onShutdown, retrieveSystemAttributes } from "./os.js";
-import { MessageBuffer } from "./buffer.js";
-import { expBackoff, AuthError, ReconnectError } from "./util.js";
+import { AuthError, expBackoff, ReconnectError } from "./util.js";
 
 const ResponseAcknowlegeDeadline = 5_000;
 const WorkerHeartbeatInterval = 10_000;
@@ -147,8 +148,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
     });
   }
 
-  private get functions() {
-    return this.options.functions ?? this.inngest["localFns"] ?? [];
+  private get functions(): InngestFunction.Any[] {
+    return (
+      (this.options.functions as InngestFunction.Any[]) ??
+      this.inngest["localFns"] ??
+      []
+    );
   }
 
   private applyDefaults(opts: ConnectHandlerOptions): ConnectHandlerOptions {
@@ -870,11 +875,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
 }
 
 export const connect = async (
-  inngest: Inngest.Any,
+  inngest: Inngest.Like,
   options: ConnectHandlerOptions
   // eslint-disable-next-line @typescript-eslint/require-await
 ): Promise<WorkerConnection> => {
-  const conn = new WebSocketWorkerConnection(inngest, options);
+  const conn = new WebSocketWorkerConnection(inngest as Inngest.Any, options);
 
   await conn.connect();
 
