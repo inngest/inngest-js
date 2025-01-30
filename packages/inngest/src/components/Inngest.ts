@@ -778,11 +778,6 @@ export namespace Inngest {
     eventBaseUrl: string | undefined;
     env: string | null;
     buildId?: string | undefined;
-
-    setEnvVars(env?: Record<string, string | undefined>): this;
-    setEventKey(eventKey: string): void;
-    send(payload: unknown, options?: { env?: string }): Promise<unknown>;
-    createFunction: Inngest.CreateFunction<Inngest.Any>;
   }
 
   export type CreateFunction<TClient extends Inngest.Any> = <

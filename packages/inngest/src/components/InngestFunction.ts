@@ -284,8 +284,6 @@ export namespace InngestFunction {
   >;
 
   export interface Like {
-    opts: Options;
-    id(prefix?: string): string;
     name: string;
     description?: string;
   }
