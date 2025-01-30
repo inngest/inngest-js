@@ -7,7 +7,7 @@ export interface ConnectHandlerOptions extends RegisterOptions {
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly InngestFunction.Any[];
+  functions?: readonly InngestFunction.Any[];
 
   instanceId: string;
   maxConcurrency?: number;
