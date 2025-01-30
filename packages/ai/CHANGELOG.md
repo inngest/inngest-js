@@ -1,5 +1,11 @@
 # @inngest/ai
 
+## 0.0.3
+
+### Patch Changes
+
+- [#816](https://github.com/inngest/inngest-js/pull/816) [`fadd94a`](https://github.com/inngest/inngest-js/commit/fadd94a998ae1e996941e88830d0f468fc649a85) Thanks [@joelhooks](https://github.com/joelhooks)! - Add Deepseek support
+
 ## 0.0.2
 
 ### Patch Changes
