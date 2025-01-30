@@ -148,6 +148,14 @@ class WebSocketWorkerConnection implements WorkerConnection {
     });
   }
 
+  private get functions(): InngestFunction.Any[] {
+    return (
+      (this.options.functions as InngestFunction.Any[]) ??
+      this.inngest["localFns"] ??
+      []
+    );
+  }
+
   private applyDefaults(opts: ConnectHandlerOptions): ConnectHandlerOptions {
     const options = { ...opts };
     if (!Array.isArray(options.handleShutdownSignals)) {
@@ -261,9 +269,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
       connect: "v1",
     };
 
-    const functions: Array<FunctionConfig> = this.options.functions.flatMap(
-      (f) =>
-        (f as InngestFunction.Any)["getConfig"](new URL("http://example.com")) // refactor; base URL shouldn't be optional here; we likely need to fetch a different kind of config
+    const functions: Array<FunctionConfig> = this.functions.flatMap(
+      (f) => f["getConfig"](new URL("http://example.com")) // refactor; base URL shouldn't be optional here; we likely need to fetch a different kind of config
     );
 
     const data: connectionEstablishData = {
@@ -277,7 +284,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     const inngestCommHandler: ConnectCommHandler = new InngestCommHandler({
       client: this.inngest,
-      functions: this.options.functions,
+      functions: this.functions,
       frameworkName: "connect",
       skipSignatureValidation: true,
       handler: (msg: GatewayExecutorRequestData) => {
