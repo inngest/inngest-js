@@ -242,7 +242,7 @@ export const retryWithBackoff = async <T>(
   const maxAttempts = opts?.maxAttempts || 5;
   const baseDelay = opts?.baseDelay ?? 100;
 
-  for (let attempt = 1; attempt < maxAttempts; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await fn();
     } catch (err) {
