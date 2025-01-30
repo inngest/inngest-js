@@ -556,6 +556,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
         clearTimeout(connectTimeout);
 
         // Make sure to close the WebSocket if it's still open
+        ws.onerror = () => {};
+        ws.onclose = () => {};
         ws.close();
 
         rejectWebsocketConnected?.(
@@ -707,6 +709,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
           return;
         }
         closed = true;
+        ws.onerror = () => {};
+        ws.onclose = () => {};
         ws.close();
       },
       lastGatewayHeartbeatAt: undefined,
@@ -977,6 +981,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
 
       this.debug("Closing connection", { connectionId });
+      ws.onerror = () => {};
+      ws.onclose = () => {};
       ws.close();
 
       if (this.currentConnection?.id === connectionId) {
