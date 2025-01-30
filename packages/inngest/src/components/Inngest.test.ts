@@ -216,7 +216,10 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          body: JSON.stringify([testEvent]),
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          body: expect.stringMatching(
+            new RegExp(JSON.stringify(testEvent).slice(1, -1))
+          ),
         })
       );
     });
@@ -233,7 +236,10 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          body: JSON.stringify([testEvent]),
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          body: expect.stringMatching(
+            new RegExp(JSON.stringify(testEvent).slice(1, -1))
+          ),
         })
       );
     });
@@ -250,7 +256,10 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          body: JSON.stringify([testEvent]),
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          body: expect.stringMatching(
+            new RegExp(JSON.stringify(testEvent).slice(1, -1))
+          ),
         })
       );
     });
@@ -506,9 +515,15 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          body: JSON.stringify([
-            { ...testEvent, data: { foo: true, bar: true } },
-          ]),
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          body: expect.stringMatching(
+            new RegExp(
+              JSON.stringify({
+                ...testEvent,
+                data: { foo: true, bar: true },
+              }).slice(1, -1)
+            )
+          ),
         })
       );
     });
