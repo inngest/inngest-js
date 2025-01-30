@@ -18,9 +18,11 @@ export enum GatewayMessageType {
   WORKER_READY = 4,
   WORKER_REQUEST_ACK = 5,
   WORKER_REPLY = 6,
-  WORKER_PAUSE = 7,
-  WORKER_HEARTBEAT = 8,
-  GATEWAY_CLOSING = 9,
+  WORKER_REPLY_ACK = 7,
+  WORKER_PAUSE = 8,
+  WORKER_HEARTBEAT = 9,
+  GATEWAY_HEARTBEAT = 10,
+  GATEWAY_CLOSING = 11,
   UNRECOGNIZED = -1,
 }
 
@@ -48,12 +50,18 @@ export function gatewayMessageTypeFromJSON(object: any): GatewayMessageType {
     case "WORKER_REPLY":
       return GatewayMessageType.WORKER_REPLY;
     case 7:
+    case "WORKER_REPLY_ACK":
+      return GatewayMessageType.WORKER_REPLY_ACK;
+    case 8:
     case "WORKER_PAUSE":
       return GatewayMessageType.WORKER_PAUSE;
-    case 8:
+    case 9:
     case "WORKER_HEARTBEAT":
       return GatewayMessageType.WORKER_HEARTBEAT;
-    case 9:
+    case 10:
+    case "GATEWAY_HEARTBEAT":
+      return GatewayMessageType.GATEWAY_HEARTBEAT;
+    case 11:
     case "GATEWAY_CLOSING":
       return GatewayMessageType.GATEWAY_CLOSING;
     case -1:
@@ -79,10 +87,14 @@ export function gatewayMessageTypeToJSON(object: GatewayMessageType): string {
       return "WORKER_REQUEST_ACK";
     case GatewayMessageType.WORKER_REPLY:
       return "WORKER_REPLY";
+    case GatewayMessageType.WORKER_REPLY_ACK:
+      return "WORKER_REPLY_ACK";
     case GatewayMessageType.WORKER_PAUSE:
       return "WORKER_PAUSE";
     case GatewayMessageType.WORKER_HEARTBEAT:
       return "WORKER_HEARTBEAT";
+    case GatewayMessageType.GATEWAY_HEARTBEAT:
+      return "GATEWAY_HEARTBEAT";
     case GatewayMessageType.GATEWAY_CLOSING:
       return "GATEWAY_CLOSING";
     case GatewayMessageType.UNRECOGNIZED:
@@ -271,12 +283,18 @@ export interface WorkerRequestAckData {
 
 export interface SDKResponse {
   requestId: string;
+  envId: string;
+  appId: string;
   status: SDKResponseStatus;
   body: Uint8Array;
   noRetry: boolean;
   retryAfter?: string | undefined;
   sdkVersion: string;
   requestVersion: number;
+}
+
+export interface WorkerReplyAckData {
+  requestId: string;
 }
 
 /** Connection metadata */
@@ -316,6 +334,10 @@ export interface StartResponse {
 
 export interface StartRequest {
   excludeGateways: string[];
+}
+
+export interface FlushResponse {
+  requestId: string;
 }
 
 function createBaseConnectMessage(): ConnectMessage {
@@ -1291,6 +1313,8 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
 function createBaseSDKResponse(): SDKResponse {
   return {
     requestId: "",
+    envId: "",
+    appId: "",
     status: 0,
     body: new Uint8Array(0),
     noRetry: false,
@@ -1305,23 +1329,29 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     if (message.requestId !== "") {
       writer.uint32(10).string(message.requestId);
     }
+    if (message.envId !== "") {
+      writer.uint32(18).string(message.envId);
+    }
+    if (message.appId !== "") {
+      writer.uint32(26).string(message.appId);
+    }
     if (message.status !== 0) {
-      writer.uint32(16).int32(message.status);
+      writer.uint32(32).int32(message.status);
     }
     if (message.body.length !== 0) {
-      writer.uint32(26).bytes(message.body);
+      writer.uint32(42).bytes(message.body);
     }
     if (message.noRetry !== false) {
-      writer.uint32(32).bool(message.noRetry);
+      writer.uint32(48).bool(message.noRetry);
     }
     if (message.retryAfter !== undefined) {
-      writer.uint32(42).string(message.retryAfter);
+      writer.uint32(58).string(message.retryAfter);
     }
     if (message.sdkVersion !== "") {
-      writer.uint32(50).string(message.sdkVersion);
+      writer.uint32(74).string(message.sdkVersion);
     }
     if (message.requestVersion !== 0) {
-      writer.uint32(56).uint32(message.requestVersion);
+      writer.uint32(80).uint32(message.requestVersion);
     }
     return writer;
   },
@@ -1342,11 +1372,11 @@ export const SDKResponse: MessageFns<SDKResponse> = {
           continue;
         }
         case 2: {
-          if (tag !== 16) {
+          if (tag !== 18) {
             break;
           }
 
-          message.status = reader.int32() as any;
+          message.envId = reader.string();
           continue;
         }
         case 3: {
@@ -1354,7 +1384,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
             break;
           }
 
-          message.body = reader.bytes();
+          message.appId = reader.string();
           continue;
         }
         case 4: {
@@ -1362,7 +1392,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
             break;
           }
 
-          message.noRetry = reader.bool();
+          message.status = reader.int32() as any;
           continue;
         }
         case 5: {
@@ -1370,19 +1400,35 @@ export const SDKResponse: MessageFns<SDKResponse> = {
             break;
           }
 
-          message.retryAfter = reader.string();
+          message.body = reader.bytes();
           continue;
         }
         case 6: {
-          if (tag !== 50) {
+          if (tag !== 48) {
+            break;
+          }
+
+          message.noRetry = reader.bool();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.retryAfter = reader.string();
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
             break;
           }
 
           message.sdkVersion = reader.string();
           continue;
         }
-        case 7: {
-          if (tag !== 56) {
+        case 10: {
+          if (tag !== 80) {
             break;
           }
 
@@ -1401,6 +1447,8 @@ export const SDKResponse: MessageFns<SDKResponse> = {
   fromJSON(object: any): SDKResponse {
     return {
       requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "",
+      envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
+      appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
       status: isSet(object.status) ? sDKResponseStatusFromJSON(object.status) : 0,
       body: isSet(object.body) ? bytesFromBase64(object.body) : new Uint8Array(0),
       noRetry: isSet(object.noRetry) ? globalThis.Boolean(object.noRetry) : false,
@@ -1414,6 +1462,12 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     const obj: any = {};
     if (message.requestId !== "") {
       obj.requestId = message.requestId;
+    }
+    if (message.envId !== "") {
+      obj.envId = message.envId;
+    }
+    if (message.appId !== "") {
+      obj.appId = message.appId;
     }
     if (message.status !== 0) {
       obj.status = sDKResponseStatusToJSON(message.status);
@@ -1442,12 +1496,72 @@ export const SDKResponse: MessageFns<SDKResponse> = {
   fromPartial<I extends Exact<DeepPartial<SDKResponse>, I>>(object: I): SDKResponse {
     const message = createBaseSDKResponse();
     message.requestId = object.requestId ?? "";
+    message.envId = object.envId ?? "";
+    message.appId = object.appId ?? "";
     message.status = object.status ?? 0;
     message.body = object.body ?? new Uint8Array(0);
     message.noRetry = object.noRetry ?? false;
     message.retryAfter = object.retryAfter ?? undefined;
     message.sdkVersion = object.sdkVersion ?? "";
     message.requestVersion = object.requestVersion ?? 0;
+    return message;
+  },
+};
+
+function createBaseWorkerReplyAckData(): WorkerReplyAckData {
+  return { requestId: "" };
+}
+
+export const WorkerReplyAckData: MessageFns<WorkerReplyAckData> = {
+  encode(message: WorkerReplyAckData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.requestId !== "") {
+      writer.uint32(10).string(message.requestId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): WorkerReplyAckData {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseWorkerReplyAckData();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.requestId = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): WorkerReplyAckData {
+    return { requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "" };
+  },
+
+  toJSON(message: WorkerReplyAckData): unknown {
+    const obj: any = {};
+    if (message.requestId !== "") {
+      obj.requestId = message.requestId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<WorkerReplyAckData>, I>>(base?: I): WorkerReplyAckData {
+    return WorkerReplyAckData.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<WorkerReplyAckData>, I>>(object: I): WorkerReplyAckData {
+    const message = createBaseWorkerReplyAckData();
+    message.requestId = object.requestId ?? "";
     return message;
   },
 };
@@ -2050,6 +2164,64 @@ export const StartRequest: MessageFns<StartRequest> = {
   fromPartial<I extends Exact<DeepPartial<StartRequest>, I>>(object: I): StartRequest {
     const message = createBaseStartRequest();
     message.excludeGateways = object.excludeGateways?.map((e) => e) || [];
+    return message;
+  },
+};
+
+function createBaseFlushResponse(): FlushResponse {
+  return { requestId: "" };
+}
+
+export const FlushResponse: MessageFns<FlushResponse> = {
+  encode(message: FlushResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.requestId !== "") {
+      writer.uint32(10).string(message.requestId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): FlushResponse {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseFlushResponse();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.requestId = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): FlushResponse {
+    return { requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "" };
+  },
+
+  toJSON(message: FlushResponse): unknown {
+    const obj: any = {};
+    if (message.requestId !== "") {
+      obj.requestId = message.requestId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<FlushResponse>, I>>(base?: I): FlushResponse {
+    return FlushResponse.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<FlushResponse>, I>>(object: I): FlushResponse {
+    const message = createBaseFlushResponse();
+    message.requestId = object.requestId ?? "";
     return message;
   },
 };

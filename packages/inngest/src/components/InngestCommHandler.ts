@@ -1239,7 +1239,7 @@ export class InngestCommHandler<
             parseAsBoolean(this.env[envKeys.InngestAllowInBandSync])
           )
             .then((allowInBandSync) => {
-              if (!allowInBandSync) {
+              if (allowInBandSync !== undefined && !allowInBandSync) {
                 return syncKind.OutOfBand;
               }
 

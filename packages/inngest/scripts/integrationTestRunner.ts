@@ -15,6 +15,7 @@ async function checkServerReady(
   apiUrl: string,
   timeout: number
 ): Promise<void> {
+  let error;
   const startTime = Date.now();
   while (Date.now() - startTime < timeout) {
     try {
@@ -24,11 +25,12 @@ async function checkServerReady(
         return;
       }
       throw new Error(`Server not ready: ${response.status}`);
-    } catch (error) {
-      console.log("Server not ready:", error);
+    } catch (e) {
+      error = e;
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
     }
   }
+  console.log("Server not ready:", error);
   throw new Error(`Server did not start within ${timeout / 1000} seconds.`);
 }
 

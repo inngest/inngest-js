@@ -1,5 +1,19 @@
 # inngest
 
+## 3.31.0
+
+### Minor Changes
+
+- [#820](https://github.com/inngest/inngest-js/pull/820) [`cb02190`](https://github.com/inngest/inngest-js/commit/cb021901ebd996392b345d2a443da72b61d97f9d) Thanks [@amh4r](https://github.com/amh4r)! - Make INNGEST_ALLOW_IN_BAND_SYNC opt out
+
+- [#813](https://github.com/inngest/inngest-js/pull/813) [`f42ab05`](https://github.com/inngest/inngest-js/commit/f42ab05a64f747ffc7042724d68c022a4057a2ac) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Add initial `connect()` support
+
+### Patch Changes
+
+- [#818](https://github.com/inngest/inngest-js/pull/818) [`c99b05f`](https://github.com/inngest/inngest-js/commit/c99b05fe1fb3cfdf2c644608634f02f5acadbbd4) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Add reconnection support to `connect()`
+
+- [#819](https://github.com/inngest/inngest-js/pull/819) [`7a5f4a5`](https://github.com/inngest/inngest-js/commit/7a5f4a56ff60f80366809a5a104a2ff9b65eaed1) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Set `inngest`'s ALS in global state to be able access it across versions and package boundaries
+
 ## 3.30.0
 
 ### Minor Changes
