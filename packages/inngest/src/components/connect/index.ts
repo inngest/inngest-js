@@ -255,6 +255,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
       })
     );
 
+    this.debug("Prepared sync data", {
+      functionSlugs: functions.map((f) => f.id),
+    });
+
     const data: connectionEstablishData = {
       manualReadinessAck: false,
 
