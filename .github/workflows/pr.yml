@@ -188,7 +188,7 @@ jobs:
       - name: Package as tarball
         run: pnpm run local:pack
       - name: Archive package tarball
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: inngestpkg
           path: packages/inngest/inngest.tgz
@@ -232,7 +232,7 @@ jobs:
       - uses: ./.github/actions/setup-and-build
 
       - name: Download pre-built SDK
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: inngestpkg
           path: packages/inngest
