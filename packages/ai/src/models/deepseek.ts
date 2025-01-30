@@ -37,9 +37,7 @@ export namespace DeepSeek {
   /**
    * IDs of models available in the DeepSeek API.
    */
-  export type Model =
-    | "deepseek-chat"
-    | "deepseek-reasoner";
+  export type Model = "deepseek-chat" | "deepseek-reasoner" | (string & {});
 
   /**
    * Options for creating a DeepSeek model.
