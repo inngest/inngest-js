@@ -1,3 +1,10 @@
+export class ConnectionLimitError extends Error {
+  constructor(public attempt: number) {
+    super("Connection limit exceeded");
+    this.name = "ConnectionLimitError";
+  }
+}
+
 export class ReconnectError extends Error {
   constructor(
     message: string,
