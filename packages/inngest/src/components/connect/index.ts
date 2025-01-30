@@ -178,6 +178,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
 
     this.resolveClosingPromise?.();
+
+    this.debug("Fully closed");
+
     return this.closed;
   }
 
