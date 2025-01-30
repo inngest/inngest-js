@@ -80,7 +80,9 @@ type PreventClashingNames<T> = CheckNever<{
   [K in keyof T]: T[K] extends { name: infer N }
     ? N extends K
       ? T[K]
-      : ClashingNameError
+      : K extends `${string}*${string}`
+        ? T[K] // TODO In this case, every obj should contain a name
+        : ClashingNameError
     : T[K];
 }>;
 
@@ -180,23 +182,34 @@ export type ZodToStandardSchema<T extends ZodEventSchemas> = {
 
 /**
  * A helper type to convert input schemas into the format expected by the
- * `EventSchemas` class, which ensures that each event contains all pieces
- * of information required.
+ * `EventSchemas` class, which ensures that each event contains all pieces of
+ * information required.
  *
  * It purposefully uses slightly more complex (read: verbose) mapped types to
  * flatten the output and preserve comments.
  *
  * @public
  */
-export type StandardEventSchemaToPayload<T> = Simplify<{
-  [K in keyof T & string]: {
-    [K2 in keyof (Omit<EventPayload, keyof T[K]> & T[K] & { name: K })]: (Omit<
-      EventPayload,
-      keyof T[K]
-    > &
-      T[K] & { name: K })[K2];
-  };
-}>;
+export type StandardEventSchemaToPayload<T> = {
+  [K in keyof T & string]: AddName<
+    Simplify<Omit<EventPayload, keyof T[K]> & T[K]>,
+    K
+  >;
+};
+
+/**
+ * A helper type to add a given name to each object in a type if it doesn't
+ * exist as a string literal.
+ *
+ * Use in this way ensures simpler types can enforce preserving comments.
+ */
+export type AddName<TObj, TDefaultName extends string> = TObj extends {
+  name: string;
+}
+  ? IsStringLiteral<TObj["name"]> extends true
+    ? TObj
+    : Simplify<TObj & { name: TDefaultName }>
+  : Simplify<TObj & { name: TDefaultName }>;
 
 /**
  * A helper type to combine two event schemas together, ensuring the result is

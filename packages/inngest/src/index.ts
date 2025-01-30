@@ -41,6 +41,7 @@
 export * from "@inngest/ai";
 export {
   EventSchemas,
+  type AddName,
   type AssertInternalEventPayloads,
   type Combine,
   type LiteralZodEventSchema,
