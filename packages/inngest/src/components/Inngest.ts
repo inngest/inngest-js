@@ -584,7 +584,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
           throw await this.getResponseError(response);
         }
 
-        if (body.status / 100 !== 2 || body.error) {
+        if (body.status !== 200 || body.error) {
           throw await this.getResponseError(response, body.error);
         }
 
