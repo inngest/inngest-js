@@ -374,7 +374,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           useSigningKey,
           data,
           attempt,
-          path
+          [...path]
         );
         return;
       } catch (err) {
@@ -744,7 +744,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
         this.debug(`Connection error (${connectionId})`, error);
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.connect(attempt + 1, path);
+        this.connect(attempt + 1, [...path]);
       };
 
       ws.onerror = (err) => onConnectionError(err);
@@ -769,7 +769,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           );
 
           // Wait for new conn to be successfully established
-          await this.connect(0, path);
+          await this.connect(0, [...path]);
 
           // Clean up the old connection
           await conn.cleanup();
