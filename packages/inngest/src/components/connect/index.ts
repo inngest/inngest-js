@@ -41,6 +41,7 @@ import {
   expBackoff,
   ReconnectError,
   ConnectionLimitError,
+  waitWithCancel,
 } from "./util.js";
 
 const ResponseAcknowlegeDeadline = 5_000;
@@ -408,7 +409,18 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
         const delay = expBackoff(attempt);
         this.debug("Reconnecting in", delay, "ms");
-        await new Promise((resolve) => setTimeout(resolve, delay));
+
+        const cancelled = await waitWithCancel(
+          delay,
+          () =>
+            this.state === ConnectionState.CLOSING ||
+            this.state === ConnectionState.CLOSED
+        );
+        if (cancelled) {
+          this.debug("Reconnect backoff cancelled");
+          break;
+        }
+
         attempt++;
       }
     }
