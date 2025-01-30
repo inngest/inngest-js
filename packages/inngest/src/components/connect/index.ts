@@ -59,6 +59,10 @@ type ConnectCommHandler = InngestCommHandler<
 >;
 
 class WebSocketWorkerConnection implements WorkerConnection {
+  private inngest: Inngest.Any;
+  private options: ConnectHandlerOptions;
+  private debug: Debugger;
+
   /**
    * The current connection ID of the worker.
    *
@@ -66,7 +70,38 @@ class WebSocketWorkerConnection implements WorkerConnection {
    */
   public _connectionId: string | undefined;
 
-  private inngest: Inngest.Any;
+  /**
+   * The current state of the connection.
+   */
+  public state: ConnectionState = ConnectionState.CONNECTING;
+
+  /**
+   * The current WebSocket connection.
+   */
+  private currentWs: WebSocket | undefined;
+
+  /**
+   * A wait group to track in-flight requests.
+   */
+  private inProgressRequests = new WaitGroup();
+
+  /**
+   * The buffer of messages to be sent to the gateway.
+   */
+  private messageBuffer: MessageBuffer;
+
+  private _hashedSigningKey: string | undefined;
+  private _hashedFallbackKey: string | undefined;
+
+  /**
+   * A set of gateways to exclude from the connection.
+   */
+  private excludeGateways: Set<string> = new Set();
+
+  /**
+   * The last time the gateway heartbeat was received.
+   */
+  private lastGatewayHeartbeatAt: Date | undefined;
 
   /**
    * The cleanup functions to be run when the connection is closed.
@@ -81,16 +116,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
   private cleanupShutdownSignal: (() => void) | undefined;
 
   /**
-   * The current state of the connection.
-   */
-  public state: ConnectionState = ConnectionState.CONNECTING;
-
-  /**
-   * A wait group to track in-flight requests.
-   */
-  private inProgressRequests = new WaitGroup();
-
-  /**
    * A promise that resolves when the connection is closed on behalf of the
    * user by calling `close()` or when a shutdown signal is received.
    */
@@ -99,40 +124,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
     | ((value: void | PromiseLike<void>) => void)
     | undefined;
 
-  /**
-   * The current WebSocket connection.
-   */
-  private currentWs: WebSocket | undefined;
-
-  /**
-   * The last time the gateway heartbeat was received.
-   */
-  private lastGatewayHeartbeatAt: Date | undefined;
-
-  /**
-   * The buffer of messages to be sent to the gateway.
-   */
-  private messageBuffer: MessageBuffer;
-
-  /**
-   * A set of gateways to exclude from the connection.
-   */
-  private excludeGateways: Set<string> = new Set();
-
-  private options: ConnectHandlerOptions;
-
-  private debug: Debugger;
-
-  private _hashedSigningKey: string | undefined;
-  private _hashedFallbackKey: string | undefined;
-
   constructor(inngest: Inngest.Any, options: ConnectHandlerOptions) {
     this.inngest = inngest;
-
     this.options = this.applyDefaults(options);
+    this.debug = debug("inngest:connect");
 
     this.messageBuffer = new MessageBuffer(inngest);
-    this.debug = debug("inngest:connect");
 
     this.closingPromise = new Promise((resolve) => {
       this.resolveClosingPromise = resolve;
@@ -399,6 +396,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
           useSigningKey = switchToFallback
             ? this._hashedFallbackKey
             : this._hashedSigningKey;
+        }
+
+        if (err instanceof ConnectionLimitError) {
+          console.error(
+            "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue."
+          );
+          // Continue reconnecting, do not throw.
         }
 
         const delay = expBackoff(attempt);

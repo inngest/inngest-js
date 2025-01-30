@@ -1,10 +1,3 @@
-export class ConnectionLimitError extends Error {
-  constructor(public attempt: number) {
-    super("Connection limit exceeded");
-    this.name = "ConnectionLimitError";
-  }
-}
-
 export class ReconnectError extends Error {
   constructor(
     message: string,
@@ -22,9 +15,16 @@ export class AuthError extends ReconnectError {
   }
 }
 
+export class ConnectionLimitError extends ReconnectError {
+  constructor(attempt: number) {
+    super("Connection limit exceeded", attempt);
+    this.name = "ConnectionLimitError";
+  }
+}
+
 export function expBackoff(attempt: number) {
   const backoffTimes = [
-    1000, 2000, 5000, 10000, 20000, 30000, 60000, 120000, 300000,
+    1000, 2000, 5000, 10_000, 20_000, 30_000, 60_000, 120_000, 300_000,
   ];
   // If attempt exceeds array length, use the last (maximum) value
   return backoffTimes[Math.min(attempt, backoffTimes.length - 1)];
