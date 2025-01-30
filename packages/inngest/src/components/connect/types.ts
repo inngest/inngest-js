@@ -9,7 +9,14 @@ export interface ConnectHandlerOptions extends RegisterOptions {
    */
   functions: readonly InngestFunction.Any[];
 
-  instanceId: string;
+  /**
+   * InstanceId represents a stable identifier to be used for identifying connected SDKs.
+   * This can be a hostname or other identifier that remains stable across restarts.
+   *
+   * If nil, this defaults to the current machine's hostname.
+   */
+  instanceId?: string;
+
   maxConcurrency?: number;
 
   /**

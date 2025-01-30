@@ -33,7 +33,7 @@ import {
 } from "./types.js";
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
-import { onShutdown, retrieveSystemAttributes } from "./os.js";
+import { getHostname, onShutdown, retrieveSystemAttributes } from "./os.js";
 import { MessageBuffer } from "./buffer.js";
 import {
   expBackoff,
@@ -525,6 +525,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
       onConnectionError = (error: unknown) => {
         // Only process the first error per connection
         if (closed) {
+          this.debug(
+            `Connection error while initializing but already in closed state, skipping`,
+            {
+              connectionId,
+            }
+          );
           return;
         }
         closed = true;
@@ -621,7 +627,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           sessionId: {
             connectionId: connectionId,
             buildId: this.inngest.buildId,
-            instanceId: this.options.instanceId,
+            instanceId: this.options.instanceId || (await getHostname()),
           },
         });
 
@@ -701,6 +707,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
       onConnectionError = async (error: unknown) => {
         // Only process the first error per connection
         if (closed) {
+          this.debug(`Connection error but already in closed state, skipping`, {
+            connectionId,
+          });
           return;
         }
         closed = true;

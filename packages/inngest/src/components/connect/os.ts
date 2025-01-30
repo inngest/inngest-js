@@ -15,6 +15,7 @@ declare const Deno: {
   };
   addSignalListener: (signal: string, fn: () => void) => void;
   removeSignalListener: (signal: string, fn: () => void) => void;
+  hostname: () => string;
 };
 
 async function retrieveCpuCores() {
@@ -116,4 +117,25 @@ export function onShutdown(signals: string[], fn: () => void) {
   }
 
   return () => {};
+}
+
+export async function getHostname() {
+  // Deno
+  try {
+    if (Deno) {
+      return Deno.hostname();
+    }
+  } catch (err) {
+    // no-op
+  }
+
+  // Node, Bun
+  try {
+    const os = await import("node:os");
+    return os.hostname();
+  } catch (err) {
+    // no-op
+  }
+
+  return "unknown";
 }
