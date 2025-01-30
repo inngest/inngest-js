@@ -121,15 +121,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
    */
   private _excludeGateways: Set<string> = new Set();
 
-  /**
-   * The current setup state of the connection.
-   */
-  private setupState = {
-    receivedGatewayHello: false,
-    sentWorkerConnect: false,
-    receivedConnectionReady: false,
-  };
-
   private options: ConnectHandlerOptions;
 
   private debug: Debugger;
@@ -471,11 +462,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
     // Clean up any previous connection state
     // Note: Never reset the message buffer, as there may be pending/unsent messages
     {
-      this.setupState = {
-        receivedGatewayHello: false,
-        sentWorkerConnect: false,
-        receivedConnectionReady: false,
-      };
       this._connectionId = undefined;
       this.lastGatewayHeartbeatAt = undefined;
 
@@ -632,6 +618,15 @@ class WebSocketWorkerConnection implements WorkerConnection {
       );
     };
 
+    /**
+     * The current setup state of the connection.
+     */
+    const setupState = {
+      receivedGatewayHello: false,
+      sentWorkerConnect: false,
+      receivedConnectionReady: false,
+    };
+
     ws.onmessage = async (event) => {
       const messageBytes = new Uint8Array(event.data as ArrayBuffer);
 
@@ -645,7 +640,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       );
 
       {
-        if (!this.setupState.receivedGatewayHello) {
+        if (!setupState.receivedGatewayHello) {
           if (connectMessage.kind !== GatewayMessageType.GATEWAY_HELLO) {
             this._excludeGateways.add(startResp.gatewayGroup);
             rejectWebsocketConnected?.(
@@ -658,10 +653,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
             );
             return;
           }
-          this.setupState.receivedGatewayHello = true;
+          setupState.receivedGatewayHello = true;
         }
 
-        if (!this.setupState.sentWorkerConnect) {
+        if (!setupState.sentWorkerConnect) {
           const workerConnectRequestMsg = WorkerConnectRequestData.create({
             appName: this.inngest.id,
             environment: this.inngest.env || undefined,
@@ -704,11 +699,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
             ).finish()
           );
 
-          this.setupState.sentWorkerConnect = true;
+          setupState.sentWorkerConnect = true;
           return;
         }
 
-        if (!this.setupState.receivedConnectionReady) {
+        if (!setupState.receivedConnectionReady) {
           if (
             connectMessage.kind !== GatewayMessageType.GATEWAY_CONNECTION_READY
           ) {
@@ -724,7 +719,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
             return;
           }
 
-          this.setupState.receivedConnectionReady = true;
+          setupState.receivedConnectionReady = true;
           this.state = ConnectionState.ACTIVE;
           clearTimeout(connectTimeout);
           resolveWebsocketConnected?.();
@@ -835,7 +830,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         kind: gatewayMessageTypeToJSON(connectMessage.kind),
         rawKind: connectMessage.kind,
         attempt,
-        setupState: this.setupState,
+        setupState: setupState,
         state: this.state,
       });
     };
