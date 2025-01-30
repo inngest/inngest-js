@@ -51,6 +51,8 @@ interface connectionEstablishData {
   manualReadinessAck: boolean;
 }
 
+const ConnectWebSocketProtocol = "v0.connect.inngest.com";
+
 type ConnectCommHandler = InngestCommHandler<
   [GatewayExecutorRequestData],
   SDKResponse,
@@ -162,7 +164,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this._connectionId = undefined;
     this.currentWs = undefined;
-    this.lastGatewayHeartbeatAt;
+    this.lastGatewayHeartbeatAt = undefined;
 
     this.state = ConnectionState.CLOSED;
 
@@ -590,7 +592,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       connectionId,
     });
 
-    const ws = new WebSocket(finalEndpoint, ["v0.connect.inngest.com"]);
+    const ws = new WebSocket(finalEndpoint, [ConnectWebSocketProtocol]);
     ws.binaryType = "arraybuffer";
 
     let onConnectionError: (error: unknown) => void;
