@@ -1,5 +1,11 @@
 # inngest
 
+## 3.31.3
+
+### Patch Changes
+
+- [#831](https://github.com/inngest/inngest-js/pull/831) [`c331190`](https://github.com/inngest/inngest-js/commit/c331190f20055c9609c5daa91d9efa5ac3eeae27) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Read signing key from env var for connect
+
 ## 3.31.2
 
 ### Patch Changes
