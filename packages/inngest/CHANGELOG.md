@@ -1,5 +1,13 @@
 # inngest
 
+## 3.31.2
+
+### Patch Changes
+
+- [#824](https://github.com/inngest/inngest-js/pull/824) [`1d72eae`](https://github.com/inngest/inngest-js/commit/1d72eae5029517ae81bdc401ec440fe183f266c1) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Handle immediate WebSocket failure when connecting to gateway
+
+- [#822](https://github.com/inngest/inngest-js/pull/822) [`1136087`](https://github.com/inngest/inngest-js/commit/11360879aebb8cc70e0d8a6cf37ac34f8b294014) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sending events now has retries, backing off over 5 attempts
+
 ## 3.31.1
 
 ### Patch Changes
