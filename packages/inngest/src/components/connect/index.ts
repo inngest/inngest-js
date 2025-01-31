@@ -143,9 +143,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
 
     const env = allProcessEnv();
-    options.signingKey = options.signingKey ?? env[envKeys.InngestSigningKey];
+    options.signingKey = options.signingKey || env[envKeys.InngestSigningKey];
     options.signingKeyFallback =
-      options.signingKeyFallback ?? env[envKeys.InngestSigningKeyFallback];
+      options.signingKeyFallback || env[envKeys.InngestSigningKeyFallback];
 
     return options;
   }
