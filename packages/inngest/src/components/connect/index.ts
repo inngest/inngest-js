@@ -259,10 +259,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this.debug("Prepared sync data", {
       functionSlugs: functions.map((f) => {
-        return {
+        return JSON.stringify({
           id: f.id,
           stepUrls: Object.values(f.steps).map((s) => s.runtime["url"]),
-        };
+        });
       }),
     });
 
