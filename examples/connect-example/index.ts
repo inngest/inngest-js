@@ -29,10 +29,15 @@ inngest["connect"]({
   signingKey: "signkey-test-12345678",
   signingKeyFallback: "signkey-test-00000000",
   //     baseUrl: "http://127.0.0.1:8288",
-}).then((conn) => {
-  console.log("Connected!", conn.connectionId);
+}).then(async (conn) => {
+  console.log("Connected!");
 
-  setInterval(() => {
-    console.log("State:", conn.state);
+  const statusLog = setInterval(() => {
+    console.log(conn.state);
   }, 1000);
+
+  await conn.closed;
+
+  console.log("Closed, clearing");
+  clearInterval(statusLog);
 });

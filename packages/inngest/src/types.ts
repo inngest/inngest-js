@@ -1126,7 +1126,7 @@ export const functionConfigSchema = z.strictObject({
       id: z.string(),
       name: z.string(),
       runtime: z.strictObject({
-        type: z.literal("http"),
+        type: z.union([z.literal("http"), z.literal("ws")]),
         url: z.string(),
       }),
       retries: z

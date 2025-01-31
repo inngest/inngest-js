@@ -392,7 +392,10 @@ export class InngestCommHandler<
     this.fns = this.rawFns.reduce<
       Record<string, { fn: InngestFunction.Any; onFailure: boolean }>
     >((acc, fn) => {
-      const configs = fn["getConfig"](new URL("https://example.com"), this.id);
+      const configs = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: this.id,
+      });
 
       const fns = configs.reduce((acc, { id }, index) => {
         return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
@@ -1510,7 +1513,10 @@ export class InngestCommHandler<
 
   protected configs(url: URL): FunctionConfig[] {
     const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
-      (acc, fn) => [...acc, ...fn["getConfig"](url, this.id)],
+      (acc, fn) => [
+        ...acc,
+        ...fn["getConfig"]({ baseUrl: url, appPrefix: this.id }),
+      ],
       []
     );
 
