@@ -329,7 +329,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
               body: new TextEncoder().encode(body),
               noRetry: headers[headerKeys.NoRetry] === "true",
               retryAfter: headers[headerKeys.RetryAfter],
-              sdkVersion: `v${version}`,
+              sdkVersion: `inngest-js:v${version}`,
               requestVersion: parseInt(
                 headers[headerKeys.RequestVersion] ??
                   PREFERRED_EXECUTION_VERSION.toString(),
@@ -340,8 +340,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           url() {
             const baseUrl = new URL("http://connect.inngest.com");
 
-            const functionId = `${appName}-${msg.functionSlug}`;
-            baseUrl.searchParams.set(queryKeys.FnId, functionId);
+            baseUrl.searchParams.set(queryKeys.FnId, msg.functionSlug);
 
             if (msg.stepId) {
               baseUrl.searchParams.set(queryKeys.StepId, msg.stepId);
