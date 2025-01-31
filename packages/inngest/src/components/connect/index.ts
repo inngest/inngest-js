@@ -1,7 +1,7 @@
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
 import { ulid } from "ulid";
-import { headerKeys, queryKeys } from "../../helpers/consts.js";
+import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.js";
 import { allProcessEnv, getPlatformName } from "../../helpers/env.js";
 import { parseFnData } from "../../helpers/functions.js";
 import { hashSigningKey } from "../../helpers/strings.js";
@@ -141,6 +141,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
     if (!Array.isArray(options.handleShutdownSignals)) {
       options.handleShutdownSignals = DEFAULT_SHUTDOWN_SIGNALS;
     }
+
+    const env = allProcessEnv();
+    options.signingKey = options.signingKey ?? env[envKeys.InngestSigningKey];
+    options.signingKeyFallback =
+      options.signingKeyFallback ?? env[envKeys.InngestSigningKeyFallback];
+
     return options;
   }
 
