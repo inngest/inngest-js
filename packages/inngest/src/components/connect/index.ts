@@ -247,10 +247,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
       connect: "v1",
     };
 
+    const appName = this.inngest.id;
+
     const functions: Array<FunctionConfig> = this.functions.flatMap((f) =>
       f["getConfig"]({
         baseUrl: new URL("wss://connect"),
-        appPrefix: this.inngest.id,
+        appPrefix: appName,
         isConnect: true,
       })
     );
@@ -265,8 +267,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
       marshaledCapabilities: JSON.stringify(capabilities),
       marshaledFunctions: JSON.stringify(functions),
     };
-
-    const appName = this.inngest.id;
 
     const inngestCommHandler: ConnectCommHandler = new InngestCommHandler({
       client: this.inngest,
