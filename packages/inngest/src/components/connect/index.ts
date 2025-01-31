@@ -340,8 +340,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           url() {
             const baseUrl = new URL("http://connect.inngest.com");
 
-            const functionId = `${appName}-${msg.functionSlug}`;
-            baseUrl.searchParams.set(queryKeys.FnId, functionId);
+            baseUrl.searchParams.set(queryKeys.FnId, msg.functionSlug);
 
             if (msg.stepId) {
               baseUrl.searchParams.set(queryKeys.StepId, msg.stepId);
