@@ -329,7 +329,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
               body: new TextEncoder().encode(body),
               noRetry: headers[headerKeys.NoRetry] === "true",
               retryAfter: headers[headerKeys.RetryAfter],
-              sdkVersion: `v${version}`,
+              sdkVersion: `inngest-js:v${version}`,
               requestVersion: parseInt(
                 headers[headerKeys.RequestVersion] ??
                   PREFERRED_EXECUTION_VERSION.toString(),
