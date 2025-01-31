@@ -25,7 +25,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000/api/inngest with your browser to see the result.
+Open http://localhost:8787/api/inngest (or the URL that Wrangler returns) with your browser to see the result.
 
 - [Inngest functions](https://www.inngest.com/docs/functions) are available at `src/inngest/`.
 <!-- - The [Inngest handler](https://www.inngest.com/docs/sdk/serve#framework-hono) is available at `index.ts`. -->
