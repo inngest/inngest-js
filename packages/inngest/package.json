@@ -143,6 +143,11 @@
       "import": "./types.js",
       "types": "./types.d.ts"
     },
+    "./connect": {
+      "require": "./connect.js",
+      "import": "./connect.js",
+      "types": "./connect.d.ts"
+    },
     "./api/*": "./api/*.js",
     "./components/*": "./components/*.js",
     "./deno/*": "./deno/*.js",
