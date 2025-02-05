@@ -47,8 +47,6 @@ import {
   type SendEventResponse,
   type TriggersFromClient,
 } from "../types.js";
-import { connect } from "./connect/index.js";
-import { type ConnectHandlerOptions } from "./connect/types.js";
 import { type EventSchemas } from "./EventSchemas.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { type InngestFunctionReference } from "./InngestFunctionReference.js";
@@ -676,13 +674,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     }
 
     return triggers as AsArray<T>;
-  }
-
-  /**
-   * `connect()` is experimental! It is not yet stable and will change.
-   */
-  protected async connect(opts: ConnectHandlerOptions) {
-    return connect(this, opts);
   }
 }
 

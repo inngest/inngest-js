@@ -29,6 +29,9 @@ inngest["connect"]({
   signingKey: "signkey-test-12345678",
   signingKeyFallback: "signkey-test-00000000",
   //     baseUrl: "http://127.0.0.1:8288",
+  rewriteGatewayEndpoint: (url) => {
+    return url.replace("127.0.0.1:8289", "host.docker.internal:8289");
+  },
 }).then(async (conn) => {
   console.log("Connected!");
 
