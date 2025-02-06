@@ -1,5 +1,11 @@
 # inngest
 
+## 3.31.4
+
+### Patch Changes
+
+- [#834](https://github.com/inngest/inngest-js/pull/834) [`b304e1c`](https://github.com/inngest/inngest-js/commit/b304e1c41f18ed940885409596ebf8af42050cbe) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Remove connect from inngest client, split out into `inngest/connect`
+
 ## 3.31.3
 
 ### Patch Changes
