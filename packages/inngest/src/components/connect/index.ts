@@ -669,7 +669,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           startedAt: startedAt,
           sessionId: {
             connectionId: connectionId,
-            buildId: this.inngest.buildId,
+            appVersion: this.inngest.appVersion,
             instanceId: this.options.instanceId || (await getHostname()),
           },
         });
