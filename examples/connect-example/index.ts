@@ -5,7 +5,7 @@ console.log("Starting up worker with pid", process.pid);
 const inngest = new Inngest({
   id: "my-connect-js-app",
   eventKey: "abc123",
-  buildId: "v1.0",
+  appVersion: "v1.0",
 });
 
 console.log("Connecting...");

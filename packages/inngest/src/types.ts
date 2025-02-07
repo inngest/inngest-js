@@ -710,10 +710,10 @@ export interface ClientOptions {
   isDev?: boolean;
 
   /**
-   * The application-specific build identifier. This can be an arbitrary value
+   * The application-specific version identifier. This can be an arbitrary value
    * such as a version string, a Git commit SHA, or any other unique identifier.
    */
-  buildId?: string;
+  appVersion?: string;
 }
 
 /**
