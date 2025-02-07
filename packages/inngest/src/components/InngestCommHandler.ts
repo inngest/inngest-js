@@ -1628,6 +1628,7 @@ export class InngestCommHandler<
 
     const body: InBandRegisterRequest = {
       app_id: this.client.id,
+      appVersion: this.client.appVersion,
       capabilities: registerBody.capabilities,
       env,
       framework: registerBody.framework,
@@ -1642,7 +1643,6 @@ export class InngestCommHandler<
       sdk_version: "",
       sdk: registerBody.sdk,
       url: registerBody.url,
-      appVersion: this.client.appVersion,
     };
 
     if (introspectionBody.authentication_succeeded) {
