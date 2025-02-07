@@ -1,4 +1,5 @@
 import { Inngest } from "inngest";
+import { connect } from "inngest/connect";
 
 console.log("Starting up worker with pid", process.pid);
 
@@ -10,7 +11,8 @@ const inngest = new Inngest({
 
 console.log("Connecting...");
 
-inngest["connect"]({
+connect({
+  inngest,
   functions: [
     inngest.createFunction(
       { id: "test-function" },
