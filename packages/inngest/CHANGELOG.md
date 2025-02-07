@@ -1,5 +1,11 @@
 # inngest
 
+## 3.31.6
+
+### Patch Changes
+
+- [#840](https://github.com/inngest/inngest-js/pull/840) [`b24fd30`](https://github.com/inngest/inngest-js/commit/b24fd304b339d7d216018ebe203c8b53895f5f38) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Sync: Provide app version in register request
+
 ## 3.31.5
 
 ### Patch Changes
