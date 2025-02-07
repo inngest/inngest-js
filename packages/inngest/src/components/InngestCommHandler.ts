@@ -1592,6 +1592,7 @@ export class InngestCommHandler<
         trust_probe: "v1",
         connect: "v1",
       },
+      appVersion: this.client.appVersion,
     };
 
     return body;
@@ -1627,6 +1628,7 @@ export class InngestCommHandler<
 
     const body: InBandRegisterRequest = {
       app_id: this.client.id,
+      appVersion: this.client.appVersion,
       capabilities: registerBody.capabilities,
       env,
       framework: registerBody.framework,

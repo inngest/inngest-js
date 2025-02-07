@@ -1012,6 +1012,12 @@ export interface RegisterRequest {
   appName: string;
 
   /**
+   * AppVersion represents an optional application version identifier. This should change
+   * whenever code within one of your Inngest function or any dependency thereof changes.
+   */
+  appVersion?: string;
+
+  /**
    * The functions available at this particular handler.
    */
   functions: FunctionConfig[];
@@ -1035,7 +1041,7 @@ export interface Capabilities {
 export interface InBandRegisterRequest
   extends Pick<
       RegisterRequest,
-      "capabilities" | "framework" | "functions" | "sdk" | "url"
+      "capabilities" | "framework" | "functions" | "sdk" | "url" | "appVersion"
     >,
     Pick<AuthenticatedIntrospection, "sdk_language" | "sdk_version" | "env"> {
   /**

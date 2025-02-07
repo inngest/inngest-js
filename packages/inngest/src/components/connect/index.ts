@@ -116,12 +116,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
     | ((value: void | PromiseLike<void>) => void)
     | undefined;
 
-  constructor(inngest: Inngest.Any, options: ConnectHandlerOptions) {
-    this.inngest = inngest;
+  constructor(options: ConnectHandlerOptions) {
+    this.inngest = options.inngest as Inngest.Any;
     this.options = this.applyDefaults(options);
     this.debug = debug("inngest:connect");
 
-    this.messageBuffer = new MessageBuffer(inngest);
+    this.messageBuffer = new MessageBuffer(this.inngest);
 
     this.closingPromise = new Promise((resolve) => {
       this.resolveClosingPromise = resolve;
@@ -1042,11 +1042,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
 }
 
 export const connect = async (
-  inngest: Inngest.Like,
   options: ConnectHandlerOptions
   // eslint-disable-next-line @typescript-eslint/require-await
 ): Promise<WorkerConnection> => {
-  const conn = new WebSocketWorkerConnection(inngest as Inngest.Any, options);
+  const conn = new WebSocketWorkerConnection(options);
 
   await conn.connect();
 
