@@ -1,5 +1,13 @@
 # inngest
 
+## 3.31.5
+
+### Patch Changes
+
+- [#837](https://github.com/inngest/inngest-js/pull/837) [`cb00a46`](https://github.com/inngest/inngest-js/commit/cb00a46c1a1fa4c71a9b76175e9bffd94f27fa0f) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Connect: Rename buildId -> appVersion
+
+- [#838](https://github.com/inngest/inngest-js/pull/838) [`ece27d7`](https://github.com/inngest/inngest-js/commit/ece27d79ccd91fe35f2ff9de09cefafb5745893b) Thanks [@amh4r](https://github.com/amh4r)! - Fix missing env for introspection and in-band sync
+
 ## 3.31.4
 
 ### Patch Changes
