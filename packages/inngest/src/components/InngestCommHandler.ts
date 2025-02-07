@@ -1592,6 +1592,7 @@ export class InngestCommHandler<
         trust_probe: "v1",
         connect: "v1",
       },
+      appVersion: this.client.appVersion,
     };
 
     return body;
@@ -1641,6 +1642,7 @@ export class InngestCommHandler<
       sdk_version: "",
       sdk: registerBody.sdk,
       url: registerBody.url,
+      appVersion: this.client.appVersion,
     };
 
     if (introspectionBody.authentication_succeeded) {
