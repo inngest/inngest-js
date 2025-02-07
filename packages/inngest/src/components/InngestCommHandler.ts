@@ -1214,11 +1214,19 @@ export class InngestCommHandler<
         }
       }
 
+      // TODO: This feels hacky, so we should probably make it not hacky.
+      const env = getInngestHeaders()[headerKeys.Environment] ?? null;
+
       if (method === "GET") {
         return {
           status: 200,
           body: stringify(
-            await this.introspectionBody({ actions, signatureValidation, url })
+            await this.introspectionBody({
+              actions,
+              env,
+              signatureValidation,
+              url,
+            })
           ),
           headers: {
             "Content-Type": "application/json",
@@ -1320,6 +1328,7 @@ export class InngestCommHandler<
           const respBody = await this.inBandRegisterBody({
             actions,
             deployId,
+            env,
             signatureValidation,
             url,
           });
@@ -1591,6 +1600,7 @@ export class InngestCommHandler<
   protected async inBandRegisterBody({
     actions,
     deployId,
+    env,
     signatureValidation,
     url,
   }: {
@@ -1602,6 +1612,7 @@ export class InngestCommHandler<
      */
     deployId: string | undefined | null;
 
+    env: string | null;
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
 
     url: URL;
@@ -1609,6 +1620,7 @@ export class InngestCommHandler<
     const registerBody = this.registerBody({ deployId, url });
     const introspectionBody = await this.introspectionBody({
       actions,
+      env,
       signatureValidation,
       url,
     });
@@ -1616,7 +1628,7 @@ export class InngestCommHandler<
     const body: InBandRegisterRequest = {
       app_id: this.client.id,
       capabilities: registerBody.capabilities,
-      env: null,
+      env,
       framework: registerBody.framework,
       functions: registerBody.functions,
       inspection: introspectionBody,
@@ -1632,7 +1644,6 @@ export class InngestCommHandler<
     };
 
     if (introspectionBody.authentication_succeeded) {
-      body.env = introspectionBody.env;
       body.sdk_language = introspectionBody.sdk_language;
       body.sdk_version = introspectionBody.sdk_version;
     }
@@ -1642,10 +1653,12 @@ export class InngestCommHandler<
 
   protected async introspectionBody({
     actions,
+    env,
     signatureValidation,
     url,
   }: {
     actions: HandlerResponseWithErrors;
+    env: string | null;
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     url: URL;
   }): Promise<UnauthenticatedIntrospection | AuthenticatedIntrospection> {
@@ -1690,11 +1703,7 @@ export class InngestCommHandler<
             trust_probe: "v1",
             connect: "v1",
           },
-          env:
-            (await actions.headers(
-              "fetching environment for introspection request",
-              headerKeys.Environment
-            )) || null,
+          env,
           event_api_origin: this.eventApiBaseUrl,
           event_key_hash: this.hashedEventKey ?? null,
           extra: {
