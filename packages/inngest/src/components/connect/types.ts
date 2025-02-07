@@ -1,9 +1,12 @@
 import { type RegisterOptions } from "../../types.js";
+import { type Inngest } from "../Inngest.js";
 import { type InngestFunction } from "../InngestFunction.js";
 
 export const DEFAULT_SHUTDOWN_SIGNALS = ["SIGINT", "SIGTERM"];
 
 export interface ConnectHandlerOptions extends RegisterOptions {
+  inngest: Inngest.Like;
+
   /**
    * An array of the functions to serve and register with Inngest.
    */
