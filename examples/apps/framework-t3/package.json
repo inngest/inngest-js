@@ -1,0 +1,40 @@
+{
+  "name": "framework-t3",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "lint": "next lint",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@t3-oss/env-nextjs": "^0.3.1",
+    "@tanstack/react-query": "^4.29.7",
+    "@trpc/client": "^10.26.0",
+    "@trpc/next": "^10.26.0",
+    "@trpc/react-query": "^10.26.0",
+    "@trpc/server": "^10.26.0",
+    "inngest": "~2",
+    "next": "^13.4.2",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "superjson": "1.12.2",
+    "zod": "^3.21.4"
+  },
+  "devDependencies": {
+    "@types/eslint": "^8.37.0",
+    "@types/node": "^18.16.0",
+    "@types/react": "^18.2.6",
+    "@types/react-dom": "^18.2.4",
+    "@typescript-eslint/eslint-plugin": "6.0.0",
+    "@typescript-eslint/parser": "6.0.0",
+    "eslint": "^8.40.0",
+    "eslint-config-next": "^13.4.2",
+    "typescript": "^5.0.4"
+  },
+  "ct3aMetadata": {
+    "initVersion": "7.16.0"
+  },
+  "packageManager": "npm@9.6.4"
+}
