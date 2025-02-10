@@ -3,7 +3,7 @@ import { type Simplify } from "./helpers/types.js";
 import { type Logger } from "./middleware/logger.js";
 
 // can we use import type to only import server-side inngest types and eat the schema?
-export const createInngest = <TOptions extends Inngest.Args>(
+export const createInngest = <const TOptions extends Inngest.Args>(
   ...[opts]: TOptions
 ): Inngest<TOptions> => {
   return new InngestImpl();
@@ -14,7 +14,8 @@ export const createInngest = <TOptions extends Inngest.Args>(
 export interface Inngest<_TOptions = any> {
   createFunction: Inngest.CreateFunctionFn;
   serve: Inngest.ServeFn;
-  sendEvent: Inngest.SendEventFn<this>;
+  sendEvent: Inngest.SendEventFn;
+  sendEvents: Inngest.SendEventsFn;
   connect: Inngest.ConnectFn;
   event: Inngest.EventFn;
 }
@@ -72,16 +73,14 @@ export namespace Inngest {
     ];
   }
 
-  export type SendEventFn<TInngest extends Inngest> = <
-    TName extends TriggerNames<TInngest>,
-  >(
-    ...opts: [name: TName, data: TriggersByName<TInngest, TName>["data"]]
-  ) => void;
+  export type SendEventFn = (event: Event.Input) => void;
+
+  export type SendEventsFn = (events: Event.Input[]) => void;
 
   export type TriggerNames<TInngest extends Inngest> = TInngest extends Inngest<
-    infer _IOptions extends [{ events: Trigger[] }]
+    infer IOptions extends [{ events: Trigger[] }]
   >
-    ? _IOptions[0]["events"][number]["name"]
+    ? IOptions[0]["events"][number]["name"]
     : never;
 
   export type TriggersByName<
@@ -104,17 +103,30 @@ export namespace Inngest {
   export type EventFn = (name: string) => Trigger;
 }
 
-export type EventSchema<TOutput> = ZodSchema<TOutput>;
+export type EventSchema<TOutput> = Type<TOutput> | ZodSchema<TOutput>;
 
 export type Trigger<
-  T extends Simplify<Pick<Event, "name" | "data">> = Simplify<
+  TShape extends Simplify<Pick<Event, "name" | "data">> = Simplify<
     Pick<Event, "name" | "data">
   >,
-> = T & {
+> = TShape & {
+  <
+    UData extends Record<string, unknown> = TShape["data"],
+    const UExtra extends Simplify<
+      Partial<Omit<Event, "name" | "data">>
+    > = Simplify<Partial<Omit<Event, "name" | "data">>>,
+  >(
+    data: UData,
+    extra?: UExtra
+  ): Simplify<
+    Partial<Omit<Event, keyof TShape>> & Pick<TShape, "name" | "data"> & UExtra
+  >;
   __brand: "Inngest.Trigger";
   type: "event" | "cron";
-  schema?: EventSchema<T["data"]>;
+  schema?: EventSchema<TShape["data"]>;
 };
+
+export type Type<T> = T & { __brand: "Inngest.Type" };
 
 export namespace Trigger {
   export type AsEvent<T extends Trigger> = Simplify<
@@ -133,11 +145,22 @@ export interface Event {
   ts: number;
 }
 
+export namespace Event {
+  export type AsInput<T extends Event> = Simplify<
+    Partial<T> & { name: T["name"] }
+  >;
+
+  export type AsInputs<T extends Event[]> = { [K in keyof T]: AsInput<T[K]> };
+
+  export type Input = AsInput<Event>;
+}
+
 export class InngestImpl implements Inngest {
   public event() {}
   public createFunction() {}
   public serve() {}
-  public send() {}
+  public sendEvent() {}
+  public sendEvents() {}
   public connect() {}
 }
 
@@ -148,13 +171,28 @@ export const event = <
   name: TName,
   schema?: EventSchema<TData>
 ): Trigger<{ name: TName; data: TData }> => {
-  return {
-    __brand: "Inngest.Trigger",
-    type: "event",
-    name,
-    data: {} as TData,
-    schema,
+  const toEvent = (
+    data: TData,
+    extra?: Simplify<Partial<Omit<Event, "name" | "data">>>
+  ) => {
+    return {
+      name,
+      data,
+      ...extra,
+    };
   };
+
+  toEvent.__brand = "Inngest.Trigger" as const;
+  toEvent.type = "event" as const;
+  toEvent.name = name;
+  toEvent.data = {} as TData;
+  toEvent.schema = schema;
+
+  return toEvent as Trigger<{ name: TName; data: TData }>;
+};
+
+export const withType = <T>(): Type<T> => {
+  return undefined as unknown as Type<T>;
 };
 
 export const cron = <TCron extends string>(
