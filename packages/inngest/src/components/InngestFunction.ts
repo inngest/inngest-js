@@ -298,7 +298,7 @@ export namespace InngestFunction {
 
   export interface Like {
     name: string;
-    description?: string;
+    description?: string | undefined;
   }
 
   /**
