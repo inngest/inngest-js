@@ -455,8 +455,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
         : {}),
     };
 
-    if (this.inngest.env) {
-      headers[headerKeys.Environment] = this.inngest.env;
+    const envOverride = this.inngest.env;
+    if (envOverride) {
+      headers[headerKeys.Environment] = envOverride;
     }
 
     // refactor this to a more universal spot
@@ -482,7 +483,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       if (resp.status === 401) {
         throw new AuthError(
           `Failed initial API handshake request to ${targetUrl.toString()}${
-            this.inngest.env ? ` (env: ${this.inngest.env})` : ""
+            envOverride ? ` (env: ${envOverride})` : ""
           }, ${await resp.text()}`,
           attempt
         );
