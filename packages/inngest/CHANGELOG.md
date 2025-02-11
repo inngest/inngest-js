@@ -1,5 +1,11 @@
 # inngest
 
+## 3.31.7
+
+### Patch Changes
+
+- [#842](https://github.com/inngest/inngest-js/pull/842) [`4237efd`](https://github.com/inngest/inngest-js/commit/4237efd04aebbca55c027f5fed249a77decf3b1c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow for use of `exactOptionalPropertyTypes: true` when serving
+
 ## 3.31.6
 
 ### Patch Changes
