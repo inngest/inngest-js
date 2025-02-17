@@ -351,6 +351,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
             return SDKResponse.create({
               requestId: msg.requestId,
+              accountId: msg.accountId,
               envId: msg.envId,
               appId: msg.appId,
               status: sdkResponseStatus,
@@ -899,6 +900,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
               kind: GatewayMessageType.WORKER_REQUEST_ACK,
               payload: WorkerRequestAckData.encode(
                 WorkerRequestAckData.create({
+                  accountId: gatewayExecutorRequest.accountId,
+                  envId: gatewayExecutorRequest.envId,
                   appId: gatewayExecutorRequest.appId,
                   functionSlug: gatewayExecutorRequest.functionSlug,
                   requestId: gatewayExecutorRequest.requestId,
