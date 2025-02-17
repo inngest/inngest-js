@@ -198,9 +198,7 @@ export enum WorkerDisconnectReason {
   UNRECOGNIZED = -1,
 }
 
-export function workerDisconnectReasonFromJSON(
-  object: any
-): WorkerDisconnectReason {
+export function workerDisconnectReasonFromJSON(object: any): WorkerDisconnectReason {
   switch (object) {
     case 0:
     case "WORKER_SHUTDOWN":
@@ -212,9 +210,7 @@ export function workerDisconnectReasonFromJSON(
   }
 }
 
-export function workerDisconnectReasonToJSON(
-  object: WorkerDisconnectReason
-): string {
+export function workerDisconnectReasonToJSON(object: WorkerDisconnectReason): string {
   switch (object) {
     case WorkerDisconnectReason.WORKER_SHUTDOWN:
       return "WORKER_SHUTDOWN";
@@ -276,6 +272,8 @@ export interface GatewayExecutorRequestData {
   functionSlug: string;
   stepId?: string | undefined;
   requestPayload: Uint8Array;
+  systemTraceCtx: Uint8Array;
+  userTraceCtx: Uint8Array;
 }
 
 export interface WorkerRequestAckData {
@@ -283,6 +281,8 @@ export interface WorkerRequestAckData {
   appId: string;
   functionSlug: string;
   stepId?: string | undefined;
+  systemTraceCtx: Uint8Array;
+  userTraceCtx: Uint8Array;
 }
 
 export interface SDKResponse {
@@ -295,6 +295,8 @@ export interface SDKResponse {
   retryAfter?: string | undefined;
   sdkVersion: string;
   requestVersion: number;
+  systemTraceCtx: Uint8Array;
+  userTraceCtx: Uint8Array;
 }
 
 export interface WorkerReplyAckData {
@@ -349,10 +351,7 @@ function createBaseConnectMessage(): ConnectMessage {
 }
 
 export const ConnectMessage: MessageFns<ConnectMessage> = {
-  encode(
-    message: ConnectMessage,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: ConnectMessage, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.kind !== 0) {
       writer.uint32(8).int32(message.kind);
     }
@@ -363,8 +362,7 @@ export const ConnectMessage: MessageFns<ConnectMessage> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): ConnectMessage {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseConnectMessage();
     while (reader.pos < end) {
@@ -398,9 +396,7 @@ export const ConnectMessage: MessageFns<ConnectMessage> = {
   fromJSON(object: any): ConnectMessage {
     return {
       kind: isSet(object.kind) ? gatewayMessageTypeFromJSON(object.kind) : 0,
-      payload: isSet(object.payload)
-        ? bytesFromBase64(object.payload)
-        : new Uint8Array(0),
+      payload: isSet(object.payload) ? bytesFromBase64(object.payload) : new Uint8Array(0),
     };
   },
 
@@ -415,14 +411,10 @@ export const ConnectMessage: MessageFns<ConnectMessage> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<ConnectMessage>, I>>(
-    base?: I
-  ): ConnectMessage {
+  create<I extends Exact<DeepPartial<ConnectMessage>, I>>(base?: I): ConnectMessage {
     return ConnectMessage.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ConnectMessage>, I>>(
-    object: I
-  ): ConnectMessage {
+  fromPartial<I extends Exact<DeepPartial<ConnectMessage>, I>>(object: I): ConnectMessage {
     const message = createBaseConnectMessage();
     message.kind = object.kind ?? 0;
     message.payload = object.payload ?? new Uint8Array(0);
@@ -435,10 +427,7 @@ function createBaseSessionIdentifier(): SessionIdentifier {
 }
 
 export const SessionIdentifier: MessageFns<SessionIdentifier> = {
-  encode(
-    message: SessionIdentifier,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: SessionIdentifier, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.instanceId !== "") {
       writer.uint32(10).string(message.instanceId);
     }
@@ -452,8 +441,7 @@ export const SessionIdentifier: MessageFns<SessionIdentifier> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): SessionIdentifier {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseSessionIdentifier();
     while (reader.pos < end) {
@@ -494,15 +482,9 @@ export const SessionIdentifier: MessageFns<SessionIdentifier> = {
 
   fromJSON(object: any): SessionIdentifier {
     return {
-      instanceId: isSet(object.instanceId)
-        ? globalThis.String(object.instanceId)
-        : "",
-      connectionId: isSet(object.connectionId)
-        ? globalThis.String(object.connectionId)
-        : "",
-      appVersion: isSet(object.appVersion)
-        ? globalThis.String(object.appVersion)
-        : undefined,
+      instanceId: isSet(object.instanceId) ? globalThis.String(object.instanceId) : "",
+      connectionId: isSet(object.connectionId) ? globalThis.String(object.connectionId) : "",
+      appVersion: isSet(object.appVersion) ? globalThis.String(object.appVersion) : undefined,
     };
   },
 
@@ -520,14 +502,10 @@ export const SessionIdentifier: MessageFns<SessionIdentifier> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<SessionIdentifier>, I>>(
-    base?: I
-  ): SessionIdentifier {
+  create<I extends Exact<DeepPartial<SessionIdentifier>, I>>(base?: I): SessionIdentifier {
     return SessionIdentifier.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<SessionIdentifier>, I>>(
-    object: I
-  ): SessionIdentifier {
+  fromPartial<I extends Exact<DeepPartial<SessionIdentifier>, I>>(object: I): SessionIdentifier {
     const message = createBaseSessionIdentifier();
     message.instanceId = object.instanceId ?? "";
     message.connectionId = object.connectionId ?? "";
@@ -541,15 +519,9 @@ function createBaseSessionDetails(): SessionDetails {
 }
 
 export const SessionDetails: MessageFns<SessionDetails> = {
-  encode(
-    message: SessionDetails,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: SessionDetails, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.sessionId !== undefined) {
-      SessionIdentifier.encode(
-        message.sessionId,
-        writer.uint32(10).fork()
-      ).join();
+      SessionIdentifier.encode(message.sessionId, writer.uint32(10).fork()).join();
     }
     if (message.functionHash.length !== 0) {
       writer.uint32(26).bytes(message.functionHash);
@@ -558,8 +530,7 @@ export const SessionDetails: MessageFns<SessionDetails> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): SessionDetails {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseSessionDetails();
     while (reader.pos < end) {
@@ -592,12 +563,8 @@ export const SessionDetails: MessageFns<SessionDetails> = {
 
   fromJSON(object: any): SessionDetails {
     return {
-      sessionId: isSet(object.sessionId)
-        ? SessionIdentifier.fromJSON(object.sessionId)
-        : undefined,
-      functionHash: isSet(object.functionHash)
-        ? bytesFromBase64(object.functionHash)
-        : new Uint8Array(0),
+      sessionId: isSet(object.sessionId) ? SessionIdentifier.fromJSON(object.sessionId) : undefined,
+      functionHash: isSet(object.functionHash) ? bytesFromBase64(object.functionHash) : new Uint8Array(0),
     };
   },
 
@@ -612,19 +579,14 @@ export const SessionDetails: MessageFns<SessionDetails> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<SessionDetails>, I>>(
-    base?: I
-  ): SessionDetails {
+  create<I extends Exact<DeepPartial<SessionDetails>, I>>(base?: I): SessionDetails {
     return SessionDetails.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<SessionDetails>, I>>(
-    object: I
-  ): SessionDetails {
+  fromPartial<I extends Exact<DeepPartial<SessionDetails>, I>>(object: I): SessionDetails {
     const message = createBaseSessionDetails();
-    message.sessionId =
-      object.sessionId !== undefined && object.sessionId !== null
-        ? SessionIdentifier.fromPartial(object.sessionId)
-        : undefined;
+    message.sessionId = (object.sessionId !== undefined && object.sessionId !== null)
+      ? SessionIdentifier.fromPartial(object.sessionId)
+      : undefined;
     message.functionHash = object.functionHash ?? new Uint8Array(0);
     return message;
   },
@@ -635,10 +597,7 @@ function createBaseConfigDetails(): ConfigDetails {
 }
 
 export const ConfigDetails: MessageFns<ConfigDetails> = {
-  encode(
-    message: ConfigDetails,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: ConfigDetails, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.capabilities.length !== 0) {
       writer.uint32(10).bytes(message.capabilities);
     }
@@ -649,8 +608,7 @@ export const ConfigDetails: MessageFns<ConfigDetails> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): ConfigDetails {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseConfigDetails();
     while (reader.pos < end) {
@@ -683,12 +641,8 @@ export const ConfigDetails: MessageFns<ConfigDetails> = {
 
   fromJSON(object: any): ConfigDetails {
     return {
-      capabilities: isSet(object.capabilities)
-        ? bytesFromBase64(object.capabilities)
-        : new Uint8Array(0),
-      functions: isSet(object.functions)
-        ? bytesFromBase64(object.functions)
-        : new Uint8Array(0),
+      capabilities: isSet(object.capabilities) ? bytesFromBase64(object.capabilities) : new Uint8Array(0),
+      functions: isSet(object.functions) ? bytesFromBase64(object.functions) : new Uint8Array(0),
     };
   },
 
@@ -703,14 +657,10 @@ export const ConfigDetails: MessageFns<ConfigDetails> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<ConfigDetails>, I>>(
-    base?: I
-  ): ConfigDetails {
+  create<I extends Exact<DeepPartial<ConfigDetails>, I>>(base?: I): ConfigDetails {
     return ConfigDetails.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ConfigDetails>, I>>(
-    object: I
-  ): ConfigDetails {
+  fromPartial<I extends Exact<DeepPartial<ConfigDetails>, I>>(object: I): ConfigDetails {
     const message = createBaseConfigDetails();
     message.capabilities = object.capabilities ?? new Uint8Array(0);
     message.functions = object.functions ?? new Uint8Array(0);
@@ -723,10 +673,7 @@ function createBaseAuthData(): AuthData {
 }
 
 export const AuthData: MessageFns<AuthData> = {
-  encode(
-    message: AuthData,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: AuthData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.sessionToken !== "") {
       writer.uint32(10).string(message.sessionToken);
     }
@@ -737,8 +684,7 @@ export const AuthData: MessageFns<AuthData> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): AuthData {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseAuthData();
     while (reader.pos < end) {
@@ -771,12 +717,8 @@ export const AuthData: MessageFns<AuthData> = {
 
   fromJSON(object: any): AuthData {
     return {
-      sessionToken: isSet(object.sessionToken)
-        ? globalThis.String(object.sessionToken)
-        : "",
-      syncToken: isSet(object.syncToken)
-        ? globalThis.String(object.syncToken)
-        : "",
+      sessionToken: isSet(object.sessionToken) ? globalThis.String(object.sessionToken) : "",
+      syncToken: isSet(object.syncToken) ? globalThis.String(object.syncToken) : "",
     };
   },
 
@@ -820,15 +762,9 @@ function createBaseWorkerConnectRequestData(): WorkerConnectRequestData {
 }
 
 export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
-  encode(
-    message: WorkerConnectRequestData,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: WorkerConnectRequestData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.sessionId !== undefined) {
-      SessionIdentifier.encode(
-        message.sessionId,
-        writer.uint32(10).fork()
-      ).join();
+      SessionIdentifier.encode(message.sessionId, writer.uint32(10).fork()).join();
     }
     if (message.authData !== undefined) {
       AuthData.encode(message.authData, writer.uint32(18).fork()).join();
@@ -843,10 +779,7 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
       writer.uint32(40).bool(message.workerManualReadinessAck);
     }
     if (message.systemAttributes !== undefined) {
-      SystemAttributes.encode(
-        message.systemAttributes,
-        writer.uint32(50).fork()
-      ).join();
+      SystemAttributes.encode(message.systemAttributes, writer.uint32(50).fork()).join();
     }
     if (message.environment !== undefined) {
       writer.uint32(58).string(message.environment);
@@ -864,20 +797,13 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
       writer.uint32(90).string(message.sdkLanguage);
     }
     if (message.startedAt !== undefined) {
-      Timestamp.encode(
-        toTimestamp(message.startedAt),
-        writer.uint32(98).fork()
-      ).join();
+      Timestamp.encode(toTimestamp(message.startedAt), writer.uint32(98).fork()).join();
     }
     return writer;
   },
 
-  decode(
-    input: BinaryReader | Uint8Array,
-    length?: number
-  ): WorkerConnectRequestData {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+  decode(input: BinaryReader | Uint8Array, length?: number): WorkerConnectRequestData {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseWorkerConnectRequestData();
     while (reader.pos < end) {
@@ -928,10 +854,7 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
             break;
           }
 
-          message.systemAttributes = SystemAttributes.decode(
-            reader,
-            reader.uint32()
-          );
+          message.systemAttributes = SystemAttributes.decode(reader, reader.uint32());
           continue;
         }
         case 7: {
@@ -979,9 +902,7 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
             break;
           }
 
-          message.startedAt = fromTimestamp(
-            Timestamp.decode(reader, reader.uint32())
-          );
+          message.startedAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
         }
       }
@@ -995,40 +916,20 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
 
   fromJSON(object: any): WorkerConnectRequestData {
     return {
-      sessionId: isSet(object.sessionId)
-        ? SessionIdentifier.fromJSON(object.sessionId)
-        : undefined,
-      authData: isSet(object.authData)
-        ? AuthData.fromJSON(object.authData)
-        : undefined,
+      sessionId: isSet(object.sessionId) ? SessionIdentifier.fromJSON(object.sessionId) : undefined,
+      authData: isSet(object.authData) ? AuthData.fromJSON(object.authData) : undefined,
       appName: isSet(object.appName) ? globalThis.String(object.appName) : "",
-      config: isSet(object.config)
-        ? ConfigDetails.fromJSON(object.config)
-        : undefined,
+      config: isSet(object.config) ? ConfigDetails.fromJSON(object.config) : undefined,
       workerManualReadinessAck: isSet(object.workerManualReadinessAck)
         ? globalThis.Boolean(object.workerManualReadinessAck)
         : false,
-      systemAttributes: isSet(object.systemAttributes)
-        ? SystemAttributes.fromJSON(object.systemAttributes)
-        : undefined,
-      environment: isSet(object.environment)
-        ? globalThis.String(object.environment)
-        : undefined,
-      framework: isSet(object.framework)
-        ? globalThis.String(object.framework)
-        : "",
-      platform: isSet(object.platform)
-        ? globalThis.String(object.platform)
-        : undefined,
-      sdkVersion: isSet(object.sdkVersion)
-        ? globalThis.String(object.sdkVersion)
-        : "",
-      sdkLanguage: isSet(object.sdkLanguage)
-        ? globalThis.String(object.sdkLanguage)
-        : "",
-      startedAt: isSet(object.startedAt)
-        ? fromJsonTimestamp(object.startedAt)
-        : undefined,
+      systemAttributes: isSet(object.systemAttributes) ? SystemAttributes.fromJSON(object.systemAttributes) : undefined,
+      environment: isSet(object.environment) ? globalThis.String(object.environment) : undefined,
+      framework: isSet(object.framework) ? globalThis.String(object.framework) : "",
+      platform: isSet(object.platform) ? globalThis.String(object.platform) : undefined,
+      sdkVersion: isSet(object.sdkVersion) ? globalThis.String(object.sdkVersion) : "",
+      sdkLanguage: isSet(object.sdkLanguage) ? globalThis.String(object.sdkLanguage) : "",
+      startedAt: isSet(object.startedAt) ? fromJsonTimestamp(object.startedAt) : undefined,
     };
   },
 
@@ -1073,33 +974,25 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<WorkerConnectRequestData>, I>>(
-    base?: I
-  ): WorkerConnectRequestData {
+  create<I extends Exact<DeepPartial<WorkerConnectRequestData>, I>>(base?: I): WorkerConnectRequestData {
     return WorkerConnectRequestData.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<WorkerConnectRequestData>, I>>(
-    object: I
-  ): WorkerConnectRequestData {
+  fromPartial<I extends Exact<DeepPartial<WorkerConnectRequestData>, I>>(object: I): WorkerConnectRequestData {
     const message = createBaseWorkerConnectRequestData();
-    message.sessionId =
-      object.sessionId !== undefined && object.sessionId !== null
-        ? SessionIdentifier.fromPartial(object.sessionId)
-        : undefined;
-    message.authData =
-      object.authData !== undefined && object.authData !== null
-        ? AuthData.fromPartial(object.authData)
-        : undefined;
+    message.sessionId = (object.sessionId !== undefined && object.sessionId !== null)
+      ? SessionIdentifier.fromPartial(object.sessionId)
+      : undefined;
+    message.authData = (object.authData !== undefined && object.authData !== null)
+      ? AuthData.fromPartial(object.authData)
+      : undefined;
     message.appName = object.appName ?? "";
-    message.config =
-      object.config !== undefined && object.config !== null
-        ? ConfigDetails.fromPartial(object.config)
-        : undefined;
+    message.config = (object.config !== undefined && object.config !== null)
+      ? ConfigDetails.fromPartial(object.config)
+      : undefined;
     message.workerManualReadinessAck = object.workerManualReadinessAck ?? false;
-    message.systemAttributes =
-      object.systemAttributes !== undefined && object.systemAttributes !== null
-        ? SystemAttributes.fromPartial(object.systemAttributes)
-        : undefined;
+    message.systemAttributes = (object.systemAttributes !== undefined && object.systemAttributes !== null)
+      ? SystemAttributes.fromPartial(object.systemAttributes)
+      : undefined;
     message.environment = object.environment ?? undefined;
     message.framework = object.framework ?? "";
     message.platform = object.platform ?? undefined;
@@ -1115,22 +1008,15 @@ function createBaseGatewaySyncRequestData(): GatewaySyncRequestData {
 }
 
 export const GatewaySyncRequestData: MessageFns<GatewaySyncRequestData> = {
-  encode(
-    message: GatewaySyncRequestData,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: GatewaySyncRequestData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.deployId !== undefined) {
       writer.uint32(10).string(message.deployId);
     }
     return writer;
   },
 
-  decode(
-    input: BinaryReader | Uint8Array,
-    length?: number
-  ): GatewaySyncRequestData {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+  decode(input: BinaryReader | Uint8Array, length?: number): GatewaySyncRequestData {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseGatewaySyncRequestData();
     while (reader.pos < end) {
@@ -1154,11 +1040,7 @@ export const GatewaySyncRequestData: MessageFns<GatewaySyncRequestData> = {
   },
 
   fromJSON(object: any): GatewaySyncRequestData {
-    return {
-      deployId: isSet(object.deployId)
-        ? globalThis.String(object.deployId)
-        : undefined,
-    };
+    return { deployId: isSet(object.deployId) ? globalThis.String(object.deployId) : undefined };
   },
 
   toJSON(message: GatewaySyncRequestData): unknown {
@@ -1169,14 +1051,10 @@ export const GatewaySyncRequestData: MessageFns<GatewaySyncRequestData> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<GatewaySyncRequestData>, I>>(
-    base?: I
-  ): GatewaySyncRequestData {
+  create<I extends Exact<DeepPartial<GatewaySyncRequestData>, I>>(base?: I): GatewaySyncRequestData {
     return GatewaySyncRequestData.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<GatewaySyncRequestData>, I>>(
-    object: I
-  ): GatewaySyncRequestData {
+  fromPartial<I extends Exact<DeepPartial<GatewaySyncRequestData>, I>>(object: I): GatewaySyncRequestData {
     const message = createBaseGatewaySyncRequestData();
     message.deployId = object.deployId ?? undefined;
     return message;
@@ -1191,174 +1069,192 @@ function createBaseGatewayExecutorRequestData(): GatewayExecutorRequestData {
     functionSlug: "",
     stepId: undefined,
     requestPayload: new Uint8Array(0),
+    systemTraceCtx: new Uint8Array(0),
+    userTraceCtx: new Uint8Array(0),
   };
 }
 
-export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> =
-  {
-    encode(
-      message: GatewayExecutorRequestData,
-      writer: BinaryWriter = new BinaryWriter()
-    ): BinaryWriter {
-      if (message.requestId !== "") {
-        writer.uint32(10).string(message.requestId);
-      }
-      if (message.envId !== "") {
-        writer.uint32(18).string(message.envId);
-      }
-      if (message.appId !== "") {
-        writer.uint32(26).string(message.appId);
-      }
-      if (message.functionSlug !== "") {
-        writer.uint32(34).string(message.functionSlug);
-      }
-      if (message.stepId !== undefined) {
-        writer.uint32(42).string(message.stepId);
-      }
-      if (message.requestPayload.length !== 0) {
-        writer.uint32(50).bytes(message.requestPayload);
-      }
-      return writer;
-    },
+export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> = {
+  encode(message: GatewayExecutorRequestData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.requestId !== "") {
+      writer.uint32(10).string(message.requestId);
+    }
+    if (message.envId !== "") {
+      writer.uint32(18).string(message.envId);
+    }
+    if (message.appId !== "") {
+      writer.uint32(26).string(message.appId);
+    }
+    if (message.functionSlug !== "") {
+      writer.uint32(34).string(message.functionSlug);
+    }
+    if (message.stepId !== undefined) {
+      writer.uint32(42).string(message.stepId);
+    }
+    if (message.requestPayload.length !== 0) {
+      writer.uint32(50).bytes(message.requestPayload);
+    }
+    if (message.systemTraceCtx.length !== 0) {
+      writer.uint32(58).bytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      writer.uint32(66).bytes(message.userTraceCtx);
+    }
+    return writer;
+  },
 
-    decode(
-      input: BinaryReader | Uint8Array,
-      length?: number
-    ): GatewayExecutorRequestData {
-      const reader =
-        input instanceof BinaryReader ? input : new BinaryReader(input);
-      let end = length === undefined ? reader.len : reader.pos + length;
-      const message = createBaseGatewayExecutorRequestData();
-      while (reader.pos < end) {
-        const tag = reader.uint32();
-        switch (tag >>> 3) {
-          case 1: {
-            if (tag !== 10) {
-              break;
-            }
-
-            message.requestId = reader.string();
-            continue;
+  decode(input: BinaryReader | Uint8Array, length?: number): GatewayExecutorRequestData {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGatewayExecutorRequestData();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
           }
-          case 2: {
-            if (tag !== 18) {
-              break;
-            }
 
-            message.envId = reader.string();
-            continue;
-          }
-          case 3: {
-            if (tag !== 26) {
-              break;
-            }
-
-            message.appId = reader.string();
-            continue;
-          }
-          case 4: {
-            if (tag !== 34) {
-              break;
-            }
-
-            message.functionSlug = reader.string();
-            continue;
-          }
-          case 5: {
-            if (tag !== 42) {
-              break;
-            }
-
-            message.stepId = reader.string();
-            continue;
-          }
-          case 6: {
-            if (tag !== 50) {
-              break;
-            }
-
-            message.requestPayload = reader.bytes();
-            continue;
-          }
+          message.requestId = reader.string();
+          continue;
         }
-        if ((tag & 7) === 4 || tag === 0) {
-          break;
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.envId = reader.string();
+          continue;
         }
-        reader.skip(tag & 7);
-      }
-      return message;
-    },
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
 
-    fromJSON(object: any): GatewayExecutorRequestData {
-      return {
-        requestId: isSet(object.requestId)
-          ? globalThis.String(object.requestId)
-          : "",
-        envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
-        appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
-        functionSlug: isSet(object.functionSlug)
-          ? globalThis.String(object.functionSlug)
-          : "",
-        stepId: isSet(object.stepId)
-          ? globalThis.String(object.stepId)
-          : undefined,
-        requestPayload: isSet(object.requestPayload)
-          ? bytesFromBase64(object.requestPayload)
-          : new Uint8Array(0),
-      };
-    },
+          message.appId = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
 
-    toJSON(message: GatewayExecutorRequestData): unknown {
-      const obj: any = {};
-      if (message.requestId !== "") {
-        obj.requestId = message.requestId;
-      }
-      if (message.envId !== "") {
-        obj.envId = message.envId;
-      }
-      if (message.appId !== "") {
-        obj.appId = message.appId;
-      }
-      if (message.functionSlug !== "") {
-        obj.functionSlug = message.functionSlug;
-      }
-      if (message.stepId !== undefined) {
-        obj.stepId = message.stepId;
-      }
-      if (message.requestPayload.length !== 0) {
-        obj.requestPayload = base64FromBytes(message.requestPayload);
-      }
-      return obj;
-    },
+          message.functionSlug = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
 
-    create<I extends Exact<DeepPartial<GatewayExecutorRequestData>, I>>(
-      base?: I
-    ): GatewayExecutorRequestData {
-      return GatewayExecutorRequestData.fromPartial(base ?? ({} as any));
-    },
-    fromPartial<I extends Exact<DeepPartial<GatewayExecutorRequestData>, I>>(
-      object: I
-    ): GatewayExecutorRequestData {
-      const message = createBaseGatewayExecutorRequestData();
-      message.requestId = object.requestId ?? "";
-      message.envId = object.envId ?? "";
-      message.appId = object.appId ?? "";
-      message.functionSlug = object.functionSlug ?? "";
-      message.stepId = object.stepId ?? undefined;
-      message.requestPayload = object.requestPayload ?? new Uint8Array(0);
-      return message;
-    },
-  };
+          message.stepId = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.requestPayload = reader.bytes();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.systemTraceCtx = reader.bytes();
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.userTraceCtx = reader.bytes();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): GatewayExecutorRequestData {
+    return {
+      requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "",
+      envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
+      appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
+      functionSlug: isSet(object.functionSlug) ? globalThis.String(object.functionSlug) : "",
+      stepId: isSet(object.stepId) ? globalThis.String(object.stepId) : undefined,
+      requestPayload: isSet(object.requestPayload) ? bytesFromBase64(object.requestPayload) : new Uint8Array(0),
+      systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
+      userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
+    };
+  },
+
+  toJSON(message: GatewayExecutorRequestData): unknown {
+    const obj: any = {};
+    if (message.requestId !== "") {
+      obj.requestId = message.requestId;
+    }
+    if (message.envId !== "") {
+      obj.envId = message.envId;
+    }
+    if (message.appId !== "") {
+      obj.appId = message.appId;
+    }
+    if (message.functionSlug !== "") {
+      obj.functionSlug = message.functionSlug;
+    }
+    if (message.stepId !== undefined) {
+      obj.stepId = message.stepId;
+    }
+    if (message.requestPayload.length !== 0) {
+      obj.requestPayload = base64FromBytes(message.requestPayload);
+    }
+    if (message.systemTraceCtx.length !== 0) {
+      obj.systemTraceCtx = base64FromBytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GatewayExecutorRequestData>, I>>(base?: I): GatewayExecutorRequestData {
+    return GatewayExecutorRequestData.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GatewayExecutorRequestData>, I>>(object: I): GatewayExecutorRequestData {
+    const message = createBaseGatewayExecutorRequestData();
+    message.requestId = object.requestId ?? "";
+    message.envId = object.envId ?? "";
+    message.appId = object.appId ?? "";
+    message.functionSlug = object.functionSlug ?? "";
+    message.stepId = object.stepId ?? undefined;
+    message.requestPayload = object.requestPayload ?? new Uint8Array(0);
+    message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
+    message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
+    return message;
+  },
+};
 
 function createBaseWorkerRequestAckData(): WorkerRequestAckData {
-  return { requestId: "", appId: "", functionSlug: "", stepId: undefined };
+  return {
+    requestId: "",
+    appId: "",
+    functionSlug: "",
+    stepId: undefined,
+    systemTraceCtx: new Uint8Array(0),
+    userTraceCtx: new Uint8Array(0),
+  };
 }
 
 export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
-  encode(
-    message: WorkerRequestAckData,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: WorkerRequestAckData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.requestId !== "") {
       writer.uint32(10).string(message.requestId);
     }
@@ -1371,15 +1267,17 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     if (message.stepId !== undefined) {
       writer.uint32(34).string(message.stepId);
     }
+    if (message.systemTraceCtx.length !== 0) {
+      writer.uint32(42).bytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      writer.uint32(50).bytes(message.userTraceCtx);
+    }
     return writer;
   },
 
-  decode(
-    input: BinaryReader | Uint8Array,
-    length?: number
-  ): WorkerRequestAckData {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+  decode(input: BinaryReader | Uint8Array, length?: number): WorkerRequestAckData {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseWorkerRequestAckData();
     while (reader.pos < end) {
@@ -1417,6 +1315,22 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
           message.stepId = reader.string();
           continue;
         }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.systemTraceCtx = reader.bytes();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.userTraceCtx = reader.bytes();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1428,16 +1342,12 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
 
   fromJSON(object: any): WorkerRequestAckData {
     return {
-      requestId: isSet(object.requestId)
-        ? globalThis.String(object.requestId)
-        : "",
+      requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "",
       appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
-      functionSlug: isSet(object.functionSlug)
-        ? globalThis.String(object.functionSlug)
-        : "",
-      stepId: isSet(object.stepId)
-        ? globalThis.String(object.stepId)
-        : undefined,
+      functionSlug: isSet(object.functionSlug) ? globalThis.String(object.functionSlug) : "",
+      stepId: isSet(object.stepId) ? globalThis.String(object.stepId) : undefined,
+      systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
+      userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
     };
   },
 
@@ -1455,22 +1365,26 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     if (message.stepId !== undefined) {
       obj.stepId = message.stepId;
     }
+    if (message.systemTraceCtx.length !== 0) {
+      obj.systemTraceCtx = base64FromBytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
+    }
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<WorkerRequestAckData>, I>>(
-    base?: I
-  ): WorkerRequestAckData {
+  create<I extends Exact<DeepPartial<WorkerRequestAckData>, I>>(base?: I): WorkerRequestAckData {
     return WorkerRequestAckData.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<WorkerRequestAckData>, I>>(
-    object: I
-  ): WorkerRequestAckData {
+  fromPartial<I extends Exact<DeepPartial<WorkerRequestAckData>, I>>(object: I): WorkerRequestAckData {
     const message = createBaseWorkerRequestAckData();
     message.requestId = object.requestId ?? "";
     message.appId = object.appId ?? "";
     message.functionSlug = object.functionSlug ?? "";
     message.stepId = object.stepId ?? undefined;
+    message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
+    message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
     return message;
   },
 };
@@ -1486,14 +1400,13 @@ function createBaseSDKResponse(): SDKResponse {
     retryAfter: undefined,
     sdkVersion: "",
     requestVersion: 0,
+    systemTraceCtx: new Uint8Array(0),
+    userTraceCtx: new Uint8Array(0),
   };
 }
 
 export const SDKResponse: MessageFns<SDKResponse> = {
-  encode(
-    message: SDKResponse,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: SDKResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.requestId !== "") {
       writer.uint32(10).string(message.requestId);
     }
@@ -1521,12 +1434,17 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     if (message.requestVersion !== 0) {
       writer.uint32(80).uint32(message.requestVersion);
     }
+    if (message.systemTraceCtx.length !== 0) {
+      writer.uint32(90).bytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      writer.uint32(98).bytes(message.userTraceCtx);
+    }
     return writer;
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): SDKResponse {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseSDKResponse();
     while (reader.pos < end) {
@@ -1604,6 +1522,22 @@ export const SDKResponse: MessageFns<SDKResponse> = {
           message.requestVersion = reader.uint32();
           continue;
         }
+        case 11: {
+          if (tag !== 90) {
+            break;
+          }
+
+          message.systemTraceCtx = reader.bytes();
+          continue;
+        }
+        case 12: {
+          if (tag !== 98) {
+            break;
+          }
+
+          message.userTraceCtx = reader.bytes();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1615,29 +1549,17 @@ export const SDKResponse: MessageFns<SDKResponse> = {
 
   fromJSON(object: any): SDKResponse {
     return {
-      requestId: isSet(object.requestId)
-        ? globalThis.String(object.requestId)
-        : "",
+      requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "",
       envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
       appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
-      status: isSet(object.status)
-        ? sDKResponseStatusFromJSON(object.status)
-        : 0,
-      body: isSet(object.body)
-        ? bytesFromBase64(object.body)
-        : new Uint8Array(0),
-      noRetry: isSet(object.noRetry)
-        ? globalThis.Boolean(object.noRetry)
-        : false,
-      retryAfter: isSet(object.retryAfter)
-        ? globalThis.String(object.retryAfter)
-        : undefined,
-      sdkVersion: isSet(object.sdkVersion)
-        ? globalThis.String(object.sdkVersion)
-        : "",
-      requestVersion: isSet(object.requestVersion)
-        ? globalThis.Number(object.requestVersion)
-        : 0,
+      status: isSet(object.status) ? sDKResponseStatusFromJSON(object.status) : 0,
+      body: isSet(object.body) ? bytesFromBase64(object.body) : new Uint8Array(0),
+      noRetry: isSet(object.noRetry) ? globalThis.Boolean(object.noRetry) : false,
+      retryAfter: isSet(object.retryAfter) ? globalThis.String(object.retryAfter) : undefined,
+      sdkVersion: isSet(object.sdkVersion) ? globalThis.String(object.sdkVersion) : "",
+      requestVersion: isSet(object.requestVersion) ? globalThis.Number(object.requestVersion) : 0,
+      systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
+      userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
     };
   },
 
@@ -1670,15 +1592,19 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     if (message.requestVersion !== 0) {
       obj.requestVersion = Math.round(message.requestVersion);
     }
+    if (message.systemTraceCtx.length !== 0) {
+      obj.systemTraceCtx = base64FromBytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
+    }
     return obj;
   },
 
   create<I extends Exact<DeepPartial<SDKResponse>, I>>(base?: I): SDKResponse {
     return SDKResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<SDKResponse>, I>>(
-    object: I
-  ): SDKResponse {
+  fromPartial<I extends Exact<DeepPartial<SDKResponse>, I>>(object: I): SDKResponse {
     const message = createBaseSDKResponse();
     message.requestId = object.requestId ?? "";
     message.envId = object.envId ?? "";
@@ -1689,6 +1615,8 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     message.retryAfter = object.retryAfter ?? undefined;
     message.sdkVersion = object.sdkVersion ?? "";
     message.requestVersion = object.requestVersion ?? 0;
+    message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
+    message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
     return message;
   },
 };
@@ -1698,22 +1626,15 @@ function createBaseWorkerReplyAckData(): WorkerReplyAckData {
 }
 
 export const WorkerReplyAckData: MessageFns<WorkerReplyAckData> = {
-  encode(
-    message: WorkerReplyAckData,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: WorkerReplyAckData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.requestId !== "") {
       writer.uint32(10).string(message.requestId);
     }
     return writer;
   },
 
-  decode(
-    input: BinaryReader | Uint8Array,
-    length?: number
-  ): WorkerReplyAckData {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+  decode(input: BinaryReader | Uint8Array, length?: number): WorkerReplyAckData {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseWorkerReplyAckData();
     while (reader.pos < end) {
@@ -1737,11 +1658,7 @@ export const WorkerReplyAckData: MessageFns<WorkerReplyAckData> = {
   },
 
   fromJSON(object: any): WorkerReplyAckData {
-    return {
-      requestId: isSet(object.requestId)
-        ? globalThis.String(object.requestId)
-        : "",
-    };
+    return { requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "" };
   },
 
   toJSON(message: WorkerReplyAckData): unknown {
@@ -1752,14 +1669,10 @@ export const WorkerReplyAckData: MessageFns<WorkerReplyAckData> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<WorkerReplyAckData>, I>>(
-    base?: I
-  ): WorkerReplyAckData {
+  create<I extends Exact<DeepPartial<WorkerReplyAckData>, I>>(base?: I): WorkerReplyAckData {
     return WorkerReplyAckData.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<WorkerReplyAckData>, I>>(
-    object: I
-  ): WorkerReplyAckData {
+  fromPartial<I extends Exact<DeepPartial<WorkerReplyAckData>, I>>(object: I): WorkerReplyAckData {
     const message = createBaseWorkerReplyAckData();
     message.requestId = object.requestId ?? "";
     return message;
@@ -1781,10 +1694,7 @@ function createBaseConnMetadata(): ConnMetadata {
 }
 
 export const ConnMetadata: MessageFns<ConnMetadata> = {
-  encode(
-    message: ConnMetadata,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: ConnMetadata, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.id !== "") {
       writer.uint32(10).string(message.id);
     }
@@ -1801,10 +1711,7 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
       writer.uint32(40).int32(message.status);
     }
     if (message.lastHeartbeatAt !== undefined) {
-      Timestamp.encode(
-        toTimestamp(message.lastHeartbeatAt),
-        writer.uint32(50).fork()
-      ).join();
+      Timestamp.encode(toTimestamp(message.lastHeartbeatAt), writer.uint32(50).fork()).join();
     }
     if (message.language !== "") {
       writer.uint32(58).string(message.language);
@@ -1813,17 +1720,13 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
       writer.uint32(66).string(message.version);
     }
     if (message.attributes !== undefined) {
-      SystemAttributes.encode(
-        message.attributes,
-        writer.uint32(74).fork()
-      ).join();
+      SystemAttributes.encode(message.attributes, writer.uint32(74).fork()).join();
     }
     return writer;
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): ConnMetadata {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseConnMetadata();
     while (reader.pos < end) {
@@ -1874,9 +1777,7 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
             break;
           }
 
-          message.lastHeartbeatAt = fromTimestamp(
-            Timestamp.decode(reader, reader.uint32())
-          );
+          message.lastHeartbeatAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
         }
         case 7: {
@@ -1915,26 +1816,14 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
   fromJSON(object: any): ConnMetadata {
     return {
       id: isSet(object.id) ? globalThis.String(object.id) : "",
-      gatewayId: isSet(object.gatewayId)
-        ? globalThis.String(object.gatewayId)
-        : "",
-      instanceId: isSet(object.instanceId)
-        ? globalThis.String(object.instanceId)
-        : "",
+      gatewayId: isSet(object.gatewayId) ? globalThis.String(object.gatewayId) : "",
+      instanceId: isSet(object.instanceId) ? globalThis.String(object.instanceId) : "",
       groupId: isSet(object.groupId) ? globalThis.String(object.groupId) : "",
-      status: isSet(object.status)
-        ? connectionStatusFromJSON(object.status)
-        : 0,
-      lastHeartbeatAt: isSet(object.lastHeartbeatAt)
-        ? fromJsonTimestamp(object.lastHeartbeatAt)
-        : undefined,
-      language: isSet(object.language)
-        ? globalThis.String(object.language)
-        : "",
+      status: isSet(object.status) ? connectionStatusFromJSON(object.status) : 0,
+      lastHeartbeatAt: isSet(object.lastHeartbeatAt) ? fromJsonTimestamp(object.lastHeartbeatAt) : undefined,
+      language: isSet(object.language) ? globalThis.String(object.language) : "",
       version: isSet(object.version) ? globalThis.String(object.version) : "",
-      attributes: isSet(object.attributes)
-        ? SystemAttributes.fromJSON(object.attributes)
-        : undefined,
+      attributes: isSet(object.attributes) ? SystemAttributes.fromJSON(object.attributes) : undefined,
     };
   },
 
@@ -1970,14 +1859,10 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<ConnMetadata>, I>>(
-    base?: I
-  ): ConnMetadata {
+  create<I extends Exact<DeepPartial<ConnMetadata>, I>>(base?: I): ConnMetadata {
     return ConnMetadata.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ConnMetadata>, I>>(
-    object: I
-  ): ConnMetadata {
+  fromPartial<I extends Exact<DeepPartial<ConnMetadata>, I>>(object: I): ConnMetadata {
     const message = createBaseConnMetadata();
     message.id = object.id ?? "";
     message.gatewayId = object.gatewayId ?? "";
@@ -1987,10 +1872,9 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
     message.lastHeartbeatAt = object.lastHeartbeatAt ?? undefined;
     message.language = object.language ?? "";
     message.version = object.version ?? "";
-    message.attributes =
-      object.attributes !== undefined && object.attributes !== null
-        ? SystemAttributes.fromPartial(object.attributes)
-        : undefined;
+    message.attributes = (object.attributes !== undefined && object.attributes !== null)
+      ? SystemAttributes.fromPartial(object.attributes)
+      : undefined;
     return message;
   },
 };
@@ -2000,10 +1884,7 @@ function createBaseSystemAttributes(): SystemAttributes {
 }
 
 export const SystemAttributes: MessageFns<SystemAttributes> = {
-  encode(
-    message: SystemAttributes,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: SystemAttributes, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.cpuCores !== 0) {
       writer.uint32(8).int32(message.cpuCores);
     }
@@ -2017,8 +1898,7 @@ export const SystemAttributes: MessageFns<SystemAttributes> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): SystemAttributes {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseSystemAttributes();
     while (reader.pos < end) {
@@ -2079,14 +1959,10 @@ export const SystemAttributes: MessageFns<SystemAttributes> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<SystemAttributes>, I>>(
-    base?: I
-  ): SystemAttributes {
+  create<I extends Exact<DeepPartial<SystemAttributes>, I>>(base?: I): SystemAttributes {
     return SystemAttributes.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<SystemAttributes>, I>>(
-    object: I
-  ): SystemAttributes {
+  fromPartial<I extends Exact<DeepPartial<SystemAttributes>, I>>(object: I): SystemAttributes {
     const message = createBaseSystemAttributes();
     message.cpuCores = object.cpuCores ?? 0;
     message.memBytes = object.memBytes ?? 0;
@@ -2096,21 +1972,11 @@ export const SystemAttributes: MessageFns<SystemAttributes> = {
 };
 
 function createBaseConnGroup(): ConnGroup {
-  return {
-    envId: "",
-    appId: "",
-    hash: "",
-    conns: [],
-    syncId: undefined,
-    appVersion: undefined,
-  };
+  return { envId: "", appId: "", hash: "", conns: [], syncId: undefined, appVersion: undefined };
 }
 
 export const ConnGroup: MessageFns<ConnGroup> = {
-  encode(
-    message: ConnGroup,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: ConnGroup, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.envId !== "") {
       writer.uint32(10).string(message.envId);
     }
@@ -2133,8 +1999,7 @@ export const ConnGroup: MessageFns<ConnGroup> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): ConnGroup {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseConnGroup();
     while (reader.pos < end) {
@@ -2202,15 +2067,9 @@ export const ConnGroup: MessageFns<ConnGroup> = {
       envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
       appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
       hash: isSet(object.hash) ? globalThis.String(object.hash) : "",
-      conns: globalThis.Array.isArray(object?.conns)
-        ? object.conns.map((e: any) => ConnMetadata.fromJSON(e))
-        : [],
-      syncId: isSet(object.syncId)
-        ? globalThis.String(object.syncId)
-        : undefined,
-      appVersion: isSet(object.appVersion)
-        ? globalThis.String(object.appVersion)
-        : undefined,
+      conns: globalThis.Array.isArray(object?.conns) ? object.conns.map((e: any) => ConnMetadata.fromJSON(e)) : [],
+      syncId: isSet(object.syncId) ? globalThis.String(object.syncId) : undefined,
+      appVersion: isSet(object.appVersion) ? globalThis.String(object.appVersion) : undefined,
     };
   },
 
@@ -2240,9 +2099,7 @@ export const ConnGroup: MessageFns<ConnGroup> = {
   create<I extends Exact<DeepPartial<ConnGroup>, I>>(base?: I): ConnGroup {
     return ConnGroup.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ConnGroup>, I>>(
-    object: I
-  ): ConnGroup {
+  fromPartial<I extends Exact<DeepPartial<ConnGroup>, I>>(object: I): ConnGroup {
     const message = createBaseConnGroup();
     message.envId = object.envId ?? "";
     message.appId = object.appId ?? "";
@@ -2255,19 +2112,11 @@ export const ConnGroup: MessageFns<ConnGroup> = {
 };
 
 function createBaseStartResponse(): StartResponse {
-  return {
-    gatewayEndpoint: "",
-    gatewayGroup: "",
-    sessionToken: "",
-    syncToken: "",
-  };
+  return { gatewayEndpoint: "", gatewayGroup: "", sessionToken: "", syncToken: "" };
 }
 
 export const StartResponse: MessageFns<StartResponse> = {
-  encode(
-    message: StartResponse,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: StartResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.gatewayEndpoint !== "") {
       writer.uint32(10).string(message.gatewayEndpoint);
     }
@@ -2284,8 +2133,7 @@ export const StartResponse: MessageFns<StartResponse> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): StartResponse {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseStartResponse();
     while (reader.pos < end) {
@@ -2334,18 +2182,10 @@ export const StartResponse: MessageFns<StartResponse> = {
 
   fromJSON(object: any): StartResponse {
     return {
-      gatewayEndpoint: isSet(object.gatewayEndpoint)
-        ? globalThis.String(object.gatewayEndpoint)
-        : "",
-      gatewayGroup: isSet(object.gatewayGroup)
-        ? globalThis.String(object.gatewayGroup)
-        : "",
-      sessionToken: isSet(object.sessionToken)
-        ? globalThis.String(object.sessionToken)
-        : "",
-      syncToken: isSet(object.syncToken)
-        ? globalThis.String(object.syncToken)
-        : "",
+      gatewayEndpoint: isSet(object.gatewayEndpoint) ? globalThis.String(object.gatewayEndpoint) : "",
+      gatewayGroup: isSet(object.gatewayGroup) ? globalThis.String(object.gatewayGroup) : "",
+      sessionToken: isSet(object.sessionToken) ? globalThis.String(object.sessionToken) : "",
+      syncToken: isSet(object.syncToken) ? globalThis.String(object.syncToken) : "",
     };
   },
 
@@ -2366,14 +2206,10 @@ export const StartResponse: MessageFns<StartResponse> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<StartResponse>, I>>(
-    base?: I
-  ): StartResponse {
+  create<I extends Exact<DeepPartial<StartResponse>, I>>(base?: I): StartResponse {
     return StartResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<StartResponse>, I>>(
-    object: I
-  ): StartResponse {
+  fromPartial<I extends Exact<DeepPartial<StartResponse>, I>>(object: I): StartResponse {
     const message = createBaseStartResponse();
     message.gatewayEndpoint = object.gatewayEndpoint ?? "";
     message.gatewayGroup = object.gatewayGroup ?? "";
@@ -2388,10 +2224,7 @@ function createBaseStartRequest(): StartRequest {
 }
 
 export const StartRequest: MessageFns<StartRequest> = {
-  encode(
-    message: StartRequest,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: StartRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     for (const v of message.excludeGateways) {
       writer.uint32(10).string(v!);
     }
@@ -2399,8 +2232,7 @@ export const StartRequest: MessageFns<StartRequest> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): StartRequest {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseStartRequest();
     while (reader.pos < end) {
@@ -2439,14 +2271,10 @@ export const StartRequest: MessageFns<StartRequest> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<StartRequest>, I>>(
-    base?: I
-  ): StartRequest {
+  create<I extends Exact<DeepPartial<StartRequest>, I>>(base?: I): StartRequest {
     return StartRequest.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<StartRequest>, I>>(
-    object: I
-  ): StartRequest {
+  fromPartial<I extends Exact<DeepPartial<StartRequest>, I>>(object: I): StartRequest {
     const message = createBaseStartRequest();
     message.excludeGateways = object.excludeGateways?.map((e) => e) || [];
     return message;
@@ -2458,10 +2286,7 @@ function createBaseFlushResponse(): FlushResponse {
 }
 
 export const FlushResponse: MessageFns<FlushResponse> = {
-  encode(
-    message: FlushResponse,
-    writer: BinaryWriter = new BinaryWriter()
-  ): BinaryWriter {
+  encode(message: FlushResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.requestId !== "") {
       writer.uint32(10).string(message.requestId);
     }
@@ -2469,8 +2294,7 @@ export const FlushResponse: MessageFns<FlushResponse> = {
   },
 
   decode(input: BinaryReader | Uint8Array, length?: number): FlushResponse {
-    const reader =
-      input instanceof BinaryReader ? input : new BinaryReader(input);
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
     const message = createBaseFlushResponse();
     while (reader.pos < end) {
@@ -2494,11 +2318,7 @@ export const FlushResponse: MessageFns<FlushResponse> = {
   },
 
   fromJSON(object: any): FlushResponse {
-    return {
-      requestId: isSet(object.requestId)
-        ? globalThis.String(object.requestId)
-        : "",
-    };
+    return { requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "" };
   },
 
   toJSON(message: FlushResponse): unknown {
@@ -2509,14 +2329,10 @@ export const FlushResponse: MessageFns<FlushResponse> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<FlushResponse>, I>>(
-    base?: I
-  ): FlushResponse {
+  create<I extends Exact<DeepPartial<FlushResponse>, I>>(base?: I): FlushResponse {
     return FlushResponse.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<FlushResponse>, I>>(
-    object: I
-  ): FlushResponse {
+  fromPartial<I extends Exact<DeepPartial<FlushResponse>, I>>(object: I): FlushResponse {
     const message = createBaseFlushResponse();
     message.requestId = object.requestId ?? "";
     return message;
@@ -2548,31 +2364,17 @@ function base64FromBytes(arr: Uint8Array): string {
   }
 }
 
-type Builtin =
-  | Date
-  | Function
-  | Uint8Array
-  | string
-  | number
-  | boolean
-  | undefined;
+type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
 
-export type DeepPartial<T> = T extends Builtin
-  ? T
-  : T extends globalThis.Array<infer U>
-    ? globalThis.Array<DeepPartial<U>>
-    : T extends ReadonlyArray<infer U>
-      ? ReadonlyArray<DeepPartial<U>>
-      : T extends {}
-        ? { [K in keyof T]?: DeepPartial<T[K]> }
-        : Partial<T>;
+export type DeepPartial<T> = T extends Builtin ? T
+  : T extends globalThis.Array<infer U> ? globalThis.Array<DeepPartial<U>>
+  : T extends ReadonlyArray<infer U> ? ReadonlyArray<DeepPartial<U>>
+  : T extends {} ? { [K in keyof T]?: DeepPartial<T[K]> }
+  : Partial<T>;
 
 type KeysOfUnion<T> = T extends T ? keyof T : never;
-export type Exact<P, I extends P> = P extends Builtin
-  ? P
-  : P & { [K in keyof P]: Exact<P[K], I[K]> } & {
-      [K in Exclude<keyof I, KeysOfUnion<P>>]: never;
-    };
+export type Exact<P, I extends P> = P extends Builtin ? P
+  : P & { [K in keyof P]: Exact<P[K], I[K]> } & { [K in Exclude<keyof I, KeysOfUnion<P>>]: never };
 
 function toTimestamp(date: Date): Timestamp {
   const seconds = Math.trunc(date.getTime() / 1_000);
