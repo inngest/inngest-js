@@ -42,6 +42,7 @@ import {
   ReconnectError,
   ConnectionLimitError,
   waitWithCancel,
+  parseTraceCtx,
 } from "./util.js";
 
 const ResponseAcknowlegeDeadline = 5_000;
@@ -288,10 +289,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         const asString = new TextDecoder().decode(msg.requestPayload);
         const parsed = parseFnData(JSON.parse(asString));
 
-        const userTraceCtx: unknown =
-          msg.userTraceCtx.length > 0
-            ? JSON.parse(new TextDecoder().decode(msg.userTraceCtx))
-            : null;
+        const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
 
         return {
           body() {
@@ -311,26 +309,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
               case headerKeys.Signature.toString():
                 // Note: Signature is disabled for connect
                 return null;
-              case headerKeys.TraceParent.toString(): {
-                if (
-                  userTraceCtx &&
-                  typeof userTraceCtx === "object" &&
-                  headerKeys.TraceParent in userTraceCtx
-                ) {
-                  return userTraceCtx[headerKeys.TraceParent] as string;
-                }
-
-                return null;
-              }
+              case headerKeys.TraceParent.toString():
+                return userTraceCtx?.traceParent ?? null;
               case headerKeys.TraceState.toString():
-                if (
-                  userTraceCtx &&
-                  typeof userTraceCtx === "object" &&
-                  headerKeys.TraceState in userTraceCtx
-                ) {
-                  return userTraceCtx[headerKeys.TraceState] as string;
-                }
-                return null;
+                return userTraceCtx?.traceState ?? null;
               default:
                 return null;
             }

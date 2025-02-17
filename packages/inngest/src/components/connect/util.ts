@@ -1,3 +1,5 @@
+import { headerKeys } from "inngest/helpers/consts";
+
 export class ReconnectError extends Error {
   constructor(
     message: string,
@@ -53,4 +55,38 @@ export function waitWithCancel(ms: number, cancelIf: () => boolean) {
       }
     }, 100);
   });
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+export function parseTraceCtx(serializedTraceCtx: Uint8Array<ArrayBufferLike>) {
+  const parsedTraceCtx: unknown =
+    serializedTraceCtx.length > 0
+      ? JSON.parse(new TextDecoder().decode(serializedTraceCtx))
+      : null;
+
+  if (!isObject(parsedTraceCtx)) {
+    return null;
+  }
+
+  const traceParent = parsedTraceCtx[headerKeys.TraceParent];
+  if (!isString(traceParent)) {
+    return null;
+  }
+
+  const traceState = parsedTraceCtx[headerKeys.TraceState];
+  if (!isString(traceState)) {
+    return null;
+  }
+
+  return {
+    traceParent,
+    traceState,
+  };
 }
