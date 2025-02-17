@@ -1,5 +1,11 @@
 # inngest
 
+## 3.31.8
+
+### Patch Changes
+
+- [#845](https://github.com/inngest/inngest-js/pull/845) [`a2aadb1`](https://github.com/inngest/inngest-js/commit/a2aadb1baed2b295d9542206db9f5bd887645755) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Connect: Forward tracing and parse user tracing headers
+
 ## 3.31.7
 
 ### Patch Changes
