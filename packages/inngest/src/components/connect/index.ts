@@ -42,6 +42,7 @@ import {
   ReconnectError,
   ConnectionLimitError,
   waitWithCancel,
+  parseTraceCtx,
 } from "./util.js";
 
 const ResponseAcknowlegeDeadline = 5_000;
@@ -288,6 +289,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
         const asString = new TextDecoder().decode(msg.requestPayload);
         const parsed = parseFnData(JSON.parse(asString));
 
+        const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
+
         return {
           body() {
             return parsed;
@@ -307,8 +310,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
                 // Note: Signature is disabled for connect
                 return null;
               case headerKeys.TraceParent.toString():
+                return userTraceCtx?.traceParent ?? null;
               case headerKeys.TraceState.toString():
-                return null;
+                return userTraceCtx?.traceState ?? null;
               default:
                 return null;
             }
@@ -329,6 +333,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
             return SDKResponse.create({
               requestId: msg.requestId,
+              accountId: msg.accountId,
               envId: msg.envId,
               appId: msg.appId,
               status: sdkResponseStatus,
@@ -341,6 +346,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
                   PREFERRED_EXECUTION_VERSION.toString(),
                 10
               ),
+              systemTraceCtx: msg.systemTraceCtx,
+              userTraceCtx: msg.userTraceCtx,
             });
           },
           url() {
@@ -875,10 +882,14 @@ class WebSocketWorkerConnection implements WorkerConnection {
               kind: GatewayMessageType.WORKER_REQUEST_ACK,
               payload: WorkerRequestAckData.encode(
                 WorkerRequestAckData.create({
+                  accountId: gatewayExecutorRequest.accountId,
+                  envId: gatewayExecutorRequest.envId,
                   appId: gatewayExecutorRequest.appId,
                   functionSlug: gatewayExecutorRequest.functionSlug,
                   requestId: gatewayExecutorRequest.requestId,
                   stepId: gatewayExecutorRequest.stepId,
+                  userTraceCtx: gatewayExecutorRequest.userTraceCtx,
+                  systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
                 })
               ).finish(),
             })
