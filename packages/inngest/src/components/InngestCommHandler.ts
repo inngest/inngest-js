@@ -1700,7 +1700,7 @@ export class InngestCommHandler<
           ...introspection,
           authentication_succeeded: true,
           api_origin: this.apiBaseUrl,
-          app_id: this.client.id,
+          app_id: this.id,
           capabilities: {
             trust_probe: "v1",
             connect: "v1",
