@@ -366,6 +366,12 @@ export class InngestCommHandler<
 
     this.frameworkName = options.frameworkName;
     this.client = options.client as Inngest.Any;
+
+    if (options.id) {
+      console.warn(
+        `${logPrefix} The \`id\` serve option is deprecated and will be removed in v4`
+      );
+    }
     this.id = options.id || this.client.id;
 
     this.handler = options.handler as Handler;
@@ -1627,7 +1633,7 @@ export class InngestCommHandler<
     });
 
     const body: InBandRegisterRequest = {
-      app_id: this.client.id,
+      app_id: this.id,
       appVersion: this.client.appVersion,
       capabilities: registerBody.capabilities,
       env,
@@ -1700,7 +1706,7 @@ export class InngestCommHandler<
           ...introspection,
           authentication_succeeded: true,
           api_origin: this.apiBaseUrl,
-          app_id: this.client.id,
+          app_id: this.id,
           capabilities: {
             trust_probe: "v1",
             connect: "v1",
