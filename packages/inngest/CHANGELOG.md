@@ -1,5 +1,11 @@
 # inngest
 
+## 3.31.9
+
+### Patch Changes
+
+- [#848](https://github.com/inngest/inngest-js/pull/848) [`dd1bef8`](https://github.com/inngest/inngest-js/commit/dd1bef893f6e1e90a03643d0c2773af2be8dc5dc) Thanks [@amh4r](https://github.com/amh4r)! - Fix serve ID not considered for in-band syncs
+
 ## 3.31.8
 
 ### Patch Changes
