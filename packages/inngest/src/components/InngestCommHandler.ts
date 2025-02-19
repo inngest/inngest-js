@@ -366,6 +366,12 @@ export class InngestCommHandler<
 
     this.frameworkName = options.frameworkName;
     this.client = options.client as Inngest.Any;
+
+    if (options.id) {
+      console.warn(
+        `${logPrefix} The \`id\` serve option is deprecated and will be removed in v4`
+      );
+    }
     this.id = options.id || this.client.id;
 
     this.handler = options.handler as Handler;

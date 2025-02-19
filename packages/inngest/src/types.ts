@@ -850,6 +850,7 @@ export interface RegisterOptions {
   /**
    * The ID of this app. This is used to group functions together in the Inngest
    * UI. The ID of the passed client is used by default.
+   * @deprecated Will be removed in v4.
    */
   id?: string;
 }
