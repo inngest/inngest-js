@@ -1627,7 +1627,7 @@ export class InngestCommHandler<
     });
 
     const body: InBandRegisterRequest = {
-      app_id: this.client.id,
+      app_id: this.id,
       appVersion: this.client.appVersion,
       capabilities: registerBody.capabilities,
       env,
