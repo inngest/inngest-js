@@ -2,4 +2,4 @@
 "inngest": patch
 ---
 
-chore: tmp canary for QA of `@inngest/ai@pr-850`
+chore: bump `@inngest/ai` to `0.0.4`
