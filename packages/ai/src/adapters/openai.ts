@@ -351,6 +351,16 @@ export interface OpenAiAiAdapter extends AiAdapter {
       id: string;
 
       /**
+       * If an error occurs, this will be an object containing the error details.
+       */
+      error?: {
+        message: string;
+        type: string;
+        param: string | null;
+        code: string | null;
+      };
+
+      /**
        * A list of chat completion choices. Can be more than one if `n` is
        * greater than 1.
        */
