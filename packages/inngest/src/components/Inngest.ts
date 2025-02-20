@@ -47,8 +47,6 @@ import {
   type SendEventResponse,
   type TriggersFromClient,
 } from "../types.js";
-import { connect } from "./connect/index.js";
-import { type ConnectHandlerOptions } from "./connect/types.js";
 import { type EventSchemas } from "./EventSchemas.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { type InngestFunctionReference } from "./InngestFunctionReference.js";
@@ -165,7 +163,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   protected readonly schemas?: NonNullable<TClientOpts["schemas"]>;
 
-  private _buildId: string | undefined;
+  private _appVersion: string | undefined;
 
   get apiBaseUrl(): string | undefined {
     return this._apiBaseUrl;
@@ -179,8 +177,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     return this.headers[headerKeys.Environment] ?? null;
   }
 
-  get buildId(): string | undefined {
-    return this._buildId;
+  get appVersion(): string | undefined {
+    return this._appVersion;
   }
 
   /**
@@ -213,7 +211,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       middleware,
       isDev,
       schemas,
-      buildId,
+      appVersion,
     } = this.options;
 
     if (!id) {
@@ -248,7 +246,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       ...(middleware || []),
     ]);
 
-    this._buildId = buildId;
+    this._appVersion = appVersion;
   }
 
   /**
@@ -677,13 +675,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
     return triggers as AsArray<T>;
   }
-
-  /**
-   * `connect()` is experimental! It is not yet stable and will change.
-   */
-  protected async connect(opts: ConnectHandlerOptions) {
-    return connect(this, opts);
-  }
 }
 
 /**
@@ -805,7 +796,7 @@ export namespace Inngest {
     apiBaseUrl: string | undefined;
     eventBaseUrl: string | undefined;
     env: string | null;
-    buildId?: string | undefined;
+    appVersion?: string | undefined;
   }
 
   export type CreateFunction<TClient extends Inngest.Any> = <

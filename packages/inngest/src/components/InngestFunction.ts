@@ -116,15 +116,28 @@ export class InngestFunction<
   /**
    * Retrieve the Inngest config for this function.
    */
-  private getConfig(
+  private getConfig({
+    baseUrl,
+    appPrefix,
+    isConnect,
+  }: {
     /**
      * Must be provided a URL that will be used to access the function and step.
      * This function can't be expected to know how it will be accessed, so
      * relies on an outside method providing context.
      */
-    baseUrl: URL,
-    appPrefix?: string
-  ): FunctionConfig[] {
+    baseUrl: URL;
+
+    /**
+     * The prefix for the app that this function is part of.
+     */
+    appPrefix: string;
+
+    /**
+     * Whether this function is being used in a Connect handler.
+     */
+    isConnect?: boolean;
+  }): FunctionConfig[] {
     const fnId = this.id(appPrefix);
     const stepUrl = new URL(baseUrl.href);
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
@@ -169,7 +182,7 @@ export class InngestFunction<
           id: InngestFunction.stepId,
           name: InngestFunction.stepId,
           runtime: {
-            type: "http",
+            type: isConnect ? "ws" : "http",
             url: stepUrl.href,
           },
           retries,
@@ -285,7 +298,7 @@ export namespace InngestFunction {
 
   export interface Like {
     name: string;
-    description?: string;
+    description?: string | undefined;
   }
 
   /**

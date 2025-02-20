@@ -366,6 +366,12 @@ export class InngestCommHandler<
 
     this.frameworkName = options.frameworkName;
     this.client = options.client as Inngest.Any;
+
+    if (options.id) {
+      console.warn(
+        `${logPrefix} The \`id\` serve option is deprecated and will be removed in v4`
+      );
+    }
     this.id = options.id || this.client.id;
 
     this.handler = options.handler as Handler;
@@ -392,7 +398,10 @@ export class InngestCommHandler<
     this.fns = this.rawFns.reduce<
       Record<string, { fn: InngestFunction.Any; onFailure: boolean }>
     >((acc, fn) => {
-      const configs = fn["getConfig"](new URL("https://example.com"), this.id);
+      const configs = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: this.id,
+      });
 
       const fns = configs.reduce((acc, { id }, index) => {
         return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
@@ -1211,11 +1220,19 @@ export class InngestCommHandler<
         }
       }
 
+      // TODO: This feels hacky, so we should probably make it not hacky.
+      const env = getInngestHeaders()[headerKeys.Environment] ?? null;
+
       if (method === "GET") {
         return {
           status: 200,
           body: stringify(
-            await this.introspectionBody({ actions, signatureValidation, url })
+            await this.introspectionBody({
+              actions,
+              env,
+              signatureValidation,
+              url,
+            })
           ),
           headers: {
             "Content-Type": "application/json",
@@ -1317,6 +1334,7 @@ export class InngestCommHandler<
           const respBody = await this.inBandRegisterBody({
             actions,
             deployId,
+            env,
             signatureValidation,
             url,
           });
@@ -1510,7 +1528,10 @@ export class InngestCommHandler<
 
   protected configs(url: URL): FunctionConfig[] {
     const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
-      (acc, fn) => [...acc, ...fn["getConfig"](url, this.id)],
+      (acc, fn) => [
+        ...acc,
+        ...fn["getConfig"]({ baseUrl: url, appPrefix: this.id }),
+      ],
       []
     );
 
@@ -1577,6 +1598,7 @@ export class InngestCommHandler<
         trust_probe: "v1",
         connect: "v1",
       },
+      appVersion: this.client.appVersion,
     };
 
     return body;
@@ -1585,6 +1607,7 @@ export class InngestCommHandler<
   protected async inBandRegisterBody({
     actions,
     deployId,
+    env,
     signatureValidation,
     url,
   }: {
@@ -1596,6 +1619,7 @@ export class InngestCommHandler<
      */
     deployId: string | undefined | null;
 
+    env: string | null;
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
 
     url: URL;
@@ -1603,14 +1627,16 @@ export class InngestCommHandler<
     const registerBody = this.registerBody({ deployId, url });
     const introspectionBody = await this.introspectionBody({
       actions,
+      env,
       signatureValidation,
       url,
     });
 
     const body: InBandRegisterRequest = {
-      app_id: this.client.id,
+      app_id: this.id,
+      appVersion: this.client.appVersion,
       capabilities: registerBody.capabilities,
-      env: null,
+      env,
       framework: registerBody.framework,
       functions: registerBody.functions,
       inspection: introspectionBody,
@@ -1626,7 +1652,6 @@ export class InngestCommHandler<
     };
 
     if (introspectionBody.authentication_succeeded) {
-      body.env = introspectionBody.env;
       body.sdk_language = introspectionBody.sdk_language;
       body.sdk_version = introspectionBody.sdk_version;
     }
@@ -1636,10 +1661,12 @@ export class InngestCommHandler<
 
   protected async introspectionBody({
     actions,
+    env,
     signatureValidation,
     url,
   }: {
     actions: HandlerResponseWithErrors;
+    env: string | null;
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     url: URL;
   }): Promise<UnauthenticatedIntrospection | AuthenticatedIntrospection> {
@@ -1679,16 +1706,12 @@ export class InngestCommHandler<
           ...introspection,
           authentication_succeeded: true,
           api_origin: this.apiBaseUrl,
-          app_id: this.client.id,
+          app_id: this.id,
           capabilities: {
             trust_probe: "v1",
             connect: "v1",
           },
-          env:
-            (await actions.headers(
-              "fetching environment for introspection request",
-              headerKeys.Environment
-            )) || null,
+          env,
           event_api_origin: this.eventApiBaseUrl,
           event_key_hash: this.hashedEventKey ?? null,
           extra: {

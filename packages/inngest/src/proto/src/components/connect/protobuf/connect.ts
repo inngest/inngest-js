@@ -228,7 +228,7 @@ export interface ConnectMessage {
 export interface SessionIdentifier {
   instanceId: string;
   connectionId: string;
-  buildId?: string | undefined;
+  appVersion?: string | undefined;
 }
 
 export interface SessionDetails {
@@ -261,28 +261,32 @@ export interface WorkerConnectRequestData {
   startedAt: Date | undefined;
 }
 
-export interface GatewaySyncRequestData {
-  deployId?: string | undefined;
-}
-
 export interface GatewayExecutorRequestData {
   requestId: string;
+  accountId: string;
   envId: string;
   appId: string;
   functionSlug: string;
   stepId?: string | undefined;
   requestPayload: Uint8Array;
+  systemTraceCtx: Uint8Array;
+  userTraceCtx: Uint8Array;
 }
 
 export interface WorkerRequestAckData {
   requestId: string;
+  accountId: string;
+  envId: string;
   appId: string;
   functionSlug: string;
   stepId?: string | undefined;
+  systemTraceCtx: Uint8Array;
+  userTraceCtx: Uint8Array;
 }
 
 export interface SDKResponse {
   requestId: string;
+  accountId: string;
   envId: string;
   appId: string;
   status: SDKResponseStatus;
@@ -291,6 +295,8 @@ export interface SDKResponse {
   retryAfter?: string | undefined;
   sdkVersion: string;
   requestVersion: number;
+  systemTraceCtx: Uint8Array;
+  userTraceCtx: Uint8Array;
 }
 
 export interface WorkerReplyAckData {
@@ -322,7 +328,7 @@ export interface ConnGroup {
   hash: string;
   conns: ConnMetadata[];
   syncId?: string | undefined;
-  buildId?: string | undefined;
+  appVersion?: string | undefined;
 }
 
 export interface StartResponse {
@@ -417,7 +423,7 @@ export const ConnectMessage: MessageFns<ConnectMessage> = {
 };
 
 function createBaseSessionIdentifier(): SessionIdentifier {
-  return { instanceId: "", connectionId: "", buildId: undefined };
+  return { instanceId: "", connectionId: "", appVersion: undefined };
 }
 
 export const SessionIdentifier: MessageFns<SessionIdentifier> = {
@@ -428,8 +434,8 @@ export const SessionIdentifier: MessageFns<SessionIdentifier> = {
     if (message.connectionId !== "") {
       writer.uint32(18).string(message.connectionId);
     }
-    if (message.buildId !== undefined) {
-      writer.uint32(34).string(message.buildId);
+    if (message.appVersion !== undefined) {
+      writer.uint32(34).string(message.appVersion);
     }
     return writer;
   },
@@ -462,7 +468,7 @@ export const SessionIdentifier: MessageFns<SessionIdentifier> = {
             break;
           }
 
-          message.buildId = reader.string();
+          message.appVersion = reader.string();
           continue;
         }
       }
@@ -478,7 +484,7 @@ export const SessionIdentifier: MessageFns<SessionIdentifier> = {
     return {
       instanceId: isSet(object.instanceId) ? globalThis.String(object.instanceId) : "",
       connectionId: isSet(object.connectionId) ? globalThis.String(object.connectionId) : "",
-      buildId: isSet(object.buildId) ? globalThis.String(object.buildId) : undefined,
+      appVersion: isSet(object.appVersion) ? globalThis.String(object.appVersion) : undefined,
     };
   },
 
@@ -490,8 +496,8 @@ export const SessionIdentifier: MessageFns<SessionIdentifier> = {
     if (message.connectionId !== "") {
       obj.connectionId = message.connectionId;
     }
-    if (message.buildId !== undefined) {
-      obj.buildId = message.buildId;
+    if (message.appVersion !== undefined) {
+      obj.appVersion = message.appVersion;
     }
     return obj;
   },
@@ -503,7 +509,7 @@ export const SessionIdentifier: MessageFns<SessionIdentifier> = {
     const message = createBaseSessionIdentifier();
     message.instanceId = object.instanceId ?? "";
     message.connectionId = object.connectionId ?? "";
-    message.buildId = object.buildId ?? undefined;
+    message.appVersion = object.appVersion ?? undefined;
     return message;
   },
 };
@@ -997,72 +1003,17 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
   },
 };
 
-function createBaseGatewaySyncRequestData(): GatewaySyncRequestData {
-  return { deployId: undefined };
-}
-
-export const GatewaySyncRequestData: MessageFns<GatewaySyncRequestData> = {
-  encode(message: GatewaySyncRequestData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.deployId !== undefined) {
-      writer.uint32(10).string(message.deployId);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): GatewaySyncRequestData {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseGatewaySyncRequestData();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.deployId = reader.string();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): GatewaySyncRequestData {
-    return { deployId: isSet(object.deployId) ? globalThis.String(object.deployId) : undefined };
-  },
-
-  toJSON(message: GatewaySyncRequestData): unknown {
-    const obj: any = {};
-    if (message.deployId !== undefined) {
-      obj.deployId = message.deployId;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<GatewaySyncRequestData>, I>>(base?: I): GatewaySyncRequestData {
-    return GatewaySyncRequestData.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<GatewaySyncRequestData>, I>>(object: I): GatewaySyncRequestData {
-    const message = createBaseGatewaySyncRequestData();
-    message.deployId = object.deployId ?? undefined;
-    return message;
-  },
-};
-
 function createBaseGatewayExecutorRequestData(): GatewayExecutorRequestData {
   return {
     requestId: "",
+    accountId: "",
     envId: "",
     appId: "",
     functionSlug: "",
     stepId: undefined,
     requestPayload: new Uint8Array(0),
+    systemTraceCtx: new Uint8Array(0),
+    userTraceCtx: new Uint8Array(0),
   };
 }
 
@@ -1071,20 +1022,29 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     if (message.requestId !== "") {
       writer.uint32(10).string(message.requestId);
     }
+    if (message.accountId !== "") {
+      writer.uint32(18).string(message.accountId);
+    }
     if (message.envId !== "") {
-      writer.uint32(18).string(message.envId);
+      writer.uint32(26).string(message.envId);
     }
     if (message.appId !== "") {
-      writer.uint32(26).string(message.appId);
+      writer.uint32(34).string(message.appId);
     }
     if (message.functionSlug !== "") {
-      writer.uint32(34).string(message.functionSlug);
+      writer.uint32(42).string(message.functionSlug);
     }
     if (message.stepId !== undefined) {
-      writer.uint32(42).string(message.stepId);
+      writer.uint32(50).string(message.stepId);
     }
     if (message.requestPayload.length !== 0) {
-      writer.uint32(50).bytes(message.requestPayload);
+      writer.uint32(58).bytes(message.requestPayload);
+    }
+    if (message.systemTraceCtx.length !== 0) {
+      writer.uint32(66).bytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      writer.uint32(74).bytes(message.userTraceCtx);
     }
     return writer;
   },
@@ -1109,7 +1069,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
             break;
           }
 
-          message.envId = reader.string();
+          message.accountId = reader.string();
           continue;
         }
         case 3: {
@@ -1117,7 +1077,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
             break;
           }
 
-          message.appId = reader.string();
+          message.envId = reader.string();
           continue;
         }
         case 4: {
@@ -1125,7 +1085,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
             break;
           }
 
-          message.functionSlug = reader.string();
+          message.appId = reader.string();
           continue;
         }
         case 5: {
@@ -1133,7 +1093,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
             break;
           }
 
-          message.stepId = reader.string();
+          message.functionSlug = reader.string();
           continue;
         }
         case 6: {
@@ -1141,7 +1101,31 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
             break;
           }
 
+          message.stepId = reader.string();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
           message.requestPayload = reader.bytes();
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.systemTraceCtx = reader.bytes();
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.userTraceCtx = reader.bytes();
           continue;
         }
       }
@@ -1156,11 +1140,14 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
   fromJSON(object: any): GatewayExecutorRequestData {
     return {
       requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "",
+      accountId: isSet(object.accountId) ? globalThis.String(object.accountId) : "",
       envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
       appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
       functionSlug: isSet(object.functionSlug) ? globalThis.String(object.functionSlug) : "",
       stepId: isSet(object.stepId) ? globalThis.String(object.stepId) : undefined,
       requestPayload: isSet(object.requestPayload) ? bytesFromBase64(object.requestPayload) : new Uint8Array(0),
+      systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
+      userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
     };
   },
 
@@ -1168,6 +1155,9 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     const obj: any = {};
     if (message.requestId !== "") {
       obj.requestId = message.requestId;
+    }
+    if (message.accountId !== "") {
+      obj.accountId = message.accountId;
     }
     if (message.envId !== "") {
       obj.envId = message.envId;
@@ -1184,6 +1174,12 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     if (message.requestPayload.length !== 0) {
       obj.requestPayload = base64FromBytes(message.requestPayload);
     }
+    if (message.systemTraceCtx.length !== 0) {
+      obj.systemTraceCtx = base64FromBytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
+    }
     return obj;
   },
 
@@ -1193,17 +1189,29 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
   fromPartial<I extends Exact<DeepPartial<GatewayExecutorRequestData>, I>>(object: I): GatewayExecutorRequestData {
     const message = createBaseGatewayExecutorRequestData();
     message.requestId = object.requestId ?? "";
+    message.accountId = object.accountId ?? "";
     message.envId = object.envId ?? "";
     message.appId = object.appId ?? "";
     message.functionSlug = object.functionSlug ?? "";
     message.stepId = object.stepId ?? undefined;
     message.requestPayload = object.requestPayload ?? new Uint8Array(0);
+    message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
+    message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
     return message;
   },
 };
 
 function createBaseWorkerRequestAckData(): WorkerRequestAckData {
-  return { requestId: "", appId: "", functionSlug: "", stepId: undefined };
+  return {
+    requestId: "",
+    accountId: "",
+    envId: "",
+    appId: "",
+    functionSlug: "",
+    stepId: undefined,
+    systemTraceCtx: new Uint8Array(0),
+    userTraceCtx: new Uint8Array(0),
+  };
 }
 
 export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
@@ -1211,14 +1219,26 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     if (message.requestId !== "") {
       writer.uint32(10).string(message.requestId);
     }
+    if (message.accountId !== "") {
+      writer.uint32(18).string(message.accountId);
+    }
+    if (message.envId !== "") {
+      writer.uint32(26).string(message.envId);
+    }
     if (message.appId !== "") {
-      writer.uint32(18).string(message.appId);
+      writer.uint32(34).string(message.appId);
     }
     if (message.functionSlug !== "") {
-      writer.uint32(26).string(message.functionSlug);
+      writer.uint32(42).string(message.functionSlug);
     }
     if (message.stepId !== undefined) {
-      writer.uint32(34).string(message.stepId);
+      writer.uint32(50).string(message.stepId);
+    }
+    if (message.systemTraceCtx.length !== 0) {
+      writer.uint32(58).bytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      writer.uint32(66).bytes(message.userTraceCtx);
     }
     return writer;
   },
@@ -1243,7 +1263,7 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
             break;
           }
 
-          message.appId = reader.string();
+          message.accountId = reader.string();
           continue;
         }
         case 3: {
@@ -1251,7 +1271,7 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
             break;
           }
 
-          message.functionSlug = reader.string();
+          message.envId = reader.string();
           continue;
         }
         case 4: {
@@ -1259,7 +1279,39 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
             break;
           }
 
+          message.appId = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.functionSlug = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
           message.stepId = reader.string();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.systemTraceCtx = reader.bytes();
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.userTraceCtx = reader.bytes();
           continue;
         }
       }
@@ -1274,9 +1326,13 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
   fromJSON(object: any): WorkerRequestAckData {
     return {
       requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "",
+      accountId: isSet(object.accountId) ? globalThis.String(object.accountId) : "",
+      envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
       appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
       functionSlug: isSet(object.functionSlug) ? globalThis.String(object.functionSlug) : "",
       stepId: isSet(object.stepId) ? globalThis.String(object.stepId) : undefined,
+      systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
+      userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
     };
   },
 
@@ -1284,6 +1340,12 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     const obj: any = {};
     if (message.requestId !== "") {
       obj.requestId = message.requestId;
+    }
+    if (message.accountId !== "") {
+      obj.accountId = message.accountId;
+    }
+    if (message.envId !== "") {
+      obj.envId = message.envId;
     }
     if (message.appId !== "") {
       obj.appId = message.appId;
@@ -1294,6 +1356,12 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     if (message.stepId !== undefined) {
       obj.stepId = message.stepId;
     }
+    if (message.systemTraceCtx.length !== 0) {
+      obj.systemTraceCtx = base64FromBytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
+    }
     return obj;
   },
 
@@ -1303,9 +1371,13 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
   fromPartial<I extends Exact<DeepPartial<WorkerRequestAckData>, I>>(object: I): WorkerRequestAckData {
     const message = createBaseWorkerRequestAckData();
     message.requestId = object.requestId ?? "";
+    message.accountId = object.accountId ?? "";
+    message.envId = object.envId ?? "";
     message.appId = object.appId ?? "";
     message.functionSlug = object.functionSlug ?? "";
     message.stepId = object.stepId ?? undefined;
+    message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
+    message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
     return message;
   },
 };
@@ -1313,6 +1385,7 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
 function createBaseSDKResponse(): SDKResponse {
   return {
     requestId: "",
+    accountId: "",
     envId: "",
     appId: "",
     status: 0,
@@ -1321,6 +1394,8 @@ function createBaseSDKResponse(): SDKResponse {
     retryAfter: undefined,
     sdkVersion: "",
     requestVersion: 0,
+    systemTraceCtx: new Uint8Array(0),
+    userTraceCtx: new Uint8Array(0),
   };
 }
 
@@ -1329,29 +1404,38 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     if (message.requestId !== "") {
       writer.uint32(10).string(message.requestId);
     }
+    if (message.accountId !== "") {
+      writer.uint32(18).string(message.accountId);
+    }
     if (message.envId !== "") {
-      writer.uint32(18).string(message.envId);
+      writer.uint32(26).string(message.envId);
     }
     if (message.appId !== "") {
-      writer.uint32(26).string(message.appId);
+      writer.uint32(34).string(message.appId);
     }
     if (message.status !== 0) {
-      writer.uint32(32).int32(message.status);
+      writer.uint32(40).int32(message.status);
     }
     if (message.body.length !== 0) {
-      writer.uint32(42).bytes(message.body);
+      writer.uint32(50).bytes(message.body);
     }
     if (message.noRetry !== false) {
-      writer.uint32(48).bool(message.noRetry);
+      writer.uint32(56).bool(message.noRetry);
     }
     if (message.retryAfter !== undefined) {
-      writer.uint32(58).string(message.retryAfter);
+      writer.uint32(66).string(message.retryAfter);
     }
     if (message.sdkVersion !== "") {
       writer.uint32(74).string(message.sdkVersion);
     }
     if (message.requestVersion !== 0) {
       writer.uint32(80).uint32(message.requestVersion);
+    }
+    if (message.systemTraceCtx.length !== 0) {
+      writer.uint32(90).bytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      writer.uint32(98).bytes(message.userTraceCtx);
     }
     return writer;
   },
@@ -1376,7 +1460,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
             break;
           }
 
-          message.envId = reader.string();
+          message.accountId = reader.string();
           continue;
         }
         case 3: {
@@ -1384,35 +1468,43 @@ export const SDKResponse: MessageFns<SDKResponse> = {
             break;
           }
 
-          message.appId = reader.string();
+          message.envId = reader.string();
           continue;
         }
         case 4: {
-          if (tag !== 32) {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.appId = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
             break;
           }
 
           message.status = reader.int32() as any;
           continue;
         }
-        case 5: {
-          if (tag !== 42) {
+        case 6: {
+          if (tag !== 50) {
             break;
           }
 
           message.body = reader.bytes();
           continue;
         }
-        case 6: {
-          if (tag !== 48) {
+        case 7: {
+          if (tag !== 56) {
             break;
           }
 
           message.noRetry = reader.bool();
           continue;
         }
-        case 7: {
-          if (tag !== 58) {
+        case 8: {
+          if (tag !== 66) {
             break;
           }
 
@@ -1435,6 +1527,22 @@ export const SDKResponse: MessageFns<SDKResponse> = {
           message.requestVersion = reader.uint32();
           continue;
         }
+        case 11: {
+          if (tag !== 90) {
+            break;
+          }
+
+          message.systemTraceCtx = reader.bytes();
+          continue;
+        }
+        case 12: {
+          if (tag !== 98) {
+            break;
+          }
+
+          message.userTraceCtx = reader.bytes();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1447,6 +1555,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
   fromJSON(object: any): SDKResponse {
     return {
       requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "",
+      accountId: isSet(object.accountId) ? globalThis.String(object.accountId) : "",
       envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
       appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
       status: isSet(object.status) ? sDKResponseStatusFromJSON(object.status) : 0,
@@ -1455,6 +1564,8 @@ export const SDKResponse: MessageFns<SDKResponse> = {
       retryAfter: isSet(object.retryAfter) ? globalThis.String(object.retryAfter) : undefined,
       sdkVersion: isSet(object.sdkVersion) ? globalThis.String(object.sdkVersion) : "",
       requestVersion: isSet(object.requestVersion) ? globalThis.Number(object.requestVersion) : 0,
+      systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
+      userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
     };
   },
 
@@ -1462,6 +1573,9 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     const obj: any = {};
     if (message.requestId !== "") {
       obj.requestId = message.requestId;
+    }
+    if (message.accountId !== "") {
+      obj.accountId = message.accountId;
     }
     if (message.envId !== "") {
       obj.envId = message.envId;
@@ -1487,6 +1601,12 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     if (message.requestVersion !== 0) {
       obj.requestVersion = Math.round(message.requestVersion);
     }
+    if (message.systemTraceCtx.length !== 0) {
+      obj.systemTraceCtx = base64FromBytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
+    }
     return obj;
   },
 
@@ -1496,6 +1616,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
   fromPartial<I extends Exact<DeepPartial<SDKResponse>, I>>(object: I): SDKResponse {
     const message = createBaseSDKResponse();
     message.requestId = object.requestId ?? "";
+    message.accountId = object.accountId ?? "";
     message.envId = object.envId ?? "";
     message.appId = object.appId ?? "";
     message.status = object.status ?? 0;
@@ -1504,6 +1625,8 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     message.retryAfter = object.retryAfter ?? undefined;
     message.sdkVersion = object.sdkVersion ?? "";
     message.requestVersion = object.requestVersion ?? 0;
+    message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
+    message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
     return message;
   },
 };
@@ -1859,7 +1982,7 @@ export const SystemAttributes: MessageFns<SystemAttributes> = {
 };
 
 function createBaseConnGroup(): ConnGroup {
-  return { envId: "", appId: "", hash: "", conns: [], syncId: undefined, buildId: undefined };
+  return { envId: "", appId: "", hash: "", conns: [], syncId: undefined, appVersion: undefined };
 }
 
 export const ConnGroup: MessageFns<ConnGroup> = {
@@ -1879,8 +2002,8 @@ export const ConnGroup: MessageFns<ConnGroup> = {
     if (message.syncId !== undefined) {
       writer.uint32(42).string(message.syncId);
     }
-    if (message.buildId !== undefined) {
-      writer.uint32(50).string(message.buildId);
+    if (message.appVersion !== undefined) {
+      writer.uint32(50).string(message.appVersion);
     }
     return writer;
   },
@@ -1937,7 +2060,7 @@ export const ConnGroup: MessageFns<ConnGroup> = {
             break;
           }
 
-          message.buildId = reader.string();
+          message.appVersion = reader.string();
           continue;
         }
       }
@@ -1956,7 +2079,7 @@ export const ConnGroup: MessageFns<ConnGroup> = {
       hash: isSet(object.hash) ? globalThis.String(object.hash) : "",
       conns: globalThis.Array.isArray(object?.conns) ? object.conns.map((e: any) => ConnMetadata.fromJSON(e)) : [],
       syncId: isSet(object.syncId) ? globalThis.String(object.syncId) : undefined,
-      buildId: isSet(object.buildId) ? globalThis.String(object.buildId) : undefined,
+      appVersion: isSet(object.appVersion) ? globalThis.String(object.appVersion) : undefined,
     };
   },
 
@@ -1977,8 +2100,8 @@ export const ConnGroup: MessageFns<ConnGroup> = {
     if (message.syncId !== undefined) {
       obj.syncId = message.syncId;
     }
-    if (message.buildId !== undefined) {
-      obj.buildId = message.buildId;
+    if (message.appVersion !== undefined) {
+      obj.appVersion = message.appVersion;
     }
     return obj;
   },
@@ -1993,7 +2116,7 @@ export const ConnGroup: MessageFns<ConnGroup> = {
     message.hash = object.hash ?? "";
     message.conns = object.conns?.map((e) => ConnMetadata.fromPartial(e)) || [];
     message.syncId = object.syncId ?? undefined;
-    message.buildId = object.buildId ?? undefined;
+    message.appVersion = object.appVersion ?? undefined;
     return message;
   },
 };

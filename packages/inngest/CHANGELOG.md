@@ -1,5 +1,116 @@
 # inngest
 
+## 3.31.10
+
+### Patch Changes
+
+- [#852](https://github.com/inngest/inngest-js/pull/852) [`518a5b8`](https://github.com/inngest/inngest-js/commit/518a5b8602a358a78957e0e970d9ba85ef9f4d35) Thanks [@charlypoly](https://github.com/charlypoly)! - chore: bump `@inngest/ai` to `0.0.4`
+
+## 3.31.9
+
+### Patch Changes
+
+- [#848](https://github.com/inngest/inngest-js/pull/848) [`dd1bef8`](https://github.com/inngest/inngest-js/commit/dd1bef893f6e1e90a03643d0c2773af2be8dc5dc) Thanks [@amh4r](https://github.com/amh4r)! - Fix serve ID not considered for in-band syncs
+
+## 3.31.8
+
+### Patch Changes
+
+- [#845](https://github.com/inngest/inngest-js/pull/845) [`a2aadb1`](https://github.com/inngest/inngest-js/commit/a2aadb1baed2b295d9542206db9f5bd887645755) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Connect: Forward tracing and parse user tracing headers
+
+## 3.31.7
+
+### Patch Changes
+
+- [#842](https://github.com/inngest/inngest-js/pull/842) [`4237efd`](https://github.com/inngest/inngest-js/commit/4237efd04aebbca55c027f5fed249a77decf3b1c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow for use of `exactOptionalPropertyTypes: true` when serving
+
+## 3.31.6
+
+### Patch Changes
+
+- [#840](https://github.com/inngest/inngest-js/pull/840) [`b24fd30`](https://github.com/inngest/inngest-js/commit/b24fd304b339d7d216018ebe203c8b53895f5f38) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Sync: Provide app version in register request
+
+## 3.31.5
+
+### Patch Changes
+
+- [#837](https://github.com/inngest/inngest-js/pull/837) [`cb00a46`](https://github.com/inngest/inngest-js/commit/cb00a46c1a1fa4c71a9b76175e9bffd94f27fa0f) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Connect: Rename buildId -> appVersion
+
+- [#838](https://github.com/inngest/inngest-js/pull/838) [`ece27d7`](https://github.com/inngest/inngest-js/commit/ece27d79ccd91fe35f2ff9de09cefafb5745893b) Thanks [@amh4r](https://github.com/amh4r)! - Fix missing env for introspection and in-band sync
+
+## 3.31.4
+
+### Patch Changes
+
+- [#834](https://github.com/inngest/inngest-js/pull/834) [`b304e1c`](https://github.com/inngest/inngest-js/commit/b304e1c41f18ed940885409596ebf8af42050cbe) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Remove connect from inngest client, split out into `inngest/connect`
+
+## 3.31.3
+
+### Patch Changes
+
+- [#831](https://github.com/inngest/inngest-js/pull/831) [`c331190`](https://github.com/inngest/inngest-js/commit/c331190f20055c9609c5daa91d9efa5ac3eeae27) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Read signing key from env var for connect
+
+## 3.31.2
+
+### Patch Changes
+
+- [#824](https://github.com/inngest/inngest-js/pull/824) [`1d72eae`](https://github.com/inngest/inngest-js/commit/1d72eae5029517ae81bdc401ec440fe183f266c1) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Handle immediate WebSocket failure when connecting to gateway
+
+- [#822](https://github.com/inngest/inngest-js/pull/822) [`1136087`](https://github.com/inngest/inngest-js/commit/11360879aebb8cc70e0d8a6cf37ac34f8b294014) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sending events now has retries, backing off over 5 attempts
+
+## 3.31.1
+
+### Patch Changes
+
+- [#817](https://github.com/inngest/inngest-js/pull/817) [`446be1b`](https://github.com/inngest/inngest-js/commit/446be1b5f1aa5c30328e95d0aa23260b586f04d0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `serve()` and `connect()` now have looser typing for `client` and `functions`, resulting in easier use of multiple `inngest` packages in a single process
+
+- [#823](https://github.com/inngest/inngest-js/pull/823) [`f1d2385`](https://github.com/inngest/inngest-js/commit/f1d23855bc412c0c255dc108e4edefffb203af04) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow wildcard event typing with `.fromRecord()`
+
+  The following schema is now valid:
+
+  ```ts
+  export const schemas = new EventSchemas().fromRecord<{
+    "app/blog.post.*":
+      | {
+          name: "app/blog.post.created";
+          data: {
+            postId: string;
+            authorId: string;
+            createdAt: string;
+          };
+        }
+      | {
+          name: "app/blog.post.published";
+          data: {
+            postId: string;
+            authorId: string;
+            publishedAt: string;
+          };
+        };
+  }>();
+  ```
+
+  When creating a function, this allows you to appropriately type narrow the event to pull out the correct data:
+
+  ```ts
+  inngest.createFunction(
+    { id: "my-fn" },
+    { event: "app/blog.post.*" },
+    async ({ event }) => {
+      if (event.name === "app/blog.post.created") {
+        console.log("Blog post created at:", event.data.createdAt);
+      } else if (event.name === "app/blog.post.published") {
+        console.log("Blog post published at:", event.data.publishedAt);
+      }
+    },
+  );
+  ```
+
+- [#825](https://github.com/inngest/inngest-js/pull/825) [`661ed7b`](https://github.com/inngest/inngest-js/commit/661ed7b278b017958b38e9add6987e35d1a8c616) Thanks [@jpwilliams](https://github.com/jpwilliams)! - If no `functions` are provided to `inngest.connect()`, it will now use any functions that have been created with the client instead
+
+- Updated dependencies [[`fadd94a`](https://github.com/inngest/inngest-js/commit/fadd94a998ae1e996941e88830d0f468fc649a85)]:
+  - @inngest/ai@0.0.3
+
 ## 3.31.0
 
 ### Minor Changes

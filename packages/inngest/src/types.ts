@@ -710,10 +710,10 @@ export interface ClientOptions {
   isDev?: boolean;
 
   /**
-   * The application-specific build identifier. This can be an arbitrary value
+   * The application-specific version identifier. This can be an arbitrary value
    * such as a version string, a Git commit SHA, or any other unique identifier.
    */
-  buildId?: string;
+  appVersion?: string;
 }
 
 /**
@@ -850,6 +850,7 @@ export interface RegisterOptions {
   /**
    * The ID of this app. This is used to group functions together in the Inngest
    * UI. The ID of the passed client is used by default.
+   * @deprecated Will be removed in v4.
    */
   id?: string;
 }
@@ -1012,6 +1013,12 @@ export interface RegisterRequest {
   appName: string;
 
   /**
+   * AppVersion represents an optional application version identifier. This should change
+   * whenever code within one of your Inngest function or any dependency thereof changes.
+   */
+  appVersion?: string;
+
+  /**
    * The functions available at this particular handler.
    */
   functions: FunctionConfig[];
@@ -1035,7 +1042,7 @@ export interface Capabilities {
 export interface InBandRegisterRequest
   extends Pick<
       RegisterRequest,
-      "capabilities" | "framework" | "functions" | "sdk" | "url"
+      "capabilities" | "framework" | "functions" | "sdk" | "url" | "appVersion"
     >,
     Pick<AuthenticatedIntrospection, "sdk_language" | "sdk_version" | "env"> {
   /**
@@ -1126,7 +1133,7 @@ export const functionConfigSchema = z.strictObject({
       id: z.string(),
       name: z.string(),
       runtime: z.strictObject({
-        type: z.literal("http"),
+        type: z.union([z.literal("http"), z.literal("ws")]),
         url: z.string(),
       }),
       retries: z
