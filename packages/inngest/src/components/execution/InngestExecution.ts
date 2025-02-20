@@ -54,6 +54,7 @@ export interface MemoizedOp extends IncomingOp {
 export enum ExecutionVersion {
   V0 = 0,
   V1 = 1,
+  V2 = 2,
 }
 
 export const PREFERRED_EXECUTION_VERSION =
