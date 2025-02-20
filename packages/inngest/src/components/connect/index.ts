@@ -117,7 +117,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
     | undefined;
 
   constructor(options: ConnectHandlerOptions) {
-    this.inngest = options.inngest as Inngest.Any;
     if (options.apps.length === 0) {
       throw new Error("No apps provided");
     }
