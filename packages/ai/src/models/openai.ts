@@ -44,8 +44,11 @@ export namespace OpenAi {
     | "chatgpt-4o-latest"
     | "gpt-4o-mini"
     | "gpt-4"
+    | "o1"
     | "o1-preview"
     | "o1-mini"
+    | "o3-mini"
+    | "gpt-4-turbo"
     | "gpt-3.5-turbo";
 
   /**
