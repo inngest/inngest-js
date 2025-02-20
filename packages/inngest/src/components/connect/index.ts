@@ -122,11 +122,15 @@ class WebSocketWorkerConnection implements WorkerConnection {
     | undefined;
 
   constructor(options: ConnectHandlerOptions) {
-    if (options.apps.length === 0) {
+    if (
+      !Array.isArray(options.apps) ||
+      options.apps.length === 0 ||
+      !options.apps[0]
+    ) {
       throw new Error("No apps provided");
     }
 
-    this.inngest = options.apps[0]!.client as Inngest.Any;
+    this.inngest = options.apps[0].client as Inngest.Any;
 
     this.options = this.applyDefaults(options);
     this.debug = debug("inngest:connect");
@@ -925,7 +929,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         });
 
         if (
-          !gatewayExecutorRequest.appName ||
+          typeof gatewayExecutorRequest.appName !== "string" ||
           gatewayExecutorRequest.appName.length === 0
         ) {
           this.debug("No app name in request, skipping", {
