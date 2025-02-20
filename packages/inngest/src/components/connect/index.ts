@@ -415,15 +415,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
               return baseUrl;
             },
-            isProduction: () => {
-              try {
-                // eslint-disable-next-line @inngest/internal/process-warn
-                const isProd = process.env.NODE_ENV === "production";
-                return isProd;
-              } catch (err) {
-                // no-op
-              }
-            },
           };
         },
       });
