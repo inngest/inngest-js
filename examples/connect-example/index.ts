@@ -12,25 +12,36 @@ const inngest = new Inngest({
 console.log("Connecting...");
 
 connect({
-  inngest,
-  functions: [
-    inngest.createFunction(
-      { id: "test-function" },
-      { event: "connect-demo/test" },
-      async ({ step }) => {
-        await step.run("test", async () => {
-          console.log("via connect!");
-          await new Promise((resolve) => setTimeout(resolve, 10000));
-          console.log("function done");
-          return "this works";
-        });
-      }
-    ),
+  apps: [
+    {
+      client: inngest,
+      functions: [
+        inngest.createFunction(
+          { id: "test-function" },
+          { event: "connect-demo/test" },
+          async ({ step }) => {
+            await step.run("test", async () => {
+              console.log("via connect!");
+              await new Promise((resolve) => setTimeout(resolve, 10000));
+              console.log("function done");
+              return "this works";
+            });
+          }
+        ),
+        inngest.createFunction(
+          { id: "hello-world" },
+          { event: "connect-demo/hello-world" },
+          async ({ step }) => {
+            return { success: true };
+          }
+        ),
+      ],
+    },
   ],
   instanceId: "my-worker",
-  signingKey: "signkey-test-12345678",
-  signingKeyFallback: "signkey-test-00000000",
-  //     baseUrl: "http://127.0.0.1:8288",
+  rewriteGatewayEndpoint: (endpoint) => {
+    return endpoint.replace("connect-gateway:8080", "localhost:8100");
+  },
 }).then(async (conn) => {
   console.log("Connected!");
 
