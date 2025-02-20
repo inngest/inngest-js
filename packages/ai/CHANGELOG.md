@@ -1,5 +1,13 @@
 # @inngest/ai
 
+## 0.0.4
+
+### Patch Changes
+
+- [#850](https://github.com/inngest/inngest-js/pull/850) [`dfe5e2a`](https://github.com/inngest/inngest-js/commit/dfe5e2ad2938871bfd5db10bab082c4f513c2490) Thanks [@charlypoly](https://github.com/charlypoly)! - feat(ai): type error outputs
+
+- [#850](https://github.com/inngest/inngest-js/pull/850) [`dfe5e2a`](https://github.com/inngest/inngest-js/commit/dfe5e2ad2938871bfd5db10bab082c4f513c2490) Thanks [@charlypoly](https://github.com/charlypoly)! - feat(ai): type error outputs
+
 ## 0.0.3
 
 ### Patch Changes
