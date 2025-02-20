@@ -213,8 +213,14 @@ export namespace AnthropicAiAdapter {
      * Object type.
      *
      * For Messages, this is always `"message"`.
+     * When an error occurs, this will be `"error"`.
      */
-    type: "message";
+    type: "message" | "error";
+
+    error?: {
+      type: string;
+      message: string;
+    };
 
     /**
      * Billing and rate-limit usage.
