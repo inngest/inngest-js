@@ -3,8 +3,14 @@ import { connect } from "inngest/connect";
 
 console.log("Starting up worker with pid", process.pid);
 
-const inngest = new Inngest({
-  id: "my-connect-js-app",
+const app1 = new Inngest({
+  id: "my-connect-js-app-1",
+  eventKey: "abc123",
+  appVersion: "v1.0",
+});
+
+const app2 = new Inngest({
+  id: "my-connect-js-app-2",
   eventKey: "abc123",
   appVersion: "v1.0",
 });
@@ -14,9 +20,9 @@ console.log("Connecting...");
 connect({
   apps: [
     {
-      client: inngest,
+      client: app1,
       functions: [
-        inngest.createFunction(
+        app1.createFunction(
           { id: "test-function" },
           { event: "connect-demo/test" },
           async ({ step }) => {
@@ -28,7 +34,19 @@ connect({
             });
           }
         ),
-        inngest.createFunction(
+        app1.createFunction(
+          { id: "hello-world" },
+          { event: "connect-demo/hello-world" },
+          async ({ step }) => {
+            return { success: true };
+          }
+        ),
+      ],
+    },
+    {
+      client: app2,
+      functions: [
+        app2.createFunction(
           { id: "hello-world" },
           { event: "connect-demo/hello-world" },
           async ({ step }) => {

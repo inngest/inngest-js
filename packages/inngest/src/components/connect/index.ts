@@ -51,6 +51,11 @@ const WorkerHeartbeatInterval = 10_000;
 interface connectionEstablishData {
   marshaledCapabilities: string;
   manualReadinessAck: boolean;
+  apps: {
+    appName: string;
+    appVersion?: string;
+    functions: Uint8Array;
+  }[];
 }
 
 const ConnectWebSocketProtocol = "v0.connect.inngest.com";
@@ -273,8 +278,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
       connect: "v1",
     };
 
-    const appName = this.inngest.id;
-
     const functionConfigs: Record<
       string,
       {
@@ -290,7 +293,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         functions: functions.flatMap((f) =>
           f["getConfig"]({
             baseUrl: new URL("wss://connect"),
-            appPrefix: appName,
+            appPrefix: client.id,
             isConnect: true,
           })
         ),
@@ -315,6 +318,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
       manualReadinessAck: false,
 
       marshaledCapabilities: JSON.stringify(capabilities),
+      apps: Object.entries(functionConfigs).map(
+        ([appId, { client, functions }]) => ({
+          appName: appId,
+          appVersion: client.appVersion,
+          functions: new TextEncoder().encode(JSON.stringify(functions)),
+        })
+      ),
     };
 
     const requestHandlers: Record<
@@ -721,13 +731,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
             sessionToken: startResp.sessionToken,
             syncToken: startResp.syncToken,
           },
-          apps: Object.entries(this.functions).map(
-            ([appId, { client, functions }]) => ({
-              appName: appId,
-              appVersion: client.appVersion,
-              functions: new TextEncoder().encode(JSON.stringify(functions)),
-            })
-          ),
+          apps: data.apps,
           capabilities: new TextEncoder().encode(data.marshaledCapabilities),
           startedAt: startedAt,
           instanceId: this.options.instanceId || (await getHostname()),
@@ -925,6 +929,19 @@ class WebSocketWorkerConnection implements WorkerConnection {
           connectionId,
         });
 
+        if (
+          !gatewayExecutorRequest.appName ||
+          gatewayExecutorRequest.appName.length === 0
+        ) {
+          this.debug("No app name in request, skipping", {
+            requestId: gatewayExecutorRequest.requestId,
+            appId: gatewayExecutorRequest.appId,
+            functionSlug: gatewayExecutorRequest.functionSlug,
+            stepId: gatewayExecutorRequest.stepId,
+            connectionId,
+          });
+          return;
+        }
         const requestHandler = requestHandlers[gatewayExecutorRequest.appName];
 
         if (!requestHandler) {
