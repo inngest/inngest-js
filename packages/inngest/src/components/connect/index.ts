@@ -165,10 +165,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
       functions[app.client.id] = {
         client: app.client,
-        functions: [
-          ...client.funcs,
-          ...((app.functions as InngestFunction.Any[]) ?? []),
-        ],
+        functions: (app.functions as InngestFunction.Any[]) ?? client.funcs,
       };
     }
     return functions;
