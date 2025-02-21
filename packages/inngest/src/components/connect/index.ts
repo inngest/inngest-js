@@ -161,9 +161,14 @@ class WebSocketWorkerConnection implements WorkerConnection {
         throw new Error(`Duplicate app id: ${app.client.id}`);
       }
 
+      const client = app.client as Inngest.Any;
+
       functions[app.client.id] = {
         client: app.client,
-        functions: (app.functions as InngestFunction.Any[]) ?? [],
+        functions: [
+          ...client.funcs,
+          ...((app.functions as InngestFunction.Any[]) ?? []),
+        ],
       };
     }
     return functions;

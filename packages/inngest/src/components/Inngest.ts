@@ -613,6 +613,10 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     return fn;
   };
 
+  public get funcs() {
+    return this.localFns;
+  }
+
   private _createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
     rawTrigger,
