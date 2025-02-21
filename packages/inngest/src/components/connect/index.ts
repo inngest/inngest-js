@@ -346,6 +346,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
         client: client,
         functions: functions,
         frameworkName: "connect",
+        signingKey: this.options.signingKey,
+        signingKeyFallback: this.options.signingKeyFallback,
         skipSignatureValidation: true,
         handler: (msg: GatewayExecutorRequestData) => {
           const asString = new TextDecoder().decode(msg.requestPayload);
