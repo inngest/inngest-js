@@ -4,13 +4,13 @@ import { type InngestFunction } from "../InngestFunction.js";
 
 export const DEFAULT_SHUTDOWN_SIGNALS = ["SIGINT", "SIGTERM"];
 
-export interface ConnectHandlerOptions extends RegisterOptions {
-  inngest: Inngest.Like;
+export interface ConnectApp {
+  client: Inngest.Like;
+  functions?: Array<InngestFunction.Like>;
+}
 
-  /**
-   * An array of the functions to serve and register with Inngest.
-   */
-  functions?: readonly InngestFunction.Like[];
+export interface ConnectHandlerOptions extends RegisterOptions {
+  apps: ConnectApp[];
 
   /**
    * InstanceId represents a stable identifier to be used for identifying connected SDKs.

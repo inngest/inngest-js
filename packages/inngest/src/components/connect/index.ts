@@ -49,9 +49,13 @@ const ResponseAcknowlegeDeadline = 5_000;
 const WorkerHeartbeatInterval = 10_000;
 
 interface connectionEstablishData {
-  marshaledFunctions: string;
   marshaledCapabilities: string;
   manualReadinessAck: boolean;
+  apps: {
+    appName: string;
+    appVersion?: string;
+    functions: Uint8Array;
+  }[];
 }
 
 const ConnectWebSocketProtocol = "v0.connect.inngest.com";
@@ -118,7 +122,16 @@ class WebSocketWorkerConnection implements WorkerConnection {
     | undefined;
 
   constructor(options: ConnectHandlerOptions) {
-    this.inngest = options.inngest as Inngest.Any;
+    if (
+      !Array.isArray(options.apps) ||
+      options.apps.length === 0 ||
+      !options.apps[0]
+    ) {
+      throw new Error("No apps provided");
+    }
+
+    this.inngest = options.apps[0].client as Inngest.Any;
+
     this.options = this.applyDefaults(options);
     this.debug = debug("inngest:connect");
 
@@ -129,12 +142,31 @@ class WebSocketWorkerConnection implements WorkerConnection {
     });
   }
 
-  private get functions(): InngestFunction.Any[] {
-    return (
-      (this.options.functions as InngestFunction.Any[]) ??
-      this.inngest["localFns"] ??
-      []
-    );
+  private get functions(): Record<
+    string,
+    {
+      client: Inngest.Like;
+      functions: InngestFunction.Any[];
+    }
+  > {
+    const functions: Record<
+      string,
+      {
+        client: Inngest.Like;
+        functions: InngestFunction.Any[];
+      }
+    > = {};
+    for (const app of this.options.apps) {
+      if (functions[app.client.id]) {
+        throw new Error(`Duplicate app id: ${app.client.id}`);
+      }
+
+      functions[app.client.id] = {
+        client: app.client,
+        functions: (app.functions as InngestFunction.Any[]) ?? [],
+      };
+    }
+    return functions;
   }
 
   private applyDefaults(opts: ConnectHandlerOptions): ConnectHandlerOptions {
@@ -254,126 +286,151 @@ class WebSocketWorkerConnection implements WorkerConnection {
       connect: "v1",
     };
 
-    const appName = this.inngest.id;
-
-    const functions: Array<FunctionConfig> = this.functions.flatMap((f) =>
-      f["getConfig"]({
-        baseUrl: new URL("wss://connect"),
-        appPrefix: appName,
-        isConnect: true,
-      })
-    );
+    const functionConfigs: Record<
+      string,
+      {
+        client: Inngest.Like;
+        functions: FunctionConfig[];
+      }
+    > = {};
+    for (const [appId, { client, functions }] of Object.entries(
+      this.functions
+    )) {
+      functionConfigs[appId] = {
+        client: client,
+        functions: functions.flatMap((f) =>
+          f["getConfig"]({
+            baseUrl: new URL("wss://connect"),
+            appPrefix: client.id,
+            isConnect: true,
+          })
+        ),
+      };
+    }
 
     this.debug("Prepared sync data", {
-      functionSlugs: functions.map((f) => {
-        return JSON.stringify({
-          id: f.id,
-          stepUrls: Object.values(f.steps).map((s) => s.runtime["url"]),
-        });
-      }),
+      functionSlugs: Object.entries(functionConfigs).map(
+        ([appId, { functions }]) => {
+          return JSON.stringify({
+            appId,
+            functions: functions.map((f) => ({
+              id: f.id,
+              stepUrls: Object.values(f.steps).map((s) => s.runtime["url"]),
+            })),
+          });
+        }
+      ),
     });
 
     const data: connectionEstablishData = {
       manualReadinessAck: false,
 
       marshaledCapabilities: JSON.stringify(capabilities),
-      marshaledFunctions: JSON.stringify(functions),
+      apps: Object.entries(functionConfigs).map(
+        ([appId, { client, functions }]) => ({
+          appName: appId,
+          appVersion: client.appVersion,
+          functions: new TextEncoder().encode(JSON.stringify(functions)),
+        })
+      ),
     };
 
-    const inngestCommHandler: ConnectCommHandler = new InngestCommHandler({
-      client: this.inngest,
-      functions: this.functions,
-      frameworkName: "connect",
-      skipSignatureValidation: true,
-      handler: (msg: GatewayExecutorRequestData) => {
-        const asString = new TextDecoder().decode(msg.requestPayload);
-        const parsed = parseFnData(JSON.parse(asString));
+    const requestHandlers: Record<
+      string,
+      (msg: GatewayExecutorRequestData) => Promise<SDKResponse>
+    > = {};
+    for (const [appId, { client, functions }] of Object.entries(
+      this.functions
+    )) {
+      const inngestCommHandler: ConnectCommHandler = new InngestCommHandler({
+        client: client,
+        functions: functions,
+        frameworkName: "connect",
+        signingKey: this.options.signingKey,
+        signingKeyFallback: this.options.signingKeyFallback,
+        skipSignatureValidation: true,
+        handler: (msg: GatewayExecutorRequestData) => {
+          const asString = new TextDecoder().decode(msg.requestPayload);
+          const parsed = parseFnData(JSON.parse(asString));
 
-        const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
+          const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
 
-        return {
-          body() {
-            return parsed;
-          },
-          method() {
-            return "POST";
-          },
-          headers(key) {
-            switch (key) {
-              case headerKeys.ContentLength.toString():
-                return asString.length.toString();
-              case headerKeys.InngestExpectedServerKind.toString():
-                return "connect";
-              case headerKeys.RequestVersion.toString():
-                return parsed.version.toString();
-              case headerKeys.Signature.toString():
-                // Note: Signature is disabled for connect
-                return null;
-              case headerKeys.TraceParent.toString():
-                return userTraceCtx?.traceParent ?? null;
-              case headerKeys.TraceState.toString():
-                return userTraceCtx?.traceState ?? null;
-              default:
-                return null;
-            }
-          },
-          transformResponse({ body, headers, status }) {
-            let sdkResponseStatus: SDKResponseStatus = SDKResponseStatus.DONE;
-            switch (status) {
-              case 200:
-                sdkResponseStatus = SDKResponseStatus.DONE;
-                break;
-              case 206:
-                sdkResponseStatus = SDKResponseStatus.NOT_COMPLETED;
-                break;
-              case 500:
-                sdkResponseStatus = SDKResponseStatus.ERROR;
-                break;
-            }
+          return {
+            body() {
+              return parsed;
+            },
+            method() {
+              return "POST";
+            },
+            headers(key) {
+              switch (key) {
+                case headerKeys.ContentLength.toString():
+                  return asString.length.toString();
+                case headerKeys.InngestExpectedServerKind.toString():
+                  return "connect";
+                case headerKeys.RequestVersion.toString():
+                  return parsed.version.toString();
+                case headerKeys.Signature.toString():
+                  // Note: Signature is disabled for connect
+                  return null;
+                case headerKeys.TraceParent.toString():
+                  return userTraceCtx?.traceParent ?? null;
+                case headerKeys.TraceState.toString():
+                  return userTraceCtx?.traceState ?? null;
+                default:
+                  return null;
+              }
+            },
+            transformResponse({ body, headers, status }) {
+              let sdkResponseStatus: SDKResponseStatus = SDKResponseStatus.DONE;
+              switch (status) {
+                case 200:
+                  sdkResponseStatus = SDKResponseStatus.DONE;
+                  break;
+                case 206:
+                  sdkResponseStatus = SDKResponseStatus.NOT_COMPLETED;
+                  break;
+                case 500:
+                  sdkResponseStatus = SDKResponseStatus.ERROR;
+                  break;
+              }
 
-            return SDKResponse.create({
-              requestId: msg.requestId,
-              accountId: msg.accountId,
-              envId: msg.envId,
-              appId: msg.appId,
-              status: sdkResponseStatus,
-              body: new TextEncoder().encode(body),
-              noRetry: headers[headerKeys.NoRetry] === "true",
-              retryAfter: headers[headerKeys.RetryAfter],
-              sdkVersion: `inngest-js:v${version}`,
-              requestVersion: parseInt(
-                headers[headerKeys.RequestVersion] ??
-                  PREFERRED_EXECUTION_VERSION.toString(),
-                10
-              ),
-              systemTraceCtx: msg.systemTraceCtx,
-              userTraceCtx: msg.userTraceCtx,
-            });
-          },
-          url() {
-            const baseUrl = new URL("http://connect.inngest.com");
+              return SDKResponse.create({
+                requestId: msg.requestId,
+                accountId: msg.accountId,
+                envId: msg.envId,
+                appId: msg.appId,
+                status: sdkResponseStatus,
+                body: new TextEncoder().encode(body),
+                noRetry: headers[headerKeys.NoRetry] === "true",
+                retryAfter: headers[headerKeys.RetryAfter],
+                sdkVersion: `inngest-js:v${version}`,
+                requestVersion: parseInt(
+                  headers[headerKeys.RequestVersion] ??
+                    PREFERRED_EXECUTION_VERSION.toString(),
+                  10
+                ),
+                systemTraceCtx: msg.systemTraceCtx,
+                userTraceCtx: msg.userTraceCtx,
+              });
+            },
+            url() {
+              const baseUrl = new URL("http://connect.inngest.com");
 
-            baseUrl.searchParams.set(queryKeys.FnId, msg.functionSlug);
+              baseUrl.searchParams.set(queryKeys.FnId, msg.functionSlug);
 
-            if (msg.stepId) {
-              baseUrl.searchParams.set(queryKeys.StepId, msg.stepId);
-            }
+              if (msg.stepId) {
+                baseUrl.searchParams.set(queryKeys.StepId, msg.stepId);
+              }
 
-            return baseUrl;
-          },
-          isProduction: () => {
-            try {
-              // eslint-disable-next-line @inngest/internal/process-warn
-              const isProd = process.env.NODE_ENV === "production";
-              return isProd;
-            } catch (err) {
-              // no-op
-            }
-          },
-        };
-      },
-    });
-    const requestHandler = inngestCommHandler.createHandler();
+              return baseUrl;
+            },
+          };
+        },
+      });
+      const requestHandler = inngestCommHandler.createHandler();
+      requestHandlers[appId] = requestHandler;
+    }
 
     if (
       this.options.handleShutdownSignals &&
@@ -395,7 +452,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
       try {
         await this.prepareConnection(
-          requestHandler,
+          requestHandlers,
           useSigningKey,
           data,
           attempt,
@@ -512,7 +569,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
   }
 
   private async prepareConnection(
-    requestHandler: (msg: GatewayExecutorRequestData) => Promise<SDKResponse>,
+    requestHandlers: Record<
+      string,
+      (msg: GatewayExecutorRequestData) => Promise<SDKResponse>
+    >,
     hashedSigningKey: string | undefined,
     data: connectionEstablishData,
     attempt: number,
@@ -658,7 +718,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
       if (!setupState.sentWorkerConnect) {
         const workerConnectRequestMsg = WorkerConnectRequestData.create({
-          appName: this.inngest.id,
+          connectionId: startResp.connectionId,
           environment: this.inngest.env || undefined,
           platform: getPlatformName({
             ...allProcessEnv(),
@@ -672,16 +732,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
             sessionToken: startResp.sessionToken,
             syncToken: startResp.syncToken,
           },
-          config: {
-            capabilities: new TextEncoder().encode(data.marshaledCapabilities),
-            functions: new TextEncoder().encode(data.marshaledFunctions),
-          },
+          apps: data.apps,
+          capabilities: new TextEncoder().encode(data.marshaledCapabilities),
           startedAt: startedAt,
-          sessionId: {
-            connectionId: connectionId,
-            appVersion: this.inngest.appVersion,
-            instanceId: this.options.instanceId || (await getHostname()),
-          },
+          instanceId: this.options.instanceId || (await getHostname()),
         });
 
         const workerConnectRequestMsgBytes = WorkerConnectRequestData.encode(
@@ -870,10 +924,38 @@ class WebSocketWorkerConnection implements WorkerConnection {
         this.debug("Received gateway executor request", {
           requestId: gatewayExecutorRequest.requestId,
           appId: gatewayExecutorRequest.appId,
+          appName: gatewayExecutorRequest.appName,
           functionSlug: gatewayExecutorRequest.functionSlug,
           stepId: gatewayExecutorRequest.stepId,
           connectionId,
         });
+
+        if (
+          typeof gatewayExecutorRequest.appName !== "string" ||
+          gatewayExecutorRequest.appName.length === 0
+        ) {
+          this.debug("No app name in request, skipping", {
+            requestId: gatewayExecutorRequest.requestId,
+            appId: gatewayExecutorRequest.appId,
+            functionSlug: gatewayExecutorRequest.functionSlug,
+            stepId: gatewayExecutorRequest.stepId,
+            connectionId,
+          });
+          return;
+        }
+        const requestHandler = requestHandlers[gatewayExecutorRequest.appName];
+
+        if (!requestHandler) {
+          this.debug("No request handler found for app, skipping", {
+            requestId: gatewayExecutorRequest.requestId,
+            appId: gatewayExecutorRequest.appId,
+            appName: gatewayExecutorRequest.appName,
+            functionSlug: gatewayExecutorRequest.functionSlug,
+            stepId: gatewayExecutorRequest.stepId,
+            connectionId,
+          });
+          return;
+        }
 
         // Ack received request
         ws.send(
@@ -1059,6 +1141,10 @@ export const connect = async (
   options: ConnectHandlerOptions
   // eslint-disable-next-line @typescript-eslint/require-await
 ): Promise<WorkerConnection> => {
+  if (options.apps.length === 0) {
+    throw new Error("No apps provided");
+  }
+
   const conn = new WebSocketWorkerConnection(options);
 
   await conn.connect();
