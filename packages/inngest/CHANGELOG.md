@@ -1,5 +1,11 @@
 # inngest
 
+## 3.31.11
+
+### Patch Changes
+
+- [#851](https://github.com/inngest/inngest-js/pull/851) [`7f96793`](https://github.com/inngest/inngest-js/commit/7f967936dfdb1a332f3370135279ebf7782fb1fc) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Connect: Allow multi-app connections
+
 ## 3.31.10
 
 ### Patch Changes
