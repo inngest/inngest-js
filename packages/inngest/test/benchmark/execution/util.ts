@@ -2,20 +2,23 @@ import { fromPartial } from "@total-typescript/shoehorn";
 import { Inngest } from "../../../src";
 import { STEP_INDEXING_SUFFIX } from "../../../src/components/InngestStepTools";
 import {
+  ExecutionVersion,
   IInngestExecution,
   InngestExecution,
   MemoizedOp,
-  PREFERRED_EXECUTION_VERSION,
+  PREFERRED_EXECUTION_VERSION
 } from "../../../src/components/execution/InngestExecution";
 import { _internals } from "../../../src/components/execution/v1";
 import { ServerTiming } from "../../../src/helpers/ServerTiming";
 
 interface CreateExecutionWithMemoizedStepsOptions {
   stepCount: number;
+  executionVersion?: ExecutionVersion;
 }
 
 export const createExecutionWithMemoizedSteps = ({
   stepCount = 1,
+  executionVersion = PREFERRED_EXECUTION_VERSION,
 }: CreateExecutionWithMemoizedStepsOptions): {
   run: () => Promise<void>;
 } => {
@@ -48,12 +51,16 @@ export const createExecutionWithMemoizedSteps = ({
   const run = async () => {
     const execution = client
       .createFunction({ id: "test" }, { event: "test" }, async ({ step }) => {
+        console.time('running')
         for (let i = 0; i < stepCount; i++) {
-          await step.run(userStepId, () => userStepOutput);
+          // console.time(`step ${i}`)
+          await step.run(i === 0 ? userStepId : `${userStepId}${STEP_INDEXING_SUFFIX}${i}`, () => userStepOutput);
+          console.timeEnd(`step ${i}`)
         }
+        console.timeEnd('running')
       })
       ["createExecution"]({
-        version: PREFERRED_EXECUTION_VERSION,
+        version: executionVersion,
         partialOptions: {
           data: fromPartial({
             event: { name: "foo", data: {} },
@@ -75,3 +82,26 @@ export const createExecutionWithMemoizedSteps = ({
 
   return { run };
 };
+
+const stepCount = 10000
+
+console.time("executionv0");
+await
+createExecutionWithMemoizedSteps({ stepCount, executionVersion: ExecutionVersion.V0 }).run();
+console.timeEnd("executionv0");
+
+console.time("executionv1");
+await
+createExecutionWithMemoizedSteps({ stepCount, executionVersion: ExecutionVersion.V1 }).run();
+console.timeEnd("executionv1");
+
+console.time("executionv2");
+await
+createExecutionWithMemoizedSteps({ stepCount, executionVersion: ExecutionVersion.V2 }).run();
+console.timeEnd("executionv2");
+
+console.time("hashjs")
+for (let i = 0; i < stepCount; i++) {
+  _internals.hashId(`a${STEP_INDEXING_SUFFIX}${i}`)
+}
+console.timeEnd("hashjs")

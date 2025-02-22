@@ -13,7 +13,6 @@ import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
   createTimeoutPromise,
-  resolveAfterPending,
   runAsPromise,
 } from "../../helpers/promises.js";
 import { type MaybePromise, type Simplify } from "../../helpers/types.js";
@@ -106,18 +105,28 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * Starts execution of the user's function and the core loop.
    */
   private async _start(): Promise<ExecutionResult> {
+    console.time("_start to result");
+    console.time("_start to function");
+    console.time("_start to middleware");
+    console.time("_start to startexecution");
+    console.time("_start to running user fn");
     try {
       const allCheckpointHandler = this.getCheckpointHandler("");
       this.state.hooks = await this.initializeMiddleware();
+      console.timeEnd("_start to middleware");
       await this.startExecution();
 
+      console.timeEnd("_start to startexecution");
+
       for await (const checkpoint of this.state.loop) {
+        console.timeEnd("_start to function");
         await allCheckpointHandler(checkpoint);
 
         const handler = this.getCheckpointHandler(checkpoint.type);
         const result = await handler(checkpoint);
 
         if (result) {
+          console.timeEnd("_start to result");
           return result;
         }
       }
@@ -205,7 +214,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         }
 
         const newSteps = await this.filterNewSteps(
-          Object.values(this.state.steps)
+          Array.from(this.state.steps.values())
         );
         if (newSteps) {
           return {
@@ -460,20 +469,32 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * and middleware hooks where appropriate.
    */
   private async startExecution(): Promise<void> {
-    return getAsyncLocalStorage().then((als) =>
-      als.run({ ctx: this.fnArg }, async (): Promise<void> => {
+    console.time("getals");
+    this.state.hooks = undefined;
+    return getAsyncLocalStorage().then((als) => {
+      console.timeEnd("getals");
+      console.time("als run enter");
+
+      return als.run({ ctx: this.fnArg }, async (): Promise<void> => {
+        console.timeEnd("als run enter");
+
+        console.time("transformInput");
         /**
          * Mutate input as neccessary based on middleware.
          */
         await this.transformInput();
+        console.timeEnd("transformInput");
 
         /**
          * Start the timer to time out the run if needed.
          */
         void this.timeout?.start();
 
+        console.time("beforeMemoization");
         await this.state.hooks?.beforeMemoization?.();
+        console.timeEnd("beforeMemoization");
 
+        console.time("state used check");
         /**
          * If we had no state to begin with, immediately end the memoization phase.
          */
@@ -481,6 +502,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           await this.state.hooks?.afterMemoization?.();
           await this.state.hooks?.beforeExecution?.();
         }
+        console.timeEnd("state used check");
+
+        console.timeEnd("_start to running user fn");
 
         /**
          * Trigger the user's function.
@@ -500,34 +524,37 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             this.state.setCheckpoint({ type: "function-rejected", error });
           });
-      })
-    );
+      });
+    });
   }
 
   /**
    * Using middleware, transform input before running.
    */
   private async transformInput() {
+    console.time("inputMutations");
     const inputMutations = await this.state.hooks?.transformInput?.({
       ctx: { ...this.fnArg },
-      steps: Object.values(this.state.stepState),
+      steps: Array.from(this.state.stepState.values()),
       fn: this.options.fn,
       reqArgs: this.options.reqArgs,
     });
+    console.timeEnd("inputMutations");
 
+    console.time("inputMutations ctx");
     if (inputMutations?.ctx) {
       this.fnArg = inputMutations.ctx;
     }
+    console.timeEnd("inputMutations ctx");
 
+    console.time("inputMutations steps");
     if (inputMutations?.steps) {
-      this.state.stepState = inputMutations.steps.reduce(
-        (steps, step) => ({
-          ...steps,
-          [step.id]: step,
-        }),
-        {}
+      console.log("lolwut mate?", inputMutations.steps.length);
+      this.state.stepState = new Map(
+        inputMutations.steps.map((step) => [step.id, step])
       );
     }
+    console.timeEnd("inputMutations steps");
   }
 
   /**
@@ -618,8 +645,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     });
 
     const state: V1ExecutionState = {
-      stepState: this.options.stepState,
-      steps: {},
+      stepState: new Map(Object.entries(this.options.stepState)),
+      steps: new Map(),
       loop,
       hasSteps: Boolean(Object.keys(this.options.stepState).length),
       stepCompletionOrder: this.options.stepCompletionOrder,
@@ -627,9 +654,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         ({ resolve: checkpointResolve } = checkpointResolve(checkpoint));
       },
       allStateUsed: () => {
-        return Object.values(state.stepState).every((step) => {
-          return step.seen;
-        });
+        return false;
       },
     };
 
@@ -637,7 +662,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   get ops(): Record<string, MemoizedOp> {
-    return this.state.steps;
+    return Object.fromEntries(this.state.steps);
   }
 
   private createFnArg(): Context.Any {
@@ -670,27 +695,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * A list of steps that have been found and are being rolled up before being
      * reported to the core loop.
      */
-    let foundStepsToReport: FoundStep[] = [];
-
-    /**
-     * A map of the subset of found steps to report that have not yet been
-     * handled. Used for fast access to steps that need to be handled in order.
-     */
-    let unhandledFoundStepsToReport: Record<string, FoundStep> = {};
-
-    /**
-     * An ordered list of step IDs that have yet to be handled in this
-     * execution. Used to ensure that we handle steps in the order they were
-     * found and based on the `stepCompletionOrder` in this execution's state.
-     */
-    const remainingStepCompletionOrder: string[] =
-      this.state.stepCompletionOrder.slice();
-
-    /**
-     * A promise that's used to ensure that step reporting cannot be run more than
-     * once in a given asynchronous time span.
-     */
-    let foundStepsReportPromise: Promise<void> | undefined;
+    const foundStepsToReport: FoundStep[] = [];
 
     /**
      * A promise that's used to represent middleware hooks running before
@@ -712,7 +717,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      const stepExists = Boolean(this.state.steps[collisionId]);
+      // const stepExists = Boolean(this.state.steps[collisionId]);
+      const stepExists = this.state.steps.has(collisionId);
+
+      console.log("hmm running over", foundStepsToReport.length);
 
       const stepFoundThisTick = foundStepsToReport.some((step) => {
         return step.id === collisionId;
@@ -743,66 +751,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * A helper used to report steps to the core loop. Used after adding an item
      * to `foundStepsToReport`.
      */
-    const reportNextTick = () => {
-      // Being explicit instead of using `??=` to appease TypeScript.
-      if (foundStepsReportPromise) {
-        return;
-      }
-
-      foundStepsReportPromise = resolveAfterPending()
-        /**
-         * Ensure that we wait for this promise to resolve before continuing.
-         *
-         * The groups in which steps are reported can affect how we detect some
-         * more complex determinism issues like parallel indexing. This promise
-         * can represent middleware hooks being run early, in the middle of
-         * ingesting steps to report.
-         *
-         * Because of this, it's important we wait for this middleware to resolve
-         * before continuing to report steps to ensure that all steps have a
-         * chance to be reported throughout this asynchronous action.
-         */
-        .then(() => beforeExecHooksPromise)
-        .then(() => {
-          foundStepsReportPromise = undefined;
-
-          for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
-            const nextStepId = remainingStepCompletionOrder[i];
-            if (!nextStepId) {
-              // Strange - removed this empty index
-              remainingStepCompletionOrder.splice(i, 1);
-              continue;
-            }
-
-            const handled = unhandledFoundStepsToReport[nextStepId]?.handle();
-            if (handled) {
-              remainingStepCompletionOrder.splice(i, 1);
-              delete unhandledFoundStepsToReport[nextStepId];
-              return void reportNextTick();
-            }
-          }
-
-          // If we've handled no steps in this "tick," roll up everything we've
-          // found and report it.
-          const steps = [...foundStepsToReport] as [FoundStep, ...FoundStep[]];
-          foundStepsToReport = [];
-          unhandledFoundStepsToReport = {};
-
-          return void this.state.setCheckpoint({
-            type: "steps-found",
-            steps: steps,
-          });
-        });
-    };
-
-    /**
-     * A helper used to push a step to the list of steps to report.
-     */
-    const pushStepToReport = (step: FoundStep) => {
-      foundStepsToReport.push(step);
-      unhandledFoundStepsToReport[step.hashedId] = step;
-      reportNextTick();
-    };
 
     const stepHandler: StepHandler = async ({
       args,
@@ -845,14 +793,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         );
       }
 
-      if (this.state.steps[opId.id]) {
+      if (this.state.steps.has(opId.id)) {
         const originalId = opId.id;
         maybeWarnOfParallelIndexing(originalId);
 
         for (let i = 1; ; i++) {
           const newId = [originalId, STEP_INDEXING_SUFFIX, i].join("");
 
-          if (!this.state.steps[newId]) {
+          if (!this.state.steps.has(newId)) {
             opId.id = newId;
             break;
           }
@@ -861,7 +809,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       const { promise, resolve, reject } = createDeferredPromise();
       const hashedId = _internals.hashId(opId.id);
-      const stepState = this.state.stepState[hashedId];
+      const stepState = this.state.stepState.get(hashedId);
       let isFulfilled = false;
       if (stepState) {
         stepState.seen = true;
@@ -950,9 +898,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         },
       };
 
-      this.state.steps[opId.id] = step;
+      this.state.steps.set(opId.id, step);
       this.state.hasSteps = true;
-      pushStepToReport(step);
+      // pushStepToReport(step);
 
       /**
        * If this is the last piece of state we had, we've now finished
@@ -964,6 +912,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           await this.state.hooks?.beforeExecution?.();
         })());
       }
+
+      void step.handle();
 
       return promise;
     };
@@ -1083,13 +1033,14 @@ export interface V1ExecutionState {
    * A map of step IDs to their data, used to fill previously-completed steps
    * with state from the executor.
    */
-  stepState: Record<string, MemoizedOp>;
+  // stepState: Record<string, MemoizedOp>;
+  stepState: Map<string, MemoizedOp>;
 
   /**
    * A map of step IDs to their functions to run. The executor can request a
    * specific step to run, so we need to store the function to run here.
    */
-  steps: Record<string, FoundStep>;
+  steps: Map<string, FoundStep>;
 
   /**
    * A flag which represents whether or not steps are understood to be used in
