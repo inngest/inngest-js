@@ -624,12 +624,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       steps: new Map(),
       loop,
       hasSteps: Boolean(stepsToFulfill),
-      stepCompletionOrder: this.options.stepCompletionOrder,
+      stepCompletionOrder: [...this.options.stepCompletionOrder],
+      remainingStepsToBeSeen: new Set(this.options.stepCompletionOrder),
       setCheckpoint: (checkpoint: Checkpoint) => {
         ({ resolve: checkpointResolve } = checkpointResolve(checkpoint));
       },
       allStateUsed: () => {
-        return false;
+        return this.state.remainingStepsToBeSeen.size === 0;
       },
     };
 
@@ -880,6 +881,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       let isFulfilled = false;
       if (stepState) {
         stepState.seen = true;
+        this.state.remainingStepsToBeSeen.delete(hashedId);
 
         if (typeof stepState.input === "undefined") {
           isFulfilled = true;
@@ -1150,6 +1152,12 @@ export interface V1ExecutionState {
    * execution was completed.
    */
   stepCompletionOrder: string[];
+
+  /**
+   * An set of step IDs that have yet to be seen in this execution. Used to
+   * decide when to trigger middleware based on the current state.
+   */
+  remainingStepsToBeSeen: Set<string>;
 
   /**
    * If defined, this is the error that purposefully thrown when memoizing step
