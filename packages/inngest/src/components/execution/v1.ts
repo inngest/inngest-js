@@ -13,6 +13,7 @@ import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
   createTimeoutPromise,
+  resolveAfterPending,
   runAsPromise,
 } from "../../helpers/promises.js";
 import { type MaybePromise, type Simplify } from "../../helpers/types.js";
@@ -670,7 +671,28 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * A list of steps that have been found and are being rolled up before being
      * reported to the core loop.
      */
-    const foundStepsToReport: FoundStep[] = [];
+    // let foundStepsToReport: FoundStep[] = [];
+    const foundStepsToReport: Map<string, FoundStep> = new Map();
+
+    /**
+     * A map of the subset of found steps to report that have not yet been
+     * handled. Used for fast access to steps that need to be handled in order.
+     */
+    const unhandledFoundStepsToReport: Map<string, FoundStep> = new Map();
+
+    /**
+     * An ordered list of step IDs that have yet to be handled in this
+     * execution. Used to ensure that we handle steps in the order they were
+     * found and based on the `stepCompletionOrder` in this execution's state.
+     */
+    const remainingStepCompletionOrder: string[] =
+      this.state.stepCompletionOrder.slice();
+
+    /**
+     * A promise that's used to ensure that step reporting cannot be run more than
+     * once in a given asynchronous time span.
+     */
+    let foundStepsReportPromise: Promise<void> | undefined;
 
     /**
      * A promise that's used to represent middleware hooks running before
@@ -693,14 +715,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       }
 
       const stepExists = this.state.steps.has(collisionId);
-
-      console.log("hmm running over", foundStepsToReport.length);
-
       if (stepExists) {
-        const stepFoundThisTick = foundStepsToReport.some((step) => {
-          return step.id === collisionId;
-        });
-
+        const stepFoundThisTick = foundStepsToReport.has(collisionId);
         if (!stepFoundThisTick) {
           warnOfParallelIndexing = true;
 
@@ -721,6 +737,77 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           );
         }
       }
+    };
+
+    /**
+     * A helper used to report steps to the core loop. Used after adding an item
+     * to `foundStepsToReport`.
+     */
+    const reportNextTick = () => {
+      // Being explicit instead of using `??=` to appease TypeScript.
+      if (foundStepsReportPromise) {
+        return;
+      }
+
+      foundStepsReportPromise = resolveAfterPending()
+        /**
+         * Ensure that we wait for this promise to resolve before continuing.
+         *
+         * The groups in which steps are reported can affect how we detect some
+         * more complex determinism issues like parallel indexing. This promise
+         * can represent middleware hooks being run early, in the middle of
+         * ingesting steps to report.
+         *
+         * Because of this, it's important we wait for this middleware to resolve
+         * before continuing to report steps to ensure that all steps have a
+         * chance to be reported throughout this asynchronous action.
+         */
+        .then(() => beforeExecHooksPromise)
+        .then(() => {
+          foundStepsReportPromise = undefined;
+
+          for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
+            const nextStepId = remainingStepCompletionOrder[i];
+            if (!nextStepId) {
+              // Strange - removed this empty index
+              remainingStepCompletionOrder.splice(i, 1);
+              continue;
+            }
+
+            const handled = unhandledFoundStepsToReport
+              .get(nextStepId)
+              ?.handle();
+            if (handled) {
+              remainingStepCompletionOrder.splice(i, 1);
+              unhandledFoundStepsToReport.delete(nextStepId);
+              return void reportNextTick();
+            }
+          }
+
+          // If we've handled no steps in this "tick," roll up everything we've
+          // found and report it.
+          // const steps = [...foundStepsToReport] as [FoundStep, ...FoundStep[]];
+          const steps = [...foundStepsToReport.values()] as [
+            FoundStep,
+            ...FoundStep[],
+          ];
+          foundStepsToReport.clear();
+          unhandledFoundStepsToReport.clear();
+
+          return void this.state.setCheckpoint({
+            type: "steps-found",
+            steps: steps,
+          });
+        });
+    };
+
+    /**
+     * A helper used to push a step to the list of steps to report.
+     */
+    const pushStepToReport = (step: FoundStep) => {
+      foundStepsToReport.set(step.hashedId, step);
+      unhandledFoundStepsToReport.set(step.hashedId, step);
+      reportNextTick();
     };
 
     /**
@@ -876,7 +963,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       this.state.steps.set(opId.id, step);
       this.state.hasSteps = true;
-      // pushStepToReport(step);
+      pushStepToReport(step);
 
       /**
        * If this is the last piece of state we had, we've now finished
@@ -888,8 +975,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           await this.state.hooks?.beforeExecution?.();
         })());
       }
-
-      void step.handle();
 
       return promise;
     };
