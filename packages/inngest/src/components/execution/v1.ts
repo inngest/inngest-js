@@ -679,6 +679,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     const unhandledFoundStepsToReport: Map<string, FoundStep> = new Map();
 
     /**
+     * A map of the latest sequential step indexes found for each step ID. Used
+     * to ensure that we don't index steps in parallel.
+     *
+     * Note that these must be sequential; if we've seen or assigned `a:1`,
+     * `a:2` and `a:4`, the latest sequential step index is `2`.
+     *
+     */
+    const expectedNextStepIndexes: Map<string, number> = new Map();
+
+    /**
      * An ordered list of step IDs that have yet to be handled in this
      * execution. Used to ensure that we handle steps in the order they were
      * found and based on the `stepCompletionOrder` in this execution's state.
@@ -852,10 +862,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         const originalId = opId.id;
         maybeWarnOfParallelIndexing(originalId);
 
-        for (let i = 1; ; i++) {
-          const newId = [originalId, STEP_INDEXING_SUFFIX, i].join("");
+        const expectedNextIndex = expectedNextStepIndexes.get(originalId) ?? 1;
+        for (let i = expectedNextIndex; ; i++) {
+          const newId = originalId + STEP_INDEXING_SUFFIX + i;
 
           if (!this.state.steps.has(newId)) {
+            expectedNextStepIndexes.set(originalId, i + 1);
             opId.id = newId;
             break;
           }
