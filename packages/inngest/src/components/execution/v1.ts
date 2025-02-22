@@ -520,13 +520,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     if (inputMutations?.steps) {
-      this.state.stepState = inputMutations.steps.reduce(
-        (steps, step) => ({
-          ...steps,
-          [step.id]: step,
-        }),
-        {}
-      );
+      const stepState: Record<string, MemoizedOp> = {};
+
+      for (const step of inputMutations.steps) {
+        stepState[step.id] = step;
+      }
+
+      this.state.stepState = stepState;
     }
   }
 
