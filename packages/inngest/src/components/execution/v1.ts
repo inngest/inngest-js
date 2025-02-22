@@ -105,28 +105,18 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * Starts execution of the user's function and the core loop.
    */
   private async _start(): Promise<ExecutionResult> {
-    console.time("_start to result");
-    console.time("_start to function");
-    console.time("_start to middleware");
-    console.time("_start to startexecution");
-    console.time("_start to running user fn");
     try {
       const allCheckpointHandler = this.getCheckpointHandler("");
       this.state.hooks = await this.initializeMiddleware();
-      console.timeEnd("_start to middleware");
       await this.startExecution();
 
-      console.timeEnd("_start to startexecution");
-
       for await (const checkpoint of this.state.loop) {
-        console.timeEnd("_start to function");
         await allCheckpointHandler(checkpoint);
 
         const handler = this.getCheckpointHandler(checkpoint.type);
         const result = await handler(checkpoint);
 
         if (result) {
-          console.timeEnd("_start to result");
           return result;
         }
       }
@@ -196,7 +186,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 data: transformResult.data,
               }),
             };
-            // }
           } else if (transformResult.type === "function-rejected") {
             return {
               type: "step-ran",
@@ -312,7 +301,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * Warn if we've found new steps but haven't yet seen all previous
      * steps. This may indicate that step presence isn't determinate.
      */
-    // const stepsToFulfil = Object.keys(this.state.stepState).length;
     let knownSteps = 0;
     for (const step of foundSteps) {
       if (step.fulfilled) {
@@ -474,32 +462,21 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * and middleware hooks where appropriate.
    */
   private async startExecution(): Promise<void> {
-    console.time("getals");
     this.state.hooks = undefined;
     return getAsyncLocalStorage().then((als) => {
-      console.timeEnd("getals");
-      console.time("als run enter");
-
       return als.run({ ctx: this.fnArg }, async (): Promise<void> => {
-        console.timeEnd("als run enter");
-
-        console.time("transformInput");
         /**
          * Mutate input as neccessary based on middleware.
          */
         await this.transformInput();
-        console.timeEnd("transformInput");
 
         /**
          * Start the timer to time out the run if needed.
          */
         void this.timeout?.start();
 
-        console.time("beforeMemoization");
         await this.state.hooks?.beforeMemoization?.();
-        console.timeEnd("beforeMemoization");
 
-        console.time("state used check");
         /**
          * If we had no state to begin with, immediately end the memoization phase.
          */
@@ -507,9 +484,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           await this.state.hooks?.afterMemoization?.();
           await this.state.hooks?.beforeExecution?.();
         }
-        console.timeEnd("state used check");
-
-        console.timeEnd("_start to running user fn");
 
         /**
          * Trigger the user's function.
@@ -537,32 +511,22 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * Using middleware, transform input before running.
    */
   private async transformInput() {
-    console.time("inputMutations");
     const inputMutations = await this.state.hooks?.transformInput?.({
       ctx: { ...this.fnArg },
       steps: Object.values(this.state.stepState),
       fn: this.options.fn,
       reqArgs: this.options.reqArgs,
     });
-    console.timeEnd("inputMutations");
 
-    console.time("inputMutations ctx");
     if (inputMutations?.ctx) {
       this.fnArg = inputMutations.ctx;
     }
-    console.timeEnd("inputMutations ctx");
 
-    console.time("inputMutations steps");
     if (inputMutations?.steps) {
-      console.log("lolwut mate?", inputMutations.steps.length);
       this.state.stepState = Object.fromEntries(
         inputMutations.steps.map((step) => [step.id, step])
       );
-      // this.state.stepState = new Map(
-      //   inputMutations.steps.map((step) => [step.id, step])
-      // );
     }
-    console.timeEnd("inputMutations steps");
   }
 
   /**
@@ -655,7 +619,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     const stepsToFulfill = Object.keys(this.options.stepState).length;
 
     const state: V1ExecutionState = {
-      // stepState: new Map(Object.entries(this.options.stepState)),
       stepState: this.options.stepState,
       stepsToFulfill,
       steps: new Map(),
@@ -729,7 +692,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      // const stepExists = Boolean(this.state.steps[collisionId]);
       const stepExists = this.state.steps.has(collisionId);
 
       console.log("hmm running over", foundStepsToReport.length);
@@ -1047,8 +1009,12 @@ export interface V1ExecutionState {
    * A map of step IDs to their data, used to fill previously-completed steps
    * with state from the executor.
    */
-  // stepState: Record<string, MemoizedOp>;
   stepState: Record<string, MemoizedOp>;
+
+  /**
+   * The number of steps we expect to fulfil based on the state passed from the
+   * Executor.
+   */
   stepsToFulfill: number;
 
   /**
