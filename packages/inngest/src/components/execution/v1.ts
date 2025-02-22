@@ -312,9 +312,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * Warn if we've found new steps but haven't yet seen all previous
      * steps. This may indicate that step presence isn't determinate.
      */
-    const stepsToFulfil = Object.keys(this.state.stepState).length;
-    const knownSteps = foundSteps.filter((step) => step.hasStepState).length;
-    const foundAllCompletedSteps = stepsToFulfil === knownSteps;
+    // const stepsToFulfil = Object.keys(this.state.stepState).length;
+    let knownSteps = 0;
+    for (const step of foundSteps) {
+      if (step.fulfilled) {
+        knownSteps++;
+      }
+    }
+    const foundAllCompletedSteps = this.state.stepsToFulfill === knownSteps;
 
     if (!foundAllCompletedSteps) {
       // TODO Tag
@@ -535,7 +540,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     console.time("inputMutations");
     const inputMutations = await this.state.hooks?.transformInput?.({
       ctx: { ...this.fnArg },
-      steps: Array.from(this.state.stepState.values()),
+      steps: Object.values(this.state.stepState),
       fn: this.options.fn,
       reqArgs: this.options.reqArgs,
     });
@@ -550,9 +555,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     console.time("inputMutations steps");
     if (inputMutations?.steps) {
       console.log("lolwut mate?", inputMutations.steps.length);
-      this.state.stepState = new Map(
+      this.state.stepState = Object.fromEntries(
         inputMutations.steps.map((step) => [step.id, step])
       );
+      // this.state.stepState = new Map(
+      //   inputMutations.steps.map((step) => [step.id, step])
+      // );
     }
     console.timeEnd("inputMutations steps");
   }
@@ -644,11 +652,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       void checkpointResults.return();
     });
 
+    const stepsToFulfill = Object.keys(this.options.stepState).length;
+
     const state: V1ExecutionState = {
-      stepState: new Map(Object.entries(this.options.stepState)),
+      // stepState: new Map(Object.entries(this.options.stepState)),
+      stepState: this.options.stepState,
+      stepsToFulfill,
       steps: new Map(),
       loop,
-      hasSteps: Boolean(Object.keys(this.options.stepState).length),
+      hasSteps: Boolean(stepsToFulfill),
       stepCompletionOrder: this.options.stepCompletionOrder,
       setCheckpoint: (checkpoint: Checkpoint) => {
         ({ resolve: checkpointResolve } = checkpointResolve(checkpoint));
@@ -722,28 +734,30 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       console.log("hmm running over", foundStepsToReport.length);
 
-      const stepFoundThisTick = foundStepsToReport.some((step) => {
-        return step.id === collisionId;
-      });
+      if (stepExists) {
+        const stepFoundThisTick = foundStepsToReport.some((step) => {
+          return step.id === collisionId;
+        });
 
-      if (stepExists && !stepFoundThisTick) {
-        warnOfParallelIndexing = true;
+        if (!stepFoundThisTick) {
+          warnOfParallelIndexing = true;
 
-        console.warn(
-          prettyError({
-            type: "warn",
-            whatHappened:
-              "We detected that you have multiple steps with the same ID.",
-            code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
-            why: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${collisionId}".`,
-            reassurance:
-              "Your function is still running, though it may exhibit unexpected behaviour.",
-            consequences:
-              "Using the same IDs across parallel chains of work can cause unexpected behaviour.",
-            toFixNow:
-              "We recommend using a unique ID for each step, especially those happening in parallel.",
-          })
-        );
+          console.warn(
+            prettyError({
+              type: "warn",
+              whatHappened:
+                "We detected that you have multiple steps with the same ID.",
+              code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
+              why: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${collisionId}".`,
+              reassurance:
+                "Your function is still running, though it may exhibit unexpected behaviour.",
+              consequences:
+                "Using the same IDs across parallel chains of work can cause unexpected behaviour.",
+              toFixNow:
+                "We recommend using a unique ID for each step, especially those happening in parallel.",
+            })
+          );
+        }
       }
     };
 
@@ -809,7 +823,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       const { promise, resolve, reject } = createDeferredPromise();
       const hashedId = _internals.hashId(opId.id);
-      const stepState = this.state.stepState.get(hashedId);
+      const stepState = this.state.stepState[hashedId];
       let isFulfilled = false;
       if (stepState) {
         stepState.seen = true;
@@ -1034,7 +1048,8 @@ export interface V1ExecutionState {
    * with state from the executor.
    */
   // stepState: Record<string, MemoizedOp>;
-  stepState: Map<string, MemoizedOp>;
+  stepState: Record<string, MemoizedOp>;
+  stepsToFulfill: number;
 
   /**
    * A map of step IDs to their functions to run. The executor can request a
