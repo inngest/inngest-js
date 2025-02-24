@@ -716,6 +716,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     let warnOfParallelIndexing = false;
 
     /**
+     * Counts the number of times we've extended this tick.
+     */
+    let tickExtensionCount = 0;
+
+    /**
      * Given a colliding step ID, maybe warn the user about parallel indexing.
      */
     const maybeWarnOfParallelIndexing = (collisionId: string) => {
@@ -758,7 +763,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      foundStepsReportPromise = resolveAfterPending()
+      let extensionPromise: Promise<void>;
+      if (++tickExtensionCount >= 10) {
+        tickExtensionCount = 0;
+        extensionPromise = new Promise((resolve) => setTimeout(resolve));
+      } else {
+        extensionPromise = resolveAfterPending();
+      }
+
+      foundStepsReportPromise = extensionPromise
         /**
          * Ensure that we wait for this promise to resolve before continuing.
          *
