@@ -3,6 +3,7 @@ import { Inngest, type GetEvents } from "@local/components/Inngest";
 import { type internalEvents } from "@local/helpers/consts";
 import { type IsAny, type IsEqual } from "@local/helpers/types";
 import { type FailureEventPayload } from "@local/types";
+import * as v from "valibot";
 import { z } from "zod";
 import { assertType } from "../test/helpers";
 
@@ -794,6 +795,94 @@ describe("EventSchemas", () => {
             data: z.union([z.string(), z.number()]),
           }),
         ]);
+      });
+    });
+  });
+
+  describe("fromSchema", () => {
+    test("sets types based on input", () => {
+      const schemas = new EventSchemas().fromSchema({
+        "test.event": v.object({
+          a: v.string(),
+        }),
+      });
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<Schemas<typeof schemas>["test.event"]["data"]>({ a: "" });
+    });
+
+    test("can concatenate types with multiple calls", () => {
+      const schemas = new EventSchemas()
+        .fromSchema({
+          "test.event": v.object({ a: v.string() }),
+        })
+        .fromSchema({
+          "test.event2": v.object({ c: v.string() }),
+        });
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<Schemas<typeof schemas>["test.event"]["data"]>({ a: "" });
+
+      assertType<Schemas<typeof schemas>["test.event2"]["name"]>("test.event2");
+      assertType<Schemas<typeof schemas>["test.event2"]["data"]>({ c: "" });
+    });
+
+    test("can overwrite types with multiple calls", () => {
+      const schemas = new EventSchemas()
+        .fromSchema({
+          "test.event": v.object({ a: v.string() }),
+        })
+        .fromSchema({
+          "test.event": v.object({ c: v.string() }),
+        });
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<Schemas<typeof schemas>["test.event"]["data"]>({ c: "" });
+      assertType<Schemas<typeof schemas>["test.event"]["user"]>({ d: 0 });
+    });
+
+    test("can set 'any' type for data", () => {
+      const schemas = new EventSchemas().fromSchema({
+        "test.event": v.any(),
+      });
+
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
+    });
+
+    test("fills in missing properties with default values", () => {
+      const schemas = new EventSchemas().fromSchema({
+        "test.event": v.object({ a: v.string() }),
+      });
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<Schemas<typeof schemas>["test.event"]["data"]>({ a: "" });
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["ts"], number | undefined>
+      >(true);
+      assertType<
+        IsEqual<Schemas<typeof schemas>["test.event"]["v"], string | undefined>
+      >(true);
+    });
+
+    test("can use a union with valid values", () => {
+      const schemas = new EventSchemas().fromSchema({
+        "test.event": v.union([
+          v.object({
+            foo: v.string(),
+          }),
+          v.object({
+            bar: v.number(),
+          }),
+        ]),
+      });
+
+      assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+        foo: "",
+      });
+      assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+        bar: 0,
       });
     });
   });

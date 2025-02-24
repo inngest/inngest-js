@@ -1,3 +1,4 @@
+import { type StandardSchemaV1 } from "@standard-schema/spec";
 import { type internalEvents } from "../helpers/consts.js";
 import {
   type IsEmptyObject,
@@ -34,6 +35,12 @@ export type StandardEventSchema = {
  * @public
  */
 export type StandardEventSchemas = Record<string, StandardEventSchema>;
+
+/**
+ * A helper type that declares an object of `StandardSchemaV1`-compliant
+ * schemas.
+ */
+export type StandardSchemaV1Schemas = Record<string, StandardSchemaV1>;
 
 /**
  * Asserts that the given type `T` contains a mapping for all internal events.
@@ -136,11 +143,12 @@ export type PickLiterals<T> = {
  *
  * @public
  */
-export type GetName<T> = T extends z.ZodObject<infer U>
-  ? U extends { name: z.ZodLiteral<infer S extends string> }
-    ? S
-    : never
-  : never;
+export type GetName<T> =
+  T extends z.ZodObject<infer U>
+    ? U extends { name: z.ZodLiteral<infer S extends string> }
+      ? S
+      : never
+    : never;
 
 /**
  * Given an input T, infer the shape of the Zod schema if that input is a Zod
@@ -177,6 +185,19 @@ export type ZodToStandardSchema<T extends ZodEventSchemas> = {
     [Key in keyof T[EventName] & string]: T[EventName][Key] extends z.ZodTypeAny
       ? z.infer<T[EventName][Key]>
       : T[EventName][Key];
+  };
+};
+
+export type StandardSchemaV1ToStandardSchema<
+  T extends StandardSchemaV1Schemas,
+> = {
+  [EventName in keyof T & string]: {
+    data: StandardSchemaV1.InferOutput<T[EventName]> extends Record<
+      string,
+      unknown
+    >
+      ? StandardSchemaV1.InferOutput<T[EventName]>
+      : Record<string, unknown>;
   };
 };
 
@@ -221,12 +242,13 @@ export type AddName<TObj, TDefaultName extends string> = TObj extends {
 export type Combine<
   TCurr extends Record<string, EventPayload>,
   TInc extends StandardEventSchemas,
-> = IsStringLiteral<keyof TCurr & string> extends true
-  ? Simplify<
-      Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> &
-        StandardEventSchemaToPayload<TInc>
-    >
-  : StandardEventSchemaToPayload<TInc>;
+> =
+  IsStringLiteral<keyof TCurr & string> extends true
+    ? Simplify<
+        Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> &
+          StandardEventSchemaToPayload<TInc>
+      >
+    : StandardEventSchemaToPayload<TInc>;
 
 /**
  * Provide an `EventSchemas` class to type events, providing type safety when
@@ -393,6 +415,17 @@ export class EventSchemas<
     }
 
     this.addRuntimeSchemas(runtimeSchemas);
+
+    return this;
+  }
+
+  /**
+   * Use a `StandardSchemaV1`-compliant schema to type events.
+   */
+  public fromSchema<T extends StandardSchemaV1Schemas>(
+    schemas: T
+  ): EventSchemas<Combine<S, StandardSchemaV1ToStandardSchema<T>>> {
+    this.addRuntimeSchemas(schemas);
 
     return this;
   }

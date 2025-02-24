@@ -202,6 +202,7 @@
     "@bufbuild/protobuf": "^2.2.3",
     "@inngest/ai": "0.0.4",
     "@jpwilliams/waitgroup": "^2.1.1",
+    "@standard-schema/spec": "^1.0.0",
     "@types/debug": "^4.1.12",
     "canonicalize": "^1.0.8",
     "chalk": "^4.1.2",
@@ -265,7 +266,8 @@
     "ts-jest": "^29.1.0",
     "ts-proto": "^2.6.1",
     "tsx": "^3.12.7",
-    "typescript": "~5.7.2"
+    "typescript": "~5.7.2",
+    "valibot": "1.0.0-rc.1"
   },
   "volta": {
     "node": "18.12.1",
