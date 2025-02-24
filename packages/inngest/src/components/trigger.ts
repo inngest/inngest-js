@@ -60,7 +60,12 @@ export namespace Event {
         Pick<TShape, "name" | "data"> &
         UExtra
     >;
+
     if: (condition: string) => Definition<TShape>;
+
+    schema: <T extends EventSchema>(
+      schema: T
+    ) => Definition<{ name: TShape["name"]; data: EventSchema.Output<T> }>;
   };
 
   export namespace Definition {
@@ -86,22 +91,22 @@ export namespace Event {
       __brand: "Inngest.Trigger";
       type: "event" | "cron";
       ifCondition?: string;
-      schema?: EventSchema;
+      runtimeSchema?: EventSchema;
     };
   }
 }
 
-export const event = <const TName extends string, TSchema extends EventSchema>(
-  name: TName,
-  opts: { schema?: TSchema } = {}
+export const event = <const TName extends string>(
+  name: TName
 ): Event.Definition<{
   name: TName;
-  data: EventSchema.Output<TSchema>;
+  data: Record<string, unknown>;
 }> => {
-  const toEvent = <const TData extends EventSchema.Input<TSchema>>(
+  const toEvent: Partial<Event.Definition> = <const TData>(
     data: TData,
     extra?: Simplify<Partial<Omit<Event, "name" | "data">>>
   ) => {
+    // todo we should validate the data against the schema here
     return {
       name,
       data,
@@ -112,18 +117,27 @@ export const event = <const TName extends string, TSchema extends EventSchema>(
   toEvent.__brand = "Inngest.Trigger" as const;
   toEvent.type = "event" as const;
   toEvent.name = name;
-  toEvent.data = {} as EventSchema.Output<TSchema>;
-  toEvent.schema = opts.schema;
-  toEvent.if = (condition: string) => {
-    const ev = event(name, opts);
+  toEvent.data = {};
+  // toEvent.schema = opts.schema;
+  toEvent.if = (condition) => {
+    const ev = { ...toEvent } as Event.Definition;
     ev.ifCondition = condition;
 
     return ev;
   };
 
+  toEvent.schema = <T extends EventSchema>(schema: T) => {
+    const ev = { ...toEvent, runtimeSchema: schema };
+
+    return ev as Event.Definition<{
+      name: TName;
+      data: EventSchema.Output<T>;
+    }>;
+  };
+
   return toEvent as Event.Definition<{
     name: TName;
-    data: EventSchema.Output<TSchema>;
+    data: Record<string, unknown>;
   }>;
 };
 
