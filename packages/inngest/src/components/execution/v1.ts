@@ -791,8 +791,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
             const nextStepId = remainingStepCompletionOrder[i];
             if (!nextStepId) {
-              // Strange - removed this empty index
-              remainingStepCompletionOrder.splice(i, 1);
+              // Strange - skip this empty index
               continue;
             }
 
@@ -968,10 +967,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               if (typeof stepState.data !== "undefined") {
                 resolve(stepState.data);
               } else {
-              this.state.recentlyRejectedStepError = new StepError(
-                opId.id,
-                stepState.error
-              );
+                this.state.recentlyRejectedStepError = new StepError(
+                  opId.id,
+                  stepState.error
+                );
 
                 reject(this.state.recentlyRejectedStepError);
               }
