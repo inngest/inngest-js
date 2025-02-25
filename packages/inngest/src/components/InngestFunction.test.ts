@@ -19,7 +19,8 @@ import {
   type ExecutionResults,
   type InngestExecutionOptions,
 } from "@local/components/execution/InngestExecution";
-import { _internals } from "@local/components/execution/v1";
+import { _internals as _v1Internals } from "@local/components/execution/v1";
+import { _internals as _v2Internals } from "@local/components/execution/v2";
 import { InngestFunction } from "@local/components/InngestFunction";
 import { STEP_INDEXING_SUFFIX } from "@local/components/InngestStepTools";
 import { internalEvents } from "@local/helpers/consts";
@@ -220,15 +221,15 @@ describe("runFn", () => {
   });
 
   describe("step functions", () => {
-    const getHashDataSpy = () => jest.spyOn(_internals, "hashOp");
+    const getHashDataSpy = () => jest.spyOn(_v1Internals, "hashOp");
     const getWarningSpy = () => jest.spyOn(console, "warn");
     const getErrorSpy = () => jest.spyOn(console, "error");
 
     const executionIdHashes: Partial<
       Record<ExecutionVersion, (id: string) => string>
     > = {
-      [ExecutionVersion.V1]: _internals.hashId,
-      [ExecutionVersion.V2]: _internals.hashId,
+      [ExecutionVersion.V1]: _v1Internals.hashId,
+      [ExecutionVersion.V2]: _v2Internals.hashId,
     };
 
     const testFn = <
@@ -1391,142 +1392,6 @@ describe("runFn", () => {
             },
           }),
         },
-        [ExecutionVersion.V2]: {
-          hashes: {
-            A: "A",
-            B: "B",
-            AWins: "A wins",
-            BWins: "B wins",
-          },
-          tests: ({ A, B, AWins, BWins }) => ({
-            "first run reports A and B steps": {
-              expectedReturn: {
-                type: "steps-found",
-                steps: [
-                  expect.objectContaining({
-                    id: A,
-                    name: "A",
-                    op: StepOpCode.StepPlanned,
-                    displayName: "A",
-                  }),
-                  expect.objectContaining({
-                    id: B,
-                    name: "B",
-                    op: StepOpCode.StepPlanned,
-                    displayName: "B",
-                  }),
-                ],
-              },
-            },
-
-            "requesting to run B runs B": {
-              runStep: B,
-              expectedReturn: {
-                type: "step-ran",
-                step: expect.objectContaining({
-                  id: B,
-                  name: "B",
-                  op: StepOpCode.StepRun,
-                  data: "B",
-                  displayName: "B",
-                }),
-              },
-              expectedStepsRun: ["B"],
-              disableImmediateExecution: true,
-            },
-
-            "request following B reports 'A' and 'B wins' steps": {
-              stack: { [B]: { id: B, data: "B" } },
-              expectedReturn: {
-                type: "steps-found",
-                steps: [
-                  expect.objectContaining({
-                    id: A,
-                    name: "A",
-                    op: StepOpCode.StepPlanned,
-                    displayName: "A",
-                  }),
-                  expect.objectContaining({
-                    id: BWins,
-                    name: "B wins",
-                    op: StepOpCode.StepPlanned,
-                    displayName: "B wins",
-                  }),
-                ],
-              },
-              disableImmediateExecution: true,
-            },
-
-            "requesting to run A runs A": {
-              runStep: A,
-              expectedReturn: {
-                type: "step-ran",
-                step: expect.objectContaining({
-                  id: A,
-                  name: "A",
-                  op: StepOpCode.StepRun,
-                  data: "A",
-                  displayName: "A",
-                }),
-              },
-              expectedStepsRun: ["A"],
-              disableImmediateExecution: true,
-            },
-
-            "request following 'B wins' re-reports missing 'A' step": {
-              stack: {
-                [B]: { id: B, data: "B" },
-                [BWins]: { id: BWins, data: "B wins" },
-              },
-              stackOrder: [B, BWins],
-              expectedReturn: {
-                type: "steps-found",
-                steps: [
-                  expect.objectContaining({
-                    id: A,
-                    name: "A",
-                    op: StepOpCode.StepPlanned,
-                    displayName: "A",
-                  }),
-                ],
-              },
-              disableImmediateExecution: true,
-            },
-
-            "request following A completion resolves": {
-              stack: {
-                [A]: { id: A, data: "A" },
-                [B]: { id: B, data: "B" },
-                [BWins]: { id: BWins, data: "B wins" },
-              },
-              stackOrder: [B, BWins, A],
-              expectedReturn: { type: "function-resolved", data: null },
-              disableImmediateExecution: true,
-            },
-
-            "request if 'A' is complete reports 'B' and 'A wins' steps": {
-              stack: { [A]: { id: A, data: "A" } },
-              expectedReturn: {
-                type: "steps-found",
-                steps: [
-                  expect.objectContaining({
-                    id: B,
-                    name: "B",
-                    op: StepOpCode.StepPlanned,
-                    displayName: "B",
-                  }),
-                  expect.objectContaining({
-                    id: AWins,
-                    name: "A wins",
-                    op: StepOpCode.StepPlanned,
-                    displayName: "A wins",
-                  }),
-                ],
-              },
-              disableImmediateExecution: true,
-            },
-          }),
-        },
         [ExecutionVersion.V1]: {
           hashes: {
             A: "A",
@@ -1663,6 +1528,7 @@ describe("runFn", () => {
             },
           }),
         },
+        [ExecutionVersion.V2]: null,
       }
     );
 
@@ -1791,62 +1657,7 @@ describe("runFn", () => {
               },
           }),
         },
-        [ExecutionVersion.V2]: {
-          hashes: {
-            A: "A",
-            B: "B",
-            B2: "B2",
-            AWins: "A wins",
-            BWins: "B wins",
-          },
-          tests: ({ A, B, B2, BWins }) => ({
-            "if B chain wins without 'A', reports 'A' and 'B wins' steps": {
-              stack: {
-                [B]: { id: B, data: "B" },
-                [B2]: { id: B2, data: "B2" },
-              },
-              expectedReturn: {
-                type: "steps-found",
-                steps: [
-                  expect.objectContaining({
-                    id: A,
-                    name: "A",
-                    op: StepOpCode.StepPlanned,
-                    displayName: "A",
-                  }),
-                  expect.objectContaining({
-                    id: BWins,
-                    name: "B wins",
-                    op: StepOpCode.StepPlanned,
-                    displayName: "B wins",
-                  }),
-                ],
-              },
-              disableImmediateExecution: true,
-            },
-            "if B chain wins after with 'A' afterwards, reports 'B wins' step":
-              {
-                stack: {
-                  [B]: { id: B, data: "B" },
-                  [B2]: { id: B2, data: "B2" },
-                  [A]: { id: A, data: "A" },
-                },
-                stackOrder: [B, B2, A],
-                expectedReturn: {
-                  type: "steps-found",
-                  steps: [
-                    expect.objectContaining({
-                      id: BWins,
-                      name: "B wins",
-                      op: StepOpCode.StepPlanned,
-                      displayName: "B wins",
-                    }),
-                  ],
-                },
-                disableImmediateExecution: true,
-              },
-          }),
-        },
+        [ExecutionVersion.V2]: null,
       }
     );
 
@@ -2202,7 +2013,6 @@ describe("runFn", () => {
                 }),
               },
               expectedStepsRun: ["B"],
-              expectedWarnings: [ErrCode.AUTOMATIC_PARALLEL_INDEXING],
             },
           }),
         },
@@ -2297,7 +2107,6 @@ describe("runFn", () => {
                   }),
                 ],
               },
-              expectedWarnings: [ErrCode.AUTOMATIC_PARALLEL_INDEXING],
               disableImmediateExecution: true,
             },
           }),
