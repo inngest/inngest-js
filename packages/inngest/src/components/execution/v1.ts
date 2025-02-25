@@ -946,7 +946,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         hasStepState: Boolean(stepState),
         displayName: opId.displayName ?? opId.id,
         handled: false,
-        handle: async () => {
+        handle: () => {
           if (step.handled) {
             return false;
           }
@@ -960,20 +960,22 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             // and `input` may be `Promises`. This could also be the case for
             // future middleware applications. For this reason, we'll make sure
             // the values are fully resolved before continuing.
-            await stepState.data;
-            await stepState.error;
-            await stepState.input;
-
-            if (typeof stepState.data !== "undefined") {
-              resolve(stepState.data);
-            } else {
+            void Promise.all([
+              stepState.data,
+              stepState.error,
+              stepState.input,
+            ]).then(() => {
+              if (typeof stepState.data !== "undefined") {
+                resolve(stepState.data);
+              } else {
               this.state.recentlyRejectedStepError = new StepError(
                 opId.id,
                 stepState.error
               );
 
-              reject(this.state.recentlyRejectedStepError);
-            }
+                reject(this.state.recentlyRejectedStepError);
+              }
+            });
           }
 
           return true;

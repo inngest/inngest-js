@@ -72,7 +72,7 @@ export interface FoundStep extends HashedOp {
    * Returns a boolean representing whether or not the step was handled on this
    * invocation.
    */
-  handle: () => Promise<boolean>;
+  handle: () => boolean;
 
   // TODO This is used to track the input we want for this step. Might be
   // present in ctx from Executor.
