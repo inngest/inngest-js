@@ -13,7 +13,6 @@ import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
   createTimeoutPromise,
-  resolveAfterPending,
   runAsPromise,
 } from "../../helpers/promises.js";
 import { type MaybePromise, type Simplify } from "../../helpers/types.js";
@@ -711,7 +710,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      foundStepsReportPromise = resolveAfterPending(100)
+      foundStepsReportPromise = new Promise((resolve) => setImmediate(resolve))
         /**
          * Ensure that we wait for this promise to resolve before continuing.
          *
