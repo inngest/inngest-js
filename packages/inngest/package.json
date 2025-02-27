@@ -265,7 +265,7 @@
     "ts-jest": "^29.1.0",
     "ts-proto": "^2.6.1",
     "tsx": "^3.12.7",
-    "typescript": "~5.7.2"
+    "typescript": "5.8.1-rc"
   },
   "volta": {
     "node": "18.12.1",
