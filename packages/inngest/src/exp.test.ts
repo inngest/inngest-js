@@ -4,7 +4,8 @@ import { cron, event, invoke, withType } from "./components/trigger.js";
 
 const sentEvent = event("event.sent");
 const sentEvent2 = event("event.sent/2").schema(z.object({ foo: z.boolean() }));
-const sentEvent3 = event("event.sent/3").schema(withType<{ bam: "wham" }>());
+const sentEvent3 = event("event.sent/3").type<{ foo: number }>();
+
 const bigCron = cron("* * 0 0 0");
 const blankInvoke = invoke();
 const typedInvoke = invoke({

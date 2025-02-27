@@ -66,6 +66,11 @@ export namespace Event {
     schema: <T extends EventSchema>(
       schema: T
     ) => Definition<{ name: TShape["name"]; data: EventSchema.Output<T> }>;
+
+    type: <T extends Record<string, unknown>>() => Definition<{
+      name: TShape["name"];
+      data: T;
+    }>;
   };
 
   export namespace Definition {
@@ -88,8 +93,8 @@ export namespace Event {
         Pick<Event, "name" | "data">
       >,
     > = TShape & {
-      __brand: "Inngest.Trigger";
-      type: "event" | "cron";
+      "~brand": "Inngest.Trigger";
+      "~type": "event" | "cron";
       ifCondition?: string;
       runtimeSchema?: EventSchema;
     };
@@ -114,8 +119,8 @@ export const event = <const TName extends string>(
     } satisfies Event.Input;
   };
 
-  toEvent.__brand = "Inngest.Trigger" as const;
-  toEvent.type = "event" as const;
+  toEvent["~brand"] = "Inngest.Trigger" as const;
+  toEvent["~type"] = "event" as const;
   toEvent.name = name;
   toEvent.data = {};
   // toEvent.schema = opts.schema;
@@ -132,6 +137,13 @@ export const event = <const TName extends string>(
     return ev as Event.Definition<{
       name: TName;
       data: EventSchema.Output<T>;
+    }>;
+  };
+
+  toEvent.type = <T extends Record<string, unknown>>() => {
+    return toEvent as Event.Definition<{
+      name: TName;
+      data: T;
     }>;
   };
 
@@ -152,10 +164,10 @@ export const cron = <TCron extends string>(
   data: { cron: TCron };
 }> => {
   return {
-    __brand: "Inngest.Trigger",
+    "~brand": "Inngest.Trigger",
     data: { cron },
     name: "inngest/scheduled.timer",
-    type: "cron",
+    "~type": "cron",
   } satisfies Event.Definition.Static<{
     name: "inngest/scheduled.timer";
     data: { cron: TCron };
@@ -169,10 +181,10 @@ export const invoke = <TData extends Event.Definition["data"]>(
   data: TData;
 }> => {
   return {
-    __brand: "Inngest.Trigger",
+    "~brand": "Inngest.Trigger",
     data: {} as TData,
     name: "inngest/function.invoked",
-    type: "event",
+    "~type": "event",
     schema: opts.schema,
   } satisfies Event.Definition.Static<{
     name: "inngest/function.invoked";
