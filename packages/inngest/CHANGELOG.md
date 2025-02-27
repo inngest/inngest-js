@@ -1,5 +1,15 @@
 # inngest
 
+## 3.31.12
+
+### Patch Changes
+
+- [#864](https://github.com/inngest/inngest-js/pull/864) [`e47965e`](https://github.com/inngest/inngest-js/commit/e47965eb1c5f4f577f96f95dd5fb2a3afb3a19d0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix event sending failing in some edge environments due to not finding `global.crypto` or `globalThis.crypto` when creating idempotency IDs
+
+- [#856](https://github.com/inngest/inngest-js/pull/856) [`cd63ce3`](https://github.com/inngest/inngest-js/commit/cd63ce32f327b47a980dd64db220b7e53b69df6b) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Connect: Prefer functions passed through `apps` but fall back to functions registered on the client
+
+- [#858](https://github.com/inngest/inngest-js/pull/858) [`ce0c5a8`](https://github.com/inngest/inngest-js/commit/ce0c5a81781ef287a3fb2a2c5500c6a058d657ae) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Optimize function memoization
+
 ## 3.31.11
 
 ### Patch Changes
