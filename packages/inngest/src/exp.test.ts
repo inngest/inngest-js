@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createApp } from "./components/app.js";
-import { cron, event, invoke, withType } from "./components/trigger.js";
+import { cron, event, invoke } from "./components/trigger.js";
 
 const sentEvent = event("event.sent");
 const sentEvent2 = event("event.sent/2").schema(z.object({ foo: z.boolean() }));
@@ -8,22 +8,20 @@ const sentEvent3 = event("event.sent/3").type<{ foo: number }>();
 
 const bigCron = cron("* * 0 0 0");
 const blankInvoke = invoke();
-const typedInvoke = invoke({
-  schema: withType<{ bar: string; baz: boolean }>(),
-});
-const schemaInvoke = invoke({ schema: z.object({ bar: z.boolean() }) });
+const typedInvoke = invoke().type<{ bar: string; baz: boolean }>();
+const schemaInvoke = invoke().schema(z.object({ bar: z.boolean() }));
 
 const inngest = createApp({
   appId: "test",
 });
 
 // events are just JSON, but can be created easily
-const lol = sentEvent2({ foo: true });
+const lol = sentEvent2.create({ foo: true });
 
 // we use these helpers to send events
-inngest.sendEvent(sentEvent2({ foo: false }));
+inngest.sendEvent(sentEvent2.create({ foo: false }));
 // or create one immediately
-inngest.sendEvent(event("yerp")({ foo: "bar" }));
+inngest.sendEvent(event("yerp").create({ foo: "bar" }));
 // but just JSON is always supported
 inngest.sendEvents([{ name: "yep lol" }]);
 
@@ -52,4 +50,4 @@ inngest.createFunction({
 import { adapter } from "inngest/next";
 export default inngest.serve({ adapter });
 
-inngest.connect({ adapter });
+await inngest.connect({ adapter });

@@ -44,60 +44,152 @@ export namespace Event {
 
   export type Input = AsInput<Event>;
 
-  export type Definition<
-    TShape extends Simplify<Pick<Event, "name" | "data">> = Simplify<
-      Pick<Event, "name" | "data">
-    >,
-  > = Definition.Static<TShape> & {
-    <
-      UData extends TShape["data"],
-      const UExtra extends Simplify<Partial<Omit<Event, "name" | "data">>>,
+  export class BaseDefinition<
+    TShape extends Definition.BaseArgs = Definition.BaseArgs,
+  > implements Definition.Like
+  {
+    public name: TShape["name"];
+    public data: TShape["data"];
+
+    constructor(name: TShape["name"]) {
+      this.name = name;
+      this.data = {} as TShape["data"];
+    }
+
+    protected clone(): this {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument
+      return Object.assign(Object.create(Object.getPrototypeOf(this)), this);
+    }
+  }
+
+  export class Definition<
+    TShape extends Definition.BaseArgs = Definition.BaseArgs,
+  > extends BaseDefinition<TShape> {
+    public ifCondition?: string;
+    public runtimeSchema?: EventSchema;
+
+    constructor(name: TShape["name"]) {
+      super(name);
+    }
+
+    public create<
+      TData extends TShape["data"],
+      const TExtra extends Definition.ExtraArgs,
     >(
-      data: UData,
-      extra?: UExtra
+      data: TData,
+      extra?: TExtra
     ): Simplify<
-      Partial<Omit<Event, keyof TShape>> &
+      Partial<Omit<Event, "name" | "data">> &
         Pick<TShape, "name" | "data"> &
-        UExtra
-    >;
+        TExtra
+    > {
+      return {
+        name: this.name,
+        data,
+        ...extra,
+      } as unknown as Event.Input;
+    }
 
-    if: (condition: string) => Definition<TShape>;
+    public if(condition: string): this {
+      const clone = this.clone();
+      clone.ifCondition = condition;
 
-    schema: <T extends EventSchema>(
+      return clone;
+    }
+
+    public schema<T extends EventSchema>(
       schema: T
-    ) => Definition<{ name: TShape["name"]; data: EventSchema.Output<T> }>;
+    ): Definition<{ name: TShape["name"]; data: EventSchema.Output<T> }> {
+      const clone = this.clone();
+      clone.runtimeSchema = schema;
 
-    type: <T extends Record<string, unknown>>() => Definition<{
+      return clone as unknown as Definition<{
+        name: TShape["name"];
+        data: EventSchema.Output<T>;
+      }>;
+    }
+
+    public type<T extends Record<string, unknown>>(): Definition<{
       name: TShape["name"];
       data: T;
-    }>;
-  };
+    }> {
+      const clone = this.clone();
+
+      return clone as Definition<{
+        name: TShape["name"];
+        data: T;
+      }>;
+    }
+  }
+
+  export class CronDefinition<
+    TShape extends Definition.BaseArgs = Definition.BaseArgs,
+  > extends BaseDefinition<{
+    name: "inngest/scheduled.timer";
+    data: TShape["data"];
+  }> {
+    constructor(private cron: string) {
+      super("inngest/scheduled.timer");
+    }
+  }
+
+  export class InvokeDefinition<
+    TShape extends Definition.BaseArgs = Definition.BaseArgs,
+  > extends BaseDefinition<{
+    name: "inngest/function.invoked";
+    data: TShape["data"];
+  }> {
+    private runtimeSchema?: EventSchema;
+
+    constructor() {
+      super("inngest/function.invoked");
+    }
+
+    public schema<T extends EventSchema>(
+      schema: T
+    ): InvokeDefinition<{
+      name: "inngest/function.invoked";
+      data: EventSchema.Output<T>;
+    }> {
+      const clone = this.clone();
+      clone.runtimeSchema = schema;
+
+      return clone as unknown as InvokeDefinition<{
+        name: "inngest/function.invoked";
+        data: EventSchema.Output<T>;
+      }>;
+    }
+
+    public type<T extends Record<string, unknown>>(): InvokeDefinition<{
+      name: TShape["name"];
+      data: T;
+    }> {
+      const clone = this.clone();
+
+      return clone as InvokeDefinition<{
+        name: TShape["name"];
+        data: T;
+      }>;
+    }
+  }
 
   export namespace Definition {
-    export type Like =
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      | Definition<{ name: string; data: any }>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      | Static<{ name: string; data: any }>;
+    export type Like = {
+      name: string;
+      data: Record<string, unknown>;
+    };
 
-    export type AsEvent<T extends Definition> = Simplify<
+    export type AsEvent<T extends Definition.Like> = Simplify<
       Omit<Event, "name" | "data"> & Pick<T, "name" | "data">
     >;
 
-    export type AsEvents<T extends Definition[]> = {
+    export type AsEvents<T extends Definition.Like[]> = {
       [K in keyof T]: AsEvent<T[K]>;
     };
 
-    export type Static<
-      TShape extends Simplify<Pick<Event, "name" | "data">> = Simplify<
-        Pick<Event, "name" | "data">
-      >,
-    > = TShape & {
-      "~brand": "Inngest.Trigger";
-      "~type": "event" | "cron";
-      ifCondition?: string;
-      runtimeSchema?: EventSchema;
-    };
+    export type BaseArgs = Simplify<Pick<Event, "name" | "data">>;
+
+    export type ExtraArgs = Simplify<Partial<Omit<Event, "name" | "data">>>;
   }
 }
 
@@ -107,87 +199,20 @@ export const event = <const TName extends string>(
   name: TName;
   data: Record<string, unknown>;
 }> => {
-  const toEvent: Partial<Event.Definition> = <const TData>(
-    data: TData,
-    extra?: Simplify<Partial<Omit<Event, "name" | "data">>>
-  ) => {
-    // todo we should validate the data against the schema here
-    return {
-      name,
-      data,
-      ...extra,
-    } satisfies Event.Input;
-  };
-
-  toEvent["~brand"] = "Inngest.Trigger" as const;
-  toEvent["~type"] = "event" as const;
-  toEvent.name = name;
-  toEvent.data = {};
-  // toEvent.schema = opts.schema;
-  toEvent.if = (condition) => {
-    const ev = { ...toEvent } as Event.Definition;
-    ev.ifCondition = condition;
-
-    return ev;
-  };
-
-  toEvent.schema = <T extends EventSchema>(schema: T) => {
-    const ev = { ...toEvent, runtimeSchema: schema };
-
-    return ev as Event.Definition<{
-      name: TName;
-      data: EventSchema.Output<T>;
-    }>;
-  };
-
-  toEvent.type = <T extends Record<string, unknown>>() => {
-    return toEvent as Event.Definition<{
-      name: TName;
-      data: T;
-    }>;
-  };
-
-  return toEvent as Event.Definition<{
-    name: TName;
-    data: Record<string, unknown>;
-  }>;
+  return new Event.Definition<{ name: TName; data: Record<string, unknown> }>(
+    name
+  );
 };
 
-export const withType = <T>(): Type<T> => {
-  return undefined as unknown as Type<T>;
-};
-
-export const cron = <TCron extends string>(
+export const cron = <const TCron extends string>(
   cron: TCron
-): Event.Definition.Static<{
+): Event.CronDefinition<{
   name: "inngest/scheduled.timer";
   data: { cron: TCron };
 }> => {
-  return {
-    "~brand": "Inngest.Trigger",
-    data: { cron },
-    name: "inngest/scheduled.timer",
-    "~type": "cron",
-  } satisfies Event.Definition.Static<{
-    name: "inngest/scheduled.timer";
-    data: { cron: TCron };
-  }>;
+  return new Event.CronDefinition(cron);
 };
 
-export const invoke = <TData extends Event.Definition["data"]>(
-  opts: { schema?: EventSchema<TData> } = {}
-): Event.Definition.Static<{
-  name: "inngest/function.invoked";
-  data: TData;
-}> => {
-  return {
-    "~brand": "Inngest.Trigger",
-    data: {} as TData,
-    name: "inngest/function.invoked",
-    "~type": "event",
-    schema: opts.schema,
-  } satisfies Event.Definition.Static<{
-    name: "inngest/function.invoked";
-    data: TData;
-  }>;
+export const invoke = (): Event.InvokeDefinition => {
+  return new Event.InvokeDefinition();
 };

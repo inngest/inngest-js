@@ -59,7 +59,7 @@ export namespace App {
       handler: (ctx: HandlerCtx<TTriggers>) => TOutput;
     }
 
-    export type HandlerCtx<TEvent extends Event.Definition[]> = {
+    export type HandlerCtx<TEvent extends Event.Definition.Like[]> = {
       event: Event.Definition.AsEvents<TEvent>[number];
     };
   }
@@ -78,21 +78,6 @@ export namespace App {
   export type SendEventFn = (event: Event.Input) => void;
 
   export type SendEventsFn = (events: Event.Input[]) => void;
-
-  export type TriggerNames<TInngest extends App> = TInngest extends App<
-    infer IOptions extends [{ events: Event.Definition[] }]
-  >
-    ? IOptions[0]["events"][number]["name"]
-    : never;
-
-  export type TriggersByName<
-    TInngest extends App,
-    TName extends string,
-  > = TInngest extends App<
-    infer _IOptions extends [{ events: Event.Definition[] }]
-  >
-    ? Extract<_IOptions[0]["events"][number], { name: TName }>
-    : Record<string, unknown>;
 
   export type ConnectFn = (opts: ConnectFn.Args) => void;
 
