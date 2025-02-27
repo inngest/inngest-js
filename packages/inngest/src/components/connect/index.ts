@@ -1,6 +1,6 @@
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
-import { ulid } from "ulid";
+import { ulid } from "ulidx";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.js";
 import { allProcessEnv, getPlatformName } from "../../helpers/env.js";
 import { parseFnData } from "../../helpers/functions.js";
@@ -29,7 +29,7 @@ import {
   parseStartResponse,
   parseWorkerReplyAck,
 } from "./messages.js";
-import { onShutdown, retrieveSystemAttributes, getHostname } from "./os.js";
+import { getHostname, onShutdown, retrieveSystemAttributes } from "./os.js";
 import {
   ConnectionState,
   DEFAULT_SHUTDOWN_SIGNALS,
@@ -38,11 +38,11 @@ import {
 } from "./types.js";
 import {
   AuthError,
-  expBackoff,
-  ReconnectError,
   ConnectionLimitError,
-  waitWithCancel,
+  expBackoff,
   parseTraceCtx,
+  ReconnectError,
+  waitWithCancel,
 } from "./util.js";
 
 const ResponseAcknowlegeDeadline = 5_000;
@@ -161,9 +161,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
         throw new Error(`Duplicate app id: ${app.client.id}`);
       }
 
+      const client = app.client as Inngest.Any;
+
       functions[app.client.id] = {
         client: app.client,
-        functions: (app.functions as InngestFunction.Any[]) ?? [],
+        functions: (app.functions as InngestFunction.Any[]) ?? client.funcs,
       };
     }
     return functions;

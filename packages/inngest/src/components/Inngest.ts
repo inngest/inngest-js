@@ -1,4 +1,4 @@
-import { ulid } from "ulid";
+import { ulid } from "ulidx";
 import { InngestApi } from "../api/api.js";
 import {
   defaultDevServerHost,
@@ -612,6 +612,10 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
     return fn;
   };
+
+  public get funcs() {
+    return this.localFns;
+  }
 
   private _createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
