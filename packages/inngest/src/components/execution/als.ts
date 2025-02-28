@@ -1,7 +1,18 @@
-import { type Context } from "../../types.js";
+import { type Context, type StepOptions } from "../../types.js";
 
 export interface AsyncContext {
+  /**
+   * The `ctx` object that has been passed in to this function execution,
+   * including values such as `step` and `event`.
+   */
   ctx: Context.Any;
+
+  /**
+   * If present, this indicates we are currently executing a `step.run()` step's
+   * callback. Useful to understand whether we are in the context of a step
+   * execution or within the main function body.
+   */
+  executingStep?: StepOptions;
 }
 
 /**

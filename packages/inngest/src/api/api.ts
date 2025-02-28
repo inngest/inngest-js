@@ -29,6 +29,11 @@ export namespace InngestApi {
     fetch: FetchT;
     mode: Mode;
   }
+
+  export interface Subscription {
+    topics: string[];
+    channel: string;
+  }
 }
 
 export class InngestApi {
@@ -146,6 +151,55 @@ export class InngestApi {
       .catch((error) => {
         return err({
           error: getErrorMessage(error, "Unknown error retrieving event batch"),
+          status: 500,
+        });
+      });
+  }
+
+  async publish(
+    subscription: InngestApi.Subscription,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data: any
+  ): Promise<Result<void, ErrorResponse>> {
+    // todo it may not be a "text/stream"
+    const isStream = data instanceof ReadableStream;
+    const url = await this.getTargetUrl("/v1/realtime/publish");
+
+    url.searchParams.set("channel", subscription.channel || "");
+
+    subscription.topics.forEach((topic) => {
+      url.searchParams.append("topic", topic);
+    });
+
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url,
+      options: {
+        method: "POST",
+        body: isStream
+          ? data
+          : typeof data === "string"
+            ? data
+            : JSON.stringify(data),
+        headers: {
+          "Content-Type": isStream ? "text/stream" : "application/json",
+        },
+      },
+    })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(
+            `Failed to publish event: ${res.status} ${res.statusText}`
+          );
+        }
+
+        return ok<void>(undefined);
+      })
+      .catch((error) => {
+        return err({
+          error: getErrorMessage(error, "Unknown error publishing event"),
           status: 500,
         });
       });
