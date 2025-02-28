@@ -1,5 +1,13 @@
 # inngest
 
+## 3.31.13
+
+### Patch Changes
+
+- [#865](https://github.com/inngest/inngest-js/pull/865) [`b2ff76d`](https://github.com/inngest/inngest-js/commit/b2ff76d21dded71b97b3ef698bc2495136544aa6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure support for `typescript@~5.8.0`
+
+  No notable changes have been made, though minor TypeScript versions often affect transpiled outputs.
+
 ## 3.31.12
 
 ### Patch Changes
