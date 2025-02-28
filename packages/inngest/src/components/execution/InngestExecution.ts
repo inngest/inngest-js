@@ -51,11 +51,25 @@ export interface MemoizedOp extends IncomingOp {
   seen?: boolean;
 }
 
+/**
+ * The execution models the SDK is aware of.
+ *
+ * This is used in a number of places to ensure all execution versions are
+ * accounted for for a given operation.
+ */
 export enum ExecutionVersion {
   V0 = 0,
   V1 = 1,
+  V2 = 2,
 }
 
+/**
+ * The preferred execution version that will be used by the SDK when handling
+ * brand new runs where the Executor is allowing us to choose.
+ *
+ * Changing this should not ever be a breaking change, as this will only change
+ * new runs, not existing ones.
+ */
 export const PREFERRED_EXECUTION_VERSION =
   ExecutionVersion.V1 satisfies ExecutionVersion;
 

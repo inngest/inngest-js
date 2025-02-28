@@ -19,7 +19,8 @@ import {
   type ExecutionResults,
   type InngestExecutionOptions,
 } from "@local/components/execution/InngestExecution";
-import { _internals } from "@local/components/execution/v1";
+import { _internals as _v1Internals } from "@local/components/execution/v1";
+import { _internals as _v2Internals } from "@local/components/execution/v2";
 import { InngestFunction } from "@local/components/InngestFunction";
 import { STEP_INDEXING_SUFFIX } from "@local/components/InngestStepTools";
 import { internalEvents } from "@local/helpers/consts";
@@ -220,14 +221,15 @@ describe("runFn", () => {
   });
 
   describe("step functions", () => {
-    const getHashDataSpy = () => jest.spyOn(_internals, "hashOp");
+    const getHashDataSpy = () => jest.spyOn(_v1Internals, "hashOp");
     const getWarningSpy = () => jest.spyOn(console, "warn");
     const getErrorSpy = () => jest.spyOn(console, "error");
 
     const executionIdHashes: Partial<
       Record<ExecutionVersion, (id: string) => string>
     > = {
-      [ExecutionVersion.V1]: _internals.hashId,
+      [ExecutionVersion.V1]: _v1Internals.hashId,
+      [ExecutionVersion.V2]: _v2Internals.hashId,
     };
 
     const testFn = <
@@ -552,6 +554,62 @@ describe("runFn", () => {
             },
           }),
         },
+        [ExecutionVersion.V2]: {
+          hashes: {
+            A: "A",
+            B: "B",
+          },
+          tests: ({ A, B }) => ({
+            "first run runs A step": {
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: A,
+                  name: "A",
+                  op: StepOpCode.StepRun,
+                  data: "A",
+                  displayName: "A",
+                }),
+              },
+              expectedStepsRun: ["A"],
+            },
+            "request with A in stack runs B step": {
+              stack: {
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+              },
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: B,
+                  name: "B",
+                  op: StepOpCode.StepRun,
+                  data: "B",
+                  displayName: "B",
+                }),
+              },
+              expectedStepsRun: ["B"],
+            },
+            "final request returns empty response": {
+              stack: {
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+                [B]: {
+                  id: B,
+                  data: "B",
+                },
+              },
+              expectedReturn: {
+                type: "function-resolved",
+                data: null,
+              },
+            },
+          }),
+        },
       }
     );
 
@@ -651,6 +709,72 @@ describe("runFn", () => {
           }),
         },
         [ExecutionVersion.V1]: {
+          hashes: {
+            foo: "wait-id",
+            A: "A",
+            B: "B",
+          },
+          tests: ({ foo, A, B }) => ({
+            "first run reports waitForEvent": {
+              expectedReturn: {
+                type: "steps-found",
+                steps: [
+                  expect.objectContaining({
+                    op: StepOpCode.WaitForEvent,
+                    name: "foo",
+                    id: foo,
+                    displayName: "wait-id",
+                  }),
+                ],
+              },
+            },
+            "request with event foo.data.foo:foo runs A step": {
+              stack: { [foo]: { id: foo, data: { data: { foo: "foo" } } } },
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: A,
+                  name: "A",
+                  op: StepOpCode.StepRun,
+                  data: "A",
+                  displayName: "A",
+                }),
+              },
+              expectedStepsRun: ["A"],
+            },
+            "request with event foo.data.foo:bar runs B step": {
+              stack: { [foo]: { id: foo, data: { data: { foo: "bar" } } } },
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: B,
+                  name: "B",
+                  op: StepOpCode.StepRun,
+                  data: "B",
+                  displayName: "B",
+                }),
+              },
+              expectedStepsRun: ["B"],
+            },
+            "final request returns empty response": {
+              stack: {
+                [foo]: {
+                  id: foo,
+                  data: { data: { foo: "bar" } },
+                },
+                [B]: {
+                  id: B,
+                  data: { data: "B" },
+                },
+              },
+              expectedReturn: {
+                type: "function-resolved",
+                data: null,
+              },
+            },
+          }),
+        },
+        [ExecutionVersion.V2]: {
           hashes: {
             foo: "wait-id",
             A: "A",
@@ -852,6 +976,160 @@ describe("runFn", () => {
           }),
         },
         [ExecutionVersion.V1]: {
+          hashes: {
+            A: "A",
+            B: "B",
+            C: "C",
+          },
+          tests: ({ A, B, C }) => ({
+            "first run reports A and B steps": {
+              expectedReturn: {
+                type: "steps-found",
+                steps: [
+                  expect.objectContaining({
+                    id: A,
+                    name: "A",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "A",
+                  }),
+                  expect.objectContaining({
+                    id: B,
+                    name: "B",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "B",
+                  }),
+                ],
+              },
+            },
+
+            "requesting to run B runs B": {
+              disableImmediateExecution: true,
+              runStep: B,
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: B,
+                  name: "B",
+                  op: StepOpCode.StepRun,
+                  data: "B",
+                  displayName: "B",
+                }),
+              },
+              expectedStepsRun: ["B"],
+            },
+
+            "request with only B state returns discovery of A": {
+              disableImmediateExecution: true,
+              stack: {
+                [B]: {
+                  id: B,
+                  data: "B",
+                },
+              },
+              expectedReturn: {
+                type: "steps-found",
+                steps: [
+                  expect.objectContaining({
+                    id: A,
+                    name: "A",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "A",
+                  }),
+                ],
+              },
+            },
+
+            "requesting to run A runs A": {
+              disableImmediateExecution: true,
+              runStep: A,
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: A,
+                  name: "A",
+                  op: StepOpCode.StepRun,
+                  data: "A",
+                  displayName: "A",
+                }),
+              },
+              expectedStepsRun: ["A"],
+            },
+
+            "request with B,A state discovers C step": {
+              disableImmediateExecution: true,
+              stack: {
+                [B]: {
+                  id: B,
+                  data: "B",
+                },
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+              },
+              expectedReturn: {
+                type: "steps-found",
+                steps: [
+                  expect.objectContaining({
+                    id: C,
+                    name: "C",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "C",
+                  }),
+                ],
+              },
+            },
+
+            "requesting to run C runs C": {
+              disableImmediateExecution: true,
+              stack: {
+                [B]: {
+                  id: B,
+                  data: "B",
+                },
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+              },
+              runStep: C,
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: C,
+                  name: "C",
+                  op: StepOpCode.StepRun,
+                  data: "C",
+                  displayName: "C",
+                }),
+              },
+              expectedStepsRun: ["C"],
+            },
+
+            "final request returns empty response": {
+              disableImmediateExecution: true,
+              stack: {
+                [B]: {
+                  id: B,
+                  data: "B",
+                },
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+                [C]: {
+                  id: C,
+                  data: "C",
+                },
+              },
+              expectedReturn: {
+                type: "function-resolved",
+                data: null,
+              },
+            },
+          }),
+        },
+        [ExecutionVersion.V2]: {
           hashes: {
             A: "A",
             B: "B",
@@ -1250,6 +1528,7 @@ describe("runFn", () => {
             },
           }),
         },
+        [ExecutionVersion.V2]: null,
       }
     );
 
@@ -1378,6 +1657,7 @@ describe("runFn", () => {
               },
           }),
         },
+        [ExecutionVersion.V2]: null,
       }
     );
 
@@ -1406,6 +1686,70 @@ describe("runFn", () => {
         // This is not performed in v0 executions.
         [ExecutionVersion.V0]: null,
         [ExecutionVersion.V1]: {
+          hashes: {
+            A: "A",
+            B: `A${STEP_INDEXING_SUFFIX}1`,
+            C: `A${STEP_INDEXING_SUFFIX}2`,
+          },
+          tests: ({ A, B, C }) => ({
+            "first run runs A step": {
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: A,
+                  name: "A",
+                  op: StepOpCode.StepRun,
+                  data: "A",
+                  displayName: "A",
+                }),
+              },
+              expectedStepsRun: ["A"],
+            },
+            "request with A in stack runs B step": {
+              stack: {
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+              },
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: B,
+                  name: "A",
+                  op: StepOpCode.StepRun,
+                  data: "B",
+                  displayName: "A",
+                }),
+              },
+              expectedStepsRun: ["B"],
+            },
+            "request with B in stack runs C step": {
+              stack: {
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+                [B]: {
+                  id: B,
+                  data: "B",
+                },
+              },
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: C,
+                  name: "A",
+                  op: StepOpCode.StepRun,
+                  data: "C",
+                  displayName: "A",
+                }),
+              },
+              expectedStepsRun: ["C"],
+            },
+          }),
+        },
+        [ExecutionVersion.V2]: {
           hashes: {
             A: "A",
             B: `A${STEP_INDEXING_SUFFIX}1`,
@@ -1528,6 +1872,40 @@ describe("runFn", () => {
             },
           }),
         },
+        [ExecutionVersion.V2]: {
+          hashes: {
+            A: "A",
+            B: `A${STEP_INDEXING_SUFFIX}1`,
+            C: `A${STEP_INDEXING_SUFFIX}2`,
+          },
+          tests: ({ A, B, C }) => ({
+            "first run reports all steps": {
+              expectedReturn: {
+                type: "steps-found",
+                steps: [
+                  expect.objectContaining({
+                    id: A,
+                    name: "A",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "A",
+                  }),
+                  expect.objectContaining({
+                    id: B,
+                    name: "A",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "A",
+                  }),
+                  expect.objectContaining({
+                    id: C,
+                    name: "A",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "A",
+                  }),
+                ],
+              },
+            },
+          }),
+        },
       }
     );
 
@@ -1597,6 +1975,47 @@ describe("runFn", () => {
             },
           }),
         },
+        [ExecutionVersion.V2]: {
+          hashes: {
+            A: "A",
+            B: `A${STEP_INDEXING_SUFFIX}1`,
+            C: `A${STEP_INDEXING_SUFFIX}2`,
+          },
+          tests: ({ A, B }) => ({
+            "first run runs A step": {
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: A,
+                  name: "A",
+                  op: StepOpCode.StepRun,
+                  data: "A",
+                  displayName: "A",
+                }),
+              },
+              expectedStepsRun: ["A"],
+            },
+            "request with A in stack runs B step": {
+              stack: {
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+              },
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: B,
+                  name: "A",
+                  op: StepOpCode.StepRun,
+                  data: "B",
+                  displayName: "A",
+                }),
+              },
+              expectedStepsRun: ["B"],
+            },
+          }),
+        },
       }
     );
 
@@ -1655,6 +2074,39 @@ describe("runFn", () => {
                 ],
               },
               expectedWarnings: [ErrCode.AUTOMATIC_PARALLEL_INDEXING],
+              disableImmediateExecution: true,
+            },
+          }),
+        },
+        [ExecutionVersion.V2]: {
+          hashes: {
+            A: "A",
+            B: `A${STEP_INDEXING_SUFFIX}1`,
+            C: `A${STEP_INDEXING_SUFFIX}2`,
+          },
+          tests: ({ A, B, C }) => ({
+            "request with A,B in stack reports C step": {
+              stack: {
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+                [B]: {
+                  id: B,
+                  data: "B",
+                },
+              },
+              expectedReturn: {
+                type: "steps-found",
+                steps: [
+                  expect.objectContaining({
+                    id: C,
+                    name: "A",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "A",
+                  }),
+                ],
+              },
               disableImmediateExecution: true,
             },
           }),
@@ -1910,6 +2362,136 @@ describe("runFn", () => {
             },
           }),
         },
+        [ExecutionVersion.V2]: {
+          hashes: {
+            A: "A",
+            B: "B",
+            BFailed: "B failed",
+          },
+          tests: ({ A, B, BFailed }) => ({
+            "first run reports A and B steps": {
+              expectedReturn: {
+                type: "steps-found",
+                steps: [
+                  expect.objectContaining({
+                    id: A,
+                    name: "A",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "A",
+                  }),
+                  expect.objectContaining({
+                    id: B,
+                    name: "B",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "B",
+                  }),
+                ],
+              },
+            },
+
+            "requesting to run A runs A": {
+              disableImmediateExecution: true,
+              runStep: A,
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: A,
+                  name: "A",
+                  op: StepOpCode.StepRun,
+                  data: "A",
+                  displayName: "A",
+                }),
+              },
+              expectedStepsRun: ["A"],
+            },
+
+            "request with only A state returns B found": {
+              disableImmediateExecution: true,
+              stack: { [A]: { id: A, data: "A" } },
+              expectedReturn: {
+                type: "steps-found",
+                steps: [
+                  expect.objectContaining({
+                    id: B,
+                    name: "B",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "B",
+                  }),
+                ],
+              },
+            },
+
+            "requesting to run B runs B, which fails": {
+              disableImmediateExecution: true,
+              runStep: B,
+              expectedReturn: {
+                type: "step-ran",
+                retriable: true,
+                step: expect.objectContaining({
+                  id: B,
+                  name: "B",
+                  displayName: "B",
+                  op: StepOpCode.StepError,
+                  error: matchError("B failed message"),
+                }),
+              },
+              expectedStepsRun: ["B"],
+              expectedErrors: ["B failed message"],
+            },
+
+            "request following B reports 'B failed' step": {
+              disableImmediateExecution: true,
+              stack: {
+                [A]: { id: A, data: "A" },
+                [B]: { id: B, error: "B failed message" },
+              },
+              expectedReturn: {
+                type: "steps-found",
+                steps: [
+                  expect.objectContaining({
+                    id: BFailed,
+                    name: "B failed",
+                    op: StepOpCode.StepPlanned,
+                    displayName: "B failed",
+                  }),
+                ],
+              },
+            },
+
+            "requesting to run 'B failed' runs 'B failed'": {
+              disableImmediateExecution: true,
+              stack: {
+                [A]: { id: A, data: "A" },
+                [B]: { id: B, error: "B failed message" },
+              },
+              runStep: BFailed,
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: BFailed,
+                  name: "B failed",
+                  op: StepOpCode.StepRun,
+                  data: "B failed",
+                  displayName: "B failed",
+                }),
+              },
+              expectedStepsRun: ["BFailed"],
+            },
+
+            "final request returns empty response": {
+              disableImmediateExecution: true,
+              stack: {
+                [A]: { id: A, data: "A" },
+                [B]: { id: B, error: "B failed message" },
+                [BFailed]: { id: BFailed, data: "B failed" },
+              },
+              expectedReturn: {
+                type: "function-resolved",
+                data: ["A", "B failed"],
+              },
+            },
+          }),
+        },
       }
     );
 
@@ -1952,6 +2534,28 @@ describe("runFn", () => {
           }),
         },
         [ExecutionVersion.V1]: {
+          hashes: {
+            A: "A",
+          },
+          tests: ({ A }) => ({
+            "first run executes A, which throws a NonRetriable error": {
+              expectedReturn: {
+                type: "step-ran",
+                retriable: false,
+                step: expect.objectContaining({
+                  id: A,
+                  name: "A",
+                  displayName: "A",
+                  op: StepOpCode.StepError,
+                  error: matchError(new NonRetriableError("A error message")),
+                }),
+              },
+              expectedStepsRun: ["A"],
+              expectedErrors: ["A error message"],
+            },
+          }),
+        },
+        [ExecutionVersion.V2]: {
           hashes: {
             A: "A",
           },
@@ -2019,6 +2623,20 @@ describe("runFn", () => {
             },
           }),
         },
+        [ExecutionVersion.V2]: {
+          hashes: {},
+          tests: () => ({
+            "throws a NonRetriableError": {
+              expectedReturn: {
+                type: "function-rejected",
+                retriable: false,
+                error: matchError(new NonRetriableError("Error message")),
+              },
+              expectedErrors: ["Error message"],
+              expectedStepsRun: [],
+            },
+          }),
+        },
       }
     );
 
@@ -2063,6 +2681,20 @@ describe("runFn", () => {
             },
           }),
         },
+        [ExecutionVersion.V2]: {
+          hashes: {},
+          tests: () => ({
+            "throws a retriable error": {
+              expectedReturn: {
+                type: "function-rejected",
+                retriable: true,
+                error: matchError("foo"),
+              },
+              expectedErrors: ["foo"],
+              expectedStepsRun: [],
+            },
+          }),
+        },
       }
     );
 
@@ -2094,6 +2726,20 @@ describe("runFn", () => {
           }),
         },
         [ExecutionVersion.V1]: {
+          hashes: {},
+          tests: () => ({
+            "throws a retriable error": {
+              expectedReturn: {
+                type: "function-rejected",
+                retriable: true,
+                error: matchError({}),
+              },
+              expectedErrors: ["{}"],
+              expectedStepsRun: [],
+            },
+          }),
+        },
+        [ExecutionVersion.V2]: {
           hashes: {},
           tests: () => ({
             "throws a retriable error": {
@@ -2272,6 +2918,62 @@ describe("runFn", () => {
             },
           }),
         },
+        [ExecutionVersion.V2]: {
+          hashes: {
+            A: "A",
+            B: "B",
+          } as const,
+          tests: ({ A, B }) => ({
+            "first run runs A step": {
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: A,
+                  name: "A",
+                  op: StepOpCode.StepRun,
+                  data: "A",
+                  displayName: "A",
+                }),
+              },
+              expectedStepsRun: ["A"],
+            },
+            "request with A in stack runs B step": {
+              stack: {
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+              },
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: B,
+                  name: "B",
+                  op: StepOpCode.StepRun,
+                  data: "B",
+                  displayName: "B",
+                }),
+              },
+              expectedStepsRun: ["B"],
+            },
+            "final request returns empty response": {
+              stack: {
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+                [B]: {
+                  id: B,
+                  data: "B",
+                },
+              },
+              expectedReturn: {
+                type: "function-resolved",
+                data: null,
+              },
+            },
+          }),
+        },
       }
     );
 
@@ -2392,6 +3094,95 @@ describe("runFn", () => {
           }),
         },
         [ExecutionVersion.V1]: {
+          hashes: {
+            A: "A",
+            B: "B",
+          },
+          tests: ({ A, B }) => ({
+            "first run runs A step": {
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: A,
+                  name: "A",
+                  op: StepOpCode.StepRun,
+                  data: "A",
+                  displayName: "A",
+                }),
+              },
+              expectedStepsRun: ["A"],
+              customTests() {
+                let loggerInfoSpy: jest.SpiedFunction<() => void>;
+
+                beforeAll(() => {
+                  loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
+                });
+
+                test("log called", () => {
+                  expect(loggerInfoSpy.mock.calls).toEqual([["info1"], ["A"]]);
+                });
+              },
+            },
+            "request with A in stack runs B step": {
+              stack: {
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+              },
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: B,
+                  name: "B",
+                  op: StepOpCode.StepRun,
+                  data: "B",
+                  displayName: "B",
+                }),
+              },
+              expectedStepsRun: ["B"],
+              customTests() {
+                let loggerInfoSpy: jest.SpiedFunction<() => void>;
+
+                beforeAll(() => {
+                  loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
+                });
+
+                test("log called", () => {
+                  expect(loggerInfoSpy.mock.calls).toEqual([["2"], ["B"]]);
+                });
+              },
+            },
+            "final request returns empty response": {
+              stack: {
+                [A]: {
+                  id: A,
+                  data: "A",
+                },
+                [B]: {
+                  id: B,
+                  data: "B",
+                },
+              },
+              expectedReturn: {
+                type: "function-resolved",
+                data: null,
+              },
+              customTests() {
+                let loggerInfoSpy: jest.SpiedFunction<() => void>;
+
+                beforeAll(() => {
+                  loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
+                });
+
+                test("log called", () => {
+                  expect(loggerInfoSpy.mock.calls).toEqual([["3"]]);
+                });
+              },
+            },
+          }),
+        },
+        [ExecutionVersion.V2]: {
           hashes: {
             A: "A",
             B: "B",
