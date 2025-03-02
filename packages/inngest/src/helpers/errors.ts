@@ -405,17 +405,19 @@ export const prettyError = ({
   stack,
   code,
 }: PrettyError): string => {
-  const { icon, colorFn } = (
+  const { icon, colorFn = (s: string) => s } = (
     {
-      error: { icon: "❌", colorFn: chalk.red },
-      warn: { icon: "⚠️", colorFn: chalk.yellow },
+      error: { icon: "❌", colorFn: chalk?.red },
+      warn: { icon: "⚠️", colorFn: chalk?.yellow },
     } satisfies Record<
       NonNullable<PrettyError["type"]>,
-      { icon: string; colorFn: (s: string) => string }
+      { icon: string; colorFn?: (s: string) => string }
     >
   )[type];
 
-  let header = `${icon}  ${chalk.bold.underline(whatHappened.trim())}`;
+  let header = `${icon}  ${
+    chalk?.bold.underline(whatHappened.trim()) || whatHappened.trim()
+  }`;
   if (stack) {
     header +=
       "\n" +
