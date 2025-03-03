@@ -88,6 +88,9 @@ importers:
       '@jpwilliams/waitgroup':
         specifier: ^2.1.1
         version: 2.1.1
+      '@standard-schema/spec':
+        specifier: ^1.0.0
+        version: 1.0.0
       '@types/debug':
         specifier: ^4.1.12
         version: 4.1.12
@@ -122,8 +125,8 @@ importers:
         specifier: ^2.4.1
         version: 2.4.1
       zod:
-        specifier: ~3.22.3
-        version: 3.22.3
+        specifier: ~3.24.2
+        version: 3.24.2
     devDependencies:
       '@actions/core':
         specifier: ^1.10.0
@@ -1397,6 +1400,9 @@ packages:
 
   '@sinonjs/fake-timers@10.0.2':
     resolution: {integrity: sha512-SwUDyjWnah1AaNl7kxsa7cfLhlTYoiyhDAIgyh+El30YvXs/o7OLXpYH88Zdhyx9JExKrmHDJ+10bwIcY80Jmw==}
+
+  '@standard-schema/spec@1.0.0':
+    resolution: {integrity: sha512-m2bOd0f2RT9k8QJx1JN85cZYyH1RqFBdlwtkSlf4tBDYLCiiZnv1fIIwacK6cqwXavOydf0NPToMQgpKq+dVlA==}
 
   '@sveltejs/kit@1.27.3':
     resolution: {integrity: sha512-pd7qwX6ww5noA0/FLk45B0aKUeOXWR+pfZsGTrv3dRmj3lTmnki9UTmTdWzHJGrje+BBkGUZHfgGrsSOQQBQpQ==}
@@ -5314,6 +5320,9 @@ packages:
   zod@3.22.3:
     resolution: {integrity: sha512-EjIevzuJRiRPbVH4mGc8nApb/lVLKVpmUhAaR5R5doKGfAnGJ6Gr3CViAVjP+4FWSxCsybeWQdcgCtbX+7oZug==}
 
+  zod@3.24.2:
+    resolution: {integrity: sha512-lY7CDW43ECgW9u1TcT3IoXHflywfVqDYze4waEz812jR/bZ8FHDsl7pFQoSZTz5N+2NqRXs8GBwnAwo3ZNxqhQ==}
+
 snapshots:
 
   '@aashutoshrathi/word-wrap@1.2.6': {}
@@ -6506,6 +6515,8 @@ snapshots:
   '@sinonjs/fake-timers@10.0.2':
     dependencies:
       '@sinonjs/commons': 2.0.0
+
+  '@standard-schema/spec@1.0.0': {}
 
   '@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@20.14.8))':
     dependencies:
@@ -11436,3 +11447,5 @@ snapshots:
   yocto-queue@0.1.0: {}
 
   zod@3.22.3: {}
+
+  zod@3.24.2: {}
