@@ -1414,7 +1414,15 @@ export class InngestCommHandler<
     }
 
     const immediateFnData = parseFnData(data);
-    const { version } = immediateFnData;
+    let { version } = immediateFnData;
+
+    // Handle opting in to optimized parallelism in v3.
+    if (
+      version === ExecutionVersion.V1 &&
+      fn.fn["shouldOptimizeParallelism"]()
+    ) {
+      version = ExecutionVersion.V2;
+    }
 
     const result = runAsPromise(async () => {
       const anyFnData = await fetchAllFnData({
@@ -1514,9 +1522,48 @@ export class InngestCommHandler<
             },
           };
         },
+        [ExecutionVersion.V2]: ({ event, events, steps, ctx, version }) => {
+          const stepState = Object.entries(steps ?? {}).reduce<
+            InngestExecutionOptions["stepState"]
+          >((acc, [id, result]) => {
+            return {
+              ...acc,
+              [id]:
+                result.type === "data"
+                  ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    { id, data: result.data }
+                  : result.type === "input"
+                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                      { id, input: result.input }
+                    : { id, error: result.error },
+            };
+          }, {});
+
+          return {
+            version,
+            partialOptions: {
+              runId: ctx?.run_id || "",
+              data: {
+                event: event as EventPayload,
+                events: events as [EventPayload, ...EventPayload[]],
+                runId: ctx?.run_id || "",
+                attempt: ctx?.attempt ?? 0,
+              },
+              stepState,
+              requestedRunStep:
+                stepId === "step" ? undefined : stepId || undefined,
+              timer,
+              isFailureHandler: fn.onFailure,
+              disableImmediateExecution: ctx?.disable_immediate_execution,
+              stepCompletionOrder: ctx?.stack?.stack ?? [],
+              reqArgs,
+              headers,
+            },
+          };
+        },
       });
 
-      const executionOptions = await executionStarters[anyFnData.value.version](
+      const executionOptions = await executionStarters[version](
         anyFnData.value
       );
 

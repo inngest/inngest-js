@@ -714,6 +714,19 @@ export interface ClientOptions {
    * such as a version string, a Git commit SHA, or any other unique identifier.
    */
   appVersion?: string;
+
+  /**
+   * If `true`, parallel steps within functions are optimized to reduce traffic
+   * during `Promise` resolution, which can hugely reduce the time taken and
+   * number of requests for each run.
+   *
+   * Note that this will be the default behaviour in v4 and in its current form
+   * will cause `Promise.*()` to wait for all promises to settle before
+   * resolving.
+   *
+   * @default false
+   */
+  optimizeParallelism?: boolean;
 }
 
 /**
