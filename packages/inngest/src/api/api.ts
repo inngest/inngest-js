@@ -1,4 +1,5 @@
 import { type fetch } from "cross-fetch";
+import { z } from "zod";
 import { type ExecutionVersion } from "../components/execution/InngestExecution.js";
 import {
   defaultDevServerHost,
@@ -20,6 +21,10 @@ import {
 } from "./schema.js";
 
 type FetchT = typeof fetch;
+
+const realtimeSubscriptionTokenSchema = z.object({
+  jwt: z.string(),
+});
 
 export namespace InngestApi {
   export interface Options {
@@ -202,6 +207,51 @@ export class InngestApi {
           error: getErrorMessage(error, "Unknown error publishing event"),
           status: 500,
         });
+      });
+  }
+
+  async getSubscriptionToken(
+    channel: string,
+    topics: string[]
+  ): Promise<string> {
+    const url = await this.getTargetUrl("/v1/realtime/token");
+
+    const body = topics.map((topic) => ({
+      channel,
+      name: topic,
+      kind: "run",
+    }));
+
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url,
+      options: {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      },
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(
+            `Failed to get subscription token: ${res.status} ${
+              res.statusText
+            } - ${await res.text()}`
+          );
+        }
+
+        const data = realtimeSubscriptionTokenSchema.parse(await res.json());
+
+        return data.jwt;
+      })
+      .catch((error) => {
+        throw new Error(
+          getErrorMessage(error, "Unknown error getting subscription token")
+        );
       });
   }
 }

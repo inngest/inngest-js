@@ -59,8 +59,8 @@ export namespace Realtime {
       TTopics extends
         (keyof Channel.InferTopics<TChannel>)[] = (keyof Channel.InferTopics<TChannel>)[],
     > = {
-      // key used to auth
-      key: Promise<string>;
+      // key used to auth - could be undefined as then we can do a cold subscribe
+      key?: Promise<string> | undefined;
       channel: Channel.InferId<TChannel>;
       topics: TTopics;
     };
@@ -109,7 +109,7 @@ export namespace Realtime {
     >,
   > = {
     [K in keyof TTopics]: {
-      topic: K;
+      topics: [K]; // Odd - should be `topic` instead of `topics`? Data leak?
       data: Realtime.Topic.InferSubscribe<TTopics[K]>;
       channel: TChannelId;
 

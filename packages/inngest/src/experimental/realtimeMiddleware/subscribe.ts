@@ -1,5 +1,5 @@
 import debug from "debug";
-import EventEmitter from "node:events";
+import { Inngest } from "../../components/Inngest.js";
 import { type Realtime } from "./types.js";
 
 /**
@@ -32,8 +32,6 @@ export const subscribe: Realtime.SubscribeFn = async (token, callback) => {
     }, extras);
   }
 
-  console.log("returning an iterator");
-
   return Object.assign(subscription.getIterator(stream), extras);
 };
 
@@ -53,6 +51,8 @@ class TokenSubscription {
 
   #createdStreamControllers = new Set<ReadableStreamDefaultController>();
 
+  #ws: WebSocket | null = null;
+
   /**
    * A counter for the number of active subscriptions for each topic.
    * It contains all topics allowed by the token.
@@ -70,7 +70,7 @@ class TokenSubscription {
     this.#debug(
       `Establishing connection to channel "${
         this.token.channel
-      }" with topics "${this.token.topics.join(", ")}"`
+      }" with topics ${JSON.stringify(this.token.topics)}...`
     );
 
     if (typeof WebSocket === "undefined") {
@@ -78,17 +78,65 @@ class TokenSubscription {
     }
 
     // .. connect and then
-    const ws = new EventEmitter();
-    ws.on("message", (data) => {
-      if (this.#running) {
-        this.#sourceStreamContoller?.enqueue(data);
-      }
-    });
+    // const ws = new EventEmitter();
+    // ws.on("message", (data) => {
+    //   if (this.#running) {
+    //     this.#sourceStreamContoller?.enqueue(data);
+    //   }
+    // });
 
-    // Fake traffic
-    setInterval(() => {
-      ws.emit("message", { data: "Hello" });
-    }, 1000);
+    // // Fake traffic
+    // setInterval(() => {
+    //   ws.emit("message", { data: "Hello" });
+    // }, 1000);
+
+    // TODO Client will own this, so this will fix itself
+    const key =
+      this.token.key ??
+      new Inngest({ id: "test-app" })["inngestApi"].getSubscriptionToken(
+        this.token.channel,
+        this.token.topics
+      );
+
+    this.#ws = new WebSocket(
+      `ws://127.0.0.1:8288/v1/realtime/connect?token=${await key}`
+    );
+
+    this.#ws.onopen = () => {
+      this.#debug("WebSocket connection established");
+    };
+
+    this.#ws.onmessage = (event) => {
+      // TODO parse
+      const msg = JSON.parse(event.data as string) as Realtime.Message;
+
+      if (this.#running) {
+        // TODO Should we be receiving `topics` here instead of `topic`? Data leak?
+        this.#debug(
+          `Received message on channel "${
+            msg.channel
+          }" for topics ${JSON.stringify(msg.topics)}:`,
+          msg.data
+        );
+
+        this.#sourceStreamContoller?.enqueue(event.data);
+      } else {
+        this.#debug(
+          `Received message on channel "${
+            msg.channel
+          }" for topics ${JSON.stringify(msg.topics)} but stream is closed`
+        );
+      }
+    };
+
+    this.#ws.onerror = (event) => {
+      console.error("WebSocket error observed:", event);
+    };
+
+    this.#ws.onclose = (event) => {
+      this.#debug("WebSocket closed:", event.reason);
+      this.close();
+    };
 
     this.#running = true;
 
@@ -108,9 +156,18 @@ class TokenSubscription {
     })();
   }
 
-  public close() {
+  public close(reason: string = "Userland closed connection") {
+    if (!this.#running) {
+      return;
+    }
+
+    this.#debug("close() called; closing connection...");
     this.#running = false;
+    this.#ws?.close(1000, reason);
+
+    this.#debug(`Closing ${this.#createdStreamControllers.size} streams...`);
     this.#sourceStreamContoller?.close();
+    this.#createdStreamControllers.forEach((controller) => controller.close());
   }
 
   public getStream() {
