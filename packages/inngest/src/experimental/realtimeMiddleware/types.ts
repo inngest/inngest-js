@@ -1,94 +1,59 @@
 import { type StandardSchemaV1 } from "@standard-schema/spec";
-import { type InngestApi } from "../api/api.js";
-import { getAsyncCtx } from "../components/execution/als.js";
-import { InngestMiddleware } from "../components/InngestMiddleware.js";
-import { type IsStringLiteral, type Simplify } from "../helpers/types.js";
-
-export const channel: Realtime.Channel.Builder = (id) => {};
-
-export const topic: Realtime.Topic.Builder = (id) => {};
-
-// Batches by channel internally
-export const publish: Realtime.PublishFn = async () => {};
-
-export const subscribeToken: Realtime.Subscribe.TokenFn = async () => {};
-
-export const subscribe: Realtime.SubscribeFn = () => {};
-
-export const publishMiddleware = () => {
-  return new InngestMiddleware({
-    name: "publish",
-    init({ client }) {
-      return {
-        onFunctionRun() {
-          return {
-            transformInput({ ctx: { runId, step } }) {
-              const publish = async (
-                { topics, channel }: { topics: string[]; channel?: string },
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                data: any
-              ) => {
-                const store = await getAsyncCtx();
-                if (!store) {
-                  throw new Error(
-                    "No ALS found, but is required for this middleware"
-                  );
-                }
-
-                const subscription: InngestApi.Subscription = {
-                  topics,
-                  channel: channel || runId,
-                };
-
-                const action = async () => {
-                  const result = await client["inngestApi"].publish(
-                    subscription,
-                    data
-                  );
-
-                  if (!result.ok) {
-                    throw new Error(
-                      `Failed to publish event: ${result.error?.error}`
-                    );
-                  }
-
-                  // Return `null` to make sure the return value is always the
-                  // same as the step return value
-                  return null;
-                };
-
-                return store.executingStep
-                  ? action()
-                  : step.run(`publish:${subscription.channel}`, action);
-              };
-
-              return {
-                ctx: {
-                  publish,
-                },
-              };
-            },
-          };
-        },
-      };
-    },
-  });
-};
+import { type IsStringLiteral, type Simplify } from "../../helpers/types.js";
 
 export namespace Realtime {
-  export type PublishFn = (message: Realtime.Message.Input) => Promise<void>;
+  export type PublishFn = <TMessage extends Realtime.Message.Input>(
+    message: TMessage
+  ) => Promise<TMessage["data"]>;
 
-  export type SubscribeFn = <TSubscribeToken extends Subscribe.Token>(
+  export type SubscribeFn = <
+    TSubscribeToken extends Subscribe.Token,
+    TCallback extends
+      | Subscribe.Callback<TSubscribeToken>
+      | undefined = undefined,
+  >(
     token: TSubscribeToken,
-    callback: (
-      message: Realtime.Message<
-        TSubscribeToken["channel"],
-        Subscribe.Token.InferTopicData<TSubscribeToken>
-      >
-    ) => void
-  ) => void;
+    callback?: TCallback
+  ) => Promise<
+    TCallback extends undefined
+      ? Subscribe.StreamSubscription<TSubscribeToken>
+      : Subscribe.CallbackSubscription
+  >;
 
   export namespace Subscribe {
+    // TODO Allow warm/cold?
+    export type CallbackSubscription = () => void;
+
+    export type StreamSubscription<
+      TSubscribeToken extends Token = Token,
+      TData extends
+        Token.InferMessage<TSubscribeToken> = Token.InferMessage<TSubscribeToken>,
+    > = ReadableStream<TData> & {
+      [Symbol.asyncIterator](): AsyncIterableIterator<TData>;
+
+      /**
+       * Warm close.
+       */
+      close(): Promise<void>;
+
+      /**
+       * Cold close.
+       */
+      cancel(): void;
+
+      /**
+       * Get a new readable stream from the subscription.
+       *
+       * The stream starts when this function is called and will not contain any
+       * messages that were sent before this function was called.
+       */
+      getStream(): ReadableStream<TData>;
+    };
+
+    export type Callback<
+      TSubscribeToken extends Subscribe.Token = Subscribe.Token,
+    > = (message: Token.InferMessage<TSubscribeToken>) => void;
+
     export type Token<
       TChannel extends Channel = Channel,
       TTopics extends
@@ -119,6 +84,11 @@ export namespace Realtime {
       > = TToken extends Token<any, infer ITopics>
         ? { [K in ITopics[number]]: TChannelTopics[K] }
         : never;
+
+      export type InferMessage<TToken extends Token> = Realtime.Message<
+        TToken["channel"],
+        Token.InferTopicData<TToken>
+      >;
     }
 
     export type TokenFn = <
@@ -168,11 +138,11 @@ export namespace Realtime {
       TTopicId extends string = string,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       TData = any,
-    > = Simplify<{
+    > = {
       channel: TChannelId;
       topic: TTopicId;
       data: TData;
-    }>;
+    };
   }
 
   export type Channel<
