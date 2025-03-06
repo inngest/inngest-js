@@ -88,7 +88,8 @@ export namespace Anthropic {
      * Note that common parameters like `messages` will likely be overwritten by
      * the adapter.
      */
-    defaultParameters?: Partial<AiAdapter.Input<AiModel>>;
+    defaultParameters: Partial<AiAdapter.Input<AiModel>> &
+      Required<Pick<AiAdapter.Input<AiModel>, "max_tokens">>;
   }
 
   /**
