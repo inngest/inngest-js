@@ -40,6 +40,8 @@ export namespace OpenAi {
    * table for details on which models work with the Chat API.
    */
   export type Model =
+    | (string & {})
+    | "gpt-4.5-preview"
     | "gpt-4o"
     | "chatgpt-4o-latest"
     | "gpt-4o-mini"
