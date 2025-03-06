@@ -1,5 +1,11 @@
 # inngest
 
+## 3.32.1
+
+### Patch Changes
+
+- [#872](https://github.com/inngest/inngest-js/pull/872) [`5c87495`](https://github.com/inngest/inngest-js/commit/5c87495592eb804b150318c6c38712da63f64e5b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Upgrade to `@inngest/ai@0.0.5` for better cross-package compatibility
+
 ## 3.32.0
 
 ### Minor Changes
