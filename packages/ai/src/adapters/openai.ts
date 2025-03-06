@@ -1,4 +1,4 @@
-import { type AiAdapter, type types } from "../adapter.js";
+import { type AiAdapter } from "../adapter.js";
 
 /**
  * An OpenAI model using the OpenAI format for I/O.
@@ -9,7 +9,7 @@ export interface OpenAiAiAdapter extends AiAdapter {
    */
   format: "openai-chat";
 
-  [types]: {
+  "~types": {
     input: {
       /**
        * ID of the model to use. See the [model endpoint

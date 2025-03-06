@@ -1,5 +1,26 @@
 # inngest
 
+## 3.32.0
+
+### Minor Changes
+
+- [#862](https://github.com/inngest/inngest-js/pull/862) [`4330563`](https://github.com/inngest/inngest-js/commit/43305631575d0bdfcd3209441463d3384655005d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow opting in to optimized parallelism
+
+### Patch Changes
+
+- [#862](https://github.com/inngest/inngest-js/pull/862) [`4330563`](https://github.com/inngest/inngest-js/commit/43305631575d0bdfcd3209441463d3384655005d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Optimize step data that's been promisified using `@inngest/test` or middleware
+
+- Updated dependencies [[`58684e1`](https://github.com/inngest/inngest-js/commit/58684e19cd35271e5b5b8460443e363165155fe1), [`62e6a85`](https://github.com/inngest/inngest-js/commit/62e6a85d37e12e5772fcec1a26adaf77dbe4d837), [`f446052`](https://github.com/inngest/inngest-js/commit/f4460528585f7f67c066fd7b8b7bdd87562014a0)]:
+  - @inngest/ai@0.0.5
+
+## 3.31.13
+
+### Patch Changes
+
+- [#865](https://github.com/inngest/inngest-js/pull/865) [`b2ff76d`](https://github.com/inngest/inngest-js/commit/b2ff76d21dded71b97b3ef698bc2495136544aa6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure support for `typescript@~5.8.0`
+
+  No notable changes have been made, though minor TypeScript versions often affect transpiled outputs.
+
 ## 3.31.12
 
 ### Patch Changes

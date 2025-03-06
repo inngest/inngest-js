@@ -13,7 +13,6 @@ import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
   createTimeoutPromise,
-  resolveAfterPending,
   runAsPromise,
 } from "../../helpers/promises.js";
 import { type MaybePromise, type Simplify } from "../../helpers/types.js";
@@ -48,14 +47,14 @@ import {
   type InngestExecutionOptions,
   type MemoizedOp,
 } from "./InngestExecution.js";
-import { getAsyncCtx, getAsyncLocalStorage } from "./als.js";
+import { getAsyncLocalStorage } from "./als.js";
 
-export const createV1InngestExecution: InngestExecutionFactory = (options) => {
-  return new V1InngestExecution(options);
+export const createV2InngestExecution: InngestExecutionFactory = (options) => {
+  return new V2InngestExecution(options);
 };
 
-class V1InngestExecution extends InngestExecution implements IInngestExecution {
-  private state: V1ExecutionState;
+class V2InngestExecution extends InngestExecution implements IInngestExecution {
+  private state: V2ExecutionState;
   private fnArg: Context.Any;
   private checkpointHandlers: CheckpointHandlers;
   private timeoutDuration = 1000 * 10;
@@ -81,7 +80,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     this.initializeTimer(this.state);
 
     this.debug(
-      "created new V1 execution for run;",
+      "created new V2 execution for run;",
       this.options.requestedRunStep
         ? `wanting to run step "${this.options.requestedRunStep}"`
         : "discovering steps"
@@ -94,7 +93,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * Idempotently start the execution of the user's function.
    */
   public start() {
-    this.debug("starting V1 execution");
+    this.debug("starting V2 execution");
 
     return (this.execution ??= this._start().then((result) => {
       this.debug("result:", result);
@@ -433,26 +432,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       displayName,
     };
     this.state.executingStep = outgoingOp;
-
-    const store = await getAsyncCtx();
-
-    if (store) {
-      store.executingStep = {
-        id,
-        name: displayName,
-      };
-    }
-
     this.debug(`executing step "${id}"`);
 
     return (
       runAsPromise(fn)
         // eslint-disable-next-line @typescript-eslint/no-misused-promises
         .finally(async () => {
-          if (store) {
-            delete store.executingStep;
-          }
-
           await this.state.hooks?.afterExecution?.();
         })
         .then<OutgoingOp>((data) => {
@@ -607,12 +592,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     };
   }
 
-  private createExecutionState(): V1ExecutionState {
+  private createExecutionState(): V2ExecutionState {
     const d = createDeferredPromiseWithStack<Checkpoint>();
     let checkpointResolve = d.deferred.resolve;
     const checkpointResults = d.results;
 
-    const loop: V1ExecutionState["loop"] = (async function* (
+    const loop: V2ExecutionState["loop"] = (async function* (
       cleanUp?: () => void
     ) {
       try {
@@ -632,7 +617,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     const stepsToFulfill = Object.keys(this.options.stepState).length;
 
-    const state: V1ExecutionState = {
+    const state: V2ExecutionState = {
       stepState: this.options.stepState,
       stepsToFulfill,
       steps: new Map(),
@@ -704,14 +689,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     const expectedNextStepIndexes: Map<string, number> = new Map();
 
     /**
-     * An ordered list of step IDs that have yet to be handled in this
-     * execution. Used to ensure that we handle steps in the order they were
-     * found and based on the `stepCompletionOrder` in this execution's state.
-     */
-    const remainingStepCompletionOrder: string[] =
-      this.state.stepCompletionOrder.slice();
-
-    /**
      * A promise that's used to ensure that step reporting cannot be run more than
      * once in a given asynchronous time span.
      */
@@ -724,50 +701,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     let beforeExecHooksPromise: Promise<void> | undefined;
 
     /**
-     * A flag used to ensure that we only warn about parallel indexing once per
-     * execution to avoid spamming the console.
-     */
-    let warnOfParallelIndexing = false;
-
-    /**
-     * Counts the number of times we've extended this tick.
-     */
-    let tickExtensionCount = 0;
-
-    /**
-     * Given a colliding step ID, maybe warn the user about parallel indexing.
-     */
-    const maybeWarnOfParallelIndexing = (collisionId: string) => {
-      if (warnOfParallelIndexing) {
-        return;
-      }
-
-      const stepExists = this.state.steps.has(collisionId);
-      if (stepExists) {
-        const stepFoundThisTick = foundStepsToReport.has(collisionId);
-        if (!stepFoundThisTick) {
-          warnOfParallelIndexing = true;
-
-          console.warn(
-            prettyError({
-              type: "warn",
-              whatHappened:
-                "We detected that you have multiple steps with the same ID.",
-              code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
-              why: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${collisionId}".`,
-              reassurance:
-                "Your function is still running, though it may exhibit unexpected behaviour.",
-              consequences:
-                "Using the same IDs across parallel chains of work can cause unexpected behaviour.",
-              toFixNow:
-                "We recommend using a unique ID for each step, especially those happening in parallel.",
-            })
-          );
-        }
-      }
-    };
-
-    /**
      * A helper used to report steps to the core loop. Used after adding an item
      * to `foundStepsToReport`.
      */
@@ -777,15 +710,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      let extensionPromise: Promise<void>;
-      if (++tickExtensionCount >= 10) {
-        tickExtensionCount = 0;
-        extensionPromise = new Promise((resolve) => setTimeout(resolve));
-      } else {
-        extensionPromise = resolveAfterPending();
-      }
-
-      foundStepsReportPromise = extensionPromise
+      foundStepsReportPromise = new Promise((resolve) => setImmediate(resolve))
         /**
          * Ensure that we wait for this promise to resolve before continuing.
          *
@@ -802,36 +727,28 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         .then(() => {
           foundStepsReportPromise = undefined;
 
-          for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
-            const nextStepId = remainingStepCompletionOrder[i];
-            if (!nextStepId) {
-              // Strange - skip this empty index
-              continue;
-            }
-
-            const handled = unhandledFoundStepsToReport
-              .get(nextStepId)
-              ?.handle();
-            if (handled) {
-              remainingStepCompletionOrder.splice(i, 1);
-              unhandledFoundStepsToReport.delete(nextStepId);
-              return void reportNextTick();
+          for (const [hashedId, step] of unhandledFoundStepsToReport) {
+            if (step.handle()) {
+              unhandledFoundStepsToReport.delete(hashedId);
+              if (step.fulfilled) {
+                foundStepsToReport.delete(step.id);
+              }
             }
           }
 
-          // If we've handled no steps in this "tick," roll up everything we've
-          // found and report it.
-          const steps = [...foundStepsToReport.values()] as [
-            FoundStep,
-            ...FoundStep[],
-          ];
-          foundStepsToReport.clear();
-          unhandledFoundStepsToReport.clear();
+          if (foundStepsToReport.size) {
+            const steps = [...foundStepsToReport.values()] as [
+              FoundStep,
+              ...FoundStep[],
+            ];
 
-          return void this.state.setCheckpoint({
-            type: "steps-found",
-            steps: steps,
-          });
+            foundStepsToReport.clear();
+
+            return void this.state.setCheckpoint({
+              type: "steps-found",
+              steps: steps,
+            });
+          }
         });
     };
 
@@ -887,7 +804,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       if (this.state.steps.has(opId.id)) {
         const originalId = opId.id;
-        maybeWarnOfParallelIndexing(originalId);
 
         const expectedNextIndex = expectedNextStepIndexes.get(originalId) ?? 1;
         for (let i = expectedNextIndex; ; i++) {
@@ -1032,7 +948,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return this.options.fn["onFailureFn"];
   }
 
-  private initializeTimer(state: V1ExecutionState): void {
+  private initializeTimer(state: V2ExecutionState): void {
     if (!this.options.requestedRunStep) {
       return;
     }
@@ -1116,7 +1032,7 @@ type CheckpointHandlers = {
   "": (checkpoint: Checkpoint) => MaybePromise<void>;
 };
 
-export interface V1ExecutionState {
+export interface V2ExecutionState {
   /**
    * A value that indicates that we're executing this step. Can be used to
    * ensure steps are not accidentally nested until we support this across all
