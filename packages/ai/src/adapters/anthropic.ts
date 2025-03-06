@@ -1,4 +1,4 @@
-import { type AiAdapter, type types } from "../adapter.js";
+import { type AiAdapter } from "../adapter.js";
 
 export interface AnthropicAiAdapter extends AiAdapter {
   /**
@@ -6,7 +6,7 @@ export interface AnthropicAiAdapter extends AiAdapter {
    */
   format: "anthropic";
 
-  [types]: {
+  "~types": {
     input: AnthropicAiAdapter.Input;
     output: AnthropicAiAdapter.Output;
   };
