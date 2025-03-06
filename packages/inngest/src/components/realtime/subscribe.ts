@@ -75,18 +75,37 @@ export class TokenSubscription {
         JSON.parse(event.data as string)
       );
 
-      if (this.#running) {
-        // TODO Should we be receiving `topics` here instead of `topic`? Data leak?
-        this.#debug(
-          `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
-          msg.data
-        );
-
-        this.#sourceStreamContoller?.enqueue(event.data);
-      } else {
+      if (!this.#running) {
         this.#debug(
           `Received message on channel "${msg.channel}" for topic "${msg.topic}" but stream is closed`
         );
+      }
+
+      // TODO Should we be receiving `topics` here instead of `topic`? Data leak?
+      // const topic = this.token.channel.topics[msg.topic];
+      // if (!topic) {
+      //   this.#debug(
+      //     `Received message on channel "${msg.channel}" for unknown topic "${msg.topic}"`
+      //   );
+      //   return;
+      // }
+
+      this.#debug(
+        `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
+        msg.data
+      );
+
+      const userlandMessageKinds: Realtime.Message["kind"][] = ["data"];
+
+      // TODO What kind of messages do we care about?
+      if (userlandMessageKinds.includes(msg.kind)) {
+        // if (topic.schema) {
+        //   TODO Validate message against schema
+        //   Need to handle partial data if this is a stream.
+        //   How does the user learn that it failed validation?
+        // }
+
+        this.#sourceStreamContoller?.enqueue(event.data);
       }
     };
 
