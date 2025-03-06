@@ -1,5 +1,14 @@
 # inngest
 
+## 3.32.2
+
+### Patch Changes
+
+- [#875](https://github.com/inngest/inngest-js/pull/875) [`80837fd`](https://github.com/inngest/inngest-js/commit/80837fdbe3b461834a0ac5f1613e85f068ff9e00) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Connect now sets the connection state to `CLOSING` while handling and flushing any pending messages instead of immediately going to `CLOSED`
+
+- Updated dependencies [[`6e8b258`](https://github.com/inngest/inngest-js/commit/6e8b258abe7eb48b8a46c6f15fdbc45f1441cbd3)]:
+  - @inngest/ai@0.1.0
+
 ## 3.32.1
 
 ### Patch Changes
