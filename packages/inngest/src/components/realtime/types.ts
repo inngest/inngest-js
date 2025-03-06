@@ -1,5 +1,12 @@
 import { type StandardSchemaV1 } from "@standard-schema/spec";
-import { type IsStringLiteral, type Simplify } from "../../helpers/types.js";
+import { z } from "zod";
+import {
+  type Expect,
+  type IsEqual,
+  type IsLiteral,
+  type IsStringLiteral,
+  type Simplify,
+} from "../../helpers/types.js";
 
 export namespace Realtime {
   export type PublishFn = <TMessage extends Realtime.Message.Input>(
@@ -165,9 +172,14 @@ export namespace Realtime {
       Realtime.Topic.Definition
     >,
   > = {
-    [K in keyof TTopics | "name"]: K extends "name"
+    [K in
+      | IsLiteral<keyof TTopics, keyof TTopics, never>
+      | "name"
+      | "topics"]: K extends "name"
       ? string
-      : Realtime.Topic<TChannelId, TTopics[K]>;
+      : K extends "topics"
+        ? TTopics
+        : Realtime.Topic<TChannelId, TTopics[K]>;
   };
 
   export namespace Channel {

@@ -269,12 +269,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       InputTopics
     >,
   >(args: { channel: InputChannel; topics: InputTopics }): TToken {
-    const channelId: string =
-      typeof args.channel === "string"
-        ? args.channel
-        : typeof args.channel.name === "string"
-          ? args.channel.name
-          : "";
+    const channelId =
+      typeof args.channel === "string" ? args.channel : args.channel.name;
 
     if (!channelId) {
       throw new Error("Channel ID is required to create a subscription token");
