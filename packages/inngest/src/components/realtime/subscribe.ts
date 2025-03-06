@@ -1,6 +1,6 @@
 import debug from "debug";
 import { type Inngest } from "../Inngest.js";
-import { type Realtime } from "./types.js";
+import { Realtime } from "./types.js";
 
 /**
  * Map of token keys to active subscriptions.
@@ -71,14 +71,9 @@ export class TokenSubscription {
     };
 
     this.#ws.onmessage = (event) => {
-      // TODO parse
-      const msg = JSON.parse(event.data as string) as Realtime.Message;
-
-      // TODO Bad fix - message should only contain `topic` instead of `topics`
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-      msg.topic = (msg as any).topics[0];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-      delete (msg as any).topics;
+      const msg = Realtime.messageSchema.parse(
+        JSON.parse(event.data as string)
+      );
 
       if (this.#running) {
         // TODO Should we be receiving `topics` here instead of `topic`? Data leak?

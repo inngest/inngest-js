@@ -120,6 +120,40 @@ export namespace Realtime {
     }) => Token<TChannel, TTopics>;
   }
 
+  // We need to use a `Message` type so that we can appropriately type incoming
+  // and outgoing messages with generics, but we also need to validate these at
+  // runtime.
+  //
+  // Ideally in the future we use protobuf for this, but for now we use Zod.
+  // This type is used to assert that the Zod schema matches the generic type.
+  type _AssertMessageSchemaMatchesGeneric = Expect<
+    IsEqual<z.output<typeof messageSchema>, Message>
+  >;
+
+  export const messageSchema = z
+    .object({
+      channel: z.string(),
+      topics: z.array(z.string()),
+      data: z.any(),
+
+      metadata: z.object({
+        run_id: z.string(),
+        fn_id: z.string(),
+        fn_slug: z.string(),
+        created_at: z.string(),
+      }),
+
+      kind: z.enum(["step", "run", "data", "ping", "pong", "closing"]),
+    })
+    .transform(({ topics, data, ...rest }) => {
+      return {
+        ...rest,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        data: data ?? undefined,
+        topic: topics[0] as string,
+      };
+    });
+
   // Subscribe (output) msg
   export type Message<
     TChannelId extends string = string,
