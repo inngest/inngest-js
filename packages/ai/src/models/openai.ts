@@ -27,6 +27,7 @@ export const openai: AiAdapter.ModelCreator<
     authKey,
     format: "openai-chat",
     onCall(_, body) {
+      Object.assign(body, options.defaultParameters);
       body.model ||= options.model;
     },
     options,
@@ -76,6 +77,14 @@ export namespace OpenAi {
      * @default "https://api.openai.com/v1/"
      */
     baseUrl?: string;
+
+    /**
+     * Default parameters to use for the model when calling.
+     *
+     * Note that common parameters like `messages` will likely be overwritten by
+     * the adapter.
+     */
+    defaultParameters?: Partial<AiAdapter.Input<AiModel>>;
   }
 
   /**

@@ -45,6 +45,14 @@ export namespace Gemini {
      * ID of the model to use.
      */
     model: Gemini.Model;
+
+    /**
+     * Default parameters to use for the model when calling.
+     *
+     * Note that common parameters like `messages` will likely be overwritten by
+     * the adapter.
+     */
+    defaultParameters?: Partial<AiAdapter.Input<AiModel>>;
   }
 
   /**

@@ -36,8 +36,8 @@ export const anthropic: AiAdapter.ModelCreator<
     authKey,
     format: "anthropic",
     onCall(_, body) {
+      Object.assign(body, options.defaultParameters);
       body.model ||= options.model;
-      body.max_tokens ||= options.max_tokens;
     },
     headers,
     options,
@@ -64,11 +64,6 @@ export namespace Anthropic {
     model: Model;
 
     /**
-     * The maximum number of tokens to generate before stopping.
-     */
-    max_tokens: number;
-
-    /**
      * The Anthropic API key to use for authenticating your request. By default
      * we'll search for and use the `ANTHROPIC_API_KEY` environment variable.
      */
@@ -86,6 +81,15 @@ export namespace Anthropic {
      * @default "https://api.anthropic.com/v1/"
      */
     baseUrl?: string;
+
+    /**
+     * Default parameters to use for the model when calling.
+     *
+     * Note that common parameters like `messages` will likely be overwritten by
+     * the adapter.
+     */
+    defaultParameters: Partial<AiAdapter.Input<AiModel>> &
+      Required<Pick<AiAdapter.Input<AiModel>, "max_tokens">>;
   }
 
   /**

@@ -4,7 +4,7 @@ import { envKeys, processEnv } from "../env";
 
 /**
  * Create a DeepSeek model using the OpenAI-compatible chat format.
- * 
+ *
  * By default it targets the `https://api.deepseek.com/v1/` base URL.
  */
 export const deepseek: AiAdapter.ModelCreator<
@@ -27,6 +27,7 @@ export const deepseek: AiAdapter.ModelCreator<
     authKey,
     format: "openai-chat",
     onCall(_, body) {
+      Object.assign(body, options.defaultParameters);
       body.model ||= options.model;
     },
     options,
@@ -44,7 +45,7 @@ export namespace DeepSeek {
    */
   export interface AiModelOptions {
     /**
-     * ID of the model to use. Currently supports 'deepseek-chat' (DeepSeek-V3) 
+     * ID of the model to use. Currently supports 'deepseek-chat' (DeepSeek-V3)
      * and 'deepseek-reasoner' (DeepSeek-R1).
      */
     model: Model;
@@ -61,6 +62,14 @@ export namespace DeepSeek {
      * @default "https://api.deepseek.com/v1/"
      */
     baseUrl?: string;
+
+    /**
+     * Default parameters to use for the model when calling.
+     *
+     * Note that common parameters like `messages` will likely be overwritten by
+     * the adapter.
+     */
+    defaultParameters?: Partial<AiAdapter.Input<AiModel>>;
   }
 
   /**
@@ -69,4 +78,4 @@ export namespace DeepSeek {
   export interface AiModel extends OpenAiAiAdapter {
     options: AiModelOptions;
   }
-} 
+}
