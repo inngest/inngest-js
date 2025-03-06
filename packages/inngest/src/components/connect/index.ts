@@ -202,8 +202,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
       this.currentConnection = undefined;
     }
 
-    this.state = ConnectionState.CLOSED;
-
     this.debug("Connection closed");
 
     this.debug("Waiting for in-flight requests to complete");
@@ -219,6 +217,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       await this.messageBuffer.flush(this._hashedFallbackKey);
     }
 
+    this.state = ConnectionState.CLOSED;
     this.resolveClosingPromise?.();
 
     this.debug("Fully closed");
