@@ -358,6 +358,11 @@ export type IsEqual<A, B> = (<G>() => G extends A ? 1 : 2) extends <
   : false;
 
 /**
+ * Expects that a value resolves to `true`, useful for asserting type checks.
+ */
+export type Expect<T extends true> = T;
+
+/**
  * Returns a boolean for whether the given type `T` is `never`.
  */
 export type IsNever<T> = [T] extends [never] ? true : false;
