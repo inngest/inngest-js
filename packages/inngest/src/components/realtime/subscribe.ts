@@ -1,5 +1,5 @@
 import debug from "debug";
-import { Inngest } from "../../components/Inngest.js";
+import { type Inngest } from "../Inngest.js";
 import { type Realtime } from "./types.js";
 
 /**
@@ -10,33 +10,8 @@ import { type Realtime } from "./types.js";
  */
 const tokenSubscriptions = new Map<string, TokenSubscription>();
 
-export const getSubscribeToken: Realtime.Subscribe.TokenFn = async () => {};
-
-export const subscribe: Realtime.SubscribeFn = async (token, callback) => {
-  const subscription = new TokenSubscription(token);
-  const stream = subscription.getStream();
-
-  await subscription.connect();
-
-  const extras = {
-    close: () => subscription.close(),
-    cancel: () => subscription.close(),
-    getStream: () => subscription.getStream(),
-  };
-
-  if (callback) {
-    subscription.useCallback(stream, callback);
-
-    return Object.assign(() => {
-      subscription.close();
-    }, extras);
-  }
-
-  return Object.assign(subscription.getIterator(stream), extras);
-};
-
 // Must be a new connection for every token used.
-class TokenSubscription {
+export class TokenSubscription {
   #debug = debug("inngest:realtime");
 
   #running = false;
@@ -60,7 +35,10 @@ class TokenSubscription {
    */
   #topicsInUse: Map<string, number>;
 
-  constructor(public token: Realtime.Subscribe.Token) {
+  constructor(
+    public app: Inngest.Any,
+    public token: Realtime.Subscribe.Token
+  ) {
     this.#topicsInUse = new Map<string, number>(
       this.token.topics.map((topic) => [topic, 0])
     );
@@ -77,26 +55,12 @@ class TokenSubscription {
       throw new Error("WebSockets not supported in current environment");
     }
 
-    // .. connect and then
-    // const ws = new EventEmitter();
-    // ws.on("message", (data) => {
-    //   if (this.#running) {
-    //     this.#sourceStreamContoller?.enqueue(data);
-    //   }
-    // });
-
-    // // Fake traffic
-    // setInterval(() => {
-    //   ws.emit("message", { data: "Hello" });
-    // }, 1000);
-
-    // TODO Client will own this, so this will fix itself
-    const key =
-      this.token.key ??
-      new Inngest({ id: "test-app" })["inngestApi"].getSubscriptionToken(
-        this.token.channel,
-        this.token.topics
+    const key = this.token.key ?? this.app.getSubscriptionToken(this.token).key;
+    if (!key) {
+      throw new Error(
+        "No subscription token key passed and failed to retrieve one automatically"
       );
+    }
 
     this.#ws = new WebSocket(
       `ws://127.0.0.1:8288/v1/realtime/connect?token=${await key}`
@@ -110,21 +74,23 @@ class TokenSubscription {
       // TODO parse
       const msg = JSON.parse(event.data as string) as Realtime.Message;
 
+      // TODO Bad fix - message should only contain `topic` instead of `topics`
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      msg.topic = (msg as any).topics[0];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+      delete (msg as any).topics;
+
       if (this.#running) {
         // TODO Should we be receiving `topics` here instead of `topic`? Data leak?
         this.#debug(
-          `Received message on channel "${
-            msg.channel
-          }" for topics ${JSON.stringify(msg.topics)}:`,
+          `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
           msg.data
         );
 
         this.#sourceStreamContoller?.enqueue(event.data);
       } else {
         this.#debug(
-          `Received message on channel "${
-            msg.channel
-          }" for topics ${JSON.stringify(msg.topics)} but stream is closed`
+          `Received message on channel "${msg.channel}" for topic "${msg.topic}" but stream is closed`
         );
       }
     };
@@ -208,7 +174,8 @@ class TokenSubscription {
 
   public useCallback(
     stream: ReadableStream<Realtime.Message>,
-    callback: (message: Realtime.Message) => void
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    callback: Realtime.Subscribe.Callback<any>
   ) {
     void (async () => {
       const reader = stream.getReader();

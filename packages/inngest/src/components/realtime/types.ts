@@ -7,27 +7,40 @@ export namespace Realtime {
   ) => Promise<TMessage["data"]>;
 
   export type SubscribeFn = <
-    TSubscribeToken extends Subscribe.Token,
-    TCallback extends
-      | Subscribe.Callback<TSubscribeToken>
+    const InputChannel extends Realtime.Channel | string,
+    const InputTopics extends InputChannel extends Realtime.Channel
+      ? (keyof Realtime.Channel.InferTopics<InputChannel>)[]
+      : string[],
+    const TToken extends Realtime.Subscribe.Token<
+      InputChannel extends Realtime.Channel
+        ? InputChannel
+        : InputChannel extends string
+          ? Realtime.Channel<InputChannel>
+          : never,
+      InputTopics
+    >,
+    const TCallback extends
+      | Realtime.Subscribe.Callback<TToken>
       | undefined = undefined,
   >(
-    token: TSubscribeToken,
+    token: { channel: InputChannel; topics: InputTopics },
     callback?: TCallback
   ) => Promise<
     TCallback extends undefined
-      ? Subscribe.StreamSubscription<TSubscribeToken>
-      : Subscribe.CallbackSubscription
+      ? Realtime.Subscribe.StreamSubscription<TToken>
+      : Realtime.Subscribe.CallbackSubscription
   >;
 
   export namespace Subscribe {
     // TODO Allow warm/cold?
+    // @deprecated Use `StreamSubscription` instead.
     export type CallbackSubscription = () => void;
 
     export type StreamSubscription<
       TSubscribeToken extends Token = Token,
-      TData extends
-        Token.InferMessage<TSubscribeToken> = Token.InferMessage<TSubscribeToken>,
+      TData extends Simplify<Token.InferMessage<TSubscribeToken>> = Simplify<
+        Token.InferMessage<TSubscribeToken>
+      >,
     > = ReadableStream<TData> & {
       [Symbol.asyncIterator](): AsyncIterableIterator<TData>;
 
@@ -109,7 +122,7 @@ export namespace Realtime {
     >,
   > = {
     [K in keyof TTopics]: {
-      topics: [K]; // Odd - should be `topic` instead of `topics`? Data leak?
+      topic: K; // Odd - should be `topic` instead of `topics`? Data leak?
       data: Realtime.Topic.InferSubscribe<TTopics[K]>;
       channel: TChannelId;
 
@@ -152,7 +165,9 @@ export namespace Realtime {
       Realtime.Topic.Definition
     >,
   > = {
-    [K in keyof TTopics]: Realtime.Topic<TChannelId, TTopics[K]>;
+    [K in keyof TTopics | "name"]: K extends "name"
+      ? string
+      : Realtime.Topic<TChannelId, TTopics[K]>;
   };
 
   export namespace Channel {
