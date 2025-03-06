@@ -1,5 +1,15 @@
 # @inngest/ai
 
+## 0.0.5
+
+### Patch Changes
+
+- [#871](https://github.com/inngest/inngest-js/pull/871) [`58684e1`](https://github.com/inngest/inngest-js/commit/58684e19cd35271e5b5b8460443e363165155fe1) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Broaden adapter typing for better cross-package compatibility
+
+- [#870](https://github.com/inngest/inngest-js/pull/870) [`62e6a85`](https://github.com/inngest/inngest-js/commit/62e6a85d37e12e5772fcec1a26adaf77dbe4d837) Thanks [@charlypoly](https://github.com/charlypoly)! - fix(ai): allow arbitrary model name for OpenAI + add "gpt-4.5-preview" to list
+
+- [#869](https://github.com/inngest/inngest-js/pull/869) [`f446052`](https://github.com/inngest/inngest-js/commit/f4460528585f7f67c066fd7b8b7bdd87562014a0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow setting default parameters for models
+
 ## 0.0.4
 
 ### Patch Changes
