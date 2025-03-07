@@ -10,6 +10,8 @@ import {
   type GetStepTools,
 } from "@local";
 import { type createStepTools } from "@local/components/InngestStepTools";
+import { channel } from "@local/components/realtime/channel";
+import { topic } from "@local/components/realtime/topic";
 import {
   dummyEventKey,
   envKeys,
@@ -19,7 +21,7 @@ import {
 import { type IsAny, type IsEqual, type IsNever } from "@local/helpers/types";
 import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
-import { literal } from "zod";
+import { literal, z } from "zod";
 import { assertType, createClient } from "../test/helpers";
 
 const testEvent: EventPayload = {
@@ -1262,6 +1264,530 @@ describe("helper types", () => {
       type Expected = "foo" | "bar";
       type Actual = GetUnionKeyValue<Parameters<T0["sendEvent"]>[1], "name">;
       assertType<IsEqual<Expected, Actual>>(true);
+    });
+  });
+});
+
+describe("subscribe", () => {
+  describe("types", () => {
+    const inngest = createClient({ id: "test" });
+
+    const createdTopic = topic("created").schema(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+      })
+    );
+
+    const updatedTopic = topic("updated").type<boolean>();
+
+    const staticChannel = channel("static")
+      .addTopic(createdTopic)
+      .addTopic(updatedTopic);
+
+    const userChannel = channel((userId: string) => `user/${userId}`)
+      .addTopic(createdTopic)
+      .addTopic(updatedTopic);
+
+    describe("strings only", () => {
+      test("can subscribe with just strings", () => {
+        const _fn = async () => {
+          const stream = await inngest.subscribe(
+            {
+              channel: "test",
+              topics: ["foo", "bar"],
+            },
+            (message) => {
+              assertType<"test">(message.channel);
+              assertType<"foo" | "bar">(message.topic);
+
+              if (message.topic === "foo") {
+                assertType<IsAny<typeof message.data>>(true);
+              } else {
+                assertType<IsAny<typeof message.data>>(true);
+              }
+            }
+          );
+
+          for await (const message of stream) {
+            assertType<"test">(message.channel);
+            assertType<"foo" | "bar">(message.topic);
+
+            if (message.topic === "foo") {
+              assertType<IsAny<typeof message.data>>(true);
+            } else {
+              assertType<IsAny<typeof message.data>>(true);
+            }
+          }
+
+          const reader = stream.getReader();
+          const { value: message, done } = await reader.read();
+          if (!done) {
+            assertType<"test">(message.channel);
+            assertType<"foo" | "bar">(message.topic);
+
+            if (message.topic === "foo") {
+              assertType<IsAny<typeof message.data>>(true);
+            } else {
+              assertType<IsAny<typeof message.data>>(true);
+            }
+          }
+        };
+      });
+    });
+
+    describe("type-only channel import", () => {
+      test("errors if channel name is incorrect", () => {
+        const _fn = () => {
+          void inngest.subscribe<typeof userChannel>({
+            // @ts-expect-error Incorrect channel
+            channel: "test",
+            topics: ["created", "updated"],
+          });
+        };
+      });
+
+      test("errors if topic names are incorrect with static channel", () => {
+        const _fn = () => {
+          void inngest.subscribe<typeof staticChannel>({
+            channel: "static",
+            // @ts-expect-error Incorrect topic
+            topics: ["created", "updated", "test"],
+          });
+        };
+      });
+
+      test("errors if topic names are incorrect with dynamic channel", () => {
+        const _fn = () => {
+          void inngest.subscribe<typeof userChannel>({
+            channel: "user/123",
+            // @ts-expect-error Incorrect topic
+            topics: ["created", "updated", "test"],
+          });
+        };
+      });
+
+      test("can subscribe using types only of a static channel", () => {
+        const _fn = async () => {
+          const stream = await inngest.subscribe<typeof staticChannel>(
+            {
+              channel: "static",
+              topics: ["created", "updated"],
+            },
+            (message) => {
+              assertType<"static">(message.channel);
+              assertType<"created" | "updated">(message.topic);
+
+              if (message.topic === "created") {
+                assertType<{ id: string; name: string }>(message.data);
+              } else {
+                assertType<boolean>(message.data);
+              }
+            }
+          );
+
+          for await (const message of stream) {
+            assertType<"static">(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+
+          const reader = stream.getReader();
+          const { value: message, done } = await reader.read();
+          if (!done) {
+            assertType<"static">(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+        };
+      });
+
+      test("can subscribe using types only of a dynamic channel", () => {
+        const _fn = async () => {
+          const stream = await inngest.subscribe<typeof userChannel>(
+            {
+              channel: "user/123",
+              topics: ["created", "updated"],
+            },
+            (message) => {
+              assertType<`user/${string}`>(message.channel);
+              assertType<"created" | "updated">(message.topic);
+
+              if (message.topic === "created") {
+                assertType<{ id: string; name: string }>(message.data);
+              } else {
+                assertType<boolean>(message.data);
+              }
+            }
+          );
+
+          for await (const message of stream) {
+            assertType<`user/${string}`>(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+
+          const reader = stream.getReader();
+          const { value: message, done } = await reader.read();
+          if (!done) {
+            assertType<`user/${string}`>(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+        };
+      });
+    });
+
+    describe("runtime channel import", () => {
+      test("errors if static definition given", () => {
+        const _fn = () => {
+          void inngest.subscribe({
+            // @ts-expect-error Definition given
+            channel: staticChannel,
+            topics: ["created", "updated"],
+          });
+        };
+      });
+
+      test("errors if dynamic definition given", () => {
+        const _fn = () => {
+          void inngest.subscribe({
+            // @ts-expect-error Definition given
+            channel: userChannel,
+            topics: ["created", "updated"],
+          });
+        };
+      });
+
+      test("errors if topic names are incorrect with static channel", () => {
+        const _fn = () => {
+          void inngest.subscribe({
+            channel: staticChannel(),
+            // @ts-expect-error Incorrect topic
+            topics: ["created", "updated", "test"],
+          });
+        };
+      });
+
+      test("errors if topic names are incorrect with dynamic channel", () => {
+        const _fn = () => {
+          void inngest.subscribe({
+            channel: userChannel("123"),
+            // @ts-expect-error Incorrect topic
+            topics: ["created", "updated", "test"],
+          });
+        };
+      });
+
+      test("can subscribe with runtime import of a static channel", () => {
+        const _fn = async () => {
+          const stream = await inngest.subscribe({
+            channel: staticChannel(),
+            topics: ["created", "updated"],
+          });
+
+          for await (const message of stream) {
+            assertType<"static">(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+
+          const reader = stream.getReader();
+          const { value: message, done } = await reader.read();
+          if (!done) {
+            assertType<"static">(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+        };
+      });
+
+      test("can subscribe with runtime import of a dynamic channel", () => {
+        const _fn = async () => {
+          const stream = await inngest.subscribe({
+            channel: userChannel("123"),
+            topics: ["created", "updated"],
+          });
+
+          for await (const message of stream) {
+            assertType<`user/${string}`>(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+
+          const reader = stream.getReader();
+          const { value: message, done } = await reader.read();
+          if (!done) {
+            assertType<`user/${string}`>(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+        };
+      });
+    });
+
+    describe("tokens", () => {
+      test("can subscribe with a string-only token", () => {
+        const _fn = async () => {
+          const token = await inngest.getSubscriptionToken({
+            channel: "test",
+            topics: ["foo", "bar"],
+          });
+
+          const stream = await inngest.subscribe(token, (message) => {
+            assertType<"test">(message.channel);
+            assertType<"foo" | "bar">(message.topic);
+
+            if (message.topic === "foo") {
+              assertType<IsAny<typeof message.data>>(true);
+            } else {
+              assertType<IsAny<typeof message.data>>(true);
+            }
+          });
+
+          for await (const message of stream) {
+            assertType<"test">(message.channel);
+            assertType<"foo" | "bar">(message.topic);
+
+            if (message.topic === "foo") {
+              assertType<IsAny<typeof message.data>>(true);
+            } else {
+              assertType<IsAny<typeof message.data>>(true);
+            }
+          }
+
+          const reader = stream.getReader();
+          const { value: message, done } = await reader.read();
+          if (!done) {
+            assertType<"test">(message.channel);
+            assertType<"foo" | "bar">(message.topic);
+
+            if (message.topic === "foo") {
+              assertType<IsAny<typeof message.data>>(true);
+            } else {
+              assertType<IsAny<typeof message.data>>(true);
+            }
+          }
+        };
+      });
+
+      test("can subscribe with a type-only import static typed token", () => {
+        const _fn = async () => {
+          const token = await inngest.getSubscriptionToken<
+            typeof staticChannel
+          >({
+            channel: "static",
+            topics: ["created", "updated"],
+          });
+
+          const stream = await inngest.subscribe(token, (message) => {
+            assertType<"static">(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          });
+
+          for await (const message of stream) {
+            assertType<"static">(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+
+          const reader = stream.getReader();
+          const { value: message, done } = await reader.read();
+          if (!done) {
+            assertType<"static">(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+        };
+      });
+
+      test("can subscribe with a runtime import static typed token", () => {
+        const _fn = async () => {
+          const token = await inngest.getSubscriptionToken({
+            channel: staticChannel(),
+            topics: ["created", "updated"],
+          });
+
+          const stream = await inngest.subscribe(token, (message) => {
+            assertType<"static">(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          });
+
+          for await (const message of stream) {
+            assertType<"static">(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+
+          const reader = stream.getReader();
+          const { value: message, done } = await reader.read();
+          if (!done) {
+            assertType<"static">(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+        };
+      });
+
+      test("can subscribe with a type-only import dynamic typed token", () => {
+        const _fn = async () => {
+          const token = await inngest.getSubscriptionToken<typeof userChannel>({
+            channel: "user/123",
+            topics: ["created", "updated"],
+          });
+
+          const stream = await inngest.subscribe(token, (message) => {
+            assertType<`user/${string}`>(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          });
+
+          for await (const message of stream) {
+            assertType<`user/${string}`>(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+
+          const reader = stream.getReader();
+          const { value: message, done } = await reader.read();
+          if (!done) {
+            assertType<`user/${string}`>(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+        };
+      });
+
+      test("can subscribe with a runtime import dynamic typed token", () => {
+        const _fn = async () => {
+          const token = await inngest.getSubscriptionToken({
+            channel: userChannel("123"),
+            topics: ["created", "updated"],
+          });
+
+          const stream = await inngest.subscribe(token, (message) => {
+            assertType<`user/${string}`>(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          });
+
+          for await (const message of stream) {
+            assertType<`user/${string}`>(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+
+          const reader = stream.getReader();
+          const { value: message, done } = await reader.read();
+          if (!done) {
+            assertType<`user/${string}`>(message.channel);
+            assertType<"created" | "updated">(message.topic);
+
+            if (message.topic === "created") {
+              assertType<{ id: string; name: string }>(message.data);
+            } else {
+              assertType<boolean>(message.data);
+            }
+          }
+        };
+      });
     });
   });
 });
