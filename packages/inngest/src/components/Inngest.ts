@@ -306,19 +306,46 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * TODO
    */
   public async subscribe<
-    const InputChannel extends Realtime.Channel | string,
-    const InputTopics extends InputChannel extends Realtime.Channel
-      ? (keyof Realtime.Channel.InferTopics<InputChannel>)[]
-      : string[],
+    const InputChannel extends
+      | Realtime.Channel.Definition
+      | Realtime.Channel
+      | string,
+    const InputTopics extends InputChannel extends Realtime.Channel.Definition
+      ? (keyof Realtime.Channel.Definition.InferTopics<InputChannel>)[]
+      : InputChannel extends Realtime.Channel
+        ? (keyof Realtime.Channel.InferTopics<InputChannel>)[]
+        : string[] = InputChannel extends Realtime.Channel.Definition
+      ? (keyof Realtime.Channel.Definition.InferTopics<InputChannel>)[]
+      : InputChannel extends Realtime.Channel
+        ? (keyof Realtime.Channel.InferTopics<InputChannel>)[]
+        : string[],
     const TToken extends Realtime.Subscribe.Token<
-      InputChannel extends Realtime.Channel
-        ? InputChannel
-        : InputChannel extends string
-          ? Realtime.Channel<InputChannel>
-          : never,
+      InputChannel extends Realtime.Channel.Definition
+        ? Realtime.Channel<
+            Realtime.Channel.Definition.InferId<InputChannel>,
+            Realtime.Channel.Definition.InferTopics<InputChannel>
+          >
+        : InputChannel extends Realtime.Channel
+          ? InputChannel
+          : InputChannel extends string
+            ? Realtime.Channel<InputChannel>
+            : never,
+      InputTopics
+    > = Realtime.Subscribe.Token<
+      InputChannel extends Realtime.Channel.Definition
+        ? Realtime.Channel<
+            Realtime.Channel.Definition.InferId<InputChannel>,
+            Realtime.Channel.Definition.InferTopics<InputChannel>
+          >
+        : InputChannel extends Realtime.Channel
+          ? InputChannel
+          : InputChannel extends string
+            ? Realtime.Channel<InputChannel>
+            : never,
       InputTopics
     >,
-    const TOutput extends Realtime.Subscribe.StreamSubscription<TToken>,
+    const TOutput extends
+      Realtime.Subscribe.StreamSubscription<TToken> = Realtime.Subscribe.StreamSubscription<TToken>,
   >(
     /**
      * TODO
@@ -327,7 +354,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       /**
        * TODO
        */
-      channel: InputChannel;
+      channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
 
       /**
        * TODO
@@ -877,6 +904,9 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
           return {
             transformInput({ ctx: { step } }) {
               const publish: Realtime.PublishFn = async (input) => {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                const { topic, channel, data } = await input;
+
                 const store = await getAsyncCtx();
                 if (!store) {
                   throw new Error(
@@ -885,14 +915,14 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
                 }
 
                 const subscription: InngestApi.Subscription = {
-                  topics: [input.topic],
-                  channel: input.channel,
+                  topics: [topic],
+                  channel,
                 };
 
                 const action = async () => {
                   const result = await client["inngestApi"].publish(
                     subscription,
-                    input.data
+                    data
                   );
 
                   if (!result.ok) {
@@ -910,7 +940,7 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
                 ).then(() => {
                   // Always return the data passed in to the `publish` call.
                   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-                  return input.data;
+                  return data;
                 });
               };
 

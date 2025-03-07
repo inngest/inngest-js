@@ -17,9 +17,22 @@ export const channel: Realtime.Channel.Builder = (
     const finalId: string = typeof id === "string" ? id : id(...args);
 
     const topicsFns = Object.entries(topics).reduce<
-      Record<string, (data: unknown) => Realtime.Message.Input>
+      Record<string, (data: unknown) => Promise<Realtime.Message.Input>>
     >((acc, [name, topic]) => {
-      acc[name] = (data: unknown) => {
+      acc[name] = async (data: unknown) => {
+        const schema = topic.getSchema();
+        if (schema) {
+          try {
+            await schema["~standard"].validate(data);
+          } catch (err) {
+            console.error(
+              `Failed schema validation for channel "${finalId}" topic "${name}":`,
+              err
+            );
+            throw new Error("Failed schema validation");
+          }
+        }
+
         return {
           channel: finalId,
           topic: name,

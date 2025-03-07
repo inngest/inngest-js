@@ -5,43 +5,21 @@ import {
   type IsEqual,
   type IsLiteral,
   type IsStringLiteral,
+  type MaybePromise,
   type Simplify,
 } from "../../helpers/types.js";
 
 export namespace Realtime {
-  export type PublishFn = <TMessage extends Realtime.Message.Input>(
-    message: TMessage
-  ) => Promise<TMessage["data"]>;
-
-  export type SubscribeFn = <
-    const InputChannel extends Realtime.Channel | string,
-    const InputTopics extends InputChannel extends Realtime.Channel
-      ? (keyof Realtime.Channel.InferTopics<InputChannel>)[]
-      : string[],
-    const TToken extends Realtime.Subscribe.Token<
-      InputChannel extends Realtime.Channel
-        ? InputChannel
-        : InputChannel extends string
-          ? Realtime.Channel<InputChannel>
-          : never,
-      InputTopics
-    >,
-    const TCallback extends
-      | Realtime.Subscribe.Callback<TToken>
-      | undefined = undefined,
+  export type PublishFn = <
+    TMessage extends MaybePromise<Realtime.Message.Input>,
   >(
-    token: { channel: InputChannel; topics: InputTopics },
-    callback?: TCallback
-  ) => Promise<
-    TCallback extends undefined
-      ? Realtime.Subscribe.StreamSubscription<TToken>
-      : Realtime.Subscribe.CallbackSubscription
-  >;
+    message: TMessage
+  ) => Promise<Awaited<TMessage>["data"]>;
 
   export namespace Subscribe {
-    // TODO Allow warm/cold?
-    // @deprecated Use `StreamSubscription` instead.
-    export type CallbackSubscription = () => void;
+    export type InferChannelInput<T> = T extends Realtime.Channel.Definition
+      ? Realtime.Channel.Definition.InferId<T>
+      : T;
 
     export type StreamSubscription<
       TSubscribeToken extends Token = Token,
@@ -106,22 +84,10 @@ export namespace Realtime {
         : never;
 
       export type InferMessage<TToken extends Token> = Realtime.Message<
-        TToken["channel"] extends string
-          ? TToken["channel"]
-          : TToken["channel"] extends Channel
-            ? Channel.InferId<TToken["channel"]>
-            : never,
+        Channel.InferId<Token.InferChannel<TToken>>,
         Token.InferTopicData<TToken>
       >;
     }
-
-    export type TokenFn = <
-      const TChannel extends Channel,
-      const TTopics extends (keyof Channel.InferTopics<TChannel>)[],
-    >(args: {
-      channel: TChannel;
-      topics: TTopics;
-    }) => Token<TChannel, TTopics>;
   }
 
   // We need to use a `Message` type so that we can appropriately type incoming
@@ -232,7 +198,8 @@ export namespace Realtime {
         : Record<string, Realtime.Topic.Definition>;
 
     export interface Definition<
-      TChannelBuilderFn extends BuilderFn = () => string,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      TChannelBuilderFn extends BuilderFn = (...args: any[]) => string,
       TTopics extends Record<string, Topic.Definition> = Record<
         string,
         Topic.Definition
@@ -247,6 +214,23 @@ export namespace Realtime {
       ): Definition<TChannelBuilderFn, AddTopic<TTopics, UTopic>>;
 
       topics: TTopics;
+    }
+
+    export namespace Definition {
+      export type InferId<TChannel extends Definition> =
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        TChannel extends Definition<infer IBuilder, any>
+          ? ReturnType<IBuilder>
+          : string;
+
+      export type InferTopics<TChannel extends Definition> =
+        TChannel extends Definition<
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          any,
+          infer ITopics
+        >
+          ? ITopics
+          : Record<string, Topic.Definition>;
     }
 
     export type AddTopic<
@@ -282,10 +266,12 @@ export namespace Realtime {
     TTopic extends Topic.Definition = Topic.Definition,
   > = (
     data: Topic.InferPublish<TTopic>
-  ) => Realtime.Message.Input<
-    TChannelId,
-    Topic.InferId<TTopic>,
-    Topic.InferPublish<TTopic>
+  ) => Promise<
+    Realtime.Message.Input<
+      TChannelId,
+      Topic.InferId<TTopic>,
+      Topic.InferPublish<TTopic>
+    >
   >;
 
   export namespace Topic {
