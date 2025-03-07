@@ -233,18 +233,16 @@ export class TokenSubscription {
     };
 
     this.#ws.onmessage = async (event) => {
-      const {
-        success,
-        data: msg,
-        error: err,
-      } = await Realtime.messageSchema.safeParseAsync(
+      const parseRes = await Realtime.messageSchema.safeParseAsync(
         JSON.parse(event.data as string)
       );
 
-      if (!success) {
-        this.#debug("Received invalid message:", err);
+      if (!parseRes.success) {
+        this.#debug("Received invalid message:", parseRes.error);
         return;
       }
+
+      const msg = parseRes.data;
 
       if (!this.#running) {
         this.#debug(
