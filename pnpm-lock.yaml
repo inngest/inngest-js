@@ -125,8 +125,8 @@ importers:
         specifier: ^2.4.1
         version: 2.4.1
       zod:
-        specifier: ~3.24.2
-        version: 3.24.2
+        specifier: ~3.22.3
+        version: 3.22.3
     devDependencies:
       '@actions/core':
         specifier: ^1.10.0
@@ -5319,9 +5319,6 @@ packages:
 
   zod@3.22.3:
     resolution: {integrity: sha512-EjIevzuJRiRPbVH4mGc8nApb/lVLKVpmUhAaR5R5doKGfAnGJ6Gr3CViAVjP+4FWSxCsybeWQdcgCtbX+7oZug==}
-
-  zod@3.24.2:
-    resolution: {integrity: sha512-lY7CDW43ECgW9u1TcT3IoXHflywfVqDYze4waEz812jR/bZ8FHDsl7pFQoSZTz5N+2NqRXs8GBwnAwo3ZNxqhQ==}
 
 snapshots:
 
@@ -11447,5 +11444,3 @@ snapshots:
   yocto-queue@0.1.0: {}
 
   zod@3.22.3: {}
-
-  zod@3.24.2: {}

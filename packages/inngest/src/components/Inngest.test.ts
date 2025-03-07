@@ -25,7 +25,8 @@ import {
 import { type IsAny, type IsEqual, type IsNever } from "@local/helpers/types";
 import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
-import { literal, z } from "zod";
+import * as v from "valibot";
+import { literal } from "zod";
 import { assertType, createClient } from "../test/helpers";
 
 const testEvent: EventPayload = {
@@ -1277,9 +1278,9 @@ describe("subscribe", () => {
     const inngest = createClient({ id: "test" });
 
     const createdTopic = topic("created").schema(
-      z.object({
-        id: z.string(),
-        name: z.string(),
+      v.object({
+        id: v.string(),
+        name: v.string(),
       })
     );
 
