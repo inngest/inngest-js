@@ -93,12 +93,20 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
    * Idempotently start the execution of the user's function.
    */
   public start() {
-    this.debug("starting V2 execution");
+    if (!this.execution) {
+      this.debug("starting V2 execution");
 
-    return (this.execution ??= this._start().then((result) => {
-      this.debug("result:", result);
-      return result;
-    }));
+      this.execution = getAsyncLocalStorage().then((als) => {
+        return als.run({ ctx: this.fnArg }, async () => {
+          return this._start().then((result) => {
+            this.debug("result:", result);
+            return result;
+          });
+        });
+      });
+    }
+
+    return this.execution;
   }
 
   /**
@@ -462,48 +470,44 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
    * and middleware hooks where appropriate.
    */
   private async startExecution(): Promise<void> {
-    return getAsyncLocalStorage().then((als) =>
-      als.run({ ctx: this.fnArg }, async (): Promise<void> => {
-        /**
-         * Mutate input as neccessary based on middleware.
-         */
-        await this.transformInput();
+    /**
+     * Mutate input as neccessary based on middleware.
+     */
+    await this.transformInput();
 
-        /**
-         * Start the timer to time out the run if needed.
-         */
-        void this.timeout?.start();
+    /**
+     * Start the timer to time out the run if needed.
+     */
+    void this.timeout?.start();
 
-        await this.state.hooks?.beforeMemoization?.();
+    await this.state.hooks?.beforeMemoization?.();
 
-        /**
-         * If we had no state to begin with, immediately end the memoization phase.
-         */
-        if (this.state.allStateUsed()) {
-          await this.state.hooks?.afterMemoization?.();
-          await this.state.hooks?.beforeExecution?.();
-        }
+    /**
+     * If we had no state to begin with, immediately end the memoization phase.
+     */
+    if (this.state.allStateUsed()) {
+      await this.state.hooks?.afterMemoization?.();
+      await this.state.hooks?.beforeExecution?.();
+    }
 
-        /**
-         * Trigger the user's function.
-         */
-        runAsPromise(() => this.userFnToRun(this.fnArg))
-          // eslint-disable-next-line @typescript-eslint/no-misused-promises
-          .finally(async () => {
-            await this.state.hooks?.afterMemoization?.();
-            await this.state.hooks?.beforeExecution?.();
-            await this.state.hooks?.afterExecution?.();
-          })
-          .then((data) => {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            this.state.setCheckpoint({ type: "function-resolved", data });
-          })
-          .catch((error) => {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            this.state.setCheckpoint({ type: "function-rejected", error });
-          });
+    /**
+     * Trigger the user's function.
+     */
+    runAsPromise(() => this.userFnToRun(this.fnArg))
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises
+      .finally(async () => {
+        await this.state.hooks?.afterMemoization?.();
+        await this.state.hooks?.beforeExecution?.();
+        await this.state.hooks?.afterExecution?.();
       })
-    );
+      .then((data) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        this.state.setCheckpoint({ type: "function-resolved", data });
+      })
+      .catch((error) => {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        this.state.setCheckpoint({ type: "function-rejected", error });
+      });
   }
 
   /**
