@@ -93,12 +93,20 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
    * Idempotently start the execution of the user's function.
    */
   public start() {
-    this.debug("starting V2 execution");
+    if (!this.execution) {
+      this.debug("starting V2 execution");
 
-    return (this.execution ??= this._start().then((result) => {
-      this.debug("result:", result);
-      return result;
-    }));
+      this.execution = getAsyncLocalStorage().then((als) => {
+        return als.run({ ctx: this.fnArg }, async () => {
+          return this._start().then((result) => {
+            this.debug("result:", result);
+            return result;
+          });
+        });
+      });
+    }
+
+    return this.execution;
   }
 
   /**
