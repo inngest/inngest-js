@@ -191,9 +191,25 @@ export namespace Realtime {
       ? IId
       : string;
 
-    export type InferTopics<TChannel extends Channel> =
+    export type AsChannel<T extends Channel.Definition | Channel | string> =
+      T extends Channel.Definition
+        ? Realtime.Channel<
+            Realtime.Channel.Definition.InferId<T>,
+            Realtime.Channel.Definition.InferTopics<T>
+          >
+        : T extends Channel
+          ? T
+          : T extends string
+            ? Realtime.Channel<T>
+            : never;
+
+    export type InferTopics<
+      TChannel extends Channel,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      TChannel extends Channel<any, infer ITopics>
+    > = TChannel extends Channel.Definition<any, infer ITopics>
+      ? ITopics
+      : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        TChannel extends Channel<any, infer ITopics>
         ? ITopics
         : Record<string, Realtime.Topic.Definition>;
 

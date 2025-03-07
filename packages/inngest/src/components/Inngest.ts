@@ -310,38 +310,18 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       | Realtime.Channel.Definition
       | Realtime.Channel
       | string,
-    const InputTopics extends InputChannel extends Realtime.Channel.Definition
-      ? (keyof Realtime.Channel.Definition.InferTopics<InputChannel>)[]
-      : InputChannel extends Realtime.Channel
-        ? (keyof Realtime.Channel.InferTopics<InputChannel>)[]
-        : string[] = InputChannel extends Realtime.Channel.Definition
-      ? (keyof Realtime.Channel.Definition.InferTopics<InputChannel>)[]
-      : InputChannel extends Realtime.Channel
-        ? (keyof Realtime.Channel.InferTopics<InputChannel>)[]
-        : string[],
+    const InputTopics extends (keyof Realtime.Channel.InferTopics<
+      Realtime.Channel.AsChannel<InputChannel>
+    > &
+      string)[] = (keyof Realtime.Channel.InferTopics<
+      Realtime.Channel.AsChannel<InputChannel>
+    > &
+      string)[],
     const TToken extends Realtime.Subscribe.Token<
-      InputChannel extends Realtime.Channel.Definition
-        ? Realtime.Channel<
-            Realtime.Channel.Definition.InferId<InputChannel>,
-            Realtime.Channel.Definition.InferTopics<InputChannel>
-          >
-        : InputChannel extends Realtime.Channel
-          ? InputChannel
-          : InputChannel extends string
-            ? Realtime.Channel<InputChannel>
-            : never,
+      Realtime.Channel.AsChannel<InputChannel>,
       InputTopics
     > = Realtime.Subscribe.Token<
-      InputChannel extends Realtime.Channel.Definition
-        ? Realtime.Channel<
-            Realtime.Channel.Definition.InferId<InputChannel>,
-            Realtime.Channel.Definition.InferTopics<InputChannel>
-          >
-        : InputChannel extends Realtime.Channel
-          ? InputChannel
-          : InputChannel extends string
-            ? Realtime.Channel<InputChannel>
-            : never,
+      Realtime.Channel.AsChannel<InputChannel>,
       InputTopics
     >,
     const TOutput extends
