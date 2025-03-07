@@ -66,6 +66,7 @@ export namespace AnthropicAiAdapter {
           | ImageBlockParam
           | ToolUseBlockParam
           | ToolResultBlockParam
+          | DocumentBlockParam
         >;
 
     role: "user" | "assistant";
@@ -121,6 +122,21 @@ export namespace AnthropicAiAdapter {
 
       type: "base64";
     }
+  }
+
+  export interface DocumentBlockParam {
+    source:
+      | {
+          type: "url";
+          url: string;
+        }
+      | {
+          type: "base64";
+          media_type: "application/pdf";
+          data: string;
+        };
+
+    type: "document";
   }
 
   export interface Message {

@@ -1,5 +1,11 @@
 # @inngest/ai
 
+## 0.1.0
+
+### Minor Changes
+
+- [#874](https://github.com/inngest/inngest-js/pull/874) [`6e8b258`](https://github.com/inngest/inngest-js/commit/6e8b258abe7eb48b8a46c6f15fdbc45f1441cbd3) Thanks [@charlypoly](https://github.com/charlypoly)! - feat(ai): add support for Anthropic Claude `"type": "document"` PDF parsing capabilities
+
 ## 0.0.5
 
 ### Patch Changes
