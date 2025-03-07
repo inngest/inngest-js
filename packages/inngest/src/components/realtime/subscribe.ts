@@ -63,8 +63,7 @@ export class TokenSubscription {
       this.#topics = this.token.topics.reduce<
         Record<string, Realtime.Topic.Definition>
       >((acc, name) => {
-        acc[name] =
-          (token.channel as Realtime.Channel).topics[name] ?? topic(name);
+        acc[name] = token.channel.topics[name] ?? topic(name);
 
         return acc;
       }, {});
@@ -82,7 +81,8 @@ export class TokenSubscription {
       throw new Error("WebSockets not supported in current environment");
     }
 
-    const key = this.token.key ?? this.app.getSubscriptionToken(this.token).key;
+    const key =
+      this.token.key || (await this.app.getSubscriptionToken(this.token)).key;
     if (!key) {
       throw new Error(
         "No subscription token key passed and failed to retrieve one automatically"
@@ -90,7 +90,7 @@ export class TokenSubscription {
     }
 
     this.#ws = new WebSocket(
-      `ws://127.0.0.1:8288/v1/realtime/connect?token=${await key}`
+      `ws://127.0.0.1:8288/v1/realtime/connect?token=${key}`
     );
 
     this.#ws.onopen = () => {

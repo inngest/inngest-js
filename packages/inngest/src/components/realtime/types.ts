@@ -52,16 +52,16 @@ export namespace Realtime {
       TSubscribeToken extends Subscribe.Token = Subscribe.Token,
     > = (message: Token.InferMessage<TSubscribeToken>) => void;
 
-    export type Token<
+    export interface Token<
       TChannel extends Channel = Channel,
       TTopics extends
         (keyof Channel.InferTopics<TChannel>)[] = (keyof Channel.InferTopics<TChannel>)[],
-    > = {
+    > {
       // key used to auth - could be undefined as then we can do a cold subscribe
-      key?: Promise<string> | undefined;
-      channel: TChannel | Channel.InferId<TChannel>;
+      key?: string | undefined;
+      channel: TChannel;
       topics: TTopics;
-    };
+    }
 
     export namespace Token {
       export type InferChannel<TToken extends Token> = TToken extends Token<
@@ -83,9 +83,11 @@ export namespace Realtime {
         ? { [K in ITopics[number]]: TChannelTopics[K] }
         : never;
 
-      export type InferMessage<TToken extends Token> = Realtime.Message<
-        Channel.InferId<Token.InferChannel<TToken>>,
-        Token.InferTopicData<TToken>
+      export type InferMessage<TToken extends Token> = Simplify<
+        Realtime.Message<
+          Channel.InferId<Token.InferChannel<TToken>>,
+          Token.InferTopicData<TToken>
+        >
       >;
     }
   }

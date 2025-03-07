@@ -255,17 +255,23 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   /**
    * TODO
    */
-  public getSubscriptionToken<
-    const InputChannel extends Realtime.Channel | string,
-    const InputTopics extends InputChannel extends Realtime.Channel
-      ? (keyof Realtime.Channel.InferTopics<InputChannel>)[]
-      : string[],
+  public async getSubscriptionToken<
+    const InputChannel extends
+      | Realtime.Channel.Definition
+      | Realtime.Channel
+      | string,
+    const InputTopics extends (keyof Realtime.Channel.InferTopics<
+      Realtime.Channel.AsChannel<InputChannel>
+    > &
+      string)[] = (keyof Realtime.Channel.InferTopics<
+      Realtime.Channel.AsChannel<InputChannel>
+    > &
+      string)[],
     const TToken extends Realtime.Subscribe.Token<
-      InputChannel extends Realtime.Channel
-        ? InputChannel
-        : InputChannel extends string
-          ? Realtime.Channel<InputChannel>
-          : never,
+      Realtime.Channel.AsChannel<InputChannel>,
+      InputTopics
+    > = Realtime.Subscribe.Token<
+      Realtime.Channel.AsChannel<InputChannel>,
       InputTopics
     >,
   >(
@@ -276,14 +282,14 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       /**
        * TODO
        */
-      channel: InputChannel;
+      channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
 
       /**
        * TODO
        */
       topics: InputTopics;
     }
-  ): TToken {
+  ): Promise<TToken> {
     const channelId =
       typeof args.channel === "string" ? args.channel : args.channel.name;
 
@@ -291,7 +297,10 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       throw new Error("Channel ID is required to create a subscription token");
     }
 
-    const key = this.inngestApi.getSubscriptionToken(channelId, args.topics);
+    const key = await this.inngestApi.getSubscriptionToken(
+      channelId,
+      args.topics
+    );
 
     const token = {
       channel: channelId,
