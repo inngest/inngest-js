@@ -1,5 +1,6 @@
 import debug from "debug";
 import { type Inngest } from "../Inngest.js";
+import { topic } from "./topic.js";
 import { Realtime } from "./types.js";
 
 /**
@@ -35,6 +36,9 @@ export class TokenSubscription {
    */
   #topicsInUse: Map<string, number>;
 
+  #channelId: string;
+  #topics: Record<string, Realtime.Topic.Definition>;
+
   constructor(
     public app: Inngest.Any,
     public token: Realtime.Subscribe.Token
@@ -42,13 +46,36 @@ export class TokenSubscription {
     this.#topicsInUse = new Map<string, number>(
       this.token.topics.map((topic) => [topic, 0])
     );
+
+    if (typeof token.channel === "string") {
+      this.#channelId = token.channel;
+
+      this.#topics = this.token.topics.reduce<
+        Record<string, Realtime.Topic.Definition>
+      >((acc, name) => {
+        acc[name] = topic(name);
+
+        return acc;
+      }, {});
+    } else {
+      this.#channelId = token.channel.name;
+
+      this.#topics = this.token.topics.reduce<
+        Record<string, Realtime.Topic.Definition>
+      >((acc, name) => {
+        acc[name] =
+          (token.channel as Realtime.Channel).topics[name] ?? topic(name);
+
+        return acc;
+      }, {});
+    }
   }
 
   public async connect() {
     this.#debug(
       `Establishing connection to channel "${
-        this.token.channel
-      }" with topics ${JSON.stringify(this.token.topics)}...`
+        this.#channelId
+      }" with topics ${JSON.stringify(this.#topics)}...`
     );
 
     if (typeof WebSocket === "undefined") {
@@ -70,10 +97,19 @@ export class TokenSubscription {
       this.#debug("WebSocket connection established");
     };
 
-    this.#ws.onmessage = (event) => {
-      const msg = Realtime.messageSchema.parse(
+    this.#ws.onmessage = async (event) => {
+      const {
+        success,
+        data: msg,
+        error: err,
+      } = await Realtime.messageSchema.safeParseAsync(
         JSON.parse(event.data as string)
       );
+
+      if (!success) {
+        this.#debug("Received invalid message:", err);
+        return;
+      }
 
       if (!this.#running) {
         this.#debug(
@@ -81,29 +117,35 @@ export class TokenSubscription {
         );
       }
 
-      // TODO Should we be receiving `topics` here instead of `topic`? Data leak?
-      // const topic = this.token.channel.topics[msg.topic];
-      // if (!topic) {
-      //   this.#debug(
-      //     `Received message on channel "${msg.channel}" for unknown topic "${msg.topic}"`
-      //   );
-      //   return;
-      // }
-
-      this.#debug(
-        `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
-        msg.data
-      );
-
       const userlandMessageKinds: Realtime.Message["kind"][] = ["data"];
 
       // TODO What kind of messages do we care about?
       if (userlandMessageKinds.includes(msg.kind)) {
-        // if (topic.schema) {
-        //   TODO Validate message against schema
-        //   Need to handle partial data if this is a stream.
-        //   How does the user learn that it failed validation?
-        // }
+        const topic = this.#topics[msg.topic];
+        if (!topic) {
+          this.#debug(
+            `Received message on channel "${msg.channel}" for unknown topic "${msg.topic}"`
+          );
+          return;
+        }
+
+        const schema = topic.getSchema();
+        if (schema) {
+          try {
+            msg.data = await schema["~standard"].validate(msg.data);
+          } catch (err) {
+            this.#debug(
+              `Received message on channel "${msg.channel}" for topic "${msg.topic}" that failed schema validation:`,
+              err
+            );
+            return;
+          }
+        }
+
+        this.#debug(
+          `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
+          msg.data
+        );
 
         this.#sourceStreamContoller?.enqueue(event.data);
       }

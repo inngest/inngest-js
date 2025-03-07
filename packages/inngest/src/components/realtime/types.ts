@@ -81,7 +81,7 @@ export namespace Realtime {
     > = {
       // key used to auth - could be undefined as then we can do a cold subscribe
       key?: Promise<string> | undefined;
-      channel: Channel.InferId<TChannel>;
+      channel: TChannel | Channel.InferId<TChannel>;
       topics: TTopics;
     };
 
@@ -106,7 +106,11 @@ export namespace Realtime {
         : never;
 
       export type InferMessage<TToken extends Token> = Realtime.Message<
-        TToken["channel"],
+        TToken["channel"] extends string
+          ? TToken["channel"]
+          : TToken["channel"] extends Channel
+            ? Channel.InferId<TToken["channel"]>
+            : never,
         Token.InferTopicData<TToken>
       >;
     }
@@ -133,24 +137,19 @@ export namespace Realtime {
   export const messageSchema = z
     .object({
       channel: z.string(),
-      topics: z.array(z.string()),
+      topic: z.string(),
       data: z.any(),
-
-      metadata: z.object({
-        run_id: z.string(),
-        fn_id: z.string(),
-        fn_slug: z.string(),
-        created_at: z.string(),
-      }),
-
+      run_id: z.string(),
+      fn_id: z.string(),
+      created_at: z.string().transform((v) => new Date(v)),
+      env_id: z.string(),
       kind: z.enum(["step", "run", "data", "ping", "pong", "closing"]),
     })
-    .transform(({ topics, data, ...rest }) => {
+    .transform(({ data, ...rest }) => {
       return {
         ...rest,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: data ?? undefined,
-        topic: topics[0] as string,
       };
     });
 
@@ -163,17 +162,13 @@ export namespace Realtime {
     >,
   > = {
     [K in keyof TTopics]: {
-      topic: K; // Odd - should be `topic` instead of `topics`? Data leak?
+      topic: K;
       data: Realtime.Topic.InferSubscribe<TTopics[K]>;
       channel: TChannelId;
-
-      metadata: {
-        run_id: string;
-        fn_id: string;
-        fn_slug: string;
-        created_at: string;
-      };
-
+      run_id: string;
+      fn_id: string;
+      created_at: Date;
+      env_id: string;
       kind:
         | "step" // step data
         | "run" // run results
@@ -250,6 +245,8 @@ export namespace Realtime {
       addTopic<UTopic extends Topic.Definition>(
         topic: UTopic
       ): Definition<TChannelBuilderFn, AddTopic<TTopics, UTopic>>;
+
+      topics: TTopics;
     }
 
     export type AddTopic<
@@ -317,6 +314,8 @@ export namespace Realtime {
         StandardSchemaV1.InferInput<TSchema>,
         StandardSchemaV1.InferOutput<TSchema>
       >;
+
+      getSchema(): StandardSchemaV1 | undefined;
     }
 
     export type InferId<TTopic extends Topic.Definition> =

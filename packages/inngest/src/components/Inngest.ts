@@ -268,7 +268,22 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
           : never,
       InputTopics
     >,
-  >(args: { channel: InputChannel; topics: InputTopics }): TToken {
+  >(
+    /**
+     * TODO
+     */
+    args: {
+      /**
+       * TODO
+       */
+      channel: InputChannel;
+
+      /**
+       * TODO
+       */
+      topics: InputTopics;
+    }
+  ): TToken {
     const channelId =
       typeof args.channel === "string" ? args.channel : args.channel.name;
 
@@ -305,7 +320,24 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     >,
     const TOutput extends Realtime.Subscribe.StreamSubscription<TToken>,
   >(
-    token: { channel: InputChannel; topics: InputTopics },
+    /**
+     * TODO
+     */
+    token: {
+      /**
+       * TODO
+       */
+      channel: InputChannel;
+
+      /**
+       * TODO
+       */
+      topics: InputTopics;
+    },
+
+    /**
+     * TODO
+     */
     callback?: Realtime.Subscribe.Callback<TToken>
   ): Promise<TOutput> {
     const subscription = new TokenSubscription(
@@ -884,6 +916,9 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
 
               return {
                 ctx: {
+                  /**
+                   * TODO
+                   */
                   publish,
                 },
               };
