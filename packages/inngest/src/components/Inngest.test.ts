@@ -10,12 +10,8 @@ import {
   type GetStepTools,
 } from "@local";
 import { type createStepTools } from "@local/components/InngestStepTools";
-import { channel } from "@local/experimental/realtime/channel";
-import {
-  getSubscriptionToken,
-  subscribe,
-} from "@local/experimental/realtime/subscribe";
-import { topic } from "@local/experimental/realtime/topic";
+import { channel } from "@local/components/realtime/channel";
+import { topic } from "@local/components/realtime/topic";
 import {
   dummyEventKey,
   envKeys,
@@ -1297,8 +1293,7 @@ describe("subscribe", () => {
     describe("strings only", () => {
       test("can subscribe with just strings", () => {
         const _fn = async () => {
-          const stream = await subscribe(
-            inngest,
+          const stream = await inngest.subscribe(
             {
               channel: "test",
               topics: ["foo", "bar"],
@@ -1345,7 +1340,7 @@ describe("subscribe", () => {
     describe("type-only channel import", () => {
       test("errors if channel name is incorrect", () => {
         const _fn = () => {
-          void subscribe<typeof userChannel>(inngest, {
+          void inngest.subscribe<typeof userChannel>({
             // @ts-expect-error Incorrect channel
             channel: "test",
             topics: ["created", "updated"],
@@ -1355,7 +1350,7 @@ describe("subscribe", () => {
 
       test("errors if topic names are incorrect with static channel", () => {
         const _fn = () => {
-          void subscribe<typeof staticChannel>(inngest, {
+          void inngest.subscribe<typeof staticChannel>({
             channel: "static",
             // @ts-expect-error Incorrect topic
             topics: ["created", "updated", "test"],
@@ -1365,7 +1360,7 @@ describe("subscribe", () => {
 
       test("errors if topic names are incorrect with dynamic channel", () => {
         const _fn = () => {
-          void subscribe<typeof userChannel>(inngest, {
+          void inngest.subscribe<typeof userChannel>({
             channel: "user/123",
             // @ts-expect-error Incorrect topic
             topics: ["created", "updated", "test"],
@@ -1375,8 +1370,7 @@ describe("subscribe", () => {
 
       test("can subscribe using types only of a static channel", () => {
         const _fn = async () => {
-          const stream = await subscribe<typeof staticChannel>(
-            inngest,
+          const stream = await inngest.subscribe<typeof staticChannel>(
             {
               channel: "static",
               topics: ["created", "updated"],
@@ -1421,8 +1415,7 @@ describe("subscribe", () => {
 
       test("can subscribe using types only of a dynamic channel", () => {
         const _fn = async () => {
-          const stream = await subscribe<typeof userChannel>(
-            inngest,
+          const stream = await inngest.subscribe<typeof userChannel>(
             {
               channel: "user/123",
               topics: ["created", "updated"],
@@ -1469,7 +1462,7 @@ describe("subscribe", () => {
     describe("runtime channel import", () => {
       test("errors if static definition given", () => {
         const _fn = () => {
-          void subscribe(inngest, {
+          void inngest.subscribe({
             // @ts-expect-error Definition given
             channel: staticChannel,
             topics: ["created", "updated"],
@@ -1479,7 +1472,7 @@ describe("subscribe", () => {
 
       test("errors if dynamic definition given", () => {
         const _fn = () => {
-          void subscribe(inngest, {
+          void inngest.subscribe({
             // @ts-expect-error Definition given
             channel: userChannel,
             topics: ["created", "updated"],
@@ -1489,7 +1482,7 @@ describe("subscribe", () => {
 
       test("errors if topic names are incorrect with static channel", () => {
         const _fn = () => {
-          void subscribe(inngest, {
+          void inngest.subscribe({
             channel: staticChannel(),
             // @ts-expect-error Incorrect topic
             topics: ["created", "updated", "test"],
@@ -1499,7 +1492,7 @@ describe("subscribe", () => {
 
       test("errors if topic names are incorrect with dynamic channel", () => {
         const _fn = () => {
-          void subscribe(inngest, {
+          void inngest.subscribe({
             channel: userChannel("123"),
             // @ts-expect-error Incorrect topic
             topics: ["created", "updated", "test"],
@@ -1509,7 +1502,7 @@ describe("subscribe", () => {
 
       test("can subscribe with runtime import of a static channel", () => {
         const _fn = async () => {
-          const stream = await subscribe(inngest, {
+          const stream = await inngest.subscribe({
             channel: staticChannel(),
             topics: ["created", "updated"],
           });
@@ -1542,7 +1535,7 @@ describe("subscribe", () => {
 
       test("can subscribe with runtime import of a dynamic channel", () => {
         const _fn = async () => {
-          const stream = await subscribe(inngest, {
+          const stream = await inngest.subscribe({
             channel: userChannel("123"),
             topics: ["created", "updated"],
           });
@@ -1577,12 +1570,12 @@ describe("subscribe", () => {
     describe("tokens", () => {
       test("can subscribe with a string-only token", () => {
         const _fn = async () => {
-          const token = await getSubscriptionToken(inngest, {
+          const token = await inngest.getSubscriptionToken({
             channel: "test",
             topics: ["foo", "bar"],
           });
 
-          const stream = await subscribe(inngest, token, (message) => {
+          const stream = await inngest.subscribe(token, (message) => {
             assertType<"test">(message.channel);
             assertType<"foo" | "bar">(message.topic);
 
@@ -1621,15 +1614,14 @@ describe("subscribe", () => {
 
       test("can subscribe with a type-only import static typed token", () => {
         const _fn = async () => {
-          const token = await getSubscriptionToken<typeof staticChannel>(
-            inngest,
-            {
-              channel: "static",
-              topics: ["created", "updated"],
-            }
-          );
+          const token = await inngest.getSubscriptionToken<
+            typeof staticChannel
+          >({
+            channel: "static",
+            topics: ["created", "updated"],
+          });
 
-          const stream = await subscribe(inngest, token, (message) => {
+          const stream = await inngest.subscribe(token, (message) => {
             assertType<"static">(message.channel);
             assertType<"created" | "updated">(message.topic);
 
@@ -1668,12 +1660,12 @@ describe("subscribe", () => {
 
       test("can subscribe with a runtime import static typed token", () => {
         const _fn = async () => {
-          const token = await getSubscriptionToken(inngest, {
+          const token = await inngest.getSubscriptionToken({
             channel: staticChannel(),
             topics: ["created", "updated"],
           });
 
-          const stream = await subscribe(inngest, token, (message) => {
+          const stream = await inngest.subscribe(token, (message) => {
             assertType<"static">(message.channel);
             assertType<"created" | "updated">(message.topic);
 
@@ -1712,15 +1704,12 @@ describe("subscribe", () => {
 
       test("can subscribe with a type-only import dynamic typed token", () => {
         const _fn = async () => {
-          const token = await getSubscriptionToken<typeof userChannel>(
-            inngest,
-            {
-              channel: "user/123",
-              topics: ["created", "updated"],
-            }
-          );
+          const token = await inngest.getSubscriptionToken<typeof userChannel>({
+            channel: "user/123",
+            topics: ["created", "updated"],
+          });
 
-          const stream = await subscribe(inngest, token, (message) => {
+          const stream = await inngest.subscribe(token, (message) => {
             assertType<`user/${string}`>(message.channel);
             assertType<"created" | "updated">(message.topic);
 
@@ -1759,12 +1748,12 @@ describe("subscribe", () => {
 
       test("can subscribe with a runtime import dynamic typed token", () => {
         const _fn = async () => {
-          const token = await getSubscriptionToken(inngest, {
+          const token = await inngest.getSubscriptionToken({
             channel: userChannel("123"),
             topics: ["created", "updated"],
           });
 
-          const stream = await subscribe(inngest, token, (message) => {
+          const stream = await inngest.subscribe(token, (message) => {
             assertType<`user/${string}`>(message.channel);
             assertType<"created" | "updated">(message.topic);
 

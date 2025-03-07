@@ -1,5 +1,5 @@
 import debug from "debug";
-import { type Inngest } from "../../components/Inngest.js";
+import { type Inngest } from "../Inngest.js";
 import { topic } from "./topic.js";
 import { Realtime } from "./types.js";
 
@@ -10,141 +10,6 @@ import { Realtime } from "./types.js";
  * unsubscribing to topics without creating new connections.
  */
 const tokenSubscriptions = new Map<string, TokenSubscription>();
-
-/**
- * TODO
- */
-export const subscribe = async <
-  const InputChannel extends
-    | Realtime.Channel.Definition
-    | Realtime.Channel
-    | string,
-  const InputTopics extends (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[] = (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[],
-  const TToken extends Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  > = Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  >,
-  const TOutput extends
-    Realtime.Subscribe.StreamSubscription<TToken> = Realtime.Subscribe.StreamSubscription<TToken>,
->(
-  /**
-   * TODO
-   */
-  app: Inngest.Any,
-
-  /**
-   * TODO
-   */
-  token: {
-    /**
-     * TODO
-     */
-    channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
-
-    /**
-     * TODO
-     */
-    topics: InputTopics;
-  },
-
-  /**
-   * TODO
-   */
-  callback?: Realtime.Subscribe.Callback<TToken>
-): Promise<TOutput> => {
-  const subscription = new TokenSubscription(
-    app,
-    token as Realtime.Subscribe.Token
-  );
-  const iterator = subscription.getIterator(subscription.getStream());
-
-  await subscription.connect();
-
-  const extras = {
-    close: () => subscription.close(),
-    cancel: () => subscription.close(),
-    getStream: () => subscription.getStream(),
-  };
-
-  if (callback) {
-    subscription.useCallback(subscription.getStream(), callback);
-  }
-
-  return Object.assign(iterator, extras) as TOutput;
-};
-
-/**
- * TODO
- */
-export const getSubscriptionToken = async <
-  const InputChannel extends
-    | Realtime.Channel.Definition
-    | Realtime.Channel
-    | string,
-  const InputTopics extends (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[] = (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[],
-  const TToken extends Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  > = Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  >,
->(
-  /**
-   * TODO
-   */
-  app: Inngest.Any,
-
-  /**
-   * TODO
-   */
-  args: {
-    /**
-     * TODO
-     */
-    channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
-
-    /**
-     * TODO
-     */
-    topics: InputTopics;
-  }
-): Promise<TToken> => {
-  const channelId =
-    typeof args.channel === "string" ? args.channel : args.channel.name;
-
-  if (!channelId) {
-    throw new Error("Channel ID is required to create a subscription token");
-  }
-
-  const key = await app["inngestApi"].getSubscriptionToken(
-    channelId,
-    args.topics
-  );
-
-  const token = {
-    channel: channelId,
-    topics: args.topics,
-    key,
-  } as TToken;
-
-  return token;
-};
 
 // Must be a new connection for every token used.
 export class TokenSubscription {
@@ -217,7 +82,7 @@ export class TokenSubscription {
     }
 
     const key =
-      this.token.key || (await getSubscriptionToken(this.app, this.token)).key;
+      this.token.key || (await this.app.getSubscriptionToken(this.token)).key;
     if (!key) {
       throw new Error(
         "No subscription token key passed and failed to retrieve one automatically"

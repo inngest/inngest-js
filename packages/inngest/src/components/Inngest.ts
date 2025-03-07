@@ -48,6 +48,7 @@ import {
   type TriggersFromClient,
 } from "../types.js";
 import { type EventSchemas } from "./EventSchemas.js";
+import { getAsyncCtx } from "./execution/als.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { type InngestFunctionReference } from "./InngestFunctionReference.js";
 import {
@@ -59,6 +60,8 @@ import {
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
 } from "./InngestMiddleware.js";
+import { TokenSubscription } from "./realtime/subscribe.js";
+import { type Realtime } from "./realtime/types.js";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -247,6 +250,131 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     ]);
 
     this._appVersion = appVersion;
+  }
+
+  /**
+   * TODO
+   */
+  public async getSubscriptionToken<
+    const InputChannel extends
+      | Realtime.Channel.Definition
+      | Realtime.Channel
+      | string,
+    const InputTopics extends (keyof Realtime.Channel.InferTopics<
+      Realtime.Channel.AsChannel<InputChannel>
+    > &
+      string)[] = (keyof Realtime.Channel.InferTopics<
+      Realtime.Channel.AsChannel<InputChannel>
+    > &
+      string)[],
+    const TToken extends Realtime.Subscribe.Token<
+      Realtime.Channel.AsChannel<InputChannel>,
+      InputTopics
+    > = Realtime.Subscribe.Token<
+      Realtime.Channel.AsChannel<InputChannel>,
+      InputTopics
+    >,
+  >(
+    /**
+     * TODO
+     */
+    args: {
+      /**
+       * TODO
+       */
+      channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
+
+      /**
+       * TODO
+       */
+      topics: InputTopics;
+    }
+  ): Promise<TToken> {
+    const channelId =
+      typeof args.channel === "string" ? args.channel : args.channel.name;
+
+    if (!channelId) {
+      throw new Error("Channel ID is required to create a subscription token");
+    }
+
+    const key = await this.inngestApi.getSubscriptionToken(
+      channelId,
+      args.topics
+    );
+
+    const token = {
+      channel: channelId,
+      topics: args.topics,
+      key,
+    } as TToken;
+
+    return token;
+  }
+
+  /**
+   * TODO
+   */
+  public async subscribe<
+    const InputChannel extends
+      | Realtime.Channel.Definition
+      | Realtime.Channel
+      | string,
+    const InputTopics extends (keyof Realtime.Channel.InferTopics<
+      Realtime.Channel.AsChannel<InputChannel>
+    > &
+      string)[] = (keyof Realtime.Channel.InferTopics<
+      Realtime.Channel.AsChannel<InputChannel>
+    > &
+      string)[],
+    const TToken extends Realtime.Subscribe.Token<
+      Realtime.Channel.AsChannel<InputChannel>,
+      InputTopics
+    > = Realtime.Subscribe.Token<
+      Realtime.Channel.AsChannel<InputChannel>,
+      InputTopics
+    >,
+    const TOutput extends
+      Realtime.Subscribe.StreamSubscription<TToken> = Realtime.Subscribe.StreamSubscription<TToken>,
+  >(
+    /**
+     * TODO
+     */
+    token: {
+      /**
+       * TODO
+       */
+      channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
+
+      /**
+       * TODO
+       */
+      topics: InputTopics;
+    },
+
+    /**
+     * TODO
+     */
+    callback?: Realtime.Subscribe.Callback<TToken>
+  ): Promise<TOutput> {
+    const subscription = new TokenSubscription(
+      this,
+      token as Realtime.Subscribe.Token
+    );
+    const iterator = subscription.getIterator(subscription.getStream());
+
+    await subscription.connect();
+
+    const extras = {
+      close: () => subscription.close(),
+      cancel: () => subscription.close(),
+      getStream: () => subscription.getStream(),
+    };
+
+    if (callback) {
+      subscription.useCallback(subscription.getStream(), callback);
+    }
+
+    return Object.assign(iterator, extras) as TOutput;
   }
 
   /**
@@ -750,6 +878,69 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
             },
             async beforeResponse() {
               await logger.flush();
+            },
+          };
+        },
+      };
+    },
+  }),
+
+  new InngestMiddleware({
+    name: "publish",
+    init({ client }) {
+      return {
+        onFunctionRun() {
+          return {
+            transformInput({ ctx: { step } }) {
+              const publish: Realtime.PublishFn = async (input) => {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                const { topic, channel, data } = await input;
+
+                const store = await getAsyncCtx();
+                if (!store) {
+                  throw new Error(
+                    "No ALS found, but is required for running `publish()`"
+                  );
+                }
+
+                const subscription: InngestApi.Subscription = {
+                  topics: [topic],
+                  channel,
+                };
+
+                const action = async () => {
+                  const result = await client["inngestApi"].publish(
+                    subscription,
+                    data
+                  );
+
+                  if (!result.ok) {
+                    throw new Error(
+                      `Failed to publish event: ${result.error?.error}`
+                    );
+                  }
+                };
+
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                return (
+                  store.executingStep
+                    ? action()
+                    : step.run(`publish:${subscription.channel}`, action)
+                ).then(() => {
+                  // Always return the data passed in to the `publish` call.
+                  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                  return data;
+                });
+              };
+
+              return {
+                ctx: {
+                  /**
+                   * TODO
+                   */
+                  publish,
+                },
+              };
             },
           };
         },
