@@ -1282,13 +1282,17 @@ describe("subscribe", () => {
 
     const updatedTopic = topic("updated").type<boolean>();
 
+    // const unusedTopic = topic("unused").type<number>();
+
     const staticChannel = channel("static")
       .addTopic(createdTopic)
       .addTopic(updatedTopic);
+    // .addTopic(unusedTopic); // TODO Exposes a type bug
 
     const userChannel = channel((userId: string) => `user/${userId}`)
       .addTopic(createdTopic)
       .addTopic(updatedTopic);
+    // .addTopic(unusedTopic); // TODO Exposes a type bug
 
     describe("strings only", () => {
       test("can subscribe with just strings", () => {
