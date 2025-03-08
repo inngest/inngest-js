@@ -1,5 +1,13 @@
 # inngest
 
+## 3.32.3
+
+### Patch Changes
+
+- [#877](https://github.com/inngest/inngest-js/pull/877) [`b9a6e89`](https://github.com/inngest/inngest-js/commit/b9a6e89e38990144271dc5c867d0c72944d032cd) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `getAsyncCtx()` now correctly finds context when called within:
+  - `step.run()` calls
+  - Middleware hooks
+
 ## 3.32.2
 
 ### Patch Changes
