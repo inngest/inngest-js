@@ -145,7 +145,7 @@ export class TokenSubscription {
           msg.data
         );
 
-        this.#sourceStreamContoller?.enqueue(event.data);
+        this.#sourceStreamContoller?.enqueue(msg);
       }
     };
 
