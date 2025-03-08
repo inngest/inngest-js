@@ -129,15 +129,16 @@ export class TokenSubscription {
 
         const schema = topic.getSchema();
         if (schema) {
-          try {
-            msg.data = await schema["~standard"].validate(msg.data);
-          } catch (err) {
-            this.#debug(
+          const validateRes = await schema["~standard"].validate(msg.data);
+          if (validateRes.issues) {
+            console.error(
               `Received message on channel "${msg.channel}" for topic "${msg.topic}" that failed schema validation:`,
-              err
+              validateRes.issues
             );
             return;
           }
+
+          msg.data = validateRes.value;
         }
 
         this.#debug(
