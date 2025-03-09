@@ -90,7 +90,7 @@ export class TokenSubscription {
     }
 
     this.#ws = new WebSocket(
-      `ws://127.0.0.1:8288/v1/realtime/connect?token=${key}`
+      `ws://localhost:8288/v1/realtime/connect?token=${key}`
     );
 
     this.#ws.onopen = () => {
