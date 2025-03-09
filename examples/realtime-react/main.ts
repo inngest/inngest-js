@@ -1,65 +1,8 @@
 import { Inngest } from "inngest";
-import { channel, topic, type Realtime } from "inngest/experimental";
+import { type Realtime } from "inngest/experimental";
 import { useEffect, useRef, useState } from "react";
 
-/**
- * TODO
- */
-export function useInngestSubscription<
-  const InputChannel extends
-    | Realtime.Channel.Definition
-    | Realtime.Channel
-    | string,
-  const InputTopics extends (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[] = (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[],
-  const TToken extends Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  > = Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  >,
->({
-  app,
-  channel,
-  topics,
-  enabled = true,
-  bufferInterval = 0,
-}: {
-  /**
-   * TODO
-   */
-  app: Inngest.Any;
-
-  /**
-   * TODO
-   */
-  channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
-
-  /**
-   * TODO
-   */
-  topics: InputTopics;
-
-  /**
-   * TODO
-   */
-  enabled?: boolean;
-
-  /**
-   * TODO
-   */
-  bufferInterval?: number;
-
-  /**
-   * TODO
-   */
-}): {
+export interface InngestSubsription<TToken extends Realtime.Subscribe.Token> {
   /**
    * TODO
    */
@@ -84,23 +27,75 @@ export function useInngestSubscription<
    * TODO
    */
   isReady: boolean;
-} {
-  const [data, setData] = useState<
-    Realtime.Subscribe.Token.InferMessage<TToken>[]
-  >([]);
-  const [latestData, setLatestData] =
-    useState<Realtime.Subscribe.Token.InferMessage<TToken> | null>(null);
-  const [freshData, setFreshData] = useState<
-    Realtime.Subscribe.Token.InferMessage<TToken>[]
-  >([]);
+}
+
+/**
+ * TODO
+ */
+export function useInngestSubscription<
+  const InputChannel extends
+    | Realtime.Channel.Definition
+    | Realtime.Channel
+    | string,
+  const InputTopics extends (keyof Realtime.Channel.InferTopics<
+    Realtime.Channel.AsChannel<InputChannel>
+  > &
+    string)[],
+  const TToken extends Realtime.Subscribe.Token<
+    Realtime.Channel.AsChannel<InputChannel>,
+    InputTopics
+  >,
+>({
+  app,
+  channel,
+  topics,
+  key,
+  enabled = true,
+  bufferInterval = 0,
+}: {
+  /**
+   * TODO
+   */
+  app: Inngest.Any;
+
+  /**
+   * TODO
+   */
+  channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
+
+  /**
+   * TODO
+   */
+  topics: InputTopics;
+
+  /**
+   * TODO
+   */
+  key?: string;
+
+  /**
+   * TODO
+   */
+  enabled?: boolean;
+
+  /**
+   * TODO
+   */
+  bufferInterval?: number;
+
+  /**
+   * TODO
+   */
+}): InngestSubsription<TToken> {
+  const [data, setData] = useState<Realtime.Message[]>([]);
+  const [latestData, setLatestData] = useState<Realtime.Message | null>(null);
+  const [freshData, setFreshData] = useState<Realtime.Message[]>([]);
   const [error, setError] = useState<Error | null>(null);
   const [isReady, setIsReady] = useState(false);
   const subscriptionRef = useRef<Realtime.Subscribe.StreamSubscription | null>(
     null
   );
-  const messageBuffer = useRef<Realtime.Subscribe.Token.InferMessage<TToken>[]>(
-    []
-  );
+  const messageBuffer = useRef<Realtime.Message[]>([]);
   const bufferIntervalRef = useRef<number>(bufferInterval);
   const isMountedRef = useRef<boolean>(true);
 
@@ -116,7 +111,9 @@ export function useInngestSubscription<
 
     const subscribe = async () => {
       try {
-        const stream = await app.subscribe({ channel, topics });
+        // @ts-expect-error TODO `key` not a valid prop, though we pass it with
+        // token.
+        const stream = await app.subscribe({ channel, topics, key });
         subscriptionRef.current = stream;
         setIsReady(true);
 
@@ -124,16 +121,16 @@ export function useInngestSubscription<
           if (!isMountedRef.current) break;
 
           if (bufferIntervalRef.current === 0) {
-            setFreshData([message.data]);
-            setData((prev) => [...prev, message.data]);
-            setLatestData(message.data);
+            setFreshData([message]);
+            setData((prev) => [...prev, message]);
+            setLatestData(message);
           } else {
-            messageBuffer.current.push(message.data);
+            messageBuffer.current.push(message);
           }
         }
       } catch (err) {
         if (!isMountedRef.current) return;
-        setError(err);
+        setError(err as Error);
       }
     };
 
@@ -143,7 +140,7 @@ export function useInngestSubscription<
       isMountedRef.current = false;
       subscriptionRef.current?.close();
     };
-  }, [app, channel, topics, enabled]);
+  }, [app, channel, topics, enabled, key]);
 
   // Manages optional buffering to control UI updates
   useEffect(() => {
@@ -168,28 +165,11 @@ export function useInngestSubscription<
     };
   }, [bufferInterval]);
 
-  return { data, latestData, freshData, error, isReady };
+  return {
+    data,
+    latestData,
+    freshData,
+    error,
+    isReady,
+  } as InngestSubsription<TToken>;
 }
-
-const app = new Inngest({ id: "fe" });
-
-const ch = channel((userId) => `user:${userId}`)
-  .addTopic(topic("a").type<boolean>())
-  .addTopic(topic("b").type<{ foo: number }>());
-
-const result = useInngestSubscription({
-  app,
-  channel: ch("123"),
-  topics: ["a", "b"],
-});
-
-const token = await app.getSubscriptionToken({
-  channel: ch("123"),
-  topics: ["a", "b"],
-});
-
-const resulta = useInngestSubscription<typeof ch>({
-  app,
-  channel: "user:123",
-  topics: ["b"]
-});
