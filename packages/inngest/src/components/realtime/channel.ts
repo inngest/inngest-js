@@ -66,3 +66,23 @@ export const channel: Realtime.Channel.Builder = (
   // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return channelDefinition;
 };
+
+/**
+ * TODO
+ */
+export const typeOnlyChannel = <
+  TChannelDef extends Realtime.Channel.Definition,
+  TId extends string = Realtime.Channel.Definition.InferId<TChannelDef>,
+  TTopics extends Record<
+    string,
+    Realtime.Topic.Definition
+  > = Realtime.Channel.Definition.InferTopics<TChannelDef>,
+  TOutput extends Realtime.Channel = Realtime.Channel<TId, TTopics>,
+>(
+  /**
+   * TODO
+   */
+  id: TId
+) => {
+  return channel(id as string)() as TOutput;
+};
