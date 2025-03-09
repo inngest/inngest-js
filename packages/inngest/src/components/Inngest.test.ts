@@ -10,8 +10,9 @@ import {
   type GetStepTools,
 } from "@local";
 import { type createStepTools } from "@local/components/InngestStepTools";
-import { channel } from "@local/components/realtime/channel";
+import { channel, typeOnlyChannel } from "@local/components/realtime/channel";
 import { topic } from "@local/components/realtime/topic";
+import { type Realtime } from "@local/components/realtime/types";
 import {
   dummyEventKey,
   envKeys,
@@ -1282,17 +1283,278 @@ describe("subscribe", () => {
 
     const updatedTopic = topic("updated").type<boolean>();
 
-    // const unusedTopic = topic("unused").type<number>();
+    const unusedTopic = topic("unused").type<number>();
 
     const staticChannel = channel("static")
       .addTopic(createdTopic)
-      .addTopic(updatedTopic);
-    // .addTopic(unusedTopic); // TODO Exposes a type bug
+      .addTopic(updatedTopic)
+      .addTopic(unusedTopic);
 
     const userChannel = channel((userId: string) => `user/${userId}`)
       .addTopic(createdTopic)
-      .addTopic(updatedTopic);
-    // .addTopic(unusedTopic); // TODO Exposes a type bug
+      .addTopic(updatedTopic)
+      .addTopic(unusedTopic);
+
+    describe("channels and topics", () => {
+      describe("topic", () => {
+        test("can create a blank topic", () => {
+          const t = topic("test");
+
+          expect(t).toBeDefined();
+          assertType<Realtime.Topic.Definition>(t);
+
+          expect(t.name).toBe("test");
+          assertType<"test">(t.name);
+
+          expect(t.getSchema()).toBeUndefined();
+
+          assertType<IsAny<Realtime.Topic.InferPublish<typeof t>>>(true);
+          assertType<IsAny<Realtime.Topic.InferSubscribe<typeof t>>>(true);
+        });
+
+        test("topic ID must be a string", () => {
+          const _fn = () => {
+            // @ts-expect-error Topic ID must be a string
+            topic(1);
+
+            // @ts-expect-error Topic ID must be a string
+            topic({ foo: "bar" });
+
+            // @ts-expect-error Topic ID must be a string
+            topic(undefined);
+
+            // @ts-expect-error Topic ID must be a string
+            topic();
+
+            // @ts-expect-error Topic ID must be a string
+            topic(null);
+
+            // @ts-expect-error Topic ID must be a string
+            topic(true);
+
+            // @ts-expect-error Topic ID must be a string
+            topic(false);
+          };
+        });
+
+        test("can type a topic", () => {
+          const t = topic("test").type<string>();
+
+          expect(t).toBeDefined();
+          assertType<Realtime.Topic.Definition>(t);
+
+          expect(t.name).toBe("test");
+          assertType<"test">(t.name);
+
+          expect(t.getSchema()).toBeUndefined();
+
+          assertType<IsEqual<string, Realtime.Topic.InferPublish<typeof t>>>(
+            true
+          );
+          assertType<IsEqual<string, Realtime.Topic.InferSubscribe<typeof t>>>(
+            true
+          );
+        });
+
+        test("can overwrite a topic's type", () => {
+          const t = topic("test").type<string>().type<number>();
+
+          expect(t).toBeDefined();
+          assertType<Realtime.Topic.Definition>(t);
+
+          expect(t.name).toBe("test");
+          assertType<"test">(t.name);
+
+          expect(t.getSchema()).toBeUndefined();
+
+          assertType<IsEqual<number, Realtime.Topic.InferPublish<typeof t>>>(
+            true
+          );
+          assertType<IsEqual<number, Realtime.Topic.InferSubscribe<typeof t>>>(
+            true
+          );
+        });
+
+        test("can add a schema to a topic", () => {
+          const t = topic("test").schema(v.string());
+
+          expect(t).toBeDefined();
+          assertType<Realtime.Topic.Definition>(t);
+
+          expect(t.name).toBe("test");
+          assertType<"test">(t.name);
+
+          expect(t.getSchema()).toBeDefined();
+
+          assertType<IsEqual<string, Realtime.Topic.InferPublish<typeof t>>>(
+            true
+          );
+          assertType<IsEqual<string, Realtime.Topic.InferSubscribe<typeof t>>>(
+            true
+          );
+        });
+
+        test("schema must be a valid schema", () => {
+          const _fn = () => {
+            // @ts-expect-error Invalid schema
+            topic("test").schema({ foo: "bar" });
+
+            // @ts-expect-error Invalid schema
+            topic("test").schema(undefined);
+
+            // @ts-expect-error Invalid schema
+            topic("test").schema();
+
+            // @ts-expect-error Invalid schema
+            topic("test").schema(null);
+
+            // @ts-expect-error Invalid schema
+            topic("test").schema(true);
+
+            // @ts-expect-error Invalid schema
+            topic("test").schema(false);
+          };
+        });
+      });
+
+      describe("channel", () => {
+        test("can create a blank channel", () => {
+          const c = channel("test");
+
+          expect(c).toBeDefined();
+          expect(c).toBeInstanceOf(Function);
+          assertType<Realtime.Channel.Definition>(c);
+        });
+
+        test("running a static channel definition gets a channel", () => {
+          const c = staticChannel();
+
+          expect(c).toBeDefined();
+          assertType<Realtime.Channel>(c);
+
+          expect(c.name).toBe("static");
+
+          expect(c.created).toBeDefined();
+          assertType<Realtime.Topic>(c.created);
+
+          expect(c.updated).toBeDefined();
+          assertType<Realtime.Topic>(c.updated);
+        });
+
+        test("running a dynamic channel definition gets a channel", () => {
+          const c = userChannel("123");
+
+          expect(c).toBeDefined();
+          assertType<Realtime.Channel>(c);
+
+          expect(c.name).toBe("user/123");
+
+          expect(c.created).toBeDefined();
+          assertType<Realtime.Topic>(c.created);
+
+          expect(c.updated).toBeDefined();
+          assertType<Realtime.Topic>(c.updated);
+        });
+
+        test("channel ID must be a string or a builder", () => {
+          const _fn = () => {
+            // @ts-expect-error Channel ID must be a string
+            channel(1);
+
+            // @ts-expect-error Channel ID must be a string
+            channel({ foo: "bar" });
+
+            // @ts-expect-error Channel ID must be a string
+            channel(undefined);
+
+            // @ts-expect-error Channel ID must be a string
+            channel();
+
+            // @ts-expect-error Channel ID must be a string
+            channel(null);
+
+            // @ts-expect-error Channel ID must be a string
+            channel(true);
+
+            // @ts-expect-error Channel ID must be a string
+            channel(false);
+          };
+        });
+
+        test("can create a blank dynamic channel", () => {
+          const c = channel((userId: string) => `user/${userId}`);
+
+          expect(c).toBeDefined();
+          expect(c).toBeInstanceOf(Function);
+          assertType<Realtime.Channel.Definition>(c);
+        });
+
+        test("can add a topic to a channel", () => {
+          const c = channel("test").addTopic(createdTopic);
+
+          expect(c).toBeDefined();
+          assertType<Realtime.Channel.Definition>(c);
+
+          expect(c().created).toBeDefined();
+          assertType<Realtime.Topic>(c().created);
+        });
+
+        test("can add multiple topics to a channel", () => {
+          const c = channel("test")
+            .addTopic(createdTopic)
+            .addTopic(updatedTopic);
+
+          expect(c).toBeDefined();
+          assertType<Realtime.Channel.Definition>(c);
+
+          expect(c().created).toBeDefined();
+          assertType<Realtime.Topic>(c().created);
+
+          expect(c().updated).toBeDefined();
+          assertType<Realtime.Topic>(c().updated);
+        });
+
+        test("can create a static channel using the types of another channel", () => {
+          const c = typeOnlyChannel<typeof staticChannel>("static");
+
+          expect(c).toBeDefined();
+          assertType<Realtime.Channel>(c);
+
+          expect(c.created).toBeDefined();
+          assertType<Realtime.Topic>(c.created);
+
+          expect(c.updated).toBeDefined();
+          assertType<Realtime.Topic>(c.updated);
+        });
+
+        test("static channel ID must be correct if using the types of another channel", () => {
+          const _fn = () => {
+            // @ts-expect-error Incorrect channel
+            typeOnlyChannel<typeof staticChannel>("staatic");
+          };
+        });
+
+        test("can create a dynamic channel using the types of another channel", () => {
+          const c = typeOnlyChannel<typeof userChannel>("user/123");
+
+          expect(c).toBeDefined();
+          assertType<Realtime.Channel>(c);
+
+          expect(c.created).toBeDefined();
+          assertType<Realtime.Topic>(c.created);
+
+          expect(c.updated).toBeDefined();
+          assertType<Realtime.Topic>(c.updated);
+        });
+
+        test("dynamic channel ID must be correct if using the types of another channel", () => {
+          const _fn = () => {
+            // @ts-expect-error Incorrect channel
+            typeOnlyChannel<typeof userChannel>("foo");
+          };
+        });
+      });
+    });
 
     describe("strings only", () => {
       test("can subscribe with just strings", () => {
@@ -1344,9 +1606,9 @@ describe("subscribe", () => {
     describe("type-only channel import", () => {
       test("errors if channel name is incorrect", () => {
         const _fn = () => {
-          void inngest.subscribe<typeof userChannel>({
+          void inngest.subscribe({
             // @ts-expect-error Incorrect channel
-            channel: "test",
+            channel: typeOnlyChannel<typeof userChannel>("test"),
             topics: ["created", "updated"],
           });
         };
@@ -1354,8 +1616,8 @@ describe("subscribe", () => {
 
       test("errors if topic names are incorrect with static channel", () => {
         const _fn = () => {
-          void inngest.subscribe<typeof staticChannel>({
-            channel: "static",
+          void inngest.subscribe({
+            channel: typeOnlyChannel<typeof staticChannel>("static"),
             // @ts-expect-error Incorrect topic
             topics: ["created", "updated", "test"],
           });
@@ -1364,8 +1626,8 @@ describe("subscribe", () => {
 
       test("errors if topic names are incorrect with dynamic channel", () => {
         const _fn = () => {
-          void inngest.subscribe<typeof userChannel>({
-            channel: "user/123",
+          void inngest.subscribe({
+            channel: typeOnlyChannel<typeof userChannel>("user/123"),
             // @ts-expect-error Incorrect topic
             topics: ["created", "updated", "test"],
           });
@@ -1374,9 +1636,9 @@ describe("subscribe", () => {
 
       test("can subscribe using types only of a static channel", () => {
         const _fn = async () => {
-          const stream = await inngest.subscribe<typeof staticChannel>(
+          const stream = await inngest.subscribe(
             {
-              channel: "static",
+              channel: typeOnlyChannel<typeof staticChannel>("static"),
               topics: ["created", "updated"],
             },
             (message) => {
@@ -1419,9 +1681,9 @@ describe("subscribe", () => {
 
       test("can subscribe using types only of a dynamic channel", () => {
         const _fn = async () => {
-          const stream = await inngest.subscribe<typeof userChannel>(
+          const stream = await inngest.subscribe(
             {
-              channel: "user/123",
+              channel: typeOnlyChannel<typeof userChannel>("user/123"),
               topics: ["created", "updated"],
             },
             (message) => {
@@ -1618,10 +1880,8 @@ describe("subscribe", () => {
 
       test("can subscribe with a type-only import static typed token", () => {
         const _fn = async () => {
-          const token = await inngest.getSubscriptionToken<
-            typeof staticChannel
-          >({
-            channel: "static",
+          const token = await inngest.getSubscriptionToken({
+            channel: typeOnlyChannel<typeof staticChannel>("static"),
             topics: ["created", "updated"],
           });
 
@@ -1708,8 +1968,8 @@ describe("subscribe", () => {
 
       test("can subscribe with a type-only import dynamic typed token", () => {
         const _fn = async () => {
-          const token = await inngest.getSubscriptionToken<typeof userChannel>({
-            channel: "user/123",
+          const token = await inngest.getSubscriptionToken({
+            channel: typeOnlyChannel<typeof userChannel>("user/123"),
             topics: ["created", "updated"],
           });
 
