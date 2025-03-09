@@ -305,11 +305,9 @@ export namespace Realtime {
     > {
       name: TTopicId;
 
-      type<const UPublish, const USubscribe = UPublish>(): Definition<
-        TTopicId,
-        UPublish,
-        USubscribe
-      >;
+      // Deliberately doesn't include `USubscribe` typing, as there's no schema
+      // to perform transformations.
+      type<const UPublish>(): Definition<TTopicId, UPublish>;
 
       schema<const TSchema extends StandardSchemaV1>(
         schema: TSchema
