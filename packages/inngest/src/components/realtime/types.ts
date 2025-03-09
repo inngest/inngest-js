@@ -193,17 +193,11 @@ export namespace Realtime {
       ? IId
       : string;
 
-    export type AsChannel<T extends Channel.Definition | Channel | string> =
-      T extends Channel.Definition
-        ? Realtime.Channel<
-            Realtime.Channel.Definition.InferId<T>,
-            Realtime.Channel.Definition.InferTopics<T>
-          >
-        : T extends Channel
-          ? T
-          : T extends string
-            ? Realtime.Channel<T>
-            : never;
+    export type AsChannel<T extends Channel | string> = T extends Channel
+      ? T
+      : T extends string
+        ? Realtime.Channel<T>
+        : never;
 
     export type InferTopics<
       TChannel extends Channel,

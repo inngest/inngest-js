@@ -256,21 +256,12 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * TODO
    */
   public async getSubscriptionToken<
-    const InputChannel extends
-      | Realtime.Channel.Definition
-      | Realtime.Channel
-      | string,
+    const InputChannel extends Realtime.Channel | string,
     const InputTopics extends (keyof Realtime.Channel.InferTopics<
-      Realtime.Channel.AsChannel<InputChannel>
-    > &
-      string)[] = (keyof Realtime.Channel.InferTopics<
       Realtime.Channel.AsChannel<InputChannel>
     > &
       string)[],
     const TToken extends Realtime.Subscribe.Token<
-      Realtime.Channel.AsChannel<InputChannel>,
-      InputTopics
-    > = Realtime.Subscribe.Token<
       Realtime.Channel.AsChannel<InputChannel>,
       InputTopics
     >,
@@ -315,26 +306,16 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * TODO
    */
   public async subscribe<
-    const InputChannel extends
-      | Realtime.Channel.Definition
-      | Realtime.Channel
-      | string,
+    const InputChannel extends Realtime.Channel | string,
     const InputTopics extends (keyof Realtime.Channel.InferTopics<
-      Realtime.Channel.AsChannel<InputChannel>
-    > &
-      string)[] = (keyof Realtime.Channel.InferTopics<
       Realtime.Channel.AsChannel<InputChannel>
     > &
       string)[],
     const TToken extends Realtime.Subscribe.Token<
       Realtime.Channel.AsChannel<InputChannel>,
       InputTopics
-    > = Realtime.Subscribe.Token<
-      Realtime.Channel.AsChannel<InputChannel>,
-      InputTopics
     >,
-    const TOutput extends
-      Realtime.Subscribe.StreamSubscription<TToken> = Realtime.Subscribe.StreamSubscription<TToken>,
+    const TOutput extends Realtime.Subscribe.StreamSubscription<TToken>,
   >(
     /**
      * TODO
