@@ -346,7 +346,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     await subscription.connect();
 
     const extras = {
-      close: () => subscription.close(),
+      close: () => Promise.resolve(subscription.close()),
       cancel: () => subscription.close(),
       getStream: () => subscription.getStream(),
     };
