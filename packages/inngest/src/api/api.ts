@@ -191,6 +191,7 @@ export class InngestApi {
         headers: {
           "Content-Type": isStream ? "text/stream" : "application/json",
         },
+        ...(isStream ? { duplex: "half" } : {}),
       },
     })
       .then((res) => {
