@@ -200,7 +200,7 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.2.3",
-    "@inngest/ai": "^0.1.0",
+    "@inngest/ai": "0.1.1-pr-880.1",
     "@jpwilliams/waitgroup": "^2.1.1",
     "@types/debug": "^4.1.12",
     "canonicalize": "^1.0.8",
