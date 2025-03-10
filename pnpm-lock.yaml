@@ -83,8 +83,8 @@ importers:
         specifier: ^2.2.3
         version: 2.2.3
       '@inngest/ai':
-        specifier: 0.0.5
-        version: 0.0.5
+        specifier: ^0.1.0
+        version: 0.1.0
       '@jpwilliams/waitgroup':
         specifier: ^2.1.1
         version: 2.1.1
@@ -1111,8 +1111,8 @@ packages:
     resolution: {integrity: sha512-c7hNEllBlenFTHBky65mhq8WD2kbN9Q6gk0bTk8lSBvc554jpXSkST1iePudpt7+A/AQvuHs9EMqjHDXMY1lrA==}
     engines: {node: '>=18.18'}
 
-  '@inngest/ai@0.0.5':
-    resolution: {integrity: sha512-lMD6XiptAGNxzwf5JOHcvN9ug3nzb4VBn8SXloSImKPUdKbD7klXsTCLahb9GCeKyDeMdnHZnTgiZjYrebXgIg==}
+  '@inngest/ai@0.1.0':
+    resolution: {integrity: sha512-PJW3FpxckdNTGyOlK9hVQ/d4bSqAufLdq1kA2XKn75VrEIlgyvKdBSN5k7CUhe36tbHkKSlIgfTAoOA1KAOwMQ==}
 
   '@inngest/test@0.1.3':
     resolution: {integrity: sha512-3iwhqXs4Z8reWMmbOMObZ9nIfIDzTwpkDPf6L86746hs/rkOy+OZpagKosQZLc0JxxiSFzQhrgCBDtrYJoMIBg==}
@@ -6037,7 +6037,7 @@ snapshots:
 
   '@humanwhocodes/retry@0.4.1': {}
 
-  '@inngest/ai@0.0.5':
+  '@inngest/ai@0.1.0':
     dependencies:
       '@types/node': 22.10.5
       typescript: 5.8.2
