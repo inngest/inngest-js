@@ -120,7 +120,12 @@ export class TokenSubscription {
           );
         }
 
-        const userlandMessageKinds: Realtime.Message["kind"][] = ["data"];
+        const userlandMessageKinds: Realtime.Message["kind"][] = [
+          "data",
+          "datastream-end",
+          "datastream-start",
+          'chunk'
+        ];
 
         // TODO What kind of messages do we care about?
         if (userlandMessageKinds.includes(msg.kind)) {

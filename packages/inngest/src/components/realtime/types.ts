@@ -119,14 +119,28 @@ export namespace Realtime {
 
   export const messageSchema = z
     .object({
-      channel: z.string(),
-      topic: z.string(),
+      channel: z.string().optional(),
+      topic: z.string().optional(),
       data: z.any(),
       run_id: z.string(),
       fn_id: z.string(),
-      created_at: z.string().transform((v) => new Date(v)),
-      env_id: z.string(),
-      kind: z.enum(["step", "run", "data", "ping", "pong", "closing"]),
+      created_at: z.string().optional().transform((v) => v ? new Date(v) : undefined),
+      env_id: z.string().optional(),
+      stream_id: z.string().optional(),
+      kind: z.enum([
+        "step",
+        "run",
+        "data",
+        "ping",
+        "pong",
+        "closing",
+        "event",
+        "sub",
+        "unsub",
+        "datastream-start",
+        "datastream-end",
+        "chunk"
+      ]),
     })
     .transform(({ data, ...rest }) => {
       return {
@@ -145,21 +159,27 @@ export namespace Realtime {
     >,
   > = {
     [K in keyof TTopics]: {
-      topic: K;
+      topic?: K;
+      stream_id?: string;
       data: Realtime.Topic.InferSubscribe<TTopics[K]>;
-      channel: TChannelId;
+      channel?: TChannelId;
       run_id: string;
       fn_id: string;
-      created_at: Date;
-      env_id: string;
+      created_at?: Date;
+      env_id?: string;
       kind:
         | "step" // step data
         | "run" // run results
         | "data" // misc stream data from `ctx.publish()`
+        | "datastream-start"
+        | "datastream-end"
         | "ping" // keepalive server -> client
         | "pong" // keepalive client -> server
-        | "closing"; // server is closing connection, client should reconnect
-      // | "event" // event sent to inngest
+        | "closing" // server is closing connection, client should reconnect
+        | "event" // event sent to inngest
+        | "sub"
+        | "unsub"
+        | "chunk";
     };
   }[keyof TTopics];
 
