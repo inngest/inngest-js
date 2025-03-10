@@ -48,7 +48,7 @@ import {
   type InngestExecutionOptions,
   type MemoizedOp,
 } from "./InngestExecution.js";
-import { getAsyncLocalStorage } from "./als.js";
+import { getAsyncCtx, getAsyncLocalStorage } from "./als.js";
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
@@ -441,12 +441,26 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       displayName,
     };
     this.state.executingStep = outgoingOp;
+
+    const store = await getAsyncCtx();
+
+    if (store) {
+      store.executingStep = {
+        id,
+        name: displayName,
+      };
+    }
+
     this.debug(`executing step "${id}"`);
 
     return (
       runAsPromise(fn)
         // eslint-disable-next-line @typescript-eslint/no-misused-promises
         .finally(async () => {
+          if (store) {
+            delete store.executingStep;
+          }
+
           await this.state.hooks?.afterExecution?.();
         })
         .then<OutgoingOp>((data) => {
