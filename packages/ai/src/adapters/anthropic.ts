@@ -404,7 +404,7 @@ export namespace AnthropicAiAdapter {
      * Different models have different maximum values for this parameter. See
      * [models](https://docs.anthropic.com/en/docs/models-overview) for details.
      */
-    max_tokens: number;
+    max_tokens?: number;
 
     /**
      * Input messages.
@@ -501,7 +501,7 @@ export namespace AnthropicAiAdapter {
      * [models](https://docs.anthropic.com/en/docs/models-overview) for additional
      * details and options.
      */
-    model: Model;
+    model?: Model;
 
     /**
      * An object describing metadata about the request.
