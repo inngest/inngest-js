@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "3.32.3",
+  "version": "3.32.4",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -200,7 +200,7 @@
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.2.3",
-    "@inngest/ai": "0.0.5",
+    "@inngest/ai": "0.1.1",
     "@jpwilliams/waitgroup": "^2.1.1",
     "@types/debug": "^4.1.12",
     "canonicalize": "^1.0.8",
