@@ -2,21 +2,17 @@
 
 import { getInngestApp } from "@/inngest";
 import { helloChannel } from "@/inngest/functions/helloWorld";
-import { typeOnlyChannel } from "inngest/components/realtime/channel";
+import { type Realtime } from "inngest/experimental";
 
-export async function invoke() {
-  "use server";
+export type HelloToken = Realtime.Token<typeof helloChannel, ["logs"]>;
 
+export async function invoke(): Promise<HelloToken> {
   const app = getInngestApp();
 
-  // let's say we invoke a fn here
-
   const token = await app.getSubscriptionToken({
-    channel: typeOnlyChannel<typeof helloChannel>("hello-world"),
+    channel: helloChannel(),
     topics: ["logs"],
   });
-
-  console.log("created token:", token);
 
   return token;
 }
