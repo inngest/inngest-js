@@ -1,4 +1,5 @@
 import debug from "debug";
+import { createDeferredPromise } from "../../helpers/promises.js";
 import { type Inngest } from "../Inngest.js";
 import { topic } from "./topic.js";
 import { Realtime } from "./types.js";
@@ -89,77 +90,85 @@ export class TokenSubscription {
       );
     }
 
-    this.#ws = new WebSocket(
-      `ws://localhost:8288/v1/realtime/connect?token=${key}`
-    );
+    const ret = createDeferredPromise<void>();
 
-    this.#ws.onopen = () => {
-      this.#debug("WebSocket connection established");
-    };
-
-    this.#ws.onmessage = async (event) => {
-      const parseRes = await Realtime.messageSchema.safeParseAsync(
-        JSON.parse(event.data as string)
+    try {
+      this.#ws = new WebSocket(
+        `ws://localhost:8288/v1/realtime/connect?token=${key}`
       );
 
-      if (!parseRes.success) {
-        this.#debug("Received invalid message:", parseRes.error);
-        return;
-      }
+      this.#ws.onopen = () => {
+        this.#debug("WebSocket connection established");
+        ret.resolve();
+      };
 
-      const msg = parseRes.data;
-
-      if (!this.#running) {
-        this.#debug(
-          `Received message on channel "${msg.channel}" for topic "${msg.topic}" but stream is closed`
+      this.#ws.onmessage = async (event) => {
+        const parseRes = await Realtime.messageSchema.safeParseAsync(
+          JSON.parse(event.data as string)
         );
-      }
 
-      const userlandMessageKinds: Realtime.Message["kind"][] = ["data"];
-
-      // TODO What kind of messages do we care about?
-      if (userlandMessageKinds.includes(msg.kind)) {
-        const topic = this.#topics[msg.topic];
-        if (!topic) {
-          this.#debug(
-            `Received message on channel "${msg.channel}" for unknown topic "${msg.topic}"`
-          );
+        if (!parseRes.success) {
+          this.#debug("Received invalid message:", parseRes.error);
           return;
         }
 
-        const schema = topic.getSchema();
-        if (schema) {
-          const validateRes = await schema["~standard"].validate(msg.data);
-          if (validateRes.issues) {
-            console.error(
-              `Received message on channel "${msg.channel}" for topic "${msg.topic}" that failed schema validation:`,
-              validateRes.issues
+        const msg = parseRes.data;
+
+        if (!this.#running) {
+          this.#debug(
+            `Received message on channel "${msg.channel}" for topic "${msg.topic}" but stream is closed`
+          );
+        }
+
+        const userlandMessageKinds: Realtime.Message["kind"][] = ["data"];
+
+        // TODO What kind of messages do we care about?
+        if (userlandMessageKinds.includes(msg.kind)) {
+          const topic = this.#topics[msg.topic];
+          if (!topic) {
+            this.#debug(
+              `Received message on channel "${msg.channel}" for unknown topic "${msg.topic}"`
             );
             return;
           }
 
-          msg.data = validateRes.value;
+          const schema = topic.getSchema();
+          if (schema) {
+            const validateRes = await schema["~standard"].validate(msg.data);
+            if (validateRes.issues) {
+              console.error(
+                `Received message on channel "${msg.channel}" for topic "${msg.topic}" that failed schema validation:`,
+                validateRes.issues
+              );
+              return;
+            }
+
+            msg.data = validateRes.value;
+          }
+
+          this.#debug(
+            `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
+            msg.data
+          );
+
+          this.#sourceStreamContoller?.enqueue(msg);
         }
+      };
 
-        this.#debug(
-          `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
-          msg.data
-        );
+      this.#ws.onerror = (event) => {
+        console.error("WebSocket error observed:", event);
+        ret.reject(event);
+      };
 
-        this.#sourceStreamContoller?.enqueue(msg);
-      }
-    };
+      this.#ws.onclose = (event) => {
+        this.#debug("WebSocket closed:", event.reason);
+        this.close();
+      };
 
-    this.#ws.onerror = (event) => {
-      console.error("WebSocket error observed:", event);
-    };
-
-    this.#ws.onclose = (event) => {
-      this.#debug("WebSocket closed:", event.reason);
-      this.close();
-    };
-
-    this.#running = true;
+      this.#running = true;
+    } catch (err) {
+      ret.reject(err);
+    }
 
     void (async () => {
       const reader = this.#sourceStream.getReader();
@@ -175,6 +184,8 @@ export class TokenSubscription {
         }
       }
     })();
+
+    return ret.promise;
   }
 
   public close(reason: string = "Userland closed connection") {
