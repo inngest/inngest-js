@@ -16,6 +16,21 @@ export namespace Realtime {
     message: TMessage
   ) => Promise<Awaited<TMessage>["data"]>;
 
+  export type Token<
+    TChannel extends Channel | Channel.Definition,
+    TTopics extends (keyof Channel.InferTopics<
+      Channel.Definition.AsChannel<TChannel>
+    > &
+      string)[] = (keyof Channel.InferTopics<
+      Channel.Definition.AsChannel<TChannel>
+    > &
+      string)[],
+  > = TChannel extends Channel.Definition
+    ? Subscribe.Token<Channel.Definition.AsChannel<TChannel>, TTopics>
+    : TChannel extends Channel
+      ? Subscribe.Token<TChannel, TTopics>
+      : never;
+
   export namespace Subscribe {
     export type InferChannelInput<T> = T extends Realtime.Channel.Definition
       ? Realtime.Channel.Definition.InferId<T>
@@ -53,13 +68,13 @@ export namespace Realtime {
     > = (message: Token.InferMessage<TSubscribeToken>) => void;
 
     export interface Token<
-      TChannel extends Channel = Channel,
+      TChannel extends Channel | Channel.Definition = Channel,
       TTopics extends
         (keyof Channel.InferTopics<TChannel>)[] = (keyof Channel.InferTopics<TChannel>)[],
     > {
       // key used to auth - could be undefined as then we can do a cold subscribe
       key?: string | undefined;
-      channel: TChannel;
+      channel: Realtime.Channel.Definition.AsChannel<TChannel>;
       topics: TTopics;
     }
 
@@ -200,7 +215,7 @@ export namespace Realtime {
         : never;
 
     export type InferTopics<
-      TChannel extends Channel,
+      TChannel extends Channel | Channel.Definition,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     > = TChannel extends Channel.Definition<any, infer ITopics>
       ? ITopics
@@ -243,6 +258,13 @@ export namespace Realtime {
         >
           ? ITopics
           : Record<string, Topic.Definition>;
+
+      export type AsChannel<T extends Definition | Channel> =
+        T extends Definition
+          ? Channel<InferId<T>, InferTopics<T>>
+          : T extends Channel
+            ? T
+            : never;
     }
 
     export type AddTopic<
