@@ -1,5 +1,11 @@
 # @inngest/ai
 
+## 0.1.1
+
+### Patch Changes
+
+- [#880](https://github.com/inngest/inngest-js/pull/880) [`6520605`](https://github.com/inngest/inngest-js/commit/65206056f54b253bdee455756e29b9f808f59d64) Thanks [@charlypoly](https://github.com/charlypoly)! - fix(ai): `model` and `max_tokens` should be optional on `MessageCreateParamsBase` for `step.ai` APIs
+
 ## 0.1.0
 
 ### Minor Changes

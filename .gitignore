@@ -5,3 +5,6 @@ node_modules
 /.direnv/
 
 .idea
+
+examples/**/*/.env
+examples/**/*/dist
