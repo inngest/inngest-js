@@ -7,3 +7,4 @@ node_modules
 .idea
 
 examples/**/*/.env
+examples/**/*/dist
