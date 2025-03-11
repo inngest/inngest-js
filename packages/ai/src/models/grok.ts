@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-namespace */
 import { type AiAdapter } from "../adapter.js";
+import { GrokAiAdapter } from "../adapters/grok.js";
 import { envKeys, processEnv } from "../env";
 import { type OpenAi, openai } from "./openai.js";
 
@@ -15,14 +16,14 @@ export const grok: AiAdapter.ModelCreator<
 > = (options) => {
   const apiKey = options.apiKey || processEnv(envKeys.GrokApiKey);
   const baseUrl = options.baseUrl || "https://api.x.ai/v1";
-  const model = options.model as OpenAi.Model;
+  const model = options.model as Grok.Model;
 
   return openai({
     ...options,
     apiKey,
     baseUrl,
     model,
-  });
+  }) as unknown as Grok.AiModel;
 };
 
 export namespace Grok {
@@ -59,5 +60,5 @@ export namespace Grok {
   /**
    * A Gemini model using the OpenAI format for I/O.
    */
-  export type AiModel = OpenAi.AiModel;
+  export type AiModel = GrokAiAdapter;
 }
