@@ -124,11 +124,15 @@ export class TokenSubscription {
           "data",
           "datastream-end",
           "datastream-start",
-          'chunk'
+          "chunk",
         ];
 
         // TODO What kind of messages do we care about?
-        if (userlandMessageKinds.includes(msg.kind)) {
+        if (!userlandMessageKinds.includes(msg.kind)) {
+          return;
+        }
+
+        if (msg.topic) {
           const topic = this.#topics[msg.topic];
           if (!topic) {
             this.#debug(
@@ -150,14 +154,14 @@ export class TokenSubscription {
 
             msg.data = validateRes.value;
           }
-
-          this.#debug(
-            `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
-            msg.data
-          );
-
-          this.#sourceStreamContoller?.enqueue(msg);
         }
+
+        this.#debug(
+          `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
+          msg.data
+        );
+
+        this.#sourceStreamContoller?.enqueue(msg);
       };
 
       this.#ws.onerror = (event) => {
