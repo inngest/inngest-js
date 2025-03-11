@@ -18,12 +18,16 @@ export const grok: AiAdapter.ModelCreator<
   const baseUrl = options.baseUrl || "https://api.x.ai/v1";
   const model = options.model as Grok.Model;
 
-  return openai({
+  const adapter = openai({
     ...options,
     apiKey,
     baseUrl,
     model,
   }) as unknown as Grok.AiModel;
+
+  adapter.format = "grok";
+
+  return adapter;
 };
 
 export namespace Grok {
