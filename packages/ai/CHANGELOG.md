@@ -1,5 +1,11 @@
 # @inngest/ai
 
+## 0.1.2
+
+### Patch Changes
+
+- [#884](https://github.com/inngest/inngest-js/pull/884) [`01788c6`](https://github.com/inngest/inngest-js/commit/01788c61c52dc139e33ec0e5277e417ea087e9e6) Thanks [@charlypoly](https://github.com/charlypoly)! - `@inngest/ai`: Gemini adapter + Grok OpenAI-compatible support
+
 ## 0.1.1
 
 ### Patch Changes

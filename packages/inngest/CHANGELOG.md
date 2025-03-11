@@ -1,5 +1,11 @@
 # inngest
 
+## 3.32.5
+
+### Patch Changes
+
+- [#885](https://github.com/inngest/inngest-js/pull/885) [`90f7c77`](https://github.com/inngest/inngest-js/commit/90f7c7788fee1f880d8daa9a8477fa9a46b00d3a) Thanks [@charlypoly](https://github.com/charlypoly)! - chore: bump `@inngest/ai`
+
 ## 3.32.4
 
 ### Patch Changes
