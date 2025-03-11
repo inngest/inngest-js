@@ -352,6 +352,15 @@ export namespace GeminiAiAdapter {
      * Prompt feedback related to the input prompt.
      */
     promptFeedback?: PromptFeedback;
+
+    /**
+     * Error information.
+     */
+    error?: {
+      code: number;
+      message: string;
+      status: string;
+    };
   }
 
   export interface Candidate {
