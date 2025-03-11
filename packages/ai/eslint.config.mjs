@@ -10,4 +10,10 @@ export default [
   pluginJs.configs.recommended,
   ...tseslint.configs.recommended,
   eslintPluginPrettierRecommended,
+  {
+    rules: {
+      "@typescript-eslint/no-namespace": "off",
+      "@typescript-eslint/ban-types": "off",
+    },
+  },
 ];
