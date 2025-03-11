@@ -1,0 +1,63 @@
+/* eslint-disable @typescript-eslint/no-namespace */
+import { type AiAdapter } from "../adapter.js";
+import { envKeys, processEnv } from "../env";
+import { type OpenAi, openai } from "./openai.js";
+
+/**
+ * Create a Grok model using the OpenAI chat format.
+ *
+ * By default it targets the `https://api.x.ai/v1`
+ * base URL.
+ */
+export const grok: AiAdapter.ModelCreator<
+  [options: Grok.AiModelOptions],
+  Grok.AiModel
+> = (options) => {
+  const apiKey = options.apiKey || processEnv(envKeys.GrokApiKey);
+  const baseUrl = options.baseUrl || "https://api.x.ai/v1";
+  const model = options.model as OpenAi.Model;
+
+  return openai({
+    ...options,
+    apiKey,
+    baseUrl,
+    model,
+  });
+};
+
+export namespace Grok {
+  /**
+   * IDs of models to use.
+   */
+  export type Model =
+    // eslint-disable-next-line @typescript-eslint/ban-types
+    | (string & {})
+    | "grok-2-1212"
+    | "grok-2"
+    | "grok-2-latest"
+    | "grok-3"
+    | "grok-3-latest";
+
+  /**
+   * Options for creating a Gemini model.
+   */
+  export interface AiModelOptions extends Omit<OpenAi.AiModelOptions, "model"> {
+    /**
+     * ID of the model to use.
+     */
+    model: Grok.Model;
+
+    /**
+     * Default parameters to use for the model when calling.
+     *
+     * Note that common parameters like `messages` will likely be overwritten by
+     * the adapter.
+     */
+    defaultParameters?: Partial<AiAdapter.Input<AiModel>>;
+  }
+
+  /**
+   * A Gemini model using the OpenAI format for I/O.
+   */
+  export type AiModel = OpenAi.AiModel;
+}
