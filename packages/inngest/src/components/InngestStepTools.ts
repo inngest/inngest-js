@@ -412,7 +412,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
       /**
        * Models for AI inference and other AI-related tasks.
        */
-      models,
+      models: {
+        ...models,
+      },
     },
 
     /**
