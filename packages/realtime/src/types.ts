@@ -1,13 +1,5 @@
 import { type StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod";
-import {
-  type Expect,
-  type IsEqual,
-  type IsLiteral,
-  type IsStringLiteral,
-  type MaybePromise,
-  type Simplify,
-} from "../../helpers/types.js";
 
 export namespace Realtime {
   export type PublishFn = <
@@ -114,7 +106,7 @@ export namespace Realtime {
   // Ideally in the future we use protobuf for this, but for now we use Zod.
   // This type is used to assert that the Zod schema matches the generic type.
   type _AssertMessageSchemaMatchesGeneric = Expect<
-    IsEqual<z.output<typeof messageSchema>, Message>
+    IsEqual<z.output<typeof messageSchema>, Message.Raw>
   >;
 
   export const messageSchema = z
@@ -124,7 +116,10 @@ export namespace Realtime {
       data: z.any(),
       run_id: z.string(),
       fn_id: z.string(),
-      created_at: z.string().optional().transform((v) => v ? new Date(v) : undefined),
+      created_at: z
+        .string()
+        .optional()
+        .transform((v) => (v ? new Date(v) : undefined)),
       env_id: z.string().optional(),
       stream_id: z.string().optional(),
       kind: z.enum([
@@ -139,7 +134,7 @@ export namespace Realtime {
         "unsub",
         "datastream-start",
         "datastream-end",
-        "chunk"
+        "chunk",
       ]),
     })
     .transform(({ data, ...rest }) => {
@@ -158,29 +153,27 @@ export namespace Realtime {
       Realtime.Topic.Definition
     >,
   > = {
-    [K in keyof TTopics]: {
-      topic?: K;
-      stream_id?: string;
-      data: Realtime.Topic.InferSubscribe<TTopics[K]>;
-      channel?: TChannelId;
-      run_id: string;
-      fn_id: string;
-      created_at?: Date;
-      env_id?: string;
-      kind:
-        | "step" // step data
-        | "run" // run results
-        | "data" // misc stream data from `ctx.publish()`
-        | "datastream-start"
-        | "datastream-end"
-        | "ping" // keepalive server -> client
-        | "pong" // keepalive client -> server
-        | "closing" // server is closing connection, client should reconnect
-        | "event" // event sent to inngest
-        | "sub"
-        | "unsub"
-        | "chunk";
-    };
+    [K in keyof TTopics]:
+      | {
+          topic: K;
+          channel: TChannelId;
+          data: Realtime.Topic.InferSubscribe<TTopics[K]>;
+          runId: string;
+          fnId: string;
+          createdAt: Date;
+          envId?: string;
+          kind: "data";
+        }
+      | {
+          topic: K;
+          channel: TChannelId;
+          data: Realtime.Topic.InferSubscribe<TTopics[K]>;
+          runId: string;
+          fnId: string;
+          kind: "datastream-start" | "datastream-end" | "chunk";
+          streamId: string;
+          stream: ReadableStream<Realtime.Topic.InferSubscribe<TTopics[K]>>;
+        };
   }[keyof TTopics];
 
   export namespace Message {
@@ -195,6 +188,38 @@ export namespace Realtime {
       topic: TTopicId;
       data: TData;
     };
+
+    export type Raw<
+      TChannelId extends string = string,
+      TTopics extends Record<string, Realtime.Topic.Definition> = Record<
+        string,
+        Realtime.Topic.Definition
+      >,
+    > = {
+      [K in keyof TTopics]: {
+        topic?: K;
+        stream_id?: string;
+        data: Realtime.Topic.InferSubscribe<TTopics[K]>;
+        channel?: TChannelId;
+        run_id: string;
+        fn_id: string;
+        created_at?: Date;
+        env_id?: string;
+        kind:
+          | "step" // step data
+          | "run" // run results
+          | "data" // misc stream data from `ctx.publish()`
+          | "datastream-start"
+          | "datastream-end"
+          | "ping" // keepalive server -> client
+          | "pong" // keepalive client -> server
+          | "closing" // server is closing connection, client should reconnect
+          | "event" // event sent to inngest
+          | "sub"
+          | "unsub"
+          | "chunk";
+      };
+    }[keyof TTopics];
   }
 
   export type Channel<
@@ -379,3 +404,97 @@ export namespace Realtime {
     ) => Topic.Definition<TTopicId>;
   }
 }
+
+/**
+ * Expects that a value resolves to `true`, useful for asserting type checks.
+ */
+export type Expect<T extends true> = T;
+
+/**
+Returns a boolean for whether the two given types are equal.
+
+{@link https://github.com/microsoft/TypeScript/issues/27024#issuecomment-421529650}
+{@link https://stackoverflow.com/questions/68961864/how-does-the-equals-work-in-typescript/68963796#68963796}
+
+Use-cases:
+- If you want to make a conditional branch based on the result of a comparison of two types.
+
+@example
+```
+import type {IsEqual} from 'type-fest';
+
+// This type returns a boolean for whether the given array includes the given item.
+// `IsEqual` is used to compare the given array at position 0 and the given item and then return true if they are equal.
+type Includes<Value extends readonly any[], Item> =
+	Value extends readonly [Value[0], ...infer rest]
+		? IsEqual<Value[0], Item> extends true
+			? true
+			: Includes<rest, Item>
+		: false;
+```
+*/
+export type IsEqual<A, B> = (<G>() => G extends A ? 1 : 2) extends <
+  G,
+>() => G extends B ? 1 : 2
+  ? true
+  : false;
+
+  /**
+ * Given a type `T`, return `Then` if `T` is a string, number, or symbol
+ * literal, else `Else`.
+ *
+ * `Then` defaults to `true` and `Else` defaults to `false`.
+ *
+ * Useful for determining if an object is a generic type or has known keys.
+ *
+ * @example
+ * ```ts
+ * type IsLiteralType = IsLiteral<"foo">; // true
+ * type IsLiteralType = IsLiteral<string>; // false
+ *
+ * type IsLiteralType = IsLiteral<1>; // true
+ * type IsLiteralType = IsLiteral<number>; // false
+ *
+ * type IsLiteralType = IsLiteral<symbol>; // true
+ * type IsLiteralType = IsLiteral<typeof Symbol.iterator>; // false
+ *
+ * type T0 = { foo: string };
+ * type HasAllKnownKeys = IsLiteral<keyof T0>; // true
+ *
+ * type T1 = { [x: string]: any; foo: boolean };
+ * type HasAllKnownKeys = IsLiteral<keyof T1>; // false
+ * ```
+ */
+export type IsLiteral<T, Then = true, Else = false> = string extends T
+? Else
+: number extends T
+  ? Else
+  : symbol extends T
+    ? Else
+    : Then;
+
+    /**
+ * Returns `true` if the given generic `T` is a string literal, e.g. `"foo"`, or
+ * `false` if it is a string type, e.g. `string`.
+ *
+ * Useful for checking whether the keys of an object are known or not.
+ *
+ * @example
+ * ```ts
+ * // false
+ * type ObjIsGeneric = IsStringLiteral<keyof Record<string, boolean>>;
+ *
+ * // true
+ * type ObjIsKnown = IsStringLiteral<keyof { foo: boolean; }>; // true
+ * ```
+ *
+ * @internal
+ */
+export type IsStringLiteral<T extends string> = string extends T ? false : true;
+
+/**
+ * Returns the given generic as either itself or a promise of itself.
+ */
+export type MaybePromise<T> = T | Promise<T>;
+
+export type Simplify<T> = { [KeyType in keyof T]: T[KeyType] } & {};

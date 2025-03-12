@@ -1,4 +1,5 @@
-import { type Realtime } from "./types.js";
+import { topic } from "./topic";
+import { type Realtime } from "./types";
 
 /**
  * TODO
@@ -7,7 +8,7 @@ export const channel: Realtime.Channel.Builder = (
   /**
    * TODO
    */
-  id
+  id,
 ) => {
   // eslint-disable-next-line prefer-const, @typescript-eslint/no-explicit-any
   let channelDefinition: any;
@@ -19,26 +20,7 @@ export const channel: Realtime.Channel.Builder = (
     const topicsFns = Object.entries(topics).reduce<
       Record<string, (data: unknown) => Promise<Realtime.Message.Input>>
     >((acc, [name, topic]) => {
-      acc[name] = async (data: unknown) => {
-        const schema = topic.getSchema();
-        if (schema) {
-          try {
-            await schema["~standard"].validate(data);
-          } catch (err) {
-            console.error(
-              `Failed schema validation for channel "${finalId}" topic "${name}":`,
-              err
-            );
-            throw new Error("Failed schema validation");
-          }
-        }
-
-        return {
-          channel: finalId,
-          topic: name,
-          data,
-        };
-      };
+      acc[name] = createTopicFn(finalId, topic);
 
       return acc;
     }, {});
@@ -56,14 +38,13 @@ export const channel: Realtime.Channel.Builder = (
     topics,
     addTopic: (topic: Realtime.Topic.Definition) => {
       topics[topic.name] = topic;
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+
       return channelDefinition;
     },
   };
 
   channelDefinition = Object.assign(builder, extras);
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return channelDefinition;
 };
 
@@ -82,7 +63,60 @@ export const typeOnlyChannel = <
   /**
    * TODO
    */
-  id: TId
+  id: TId,
 ) => {
-  return channel(id as string)() as TOutput;
+  const blankChannel = {
+    ...channel(id),
+    topics: new Proxy(
+      {},
+      {
+        get: (target, prop) => {
+          if (prop in target) {
+            return target[prop as keyof typeof target];
+          }
+
+          if (typeof prop === "string") {
+            return topic(prop);
+          }
+        },
+      },
+    ),
+  };
+
+  const ch = new Proxy(blankChannel, {
+    get: (target, prop) => {
+      if (prop in target) {
+        return target[prop as keyof typeof target];
+      }
+
+      if (typeof prop === "string") {
+        return createTopicFn(id, topic(prop));
+      }
+    },
+  });
+
+  return ch as unknown as TOutput;
+};
+
+const createTopicFn = (channelId: string, topic: Realtime.Topic.Definition) => {
+  return async (data: unknown) => {
+    const schema = topic.getSchema();
+    if (schema) {
+      try {
+        await schema["~standard"].validate(data);
+      } catch (err) {
+        console.error(
+          `Failed schema validation for channel "${channelId}" topic "${topic.name}":`,
+          err,
+        );
+        throw new Error("Failed schema validation");
+      }
+    }
+
+    return {
+      channel: channelId,
+      topic: topic.name,
+      data,
+    };
+  };
 };
