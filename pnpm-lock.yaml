@@ -56,14 +56,17 @@ importers:
     dependencies:
       '@typescript-eslint/utils':
         specifier: ^6.11.0
-        version: 6.11.0(eslint@9.18.0)(typescript@5.5.2)
+        version: 6.11.0(eslint@8.53.0)(typescript@5.5.2)
       typescript:
         specifier: ~5.5.2
         version: 5.5.2
     devDependencies:
       '@typescript-eslint/rule-tester':
         specifier: ^6.11.0
-        version: 6.11.0(@eslint/eslintrc@3.2.0)(eslint@9.18.0)(typescript@5.5.2)
+        version: 6.11.0(@eslint/eslintrc@3.2.0)(eslint@8.53.0)(typescript@5.5.2)
+      eslint:
+        specifier: ^8.0.0
+        version: 8.53.0
       jest:
         specifier: ^29.3.1
         version: 29.5.0(@types/node@22.13.10)(ts-node@10.9.1(@types/node@22.13.10)(typescript@5.5.2))
@@ -7139,13 +7142,13 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@typescript-eslint/rule-tester@6.11.0(@eslint/eslintrc@3.2.0)(eslint@9.18.0)(typescript@5.5.2)':
+  '@typescript-eslint/rule-tester@6.11.0(@eslint/eslintrc@3.2.0)(eslint@8.53.0)(typescript@5.5.2)':
     dependencies:
       '@eslint/eslintrc': 3.2.0
       '@typescript-eslint/typescript-estree': 6.11.0(typescript@5.5.2)
-      '@typescript-eslint/utils': 6.11.0(eslint@9.18.0)(typescript@5.5.2)
+      '@typescript-eslint/utils': 6.11.0(eslint@8.53.0)(typescript@5.5.2)
       ajv: 6.12.6
-      eslint: 9.18.0
+      eslint: 8.53.0
       lodash.merge: 4.6.2
       semver: 7.5.4
     transitivePeerDependencies:
@@ -7355,15 +7358,15 @@ snapshots:
       - supports-color
       - typescript
 
-  '@typescript-eslint/utils@6.11.0(eslint@9.18.0)(typescript@5.5.2)':
+  '@typescript-eslint/utils@6.11.0(eslint@8.53.0)(typescript@5.5.2)':
     dependencies:
-      '@eslint-community/eslint-utils': 4.4.0(eslint@9.18.0)
+      '@eslint-community/eslint-utils': 4.4.0(eslint@8.53.0)
       '@types/json-schema': 7.0.15
       '@types/semver': 7.5.0
       '@typescript-eslint/scope-manager': 6.11.0
       '@typescript-eslint/types': 6.11.0
       '@typescript-eslint/typescript-estree': 6.11.0(typescript@5.5.2)
-      eslint: 9.18.0
+      eslint: 8.53.0
       semver: 7.5.4
     transitivePeerDependencies:
       - supports-color
