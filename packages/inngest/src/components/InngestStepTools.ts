@@ -1,4 +1,4 @@
-import { gemini, openai, type AiAdapter } from "@inngest/ai";
+import { models, type AiAdapter } from "@inngest/ai";
 import { z } from "zod";
 import { logPrefix } from "../helpers/consts.js";
 import { type Jsonify } from "../helpers/jsonify.js";
@@ -413,20 +413,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
        * Models for AI inference and other AI-related tasks.
        */
       models: {
-        /**
-         * Create an OpenAI model using the OpenAI chat format.
-         *
-         * By default it targets the `https://api.openai.com/v1/` base URL.
-         */
-        openai,
-
-        /**
-         * Create a Gemini model using the OpenAI chat format.
-         *
-         * By default it targets the `https://generativelanguage.googleapis.com/v1beta/`
-         * base URL.
-         */
-        gemini,
+        ...models,
       },
     },
 
