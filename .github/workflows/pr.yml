@@ -177,6 +177,21 @@ jobs:
       - run: pnpm install
       - run: pnpm test
 
+  "realtime_test":
+    name: "realtime: Test"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/realtime
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+      - run: pnpm install
+      - run: pnpm test
+
   package_inngest:
     name: "inngest: Package"
     runs-on: ubuntu-latest
