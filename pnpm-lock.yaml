@@ -247,7 +247,7 @@ importers:
         version: 0.1.11
       next:
         specifier: ^13.5.4
-        version: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
+        version: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
       nock:
         specifier: ^13.2.9
         version: 13.2.9
@@ -314,7 +314,7 @@ importers:
         version: 1.5.1(node-fetch@2.7.0)
       inngest:
         specifier: 3.21.0
-        version: 3.21.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.5.2)
+        version: 3.21.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.5.2)
       jest:
         specifier: ^29.3.1
         version: 29.5.0(@types/node@22.13.10)(ts-node@10.9.1(@types/node@22.13.10)(typescript@5.5.2))
@@ -350,7 +350,7 @@ importers:
         version: 15.14.0
       inngest:
         specifier: ^3.19.11
-        version: 3.19.20(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.4.2)
+        version: 3.19.20(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.4.2)
       typescript:
         specifier: ~5.4.0
         version: 5.4.2
@@ -362,7 +362,7 @@ importers:
     dependencies:
       inngest:
         specifier: ^3.23.1
-        version: 3.25.1(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.6.3)
+        version: 3.25.1(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.6.3)
       zod:
         specifier: ^3.0.0
         version: 3.22.3
@@ -372,7 +372,7 @@ importers:
         version: 9.7.0
       '@inngest/test':
         specifier: ^0.1.3
-        version: 0.1.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.6.3)
+        version: 0.1.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.6.3)
       '@types/eslint__js':
         specifier: ^8.42.3
         version: 8.42.3
@@ -438,11 +438,14 @@ importers:
         specifier: ^15.14.0
         version: 15.14.0
       inngest:
-        specifier: 3.32.6-pr-892.0
-        version: 3.32.6-pr-892.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.8.2)
+        specifier: ^3.32.7
+        version: 3.32.7(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2)
       jest:
         specifier: ^29.3.1
         version: 29.5.0(@types/node@22.13.10)(ts-node@10.9.1(@types/node@22.13.10)(typescript@5.8.2))
+      react:
+        specifier: ^19.0.0
+        version: 19.0.0
       ts-jest:
         specifier: ^29.1.0
         version: 29.1.0(@babel/core@7.23.6)(@jest/types@29.5.0)(babel-jest@29.5.0(@babel/core@7.23.6))(jest@29.5.0(@types/node@22.13.10)(ts-node@10.9.1(@types/node@22.13.10)(typescript@5.8.2)))(typescript@5.8.2)
@@ -460,7 +463,7 @@ importers:
     dependencies:
       inngest:
         specifier: ^3.22.12
-        version: 3.23.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.8.2)
+        version: 3.23.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2)
       tinyspy:
         specifier: ^3.0.2
         version: 3.0.2
@@ -3455,8 +3458,8 @@ packages:
       typescript:
         optional: true
 
-  inngest@3.32.6-pr-892.0:
-    resolution: {integrity: sha512-8JwSf0bA4r8AjCUDxGT7rvGI8fuZBDJdyS9WM2GwQdvKYYYFwPUn2YaWrgqnwkyearpyU7FrTxTs+usIiPtS7A==}
+  inngest@3.32.7:
+    resolution: {integrity: sha512-wydg8YAzMXp4u3cS2/ETvh9IW3J5NpZX/n2+yU6db5nrZp7Mbw7E0SwYYxiCZYGQ06cN8kYn1XsguzXMTVyayg==}
     engines: {node: '>=14'}
     peerDependencies:
       '@sveltejs/kit': '>=1.27.3'
@@ -4542,8 +4545,8 @@ packages:
   react-is@18.2.0:
     resolution: {integrity: sha512-xWGDIW6x921xtzPkhiULtthJHoJvBbF3q26fzloPCK0hsvxtPVelvftw3zjbHWSkR2km9Z+4uxbDDK/6Zw9B8w==}
 
-  react@18.2.0:
-    resolution: {integrity: sha512-/3IjMdb2L9QbBdWiW5e3P2/npwMBaU9mHCSCUzNln0ZCYbcfTsGbTJrU/kGemdH2IWmB2ioZ+zkxtmq6g09fGQ==}
+  react@19.0.0:
+    resolution: {integrity: sha512-V8AVnmPIICiWpGfm6GLzCR/W5FXLchHop40W4nXBmdlEceh16rCN8O8LNWm5bh5XUX91fh7KpA+W0TgMKmgTpQ==}
     engines: {node: '>=0.10.0'}
 
   read-pkg-up@7.0.1:
@@ -6201,9 +6204,9 @@ snapshots:
       '@types/node': 22.10.5
       typescript: 5.8.2
 
-  '@inngest/test@0.1.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.6.3)':
+  '@inngest/test@0.1.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.6.3)':
     dependencies:
-      inngest: 3.32.5(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.6.3)
+      inngest: 3.32.5(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.6.3)
       tinyspy: 3.0.2
       ulid: 2.3.0
     transitivePeerDependencies:
@@ -9203,7 +9206,7 @@ snapshots:
 
   inherits@2.0.4: {}
 
-  inngest@3.19.20(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.4.2):
+  inngest@3.19.20(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.4.2):
     dependencies:
       '@types/debug': 4.1.12
       canonicalize: 1.0.8
@@ -9225,13 +9228,13 @@ snapshots:
       h3: 1.8.1
       hono: 4.2.7
       koa: 2.14.2
-      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
+      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
       typescript: 5.4.2
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  inngest@3.21.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.5.2):
+  inngest@3.21.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.5.2):
     dependencies:
       '@types/debug': 4.1.12
       canonicalize: 1.0.8
@@ -9253,13 +9256,13 @@ snapshots:
       h3: 1.8.1
       hono: 4.2.7
       koa: 2.14.2
-      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
+      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
       typescript: 5.5.2
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  inngest@3.23.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.8.2):
+  inngest@3.23.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2):
     dependencies:
       '@types/debug': 4.1.12
       canonicalize: 1.0.8
@@ -9281,13 +9284,13 @@ snapshots:
       h3: 1.8.1
       hono: 4.2.7
       koa: 2.14.2
-      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
+      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
       typescript: 5.8.2
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  inngest@3.25.1(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.6.3):
+  inngest@3.25.1(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.6.3):
     dependencies:
       '@types/debug': 4.1.12
       canonicalize: 1.0.8
@@ -9309,13 +9312,13 @@ snapshots:
       h3: 1.8.1
       hono: 4.2.7
       koa: 2.14.2
-      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
+      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
       typescript: 5.6.3
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  inngest@3.32.5(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.6.3):
+  inngest@3.32.5(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.6.3):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.2
@@ -9341,16 +9344,16 @@ snapshots:
       h3: 1.8.1
       hono: 4.2.7
       koa: 2.14.2
-      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
+      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
       typescript: 5.6.3
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  inngest@3.32.6-pr-892.0(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(typescript@5.8.2):
+  inngest@3.32.7(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.3(@types/node@22.13.10)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
-      '@inngest/ai': 0.1.2
+      '@inngest/ai': 0.1.3
       '@jpwilliams/waitgroup': 2.1.1
       '@types/debug': 4.1.12
       canonicalize: 1.0.8
@@ -9373,7 +9376,7 @@ snapshots:
       h3: 1.8.1
       hono: 4.2.7
       koa: 2.14.2
-      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
+      next: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
       typescript: 5.8.2
     transitivePeerDependencies:
       - encoding
@@ -10408,16 +10411,16 @@ snapshots:
 
   negotiator@0.6.3: {}
 
-  next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@18.2.0))(react@18.2.0):
+  next@13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0):
     dependencies:
       '@next/env': 13.5.4
       '@swc/helpers': 0.5.2
       busboy: 1.6.0
       caniuse-lite: 1.0.30001571
       postcss: 8.4.31
-      react: 18.2.0
-      react-dom: 18.2.0(react@18.2.0)
-      styled-jsx: 5.1.1(@babel/core@7.23.6)(react@18.2.0)
+      react: 19.0.0
+      react-dom: 18.2.0(react@19.0.0)
+      styled-jsx: 5.1.1(@babel/core@7.23.6)(react@19.0.0)
       watchpack: 2.4.0
     optionalDependencies:
       '@next/swc-darwin-arm64': 13.5.4
@@ -10792,19 +10795,17 @@ snapshots:
       iconv-lite: 0.4.24
       unpipe: 1.0.0
 
-  react-dom@18.2.0(react@18.2.0):
+  react-dom@18.2.0(react@19.0.0):
     dependencies:
       loose-envify: 1.4.0
-      react: 18.2.0
+      react: 19.0.0
       scheduler: 0.23.2
 
   react-is@17.0.2: {}
 
   react-is@18.2.0: {}
 
-  react@18.2.0:
-    dependencies:
-      loose-envify: 1.4.0
+  react@19.0.0: {}
 
   read-pkg-up@7.0.1:
     dependencies:
@@ -11177,10 +11178,10 @@ snapshots:
 
   strip-json-comments@3.1.1: {}
 
-  styled-jsx@5.1.1(@babel/core@7.23.6)(react@18.2.0):
+  styled-jsx@5.1.1(@babel/core@7.23.6)(react@19.0.0):
     dependencies:
       client-only: 0.0.1
-      react: 18.2.0
+      react: 19.0.0
     optionalDependencies:
       '@babel/core': 7.23.6
 
