@@ -36,7 +36,7 @@
   "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "peerDependencies": {
-    "inngest": "^3.32.5"
+    "inngest": "^3.32.6-pr-892.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.7.0",
@@ -46,7 +46,7 @@
     "eslint": "^9.18.0",
     "eslint-plugin-prettier": "^5.2.1",
     "globals": "^15.14.0",
-    "inngest": "^3.32.5",
+    "inngest": "3.32.6-pr-892.0",
     "jest": "^29.3.1",
     "ts-jest": "^29.1.0",
     "typescript": "^5.8.2",
