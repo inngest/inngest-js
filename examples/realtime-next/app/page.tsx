@@ -1,7 +1,7 @@
 "use client";
 
 import { useInngestApp } from "@/hooks/useInngestApp";
-import { useInngestSubscription } from "@/hooks/useInngestSubscription";
+import { useInngestSubscription } from "@inngest/realtime/hooks";
 import Image from "next/image";
 import { useState } from "react";
 import { invoke } from "./actions";

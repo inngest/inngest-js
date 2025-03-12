@@ -1,6 +1,7 @@
-import { Inngest } from "inngest";
-import { type Realtime } from "inngest/experimental";
+import { type Inngest } from "inngest";
 import { useEffect, useRef, useState } from "react";
+import { subscribe } from "./subscribe";
+import { type Realtime } from "./types";
 
 export enum InngestSubscriptionState {
   Closed = "closed",
@@ -38,7 +39,6 @@ export function useInngestSubscription<
 }): InngestSubscription<NonNullable<TToken>> {
   const [token, setToken] = useState<TToken | null | undefined>(tokenInput);
   const [data, setData] = useState<Realtime.Message[]>([]);
-  const [latestData, setLatestData] = useState<Realtime.Message | null>(null);
   const [freshData, setFreshData] = useState<Realtime.Message[]>([]);
   const [error, setError] = useState<Error | null>(null);
   const [state, setState] = useState<InngestSubscriptionState>(
@@ -84,7 +84,7 @@ export function useInngestSubscription<
     const start = async () => {
       try {
         setState(InngestSubscriptionState.Connecting);
-        const stream = await app.subscribe({ ...token });
+        const stream = await subscribe(app, { ...token });
         if (cancelled) return;
 
         subscriptionRef.current = stream;
@@ -95,7 +95,6 @@ export function useInngestSubscription<
 
           if (bufferIntervalRef.current === 0) {
             setFreshData([message]);
-            setLatestData(message);
             setData((prev) => [...prev, message]);
           } else {
             messageBuffer.current.push(message);
@@ -153,7 +152,6 @@ export function useInngestSubscription<
 
           setFreshData(buffered);
           setData((prev) => [...prev, ...buffered]);
-          setLatestData(buffered[buffered.length - 1]);
         }
       }, bufferInterval);
     }
@@ -163,7 +161,11 @@ export function useInngestSubscription<
     };
   }, [bufferInterval]);
 
-  return { data, latestData, freshData, error, state } as InngestSubscription<
-    NonNullable<TToken>
-  >;
+  return {
+    data,
+    latestData: data[data.length - 1] ?? null,
+    freshData,
+    error,
+    state,
+  } as unknown as InngestSubscription<NonNullable<TToken>>;
 }

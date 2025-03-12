@@ -5,6 +5,7 @@
   "version": "0.0.0",
   "include": ["./src/**/*.ts"],
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./hooks": "./src/hooks.ts"
   }
 }

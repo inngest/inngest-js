@@ -425,6 +425,9 @@ importers:
       '@types/node':
         specifier: ^22.13.10
         version: 22.13.10
+      '@types/react':
+        specifier: ^19.0.10
+        version: 19.0.10
       eslint:
         specifier: ^9.18.0
         version: 9.18.0
@@ -1163,6 +1166,9 @@ packages:
     resolution: {integrity: sha512-c7hNEllBlenFTHBky65mhq8WD2kbN9Q6gk0bTk8lSBvc554jpXSkST1iePudpt7+A/AQvuHs9EMqjHDXMY1lrA==}
     engines: {node: '>=18.18'}
 
+  '@inngest/ai@0.1.2':
+    resolution: {integrity: sha512-79Ez/2142GU5Fo44fMxo8rW6PaeVvIFnYqePdEeGTiymTGMMmcsAtrMTfnvq4AnMorFnrtTh6rr6P9xlSdhPJA==}
+
   '@inngest/ai@0.1.3':
     resolution: {integrity: sha512-J8R/pff6Nsm16e5V9UvcNO/wfaaNVS54/wN7cE8CREb1OOFzlCd3Y4TyGb0wyw3y+iTayOLa/KJEYziaGMPIbA==}
 
@@ -1649,6 +1655,9 @@ packages:
 
   '@types/range-parser@1.2.4':
     resolution: {integrity: sha512-EEhsLsD6UsDM1yFhAvy0Cjr6VwmpMWqFBCb9w07wVugF7w9nfajxLuVmngTIpgS6svCnm6Vaw+MZhoDCKnOfsw==}
+
+  '@types/react@19.0.10':
+    resolution: {integrity: sha512-JuRQ9KXLEjaUNjTWpzuR231Z2WpIwczOkBEIvbHNCzQefFIT0L8IqE6NV6ULLyC1SI/i234JnDoMkfg+RjQj2g==}
 
   '@types/semver@7.5.0':
     resolution: {integrity: sha512-G8hZ6XJiHnuhQKR7ZmysCeJWE08o8T0AXtk5darsCaTVsYZhhgUrq53jizaR2FvsoeCwJhlmwTjkXBY5Pn/ZHw==}
@@ -2293,6 +2302,9 @@ packages:
   css-tree@2.3.1:
     resolution: {integrity: sha512-6Fv1DV/TYw//QF5IzQdqsNDjx/wc8TrMBZsqjL9eW01tWb7R7k/mq+/VXfJCl7SoD5emsJop9cOByJZfs8hYIw==}
     engines: {node: ^10 || ^12.20.0 || ^14.13.0 || >=15.0.0}
+
+  csstype@3.1.3:
+    resolution: {integrity: sha512-M1uQkMl8rQK/szD0LNhtqxIPLpimGm8sOBwU7lLnCpSbTyY3yeU1Vc7l4KT5zT4s/yOxHH5O7tIuuLOCnLADRw==}
 
   csv-generate@3.4.3:
     resolution: {integrity: sha512-w/T+rqR0vwvHqWs/1ZyMDWtHHSJaN06klRqJXBEpDJaM/+dZkso0OKh1VcuuYvK3XM53KysVNq8Ko/epCK8wOw==}
@@ -6179,6 +6191,11 @@ snapshots:
 
   '@humanwhocodes/retry@0.4.1': {}
 
+  '@inngest/ai@0.1.2':
+    dependencies:
+      '@types/node': 22.13.10
+      typescript: 5.8.2
+
   '@inngest/ai@0.1.3':
     dependencies:
       '@types/node': 22.10.5
@@ -6978,6 +6995,10 @@ snapshots:
   '@types/qs@6.9.7': {}
 
   '@types/range-parser@1.2.4': {}
+
+  '@types/react@19.0.10':
+    dependencies:
+      csstype: 3.1.3
 
   '@types/semver@7.5.0': {}
 
@@ -8053,6 +8074,8 @@ snapshots:
     dependencies:
       mdn-data: 2.0.30
       source-map-js: 1.2.1
+
+  csstype@3.1.3: {}
 
   csv-generate@3.4.3: {}
 
