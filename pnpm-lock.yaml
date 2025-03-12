@@ -83,8 +83,8 @@ importers:
         specifier: ^2.2.3
         version: 2.2.3
       '@inngest/ai':
-        specifier: 0.1.2
-        version: 0.1.2
+        specifier: ^0.1.3
+        version: 0.1.3
       '@jpwilliams/waitgroup':
         specifier: ^2.1.1
         version: 2.1.1
@@ -1111,8 +1111,8 @@ packages:
     resolution: {integrity: sha512-c7hNEllBlenFTHBky65mhq8WD2kbN9Q6gk0bTk8lSBvc554jpXSkST1iePudpt7+A/AQvuHs9EMqjHDXMY1lrA==}
     engines: {node: '>=18.18'}
 
-  '@inngest/ai@0.1.2':
-    resolution: {integrity: sha512-79Ez/2142GU5Fo44fMxo8rW6PaeVvIFnYqePdEeGTiymTGMMmcsAtrMTfnvq4AnMorFnrtTh6rr6P9xlSdhPJA==}
+  '@inngest/ai@0.1.3':
+    resolution: {integrity: sha512-J8R/pff6Nsm16e5V9UvcNO/wfaaNVS54/wN7cE8CREb1OOFzlCd3Y4TyGb0wyw3y+iTayOLa/KJEYziaGMPIbA==}
 
   '@inngest/test@0.1.3':
     resolution: {integrity: sha512-3iwhqXs4Z8reWMmbOMObZ9nIfIDzTwpkDPf6L86746hs/rkOy+OZpagKosQZLc0JxxiSFzQhrgCBDtrYJoMIBg==}
@@ -4587,6 +4587,7 @@ packages:
 
   serialize-error-cjs@0.1.3:
     resolution: {integrity: sha512-GXwbHkufrNZ87O7DUEvWhR8eBnOqiXtHsOXakkJliG7eLDmjh6gDlbJbMZFFbUx0J5sXKgwq4NFCs41dF5MhiA==}
+    deprecated: Rolling release, please update to 0.2.0
 
   serve-static@1.15.0:
     resolution: {integrity: sha512-XGuRDNjXUijsUL0vl6nSD7cwURuzEgglbOaFuZM9g3kwDXOWVTck0jLzjPzGD+TazWbboZYu52/9/XPdUgne9g==}
@@ -6037,7 +6038,7 @@ snapshots:
 
   '@humanwhocodes/retry@0.4.1': {}
 
-  '@inngest/ai@0.1.2':
+  '@inngest/ai@0.1.3':
     dependencies:
       '@types/node': 22.10.5
       typescript: 5.8.2

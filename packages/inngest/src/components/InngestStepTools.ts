@@ -1,5 +1,4 @@
-import { type AiAdapter } from "@inngest/ai";
-import * as models from "@inngest/ai/dist/models";
+import { models, type AiAdapter } from "@inngest/ai";
 import { z } from "zod";
 import { logPrefix } from "../helpers/consts.js";
 import { type Jsonify } from "../helpers/jsonify.js";
