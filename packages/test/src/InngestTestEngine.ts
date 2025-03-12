@@ -29,7 +29,7 @@ export namespace InngestTestEngine {
      * TODO Potentially later allow many functions such that we can invoke and
      * send events.
      */
-    function: InngestFunction<any, any, any, any, any, any>;
+    function: InngestFunction.Like;
 
     /**
      * The event payloads to send to the function. If none is given, an
@@ -475,7 +475,9 @@ export class InngestTestEngine {
 
     const runId = ulid();
 
-    const execution = options.function["createExecution"]({
+    const execution = (options.function as InngestFunction.Any)[
+      "createExecution"
+    ]({
       version: ExecutionVersion.V1,
       partialOptions: {
         runId,
