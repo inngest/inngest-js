@@ -8,7 +8,7 @@ export const topic: Realtime.Topic.Builder = (
   /**
    * TODO
    */
-  id
+  id,
 ) => {
   return new TopicDefinitionImpl(id);
 };
@@ -36,7 +36,7 @@ export class TopicDefinitionImpl<
   }
 
   public schema<const TSchema extends StandardSchemaV1>(
-    schema: TSchema
+    schema: TSchema,
   ): Realtime.Topic.Definition<
     TTopicId,
     StandardSchemaV1.InferInput<TSchema>,
