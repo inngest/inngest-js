@@ -1,5 +1,11 @@
 # @inngest/ai
 
+## 0.1.3
+
+### Patch Changes
+
+- [#890](https://github.com/inngest/inngest-js/pull/890) [`fd03b00`](https://github.com/inngest/inngest-js/commit/fd03b009941cf89a4872447b6059d66ef585532a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export a `models` property containing all models
+
 ## 0.1.2
 
 ### Patch Changes
