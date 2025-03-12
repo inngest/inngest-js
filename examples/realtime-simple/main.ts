@@ -1,11 +1,17 @@
+import {
+  channel,
+  realtimeMiddleware,
+  subscribe,
+  topic,
+} from "@inngest/realtime";
 import { EventSchemas, Inngest } from "inngest";
-import { channel, topic } from "inngest/experimental";
 import { serve } from "inngest/node";
 import { createServer } from "node:http";
 import { z } from "zod";
 
 const app = new Inngest({
   id: "realtime-simple",
+  middleware: [realtimeMiddleware()],
   schemas: new EventSchemas().fromZod({
     "app/post.like": { data: z.object({ postId: z.string() }) },
   }),
@@ -80,7 +86,8 @@ const serveApp = () => {
 };
 
 const logsSubscription = async () => {
-  await app.subscribe(
+  await subscribe(
+    app,
     {
       channel: globalChannel(),
       topics: ["logs"],
@@ -97,7 +104,8 @@ const logsSubscription = async () => {
 };
 
 const postSubscription = async () => {
-  await app.subscribe(
+  await subscribe(
+    app,
     {
       channel: postChannel("123"),
       topics: ["updated", "deleted"],

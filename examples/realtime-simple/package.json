@@ -13,10 +13,12 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "inngest": "^3.31.13-pr-866.13",
+    "@inngest/realtime": "file:../../packages/realtime/inngest-realtime.tgz",
+    "inngest": "^3.32.7",
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@types/node": "^22.13.10",
     "concurrently": "^9.1.2",
     "tsx": "^4.19.3",
     "wait-port": "^1.1.0"
