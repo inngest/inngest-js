@@ -101,7 +101,12 @@ export default function Home() {
                   >
                     <div className="font-mono break-words w-full">
                       <div className="text-[#aaa] mb-1">
-                        [{new Date(message.created_at).toLocaleTimeString()}]{" "}
+                        [
+                        {(message.kind === "data"
+                          ? new Date(message.createdAt)
+                          : new Date()
+                        ).toLocaleTimeString()}
+                        ]{" "}
                         <strong className="text-white">
                           {message.channel}/{message.topic}
                         </strong>

@@ -1,4 +1,4 @@
-import { channel, topic } from "inngest/experimental";
+import { channel, topic } from "@inngest/realtime";
 import { getInngestApp } from "..";
 
 const inngest = getInngestApp();
@@ -14,14 +14,12 @@ export const helloWorld = inngest.createFunction(
     await Promise.all([
       publish(helloChannel().logs(`Hello ${event.data.email} from ${runId}`)),
 
-      step
-        .sleep("holdit", 1000)
-        .then(() =>
-          step.sendEvent("retrigger", {
-            name: "test/hello.world",
-            data: { email: event.data.email },
-          })
-        ),
+      step.sleep("holdit", 1000).then(() =>
+        step.sendEvent("retrigger", {
+          name: "test/hello.world",
+          data: { email: event.data.email },
+        })
+      ),
     ]);
 
     return { message: `Hello ${event.data.email}!`, runId };
