@@ -1,5 +1,11 @@
 # inngest
 
+## 3.32.7
+
+### Patch Changes
+
+- [#889](https://github.com/inngest/inngest-js/pull/889) [`5d5bd10`](https://github.com/inngest/inngest-js/commit/5d5bd10169bd7c303dcf8adb93f25990b6cebcaa) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Automatically set all AI models exports in step tooling based on `@inngest/ai` version
+
 ## 3.32.6
 
 ### Patch Changes
