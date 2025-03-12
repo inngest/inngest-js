@@ -1,5 +1,13 @@
 # inngest
 
+## 3.32.6
+
+### Patch Changes
+
+- [#892](https://github.com/inngest/inngest-js/pull/892) [`cb165d1`](https://github.com/inngest/inngest-js/commit/cb165d1f88211e81f61ed6e16cdf7ce23e7f770c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add APIs in preparation for realtime calls
+
+- [#892](https://github.com/inngest/inngest-js/pull/892) [`cb165d1`](https://github.com/inngest/inngest-js/commit/cb165d1f88211e81f61ed6e16cdf7ce23e7f770c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `executingStep` as an ALS property, allowing async contexts to ascertain whether we are in or out of a step
+
 ## 3.32.5
 
 ### Patch Changes
