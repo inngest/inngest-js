@@ -1,5 +1,11 @@
 # @inngest/test
 
+## 0.1.6
+
+### Patch Changes
+
+- [#898](https://github.com/inngest/inngest-js/pull/898) [`e3c8dfe`](https://github.com/inngest/inngest-js/commit/e3c8dfee031fc7fd1b24e3713805194ee40bf5b4) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Loosen `InngestTestEngine`'s `function` typing, allowing for `InngestFunction`s from many different `inngest` versions to be passed
+
 ## 0.1.5
 
 ### Patch Changes
