@@ -1,8 +1,34 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Next.js + Inngest Realtime Example
+
+This is a [Next.js](https://nextjs.org/) project showcasing how to use [`@inngest/realtime`](https://npm.im/@inngest/realtime) with Inngest for real-time data streaming.
+
+## Features
+
+- Live data streaming from Inngest to your frontend
+- React hooks for real-time data updates
+- Typescript integration with channel and topic typing
+- Example pattern for real-time event handling
 
 ## Getting Started
 
-First, run the development server:
+### Clone the Repository
+
+```bash
+git clone https://github.com/inngest/inngest-js.git
+cd inngest-js/examples/realtime-next
+```
+
+### Install Dependencies
+
+```bash
+npm install
+# or
+yarn install
+# or
+pnpm install
+```
+
+### Start the Development Server
 
 ```bash
 npm run dev
@@ -10,27 +36,80 @@ npm run dev
 yarn dev
 # or
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+In a separate terminal, start the Inngest Dev Server:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npx inngest-cli@latest dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000) to see the streaming
+dashboard.
+
+Open [http://localhost:8288](http://localhost:8288) to see the Inngest Dev
+Server and kick off the first even, which starts data streaming.
+
+## Project Structure
+
+- `/app` - Next.js app router pages and components
+- `/app/api/inngest` - Inngest API route handler
+- `/app/inngest` - Inngest function definitions
+- `/components` - React components including realtime examples
+
+## Key Concepts
+
+### Setting Up Inngest
+
+The project uses the Inngest client defined in `/app/inngest/client.ts`:
+
+```typescript
+import { Inngest } from "inngest";
+
+export const inngest = new Inngest({
+  id: "realtime-next-app",
+  // Additional config options here
+});
+```
+
+### Using Realtime Subscriptions
+
+The `@inngest/realtime` package provides hooks for subscribing to real-time data:
+
+```typescript
+import { useInngestSubscription } from "@inngest/realtime/hooks";
+import { inngest } from "./path-to-client";
+
+function MyComponent() {
+  const { data, latestData, state } = useInngestSubscription({
+    app: inngest,
+    token: {
+      channel: "my-channel",
+      topics: ["my-topic"],
+    },
+    enabled: true,
+  });
+
+  // Render with real-time data
+}
+```
+
+### Subscription Tokens
+
+To create subscription tokens for specific channels and topics:
+
+```typescript
+import { getSubscriptionToken } from "@inngest/realtime";
+
+const token = await getSubscriptionToken(inngest, {
+  channel: "my-channel",
+  topics: ["my-topic"],
+  // Optional filters, expiration, etc.
+});
+```
 
 ## Learn More
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- [Inngest Documentation](https://www.inngest.com/docs) - Learn about Inngest features and API
+- [Inngest Realtime Documentation](https://www.inngest.com/docs/features/realtime) - Learn about the realtime features
+- [Next.js Documentation](https://nextjs.org/docs) - Learn about Next.js features and API
