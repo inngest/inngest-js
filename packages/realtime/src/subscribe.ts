@@ -42,11 +42,11 @@ export const subscribe = async <
   /**
    * TODO
    */
-  callback?: Realtime.Subscribe.Callback<TToken>
+  callback?: Realtime.Subscribe.Callback<TToken>,
 ): Promise<TOutput> => {
   const subscription = new TokenSubscription(
     app,
-    token as Realtime.Subscribe.Token
+    token as Realtime.Subscribe.Token,
   );
   const iterator = subscription.getIterator(subscription.getStream());
 
@@ -97,7 +97,7 @@ export const getSubscriptionToken = async <
      * TODO
      */
     topics: InputTopics;
-  }
+  },
 ): Promise<TToken> => {
   const channelId =
     typeof args.channel === "string" ? args.channel : args.channel.name;
@@ -108,7 +108,7 @@ export const getSubscriptionToken = async <
 
   const key = await (app as Inngest.Any)["inngestApi"].getSubscriptionToken(
     channelId,
-    args.topics
+    args.topics,
   );
 
   const token = {
@@ -119,14 +119,6 @@ export const getSubscriptionToken = async <
 
   return token;
 };
-
-/**
- * Map of token keys to active subscriptions.
- *
- * Used to map every token to a single connection and allowing subscribing and
- * unsubscribing to topics without creating new connections.
- */
-const tokenSubscriptions = new Map<string, TokenSubscription>();
 
 // Must be a new connection for every token used.
 class TokenSubscription {
@@ -147,13 +139,6 @@ class TokenSubscription {
 
   #ws: WebSocket | null = null;
 
-  /**
-   * A counter for the number of active subscriptions for each topic.
-   * It contains all topics allowed by the token.
-   * If the counter reaches 0, the topic is unsubscribed.
-   */
-  #topicsInUse: Map<string, number>;
-
   #chunkStreams = new Map<
     string,
     { stream: ReadableStream; controller: ReadableStreamDefaultController }
@@ -164,12 +149,8 @@ class TokenSubscription {
 
   constructor(
     public app: Inngest.Like,
-    public token: Realtime.Subscribe.Token
+    public token: Realtime.Subscribe.Token,
   ) {
-    this.#topicsInUse = new Map<string, number>(
-      this.token.topics.map((topic) => [topic, 0])
-    );
-
     if (typeof token.channel === "string") {
       this.#channelId = token.channel;
 
@@ -197,7 +178,7 @@ class TokenSubscription {
     this.#debug(
       `Establishing connection to channel "${
         this.#channelId
-      }" with topics ${JSON.stringify(this.#topics)}...`
+      }" with topics ${JSON.stringify(this.#topics)}...`,
     );
 
     if (typeof WebSocket === "undefined") {
@@ -208,7 +189,7 @@ class TokenSubscription {
       this.token.key || (await getSubscriptionToken(this.app, this.token)).key;
     if (!key) {
       throw new Error(
-        "No subscription token key passed and failed to retrieve one automatically"
+        "No subscription token key passed and failed to retrieve one automatically",
       );
     }
 
@@ -216,7 +197,7 @@ class TokenSubscription {
 
     try {
       this.#ws = new WebSocket(
-        `ws://localhost:8288/v1/realtime/connect?token=${key}`
+        `ws://localhost:8288/v1/realtime/connect?token=${key}`,
       );
 
       this.#ws.onopen = () => {
@@ -226,7 +207,7 @@ class TokenSubscription {
 
       this.#ws.onmessage = async (event) => {
         const parseRes = await Realtime.messageSchema.safeParseAsync(
-          JSON.parse(event.data as string)
+          JSON.parse(event.data as string),
         );
 
         if (!parseRes.success) {
@@ -238,7 +219,7 @@ class TokenSubscription {
 
         if (!this.#running) {
           this.#debug(
-            `Received message on channel "${msg.channel}" for topic "${msg.topic}" but stream is closed`
+            `Received message on channel "${msg.channel}" for topic "${msg.topic}" but stream is closed`,
           );
         }
 
@@ -246,14 +227,14 @@ class TokenSubscription {
           case "data": {
             if (!msg.channel) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no channel`
+                `Received message on channel "${msg.channel}" with no channel`,
               );
               return;
             }
 
             if (!msg.topic) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no topic`
+                `Received message on channel "${msg.channel}" with no topic`,
               );
               return;
             }
@@ -261,7 +242,7 @@ class TokenSubscription {
             const topic = this.#topics.get(msg.topic);
             if (!topic) {
               this.#debug(
-                `Received message on channel "${msg.channel}" for unknown topic "${msg.topic}"`
+                `Received message on channel "${msg.channel}" for unknown topic "${msg.topic}"`,
               );
               return;
             }
@@ -272,7 +253,7 @@ class TokenSubscription {
               if (validateRes.issues) {
                 console.error(
                   `Received message on channel "${msg.channel}" for topic "${msg.topic}" that failed schema validation:`,
-                  validateRes.issues
+                  validateRes.issues,
                 );
                 return;
               }
@@ -282,12 +263,12 @@ class TokenSubscription {
 
             this.#debug(
               `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
-              msg.data
+              msg.data,
             );
             return this.#sourceStreamContoller?.enqueue({
               channel: msg.channel,
               topic: msg.topic,
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
               data: msg.data,
               fnId: msg.fn_id,
               createdAt: msg.created_at || new Date(),
@@ -300,14 +281,14 @@ class TokenSubscription {
           case "datastream-start": {
             if (!msg.channel) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no channel`
+                `Received message on channel "${msg.channel}" with no channel`,
               );
               return;
             }
 
             if (!msg.topic) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no topic`
+                `Received message on channel "${msg.channel}" with no topic`,
               );
               return;
             }
@@ -315,7 +296,7 @@ class TokenSubscription {
             const streamId: unknown = msg.data;
             if (typeof streamId !== "string" || !streamId) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no stream ID`
+                `Received message on channel "${msg.channel}" with no stream ID`,
               );
               return;
             }
@@ -323,7 +304,7 @@ class TokenSubscription {
             // `data` is a stream ID that we'll start receiving chunks with
             if (this.#chunkStreams.has(streamId)) {
               this.#debug(
-                `Received message on channel "${msg.channel}" to create stream ID "${streamId}" that already exists`
+                `Received message on channel "${msg.channel}" to create stream ID "${streamId}" that already exists`,
               );
               return;
             }
@@ -339,7 +320,7 @@ class TokenSubscription {
             });
 
             this.#debug(
-              `Created stream ID "${streamId}" on channel "${msg.channel}"`
+              `Created stream ID "${streamId}" on channel "${msg.channel}"`,
             );
             return this.#sourceStreamContoller?.enqueue({
               channel: msg.channel,
@@ -356,14 +337,14 @@ class TokenSubscription {
           case "datastream-end": {
             if (!msg.channel) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no channel`
+                `Received message on channel "${msg.channel}" with no channel`,
               );
               return;
             }
 
             if (!msg.topic) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no topic`
+                `Received message on channel "${msg.channel}" with no topic`,
               );
               return;
             }
@@ -371,7 +352,7 @@ class TokenSubscription {
             const streamId: unknown = msg.data;
             if (typeof streamId !== "string" || !streamId) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no stream ID`
+                `Received message on channel "${msg.channel}" with no stream ID`,
               );
               return;
             }
@@ -380,7 +361,7 @@ class TokenSubscription {
             const stream = this.#chunkStreams.get(streamId);
             if (!stream) {
               this.#debug(
-                `Received message on channel "${msg.channel}" to close stream ID "${streamId}" that doesn't exist`
+                `Received message on channel "${msg.channel}" to close stream ID "${streamId}" that doesn't exist`,
               );
               return;
             }
@@ -389,7 +370,7 @@ class TokenSubscription {
             this.#chunkStreams.delete(streamId);
 
             this.#debug(
-              `Closed stream ID "${streamId}" on channel "${msg.channel}"`
+              `Closed stream ID "${streamId}" on channel "${msg.channel}"`,
             );
             return this.#sourceStreamContoller?.enqueue({
               channel: msg.channel,
@@ -406,14 +387,14 @@ class TokenSubscription {
           case "chunk": {
             if (!msg.channel) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no channel`
+                `Received message on channel "${msg.channel}" with no channel`,
               );
               return;
             }
 
             if (!msg.topic) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no topic`
+                `Received message on channel "${msg.channel}" with no topic`,
               );
               return;
             }
@@ -421,7 +402,7 @@ class TokenSubscription {
             // `stream_id` is the ID of the stream we're receiving chunks for
             if (!msg.stream_id) {
               this.#debug(
-                `Received message on channel "${msg.channel}" with no stream ID`
+                `Received message on channel "${msg.channel}" with no stream ID`,
               );
               return;
             }
@@ -429,14 +410,14 @@ class TokenSubscription {
             const stream = this.#chunkStreams.get(msg.stream_id);
             if (!stream) {
               this.#debug(
-                `Received message on channel "${msg.channel}" for unknown stream ID "${msg.stream_id}"`
+                `Received message on channel "${msg.channel}" for unknown stream ID "${msg.stream_id}"`,
               );
               return;
             }
 
             this.#debug(
               `Received chunk on channel "${msg.channel}" for stream ID "${msg.stream_id}":`,
-              msg.data
+              msg.data,
             );
 
             stream.controller.enqueue(msg.data);
@@ -445,7 +426,7 @@ class TokenSubscription {
               channel: msg.channel,
               topic: msg.topic,
               kind: "chunk",
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
               data: msg.data,
               streamId: msg.stream_id,
               fnId: msg.fn_id,
@@ -456,7 +437,7 @@ class TokenSubscription {
 
           default: {
             this.#debug(
-              `Received message on channel "${msg.channel}" with unhandled kind "${msg.kind}"`
+              `Received message on channel "${msg.channel}" with unhandled kind "${msg.kind}"`,
             );
             return;
           }
@@ -549,7 +530,7 @@ class TokenSubscription {
   public useCallback(
     stream: ReadableStream<Realtime.Message>,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    callback: Realtime.Subscribe.Callback<any>
+    callback: Realtime.Subscribe.Callback<any>,
   ) {
     void (async () => {
       const reader = stream.getReader();

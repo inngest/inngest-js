@@ -1,4 +1,4 @@
-import { type Inngest } from "inngest";
+import { Inngest } from "inngest";
 import { useEffect, useRef, useState } from "react";
 import { subscribe } from "./subscribe";
 import { type Realtime } from "./types";
@@ -23,14 +23,14 @@ export interface InngestSubscription<TToken extends Realtime.Subscribe.Token> {
 export function useInngestSubscription<
   const TToken extends Realtime.Subscribe.Token | null | undefined,
 >({
-  app,
+  app = new Inngest({ id: "useInngestSubscription" }),
   token: tokenInput,
   refreshToken,
   key,
   enabled = true,
   bufferInterval = 0,
 }: {
-  app: Inngest.Any;
+  app?: Inngest.Any;
   token?: TToken;
   refreshToken?: () => Promise<TToken>;
   key?: string;
@@ -42,11 +42,11 @@ export function useInngestSubscription<
   const [freshData, setFreshData] = useState<Realtime.Message[]>([]);
   const [error, setError] = useState<Error | null>(null);
   const [state, setState] = useState<InngestSubscriptionState>(
-    InngestSubscriptionState.Closed
+    InngestSubscriptionState.Closed,
   );
 
   const subscriptionRef = useRef<Realtime.Subscribe.StreamSubscription | null>(
-    null
+    null,
   );
   const messageBuffer = useRef<Realtime.Message[]>([]);
   const bufferIntervalRef = useRef<number>(bufferInterval);
@@ -72,7 +72,6 @@ export function useInngestSubscription<
         setState(InngestSubscriptionState.Error);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Subscription management
@@ -136,7 +135,6 @@ export function useInngestSubscription<
         setState(InngestSubscriptionState.Closed);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, enabled, key]);
 
   // Buffer flushing
