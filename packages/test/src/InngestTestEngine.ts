@@ -95,14 +95,18 @@ export namespace InngestTestEngine {
     handler: () => any;
   }
 
+  export type DeepMock<T> = T extends (...args: any[]) => any
+    ? Mock<T>
+    : T extends object
+      ? { [K in keyof T]: DeepMock<T[K]> }
+      : T;
+
   /**
    * A mocked context object that allows you to assert step usage, input, and
    * output.
    */
   export interface MockContext extends Omit<Context.Any, "step"> {
-    step: {
-      [K in keyof Context.Any["step"]]: Mock<Context.Any["step"][K]>;
-    };
+    step: DeepMock<Context.Any["step"]>;
   }
 
   /**
@@ -349,6 +353,7 @@ export class InngestTestEngine {
       [StepOpCode.StepRun]: () => ({ ...baseRet, result: step.data }),
       [StepOpCode.WaitForEvent]: () => baseRet,
       [StepOpCode.Step]: () => ({ ...baseRet, result: step.data }),
+      [StepOpCode.AiGateway]: () => baseRet,
     };
 
     const result = opHandlers[step.op]();
