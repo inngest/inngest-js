@@ -1,6 +1,5 @@
 "use client";
 
-import { useInngestApp } from "@/hooks/useInngestApp";
 import { useInngestSubscription } from "@inngest/realtime/hooks";
 import Image from "next/image";
 import { useState } from "react";
@@ -12,7 +11,6 @@ export default function Home() {
   const [tab, setTab] = useState<"fresh" | "latest">("fresh");
 
   const { data, error, freshData, state, latestData } = useInngestSubscription({
-    app: useInngestApp(),
     refreshToken: invoke,
     bufferInterval,
     enabled,

@@ -1,4 +1,4 @@
-import { type Inngest } from "inngest";
+import { Inngest } from "inngest";
 import { useEffect, useRef, useState } from "react";
 import { subscribe } from "./subscribe";
 import { type Realtime } from "./types";
@@ -23,14 +23,14 @@ export interface InngestSubscription<TToken extends Realtime.Subscribe.Token> {
 export function useInngestSubscription<
   const TToken extends Realtime.Subscribe.Token | null | undefined,
 >({
-  app,
+  app = new Inngest({ id: "useInngestSubscription" }),
   token: tokenInput,
   refreshToken,
   key,
   enabled = true,
   bufferInterval = 0,
 }: {
-  app: Inngest.Any;
+  app?: Inngest.Any;
   token?: TToken;
   refreshToken?: () => Promise<TToken>;
   key?: string;
