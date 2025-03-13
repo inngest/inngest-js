@@ -1,5 +1,5 @@
-import { type AiAdapter } from "../adapter.ts";
-import { type OpenAiAiAdapter } from "../adapters/openai.ts";
+import { type AiAdapter } from "../adapter.js";
+import { type OpenAiAiAdapter } from "../adapters/openai.js";
 import { envKeys, processEnv } from "../env";
 
 /**

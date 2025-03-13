@@ -1,7 +1,7 @@
-import { type AnthropicAiAdapter } from "./adapters/anthropic.ts";
-import { type GeminiAiAdapter } from "./adapters/gemini.ts";
-import { type GrokAiAdapter } from "./adapters/grok.ts";
-import { type OpenAiAiAdapter } from "./adapters/openai.ts";
+import { type AnthropicAiAdapter } from "./adapters/anthropic.js";
+import { type GeminiAiAdapter } from "./adapters/gemini.js";
+import { type GrokAiAdapter } from "./adapters/grok.js";
+import { type OpenAiAiAdapter } from "./adapters/openai.js";
 
 /**
  * An AI model, defining the I/O format and typing, and how to call the model.

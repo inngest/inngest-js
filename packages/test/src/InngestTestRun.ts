@@ -1,11 +1,11 @@
 import { OutgoingOp } from "inngest";
 import type {
-    ExecutionResult,
-    ExecutionResults,
+  ExecutionResult,
+  ExecutionResults,
 } from "inngest/components/execution/InngestExecution";
 import { _internals } from "inngest/components/execution/v1";
 import { createDeferredPromise } from "inngest/helpers/promises";
-import type { InngestTestEngine } from "./InngestTestEngine.ts";
+import type { InngestTestEngine } from "./InngestTestEngine.js";
 import { isDeeplyEqual, type DeepPartial } from "./util";
 
 /**

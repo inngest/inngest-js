@@ -1,5 +1,5 @@
-import { type AiAdapter } from "../adapter.ts";
-import { type GeminiAiAdapter } from "../adapters/gemini.ts";
+import { type AiAdapter } from "../adapter.js";
+import { type GeminiAiAdapter } from "../adapters/gemini.js";
 import { envKeys, processEnv } from "../env";
 
 /**

@@ -1,7 +1,7 @@
-import { type AiAdapter } from "../adapter.ts";
-import { GrokAiAdapter } from "../adapters/grok.ts";
+import { type AiAdapter } from "../adapter.js";
+import { GrokAiAdapter } from "../adapters/grok.js";
 import { envKeys, processEnv } from "../env";
-import { type OpenAi, openai } from "./openai.ts";
+import { type OpenAi, openai } from "./openai.js";
 
 /**
  * Create a Grok model using the OpenAI chat format.

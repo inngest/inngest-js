@@ -1,7 +1,7 @@
 import { internalEvents } from "inngest";
 import type { Context, EventPayload } from "inngest/types";
 import { ulid } from "ulid";
-import { mockAny } from "./spy.ts";
+import { mockAny } from "./spy.js";
 
 /**
  * The default context transformation function that mocks all step tools. Use

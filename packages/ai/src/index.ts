@@ -1,4 +1,4 @@
-export type { AiAdapter, AiAdapters } from "./adapter.ts";
-export * from "./adapters/index.ts";
-export * from "./models/index.ts";
-export * as models from "./models/index.ts";
+export type { AiAdapter, AiAdapters } from "./adapter.js";
+export * from "./adapters/index.js";
+export * from "./models/index.js";
+export * as models from "./models/index.js";

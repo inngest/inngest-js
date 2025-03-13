@@ -1,4 +1,4 @@
-import { type AiAdapter } from "../adapter.ts";
+import { type AiAdapter } from "../adapter.js";
 
 export interface AnthropicAiAdapter extends AiAdapter {
   /**
