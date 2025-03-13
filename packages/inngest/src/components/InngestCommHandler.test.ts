@@ -43,7 +43,7 @@ describe("ServeHandler", () => {
         inngest.createFunction(
           { id: "test" },
           { event: "demo/event.sent" },
-          () => "test"
+          () => "test",
         ),
       ];
 
@@ -57,7 +57,7 @@ describe("ServeHandler", () => {
         inngest.createFunction(
           { id: "test" },
           { event: "demo/event.sent" },
-          () => "test"
+          () => "test",
         ),
       ] as const;
 

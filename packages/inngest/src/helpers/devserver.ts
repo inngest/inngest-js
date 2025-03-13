@@ -23,14 +23,14 @@ export const devServerAvailable = async (
   /**
    * The fetch implementation to use to communicate with the dev server.
    */
-  fetch: FetchT
+  fetch: FetchT,
 ): Promise<boolean> => {
   try {
     const url = devServerUrl(host, "/dev");
     const result = await fetch(url.toString());
     await result.json();
     return true;
-  } catch (e) {
+  } catch (_e) {
     return false;
   }
 };
@@ -46,7 +46,7 @@ export const devServerAvailable = async (
  */
 export const devServerUrl = (
   host: string = defaultDevServerHost,
-  pathname = ""
+  pathname = "",
 ): URL => {
   return new URL(pathname, host.includes("://") ? host : `http://${host}`);
 };

@@ -24,12 +24,12 @@
  * @module
  */
 
-import {
-  type InternalServeHandlerOptions,
-  type ServeHandlerOptions,
+import type {
+  InternalServeHandlerOptions,
+  ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
 import { serve as serveEdge } from "./edge.ts";
-import { type SupportedFrameworkName } from "./types.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -64,7 +64,7 @@ export const frameworkName: SupportedFrameworkName = "bun";
  */
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
-  options: ServeHandlerOptions
+  options: ServeHandlerOptions,
 ): ((req: Request) => Promise<Response>) => {
   const optsOverrides: InternalServeHandlerOptions = {
     ...options,

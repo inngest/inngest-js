@@ -51,7 +51,7 @@ describe("run", () => {
         type: "StepCompleted",
         stepName: "b never runs",
       },
-      1
+      1,
     );
     expect(item).toBeUndefined();
   }, 10000);

@@ -1,6 +1,6 @@
 import { fromAny } from "@total-typescript/shoehorn";
-import { type Response } from "express";
-import { type FastifyReply, type FastifyRequest } from "fastify";
+import type { Response } from "express";
+import type { FastifyReply, FastifyRequest } from "fastify";
 import * as FastifyHandler from "./fastify.ts";
 import { testFramework } from "./test/helpers.ts";
 

@@ -1,5 +1,5 @@
 import { InngestTestEngine } from "@inngest/test";
-import { type AsyncContext } from "./als.ts";
+import type { AsyncContext } from "./als.ts";
 
 vi.mock("node:async_hooks", () => {
   throw new Error("import failed");
@@ -25,8 +25,8 @@ describe("getAsyncLocalStorage", () => {
 
     expect(consoleWarnSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        "node:async_hooks is not supported in this runtime"
-      )
+        "node:async_hooks is not supported in this runtime",
+      ),
     );
 
     expect(als).toBeDefined();
@@ -56,7 +56,7 @@ describe("getAsyncCtx", () => {
 
     const inngest = new Inngest({ id: "test" });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     let resolve: (value: any) => void | PromiseLike<void>;
     const externalP = new Promise<AsyncContext | undefined>((r) => {
       resolve = r;
@@ -75,10 +75,10 @@ describe("getAsyncCtx", () => {
           .then(resolve);
 
         return "done";
-      }
+      },
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     const t = new InngestTestEngine({ function: fn as any });
 
     const { result } = await t.execute();

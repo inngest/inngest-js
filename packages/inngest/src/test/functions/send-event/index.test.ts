@@ -31,7 +31,7 @@ describe("run", () => {
 
   test("sent event 'app/my.event.happened.multiple.1'", async () => {
     const event = await receivedEventWithName(
-      "app/my.event.happened.multiple.1"
+      "app/my.event.happened.multiple.1",
     );
     expect(event).toBeDefined();
     expect(JSON.parse(event?.payload ?? "{}")).toMatchObject({ foo: "bar" });
@@ -39,7 +39,7 @@ describe("run", () => {
 
   test("sent event 'app/my.event.happened.multiple.2'", async () => {
     const event = await receivedEventWithName(
-      "app/my.event.happened.multiple.2"
+      "app/my.event.happened.multiple.2",
     );
     expect(event).toBeDefined();
     expect(JSON.parse(event?.payload ?? "{}")).toMatchObject({ foo: "bar" });

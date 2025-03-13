@@ -18,7 +18,7 @@ export class StepError extends Error {
      * The ID of the step that failed.
      */
     public readonly stepId: string,
-    err: unknown
+    err: unknown,
   ) {
     const parsedErr = jsonErrorSchema.parse(err);
 

@@ -11,32 +11,31 @@ import {
 } from "../helpers/consts.ts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
 import {
+  type Mode,
   allProcessEnv,
   getFetch,
   getMode,
   inngestHeaders,
   processEnv,
-  type Mode,
 } from "../helpers/env.ts";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.ts";
-import { type Jsonify } from "../helpers/jsonify.ts";
+import type { Jsonify } from "../helpers/jsonify.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
 import { stringify } from "../helpers/strings.ts";
-import {
-  type AsArray,
-  type IsNever,
-  type SendEventPayload,
-  type SimplifyDeep,
-  type SingleOrArray,
-  type WithoutInternal,
+import type {
+  AsArray,
+  IsNever,
+  SendEventPayload,
+  SimplifyDeep,
+  SingleOrArray,
+  WithoutInternal,
 } from "../helpers/types.ts";
 import {
   DefaultLogger,
-  ProxyLogger,
   type Logger,
+  ProxyLogger,
 } from "../middleware/logger.ts";
 import {
-  sendEventResponseSchema,
   type ClientOptions,
   type EventNameFromTrigger,
   type EventPayload,
@@ -46,18 +45,19 @@ import {
   type SendEventOutput,
   type SendEventResponse,
   type TriggersFromClient,
+  sendEventResponseSchema,
 } from "../types.ts";
-import { type EventSchemas } from "./EventSchemas.ts";
+import type { EventSchemas } from "./EventSchemas.ts";
 import { InngestFunction } from "./InngestFunction.ts";
-import { type InngestFunctionReference } from "./InngestFunctionReference.ts";
+import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
-  InngestMiddleware,
-  getHookStack,
   type ExtendWithMiddleware,
+  InngestMiddleware,
   type MiddlewareOptions,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
+  getHookStack,
 } from "./InngestMiddleware.ts";
 
 /**
@@ -132,7 +132,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    */
   private sendEventUrl: URL = new URL(
     `e/${this.eventKey}`,
-    defaultInngestEventBaseUrl
+    defaultInngestEventBaseUrl,
   );
 
   private headers!: Record<string, string>;
@@ -255,7 +255,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * update the client with those values as requests come in.
    */
   public setEnvVars(
-    env: Record<string, string | undefined> = allProcessEnv()
+    env: Record<string, string | undefined> = allProcessEnv(),
   ): this {
     this.mode = getMode({ env, client: this });
 
@@ -276,7 +276,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       this.mode.getExplicitUrl(defaultInngestEventBaseUrl);
 
     this.setEventKey(
-      this.options.eventKey || this.mode["env"][envKeys.InngestEventKey] || ""
+      this.options.eventKey || this.mode["env"][envKeys.InngestEventKey] || "",
     );
 
     this.headers = inngestHeaders({
@@ -297,7 +297,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     opts?: {
       registerInput?: Omit<Parameters<MiddlewareRegisterFn>[0], "client">;
       prefixStack?: Promise<MiddlewareRegisterReturn[]>;
-    }
+    },
   ): Promise<MiddlewareRegisterReturn[]> {
     /**
      * Wait for the prefix stack to run first; do not trigger ours before this
@@ -313,7 +313,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
         return [...prev, next];
       },
-      Promise.resolve([])
+      Promise.resolve([]),
     );
 
     return [...prefix, ...(await stack)];
@@ -333,7 +333,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    */
   private async getResponseError(
     response: globalThis.Response,
-    foundErr = "Unknown error"
+    foundErr = "Unknown error",
   ): Promise<Error> {
     let errorMessage = foundErr;
 
@@ -384,13 +384,13 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
      * key is for some reason not available at time of instantiation or present
      * in the `INNGEST_EVENT_KEY` environment variable.
      */
-    eventKey: string
+    eventKey: string,
   ): void {
     this.eventKey = eventKey || dummyEventKey;
 
     this.sendEventUrl = new URL(
       `e/${this.eventKey}`,
-      this.eventBaseUrl || defaultInngestEventBaseUrl
+      this.eventBaseUrl || defaultInngestEventBaseUrl,
     );
   }
 
@@ -436,7 +436,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
        * multiple systems together using branch names.
        */
       env?: string;
-    }
+    },
   ): Promise<SendEventOutput<TClientOpts>> {
     const headers: Record<string, string> = {
       ...(options?.env ? { [headerKeys.Environment]: options.env } : {}),
@@ -469,7 +469,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
             result: { ...prev.result, ...output?.result },
           };
         },
-      }
+      },
     );
 
     let payloads: EventPayload[] = Array.isArray(payload)
@@ -500,7 +500,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     });
 
     const applyHookToOutput = async (
-      arg: Parameters<NonNullable<SendEventHookStack["transformOutput"]>>[0]
+      arg: Parameters<NonNullable<SendEventHookStack["transformOutput"]>>[0],
     ): Promise<SendEventOutput<TClientOpts>> => {
       const hookOutput = await hooks.transformOutput?.(arg);
       return {
@@ -524,7 +524,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
           consequences:
             "The returned promise will resolve, but no events have been sent to Inngest.",
           stack: true,
-        })
+        }),
       );
 
       return await applyHookToOutput({ result: { ids: [] } });
@@ -544,7 +544,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
           consequences: "Your event or events were not sent to Inngest.",
           why: "We couldn't find an event key to use to send events to Inngest.",
           toFixNow: fixEventKeyMissingSteps,
-        })
+        }),
       );
     }
 
@@ -559,7 +559,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     if (this.mode.isDev && this.mode.isInferred && !this.eventBaseUrl) {
       const devAvailable = await devServerAvailable(
         defaultDevServerHost,
-        this.fetch
+        this.fetch,
       );
 
       if (devAvailable) {
@@ -582,7 +582,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         try {
           const rawBody: unknown = await response.json();
           body = await sendEventResponseSchema.parseAsync(rawBody);
-        } catch (err) {
+        } catch (_err) {
           throw await this.getResponseError(response);
         }
 
@@ -595,7 +595,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       {
         maxAttempts: 5,
         baseDelay: 100,
-      }
+      },
     );
 
     return await applyHookToOutput({ result: { ids: body.ids } });
@@ -604,7 +604,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   public createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
     rawTrigger,
-    handler
+    handler,
   ) => {
     const fn = this._createFunction(rawOptions, rawTrigger, handler);
 
@@ -620,7 +620,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   private _createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
     rawTrigger,
-    handler
+    handler,
   ) => {
     const options = this.sanitizeOptions(rawOptions);
     const triggers = this.sanitizeTriggers(rawTrigger);
@@ -631,7 +631,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         ...options,
         triggers,
       },
-      handler
+      handler,
     );
   };
 
@@ -642,14 +642,14 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     if (Object.prototype.hasOwnProperty.call(options, "fns")) {
       // v2 -> v3 migration warning
       console.warn(
-        `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`
+        `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`,
       );
     }
 
     if (typeof options === "string") {
       // v2 -> v3 runtime migraton warning
       console.warn(
-        `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
+        `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`,
       );
 
       return { id: options as string } as T;
@@ -667,7 +667,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     if (typeof triggers === "string") {
       // v2 -> v3 migration warning
       console.warn(
-        `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
+        `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`,
       );
 
       return [{ event: triggers as string }] as AsArray<T>;
@@ -696,7 +696,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
  * we support versions of TypeScript prior to the introduction of `satisfies`.
  */
 export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
-  m: T
+  m: T,
 ): T => m)([
   new InngestMiddleware({
     name: "Inngest: Logger",
@@ -716,10 +716,10 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
           try {
             if ("child" in providedLogger) {
               type ChildLoggerFn = (
-                metadata: Record<string, unknown>
+                metadata: Record<string, unknown>,
               ) => Logger;
               providedLogger = (providedLogger.child as ChildLoggerFn)(
-                metadata
+                metadata,
               );
             }
           } catch (err) {
@@ -847,7 +847,7 @@ export namespace Inngest {
       "triggers"
     >,
     trigger: TTrigger,
-    handler: THandler
+    handler: THandler,
   ) => InngestFunction<
     Omit<
       InngestFunction.Options<
@@ -961,7 +961,7 @@ export type GetFunctionOutput<
  */
 export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
 > = TFunction extends InngestFunction<any, infer IHandler, any, any, any, any>
   ? IsNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> extends true
     ? null
@@ -979,7 +979,7 @@ export type GetFunctionOutputFromInngestFunction<
  */
 export type GetFunctionOutputFromReferenceInngestFunction<
   TFunction extends InngestFunctionReference.Any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
 > = TFunction extends InngestFunctionReference<any, infer IOutput>
   ? IsNever<SimplifyDeep<Jsonify<IOutput>>> extends true
     ? null

@@ -1,6 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ExecutionVersion } from "../helpers/consts.ts";
-import { type IsEqual, type IsUnknown } from "../helpers/types.ts";
+import type { IsEqual, IsUnknown } from "../helpers/types.ts";
 import {
   assertType,
   createClient,
@@ -94,7 +93,7 @@ describe("stacking and inference", () => {
 
               assertType<IsEqual<(typeof ctx)["bar"], string>>(true);
               expect(ctx.bar).toBe("bar");
-            }
+            },
           );
         });
       });
@@ -159,7 +158,7 @@ describe("stacking and inference", () => {
 
               assertType<IsEqual<(typeof ctx)["bar"], "bar">>(true);
               expect(ctx.bar).toBe("bar");
-            }
+            },
           );
         });
       });
@@ -221,7 +220,7 @@ describe("stacking and inference", () => {
 
               assertType<IsEqual<(typeof ctx)["step"], boolean>>(true);
               expect(ctx.step).toBe(true);
-            }
+            },
           );
         });
       });
@@ -320,7 +319,7 @@ describe("stacking and inference", () => {
 
               assertType<IsEqual<(typeof ctx)["fooFn"], string>>(true);
               expect(ctx.fooFn).toBe("foo");
-            }
+            },
           );
         });
 
@@ -344,7 +343,7 @@ describe("stacking and inference", () => {
 
               assertType<IsEqual<(typeof ctx)["barFn"], boolean>>(true);
               expect(ctx.barFn).toBe(true);
-            }
+            },
           );
         });
       });
@@ -435,7 +434,7 @@ describe("stacking and inference", () => {
             { event: "" },
             (ctx) => {
               assertType<IsEqual<(typeof ctx)["foo"], number>>(true);
-            }
+            },
           );
         });
       });
@@ -516,7 +515,7 @@ describe("stacking and inference", () => {
         const res = await runFnWithStack(
           fn,
           {},
-          { executionVersion: ExecutionVersion.V1 }
+          { executionVersion: ExecutionVersion.V1 },
         );
 
         expect(res).toMatchObject({
@@ -554,7 +553,7 @@ describe("stacking and inference", () => {
         const res = await runFnWithStack(
           fn,
           {},
-          { executionVersion: ExecutionVersion.V1 }
+          { executionVersion: ExecutionVersion.V1 },
         );
 
         expect(res).toMatchObject({
@@ -568,12 +567,14 @@ describe("stacking and inference", () => {
 
   describe("onSendEvent", () => {
     describe("transformInput", () => {
-      const mockFetch = vi.fn(() =>
-        Promise.resolve({
-          status: 200,
-          json: () => Promise.resolve({ ids: [], status: 200 }),
-          text: () => Promise.resolve(""),
-        })
+      const mockFetch = vi.fn(
+        () =>
+          Promise.resolve({
+            status: 200,
+            json: () => Promise.resolve({ ids: [], status: 200 }),
+            text: () => Promise.resolve(""),
+          }),
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       ) as any;
 
       beforeEach(() => {
@@ -617,13 +618,13 @@ describe("stacking and inference", () => {
                   data: { dataFromStep: true },
                 }),
               });
-            }
+            },
           );
 
           const res = await runFnWithStack(
             fn,
             {},
-            { executionVersion: ExecutionVersion.V1 }
+            { executionVersion: ExecutionVersion.V1 },
           );
 
           expect(res).toMatchObject({
@@ -671,13 +672,13 @@ describe("stacking and inference", () => {
                 }),
                 data: { dataFromStep: true },
               });
-            }
+            },
           );
 
           const res = await runFnWithStack(
             fn,
             {},
-            { executionVersion: ExecutionVersion.V1 }
+            { executionVersion: ExecutionVersion.V1 },
           );
 
           expect(res).toMatchObject({
@@ -730,13 +731,13 @@ describe("stacking and inference", () => {
                 }),
                 data: { dataFromStep: true },
               });
-            }
+            },
           );
 
           const res = await runFnWithStack(
             fn,
             {},
-            { executionVersion: ExecutionVersion.V1 }
+            { executionVersion: ExecutionVersion.V1 },
           );
 
           expect(res).toMatchObject({
@@ -795,13 +796,13 @@ describe("stacking and inference", () => {
                   }),
                 }),
               ]);
-            }
+            },
           );
 
           await runFnWithStack(
             fn,
             {},
-            { executionVersion: ExecutionVersion.V1 }
+            { executionVersion: ExecutionVersion.V1 },
           );
 
           expect(onSendEventSpy).toHaveBeenCalledTimes(2);
@@ -811,12 +812,14 @@ describe("stacking and inference", () => {
     });
 
     describe("transformOutput", () => {
-      const mockFetch = vi.fn(() =>
-        Promise.resolve({
-          status: 200,
-          json: () => Promise.resolve({ ids: [], status: 200 }),
-          text: () => Promise.resolve(""),
-        })
+      const mockFetch = vi.fn(
+        () =>
+          Promise.resolve({
+            status: 200,
+            json: () => Promise.resolve({ ids: [], status: 200 }),
+            text: () => Promise.resolve(""),
+          }),
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       ) as any;
 
       beforeEach(() => {
@@ -865,7 +868,7 @@ describe("stacking and inference", () => {
           inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
             const directRes = inngest.send(payload);
             assertType<IsEqual<Awaited<typeof directRes>["ids"], string[]>>(
-              true
+              true,
             );
 
             const res = step.sendEvent("id", payload);
@@ -916,7 +919,7 @@ describe("stacking and inference", () => {
           inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
             const directRes = inngest.send(payload);
             assertType<IsEqual<Awaited<typeof directRes>["ids"], string[]>>(
-              true
+              true,
             );
 
             const res = step.sendEvent("id", payload);
@@ -957,7 +960,7 @@ describe("stacking and inference", () => {
           inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
             const directRes = inngest.send(payload);
             assertType<IsEqual<Awaited<typeof directRes>["ids"], boolean>>(
-              true
+              true,
             );
 
             const res = step.sendEvent("id", payload);
@@ -1025,7 +1028,7 @@ describe("stacking and inference", () => {
           inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
             const directRes = inngest.send(payload);
             assertType<IsEqual<Awaited<typeof directRes>["bar"], boolean>>(
-              true
+              true,
             );
 
             const res = step.sendEvent("id", payload);
@@ -1083,7 +1086,7 @@ describe("stacking and inference", () => {
           inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
             const directRes = inngest.send(payload);
             assertType<IsEqual<Awaited<typeof directRes>["foo"], boolean>>(
-              true
+              true,
             );
 
             const res = step.sendEvent("id", payload);

@@ -1,4 +1,4 @@
-import { type IsUnknown } from "../types.ts";
+import type { IsUnknown } from "../types.ts";
 import type * as z from "./zod";
 
 /**

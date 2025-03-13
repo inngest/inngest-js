@@ -10,7 +10,7 @@ export function createStartRequest(excludeGateways: string[]) {
   return StartRequest.encode(
     StartRequest.create({
       excludeGateways,
-    })
+    }),
   ).finish();
 }
 

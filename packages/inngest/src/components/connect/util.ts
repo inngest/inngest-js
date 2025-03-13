@@ -3,7 +3,7 @@ import { headerKeys } from "../../helpers/consts.ts";
 export class ReconnectError extends Error {
   constructor(
     message: string,
-    public attempt: number
+    public attempt: number,
   ) {
     super(message);
     this.name = "ReconnectError";

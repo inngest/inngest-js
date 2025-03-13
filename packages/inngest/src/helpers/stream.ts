@@ -40,7 +40,6 @@ export const createStream = (opts?: {
   const interval = opts?.interval ?? 3000;
   const value = opts?.value ?? " ";
 
-  // eslint-disable-next-line no-async-promise-executor
   return new Promise(async (resolve, reject) => {
     try {
       const stream = new ReadableStream({

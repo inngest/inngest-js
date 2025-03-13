@@ -24,7 +24,7 @@ export class NonRetriableError extends Error {
        * This will be serialized and sent to Inngest.
        */
       cause?: unknown;
-    }
+    },
   ) {
     super(message);
 

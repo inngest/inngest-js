@@ -41,7 +41,7 @@ export class RetryAfterError extends Error {
        * This will be serialized and sent to Inngest.
        */
       cause?: unknown;
-    }
+    },
   ) {
     super(message);
 
@@ -51,12 +51,12 @@ export class RetryAfterError extends Error {
       const seconds = `${Math.ceil(
         (typeof retryAfter === "string"
           ? ms(retryAfter as `${number}`)
-          : retryAfter) / 1000
+          : retryAfter) / 1000,
       )}`;
 
       if (!isFinite(Number(seconds))) {
         throw new Error(
-          "retryAfter must be a number of milliseconds, a ms-compatible string, or a Date"
+          "retryAfter must be a number of milliseconds, a ms-compatible string, or a Date",
         );
       }
 

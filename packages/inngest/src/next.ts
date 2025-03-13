@@ -20,15 +20,15 @@
  * @module
  */
 
-import { type NextApiRequest, type NextApiResponse } from "next";
-import { type NextRequest } from "next/server";
+import type { NextApiRequest, NextApiResponse } from "next";
+import type { NextRequest } from "next/server";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
 import { getResponse } from "./helpers/env.ts";
-import { type Either } from "./helpers/types.ts";
-import { type SupportedFrameworkName } from "./types.ts";
+import type { Either } from "./helpers/types.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -50,7 +50,7 @@ export const frameworkName: SupportedFrameworkName = "nextjs";
  */
 export type RequestHandler = (
   expectedReq: NextRequest,
-  res: unknown
+  res: unknown,
 ) => Promise<Response>;
 
 const isRecord = (val: unknown): val is Record<string, unknown> => {
@@ -93,7 +93,7 @@ const isNext12ApiResponse = (val: unknown): val is NextApiResponse => {
  */
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
-  options: ServeHandlerOptions
+  options: ServeHandlerOptions,
 ): RequestHandler & {
   GET: RequestHandler;
   POST: RequestHandler;
@@ -142,7 +142,7 @@ export const serve = (
           try {
             const isProd = process.env.NODE_ENV === "production";
             return isProd;
-          } catch (err) {
+          } catch (_err) {
             // no-op
           }
 
@@ -174,7 +174,9 @@ export const serve = (
             const host = options.serveHost || getHeader("host");
             if (host) {
               const hostWithProtocol = new URL(
-                host.includes("://") ? host : `${absoluteUrl.protocol}//${host}`
+                host.includes("://")
+                  ? host
+                  : `${absoluteUrl.protocol}//${host}`,
               );
 
               absoluteUrl.protocol = hostWithProtocol.protocol;
@@ -194,7 +196,7 @@ export const serve = (
             if (process.env.NODE_ENV === "development") {
               scheme = "http";
             }
-          } catch (err) {
+          } catch (_err) {
             // no-op
           }
 

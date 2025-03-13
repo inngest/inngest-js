@@ -14,10 +14,8 @@ import {
   resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises.ts";
-import { type MaybePromise, type PartialK } from "../../helpers/types.ts";
+import type { MaybePromise, PartialK } from "../../helpers/types.ts";
 import {
-  StepOpCode,
-  jsonErrorSchema,
   type BaseContext,
   type Context,
   type EventPayload,
@@ -27,20 +25,22 @@ import {
   type IncomingOp,
   type OpStack,
   type OutgoingOp,
+  StepOpCode,
+  jsonErrorSchema,
 } from "../../types.ts";
-import { type Inngest } from "../Inngest.ts";
-import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
+import type { Inngest } from "../Inngest.ts";
+import { type RunHookStack, getHookStack } from "../InngestMiddleware.ts";
 import {
+  type StepHandler,
   createStepTools,
   getStepOptions,
-  type StepHandler,
 } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import {
-  InngestExecution,
   type ExecutionResult,
   type IInngestExecution,
+  InngestExecution,
   type InngestExecutionFactory,
   type InngestExecutionOptions,
   type MemoizedOp,
@@ -70,6 +70,7 @@ export class V0InngestExecution
   public start() {
     this.debug("starting V0 execution");
 
+    // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
     return (this.execution ??= this._start().then((result) => {
       this.debug("result:", result);
       return result;
@@ -129,7 +130,7 @@ export class V0InngestExecution
                   "For more information on why step functions work in this manner, see https://www.inngest.com/docs/functions/multi-step#gotchas",
                 stack: true,
                 code: ErrCode.NON_DETERMINISTIC_FUNCTION,
-              })
+              }),
             );
           }
 
@@ -150,7 +151,7 @@ export class V0InngestExecution
       await this.state.hooks.afterMemoization?.();
 
       const discoveredOps = Object.values(this.state.tickOps).map<OutgoingOp>(
-        tickOpToOutgoing
+        tickOpToOutgoing,
       );
 
       const runStep =
@@ -163,7 +164,7 @@ export class V0InngestExecution
 
         if (!stepToRun) {
           throw new Error(
-            `Bad stack; executor requesting to run unknown step "${runStep}"`
+            `Bad stack; executor requesting to run unknown step "${runStep}"`,
           );
         }
 
@@ -209,7 +210,7 @@ export class V0InngestExecution
           const allOpsFulfilled = Object.values(this.state.allFoundOps).every(
             (op) => {
               return op.fulfilled;
-            }
+            },
           );
 
           if (allOpsFulfilled) {
@@ -224,14 +225,14 @@ export class V0InngestExecution
           const hasOpsPending = Object.values(this.state.allFoundOps).some(
             (op) => {
               return op.fulfilled === false;
-            }
+            },
           );
 
           if (!hasOpsPending) {
             throw new NonRetriableError(
               functionStoppedRunningErr(
-                ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION
-              )
+                ErrCode.ASYNC_DETECTED_AFTER_MEMOIZATION,
+              ),
             );
           }
         }
@@ -285,7 +286,7 @@ export class V0InngestExecution
             step: prev.step,
           };
         },
-      }
+      },
     );
 
     return hooks;
@@ -313,7 +314,7 @@ export class V0InngestExecution
 
           return [...acc, stepState];
         },
-        []
+        [],
       ),
     };
 
@@ -333,8 +334,8 @@ export class V0InngestExecution
             fulfilled: op.fulfilled,
             seen: true,
           },
-        ]
-      )
+        ],
+      ),
     );
   }
 
@@ -372,7 +373,7 @@ export class V0InngestExecution
        * The op to generate a hash from. We only use a subset of the op's
        * properties when creating the hash.
        */
-      op: PartialK<HashedOp, "id">
+      op: PartialK<HashedOp, "id">,
     ): HashedOp => {
       /**
        * It's difficult for v0 to understand whether or not an op has
@@ -392,11 +393,12 @@ export class V0InngestExecution
         //
         // For this purpose, we change this to always use `null` if the op is
         // that of a `step.run()`.
-        opts: op.op === StepOpCode.StepPlanned ? null : op.opts ?? null,
+        opts: op.op === StepOpCode.StepPlanned ? null : (op.opts ?? null),
       };
 
       const collisionHash = _internals.hashData(obj);
 
+      // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
       const pos = (this.state.tickOpHashes[collisionHash] =
         (this.state.tickOpHashes[collisionHash] ?? -1) + 1);
 
@@ -409,7 +411,7 @@ export class V0InngestExecution
     const stepHandler: StepHandler = ({ args, matchOp, opts }) => {
       if (this.state.nonStepFnDetected) {
         throw new NonRetriableError(
-          functionStoppedRunningErr(ErrCode.STEP_USED_AFTER_ASYNC)
+          functionStoppedRunningErr(ErrCode.STEP_USED_AFTER_ASYNC),
         );
       }
 
@@ -425,7 +427,7 @@ export class V0InngestExecution
             otherwise:
               "For more information on step functions with Inngest, see https://www.inngest.com/docs/functions/multi-step",
             code: ErrCode.NESTING_STEPS,
-          })
+          }),
         );
       }
 
@@ -513,7 +515,7 @@ export class V0InngestExecution
     dataOrError: Parameters<
       NonNullable<RunHookStack["transformOutput"]>
     >[0]["result"],
-    step?: Readonly<Omit<OutgoingOp, "id">>
+    step?: Readonly<Omit<OutgoingOp, "id">>,
   ): Promise<ExecutionResult> {
     const output = { ...dataOrError };
 

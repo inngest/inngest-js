@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 globalThis.console = {
   ...globalThis.console,
   log: vi.fn(() => undefined),
@@ -7,44 +6,47 @@ globalThis.console = {
 };
 
 const clearConsole = () => {
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   (globalThis.console.log as any).mockClear();
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   (globalThis.console.warn as any).mockClear();
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   (globalThis.console.error as any).mockClear();
 };
 
 import { fromPartial } from "@total-typescript/shoehorn";
-import { type Mock, type MockInstance } from "vitest";
+import type { Mock, MockInstance } from "vitest";
 import { ExecutionVersion, internalEvents } from "../helpers/consts.ts";
 import {
   ErrCode,
   OutgoingResultError,
   serializeError,
 } from "../helpers/errors.ts";
-import { type IsEqual } from "../helpers/types.ts";
+import type { IsEqual } from "../helpers/types.ts";
 import {
+  type EventPayload,
   EventSchemas,
   InngestMiddleware,
   NonRetriableError,
-  type EventPayload,
 } from "../index.ts";
-import { ProxyLogger, type Logger } from "../middleware/logger.ts";
+import { type Logger, ProxyLogger } from "../middleware/logger.ts";
 import { assertType, createClient, runFnWithStack } from "../test/helpers.ts";
 import {
-  StepOpCode,
   type ClientOptions,
   type FailureEventPayload,
   type OutgoingOp,
+  StepOpCode,
 } from "../types.ts";
+import { InngestFunction } from "./InngestFunction.ts";
+import { STEP_INDEXING_SUFFIX } from "./InngestStepTools.ts";
 import {
-  PREFERRED_EXECUTION_VERSION,
   type ExecutionResult,
   type ExecutionResults,
   type InngestExecutionOptions,
+  PREFERRED_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
 import { _internals as _v1Internals } from "./execution/v1.ts";
 import { _internals as _v2Internals } from "./execution/v2.ts";
-import { InngestFunction } from "./InngestFunction.ts";
-import { STEP_INDEXING_SUFFIX } from "./InngestStepTools.ts";
 
 type TestEvents = {
   foo: { data: { foo: string } };
@@ -112,6 +114,7 @@ const opts = (<T extends ClientOptions>(x: T): T => x)({
 
 const inngest = createClient(opts);
 
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 const matchError = (err: any) => {
   const serializedErr = serializeError(err);
   return expect.objectContaining({
@@ -129,6 +132,7 @@ describe("runFn", () => {
     const stepRet = { someProperty: "step done" };
     const stepErr = new Error("step error");
 
+    // biome-ignore lint/complexity/noForEach: <explanation>
     [
       {
         type: "synchronous",
@@ -162,7 +166,7 @@ describe("runFn", () => {
             fn = new InngestFunction(
               createClient(opts),
               { id: "Foo", triggers: [{ event: "foo" }] },
-              flowFn
+              flowFn,
             );
 
             const execution = fn["createExecution"]({
@@ -188,7 +192,7 @@ describe("runFn", () => {
 
           test("returns data on success", () => {
             expect((ret as ExecutionResults["function-resolved"]).data).toBe(
-              stepRet
+              stepRet,
             );
           });
 
@@ -205,7 +209,7 @@ describe("runFn", () => {
             fn = new InngestFunction(
               createClient(opts),
               { id: "Foo", triggers: [{ event: "foo" }] },
-              badFlowFn
+              badFlowFn,
             );
           });
 
@@ -252,7 +256,9 @@ describe("runFn", () => {
         fn: InngestFunction.Any;
         steps: Record<
           string,
+          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
           | Mock<(...args: any[]) => string>
+          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
           | Mock<(...args: any[]) => Promise<string>>
         >;
         event?: EventPayload;
@@ -285,8 +291,9 @@ describe("runFn", () => {
             }
           >;
         } | null
-      >
+      >,
     ) => {
+      // biome-ignore lint/complexity/noForEach: <explanation>
       Object.entries(executionTests).forEach(([version, specs]) => {
         if (!specs) return;
         const { hashes, tests } = specs;
@@ -300,10 +307,11 @@ describe("runFn", () => {
             ? (Object.fromEntries(
                 Object.entries(hashes).map(([key, value]) => {
                   return [key, hashId(value)];
-                })
+                }),
               ) as typeof hashes)
             : hashes;
 
+          // biome-ignore lint/complexity/noForEach: <explanation>
           Object.entries(tests(processedHashes)).forEach(([name, t]) => {
             describe(name, () => {
               let hashDataSpy: ReturnType<typeof getHashDataSpy>;
@@ -347,7 +355,7 @@ describe("runFn", () => {
                   expect(
                     retErr instanceof OutgoingResultError
                       ? (retErr.result.error as Error)?.message
-                      : retErr?.message ?? ""
+                      : (retErr?.message ?? ""),
                   ).toContain(t.expectedThrowMessage);
                 });
               } else {
@@ -358,6 +366,7 @@ describe("runFn", () => {
 
               if (t.expectedHashOps?.length) {
                 test("hashes expected ops", () => {
+                  // biome-ignore lint/complexity/noForEach: <explanation>
                   t.expectedHashOps?.forEach((h) => {
                     expect(hashDataSpy).toHaveBeenCalledWith(h);
                   });
@@ -370,7 +379,7 @@ describe("runFn", () => {
                     test(`warning log #${i + 1} includes "${warning}"`, () => {
                       expect(globalThis.console.warn).toHaveBeenNthCalledWith(
                         i + 1,
-                        expect.stringContaining(warning)
+                        expect.stringContaining(warning),
                       );
                     });
                   });
@@ -385,6 +394,7 @@ describe("runFn", () => {
                 describe("error logs", () => {
                   t.expectedErrors?.forEach((error, i) => {
                     test(`error log #${i + 1} includes "${error}"`, () => {
+                      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
                       const call = (globalThis.console.error as any).mock.calls[
                         i
                       ];
@@ -406,6 +416,7 @@ describe("runFn", () => {
               }
 
               test("runs expected steps", () => {
+                // biome-ignore lint/complexity/noForEach: <explanation>
                 Object.keys(tools.steps).forEach((k) => {
                   const step = tools.steps[k];
 
@@ -439,6 +450,7 @@ describe("runFn", () => {
                             .steps
                         : [];
 
+                  // biome-ignore lint/complexity/noForEach: <explanation>
                   outgoingOps.forEach((op) => {
                     expect(op.id).toMatch(/^[a-f0-9]{40}$/i);
                   });
@@ -464,7 +476,7 @@ describe("runFn", () => {
           async ({ step: { run } }) => {
             await run("A", A);
             await run("B", B);
-          }
+          },
         );
 
         return { fn, steps: { A, B } };
@@ -626,7 +638,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -649,7 +661,7 @@ describe("runFn", () => {
             } else if (foo?.data.foo === "bar") {
               await run("B", B);
             }
-          }
+          },
         );
 
         return { fn, steps: { A, B } };
@@ -856,7 +868,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -872,7 +884,7 @@ describe("runFn", () => {
           async ({ step: { run } }) => {
             await Promise.all([run("A", A), run("B", B)]);
             await run("C", C);
-          }
+          },
         );
 
         return { fn, steps: { A, B, C } };
@@ -1299,7 +1311,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -1321,7 +1333,7 @@ describe("runFn", () => {
             } else if (winner === "B") {
               await run("B wins", BWins);
             }
-          }
+          },
         );
 
         return { fn, steps: { A, B, AWins, BWins } };
@@ -1545,7 +1557,7 @@ describe("runFn", () => {
           }),
         },
         [ExecutionVersion.V2]: null,
-      }
+      },
     );
 
     testFn(
@@ -1571,7 +1583,7 @@ describe("runFn", () => {
             } else if (winner === "B2") {
               await run("B wins", BWins);
             }
-          }
+          },
         );
 
         return { fn, steps: { A, B, B2, AWins, BWins } };
@@ -1674,7 +1686,7 @@ describe("runFn", () => {
           }),
         },
         [ExecutionVersion.V2]: null,
-      }
+      },
     );
 
     testFn(
@@ -1693,7 +1705,7 @@ describe("runFn", () => {
             await run(id, A);
             await run(id, B);
             await run(id, C);
-          }
+          },
         );
 
         return { fn, steps: { A, B, C } };
@@ -1829,7 +1841,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -1846,7 +1858,7 @@ describe("runFn", () => {
           { event: "foo" },
           async ({ step: { run } }) => {
             await Promise.all([run(id, A), run(id, B), run(id, C)]);
-          }
+          },
         );
 
         return { fn, steps: { A, B, C } };
@@ -1922,7 +1934,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -1941,7 +1953,7 @@ describe("runFn", () => {
             await run(id, A);
             await wait(200);
             await run(id, B);
-          }
+          },
         );
 
         return { fn, steps: { A, B } };
@@ -2032,7 +2044,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -2052,7 +2064,7 @@ describe("runFn", () => {
             await Promise.all([run(id, A), run(id, B)]);
             await wait(200);
             await run(id, C);
-          }
+          },
         );
 
         return { fn, steps: { A, B, C } };
@@ -2127,7 +2139,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -2147,7 +2159,7 @@ describe("runFn", () => {
               run("A", A),
               run("B", B).catch(() => run("B failed", BFailed)),
             ]);
-          }
+          },
         );
 
         return { fn, steps: { A, B, BFailed } };
@@ -2508,7 +2520,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -2523,7 +2535,7 @@ describe("runFn", () => {
           { event: "foo" },
           async ({ step: { run } }) => {
             await run("A", A);
-          }
+          },
         );
 
         return { fn, steps: { A } };
@@ -2593,7 +2605,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -2604,7 +2616,7 @@ describe("runFn", () => {
           { event: "foo" },
           async () => {
             throw new NonRetriableError("Error message");
-          }
+          },
         );
 
         return { fn, steps: {} };
@@ -2653,7 +2665,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -2664,7 +2676,7 @@ describe("runFn", () => {
           { event: "foo" },
           async () => {
             throw "foo";
-          }
+          },
         );
 
         return { fn, steps: {} };
@@ -2711,7 +2723,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -2722,7 +2734,7 @@ describe("runFn", () => {
           { event: "foo" },
           async () => {
             throw {};
-          }
+          },
         );
 
         return { fn, steps: {} };
@@ -2769,7 +2781,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -2787,7 +2799,7 @@ describe("runFn", () => {
             },
           },
           { event: "foo" },
-          () => undefined
+          () => undefined,
         );
 
         const event: FailureEventPayload = {
@@ -2990,7 +3002,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -3016,7 +3028,7 @@ describe("runFn", () => {
             logger.info("2");
             await run("B", () => B(logger));
             logger.info("3");
-          }
+          },
         );
 
         return { fn, steps: { A, B } };
@@ -3242,7 +3254,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
   });
 
@@ -3264,7 +3276,7 @@ describe("runFn", () => {
             { event: "test" },
             () => {
               // no-op
-            }
+            },
           );
         });
       });
@@ -3301,7 +3313,7 @@ describe("runFn", () => {
             { event: "foo" },
             () => {
               // no-op
-            }
+            },
           );
         });
       });
@@ -3334,7 +3346,7 @@ describe("runFn", () => {
         { event: "foo" },
         () => {
           // no-op
-        }
+        },
       );
 
       expect(fn).toBeInstanceOf(InngestFunction);
@@ -3392,7 +3404,7 @@ describe("runFn", () => {
             { event: "test" },
             () => {
               // no-op
-            }
+            },
           );
         });
 
@@ -3405,7 +3417,7 @@ describe("runFn", () => {
             { event: "test" },
             () => {
               // no-op
-            }
+            },
           );
         });
       });
@@ -3440,7 +3452,7 @@ describe("runFn", () => {
             { event: "foo" },
             () => {
               // no-op
-            }
+            },
           );
         });
 
@@ -3450,7 +3462,7 @@ describe("runFn", () => {
             { event: "foo" },
             () => {
               // no-op
-            }
+            },
           );
         });
 
@@ -3463,7 +3475,7 @@ describe("runFn", () => {
             { event: "foo" },
             () => {
               // no-op
-            }
+            },
           );
         });
       });
@@ -3495,7 +3507,7 @@ describe("runFn", () => {
         { event: "foo" },
         () => {
           // no-op
-        }
+        },
       );
 
       const [fnConfig] = fn["getConfig"]({

@@ -1,13 +1,13 @@
-import { spawn, type SpawnOptionsWithoutStdio } from "child_process";
+import { type SpawnOptionsWithoutStdio, spawn } from "child_process";
 import fs from "fs";
+import path from "path";
 import inquirer from "inquirer";
 import minimist from "minimist";
-import path from "path";
 
 const exec = (
   command: string,
   args: string[] = [],
-  options?: SpawnOptionsWithoutStdio
+  options?: SpawnOptionsWithoutStdio,
 ) => {
   return new Promise<number>((resolve, reject) => {
     const proc = spawn(command, args, { ...options, stdio: "inherit" });
@@ -29,7 +29,7 @@ const examples: string[] = fs
   .filter(
     (file) =>
       file.isDirectory() &&
-      allowedPrefixes.some((prefix) => file.name.startsWith(prefix))
+      allowedPrefixes.some((prefix) => file.name.startsWith(prefix)),
   )
   .map((file) => file.name);
 
@@ -59,7 +59,7 @@ void inquirer
 
     const relativeTgzPath = path.join(
       path.relative(examplePath, inngestPath),
-      "inngest.tgz"
+      "inngest.tgz",
     );
 
     const devServerEnv = {
@@ -92,7 +92,7 @@ void inquirer
     await exec(
       "npm",
       ["install", "--no-save", "--no-package-lock", relativeTgzPath],
-      { cwd: examplePath }
+      { cwd: examplePath },
     );
 
     await exec("npm", ["run", "dev"], {

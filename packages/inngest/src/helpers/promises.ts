@@ -1,4 +1,4 @@
-import { type MaybePromise } from "./types.ts";
+import type { MaybePromise } from "./types.ts";
 
 /**
  * Some environments don't allow access to the global queueMicrotask(). While we
@@ -67,7 +67,7 @@ export const resolveAfterPending = (count = 10): Promise<void> => {
 type DeferredPromiseReturn<T> = {
   promise: Promise<T>;
   resolve: (value: T) => DeferredPromiseReturn<T>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   reject: (reason: any) => DeferredPromiseReturn<T>;
 };
 
@@ -111,6 +111,7 @@ export const createDeferredPromiseWithStack = <T>(): {
   results: AsyncGenerator<Awaited<T>, void, void>;
 } => {
   const settledPromises: Promise<T>[] = [];
+  // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
   let rotateQueue: (value: void) => void = () => {};
 
   const results = (async function* () {
@@ -180,7 +181,7 @@ export const createTimeoutPromise = (duration: number): TimeoutPromise => {
   const { promise, resolve } = createDeferredPromise<void>();
 
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  // eslint-disable-next-line prefer-const
+  // biome-ignore lint/style/useConst: <explanation>
   let ret: TimeoutPromise;
 
   const start = () => {
@@ -215,10 +216,10 @@ export const createTimeoutPromise = (duration: number): TimeoutPromise => {
  * The passed `fn` can be undefined to support functions that may conditionally
  * be defined.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export const runAsPromise = <T extends (() => any) | undefined>(
-  fn: T
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fn: T,
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
 ): Promise<T extends () => any ? Awaited<ReturnType<T>> : T> => {
   return Promise.resolve().then(fn);
 };
@@ -235,7 +236,7 @@ export const retryWithBackoff = async <T>(
   opts?: {
     maxAttempts?: number;
     baseDelay?: number;
-  }
+  },
 ): Promise<T> => {
   const maxAttempts = opts?.maxAttempts || 5;
   const baseDelay = opts?.baseDelay ?? 100;

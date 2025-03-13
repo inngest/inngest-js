@@ -51,7 +51,7 @@ export const createExecutionWithMemoizedSteps = ({
         for (let i = 0; i < stepCount; i++) {
           await step.run(
             i === 0 ? userStepId : `${userStepId}${STEP_INDEXING_SUFFIX}${i}`,
-            () => userStepOutput
+            () => userStepOutput,
           );
         }
       })

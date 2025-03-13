@@ -17,7 +17,7 @@ import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
-import { type SupportedFrameworkName } from "./types.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -41,7 +41,7 @@ export const frameworkName: SupportedFrameworkName = "astro";
  */
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
-  options: ServeHandlerOptions
+  options: ServeHandlerOptions,
 ): ((ctx: { request: Request }) => Promise<Response>) & {
   GET: (ctx: { request: Request }) => Promise<Response>;
   POST: (ctx: { request: Request }) => Promise<Response>;

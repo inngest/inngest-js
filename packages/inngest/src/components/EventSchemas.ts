@@ -1,16 +1,16 @@
-import { type internalEvents } from "../helpers/consts.ts";
-import {
-  type IsEmptyObject,
-  type IsStringLiteral,
-  type Simplify,
+import type { internalEvents } from "../helpers/consts.ts";
+import type {
+  IsEmptyObject,
+  IsStringLiteral,
+  Simplify,
 } from "../helpers/types.ts";
 import type * as z from "../helpers/validators/zod.ts";
-import {
-  type EventPayload,
-  type FailureEventPayload,
-  type FinishedEventPayload,
-  type InvokedEventPayload,
-  type ScheduledTimerEventPayload,
+import type {
+  EventPayload,
+  FailureEventPayload,
+  FinishedEventPayload,
+  InvokedEventPayload,
+  ScheduledTimerEventPayload,
 } from "../types.ts";
 
 /**
@@ -22,9 +22,9 @@ import {
  */
 export type StandardEventSchema = {
   name?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   data?: Record<string, any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   user?: Record<string, any>;
 };
 
@@ -365,7 +365,7 @@ export class EventSchemas<
    * ```
    */
   public fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(
-    schemas: T
+    schemas: T,
   ): EventSchemas<
     Combine<
       S,

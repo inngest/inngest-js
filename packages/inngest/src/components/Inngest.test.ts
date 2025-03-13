@@ -1,4 +1,4 @@
-import { type Mock } from "vitest";
+import type { Mock } from "vitest";
 import { literal } from "zod";
 import {
   dummyEventKey,
@@ -6,22 +6,22 @@ import {
   headerKeys,
   internalEvents,
 } from "../helpers/consts.ts";
-import { type IsAny, type IsEqual, type IsNever } from "../helpers/types.ts";
+import type { IsAny, IsEqual, IsNever } from "../helpers/types.ts";
 import {
-  EventSchemas,
-  Inngest,
-  InngestMiddleware,
-  referenceFunction,
   type EventPayload,
+  EventSchemas,
   type GetEvents,
   type GetFunctionInput,
   type GetFunctionOutput,
   type GetStepTools,
+  Inngest,
+  InngestMiddleware,
+  referenceFunction,
 } from "../index.ts";
-import { type Logger } from "../middleware/logger.ts";
+import type { Logger } from "../middleware/logger.ts";
 import { assertType, createClient } from "../test/helpers.ts";
-import { type SendEventResponse } from "../types.ts";
-import { type createStepTools } from "./InngestStepTools.ts";
+import type { SendEventResponse } from "../types.ts";
+import type { createStepTools } from "./InngestStepTools.ts";
 
 const testEvent: EventPayload = {
   name: "test",
@@ -49,13 +49,14 @@ describe("new Inngest()", () => {
             process.env[key] = env[key];
             return acc;
           },
-          {}
+          {},
         );
       }
 
       const inngest = new Inngest({ id: "test", ...opts });
 
       if (env) {
+        // biome-ignore lint/complexity/noForEach: <explanation>
         Object.keys(ogKeys).forEach((key) => {
           process.env[key] = ogKeys[key];
         });
@@ -130,7 +131,7 @@ describe("new Inngest()", () => {
       expect(inngest["mode"].isDev).toBe(true);
       expect(inngest["mode"].isExplicit).toBe(true);
       expect(inngest["mode"].explicitDevUrl?.href).toBe(
-        "http://localhost:3000/"
+        "http://localhost:3000/",
       );
     });
   });
@@ -146,7 +147,7 @@ describe("send", () => {
       ids,
       error,
     }: Partial<SendEventResponse> = {}) => {
-      return vi.fn((url: string, opts: { body: string }) => {
+      return vi.fn((_url: string, opts: { body: string }) => {
         const json = error
           ? {
               error,
@@ -202,7 +203,7 @@ describe("send", () => {
       const inngest = createClient({ id: "test" });
 
       await expect(() => inngest.send(testEvent)).rejects.toThrowError(
-        "Failed to send event"
+        "Failed to send event",
       );
     });
 
@@ -219,9 +220,9 @@ describe("send", () => {
           method: "POST",
 
           body: expect.stringMatching(
-            new RegExp(JSON.stringify(testEvent).slice(1, -1))
+            new RegExp(JSON.stringify(testEvent).slice(1, -1)),
           ),
-        })
+        }),
       );
     });
 
@@ -239,9 +240,9 @@ describe("send", () => {
           method: "POST",
 
           body: expect.stringMatching(
-            new RegExp(JSON.stringify(testEvent).slice(1, -1))
+            new RegExp(JSON.stringify(testEvent).slice(1, -1)),
           ),
-        })
+        }),
       );
     });
 
@@ -259,9 +260,9 @@ describe("send", () => {
           method: "POST",
 
           body: expect.stringMatching(
-            new RegExp(JSON.stringify(testEvent).slice(1, -1))
+            new RegExp(JSON.stringify(testEvent).slice(1, -1)),
           ),
-        })
+        }),
       );
     });
 
@@ -293,7 +294,7 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
-        })
+        }),
       );
     });
 
@@ -301,7 +302,7 @@ describe("send", () => {
       const inngest = createClient({ id: "test", eventKey: testEventKey });
 
       await expect(
-        inngest.send(testEvent, { env: "foo" })
+        inngest.send(testEvent, { env: "foo" }),
       ).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
       });
@@ -313,7 +314,7 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
-        })
+        }),
       );
     });
 
@@ -336,7 +337,7 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
-        })
+        }),
       );
     });
 
@@ -360,7 +361,7 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
-        })
+        }),
       );
     });
 
@@ -383,7 +384,7 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
-        })
+        }),
       );
     });
 
@@ -397,7 +398,7 @@ describe("send", () => {
       });
 
       await expect(
-        inngest.send(testEvent, { env: "foo" })
+        inngest.send(testEvent, { env: "foo" }),
       ).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
       });
@@ -409,7 +410,7 @@ describe("send", () => {
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
-        })
+        }),
       );
     });
 
@@ -431,9 +432,9 @@ describe("send", () => {
       expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
       expect(mockedFetch.mock.calls[1]).toHaveLength(2);
       expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       const body: Array<Record<string, any>> = JSON.parse(
-        mockedFetch.mock.calls[1]?.[1]?.body as string
+        mockedFetch.mock.calls[1]?.[1]?.body as string,
       );
       expect(body).toHaveLength(1);
       expect(body[0]).toEqual(
@@ -441,7 +442,7 @@ describe("send", () => {
           ...testEventWithoutTs,
 
           ts: expect.any(Number),
-        })
+        }),
       );
     });
 
@@ -462,16 +463,16 @@ describe("send", () => {
       expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
       expect(mockedFetch.mock.calls[1]).toHaveLength(2);
       expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       const body: Array<Record<string, any>> = JSON.parse(
-        mockedFetch.mock.calls[1]?.[1]?.body as string
+        mockedFetch.mock.calls[1]?.[1]?.body as string,
       );
       expect(body).toHaveLength(1);
       expect(body[0]).toEqual(
         expect.objectContaining({
           ...testEventWithoutData,
           data: {},
-        })
+        }),
       );
     });
 
@@ -507,7 +508,7 @@ describe("send", () => {
       });
 
       await expect(
-        inngest.send({ ...testEvent, data: { foo: true } })
+        inngest.send({ ...testEvent, data: { foo: true } }),
       ).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
       });
@@ -522,10 +523,10 @@ describe("send", () => {
               JSON.stringify({
                 ...testEvent,
                 data: { foo: true, bar: true },
-              }).slice(1, -1)
-            )
+              }).slice(1, -1),
+            ),
           ),
-        })
+        }),
       );
     });
 
@@ -588,7 +589,7 @@ describe("send", () => {
       });
 
       return expect(inngest.send(testEvent)).rejects.toThrowError(
-        "Cannot process event payload"
+        "Cannot process event payload",
       );
     });
 
@@ -610,7 +611,7 @@ describe("send", () => {
       test.todo("disallows sending invalid fields");
 
       test.todo(
-        "disallows sending invalid fields when sending multiple events"
+        "disallows sending invalid fields when sending multiple events",
       );
 
       test("allows sending a single event with an object", () => {
@@ -644,7 +645,6 @@ describe("send", () => {
           bar: {
             data: { bar: string };
           };
-          // eslint-disable-next-line @typescript-eslint/ban-types
           baz: {};
         }>(),
       });
@@ -760,7 +760,7 @@ describe("createFunction", () => {
           { event: "test" },
           ({ attempt }) => {
             assertType<number>(attempt);
-          }
+          },
         );
       });
     });
@@ -775,7 +775,7 @@ describe("createFunction", () => {
           ({ event }) => {
             assertType<string>(event.name);
             assertType<IsAny<typeof event.data>>(true);
-          }
+          },
         );
       });
 
@@ -787,7 +787,7 @@ describe("createFunction", () => {
           ({ event }) => {
             assertType<string>(event.name);
             assertType<IsAny<typeof event.data>>(true);
-          }
+          },
         );
       });
 
@@ -798,7 +798,7 @@ describe("createFunction", () => {
           ({ event }) => {
             assertType<string>(event.name);
             assertType<IsAny<typeof event.data>>(true);
-          }
+          },
         );
       });
 
@@ -809,7 +809,7 @@ describe("createFunction", () => {
           ({ event }) => {
             assertType<string>(event.name);
             assertType<IsAny<typeof event.data>>(true);
-          }
+          },
         );
       });
 
@@ -829,7 +829,7 @@ describe("createFunction", () => {
           ({ event }) => {
             assertType<string>(event.name);
             assertType<IsAny<typeof event.data>>(true);
-          }
+          },
         );
       });
     });
@@ -875,7 +875,7 @@ describe("createFunction", () => {
               >
             >(true);
             assertType<{ message: string }>(event.data);
-          }
+          },
         );
       });
 
@@ -892,7 +892,7 @@ describe("createFunction", () => {
               >
             >(true);
             assertType<{ title: string }>(event.data);
-          }
+          },
         );
       });
 
@@ -908,7 +908,7 @@ describe("createFunction", () => {
               >
             >(true);
             assertType<{ title: string }>(event.data);
-          }
+          },
         );
       });
 
@@ -918,7 +918,7 @@ describe("createFunction", () => {
           { cron: "test" },
           ({ event }) => {
             assertType<unknown>(event);
-          }
+          },
         );
       });
 
@@ -936,7 +936,7 @@ describe("createFunction", () => {
           { event: "foo", cron: "test" },
           ({ event }) => {
             assertType<unknown>(event);
-          }
+          },
         );
       });
 
@@ -1009,7 +1009,7 @@ describe("createFunction", () => {
             // `events` should omit internal triggers, as they are not
             // batched
             assertType<IsEqual<"foo" | "bar", (typeof events)[number]["name"]>>(
-              true
+              true,
             );
 
             // Without narrowing, `event.data` should be the union of all
@@ -1041,7 +1041,7 @@ describe("createFunction", () => {
                 // Proves we have exhausted all possibilities
                 assertType<never>(events[0]);
             }
-          }
+          },
         );
       });
     });
@@ -1182,7 +1182,7 @@ describe("helper types", () => {
 
         async () => {
           return "foo" as const;
-        }
+        },
       );
 
       type Expected = "foo";
@@ -1196,7 +1196,7 @@ describe("helper types", () => {
         { event: "foo" },
         () => {
           return "foo" as const;
-        }
+        },
       );
 
       type Expected = "foo";
@@ -1211,7 +1211,7 @@ describe("helper types", () => {
 
         async () => {
           return "foo" as const;
-        }
+        },
       );
 
       const ref = referenceFunction<typeof fn>({ functionId: "test" });
@@ -1227,7 +1227,7 @@ describe("helper types", () => {
         { event: "foo" },
         () => {
           return "foo" as const;
-        }
+        },
       );
 
       const ref = referenceFunction<typeof fn>({ functionId: "test" });

@@ -1,17 +1,17 @@
 import { ZodError, z } from "zod";
-import { type InngestApi } from "../api/api.ts";
+import type { InngestApi } from "../api/api.ts";
 import { stepsSchemas } from "../api/schema.ts";
 import { PREFERRED_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
-import { err, ok, type Result } from "../types.ts";
+import { type Result, err, ok } from "../types.ts";
 import { ExecutionVersion } from "./consts.ts";
 import { prettyError } from "./errors.ts";
-import { type Await } from "./types.ts";
+import type { Await } from "./types.ts";
 
 /**
  * Wraps a function with a cache. When the returned function is run, it will
  * cache the result and return it on subsequent calls.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export const cacheFn = <T extends (...args: any[]) => any>(fn: T): T => {
   const key = "value";
   const cache = new Map<typeof key, unknown>();
@@ -36,7 +36,7 @@ export const cacheFn = <T extends (...args: any[]) => any>(fn: T): T => {
  * Because this needs to support both sync and async functions, it only allows
  * functions that accept a single argument.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export const waterfall = <TFns extends ((arg?: any) => any)[]>(
   fns: TFns,
 
@@ -46,8 +46,8 @@ export const waterfall = <TFns extends ((arg?: any) => any)[]>(
    *
    * Will not be called on the final function.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  transform?: (prev: any, output: any) => any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  transform?: (prev: any, output: any) => any,
 ): ((...args: Parameters<TFns[number]>) => Promise<Await<TFns[number]>>) => {
   return (...args) => {
     const chain = fns.reduce(async (acc, fn) => {
@@ -87,7 +87,7 @@ const fnDataVersionSchema = z.object({
     .transform<ExecutionVersion>((v) => {
       if (typeof v === "undefined") {
         console.debug(
-          `No request version specified by executor; defaulting to v${PREFERRED_EXECUTION_VERSION}`
+          `No request version specified by executor; defaulting to v${PREFERRED_EXECUTION_VERSION}`,
         );
 
         return PREFERRED_EXECUTION_VERSION;
@@ -231,7 +231,7 @@ export const fetchAllFnData = async ({
             consequences: "function execution can't continue",
             why: "run_id is missing from context",
             stack: true,
-          })
+          }),
         );
       }
 
@@ -249,7 +249,7 @@ export const fetchAllFnData = async ({
             consequences: "function execution can't continue",
             why: evtResp.error?.error,
             stack: true,
-          })
+          }),
         );
       }
 
@@ -262,7 +262,7 @@ export const fetchAllFnData = async ({
             consequences: "function execution can't continue",
             why: stepResp.error?.error,
             stack: true,
-          })
+          }),
         );
       }
     }

@@ -1,5 +1,5 @@
-import { type MockInstance } from "vitest";
-import { DefaultLogger, ProxyLogger, type Logger } from "./logger.ts";
+import type { MockInstance } from "vitest";
+import { DefaultLogger, type Logger, ProxyLogger } from "./logger.ts";
 
 describe("ProxyLogger", () => {
   const buffer = [
@@ -17,6 +17,7 @@ describe("ProxyLogger", () => {
   });
 
   const populateBuf = () => {
+    // biome-ignore lint/complexity/noForEach: <explanation>
     buffer.forEach(({ level, args }) => {
       const method = level as keyof ProxyLogger;
 

@@ -4,24 +4,24 @@ import {
   queryKeys,
 } from "../helpers/consts.ts";
 import { timeStr } from "../helpers/strings.ts";
-import { type RecursiveTuple, type StrictUnion } from "../helpers/types.ts";
-import {
-  type Cancellation,
-  type ConcurrencyOption,
-  type FunctionConfig,
-  type Handler,
-  type TimeStr,
-  type TimeStrBatch,
-  type TriggersFromClient,
+import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
+import type {
+  Cancellation,
+  ConcurrencyOption,
+  FunctionConfig,
+  Handler,
+  TimeStr,
+  TimeStrBatch,
+  TriggersFromClient,
 } from "../types.ts";
-import { type GetEvents, type Inngest } from "./Inngest.ts";
-import {
-  type InngestMiddleware,
-  type MiddlewareRegisterReturn,
+import type { GetEvents, Inngest } from "./Inngest.ts";
+import type {
+  InngestMiddleware,
+  MiddlewareRegisterReturn,
 } from "./InngestMiddleware.ts";
-import {
-  type IInngestExecution,
-  type InngestExecutionOptions,
+import type {
+  IInngestExecution,
+  InngestExecutionOptions,
 } from "./execution/InngestExecution.ts";
 import { createV0InngestExecution } from "./execution/v0.ts";
 import { createV1InngestExecution } from "./execution/v1.ts";
@@ -75,7 +75,7 @@ export class InngestFunction<
      * Options
      */
     opts: TFnOpts,
-    fn: THandler
+    fn: THandler,
   ) {
     this.client = client;
     this.opts = opts;
@@ -84,7 +84,7 @@ export class InngestFunction<
 
     this.middleware = this.client["initializeMiddleware"](
       this.opts.middleware,
-      { registerInput: { fn: this }, prefixStack: this.client["middleware"] }
+      { registerInput: { fn: this }, prefixStack: this.client["middleware"] },
     );
   }
 
@@ -298,15 +298,15 @@ export namespace InngestFunction {
    * inference.
    */
   export type Any = InngestFunction<
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any,
     Handler.Any,
     Handler.Any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any
   >;
 
@@ -331,7 +331,7 @@ export namespace InngestFunction {
   >;
 
   export type GetOptions<T extends InngestFunction.Any> =
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     T extends InngestFunction<infer O, any, any, any, any, any> ? O : never;
 
   /**

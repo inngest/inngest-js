@@ -1,6 +1,5 @@
-/* eslint-disable import/no-extraneous-dependencies */
 import { createMockContext } from "@story-health/vitest-koa-mocks";
-import { type RequestMethod } from "node-mocks-http";
+import type { RequestMethod } from "node-mocks-http";
 import * as KoaHandler from "./koa.ts";
 import { testFramework } from "./test/helpers.ts";
 
@@ -10,7 +9,7 @@ testFramework("Koa", KoaHandler, {
       url: `https://${req.headers.host || req.hostname}${req.url}`,
       method: req.method as RequestMethod,
       statusCode: req.statusCode,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       headers: req.headers as any,
       host: req.hostname,
 

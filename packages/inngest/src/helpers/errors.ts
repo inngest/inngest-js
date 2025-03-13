@@ -1,16 +1,16 @@
 import chalk from "chalk";
 import stringify from "json-stringify-safe";
 import {
+  type SerializedError as CjsSerializedError,
   deserializeError as cjsDeserializeError,
   serializeError as cjsSerializeError,
   errorConstructors,
-  type SerializedError as CjsSerializedError,
 } from "serialize-error-cjs";
 import stripAnsi from "strip-ansi";
 import { z } from "zod";
-import { type Inngest } from "../components/Inngest.ts";
+import type { Inngest } from "../components/Inngest.ts";
 import { NonRetriableError } from "../components/NonRetriableError.ts";
-import { type ClientOptions, type OutgoingOp } from "../types.ts";
+import type { ClientOptions, OutgoingOp } from "../types.ts";
 
 const SERIALIZED_KEY = "__serialized";
 const SERIALIZED_VALUE = true;
@@ -28,7 +28,7 @@ const SERIALIZED_VALUE = true;
  */
 errorConstructors.set(
   "NonRetriableError",
-  NonRetriableError as ErrorConstructor
+  NonRetriableError as ErrorConstructor,
 );
 
 export interface SerializedError extends Readonly<CjsSerializedError> {
@@ -105,20 +105,20 @@ export const serializeError = (subject: unknown): SerializedError => {
     // If it's not an object, it's hard to parse this as an Error. In this case,
     // we'll throw an error to start attempting backup strategies.
     throw new Error("Error is not an object; strange throw value.");
-  } catch (err) {
+  } catch (_err) {
     try {
       // If serialization fails, fall back to a regular Error and use the
       // original object as the message for an Error. We don't know what this
       // object looks like, so we can't do anything else with it.
       return {
         ...serializeError(
-          new Error(typeof subject === "string" ? subject : stringify(subject))
+          new Error(typeof subject === "string" ? subject : stringify(subject)),
         ),
         // Remove the stack; it's not relevant here
         stack: "",
         [SERIALIZED_KEY]: SERIALIZED_VALUE,
       };
-    } catch (err) {
+    } catch (_err) {
       // If this failed, then stringifying the object also failed, so we'll just
       // return a completely generic error.
       // Failing to stringify the object is very unlikely.
@@ -137,7 +137,7 @@ export const serializeError = (subject: unknown): SerializedError => {
  * {@link serializeError}.
  */
 export const isSerializedError = (
-  value: unknown
+  value: unknown,
 ): SerializedError | undefined => {
   try {
     if (typeof value === "string") {
@@ -200,7 +200,7 @@ export const deserializeError = (subject: Partial<SerializedError>): Error => {
 
     if ("cause" in deserializedErr) {
       deserializedErr.cause = deserializeError(
-        deserializedErr.cause as Partial<SerializedError>
+        deserializedErr.cause as Partial<SerializedError>,
       );
     }
 
@@ -351,7 +351,7 @@ export const minifyPrettyError = <T>(err: T): T => {
     }
 
     return err;
-  } catch (noopErr) {
+  } catch (_noopErr) {
     return err;
   }
 };
@@ -370,7 +370,7 @@ const isError = (err: unknown): err is Error => {
     const hasMessage = Object.prototype.hasOwnProperty.call(err, "message");
 
     return hasName && hasMessage;
-  } catch (noopErr) {
+  } catch (_noopErr) {
     return false;
   }
 };
@@ -421,7 +421,7 @@ export const prettyError = ({
     header +=
       "\n" +
       [...(new Error().stack?.split("\n").slice(1).filter(Boolean) || [])].join(
-        "\n"
+        "\n",
       );
   }
 
@@ -496,15 +496,15 @@ export class OutgoingResultError extends Error {
  * await doSomeAction().catch(rethrowError("Failed to do some action"));
  * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export const rethrowError = (prefix: string): ((err: any) => never) => {
   return (err) => {
     try {
       err.message &&= `${prefix}; ${err.message}`;
-    } catch (noopErr) {
+    } catch (_noopErr) {
       // no-op
     } finally {
-      // eslint-disable-next-line no-unsafe-finally
+      // biome-ignore lint/correctness/noUnsafeFinally: <explanation>
       throw err;
     }
   };

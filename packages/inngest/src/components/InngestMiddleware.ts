@@ -1,21 +1,21 @@
 import { cacheFn, waterfall } from "../helpers/functions.ts";
-import {
-  type Await,
-  type MaybePromise,
-  type ObjectAssign,
-  type PartialK,
-  type Simplify,
+import type {
+  Await,
+  MaybePromise,
+  ObjectAssign,
+  PartialK,
+  Simplify,
 } from "../helpers/types.ts";
-import {
-  type BaseContext,
-  type EventPayload,
-  type IncomingOp,
-  type OutgoingOp,
-  type SendEventBaseOutput,
-  type TriggersFromClient,
+import type {
+  BaseContext,
+  EventPayload,
+  IncomingOp,
+  OutgoingOp,
+  SendEventBaseOutput,
+  TriggersFromClient,
 } from "../types.ts";
-import { type Inngest } from "./Inngest.ts";
-import { type InngestFunction } from "./InngestFunction.ts";
+import type { Inngest } from "./Inngest.ts";
+import type { InngestFunction } from "./InngestFunction.ts";
 
 /**
  * A middleware that can be registered with Inngest to hook into various
@@ -76,20 +76,22 @@ export namespace InngestMiddleware {
 }
 
 type FnsWithSameInputAsOutput<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   TRecord extends Record<string, (arg: any) => any>,
 > = {
   [K in keyof TRecord as Await<TRecord[K]> extends Parameters<TRecord[K]>[0]
     ? K
-    : Await<TRecord[K]> extends void | undefined
-      ? Parameters<TRecord[K]>[0] extends void | undefined
+    : // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+      Await<TRecord[K]> extends undefined | void
+      ? // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+        Parameters<TRecord[K]>[0] extends undefined | void
         ? K
         : never
       : never]: TRecord[K];
 };
 
 type PromisifiedFunctionRecord<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   TRecord extends Record<string, (arg: any) => any>,
 > = Pick<
   Partial<{
@@ -124,7 +126,7 @@ export type SendEventHookStack = PromisifiedFunctionRecord<
  * Lets the middleware initialize before starting.
  */
 export const getHookStack = async <
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   TMiddleware extends Record<string, (arg: any) => any>,
   TKey extends keyof TMiddleware,
   TResult extends Await<TMiddleware[TKey]>,
@@ -150,17 +152,18 @@ export const getHookStack = async <
     {
       [K in keyof TResult]-?: (
         prev: Parameters<TResult[K]>[0],
-        output: Await<TResult[K]>
+        output: Await<TResult[K]>,
       ) => Parameters<TResult[K]>[0];
     },
     keyof {
       [K in keyof TResult as Await<TResult[K]> extends Parameters<TResult[K]>[0]
         ? K
-        : Await<TResult[K]> extends void | undefined
+        : // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+          Await<TResult[K]> extends undefined | void
           ? K
-          : never]: void;
+          : never]: undefined;
     }
-  >
+  >,
 ): Promise<TRet> => {
   // Wait for middleware to initialize
   const mwStack = await middleware;
@@ -176,7 +179,7 @@ export const getHookStack = async <
 
       return acc;
     },
-    [] as NonNullable<TMiddleware[TKey]>[]
+    [] as NonNullable<TMiddleware[TKey]>[],
   );
 
   // Run each hook found in sequence and collect the results
@@ -203,7 +206,7 @@ export const getHookStack = async <
       }
 
       const transform = transforms[key as keyof typeof transforms] as (
-        arg: Await<(typeof fns)[number]>
+        arg: Await<(typeof fns)[number]>,
       ) => Parameters<(typeof fns)[number]>;
 
       ret[key] = waterfall(fns, transform) as TRet[keyof TRet];
@@ -215,7 +218,7 @@ export const getHookStack = async <
     const key = k as keyof typeof ret;
 
     ret[key] = cacheFn(
-      ret[key] as (...args: unknown[]) => unknown
+      ret[key] as (...args: unknown[]) => unknown,
     ) as unknown as TRet[keyof TRet];
   }
 
@@ -445,16 +448,21 @@ type InitialRunInfo = Readonly<
  *
  * @internal
  */
-type MiddlewareRunInput = (ctx: MiddlewareRunArgs) => MaybePromise<{
-  ctx?: Record<string, unknown>;
-  steps?: Pick<IncomingOp, "data">[];
-  // We need these in the future to allow users to specify their own complex
-  // types for transforming data above using just inference. e.g. every field
-  // ending with "_at" is transformed to a Date.
-  //
-  // transformEvent?: (event: EventPayload) => unknown;
-  // transformStep?: (data: unknown) => unknown;
-} | void>;
+type MiddlewareRunInput = (ctx: MiddlewareRunArgs) => MaybePromise<
+  | {
+      ctx?: Record<string, unknown>;
+      steps?: Pick<IncomingOp, "data">[];
+      // We need these in the future to allow users to specify their own complex
+      // types for transforming data above using just inference. e.g. every field
+      // ending with "_at" is transformed to a Date.
+      //
+      // transformEvent?: (event: EventPayload) => unknown;
+      // transformStep?: (data: unknown) => unknown;
+    }
+  | undefined
+  // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+  | void
+>;
 
 /**
  * Arguments for the SendEventInput hook
@@ -472,10 +480,15 @@ type MiddlewareSendEventInputArgs = Readonly<{
  * @internal
  */
 type MiddlewareSendEventInput = (
-  ctx: MiddlewareSendEventInputArgs
-) => MaybePromise<{
-  payloads?: EventPayload[];
-} | void>;
+  ctx: MiddlewareSendEventInputArgs,
+) => MaybePromise<
+  | {
+      payloads?: EventPayload[];
+    }
+  | undefined
+  // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+  | void
+>;
 
 /**
  * Arguments for the SendEventOutput hook
@@ -489,8 +502,9 @@ type MiddlewareSendEventOutputArgs = { result: Readonly<SendEventBaseOutput> };
  * change to the result value.
  */
 type MiddlewareSendEventOutput = (
-  ctx: MiddlewareSendEventOutputArgs
-) => MaybePromise<{ result?: Record<string, unknown> } | void>;
+  ctx: MiddlewareSendEventOutputArgs,
+  // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+) => MaybePromise<{ result?: Record<string, unknown> } | undefined | void>;
 
 /**
  * @internal
@@ -498,9 +512,14 @@ type MiddlewareSendEventOutput = (
 type MiddlewareRunOutput = (ctx: {
   result: Readonly<Pick<OutgoingOp, "error" | "data">>;
   step?: Readonly<Omit<OutgoingOp, "id">>;
-}) => MaybePromise<{
-  result?: Partial<Pick<OutgoingOp, "data" | "error">>;
-} | void>;
+}) => MaybePromise<
+  | {
+      result?: Partial<Pick<OutgoingOp, "data" | "error">>;
+    }
+  | undefined
+  // biome-ignore lint/suspicious/noConfusingVoidType: <explanation>
+  | void
+>;
 
 type MiddlewareRunFinished = (ctx: {
   result: Readonly<Pick<OutgoingOp, "error" | "data">>;
@@ -521,12 +540,9 @@ type GetMiddlewareRunInputMutation<
       ? {
           [K in keyof TCtx]: TCtx[K];
         }
-      : // eslint-disable-next-line @typescript-eslint/ban-types
-        {}
-    : // eslint-disable-next-line @typescript-eslint/ban-types
-      {}
-  : // eslint-disable-next-line @typescript-eslint/ban-types
-    {};
+      : {}
+    : {}
+  : {};
 
 /**
  * @internal
@@ -543,12 +559,9 @@ type GetMiddlewareSendEventOutputMutation<
       ? {
           [K in keyof TResult]: TResult[K];
         }
-      : // eslint-disable-next-line @typescript-eslint/ban-types
-        {}
-    : // eslint-disable-next-line @typescript-eslint/ban-types
-      {}
-  : // eslint-disable-next-line @typescript-eslint/ban-types
-    {};
+      : {}
+    : {}
+  : {};
 
 /**
  * @internal
@@ -567,12 +580,10 @@ export type MiddlewareStackSendEventOutputMutation<
 
 export type ExtendWithMiddleware<
   TMiddlewareStacks extends InngestMiddleware.Stack[],
-  // eslint-disable-next-line @typescript-eslint/ban-types
   TContext = {},
 > = ObjectAssign<
   {
     [K in keyof TMiddlewareStacks]: MiddlewareStackRunInputMutation<
-      // eslint-disable-next-line @typescript-eslint/ban-types
       {},
       TMiddlewareStacks[K]
     >;
@@ -582,12 +593,10 @@ export type ExtendWithMiddleware<
 
 export type ExtendSendEventWithMiddleware<
   TMiddlewareStacks extends InngestMiddleware.Stack[],
-  // eslint-disable-next-line @typescript-eslint/ban-types
   TContext = {},
 > = ObjectAssign<
   {
     [K in keyof TMiddlewareStacks]: MiddlewareStackSendEventOutputMutation<
-      // eslint-disable-next-line @typescript-eslint/ban-types
       {},
       TMiddlewareStacks[K]
     >;

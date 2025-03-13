@@ -1,11 +1,11 @@
 import Debug, { type Debugger } from "debug";
-import { type ServerTiming } from "../../helpers/ServerTiming.ts";
-import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
-import { type MaybePromise, type Simplify } from "../../helpers/types.ts";
-import { type Context, type IncomingOp, type OutgoingOp } from "../../types.ts";
-import { type Inngest } from "../Inngest.ts";
-import { type ActionResponse } from "../InngestCommHandler.ts";
-import { type InngestFunction } from "../InngestFunction.ts";
+import type { ServerTiming } from "../../helpers/ServerTiming.ts";
+import { ExecutionVersion, debugPrefix } from "../../helpers/consts.ts";
+import type { MaybePromise, Simplify } from "../../helpers/types.ts";
+import type { Context, IncomingOp, OutgoingOp } from "../../types.ts";
+import type { Inngest } from "../Inngest.ts";
+import type { ActionResponse } from "../InngestCommHandler.ts";
+import type { InngestFunction } from "../InngestFunction.ts";
 
 /**
  * The possible results of an execution.
@@ -29,7 +29,7 @@ export type ExecutionResult = {
 }[keyof ExecutionResults];
 
 export type ExecutionResultHandler<T = ActionResponse> = (
-  result: ExecutionResult
+  result: ExecutionResult,
 ) => MaybePromise<T>;
 
 export type ExecutionResultHandlers<T = ActionResponse> = {
@@ -90,7 +90,7 @@ export interface InngestExecutionOptions {
 }
 
 export type InngestExecutionFactory = (
-  options: InngestExecutionOptions
+  options: InngestExecutionOptions,
 ) => IInngestExecution;
 
 export class InngestExecution {

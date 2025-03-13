@@ -1,4 +1,4 @@
-import { type VercelRequest, type VercelRequestQuery } from "@vercel/node";
+import type { VercelRequest, VercelRequestQuery } from "@vercel/node";
 import * as ExpressHandler from "./express.ts";
 import { testFramework } from "./test/helpers.ts";
 

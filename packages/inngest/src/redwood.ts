@@ -18,16 +18,16 @@
  * @module
  */
 
-import {
-  type APIGatewayProxyEvent,
-  type Context as LambdaContext,
+import type {
+  APIGatewayProxyEvent,
+  Context as LambdaContext,
 } from "aws-lambda";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
 import { processEnv } from "./helpers/env.ts";
-import { type SupportedFrameworkName } from "./types.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 export interface RedwoodResponse {
   statusCode: number;
@@ -62,10 +62,10 @@ export const frameworkName: SupportedFrameworkName = "redwoodjs";
  */
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
-  options: ServeHandlerOptions
+  options: ServeHandlerOptions,
 ): ((
   event: APIGatewayProxyEvent,
-  _context: LambdaContext
+  _context: LambdaContext,
 ) => Promise<RedwoodResponse>) => {
   const handler = new InngestCommHandler({
     frameworkName,
@@ -78,7 +78,7 @@ export const serve = (
               ? event.isBase64Encoded
                 ? Buffer.from(event.body, "base64").toString()
                 : event.body
-              : "{}"
+              : "{}",
           );
         },
         headers: (key) => event.headers[key],
@@ -88,7 +88,7 @@ export const serve = (
             processEnv("NODE_ENV") === "development" ? "http" : "https";
           const url = new URL(
             event.path,
-            `${scheme}://${event.headers.host || ""}`
+            `${scheme}://${event.headers.host || ""}`,
           );
 
           return url;

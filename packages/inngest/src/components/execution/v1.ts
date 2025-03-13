@@ -16,34 +16,34 @@ import {
   resolveAfterPending,
   runAsPromise,
 } from "../../helpers/promises.ts";
-import { type MaybePromise, type Simplify } from "../../helpers/types.ts";
+import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
-  StepOpCode,
-  jsonErrorSchema,
   type BaseContext,
   type Context,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
   type OutgoingOp,
+  StepOpCode,
+  jsonErrorSchema,
 } from "../../types.ts";
-import { type Inngest } from "../Inngest.ts";
-import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
+import type { Inngest } from "../Inngest.ts";
+import { type RunHookStack, getHookStack } from "../InngestMiddleware.ts";
 import {
+  type FoundStep,
   STEP_INDEXING_SUFFIX,
+  type StepHandler,
   createStepTools,
   getStepOptions,
   invokePayloadSchema,
-  type FoundStep,
-  type StepHandler,
 } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
 import {
-  InngestExecution,
   type ExecutionResult,
   type IInngestExecution,
+  InngestExecution,
   type InngestExecutionFactory,
   type InngestExecutionOptions,
   type MemoizedOp,
@@ -84,7 +84,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       "created new V1 execution for run;",
       this.options.requestedRunStep
         ? `wanting to run step "${this.options.requestedRunStep}"`
-        : "discovering steps"
+        : "discovering steps",
     );
 
     this.debug("existing state keys:", Object.keys(this.state.stepState));
@@ -212,7 +212,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         }
 
         const newSteps = await this.filterNewSteps(
-          Array.from(this.state.steps.values())
+          Array.from(this.state.steps.values()),
         );
         if (newSteps) {
           return {
@@ -238,11 +238,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
   private getCheckpointHandler(type: keyof CheckpointHandlers) {
     return this.checkpointHandlers[type] as (
-      checkpoint: Checkpoint
-    ) => MaybePromise<ExecutionResult | void>;
+      checkpoint: Checkpoint,
+    ) => MaybePromise<ExecutionResult | undefined>;
   }
 
-  private async tryExecuteStep(steps: FoundStep[]): Promise<OutgoingOp | void> {
+  private async tryExecuteStep(
+    steps: FoundStep[],
+  ): Promise<OutgoingOp | undefined> {
     const hashedStepIdToRun =
       this.options.requestedRunStep || this.getEarlyExecRunStep(steps);
     if (!hashedStepIdToRun) {
@@ -250,7 +252,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     const step = steps.find(
-      (step) => step.hashedId === hashedStepIdToRun && step.fn
+      (step) => step.hashedId === hashedStepIdToRun && step.fn,
     );
 
     if (step) {
@@ -261,14 +263,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * Ensure we reset the timeout if we have a requested run step but couldn't
      * find it, but also that we don't reset if we found and executed it.
      */
-    void this.timeout?.reset();
+    return void this.timeout?.reset();
   }
 
   /**
    * Given a list of outgoing ops, decide if we can execute an op early and
    * return the ID of the step to execute if we can.
    */
-  private getEarlyExecRunStep(steps: FoundStep[]): string | void {
+  private getEarlyExecRunStep(steps: FoundStep[]): string | undefined {
     /**
      * We may have been disabled due to parallelism, in which case we can't
      * immediately execute unless explicitly requested.
@@ -290,11 +292,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     ) {
       return op.hashedId;
     }
+
+    return;
   }
 
   private async filterNewSteps(
-    foundSteps: FoundStep[]
-  ): Promise<[OutgoingOp, ...OutgoingOp[]] | void> {
+    foundSteps: FoundStep[],
+  ): Promise<[OutgoingOp, ...OutgoingOp[]] | undefined> {
     if (this.options.requestedRunStep) {
       return;
     }
@@ -331,7 +335,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             "This may cause unexpected behaviour as Inngest executes your function.",
           reassurance:
             "This is expected if a function is updated in the middle of a run, but may indicate a bug if not.",
-        })
+        }),
       );
     }
 
@@ -362,7 +366,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * an Inngest Server.
    */
   private async transformNewSteps<T extends [OutgoingOp, ...OutgoingOp[]]>(
-    steps: T
+    steps: T,
   ): Promise<T> {
     return Promise.all(
       steps.map(async (step) => {
@@ -383,7 +387,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 result: { ...prev.result, ...output?.result },
               };
             },
-          }
+          },
         );
 
         /**
@@ -407,7 +411,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         });
 
         const newPayload = invokePayloadSchema.parse(
-          transformedPayload?.payloads?.[0] ?? {}
+          transformedPayload?.payloads?.[0] ?? {},
         );
 
         return {
@@ -420,7 +424,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             },
           },
         };
-      })
+      }),
     ) as Promise<T>;
   }
 
@@ -538,7 +542,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     if (inputMutations?.steps) {
       this.state.stepState = Object.fromEntries(
-        inputMutations.steps.map((step) => [step.id, step])
+        inputMutations.steps.map((step) => [step.id, step]),
       );
     }
   }
@@ -549,7 +553,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   private async transformOutput(
     dataOrError: Parameters<
       NonNullable<RunHookStack["transformOutput"]>
-    >[0]["result"]
+    >[0]["result"],
   ): Promise<ExecutionResult> {
     const output = { ...dataOrError };
 
@@ -613,7 +617,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     const checkpointResults = d.results;
 
     const loop: V1ExecutionState["loop"] = (async function* (
-      cleanUp?: () => void
+      cleanUp?: () => void,
     ) {
       try {
         while (true) {
@@ -761,7 +765,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 "Using the same IDs across parallel chains of work can cause unexpected behaviour.",
               toFixNow:
                 "We recommend using a unique ID for each step, especially those happening in parallel.",
-            })
+            }),
           );
         }
       }
@@ -881,7 +885,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             toFixNow:
               "Make sure you're not using `step.*` tooling inside of other `step.*` tooling. If you need to compose steps together, you can create a new async function and call it from within your step function, or use promise chaining.",
             code: ErrCode.NESTING_STEPS,
-          })
+          }),
         );
       }
 
@@ -982,7 +986,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               } else {
                 this.state.recentlyRejectedStepError = new StepError(
                   opId.id,
-                  stepState.error
+                  stepState.error,
                 );
 
                 reject(this.state.recentlyRejectedStepError);
@@ -1003,6 +1007,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * memoizing.
        */
       if (!beforeExecHooksPromise && this.state.allStateUsed()) {
+        // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
         await (beforeExecHooksPromise = (async () => {
           await this.state.hooks?.afterMemoization?.();
           await this.state.hooks?.beforeExecution?.();
@@ -1086,7 +1091,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             step: prev.step,
           };
         },
-      }
+      },
     );
 
     return hooks;
@@ -1109,8 +1114,8 @@ type Checkpoint = {
 
 type CheckpointHandlers = {
   [C in Checkpoint as C["type"]]: (
-    checkpoint: C
-  ) => MaybePromise<ExecutionResult | void>;
+    checkpoint: C,
+  ) => MaybePromise<ExecutionResult | undefined>;
 } & {
   "": (checkpoint: Checkpoint) => MaybePromise<void>;
 };

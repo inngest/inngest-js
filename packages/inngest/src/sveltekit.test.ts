@@ -1,5 +1,4 @@
-/* eslint-disable import/no-unresolved */
-import { type RequestEvent } from "@sveltejs/kit";
+import type { RequestEvent } from "@sveltejs/kit";
 import { fromPartial } from "@total-typescript/shoehorn";
 import fetch, { Headers, Response } from "cross-fetch";
 import * as SvelteKitHandler from "./sveltekit.ts";
@@ -34,6 +33,7 @@ testFramework("SvelteKit", SvelteKitHandler, {
   },
   transformReq: (req, _res, _env) => {
     const headers = new Headers();
+    // biome-ignore lint/complexity/noForEach: <explanation>
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
     });

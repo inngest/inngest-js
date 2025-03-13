@@ -1,4 +1,4 @@
-import { type APIGatewayProxyResult } from "aws-lambda";
+import type { APIGatewayProxyResult } from "aws-lambda";
 import * as LambdaHandler from "./lambda.ts";
 import { testFramework } from "./test/helpers.ts";
 

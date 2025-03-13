@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { type internalEvents } from "../helpers/consts.ts";
-import { type IsAny, type IsEqual } from "../helpers/types.ts";
+import type { internalEvents } from "../helpers/consts.ts";
+import type { IsAny, IsEqual } from "../helpers/types.ts";
 import { assertType } from "../test/helpers.ts";
-import { type FailureEventPayload } from "../types.ts";
+import type { FailureEventPayload } from "../types.ts";
 import { EventSchemas } from "./EventSchemas.ts";
-import { Inngest, type GetEvents } from "./Inngest.ts";
+import { type GetEvents, Inngest } from "./Inngest.ts";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 type Schemas<T extends EventSchemas<any>> = GetEvents<
   Inngest<{ id: "test"; schemas: T }>,
   true
@@ -59,7 +59,7 @@ describe("EventSchemas", () => {
           | `${internalEvents.FunctionFailed}`
         >(event.name);
         assertType<FailureEventPayload["data"]>(event.data);
-      }
+      },
     );
   });
 
@@ -110,7 +110,7 @@ describe("EventSchemas", () => {
 
     test("can set 'any' type for data", () => {
       const schemas = new EventSchemas().fromRecord<{
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         "test.event": { data: any };
       }>();
 
@@ -119,7 +119,7 @@ describe("EventSchemas", () => {
 
     test("can set 'any' type for data alongside populated events", () => {
       const schemas = new EventSchemas().fromRecord<{
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         "test.event": { data: any };
         "test.event2": { data: { foo: string } };
       }>();
@@ -130,7 +130,7 @@ describe("EventSchemas", () => {
 
     test("can set 'any' type for user", () => {
       const schemas = new EventSchemas().fromRecord<{
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         "test.event": { data: { foo: string }; user: any };
       }>();
 
@@ -179,14 +179,13 @@ describe("EventSchemas", () => {
     test("cannot set non-object type for user", () => {
       // @ts-expect-error User must be object type or any
       new EventSchemas().fromRecord<{
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         "test.event": { data: any; user: string };
       }>();
     });
 
     test("can set empty event", () => {
       const schemas = new EventSchemas().fromRecord<{
-        // eslint-disable-next-line @typescript-eslint/ban-types
         "test.event": {};
       }>();
 
@@ -203,7 +202,6 @@ describe("EventSchemas", () => {
 
     test("can set empty event alongside populated event", () => {
       const schemas = new EventSchemas().fromRecord<{
-        // eslint-disable-next-line @typescript-eslint/ban-types
         "test.event": {};
         "test.event2": { data: { foo: string } };
       }>();
@@ -299,7 +297,7 @@ describe("EventSchemas", () => {
         >
       >(true);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       const t0: Schemas<typeof schemas>["app/blog.post.*"] = null as any;
       const _fnToCheckTypesOnly = () => {
         if (t0.name === "app/blog.post.created") {
@@ -370,7 +368,7 @@ describe("EventSchemas", () => {
     test("can set 'any' type for data", () => {
       const schemas = new EventSchemas().fromUnion<{
         name: "test.event";
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         data: any;
       }>();
 
@@ -381,7 +379,7 @@ describe("EventSchemas", () => {
       const schemas = new EventSchemas().fromUnion<{
         name: "test.event";
         data: { foo: string };
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         user: any;
       }>();
 
@@ -397,7 +395,7 @@ describe("EventSchemas", () => {
       // @ts-expect-error User must be object type or any
       new EventSchemas().fromUnion<{
         name: "test.event";
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         data: any;
         user: string;
       }>();
@@ -456,7 +454,7 @@ describe("EventSchemas", () => {
         assertType<Schemas<typeof schemas>["test.event"]["user"]>({ b: 0 });
 
         assertType<Schemas<typeof schemas>["test.event2"]["name"]>(
-          "test.event2"
+          "test.event2",
         );
         assertType<Schemas<typeof schemas>["test.event2"]["data"]>({ c: "" });
         assertType<Schemas<typeof schemas>["test.event2"]["user"]>({ d: 0 });
@@ -635,7 +633,7 @@ describe("EventSchemas", () => {
         assertType<Schemas<typeof schemas>["test.event"]["user"]>({ b: 0 });
 
         assertType<Schemas<typeof schemas>["test.event2"]["name"]>(
-          "test.event2"
+          "test.event2",
         );
         assertType<Schemas<typeof schemas>["test.event2"]["data"]>({ c: "" });
         assertType<Schemas<typeof schemas>["test.event2"]["user"]>({ d: 0 });
@@ -879,17 +877,17 @@ describe("EventSchemas", () => {
         { event: "test.event" },
         ({ event }) => {
           assertType<`${internalEvents.FunctionInvoked}` | "test.event">(
-            event.name
+            event.name,
           );
           assertType<{ a: string }>(event.data);
           assertType<IsAny<typeof event.user>>(true);
-        }
+        },
       );
     });
 
     test("fetches 'any' event payload based on event", () => {
       const schemas = new EventSchemas().fromRecord<{
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         "test.event": { data: any };
       }>();
 
@@ -904,11 +902,11 @@ describe("EventSchemas", () => {
         { event: "test.event" },
         ({ event }) => {
           assertType<`${internalEvents.FunctionInvoked}` | "test.event">(
-            event.name
+            event.name,
           );
           assertType<IsAny<typeof event.data>>(true);
           assertType<IsAny<typeof event.user>>(true);
-        }
+        },
       );
     });
   });

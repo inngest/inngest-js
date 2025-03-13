@@ -1,15 +1,15 @@
 import { sha256 } from "hash.js";
 import { default as safeStringify } from "json-stringify-safe";
 import ms from "ms";
-import { type TimeStr } from "../types.ts";
+import type { TimeStr } from "../types.ts";
 
 /**
  * Safely `JSON.stringify()` an `input`, handling circular refernences and
  * removing `BigInt` values.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export const stringify = (input: any): string => {
-  return safeStringify(input, (key, value) => {
+  return safeStringify(input, (_key, value) => {
     if (typeof value !== "bigint") {
       return value;
     }
@@ -65,7 +65,7 @@ export const timeStr = (
   /**
    * The future date to use to convert to a time string.
    */
-  input: string | number | Date
+  input: string | number | Date,
 ): string => {
   if (input instanceof Date) {
     return input.toISOString();
@@ -84,7 +84,7 @@ export const timeStr = (
 
       return [num, str];
     },
-    [milliseconds, ""]
+    [milliseconds, ""],
   );
 
   return timeStr as TimeStr;

@@ -24,18 +24,18 @@
  * @module
  */
 
-import {
-  type APIGatewayEvent,
-  type APIGatewayProxyEventV2,
-  type APIGatewayProxyResult,
-  type Context,
+import type {
+  APIGatewayEvent,
+  APIGatewayProxyEventV2,
+  APIGatewayProxyResult,
+  Context,
 } from "aws-lambda";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
-import { type Either } from "./helpers/types.ts";
-import { type SupportedFrameworkName } from "./types.ts";
+import type { Either } from "./helpers/types.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -70,17 +70,17 @@ export const frameworkName: SupportedFrameworkName = "aws-lambda";
  */
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
-  options: ServeHandlerOptions
+  options: ServeHandlerOptions,
 ): ((
   event: Either<APIGatewayEvent, APIGatewayProxyEventV2>,
-  _context: Context
+  _context: Context,
 ) => Promise<APIGatewayProxyResult>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
     handler: (
       event: Either<APIGatewayEvent, APIGatewayProxyEventV2>,
-      _context: Context
+      _context: Context,
     ) => {
       /**
        * Try to handle multiple incoming event types, as Lambda can have many
@@ -89,7 +89,7 @@ export const serve = (
        * This still doesn't handle all cases, but it's a start.
        */
       const eventIsV2 = ((
-        ev: APIGatewayEvent | APIGatewayProxyEventV2
+        ev: APIGatewayEvent | APIGatewayProxyEventV2,
       ): ev is APIGatewayProxyEventV2 => {
         return (ev as APIGatewayProxyEventV2).version === "2.0";
       })(event);
@@ -101,7 +101,7 @@ export const serve = (
               ? event.isBase64Encoded
                 ? Buffer.from(event.body, "base64").toString()
                 : event.body
-              : "{}"
+              : "{}",
           );
         },
         headers: (key) => event.headers[key],
