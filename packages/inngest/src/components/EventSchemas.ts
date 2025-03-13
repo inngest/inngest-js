@@ -175,7 +175,7 @@ export type LiteralToRecordZodSchemas<T> = PickLiterals<
 export type ZodToStandardSchema<T extends ZodEventSchemas> = {
   [EventName in keyof T & string]: {
     [Key in keyof T[EventName] & string]: T[EventName][Key] extends z.ZodTypeAny
-      ? z.infer<T[EventName][Key]>
+      ? z.ZodInfer<T[EventName][Key]>
       : T[EventName][Key];
   };
 };

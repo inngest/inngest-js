@@ -17,7 +17,7 @@ export type ResolveSchema<
 > = IsUnknown<TInput> extends true
   ? TUnknownFallback
   : TInput extends z.ZodTypeAny
-    ? z.infer<TInput>
+    ? z.ZodInfer<TInput>
     : TFallback;
 
 /**

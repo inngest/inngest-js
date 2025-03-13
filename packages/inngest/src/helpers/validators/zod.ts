@@ -64,4 +64,4 @@ export type ValidZodValue =
   // Allow `z.union()`, only in cases where it's a union of other valid zod values
   | ZodUnion;
 
-export type infer<T extends ZodTypeAny> = T["_output"];
+export type ZodInfer<T extends ZodTypeAny> = T["_output"];
