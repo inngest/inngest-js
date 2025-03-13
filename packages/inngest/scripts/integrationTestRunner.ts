@@ -311,7 +311,7 @@ async function runIntegrationTest(
     10 * 60 * 1000,
   );
 
-  const rootPath = path.join(__dirname, "..", "..", "..");
+  const rootPath = path.join(import.meta.dirname, "..", "..", "..");
   const sdkPath = path.join(rootPath, "packages", "inngest");
   const examplePath = path.join(rootPath, "examples", example);
 
