@@ -1,8 +1,8 @@
 import { type SpawnOptionsWithoutStdio, spawn } from "child_process";
 import fs from "fs";
+import path from "path";
 import inquirer from "inquirer";
 import minimist from "minimist";
-import path from "path";
 
 const exec = (
   command: string,
