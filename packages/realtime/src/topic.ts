@@ -1,5 +1,5 @@
 import { type StandardSchemaV1 } from "@standard-schema/spec";
-import { type Realtime } from "./types.js";
+import { type Realtime } from "./types.ts";
 
 /**
  * TODO

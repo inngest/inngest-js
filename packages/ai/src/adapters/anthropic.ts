@@ -1,4 +1,4 @@
-import { type AiAdapter } from "../adapter.js";
+import { type AiAdapter } from "../adapter.ts";
 
 export interface AnthropicAiAdapter extends AiAdapter {
   /**
@@ -23,7 +23,6 @@ export namespace AnthropicAiAdapter {
    * details and options.
    */
   export type Model =
-    // eslint-disable-next-line @typescript-eslint/ban-types
     | (string & {})
     | "claude-3-5-haiku-latest"
     | "claude-3-5-haiku-20241022"
@@ -39,7 +38,6 @@ export namespace AnthropicAiAdapter {
     | "claude-instant-1.2";
 
   export type Beta =
-    // eslint-disable-next-line @typescript-eslint/ban-types
     | (string & {})
     | "message-batches-2024-09-24"
     | "prompt-caching-2024-07-31"

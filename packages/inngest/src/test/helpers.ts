@@ -1,43 +1,37 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-import { Inngest, InngestFunction } from "@local";
-import {
-  HandlerResponse,
-  InngestCommHandler,
-  type ServeHandlerOptions,
-} from "@local/components/InngestCommHandler";
-import {
-  createStepTools,
-  getStepOptions,
-} from "@local/components/InngestStepTools";
-import {
-  ExecutionVersion,
-  type IInngestExecution,
-  type InngestExecution,
-  type InngestExecutionOptions,
-  PREFERRED_EXECUTION_VERSION,
-} from "@local/components/execution/InngestExecution";
-import { ServerTiming } from "@local/helpers/ServerTiming";
-import {
-  envKeys,
-  headerKeys,
-  queryKeys,
-  serverKind,
-  syncKind,
-} from "@local/helpers/consts";
-import { type Env } from "@local/helpers/env";
-import { signDataWithKey } from "@local/helpers/net";
-import { slugify } from "@local/helpers/strings";
-import { type EventPayload, type FunctionConfig } from "@local/types";
+
 import { fromPartial } from "@total-typescript/shoehorn";
 import fetch from "cross-fetch";
 import { type Request, type Response } from "express";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { z } from "zod";
+import {
+  type HandlerResponse,
+  InngestCommHandler,
+  type ServeHandlerOptions,
+} from "../components/InngestCommHandler.ts";
+import { createStepTools, getStepOptions } from "../components/InngestStepTools.ts";
+import {
+  type IInngestExecution,
+  type InngestExecution,
+  type InngestExecutionOptions,
+  PREFERRED_EXECUTION_VERSION,
+} from "../components/execution/InngestExecution.ts";
+import { ServerTiming } from "../helpers/ServerTiming.ts";
+import {
+  envKeys,
+  ExecutionVersion,
+  headerKeys,
+  queryKeys,
+  serverKind,
+  syncKind,
+} from "../helpers/consts.ts";
+import { type Env } from "../helpers/env.ts";
+import { signDataWithKey } from "../helpers/net.ts";
+import { slugify } from "../helpers/strings.ts";
+import { Inngest, type InngestFunction } from "../index.ts";
+import { type EventPayload, type FunctionConfig } from "../types.ts";
 
 interface HandlerStandardReturn {
   status: number;
@@ -175,7 +169,7 @@ export const testFramework = (
    */
   handler: {
     frameworkName: string;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     serve: (options: ServeHandlerOptions) => any;
   },
 
@@ -219,7 +213,7 @@ export const testFramework = (
       /**
        * The returned value from the handler.
        */
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       ret: any
     ) => Promise<HandlerStandardReturn>;
 
@@ -316,7 +310,6 @@ export const testFramework = (
       args.push({ actionOverrides });
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ret = await (serveHandler as (...args: any[]) => any)(...args);
 
     if (prevProcessEnv) {
@@ -499,7 +492,6 @@ export const testFramework = (
               .post("/fn/register", (b) => {
                 reqToMock = b;
 
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
                 return b;
               })
               .reply(200, {
@@ -578,7 +570,6 @@ export const testFramework = (
               .post("/fn/register", (b) => {
                 reqToMock = b;
 
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
                 return b;
               })
               .reply(200, {
@@ -628,7 +619,6 @@ export const testFramework = (
               .post("/fn/register", (b) => {
                 reqToMock = b;
 
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
                 return b;
               })
               .reply(200, {
@@ -671,7 +661,6 @@ export const testFramework = (
               .post("/fn/register", (b) => {
                 reqToMock = b;
 
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
                 return b;
               })
               .reply(200, {
@@ -746,7 +735,6 @@ export const testFramework = (
             .post("/fn/register", (b) => {
               reqToMock = b;
 
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-return
               return b;
             })
             .reply(200, {
@@ -799,7 +787,6 @@ export const testFramework = (
                 .post("/fn/register", (b) => {
                   reqToMock = b;
 
-                  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
                   return b;
                 })
                 .query((q) =>
@@ -881,7 +868,7 @@ export const testFramework = (
               ? "INVALID"
               : undefined;
 
-          let name = `${
+          const name = `${
             serverMode === serverKind.Cloud ? "Cloud" : "Dev"
           } Server -> ${sdkMode === serverKind.Cloud ? "Cloud" : "Dev"} SDK - ${
             requestedSyncKind
@@ -1212,7 +1199,6 @@ export const testFramework = (
                 signingKey:
                   "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                 __testingAllowExpiredSignatures: true,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
               } as any,
             ],
             [
@@ -1265,7 +1251,6 @@ export const testFramework = (
                   signingKeyFallback:
                     "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                   __testingAllowExpiredSignatures: true,
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 } as any,
               ],
               [
@@ -1316,7 +1301,6 @@ export const testFramework = (
                   signingKey: "fake",
                   signingKeyFallback: "another-fake",
                   __testingAllowExpiredSignatures: true,
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 } as any,
               ],
               [
@@ -1341,7 +1325,7 @@ export const testFramework = (
 
         describe("signed response", () => {
           beforeEach(() => {
-            jest
+            vi
               .spyOn(
                 InngestCommHandler.prototype as any,
                 "getResponseSignature"
@@ -1352,7 +1336,7 @@ export const testFramework = (
           });
 
           afterEach(() => {
-            jest.restoreAllMocks();
+            vi.restoreAllMocks();
           });
 
           test("should throw if request is signed but we fail to sign the response", async () => {
@@ -1385,7 +1369,6 @@ export const testFramework = (
                   signingKey:
                     "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                   __testingAllowExpiredSignatures: true,
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 } as any,
               ],
               [
@@ -1528,7 +1511,7 @@ export const receivedEventWithName = async (
     }
 
     const data = await res.json();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const event = data?.data?.events?.find((e: any) => e.name === name);
 
     if (event) {
@@ -1585,7 +1568,6 @@ export const eventRunWithName = async (
 
     const data = await res.json();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let run: any;
 
     for (let i = 0; i < (data?.data?.stream?.length ?? 0); i++) {
@@ -1595,7 +1577,6 @@ export const eventRunWithName = async (
         continue;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       run = item?.runs?.find((run: any) => {
         return run?.function?.name === name;
       });
@@ -1639,7 +1620,7 @@ class TimelineItem {
   public createdAt: string;
 
   // Unsafe, but fine for testing.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   constructor(runId: string, item: any) {
     this.runId = runId;
     this.id = item.id;
@@ -1731,10 +1712,8 @@ export const runHasTimeline = async (
 
     const data = await res.json();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const timelineItem = data?.data?.functionRun?.history?.find((entry: any) =>
       Object.keys(timeline).every(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (key) => entry[key] === (timeline as any)[key]
       )
     );

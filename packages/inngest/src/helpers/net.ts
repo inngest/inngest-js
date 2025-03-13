@@ -51,7 +51,7 @@ export function signDataWithKey(
   const encoded = typeof data === "string" ? data : canonicalize(data);
   // Remove the `/signkey-[test|prod]-/` prefix from our signing key to calculate the HMAC.
   const key = signingKey.replace(/signkey-\w+-/, "");
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mac = hmac(sha256 as any, key)
     .update(encoded)
     .update(ts)

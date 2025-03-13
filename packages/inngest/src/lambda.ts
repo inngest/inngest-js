@@ -33,9 +33,9 @@ import {
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type Either } from "./helpers/types.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import { type Either } from "./helpers/types.ts";
+import { type SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -96,7 +96,6 @@ export const serve = (
 
       return {
         body: () => {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
           return JSON.parse(
             event.body
               ? event.isBase64Encoded

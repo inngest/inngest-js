@@ -7,14 +7,14 @@ import {
   functionStoppedRunningErr,
   prettyError,
   serializeError,
-} from "../../helpers/errors.js";
-import { undefinedToNull } from "../../helpers/functions.js";
+} from "../../helpers/errors.ts";
+import { undefinedToNull } from "../../helpers/functions.ts";
 import {
   resolveAfterPending,
   resolveNextTick,
   runAsPromise,
-} from "../../helpers/promises.js";
-import { type MaybePromise, type PartialK } from "../../helpers/types.js";
+} from "../../helpers/promises.ts";
+import { type MaybePromise, type PartialK } from "../../helpers/types.ts";
 import {
   StepOpCode,
   jsonErrorSchema,
@@ -27,16 +27,16 @@ import {
   type IncomingOp,
   type OpStack,
   type OutgoingOp,
-} from "../../types.js";
-import { type Inngest } from "../Inngest.js";
-import { getHookStack, type RunHookStack } from "../InngestMiddleware.js";
+} from "../../types.ts";
+import { type Inngest } from "../Inngest.ts";
+import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
   getStepOptions,
   type StepHandler,
-} from "../InngestStepTools.js";
-import { NonRetriableError } from "../NonRetriableError.js";
-import { RetryAfterError } from "../RetryAfterError.js";
+} from "../InngestStepTools.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
+import { RetryAfterError } from "../RetryAfterError.ts";
 import {
   InngestExecution,
   type ExecutionResult,
@@ -44,7 +44,7 @@ import {
   type InngestExecutionFactory,
   type InngestExecutionOptions,
   type MemoizedOp,
-} from "./InngestExecution.js";
+} from "./InngestExecution.ts";
 
 export const createV0InngestExecution: InngestExecutionFactory = (options) => {
   return new V0InngestExecution(options);
@@ -502,6 +502,8 @@ export class V0InngestExecution
     ) {
       return op.id;
     }
+
+    return;
   }
 
   /**

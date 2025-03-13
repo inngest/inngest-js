@@ -1,6 +1,6 @@
 import {
-  ExecutionVersion,
-  type MemoizedOp,
+    ExecutionVersion,
+    type MemoizedOp,
 } from "inngest/components/execution/InngestExecution";
 import { _internals } from "inngest/components/execution/v1";
 import type { InngestFunction } from "inngest/components/InngestFunction";
@@ -9,9 +9,9 @@ import { createDeferredPromise } from "inngest/helpers/promises";
 import { ServerTiming } from "inngest/helpers/ServerTiming";
 import { Context, EventPayload, StepOpCode } from "inngest/types";
 import { ulid } from "ulid";
-import { InngestTestRun } from "./InngestTestRun.js";
-import type { Mock } from "./spy.js";
-import { createMockEvent, mockCtx, type DeepPartial } from "./util.js";
+import { InngestTestRun } from "./InngestTestRun.ts";
+import type { Mock } from "./spy.ts";
+import { createMockEvent, mockCtx, type DeepPartial } from "./util.ts";
 
 /**
  * A test engine for running Inngest functions in a test environment, providing

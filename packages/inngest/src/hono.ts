@@ -22,9 +22,9 @@ import { env } from "hono/adapter";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type Env } from "./helpers/env.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import { type Env } from "./helpers/env.ts";
+import { type SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -91,7 +91,6 @@ export const serve = (
               // access the environment instead of using any helpers here to
               // ensure compatibility with tools with Webpack which will replace
               // this with a literal.
-              // eslint-disable-next-line @inngest/internal/process-warn
               if (process.env.NODE_ENV !== "production") {
                 scheme = "http";
               }

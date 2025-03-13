@@ -1,10 +1,10 @@
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
 import { ulid } from "ulidx";
-import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.js";
-import { allProcessEnv, getPlatformName } from "../../helpers/env.js";
-import { parseFnData } from "../../helpers/functions.js";
-import { hashSigningKey } from "../../helpers/strings.js";
+import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.ts";
+import { allProcessEnv, getPlatformName } from "../../helpers/env.ts";
+import { parseFnData } from "../../helpers/functions.ts";
+import { hashSigningKey } from "../../helpers/strings.ts";
 import {
   ConnectMessage,
   GatewayMessageType,
@@ -14,28 +14,28 @@ import {
   WorkerConnectRequestData,
   WorkerRequestAckData,
   type GatewayExecutorRequestData,
-} from "../../proto/src/components/connect/protobuf/connect.js";
-import { type Capabilities, type FunctionConfig } from "../../types.js";
-import { version } from "../../version.js";
-import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.js";
-import { type Inngest } from "../Inngest.js";
-import { InngestCommHandler } from "../InngestCommHandler.js";
-import { type InngestFunction } from "../InngestFunction.js";
-import { MessageBuffer } from "./buffer.js";
+} from "../../proto/src/components/connect/protobuf/connect.ts";
+import { type Capabilities, type FunctionConfig } from "../../types.ts";
+import { version } from "../../version.ts";
+import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
+import { type Inngest } from "../Inngest.ts";
+import { InngestCommHandler } from "../InngestCommHandler.ts";
+import { type InngestFunction } from "../InngestFunction.ts";
+import { MessageBuffer } from "./buffer.ts";
 import {
   createStartRequest,
   parseConnectMessage,
   parseGatewayExecutorRequest,
   parseStartResponse,
   parseWorkerReplyAck,
-} from "./messages.js";
-import { getHostname, onShutdown, retrieveSystemAttributes } from "./os.js";
+} from "./messages.ts";
+import { getHostname, onShutdown, retrieveSystemAttributes } from "./os.ts";
 import {
   ConnectionState,
   DEFAULT_SHUTDOWN_SIGNALS,
   type ConnectHandlerOptions,
   type WorkerConnection,
-} from "./types.js";
+} from "./types.ts";
 import {
   AuthError,
   ConnectionLimitError,
@@ -43,7 +43,7 @@ import {
   parseTraceCtx,
   ReconnectError,
   waitWithCancel,
-} from "./util.js";
+} from "./util.ts";
 
 const ResponseAcknowlegeDeadline = 5_000;
 const WorkerHeartbeatInterval = 10_000;
@@ -185,7 +185,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
     return options;
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   async close(): Promise<void> {
     // Remove the shutdown signal handler
     if (this.cleanupShutdownSignal) {
@@ -853,7 +852,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         }
 
         this.debug(`Connection error (${connectionId})`, error);
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
+
         this.connect(attempt + 1, [...path, "onConnectionError"]);
       };
 
@@ -1077,7 +1076,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
           return;
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.messageBuffer.flush(hashedSigningKey);
       }, WorkerHeartbeatInterval / 2);
     }, WorkerHeartbeatInterval);
@@ -1140,7 +1138,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
 export const connect = async (
   options: ConnectHandlerOptions
-  // eslint-disable-next-line @typescript-eslint/require-await
 ): Promise<WorkerConnection> => {
   if (options.apps.length === 0) {
     throw new Error("No apps provided");

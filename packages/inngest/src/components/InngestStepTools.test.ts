@@ -1,25 +1,24 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { openai } from "@local";
-import { EventSchemas } from "@local/components/EventSchemas";
-import { type Inngest } from "@local/components/Inngest";
-import { InngestFunction } from "@local/components/InngestFunction";
-import { referenceFunction } from "@local/components/InngestFunctionReference";
-import { type createStepTools } from "@local/components/InngestStepTools";
-import { type IsEqual } from "@local/helpers/types";
-import {
-  StepOpCode,
-  type ClientOptions,
-  type InvocationResult,
-} from "@local/types";
+import { openai } from "@inngest/ai";
 import ms from "ms";
 import { z } from "zod";
+import { type IsEqual } from "../helpers/types.ts";
 import {
   assertType,
   createClient,
   getStepTools,
   testClientId,
   type StepTools,
-} from "../test/helpers";
+} from "../test/helpers.ts";
+import {
+  StepOpCode,
+  type ClientOptions,
+  type InvocationResult,
+} from "../types.ts";
+import { EventSchemas } from "./EventSchemas.ts";
+import { type Inngest } from "./Inngest.ts";
+import { InngestFunction } from "./InngestFunction.ts";
+import { referenceFunction } from "./InngestFunctionReference.ts";
+import { type createStepTools } from "./InngestStepTools.ts";
 
 describe("waitForEvent", () => {
   let step: StepTools;

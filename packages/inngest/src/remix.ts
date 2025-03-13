@@ -20,9 +20,9 @@ import {
   InngestCommHandler,
   type ActionResponse,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type Env } from "./helpers/env.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import { type Env } from "./helpers/env.ts";
+import { type SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -43,10 +43,9 @@ const createNewResponse = ({
   let Res: typeof Response;
 
   if (typeof Response === "undefined") {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     Res = require("cross-fetch").Response;
   } else {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     Res = Response;
   }
 
@@ -103,6 +102,8 @@ export const serve = (
           if (ctxParse.success && Object.keys(ctxParse.data.env).length) {
             return ctxParse.data.env as Env;
           }
+
+          return;
         },
         body: () => req.json(),
         headers: (key) => req.headers.get(key),

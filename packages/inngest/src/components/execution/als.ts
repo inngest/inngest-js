@@ -1,4 +1,4 @@
-import { type Context, type StepOptions } from "../../types.js";
+import { type Context, type StepOptions } from "../../types.ts";
 
 export interface AsyncContext {
   /**
@@ -44,13 +44,15 @@ export const getAsyncCtx = async (): Promise<AsyncContext | undefined> => {
 export const getAsyncLocalStorage = async (): Promise<AsyncLocalStorageIsh> => {
   (globalThis as Record<string | symbol | number, unknown>)[alsSymbol] ??=
     new Promise<AsyncLocalStorageIsh>(
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
+      // eslint-disable-next-line no-async-promise-executor
       async (resolve) => {
         try {
           const { AsyncLocalStorage } = await import("node:async_hooks");
 
           resolve(new AsyncLocalStorage<AsyncContext>());
         } catch (err) {
+          console.error(err);
+
           console.warn(
             "node:async_hooks is not supported in this runtime. Experimental async context is disabled."
           );

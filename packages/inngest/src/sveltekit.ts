@@ -1,3 +1,4 @@
+/* eslint-disable import/no-unresolved */
 /**
  * An adapter for SvelteKit to serve and register any declared functions with
  * Inngest, making them available to be triggered by events.
@@ -25,9 +26,9 @@ import { type RequestEvent } from "@sveltejs/kit";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { processEnv } from "./helpers/env.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import { processEnv } from "./helpers/env.ts";
+import { type SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -96,10 +97,9 @@ export const serve = (
           let Res: typeof Response;
 
           if (typeof Response === "undefined") {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
+            // eslint-disable-next-line @typescript-eslint/no-var-requires
             Res = require("cross-fetch").Response;
           } else {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             Res = Response;
           }
 

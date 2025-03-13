@@ -4,7 +4,7 @@ import {
   StartRequest,
   StartResponse,
   WorkerReplyAckData,
-} from "../../proto/src/components/connect/protobuf/connect.js";
+} from "../../proto/src/components/connect/protobuf/connect.ts";
 
 export function createStartRequest(excludeGateways: string[]) {
   return StartRequest.encode(

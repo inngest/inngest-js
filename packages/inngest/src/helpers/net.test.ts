@@ -1,5 +1,9 @@
-import fetchMock from "jest-fetch-mock";
-import { fetchWithAuthFallback } from "./net";
+/* eslint-disable import/no-extraneous-dependencies */
+import { vi } from "vitest";
+import createFetchMock from "vitest-fetch-mock";
+import { fetchWithAuthFallback } from "./net.ts";
+
+const fetchMock = createFetchMock(vi);
 
 describe("fetchWithAuthFallback", () => {
   beforeEach(() => {

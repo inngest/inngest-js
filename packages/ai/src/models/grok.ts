@@ -1,8 +1,7 @@
-/* eslint-disable @typescript-eslint/no-namespace */
-import { type AiAdapter } from "../adapter.js";
-import { GrokAiAdapter } from "../adapters/grok.js";
+import { type AiAdapter } from "../adapter.ts";
+import { GrokAiAdapter } from "../adapters/grok.ts";
 import { envKeys, processEnv } from "../env";
-import { type OpenAi, openai } from "./openai.js";
+import { type OpenAi, openai } from "./openai.ts";
 
 /**
  * Create a Grok model using the OpenAI chat format.
@@ -35,7 +34,6 @@ export namespace Grok {
    * IDs of models to use.
    */
   export type Model =
-    // eslint-disable-next-line @typescript-eslint/ban-types
     | (string & {})
     | "grok-2-1212"
     | "grok-2"

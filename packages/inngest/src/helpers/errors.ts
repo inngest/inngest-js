@@ -8,9 +8,9 @@ import {
 } from "serialize-error-cjs";
 import stripAnsi from "strip-ansi";
 import { z } from "zod";
-import { type Inngest } from "../components/Inngest.js";
-import { NonRetriableError } from "../components/NonRetriableError.js";
-import { type ClientOptions, type OutgoingOp } from "../types.js";
+import { type Inngest } from "../components/Inngest.ts";
+import { NonRetriableError } from "../components/NonRetriableError.ts";
+import { type ClientOptions, type OutgoingOp } from "../types.ts";
 
 const SERIALIZED_KEY = "__serialized";
 const SERIALIZED_VALUE = true;
@@ -162,7 +162,6 @@ export const isSerializedError = (
     if (typeof value === "object" && value !== null) {
       const objIsSerializedErr =
         Object.prototype.hasOwnProperty.call(value, SERIALIZED_KEY) &&
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         (value as { [SERIALIZED_KEY]: unknown })[SERIALIZED_KEY] ===
           SERIALIZED_VALUE;
 
@@ -174,6 +173,8 @@ export const isSerializedError = (
     // no-op; we'll return undefined if parsing failed, as it isn't a serialized
     // error
   }
+
+  return;
 };
 
 /**
@@ -499,7 +500,6 @@ export class OutgoingResultError extends Error {
 export const rethrowError = (prefix: string): ((err: any) => never) => {
   return (err) => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/restrict-template-expressions
       err.message &&= `${prefix}; ${err.message}`;
     } catch (noopErr) {
       // no-op

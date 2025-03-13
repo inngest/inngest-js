@@ -1,15 +1,15 @@
 import { models, type AiAdapter } from "@inngest/ai";
 import { z } from "zod";
-import { logPrefix } from "../helpers/consts.js";
-import { type Jsonify } from "../helpers/jsonify.js";
-import { timeStr } from "../helpers/strings.js";
+import { logPrefix } from "../helpers/consts.ts";
+import { type Jsonify } from "../helpers/jsonify.ts";
+import { timeStr } from "../helpers/strings.ts";
 import {
   type ExclusiveKeys,
   type ParametersExceptFirst,
   type SendEventPayload,
   type SimplifyDeep,
   type WithoutInternalStr,
-} from "../helpers/types.js";
+} from "../helpers/types.ts";
 import {
   StepOpCode,
   type EventPayload,
@@ -22,17 +22,17 @@ import {
   type StepOptionsOrId,
   type TriggerEventFromFunction,
   type TriggersFromClient,
-} from "../types.js";
+} from "../types.ts";
 import {
   type ClientOptionsFromInngest,
   type GetEvents,
   type GetFunctionOutput,
   type Inngest,
-} from "./Inngest.js";
-import { InngestFunction } from "./InngestFunction.js";
-import { InngestFunctionReference } from "./InngestFunctionReference.js";
+} from "./Inngest.ts";
+import { InngestFunction } from "./InngestFunction.ts";
+import { InngestFunctionReference } from "./InngestFunctionReference.ts";
 
-import { type InngestExecution } from "./execution/InngestExecution.js";
+import { type InngestExecution } from "./execution/InngestExecution.ts";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -237,7 +237,6 @@ export const createStepTools = <TClient extends Inngest.Any>(
         };
       },
       {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         fn: (_, fn, ...input) => fn(...input),
       }
     );

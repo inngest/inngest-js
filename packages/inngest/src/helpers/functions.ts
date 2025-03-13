@@ -1,13 +1,11 @@
 import { ZodError, z } from "zod";
-import { type InngestApi } from "../api/api.js";
-import { stepsSchemas } from "../api/schema.js";
-import {
-  ExecutionVersion,
-  PREFERRED_EXECUTION_VERSION,
-} from "../components/execution/InngestExecution.js";
-import { err, ok, type Result } from "../types.js";
-import { prettyError } from "./errors.js";
-import { type Await } from "./types.js";
+import { type InngestApi } from "../api/api.ts";
+import { stepsSchemas } from "../api/schema.ts";
+import { PREFERRED_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
+import { err, ok, type Result } from "../types.ts";
+import { ExecutionVersion } from "./consts.ts";
+import { prettyError } from "./errors.ts";
+import { type Await } from "./types.ts";
 
 /**
  * Wraps a function with a cache. When the returned function is run, it will
@@ -20,7 +18,6 @@ export const cacheFn = <T extends (...args: any[]) => any>(fn: T): T => {
 
   return ((...args) => {
     if (!cache.has(key)) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       cache.set(key, fn(...args));
     }
 
@@ -54,17 +51,14 @@ export const waterfall = <TFns extends ((arg?: any) => any)[]>(
 ): ((...args: Parameters<TFns[number]>) => Promise<Await<TFns[number]>>) => {
   return (...args) => {
     const chain = fns.reduce(async (acc, fn) => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const prev = await acc;
       const output = (await fn(prev)) as Promise<Await<TFns[number]>>;
 
       if (transform) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return await transform(prev, output);
       }
 
       if (typeof output === "undefined") {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return prev;
       }
 

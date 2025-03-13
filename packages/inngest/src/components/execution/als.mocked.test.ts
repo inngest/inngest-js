@@ -1,33 +1,35 @@
 import { InngestTestEngine } from "@inngest/test";
 import { type AsyncContext } from "./als.ts";
 
+vi.mock("node:async_hooks", () => {
+  throw new Error("import failed");
+});
+
 describe("getAsyncLocalStorage", () => {
+  const warningSpy = vi.spyOn(console, "warn");
+
   afterEach(() => {
+    vi.resetModules();
+
     // kill the global used for storing ALS state
     delete (globalThis as Record<string | symbol | number, unknown>)[
       Symbol.for("inngest:als")
     ];
   });
 
-  test("should return an `AsyncLocalStorageIsh`", async () => {
+  test("should return `undefined` if node:async_hooks is not supported", async () => {
     const mod = await import("./als.ts");
     const als = await mod.getAsyncLocalStorage();
 
+    expect(warningSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "node:async_hooks is not supported in this runtime"
+      )
+    );
+
     expect(als).toBeDefined();
-    expect(als.getStore).toBeDefined();
+    expect(als.getStore()).toBeUndefined();
     expect(als.run).toBeDefined();
-  });
-
-  test("should return the same instance of `AsyncLocalStorageIsh`", async () => {
-    const mod = await import("./als.ts");
-
-    const als1p = mod.getAsyncLocalStorage();
-    const als2p = mod.getAsyncLocalStorage();
-
-    const als1 = await als1p;
-    const als2 = await als2p;
-
-    expect(als1).toBe(als2);
   });
 });
 
@@ -38,7 +40,6 @@ describe("getAsyncCtx", () => {
   };
 
   afterEach(() => {
-    vi.unmock("node:async_hooks");
     vi.resetModules();
 
     // kill the global used for storing ALS state
@@ -47,14 +48,7 @@ describe("getAsyncCtx", () => {
     ];
   });
 
-  test("should return `undefined` outside of an Inngest async context", async () => {
-    const mod = await import("./als.ts");
-    const store = await mod.getAsyncCtx();
-
-    expect(store).toBeUndefined();
-  });
-
-  test("should return the input context during execution", async () => {
+  test("should return `undefined` if node:async_hooks is not supported", async () => {
     const { Inngest } = await import("../../index.ts");
     const mod = await import("../../experimental.ts");
 
@@ -91,7 +85,6 @@ describe("getAsyncCtx", () => {
     expect(internalRunId).toBeTruthy();
 
     const store = await externalP;
-    expect(store).toBeDefined();
-    expect(store?.ctx.runId).toBe(internalRunId);
+    expect(store).toBeUndefined();
   });
 });

@@ -1,11 +1,11 @@
 import debug, { type Debugger } from "debug";
-import { headerKeys } from "../../helpers/consts.js";
-import { type Inngest } from "../Inngest.js";
+import { headerKeys } from "../../helpers/consts.ts";
 import {
   FlushResponse,
   SDKResponse,
-} from "../../proto/src/components/connect/protobuf/connect.js";
-import { expBackoff } from "./util.js";
+} from "../../proto/src/components/connect/protobuf/connect.ts";
+import { type Inngest } from "../Inngest.ts";
+import { expBackoff } from "./util.ts";
 
 export class MessageBuffer {
   private buffered: Record<string, SDKResponse> = {};

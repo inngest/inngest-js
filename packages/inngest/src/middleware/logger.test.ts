@@ -1,9 +1,5 @@
-import { jest } from "@jest/globals";
-import {
-  DefaultLogger,
-  ProxyLogger,
-  type Logger,
-} from "@local/middleware/logger";
+import { type MockInstance } from "vitest";
+import { DefaultLogger, ProxyLogger, type Logger } from "./logger.ts";
 
 describe("ProxyLogger", () => {
   const buffer = [
@@ -23,16 +19,16 @@ describe("ProxyLogger", () => {
   const populateBuf = () => {
     buffer.forEach(({ level, args }) => {
       const method = level as keyof ProxyLogger;
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+
       logger[method](...args);
     });
   };
 
   describe("flush", () => {
-    let timeout: jest.SpiedFunction<typeof setTimeout>;
+    let timeout: MockInstance<typeof setTimeout>;
 
     beforeEach(() => {
-      timeout = jest.spyOn(global, "setTimeout");
+      timeout = vi.spyOn(global, "setTimeout");
     });
 
     afterEach(() => {
@@ -46,14 +42,13 @@ describe("ProxyLogger", () => {
     });
 
     test("should attempt to wait for flushing with non DefaultLogger", async () => {
-      /* eslint-disable @typescript-eslint/no-empty-function, prettier/prettier */
       _internal = new (class DummyLogger implements Logger {
         info(..._args: unknown[]) {}
         warn(..._args: unknown[]) {}
         error(..._args: unknown[]) {}
         debug(..._args: unknown[]) {}
       })();
-      /* eslint-enable */
+
       logger = new ProxyLogger(_internal);
 
       populateBuf();

@@ -1,10 +1,10 @@
-import { EventSchemas } from "@local/components/EventSchemas";
-import { Inngest, type GetEvents } from "@local/components/Inngest";
-import { type internalEvents } from "@local/helpers/consts";
-import { type IsAny, type IsEqual } from "@local/helpers/types";
-import { type FailureEventPayload } from "@local/types";
 import { z } from "zod";
-import { assertType } from "../test/helpers";
+import { type internalEvents } from "../helpers/consts.ts";
+import { type IsAny, type IsEqual } from "../helpers/types.ts";
+import { assertType } from "../test/helpers.ts";
+import { type FailureEventPayload } from "../types.ts";
+import { EventSchemas } from "./EventSchemas.ts";
+import { Inngest, type GetEvents } from "./Inngest.ts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Schemas<T extends EventSchemas<any>> = GetEvents<
@@ -299,7 +299,7 @@ describe("EventSchemas", () => {
         >
       >(true);
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const t0: Schemas<typeof schemas>["app/blog.post.*"] = null as any;
       const _fnToCheckTypesOnly = () => {
         if (t0.name === "app/blog.post.created") {

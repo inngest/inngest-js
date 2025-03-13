@@ -21,7 +21,7 @@ import {
   type IsUnknown,
   type KnownKeys,
   type Simplify,
-} from "./types.js";
+} from "./types.ts";
 
 // Note: The return value has to be `any` and not `unknown` so it can match `void`.
 type NotJsonable = ((...arguments_: any[]) => any) | undefined | symbol;
@@ -58,7 +58,7 @@ Please upvote [this issue](https://github.com/microsoft/TypeScript/issues/32277)
 @see NegativeInfinity
 */
 // See https://github.com/microsoft/TypeScript/issues/31752
-// eslint-disable-next-line @typescript-eslint/no-loss-of-precision
+
 export type PositiveInfinity = 1e999;
 
 /**
@@ -69,7 +69,7 @@ Please upvote [this issue](https://github.com/microsoft/TypeScript/issues/32277)
 @see PositiveInfinity
 */
 // See https://github.com/microsoft/TypeScript/issues/31752
-// eslint-disable-next-line @typescript-eslint/no-loss-of-precision
+
 export type NegativeInfinity = -1e999;
 
 /**

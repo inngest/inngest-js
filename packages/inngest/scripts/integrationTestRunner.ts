@@ -1,4 +1,3 @@
-/* eslint-disable @inngest/internal/process-warn */
 import {
   exec,
   execSync,

@@ -1,5 +1,5 @@
 import { ulid } from "ulidx";
-import { InngestApi } from "../api/api.js";
+import { InngestApi } from "../api/api.ts";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
@@ -8,8 +8,8 @@ import {
   envKeys,
   headerKeys,
   logPrefix,
-} from "../helpers/consts.js";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver.js";
+} from "../helpers/consts.ts";
+import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
 import {
   allProcessEnv,
   getFetch,
@@ -17,11 +17,11 @@ import {
   inngestHeaders,
   processEnv,
   type Mode,
-} from "../helpers/env.js";
-import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.js";
-import { type Jsonify } from "../helpers/jsonify.js";
-import { retryWithBackoff } from "../helpers/promises.js";
-import { stringify } from "../helpers/strings.js";
+} from "../helpers/env.ts";
+import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.ts";
+import { type Jsonify } from "../helpers/jsonify.ts";
+import { retryWithBackoff } from "../helpers/promises.ts";
+import { stringify } from "../helpers/strings.ts";
 import {
   type AsArray,
   type IsNever,
@@ -29,12 +29,12 @@ import {
   type SimplifyDeep,
   type SingleOrArray,
   type WithoutInternal,
-} from "../helpers/types.js";
+} from "../helpers/types.ts";
 import {
   DefaultLogger,
   ProxyLogger,
   type Logger,
-} from "../middleware/logger.js";
+} from "../middleware/logger.ts";
 import {
   sendEventResponseSchema,
   type ClientOptions,
@@ -46,10 +46,10 @@ import {
   type SendEventOutput,
   type SendEventResponse,
   type TriggersFromClient,
-} from "../types.js";
-import { type EventSchemas } from "./EventSchemas.js";
-import { InngestFunction } from "./InngestFunction.js";
-import { type InngestFunctionReference } from "./InngestFunctionReference.js";
+} from "../types.ts";
+import { type EventSchemas } from "./EventSchemas.ts";
+import { InngestFunction } from "./InngestFunction.ts";
+import { type InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
   InngestMiddleware,
   getHookStack,
@@ -58,7 +58,7 @@ import {
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
-} from "./InngestMiddleware.js";
+} from "./InngestMiddleware.ts";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -494,7 +494,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         // Always generate an idempotency ID for an event for retries
         id: p.id || ulid(),
         ts: p.ts || new Date().getTime(),
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
         data: p.data || {},
       };
     });
@@ -883,7 +883,6 @@ export namespace Inngest {
  * @public
  */
 export type GetStepTools<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TInngest extends Inngest.Any,
   TTrigger extends keyof GetEvents<TInngest> &
     string = keyof GetEvents<TInngest> & string,
@@ -1029,6 +1028,6 @@ export type GetEvents<
  *
  * @public
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export type ClientOptionsFromInngest<TInngest extends Inngest.Any> =
   TInngest extends Inngest<infer U> ? U : ClientOptions;

@@ -1,6 +1,6 @@
-import * as LambdaHandler from "@local/lambda";
 import { type APIGatewayProxyResult } from "aws-lambda";
-import { testFramework } from "./test/helpers";
+import * as LambdaHandler from "./lambda.ts";
+import { testFramework } from "./test/helpers.ts";
 
 testFramework("AWS Lambda", LambdaHandler, {
   transformReq: (req, _res, _env) => {

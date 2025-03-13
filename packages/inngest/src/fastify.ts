@@ -55,13 +55,13 @@ import {
   type FastifyReply,
   type FastifyRequest,
 } from "fastify";
-import { type Inngest } from "./components/Inngest.js";
+import { type Inngest } from "./components/Inngest.ts";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type InngestFunction } from "./components/InngestFunction.js";
-import { type RegisterOptions, type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import { type InngestFunction } from "./components/InngestFunction.ts";
+import { type RegisterOptions, type SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest

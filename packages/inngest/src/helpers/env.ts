@@ -3,11 +3,11 @@
 // along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
 // string in order to read variables.
 
-import { type Inngest } from "../components/Inngest.js";
-import { type SupportedFrameworkName } from "../types.js";
-import { version } from "../version.js";
-import { defaultDevServerHost, envKeys, headerKeys } from "./consts.js";
-import { stringifyUnknown } from "./strings.js";
+import { type Inngest } from "../components/Inngest.ts";
+import { type SupportedFrameworkName } from "../types.ts";
+import { version } from "../version.ts";
+import { defaultDevServerHost, envKeys, headerKeys } from "./consts.ts";
+import { stringifyUnknown } from "./strings.ts";
 
 /**
  * @public
@@ -55,6 +55,8 @@ export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
     } catch {
       // no-op
     }
+
+    return;
   });
 };
 
@@ -286,9 +288,7 @@ declare const Netlify: {
 export const allProcessEnv = (): Env => {
   // Node, or Node-like environments
   try {
-    // eslint-disable-next-line @inngest/internal/process-warn
     if (process.env) {
-      // eslint-disable-next-line @inngest/internal/process-warn
       return process.env;
     }
   } catch (_err) {
@@ -576,7 +576,7 @@ export const getResponse = (): typeof Response => {
     return Response;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
   return require("cross-fetch").Response;
 };
 

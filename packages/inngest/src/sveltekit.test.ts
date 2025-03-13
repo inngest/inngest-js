@@ -1,8 +1,9 @@
-import * as SvelteKitHandler from "@local/sveltekit";
+/* eslint-disable import/no-unresolved */
 import { type RequestEvent } from "@sveltejs/kit";
 import { fromPartial } from "@total-typescript/shoehorn";
 import fetch, { Headers, Response } from "cross-fetch";
-import { testFramework } from "./test/helpers";
+import * as SvelteKitHandler from "./sveltekit.ts";
+import { testFramework } from "./test/helpers.ts";
 
 const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;
@@ -11,7 +12,7 @@ const originalHeaders = globalThis.Headers;
 testFramework("SvelteKit", SvelteKitHandler, {
   lifecycleChanges: () => {
     beforeEach(() => {
-      jest.resetModules();
+      vi.resetModules();
 
       Object.defineProperties(globalThis, {
         fetch: { value: fetch, configurable: true },

@@ -1,4 +1,4 @@
-import { type MaybePromise } from "./types.js";
+import { type MaybePromise } from "./types.ts";
 
 /**
  * Some environments don't allow access to the global queueMicrotask(). While we
@@ -94,7 +94,6 @@ export const createDeferredPromise = <T>(): DeferredPromiseReturn<T> => {
     };
   });
 
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   return { promise, resolve: resolve!, reject: reject! };
 };
 
@@ -221,7 +220,6 @@ export const runAsPromise = <T extends (() => any) | undefined>(
   fn: T
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<T extends () => any ? Awaited<ReturnType<T>> : T> => {
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
   return Promise.resolve().then(fn);
 };
 

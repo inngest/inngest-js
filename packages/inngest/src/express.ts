@@ -25,9 +25,9 @@ import { type Request, type Response } from "express";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type Either } from "./helpers/types.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import { type Either } from "./helpers/types.ts";
+import { type SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -71,7 +71,6 @@ export const serve = (options: ServeHandlerOptions): any => {
       res: Either<Response, VercelResponse>
     ) => {
       return {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         body: () => req.body,
         headers: (key) => {
           const header = req.headers[key];

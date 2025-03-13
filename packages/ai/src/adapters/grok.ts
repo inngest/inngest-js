@@ -1,5 +1,5 @@
-import { type AiAdapter } from "../adapter.js";
-import { OpenAiAiAdapter } from "./openai.js";
+import { type AiAdapter } from "../adapter.ts";
+import { OpenAiAiAdapter } from "./openai.ts";
 
 // Grok is an exotic one, it is an OpenAI-compatible API,
 // but does not support strict mode Function Calling, requiring an adapter.

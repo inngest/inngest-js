@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { ExecutionVersion } from "../components/execution/InngestExecution.js";
-import { jsonErrorSchema, type EventPayload } from "../types.js";
+import { ExecutionVersion } from "../helpers/consts.ts";
+import { jsonErrorSchema, type EventPayload } from "../types.ts";
 
 export const errorSchema = z.object({
   error: z.string(),
@@ -53,7 +53,7 @@ const v1StepSchema = z
        *
        * In this case, pull the entire value through as data.
        */
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
       .or(z.any().transform((v) => ({ type: "data" as const, data: v })))
   )
   .default({});

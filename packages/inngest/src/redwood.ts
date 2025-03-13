@@ -25,9 +25,9 @@ import {
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { processEnv } from "./helpers/env.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import { processEnv } from "./helpers/env.ts";
+import { type SupportedFrameworkName } from "./types.ts";
 
 export interface RedwoodResponse {
   statusCode: number;
@@ -73,7 +73,6 @@ export const serve = (
     handler: (event: APIGatewayProxyEvent, _context: LambdaContext) => {
       return {
         body: () => {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
           return JSON.parse(
             event.body
               ? event.isBase64Encoded

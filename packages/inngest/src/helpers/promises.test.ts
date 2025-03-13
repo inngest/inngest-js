@@ -1,5 +1,5 @@
-import { runAsPromise } from "@local/helpers/promises";
-import { assertType } from "../test/helpers";
+import { assertType } from "../test/helpers.ts";
+import { runAsPromise } from "./promises.ts";
 
 describe("runAsPromise", () => {
   describe("synchronous functions", () => {

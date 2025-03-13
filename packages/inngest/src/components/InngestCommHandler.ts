@@ -1,20 +1,21 @@
 import debug from "debug";
 import { z } from "zod";
-import { ServerTiming } from "../helpers/ServerTiming.js";
+import { ServerTiming } from "../helpers/ServerTiming.ts";
 import {
   debugPrefix,
   defaultInngestApiBaseUrl,
   defaultInngestEventBaseUrl,
   dummyEventKey,
   envKeys,
+  ExecutionVersion,
   headerKeys,
   logPrefix,
   probe as probeEnum,
   queryKeys,
   syncKind,
-} from "../helpers/consts.js";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver.js";
-import { enumFromValue } from "../helpers/enum.js";
+} from "../helpers/consts.ts";
+import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
+import { enumFromValue } from "../helpers/enum.ts";
 import {
   allProcessEnv,
   devServerHost,
@@ -26,19 +27,19 @@ import {
   parseAsBoolean,
   platformSupportsStreaming,
   type Env,
-} from "../helpers/env.js";
-import { rethrowError, serializeError } from "../helpers/errors.js";
+} from "../helpers/env.ts";
+import { rethrowError, serializeError } from "../helpers/errors.ts";
 import {
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
   type FnData,
-} from "../helpers/functions.js";
-import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.js";
-import { runAsPromise } from "../helpers/promises.js";
-import { createStream } from "../helpers/stream.js";
-import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.js";
-import { type MaybePromise } from "../helpers/types.js";
+} from "../helpers/functions.ts";
+import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
+import { runAsPromise } from "../helpers/promises.ts";
+import { createStream } from "../helpers/stream.ts";
+import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
+import { type MaybePromise } from "../helpers/types.ts";
 import {
   functionConfigSchema,
   inBandSyncRequestBodySchema,
@@ -53,21 +54,20 @@ import {
   type RegisterRequest,
   type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
-} from "../types.js";
-import { version } from "../version.js";
-import { type Inngest } from "./Inngest.js";
+} from "../types.ts";
+import { version } from "../version.ts";
+import { type Inngest } from "./Inngest.ts";
 import {
   type CreateExecutionOptions,
   type InngestFunction,
-} from "./InngestFunction.js";
+} from "./InngestFunction.ts";
 import {
-  ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
   type ExecutionResult,
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
-} from "./execution/InngestExecution.js";
+} from "./execution/InngestExecution.ts";
 
 /**
  * A set of options that can be passed to a serve handler, intended to be used
@@ -381,7 +381,7 @@ export class InngestCommHandler<
      * testing.
      */
     this.allowExpiredSignatures = Boolean(
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, prefer-rest-params
+      // eslint-disable-next-line prefer-rest-params
       arguments["0"]?.__testingAllowExpiredSignatures
     );
 
@@ -806,7 +806,6 @@ export class InngestCommHandler<
           return parseInt(value, 10);
         });
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const [signature, method, body] = await Promise.all([
         actions
           .headers("checking signature for request", headerKeys.Signature)
@@ -854,7 +853,7 @@ export class InngestCommHandler<
           getInngestHeaders,
           reqArgs: args,
           signatureValidation,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           body,
           method,
           headers: headersToForwardP,
@@ -944,7 +943,6 @@ export class InngestCommHandler<
 
       return timer.wrap("res", async () => {
         return actionRes.then(prepareActionRes).then((actionRes) => {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
           return actions.transformResponse("sending back response", actionRes);
         });
       });
@@ -1457,7 +1455,7 @@ export class InngestCommHandler<
           >((acc, [id, data]) => {
             return {
               ...acc,
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
               [id]: { id, data },
             };
           }, {});
@@ -1491,11 +1489,9 @@ export class InngestCommHandler<
               ...acc,
               [id]:
                 result.type === "data"
-                  ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                    { id, data: result.data }
+                  ? { id, data: result.data }
                   : result.type === "input"
-                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                      { id, input: result.input }
+                    ? { id, input: result.input }
                     : { id, error: result.error },
             };
           }, {});
@@ -1530,11 +1526,9 @@ export class InngestCommHandler<
               ...acc,
               [id]:
                 result.type === "data"
-                  ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                    { id, data: result.data }
+                  ? { id, data: result.data }
                   : result.type === "input"
-                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                      { id, input: result.input }
+                    ? { id, input: result.input }
                     : { id, error: result.error },
             };
           }, {});
@@ -1850,11 +1844,9 @@ export class InngestCommHandler<
 
     const raw = await res.text();
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     let data: z.input<typeof registerResSchema> = {};
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data = JSON.parse(raw);
     } catch (err) {
       this.log("warn", "Couldn't unpack register response:", err);
@@ -1953,7 +1945,7 @@ export class InngestCommHandler<
    * Validate the signature of a request and return the signing key used to
    * validate it.
    */
-  // eslint-disable-next-line @typescript-eslint/require-await
+
   protected async validateSignature(
     sig: string | undefined,
     body: unknown

@@ -10,4 +10,6 @@ export const enumFromValue = <T extends Record<string, unknown>>(
   if (Object.values(enumType).includes(value)) {
     return value as T[keyof T];
   }
+
+  return;
 };

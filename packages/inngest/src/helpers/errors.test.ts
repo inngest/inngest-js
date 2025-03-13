@@ -5,7 +5,7 @@ import {
   minifyPrettyError,
   prettyError,
   serializeError,
-} from "@local/helpers/errors";
+} from "./errors.ts";
 
 interface ErrorTests {
   name: string;

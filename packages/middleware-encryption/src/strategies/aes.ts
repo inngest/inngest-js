@@ -1,5 +1,5 @@
-import AES from "crypto-js/aes.js";
-import CryptoJSUtf8 from "crypto-js/enc-utf8.js";
+import AES from "crypto-js/aes.ts";
+import CryptoJSUtf8 from "crypto-js/enc-utf8.ts";
 import { type EncryptionService } from "../middleware";
 
 /**

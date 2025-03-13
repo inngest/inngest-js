@@ -1,10 +1,9 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   checkIntrospection,
   eventRunWithName,
   runHasTimeline,
   sendEvent,
-} from "@local/test/helpers";
+} from "./test/helpers";
 
 checkIntrospection({
   name: "sequential-reduce",

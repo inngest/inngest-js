@@ -1,10 +1,10 @@
+import { events } from ".";
 import {
   checkIntrospection,
   eventRunWithName,
   runHasTimeline,
   sendEvent,
-} from "@local/test/helpers";
-import { events } from ".";
+} from "./test/helpers";
 
 checkIntrospection({
   name: "multiple-triggers",

@@ -1,7 +1,7 @@
 import { sha256 } from "hash.js";
 import { default as safeStringify } from "json-stringify-safe";
 import ms from "ms";
-import { type TimeStr } from "../types.js";
+import { type TimeStr } from "../types.ts";
 
 /**
  * Safely `JSON.stringify()` an `input`, handling circular refernences and
@@ -11,7 +11,6 @@ import { type TimeStr } from "../types.js";
 export const stringify = (input: any): string => {
   return safeStringify(input, (key, value) => {
     if (typeof value !== "bigint") {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return value;
     }
   });
@@ -72,7 +71,8 @@ export const timeStr = (
     return input.toISOString();
   }
 
-  const milliseconds: number = typeof input === "string" ? ms(input) : input;
+  const milliseconds: number =
+    typeof input === "string" ? ms(input as `${number}`) : input;
 
   const [, timeStr] = periods.reduce<[number, string]>(
     ([num, str], [suffix, period]) => {
@@ -102,6 +102,8 @@ export const stringifyUnknown = (input: unknown): string | undefined => {
   ) {
     return input.toString();
   }
+
+  return;
 };
 
 export const hashEventKey = (eventKey: string): string => {

@@ -3,9 +3,7 @@
   "name": "@inngest/sdk",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "version": "3.32.7",
-  "include": [
-    "./src/**/*.ts"
-  ],
+  "include": ["./src/**/*.ts"],
   "exclude": [
     "./src/test/**",
     "./test/**",
@@ -15,6 +13,7 @@
     "./**/tsconfig.*",
     "!./src/version.ts"
   ],
+  "nodeModulesMode": "nodir",
   "exports": {
     ".": "./src/index.ts",
     "./experimental": "./src/experimental.ts",
@@ -37,6 +36,20 @@
     "./hono": "./src/hono.ts",
     "./nitro": "./src/nitro.ts",
     "./node": "./src/node.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./connect": "./src/connect.ts",
+    "./api/*": "./src/api/*.ts",
+    "./components/*": "./src/components/*.ts",
+    "./deno/*": "./src/deno/*.ts",
+    "./helpers/*": "./src/helpers/*.ts",
+    "./middleware/*": "./src/middleware/*.ts"
+  },
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "moduleResolution": "NodeNext"
+  },
+  "targets": {
+    "node": ">=20"
   }
 }

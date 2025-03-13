@@ -16,7 +16,6 @@
  * `.d.ts` files to ensure that we are not exporting types that are not
  * available to the consumer.
  */
-/* eslint-disable @inngest/internal/process-warn */
 import chalk from "chalk";
 import fs from "fs";
 import { builtinModules } from "module";

@@ -1,4 +1,4 @@
-import { headerKeys } from "inngest/helpers/consts";
+import { headerKeys } from "../../helpers/consts.ts";
 
 export class ReconnectError extends Error {
   constructor(

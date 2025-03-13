@@ -1,6 +1,6 @@
-import * as BunHandler from "@local/bun";
 import fetch, { Headers, Response } from "cross-fetch";
-import { testFramework } from "./test/helpers";
+import * as BunHandler from "./bun.ts";
+import { testFramework } from "./test/helpers.ts";
 
 const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;
@@ -9,7 +9,7 @@ const originalHeaders = globalThis.Headers;
 testFramework("Bun", BunHandler, {
   lifecycleChanges: () => {
     beforeEach(() => {
-      jest.resetModules();
+      vi.resetModules();
 
       Object.defineProperties(globalThis, {
         /**
@@ -49,10 +49,10 @@ testFramework("Bun", BunHandler, {
       headers.set(k, v as string);
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (req as any).headers = headers;
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (req as any).json = () => Promise.resolve(req.body);
 
     return [req];

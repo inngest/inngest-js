@@ -1,3 +1,12 @@
+import { type Mock } from "vitest";
+import { literal } from "zod";
+import {
+  dummyEventKey,
+  envKeys,
+  headerKeys,
+  internalEvents,
+} from "../helpers/consts.ts";
+import { type IsAny, type IsEqual, type IsNever } from "../helpers/types.ts";
 import {
   EventSchemas,
   Inngest,
@@ -8,19 +17,11 @@ import {
   type GetFunctionInput,
   type GetFunctionOutput,
   type GetStepTools,
-} from "@local";
-import { type createStepTools } from "@local/components/InngestStepTools";
-import {
-  dummyEventKey,
-  envKeys,
-  headerKeys,
-  internalEvents,
-} from "@local/helpers/consts";
-import { type IsAny, type IsEqual, type IsNever } from "@local/helpers/types";
-import { type Logger } from "@local/middleware/logger";
-import { type SendEventResponse } from "@local/types";
-import { literal } from "zod";
-import { assertType, createClient } from "../test/helpers";
+} from "../index.ts";
+import { type Logger } from "../middleware/logger.ts";
+import { assertType, createClient } from "../test/helpers.ts";
+import { type SendEventResponse } from "../types.ts";
+import { type createStepTools } from "./InngestStepTools.ts";
 
 const testEvent: EventPayload = {
   name: "test",
@@ -145,7 +146,7 @@ describe("send", () => {
       ids,
       error,
     }: Partial<SendEventResponse> = {}) => {
-      return jest.fn((url: string, opts: { body: string }) => {
+      return vi.fn((url: string, opts: { body: string }) => {
         const json = error
           ? {
               error,
@@ -179,7 +180,7 @@ describe("send", () => {
     });
 
     beforeEach(() => {
-      (global.fetch as jest.Mock).mockClear();
+      (global.fetch as Mock).mockClear();
       process.env = { ...originalProcessEnv };
     });
 
@@ -216,7 +217,7 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           body: expect.stringMatching(
             new RegExp(JSON.stringify(testEvent).slice(1, -1))
           ),
@@ -236,7 +237,7 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           body: expect.stringMatching(
             new RegExp(JSON.stringify(testEvent).slice(1, -1))
           ),
@@ -256,7 +257,7 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           body: expect.stringMatching(
             new RegExp(JSON.stringify(testEvent).slice(1, -1))
           ),
@@ -288,7 +289,7 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
@@ -308,7 +309,7 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
@@ -331,7 +332,7 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
@@ -355,7 +356,7 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
@@ -378,7 +379,7 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
@@ -404,7 +405,7 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           headers: expect.objectContaining({
             [headerKeys.Environment]: "foo",
           }),
@@ -421,7 +422,7 @@ describe("send", () => {
         data: {},
       };
 
-      const mockedFetch = jest.mocked(global.fetch);
+      const mockedFetch = vi.mocked(global.fetch);
 
       await expect(inngest.send(testEventWithoutTs)).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
@@ -430,7 +431,7 @@ describe("send", () => {
       expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
       expect(mockedFetch.mock.calls[1]).toHaveLength(2);
       expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const body: Array<Record<string, any>> = JSON.parse(
         mockedFetch.mock.calls[1]?.[1]?.body as string
       );
@@ -438,7 +439,7 @@ describe("send", () => {
       expect(body[0]).toEqual(
         expect.objectContaining({
           ...testEventWithoutTs,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           ts: expect.any(Number),
         })
       );
@@ -452,7 +453,7 @@ describe("send", () => {
         name: "test.without.data",
       };
 
-      const mockedFetch = jest.mocked(global.fetch);
+      const mockedFetch = vi.mocked(global.fetch);
 
       await expect(inngest.send(testEventWithoutData)).resolves.toMatchObject({
         ids: Array(1).fill(expect.any(String)),
@@ -461,7 +462,7 @@ describe("send", () => {
       expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
       expect(mockedFetch.mock.calls[1]).toHaveLength(2);
       expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const body: Array<Record<string, any>> = JSON.parse(
         mockedFetch.mock.calls[1]?.[1]?.body as string
       );
@@ -489,7 +490,7 @@ describe("send", () => {
                       return {
                         payloads: ctx.payloads.map((payload) => ({
                           ...payload,
-                          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
                           data: {
                             ...payload.data,
                             bar: true,
@@ -515,7 +516,7 @@ describe("send", () => {
         expect.stringContaining(`/e/${testEventKey}`),
         expect.objectContaining({
           method: "POST",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           body: expect.stringMatching(
             new RegExp(
               JSON.stringify({
@@ -1178,7 +1179,7 @@ describe("helper types", () => {
       const fn = inngest.createFunction(
         { id: "test" },
         { event: "foo" },
-        // eslint-disable-next-line @typescript-eslint/require-await
+
         async () => {
           return "foo" as const;
         }
@@ -1207,7 +1208,7 @@ describe("helper types", () => {
       const fn = inngest.createFunction(
         { id: "test" },
         { event: "foo" },
-        // eslint-disable-next-line @typescript-eslint/require-await
+
         async () => {
           return "foo" as const;
         }

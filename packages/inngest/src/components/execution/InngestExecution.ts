@@ -1,11 +1,11 @@
 import Debug, { type Debugger } from "debug";
-import { type ServerTiming } from "../../helpers/ServerTiming.js";
-import { debugPrefix } from "../../helpers/consts.js";
-import { type MaybePromise, type Simplify } from "../../helpers/types.js";
-import { type Context, type IncomingOp, type OutgoingOp } from "../../types.js";
-import { type Inngest } from "../Inngest.js";
-import { type ActionResponse } from "../InngestCommHandler.js";
-import { type InngestFunction } from "../InngestFunction.js";
+import { type ServerTiming } from "../../helpers/ServerTiming.ts";
+import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
+import { type MaybePromise, type Simplify } from "../../helpers/types.ts";
+import { type Context, type IncomingOp, type OutgoingOp } from "../../types.ts";
+import { type Inngest } from "../Inngest.ts";
+import { type ActionResponse } from "../InngestCommHandler.ts";
+import { type InngestFunction } from "../InngestFunction.ts";
 
 /**
  * The possible results of an execution.
@@ -49,18 +49,6 @@ export interface MemoizedOp extends IncomingOp {
    */
   promise?: Promise<unknown>;
   seen?: boolean;
-}
-
-/**
- * The execution models the SDK is aware of.
- *
- * This is used in a number of places to ensure all execution versions are
- * accounted for for a given operation.
- */
-export enum ExecutionVersion {
-  V0 = 0,
-  V1 = 1,
-  V2 = 2,
 }
 
 /**

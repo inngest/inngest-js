@@ -1,6 +1,6 @@
-import * as AstroHandler from "@local/astro";
 import fetch, { Headers, Response } from "cross-fetch";
-import { testFramework } from "./test/helpers";
+import * as AstroHandler from "./astro.ts";
+import { testFramework } from "./test/helpers.ts";
 
 const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;
@@ -12,7 +12,7 @@ testFramework("Astro", AstroHandler, {
    */
   lifecycleChanges: () => {
     beforeEach(() => {
-      jest.resetModules();
+      vi.resetModules();
       Object.defineProperties(globalThis, {
         /**
          * Fake a global `fetch` value, which is available as as a Web Standard
@@ -47,9 +47,9 @@ testFramework("Astro", AstroHandler, {
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
     });
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (req as any).headers = headers;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (req as any).json = () => Promise.resolve(req.body);
     return [{ request: req }];
   },

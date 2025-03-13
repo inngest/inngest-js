@@ -1,4 +1,3 @@
-/* eslint-disable @inngest/internal/process-warn */
 import { spawn, type SpawnOptionsWithoutStdio } from "child_process";
 import fs from "fs";
 import inquirer from "inquirer";

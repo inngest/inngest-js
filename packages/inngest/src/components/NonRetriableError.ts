@@ -13,7 +13,7 @@ export class NonRetriableError extends Error {
    *
    * This will be serialized and sent to Inngest.
    */
-  public readonly cause?: unknown;
+  public override readonly cause?: unknown;
 
   constructor(
     message: string,
@@ -27,7 +27,7 @@ export class NonRetriableError extends Error {
     }
   ) {
     super(message);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
     this.cause = options?.cause;
 
     this.name = "NonRetriableError";

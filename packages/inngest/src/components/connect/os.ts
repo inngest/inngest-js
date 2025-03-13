@@ -102,12 +102,10 @@ export function onShutdown(signals: string[], fn: () => void) {
   try {
     if (process) {
       signals.forEach((signal) => {
-        // eslint-disable-next-line @inngest/internal/process-warn
         process.on(signal, fn);
       });
       return () => {
         signals.forEach((signal) => {
-          // eslint-disable-next-line @inngest/internal/process-warn
           process.removeListener(signal, fn);
         });
       };

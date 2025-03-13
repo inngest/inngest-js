@@ -1,22 +1,22 @@
 import { sha1 } from "hash.js";
 import { z } from "zod";
-import { internalEvents } from "../../helpers/consts.js";
+import { internalEvents } from "../../helpers/consts.ts";
 import {
   ErrCode,
   deserializeError,
   minifyPrettyError,
   prettyError,
   serializeError,
-} from "../../helpers/errors.js";
-import { undefinedToNull } from "../../helpers/functions.js";
+} from "../../helpers/errors.ts";
+import { undefinedToNull } from "../../helpers/functions.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
   createTimeoutPromise,
   resolveAfterPending,
   runAsPromise,
-} from "../../helpers/promises.js";
-import { type MaybePromise, type Simplify } from "../../helpers/types.js";
+} from "../../helpers/promises.ts";
+import { type MaybePromise, type Simplify } from "../../helpers/types.ts";
 import {
   StepOpCode,
   jsonErrorSchema,
@@ -26,9 +26,9 @@ import {
   type FailureEventArgs,
   type Handler,
   type OutgoingOp,
-} from "../../types.js";
-import { type Inngest } from "../Inngest.js";
-import { getHookStack, type RunHookStack } from "../InngestMiddleware.js";
+} from "../../types.ts";
+import { type Inngest } from "../Inngest.ts";
+import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   STEP_INDEXING_SUFFIX,
   createStepTools,
@@ -36,10 +36,10 @@ import {
   invokePayloadSchema,
   type FoundStep,
   type StepHandler,
-} from "../InngestStepTools.js";
-import { NonRetriableError } from "../NonRetriableError.js";
-import { RetryAfterError } from "../RetryAfterError.js";
-import { StepError } from "../StepError.js";
+} from "../InngestStepTools.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
+import { RetryAfterError } from "../RetryAfterError.ts";
+import { StepError } from "../StepError.ts";
 import {
   InngestExecution,
   type ExecutionResult,
@@ -47,8 +47,8 @@ import {
   type InngestExecutionFactory,
   type InngestExecutionOptions,
   type MemoizedOp,
-} from "./InngestExecution.js";
-import { getAsyncCtx, getAsyncLocalStorage } from "./als.js";
+} from "./InngestExecution.ts";
+import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
@@ -222,6 +222,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             steps: newSteps,
           };
         }
+
+        return;
       },
 
       /**
@@ -453,31 +455,28 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     this.debug(`executing step "${id}"`);
 
-    return (
-      runAsPromise(fn)
-        // eslint-disable-next-line @typescript-eslint/no-misused-promises
-        .finally(async () => {
-          if (store) {
-            delete store.executingStep;
-          }
+    return runAsPromise(fn)
+      .finally(async () => {
+        if (store) {
+          delete store.executingStep;
+        }
 
-          await this.state.hooks?.afterExecution?.();
-        })
-        .then<OutgoingOp>((data) => {
-          return {
-            ...outgoingOp,
-            data,
-          };
-        })
-        .catch<OutgoingOp>((error) => {
-          return {
-            ...outgoingOp,
-            op: StepOpCode.StepError,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
-          };
-        })
-    );
+        await this.state.hooks?.afterExecution?.();
+      })
+      .then<OutgoingOp>((data) => {
+        return {
+          ...outgoingOp,
+          data,
+        };
+      })
+      .catch<OutgoingOp>((error) => {
+        return {
+          ...outgoingOp,
+          op: StepOpCode.StepError,
+
+          error,
+        };
+      });
   }
 
   /**
@@ -509,18 +508,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * Trigger the user's function.
      */
     runAsPromise(() => this.userFnToRun(this.fnArg))
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises
       .finally(async () => {
         await this.state.hooks?.afterMemoization?.();
         await this.state.hooks?.beforeExecution?.();
         await this.state.hooks?.afterExecution?.();
       })
       .then((data) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.state.setCheckpoint({ type: "function-resolved", data });
       })
       .catch((error) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.state.setCheckpoint({ type: "function-rejected", error });
       });
   }
@@ -928,9 +924,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         switch (opId.op) {
           // `step.run()` has its function input affected
           case StepOpCode.StepPlanned: {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             fnArgs = [...args.slice(0, 2), ...stepState.input];
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
             extraOpts = { input: [...stepState.input] };
             break;
           }
@@ -956,7 +951,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         rawArgs: fnArgs, // TODO What is the right value here? Should this be raw args without affected input?
         hashedId,
         input: stepState?.input,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+
         fn: opts?.fn ? () => opts.fn?.(...fnArgs) : undefined,
         promise,
         fulfilled: isFulfilled,

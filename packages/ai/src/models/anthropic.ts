@@ -1,6 +1,5 @@
-/* eslint-disable @typescript-eslint/no-namespace */
-import { type AiAdapter } from "../adapter.js";
-import { type AnthropicAiAdapter } from "../adapters/anthropic.js";
+import { type AiAdapter } from "../adapter.ts";
+import { type AnthropicAiAdapter } from "../adapters/anthropic.ts";
 import { envKeys, processEnv } from "../env";
 
 /**

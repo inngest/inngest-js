@@ -1,11 +1,11 @@
-import { cacheFn, waterfall } from "../helpers/functions.js";
+import { cacheFn, waterfall } from "../helpers/functions.ts";
 import {
   type Await,
   type MaybePromise,
   type ObjectAssign,
   type PartialK,
   type Simplify,
-} from "../helpers/types.js";
+} from "../helpers/types.ts";
 import {
   type BaseContext,
   type EventPayload,
@@ -13,9 +13,9 @@ import {
   type OutgoingOp,
   type SendEventBaseOutput,
   type TriggersFromClient,
-} from "../types.js";
-import { type Inngest } from "./Inngest.js";
-import { type InngestFunction } from "./InngestFunction.js";
+} from "../types.ts";
+import { type Inngest } from "./Inngest.ts";
+import { type InngestFunction } from "./InngestFunction.ts";
 
 /**
  * A middleware that can be registered with Inngest to hook into various
@@ -183,7 +183,6 @@ export const getHookStack = async <
   const hooksRegistered = await keyFns.reduce<
     Promise<Await<TMiddleware[TKey]>[]>
   >(async (acc, fn) => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return [...(await acc), await fn(arg)];
   }, Promise.resolve([]));
 
