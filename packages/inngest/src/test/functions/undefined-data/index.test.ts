@@ -3,7 +3,7 @@ import {
   eventRunWithName,
   runHasTimeline,
   sendEvent,
-} from "./test/helpers";
+} from "../../helpers";
 
 checkIntrospection({
   name: "undefined-data",

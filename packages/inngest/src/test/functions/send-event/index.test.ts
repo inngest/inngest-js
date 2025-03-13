@@ -3,7 +3,7 @@ import {
   eventRunWithName,
   receivedEventWithName,
   sendEvent,
-} from "./test/helpers";
+} from "../../helpers";
 
 checkIntrospection({
   name: "send-event",

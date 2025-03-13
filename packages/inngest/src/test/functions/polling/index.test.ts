@@ -1,4 +1,4 @@
-import { checkIntrospection } from "./test/helpers";
+import { checkIntrospection } from "../../helpers";
 
 checkIntrospection({
   name: "polling",

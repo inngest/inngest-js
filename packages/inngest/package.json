@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.build.json && tsup --config tsup.config.ts",
     "test": "vitest run",
     "itest": "tsx scripts/integrationTestRunner.ts",
-    "test:examples": "jest --logHeapUsage --maxWorkers=8 --testMatch \"**/test/functions/**/*.test.ts\" --ci --verbose",
+    "test:examples": "vitest run --dir src/test/functions",
     "test:types": "tsc --noEmit --project tsconfig.types.json --listFiles",
     "test:dist": "tsc --noEmit dist/**/*.d.ts",
     "test:deps": "tsx scripts/checkDependencies.ts",
