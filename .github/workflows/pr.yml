@@ -23,9 +23,6 @@ jobs:
       fail-fast: false
       matrix:
         nodeVersion:
-          - 14
-          - 16
-          - 18
           - 20
           - 22
     steps:
@@ -60,17 +57,6 @@ jobs:
         tsVersion:
           - "latest"
           - "~5.8.0"
-          - "~5.7.0"
-          - "~5.6.0"
-          - "~5.5.0"
-          - "~5.4.0"
-          - "~5.3.0"
-          - "~5.2.0"
-          - "~5.1.0"
-          - "~5.0.0"
-          - "~4.9.0"
-          - "~4.8.0"
-          - "~4.7.0"
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
