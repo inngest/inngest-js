@@ -6,8 +6,6 @@ vi.mock("node:async_hooks", () => {
 });
 
 describe("getAsyncLocalStorage", () => {
-  const warningSpy = vi.spyOn(console, "warn");
-
   afterEach(() => {
     vi.resetModules();
 
@@ -18,10 +16,14 @@ describe("getAsyncLocalStorage", () => {
   });
 
   test("should return `undefined` if node:async_hooks is not supported", async () => {
+    const consoleWarnSpy = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => {});
+
     const mod = await import("./als.ts");
     const als = await mod.getAsyncLocalStorage();
 
-    expect(warningSpy).toHaveBeenCalledWith(
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
       expect.stringContaining(
         "node:async_hooks is not supported in this runtime"
       )

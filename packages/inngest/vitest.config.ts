@@ -13,8 +13,10 @@ export default defineConfig({
     environment: "node",
     globals: true,
     exclude: ["**/node_modules/**", "**/dist/**", "**/test/**"],
-    silent: true,
     logHeapUsage: true,
+    fileParallelism: true,
+    silent: true,
+    hideSkippedTests: true,
     typecheck: {
       tsconfig: "./tsconfig.types.json",
     },

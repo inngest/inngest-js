@@ -14,7 +14,7 @@
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
     "proto": "protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/proto ./src/components/connect/protobuf/connect.proto",
     "build": "tsc -p tsconfig.build.json && tsup --config tsup.config.ts",
-    "test": "vitest run --coverage",
+    "test": "vitest run",
     "itest": "tsx scripts/integrationTestRunner.ts",
     "test:examples": "jest --logHeapUsage --maxWorkers=8 --testMatch \"**/test/functions/**/*.test.ts\" --ci --verbose",
     "test:types": "tsc --noEmit --project tsconfig.types.json --listFiles",

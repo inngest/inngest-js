@@ -51,8 +51,6 @@ export const getAsyncLocalStorage = async (): Promise<AsyncLocalStorageIsh> => {
 
           resolve(new AsyncLocalStorage<AsyncContext>());
         } catch (err) {
-          console.error(err);
-
           console.warn(
             "node:async_hooks is not supported in this runtime. Experimental async context is disabled."
           );

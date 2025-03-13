@@ -1,4 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+globalThis.console = {
+  ...globalThis.console,
+  log: vi.fn(() => undefined),
+  warn: vi.fn(() => undefined),
+  error: vi.fn(() => undefined),
+};
+
+const clearConsole = () => {
+  (globalThis.console.log as any).mockClear();
+  (globalThis.console.warn as any).mockClear();
+  (globalThis.console.error as any).mockClear();
+};
 
 import { fromPartial } from "@total-typescript/shoehorn";
 import { type Mock, type MockInstance } from "vitest";
@@ -15,11 +27,7 @@ import {
   NonRetriableError,
   type EventPayload,
 } from "../index.ts";
-import {
-  DefaultLogger,
-  ProxyLogger,
-  type Logger,
-} from "../middleware/logger.ts";
+import { ProxyLogger, type Logger } from "../middleware/logger.ts";
 import { assertType, createClient, runFnWithStack } from "../test/helpers.ts";
 import {
   StepOpCode,
@@ -46,10 +54,25 @@ type TestEvents = {
 
 const schemas = new EventSchemas().fromRecord<TestEvents>();
 
+const mockLogger = {
+  info: vi.fn(globalThis.console.log),
+  warn: vi.fn(globalThis.console.warn),
+  error: vi.fn(globalThis.console.error),
+  debug: vi.fn(globalThis.console.debug),
+};
+
+const clearLogger = () => {
+  mockLogger.info.mockClear();
+  mockLogger.warn.mockClear();
+  mockLogger.error.mockClear();
+  mockLogger.debug.mockClear();
+};
+
 const opts = (<T extends ClientOptions>(x: T): T => x)({
   id: "test",
   eventKey: "event-key-123",
   schemas,
+  logger: mockLogger,
   /**
    * Create some test middleware that purposefully takes time for every hook.
    * This ensures that the engine accounts for the potential time taken by
@@ -216,8 +239,6 @@ describe("runFn", () => {
 
   describe("step functions", () => {
     const getHashDataSpy = () => vi.spyOn(_v1Internals, "hashOp");
-    const getWarningSpy = () => vi.spyOn(console, "warn");
-    const getErrorSpy = () => vi.spyOn(console, "error");
 
     const executionIdHashes: Partial<
       Record<ExecutionVersion, (id: string) => string>
@@ -286,8 +307,6 @@ describe("runFn", () => {
           Object.entries(tests(processedHashes)).forEach(([name, t]) => {
             describe(name, () => {
               let hashDataSpy: ReturnType<typeof getHashDataSpy>;
-              let warningSpy: ReturnType<typeof getWarningSpy>;
-              let errorSpy: ReturnType<typeof getErrorSpy>;
               let tools: T;
               let ret: Awaited<ReturnType<typeof runFnWithStack>> | undefined;
               let retErr: Error | undefined;
@@ -295,15 +314,15 @@ describe("runFn", () => {
 
               beforeAll(() => {
                 vi.restoreAllMocks();
-                vi.resetAllMocks();
+                vi.resetModules();
+                clearLogger();
+                clearConsole();
                 flush = vi
                   .spyOn(ProxyLogger.prototype, "flush")
                   .mockImplementation(async () => {
                     /* noop */
                   });
                 hashDataSpy = getHashDataSpy();
-                warningSpy = getWarningSpy();
-                errorSpy = getErrorSpy();
                 tools = createTools();
               });
 
@@ -349,7 +368,7 @@ describe("runFn", () => {
                 describe("warning logs", () => {
                   t.expectedWarnings?.forEach((warning, i) => {
                     test(`warning log #${i + 1} includes "${warning}"`, () => {
-                      expect(warningSpy).toHaveBeenNthCalledWith(
+                      expect(globalThis.console.warn).toHaveBeenNthCalledWith(
                         i + 1,
                         expect.stringContaining(warning)
                       );
@@ -358,7 +377,7 @@ describe("runFn", () => {
                 });
               } else {
                 test("no warning logs", () => {
-                  expect(warningSpy).not.toHaveBeenCalled();
+                  expect(globalThis.console.warn).not.toHaveBeenCalled();
                 });
               }
 
@@ -366,10 +385,15 @@ describe("runFn", () => {
                 describe("error logs", () => {
                   t.expectedErrors?.forEach((error, i) => {
                     test(`error log #${i + 1} includes "${error}"`, () => {
-                      const call = errorSpy.mock.calls[i];
-                      const stringifiedArgs = call?.map((arg) => {
-                        return arg instanceof Error ? serializeError(arg) : arg;
-                      });
+                      const call = (globalThis.console.error as any).mock.calls[
+                        i
+                      ];
+                      const stringifiedArgs =
+                        call?.map((arg: unknown) => {
+                          return arg instanceof Error
+                            ? serializeError(arg)
+                            : arg;
+                        }) ?? "";
 
                       expect(JSON.stringify(stringifiedArgs)).toContain(error);
                     });
@@ -377,7 +401,7 @@ describe("runFn", () => {
                 });
               } else {
                 test("no error logs", () => {
-                  expect(errorSpy).not.toHaveBeenCalled();
+                  expect(globalThis.console.error).not.toHaveBeenCalled();
                 });
               }
 
@@ -3016,14 +3040,11 @@ describe("runFn", () => {
               },
               expectedStepsRun: ["A"],
               customTests() {
-                let loggerInfoSpy: MockInstance<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = vi.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["info1"], ["A"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([
+                    ["info1"],
+                    ["A"],
+                  ]);
                 });
               },
             },
@@ -3045,14 +3066,8 @@ describe("runFn", () => {
               },
               expectedStepsRun: ["B"],
               customTests() {
-                let loggerInfoSpy: MockInstance<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = vi.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["2"], ["B"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([["2"], ["B"]]);
                 });
               },
             },
@@ -3072,14 +3087,8 @@ describe("runFn", () => {
                 data: null,
               },
               customTests() {
-                let loggerInfoSpy: MockInstance<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = vi.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["3"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([["3"]]);
                 });
               },
             },
@@ -3104,14 +3113,11 @@ describe("runFn", () => {
               },
               expectedStepsRun: ["A"],
               customTests() {
-                let loggerInfoSpy: MockInstance<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = vi.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["info1"], ["A"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([
+                    ["info1"],
+                    ["A"],
+                  ]);
                 });
               },
             },
@@ -3134,14 +3140,8 @@ describe("runFn", () => {
               },
               expectedStepsRun: ["B"],
               customTests() {
-                let loggerInfoSpy: MockInstance<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = vi.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["2"], ["B"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([["2"], ["B"]]);
                 });
               },
             },
@@ -3161,14 +3161,8 @@ describe("runFn", () => {
                 data: null,
               },
               customTests() {
-                let loggerInfoSpy: MockInstance<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = vi.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["3"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([["3"]]);
                 });
               },
             },
@@ -3193,14 +3187,11 @@ describe("runFn", () => {
               },
               expectedStepsRun: ["A"],
               customTests() {
-                let loggerInfoSpy: MockInstance<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = vi.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["info1"], ["A"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([
+                    ["info1"],
+                    ["A"],
+                  ]);
                 });
               },
             },
@@ -3223,14 +3214,8 @@ describe("runFn", () => {
               },
               expectedStepsRun: ["B"],
               customTests() {
-                let loggerInfoSpy: MockInstance<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = vi.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["2"], ["B"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([["2"], ["B"]]);
                 });
               },
             },
@@ -3250,14 +3235,8 @@ describe("runFn", () => {
                 data: null,
               },
               customTests() {
-                let loggerInfoSpy: MockInstance<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = vi.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["3"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([["3"]]);
                 });
               },
             },
