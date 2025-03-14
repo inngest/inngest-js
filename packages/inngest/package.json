@@ -31,7 +31,7 @@
     "dev": "pnpm install && concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"pnpm run dev:build\" \"pnpm run dev:lint\"",
     "dev:build": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run build'",
     "dev:lint": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run lint'",
-    "local:pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest.tgz",
+    "local:pack": "pnpm run build && pnpm pack -out inngest.tgz",
     "dev:example": "tsx scripts/runExample.ts",
     "bench": "tsx test/benchmark/main.ts"
   },
