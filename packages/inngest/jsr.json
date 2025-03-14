@@ -37,12 +37,7 @@
     "./nitro": "./src/nitro.ts",
     "./node": "./src/node.ts",
     "./types": "./src/types.ts",
-    "./connect": "./src/connect.ts",
-    "./api/*": "./src/api/*.ts",
-    "./components/*": "./src/components/*.ts",
-    "./deno/*": "./src/deno/*.ts",
-    "./helpers/*": "./src/helpers/*.ts",
-    "./middleware/*": "./src/middleware/*.ts"
+    "./connect": "./src/connect.ts"
   },
   "compilerOptions": {
     "target": "ES2022",

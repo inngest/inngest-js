@@ -5,7 +5,7 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "type": "module",
-  "types": "./index.d.ts",
+  "types": "./dist/index.d.ts",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
@@ -219,46 +219,6 @@
       },
       "import": "./dist/connect.js",
       "require": "./dist/connect.cjs"
-    },
-    "./api/*": {
-      "types": {
-        "import": "./dist/api/*.d.ts",
-        "require": "./dist/api/*.d.cts"
-      },
-      "import": "./dist/api/*.js",
-      "require": "./dist/api/*.cjs"
-    },
-    "./components/*": {
-      "types": {
-        "import": "./dist/components/*.d.ts",
-        "require": "./dist/components/*.d.cts"
-      },
-      "import": "./dist/components/*.js",
-      "require": "./dist/components/*.cjs"
-    },
-    "./deno/*": {
-      "types": {
-        "import": "./dist/deno/*.d.ts",
-        "require": "./dist/deno/*.d.cts"
-      },
-      "import": "./dist/deno/*.js",
-      "require": "./dist/deno/*.cjs"
-    },
-    "./helpers/*": {
-      "types": {
-        "import": "./dist/helpers/*.d.ts",
-        "require": "./dist/helpers/*.d.cts"
-      },
-      "import": "./dist/helpers/*.js",
-      "require": "./dist/helpers/*.cjs"
-    },
-    "./middleware/*": {
-      "types": {
-        "import": "./dist/middleware/*.d.ts",
-        "require": "./dist/middleware/*.d.cts"
-      },
-      "import": "./dist/middleware/*.js",
-      "require": "./dist/middleware/*.cjs"
     }
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
