@@ -54,7 +54,7 @@
     },
     "./astro": {
       "types": {
-        "import": "./dis/astro.d.ts",
+        "import": "./dist/astro.d.ts",
         "require": "./dist/astro.d.cts"
       },
       "import": "./dist/astro.js",
