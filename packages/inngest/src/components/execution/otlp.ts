@@ -52,7 +52,9 @@ export class InngestSpanProcessor implements SpanProcessor {
    */
   private get batcher(): BatchSpanProcessor {
     if (!this.#batcher) {
-      // TODO Get the app from context? Or maybe we pass it in to this class
+      // TODO Get the app from context? Or maybe we pass it in to this class.
+      // Remember that this instance could be created by our middleware or by a
+      // user manually creating it and passing it to their own providers.
       const url = "http://localhost:8288/v1/traces";
 
       processorDebug(
