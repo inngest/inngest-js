@@ -1,5 +1,5 @@
 import canonicalize from "canonicalize";
-import { sha1 } from "hash.js";
+import hashjs from "hash.js";
 import { z } from "zod";
 import {
   ErrCode,
@@ -45,6 +45,8 @@ import {
   type InngestExecutionOptions,
   type MemoizedOp,
 } from "./InngestExecution.ts";
+
+const { sha1 } = hashjs;
 
 export const createV0InngestExecution: InngestExecutionFactory = (options) => {
   return new V0InngestExecution(options);

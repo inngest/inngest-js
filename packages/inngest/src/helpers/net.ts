@@ -1,5 +1,7 @@
 import canonicalize from "canonicalize";
-import { hmac, sha256 } from "hash.js";
+import hashjs from "hash.js";
+
+const { hmac, sha256 } = hashjs;
 
 /**
  * Send an HTTP request with the given signing key. If the response is a 401 or

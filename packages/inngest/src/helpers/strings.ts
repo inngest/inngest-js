@@ -1,7 +1,9 @@
-import { sha256 } from "hash.js";
+import hashjs from "hash.js";
 import { default as safeStringify } from "json-stringify-safe";
 import ms from "ms";
 import type { TimeStr } from "../types.ts";
+
+const { sha256 } = hashjs;
 
 /**
  * Safely `JSON.stringify()` an `input`, handling circular refernences and

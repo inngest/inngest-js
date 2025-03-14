@@ -1,4 +1,4 @@
-import { sha1 } from "hash.js";
+import hashjs from "hash.js";
 import { z } from "zod";
 import { internalEvents } from "../../helpers/consts.ts";
 import {
@@ -49,6 +49,8 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.ts";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
+
+const { sha1 } = hashjs;
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
