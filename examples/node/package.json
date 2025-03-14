@@ -11,7 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "inngest": "^3.0.0"
+    "inngest": "file:../../packages/inngest/inngest.tgz"
   },
   "devDependencies": {
     "@types/node": "^20.5.2",
