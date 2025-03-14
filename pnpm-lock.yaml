@@ -5,7 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  ajv: 8.17.1
   whatwg-url: ^14.0.0
 
 importers:
@@ -2027,13 +2026,19 @@ packages:
   ajv-formats@2.1.1:
     resolution: {integrity: sha512-Wx0Kx52hxE7C18hkMEggYlEifqWZtYaRgouJor+WMdPnQyEK13vgEWyVNup7SoeeoLMsr4kf5h6dOW11I15MUA==}
     peerDependencies:
-      ajv: 8.17.1
+      ajv: ^8.0.0
     peerDependenciesMeta:
       ajv:
         optional: true
 
+  ajv@6.12.6:
+    resolution: {integrity: sha512-j3fVLgvTo527anyYyJOGTYJbG+vnnQYvE0m5mmkc1TK+nxAppkCLMIL0aZ4dblVCNoGShhm+kzE4ZUykBoMg4g==}
+
   ajv@8.17.1:
     resolution: {integrity: sha512-B/gBuNg5SiMTrPkC+A2+cW0RszwxYmn6VYxB/inlBStS5nx6xHIt/ehKRhIMhqusl7a8LjQoZnjCs5vhwxOQ1g==}
+
+  ajv@8.6.3:
+    resolution: {integrity: sha512-SMJOdDP6LqTkD0Uq8qLi+gMwSt0imXLSV080qFVwJCpH9U6Mb+SUGHAXM0KNbcBPguytWyvFxcHgMLe2D2XSpw==}
 
   ansi-colors@4.1.3:
     resolution: {integrity: sha512-/6w/C21Pm1A7aZitlI5Ni/2J6FFQN8i1Cvz3kHABAAbw93v/NlvKdVOqz7CCWz/3iv/JplRSEEZ83XION15ovw==}
@@ -3939,6 +3944,9 @@ packages:
   json-schema-to-ts@1.6.4:
     resolution: {integrity: sha512-pR4yQ9DHz6itqswtHCm26mw45FSNfQ9rEQjosaZErhn5J3J2sIViQiz8rDaezjKAhFGpmsoczYVBgGHzFw/stA==}
 
+  json-schema-traverse@0.4.1:
+    resolution: {integrity: sha512-xbbCH5dCYU5T8LcEhhuh7HJ88HXuW3qsI3Y0zOZFKfZEHcpWiHU/Jxzk629Brsab/mMiHQti9wMP+845RPe3Vg==}
+
   json-schema-traverse@1.0.0:
     resolution: {integrity: sha512-NM8/P9n3XjXhIZn1lLhkFaACTOURQXjWhV4BA/RnOv8xvgqtqpAX9IO4mRQxSx1Rlo4tqzeqb0sOlruaOy3dug==}
 
@@ -5429,6 +5437,9 @@ packages:
     peerDependencies:
       browserslist: '>= 4.21.0'
 
+  uri-js@4.4.1:
+    resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
+
   url@0.10.3:
     resolution: {integrity: sha512-hzSUW2q06EqL1gKM/a+obYHLIO6ct2hwPuviqTTOcfFVc61UbfJ2Q32+uGL/HCPxKqrdGB5QUwIe7UqlDgwsOQ==}
 
@@ -6362,7 +6373,7 @@ snapshots:
 
   '@eslint/eslintrc@2.0.1':
     dependencies:
-      ajv: 8.17.1
+      ajv: 6.12.6
       debug: 4.4.0
       espree: 9.6.1
       globals: 13.23.0
@@ -6376,7 +6387,7 @@ snapshots:
 
   '@eslint/eslintrc@2.1.3':
     dependencies:
-      ajv: 8.17.1
+      ajv: 6.12.6
       debug: 4.4.0
       espree: 9.6.1
       globals: 13.23.0
@@ -6390,7 +6401,7 @@ snapshots:
 
   '@eslint/eslintrc@3.2.0':
     dependencies:
-      ajv: 8.17.1
+      ajv: 6.12.6
       debug: 4.4.0
       espree: 10.3.0
       globals: 14.0.0
@@ -6404,7 +6415,7 @@ snapshots:
 
   '@eslint/eslintrc@3.3.0':
     dependencies:
-      ajv: 8.17.1
+      ajv: 6.12.6
       debug: 4.4.0
       espree: 10.3.0
       globals: 14.0.0
@@ -7465,7 +7476,7 @@ snapshots:
       '@eslint/eslintrc': 3.3.0
       '@typescript-eslint/typescript-estree': 6.11.0(typescript@5.5.2)
       '@typescript-eslint/utils': 6.11.0(eslint@8.53.0)(typescript@5.5.2)
-      ajv: 8.17.1
+      ajv: 6.12.6
       eslint: 8.53.0
       lodash.merge: 4.6.2
       semver: 7.5.4
@@ -7748,7 +7759,7 @@ snapshots:
 
   '@vercel/static-config@2.0.17':
     dependencies:
-      ajv: 8.17.1
+      ajv: 8.6.3
       json-schema-to-ts: 1.6.4
       ts-morph: 12.0.0
 
@@ -7859,12 +7870,26 @@ snapshots:
     optionalDependencies:
       ajv: 8.17.1
 
+  ajv@6.12.6:
+    dependencies:
+      fast-deep-equal: 3.1.3
+      fast-json-stable-stringify: 2.1.0
+      json-schema-traverse: 0.4.1
+      uri-js: 4.4.1
+
   ajv@8.17.1:
     dependencies:
       fast-deep-equal: 3.1.3
       fast-uri: 3.0.6
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
+
+  ajv@8.6.3:
+    dependencies:
+      fast-deep-equal: 3.1.3
+      json-schema-traverse: 1.0.0
+      require-from-string: 2.0.2
+      uri-js: 4.4.1
 
   ansi-colors@4.1.3: {}
 
@@ -8733,7 +8758,7 @@ snapshots:
       '@humanwhocodes/config-array': 0.11.8
       '@humanwhocodes/module-importer': 1.0.1
       '@nodelib/fs.walk': 1.2.8
-      ajv: 8.17.1
+      ajv: 6.12.6
       chalk: 4.1.2
       cross-spawn: 7.0.3
       debug: 4.3.4
@@ -8779,7 +8804,7 @@ snapshots:
       '@humanwhocodes/module-importer': 1.0.1
       '@nodelib/fs.walk': 1.2.8
       '@ungap/structured-clone': 1.2.0
-      ajv: 8.17.1
+      ajv: 6.12.6
       chalk: 4.1.2
       cross-spawn: 7.0.3
       debug: 4.3.4
@@ -8826,7 +8851,7 @@ snapshots:
       '@humanwhocodes/retry': 0.4.1
       '@types/estree': 1.0.6
       '@types/json-schema': 7.0.15
-      ajv: 8.17.1
+      ajv: 6.12.6
       chalk: 4.1.2
       cross-spawn: 7.0.6
       debug: 4.3.4
@@ -10240,6 +10265,8 @@ snapshots:
     dependencies:
       '@types/json-schema': 7.0.15
       ts-toolbelt: 6.15.5
+
+  json-schema-traverse@0.4.1: {}
 
   json-schema-traverse@1.0.0: {}
 
@@ -11829,6 +11856,10 @@ snapshots:
       browserslist: 4.22.2
       escalade: 3.1.1
       picocolors: 1.1.1
+
+  uri-js@4.4.1:
+    dependencies:
+      punycode: 2.3.1
 
   url@0.10.3:
     dependencies:
