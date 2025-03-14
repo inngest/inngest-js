@@ -1,7 +1,7 @@
 import { trace } from "@opentelemetry/api";
 import { sha1 } from "hash.js";
 import { z } from "zod";
-import { internalEvents } from "../../helpers/consts.js";
+import { headerKeys, internalEvents } from "../../helpers/consts.js";
 import {
   ErrCode,
   deserializeError,
@@ -105,8 +105,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         return als.run({ ctx: this.fnArg }, async () => {
           return tracer.startActiveSpan("inngest.execution", (span) => {
             // TODO We should set lots of attributes here
-
-            InngestSpanProcessor.declareStartingSpan(span);
+            const traceparent = this.options.headers[headerKeys.TraceParent];
+            if (traceparent) {
+              // Only start capturing these spans if we have a traceparent to
+              // attribute them to
+              InngestSpanProcessor.declareStartingSpan(traceparent, span);
+            }
 
             return this._start()
               .then((result) => {

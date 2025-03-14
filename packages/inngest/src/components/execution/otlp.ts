@@ -21,7 +21,12 @@ export type Instrumentations = (
   | Instrumentation<InstrumentationConfig>[]
 )[];
 
-const allowed = new Set<string>();
+/**
+ * A map of span IDs to the Inngest traceparent headers they belong to. This is
+ * used to track spans that we care about, so that we can export them to the
+ * OTLP endpoint.
+ */
+const allowed = new Map<string, string>();
 
 const processorDebug = Debug("inngest:otlp:InngestSpanProcessor");
 
@@ -30,15 +35,19 @@ export class InngestSpanProcessor implements SpanProcessor {
 
   constructor() {}
 
-  static declareStartingSpan(span: Span): void {
-    processorDebug.extend("declareStartingSpan")(
-      "declaring:",
-      span.spanContext().spanId
-    );
-
+  static declareStartingSpan(traceparent: string, span: Span): void {
     // This is a span that we care about, so let's make sure it and its
     // children are exported.
-    allowed.add(span.spanContext().spanId);
+    processorDebug.extend("declareStartingSpan")(
+      "declaring:",
+      span.spanContext().spanId,
+      "for traceparent",
+      traceparent
+    );
+
+    span.setAttribute("inngest.traceparent", traceparent);
+
+    allowed.set(span.spanContext().spanId, traceparent);
   }
 
   /**
@@ -77,41 +86,50 @@ export class InngestSpanProcessor implements SpanProcessor {
     return this.#batcher;
   }
 
-  onStart(span: ReadableSpan): void {
+  onStart(span: Span): void {
     const debug = processorDebug.extend("onStart");
+    const spanId = span.spanContext().spanId;
+    // 🤫 It seems to work
+    const parentSpanId = (span as unknown as ReadableSpan).parentSpanId;
 
     // The root span isn't captured here, but we can capture children of it
     // here.
 
-    if (!span.parentSpanId) {
+    if (!parentSpanId) {
       // All spans that Inngest cares about will have a parent, so ignore this
-      debug(
-        "no parent span ID for",
-        span.spanContext().spanId,
-        "so skipping it"
-      );
+      debug("no parent span ID for", spanId, "so skipping it");
 
       return;
     }
 
-    if (allowed.has(span.parentSpanId)) {
+    const traceparent = allowed.get(parentSpanId);
+    if (traceparent) {
       // This span is a child of a span we care about, so add it to the list of
       // tracked spans so that we also capture its children
-      debug("found parent span ID", span.parentSpanId, "so adding it");
+      debug(
+        "found traceparent",
+        traceparent,
+        "in span ID",
+        parentSpanId,
+        "so adding",
+        spanId
+      );
 
-      allowed.add(span.spanContext().spanId);
+      allowed.set(spanId, traceparent);
+      span.setAttribute("inngest.traceparent", traceparent);
     }
   }
 
   onEnd(span: ReadableSpan): void {
     const debug = processorDebug.extend("onEnd");
+    const spanId = span.spanContext().spanId;
 
-    if (allowed.has(span.spanContext().spanId)) {
+    if (allowed.has(spanId)) {
       // This is a span that we care about, so make sure it gets exported by the
       // batcher
-      debug("exporting span", span.spanContext().spanId);
+      debug("exporting span", spanId);
 
-      allowed.delete(span.spanContext().spanId);
+      allowed.delete(spanId);
 
       return this.batcher.onEnd(span);
     }
