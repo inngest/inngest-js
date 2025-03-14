@@ -55,8 +55,8 @@ jobs:
       - run: pnpm run test:types
       - run: pnpm run test:dist
 
-  inngest_api_diff:
-    name: "inngest: Local API diff"
+  inngest_package_health:
+    name: "inngest: Package health"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -64,6 +64,21 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
+      - run: pnpm run local:pack
+
+      - name: Lint package publishing config
+        id: publint
+        continue-on-error: true
+        run: pnpm dlx publint
+
+      - name: Check publishing types health
+        id: typescheck
+        continue-on-error: true
+        run: pnpm dlx @arethetypeswrong/cli inngest.tgz --profile node16
+
+      - name: Fail if any checks failed
+        if: steps.publint.outcome != 'success' || steps.typescheck.outcome != 'success'
+        run: exit 1
 
   inngest_lint:
     name: "inngest: Lint"

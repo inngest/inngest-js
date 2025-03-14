@@ -33,5 +33,6 @@ export default defineConfig({
   format: ["cjs", "esm"],
   outDir: "dist",
   tsconfig: "tsconfig.build.json",
+  target: "node20",
   sourcemap: true,
 });
