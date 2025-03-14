@@ -1,5 +1,5 @@
 import { type AiAdapter, models } from "@inngest/ai";
-import { z } from "zod";
+import * as v from "valibot";
 import { logPrefix } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { timeStr } from "../helpers/strings.ts";
@@ -508,28 +508,31 @@ export const createStepTools = <TClient extends Inngest.Any>(
     >(({ id, name }, invokeOpts) => {
       // Create a discriminated union to operate on based on the input types
       // available for this tool.
-      const optsSchema = invokePayloadSchema.extend({
-        timeout: z.union([z.number(), z.string(), z.date()]).optional(),
+      const optsSchema = v.object({
+        ...invokePayloadSchema.entries,
+        timeout: v.optional(v.union([v.number(), v.string(), v.date()])),
       });
 
-      const parsedFnOpts = optsSchema
-        .extend({
-          _type: z.literal("fullId").optional().default("fullId"),
-          function: z.string().min(1),
-        })
-        .or(
-          optsSchema.extend({
-            _type: z.literal("fnInstance").optional().default("fnInstance"),
-            function: z.instanceof(InngestFunction),
+      const parsedFnOpts = v.safeParse(
+        v.union([
+          v.object({
+            ...optsSchema.entries,
+            _type: v.optional(v.literal("fullId"), "fullId"),
+            function: v.pipe(v.string(), v.minLength(1)),
           }),
-        )
-        .or(
-          optsSchema.extend({
-            _type: z.literal("refInstance").optional().default("refInstance"),
-            function: z.instanceof(InngestFunctionReference),
+          v.object({
+            ...optsSchema.entries,
+            _type: v.optional(v.literal("fnInstance"), "fnInstance"),
+            function: v.instance(InngestFunction),
           }),
-        )
-        .safeParse(invokeOpts);
+          v.object({
+            ...optsSchema.entries,
+            _type: v.optional(v.literal("refInstance"), "refInstance"),
+            function: v.instance(InngestFunctionReference),
+          }),
+        ]),
+        invokeOpts,
+      );
 
       if (!parsedFnOpts.success) {
         throw new Error(
@@ -537,8 +540,15 @@ export const createStepTools = <TClient extends Inngest.Any>(
         );
       }
 
-      const { _type, function: fn, data, user, v, timeout } = parsedFnOpts.data;
-      const payload = { data, user, v } satisfies MinimalEventPayload;
+      const {
+        _type,
+        function: fn,
+        data,
+        user,
+        v: version,
+        timeout,
+      } = parsedFnOpts.output;
+      const payload = { data, user, v: version } satisfies MinimalEventPayload;
       const opts: {
         payload: MinimalEventPayload;
         function_id: string;
@@ -584,10 +594,10 @@ export const createStepTools = <TClient extends Inngest.Any>(
  * The event payload portion of the options for `step.invoke()`. This does not
  * include non-payload options like `timeout` or the function to invoke.
  */
-export const invokePayloadSchema = z.object({
-  data: z.record(z.any()).optional(),
-  user: z.record(z.any()).optional(),
-  v: z.string().optional(),
+export const invokePayloadSchema = v.object({
+  data: v.optional(v.record(v.string(), v.any())),
+  user: v.optional(v.record(v.string(), v.any())),
+  v: v.optional(v.string()),
 });
 
 type InvocationTargetOpts<TFunction extends InvokeTargetFunctionDefinition> = {

@@ -1,3 +1,4 @@
+import * as v from "valibot";
 import { deserializeError } from "../helpers/errors.ts";
 import { jsonErrorSchema } from "../types.ts";
 
@@ -20,7 +21,7 @@ export class StepError extends Error {
     public readonly stepId: string,
     err: unknown,
   ) {
-    const parsedErr = jsonErrorSchema.parse(err);
+    const parsedErr = v.parse(jsonErrorSchema, err);
 
     super(parsedErr.message);
     this.name = parsedErr.name;

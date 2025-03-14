@@ -15,7 +15,7 @@
  * @module
  */
 
-import { z } from "zod";
+import * as v from "valibot";
 import {
   type ActionResponse,
   InngestCommHandler,
@@ -54,6 +54,10 @@ const createNewResponse = ({
   });
 };
 
+const Context = v.object({
+  env: v.record(v.string(), v.any()),
+});
+
 /**
  * In Remix, serve and register any declared functions with Inngest, making them
  * available to be triggered by events.
@@ -80,10 +84,6 @@ const createNewResponse = ({
 export const serve = (
   options: ServeHandlerOptions,
 ): ((ctx: { request: Request; context?: unknown }) => Promise<Response>) => {
-  const contextSchema = z.object({
-    env: z.record(z.string(), z.any()),
-  });
-
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
@@ -96,10 +96,10 @@ export const serve = (
     }) => {
       return {
         env: () => {
-          const ctxParse = contextSchema.safeParse(context);
+          const ctxParse = v.safeParse(Context, context);
 
-          if (ctxParse.success && Object.keys(ctxParse.data.env).length) {
-            return ctxParse.data.env as Env;
+          if (ctxParse.success && Object.keys(ctxParse.output.env).length) {
+            return ctxParse.output.env as Env;
           }
 
           return;

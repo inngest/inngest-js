@@ -130,9 +130,9 @@ importers:
       ulidx:
         specifier: ^2.4.1
         version: 2.4.1
-      zod:
-        specifier: ~3.22.3
-        version: 3.22.3
+      valibot:
+        specifier: 1.0.0-rc.3
+        version: 1.0.0-rc.3(typescript@5.8.2)
     devDependencies:
       '@actions/core':
         specifier: ^1.10.0
@@ -266,6 +266,9 @@ importers:
       vitest-fetch-mock:
         specifier: ^0.4.5
         version: 0.4.5(vitest@3.0.8)
+      zod:
+        specifier: ^3.24.2
+        version: 3.24.2
 
   packages/middleware-encryption:
     dependencies:

@@ -1,5 +1,5 @@
 import type { fetch } from "cross-fetch";
-import { z } from "zod";
+import * as v from "valibot";
 import {
   type ExecutionVersion,
   defaultDevServerHost,
@@ -22,8 +22,8 @@ import {
 
 type FetchT = typeof fetch;
 
-const realtimeSubscriptionTokenSchema = z.object({
-  jwt: z.string(),
+const realtimeSubscriptionTokenSchema = v.object({
+  jwt: v.string(),
 });
 
 export namespace InngestApi {
@@ -122,9 +122,9 @@ export class InngestApi {
         const data: unknown = await resp.json();
 
         if (resp.ok) {
-          return ok(stepsSchemas[version].parse(data));
+          return ok(v.parse(stepsSchemas[version], data));
         } else {
-          return err(errorSchema.parse(data));
+          return err(v.parse(errorSchema, data));
         }
       })
       .catch((error) => {
@@ -148,9 +148,9 @@ export class InngestApi {
         const data: unknown = await resp.json();
 
         if (resp.ok) {
-          return ok(batchSchema.parse(data));
+          return ok(v.parse(batchSchema, data));
         } else {
-          return err(errorSchema.parse(data));
+          return err(v.parse(errorSchema, data));
         }
       })
       .catch((error) => {
@@ -246,7 +246,7 @@ export class InngestApi {
           );
         }
 
-        const data = realtimeSubscriptionTokenSchema.parse(await res.json());
+        const data = v.parse(realtimeSubscriptionTokenSchema, await res.json());
 
         return data.jwt;
       })

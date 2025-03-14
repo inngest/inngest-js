@@ -3,7 +3,7 @@
   "vcs": { "enabled": false, "clientKind": "git", "useIgnoreFile": false },
   "files": {
     "ignoreUnknown": false,
-    "ignore": ["coverage", "dist", "src/proto"]
+    "ignore": ["coverage", "dist", "src/proto", "package.json"]
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 },
   "organizeImports": { "enabled": true },

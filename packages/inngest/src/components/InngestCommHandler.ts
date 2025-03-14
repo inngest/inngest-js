@@ -1,5 +1,5 @@
 import debug from "debug";
-import { z } from "zod";
+import * as v from "valibot";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
 import {
   ExecutionVersion,
@@ -169,11 +169,11 @@ type FetchT = typeof fetch;
 /**
  * A schema for the response from Inngest when registering.
  */
-const registerResSchema = z.object({
-  status: z.number().default(200),
-  skipped: z.boolean().optional().default(false),
-  modified: z.boolean().optional().default(false),
-  error: z.string().default("Successfully registered"),
+const registerResSchema = v.object({
+  status: v.optional(v.number(), 200),
+  skipped: v.optional(v.boolean(), false),
+  modified: v.optional(v.boolean(), false),
+  error: v.optional(v.string(), "Successfully registered"),
 });
 
 /**
@@ -433,20 +433,20 @@ export class InngestCommHandler<
     this.skipSignatureValidation = options.skipSignatureValidation || false;
 
     const defaultLogLevel: typeof this.logLevel = "info";
-    this.logLevel = z
-      .enum(logLevels)
-      .default(defaultLogLevel)
-      .catch((ctx) => {
+
+    this.logLevel = v.parse(
+      v.fallback(v.optional(v.picklist(logLevels), defaultLogLevel), (ctx) => {
         this.log(
           "warn",
           `Unknown log level passed: ${String(
-            ctx.input,
+            ctx?.value,
           )}; defaulting to ${defaultLogLevel}`,
         );
 
         return defaultLogLevel;
-      })
-      .parse(options.logLevel || this.env[envKeys.InngestLogLevel]);
+      }),
+      options.logLevel || this.env[envKeys.InngestLogLevel],
+    );
 
     if (this.logLevel === "debug") {
       /**
@@ -465,20 +465,23 @@ export class InngestCommHandler<
     }
 
     const defaultStreamingOption: typeof this.streaming = false;
-    this.streaming = z
-      .union([z.enum(["allow", "force"]), z.literal(false)])
-      .default(defaultStreamingOption)
-      .catch((ctx) => {
-        this.log(
-          "warn",
-          `Unknown streaming option passed: ${String(
-            ctx.input,
-          )}; defaulting to ${String(defaultStreamingOption)}`,
-        );
 
-        return defaultStreamingOption;
-      })
-      .parse(options.streaming || this.env[envKeys.InngestStreaming]);
+    this.streaming = v.parse(
+      v.fallback(
+        v.union([v.picklist(["allow", "force"]), v.literal(false)]),
+        (ctx) => {
+          this.log(
+            "warn",
+            `Unknown streaming option passed: ${String(
+              ctx?.value,
+            )}; defaulting to ${defaultStreamingOption}`,
+          );
+
+          return defaultStreamingOption;
+        },
+      ),
+      options.streaming || this.env[envKeys.InngestStreaming],
+    );
 
     this.fetch = options.fetch ? getFetch(options.fetch) : this.client["fetch"];
   }
@@ -1310,13 +1313,13 @@ export class InngestCommHandler<
             };
           }
 
-          const res = inBandSyncRequestBodySchema.safeParse(body);
+          const res = v.safeParse(inBandSyncRequestBodySchema, body);
           if (!res.success) {
             return {
               status: 400,
               body: stringify({
                 code: "invalid_request",
-                message: res.error.message,
+                message: res.issues.join(", "),
               }),
               headers: {
                 "Content-Type": "application/json",
@@ -1327,7 +1330,7 @@ export class InngestCommHandler<
 
           // We can trust the URL here because it's coming from
           // signature-verified request.
-          url = this.reqUrl(new URL(res.data.url));
+          url = this.reqUrl(new URL(res.output.url));
 
           // This should be an in-band sync
           const respBody = await this.inBandRegisterBody({
@@ -1578,9 +1581,9 @@ export class InngestCommHandler<
     );
 
     for (const config of configs) {
-      const check = functionConfigSchema.safeParse(config);
+      const check = v.safeParse(functionConfigSchema, config);
       if (!check.success) {
-        const errors = check.error.errors.map((err) => err.message).join("; ");
+        const errors = check.issues.map((err) => err.message).join("; ");
 
         this.log(
           "warn",
@@ -1845,7 +1848,7 @@ export class InngestCommHandler<
 
     const raw = await res.text();
 
-    let data: z.input<typeof registerResSchema> = {};
+    let data: v.InferInput<typeof registerResSchema> = {};
 
     try {
       data = JSON.parse(raw);
@@ -1870,7 +1873,7 @@ export class InngestCommHandler<
     let skipped: boolean;
     let modified: boolean;
     try {
-      ({ status, error, skipped, modified } = registerResSchema.parse(data));
+      ({ status, error, skipped, modified } = v.parse(registerResSchema, data));
     } catch (err) {
       this.log("warn", "Invalid register response schema:", err);
 

@@ -1,5 +1,5 @@
 import hashjs from "hash.js";
-import { z } from "zod";
+import * as v from "valibot";
 import { internalEvents } from "../../helpers/consts.ts";
 import {
   ErrCode,
@@ -411,7 +411,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           ],
         });
 
-        const newPayload = invokePayloadSchema.parse(
+        const newPayload = v.parse(
+          invokePayloadSchema,
           transformedPayload?.payloads?.[0] ?? {},
         );
 
@@ -672,9 +673,10 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
      * Handle use of the `onFailure` option by deserializing the error.
      */
     if (this.options.isFailureHandler) {
-      const eventData = z
-        .object({ error: jsonErrorSchema })
-        .parse(fnArg.event?.data);
+      const eventData = v.parse(
+        v.object({ error: jsonErrorSchema }),
+        fnArg.event?.data,
+      );
 
       (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
         ...fnArg,

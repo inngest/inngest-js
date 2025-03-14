@@ -7,7 +7,7 @@ import {
   errorConstructors,
 } from "serialize-error-cjs";
 import stripAnsi from "strip-ansi";
-import { z } from "zod";
+import * as v from "valibot";
 import type { Inngest } from "../components/Inngest.ts";
 import { NonRetriableError } from "../components/NonRetriableError.ts";
 import type { ClientOptions, OutgoingOp } from "../types.ts";
@@ -141,21 +141,21 @@ export const isSerializedError = (
 ): SerializedError | undefined => {
   try {
     if (typeof value === "string") {
-      const parsed = z
-        .object({
-          [SERIALIZED_KEY]: z.literal(SERIALIZED_VALUE),
-          name: z.enum([...Array.from(errorConstructors.keys())] as [
+      const parsed = v.safeParse(
+        v.looseObject({
+          [SERIALIZED_KEY]: v.literal(SERIALIZED_VALUE),
+          name: v.picklist([...Array.from(errorConstructors.keys())] as [
             string,
             ...string[],
           ]),
-          message: z.string(),
-          stack: z.string(),
-        })
-        .passthrough()
-        .safeParse(JSON.parse(value));
+          message: v.string(),
+          stack: v.string(),
+        }),
+        JSON.parse(value),
+      );
 
       if (parsed.success) {
-        return parsed.data as SerializedError;
+        return parsed.output as SerializedError;
       }
     }
 
@@ -380,10 +380,12 @@ const isError = (err: unknown): err is Error => {
  * back to the `fallback` string if it doesn't exist or is empty.
  */
 export const getErrorMessage = (err: unknown, fallback: string): string => {
-  const { message } = z
-    .object({ message: z.string().min(1) })
-    .catch({ message: fallback })
-    .parse(err);
+  const { message } = v.parse(
+    v.fallback(v.object({ message: v.pipe(v.string(), v.minLength(1)) }), {
+      message: fallback,
+    }),
+    err,
+  );
 
   return message;
 };
