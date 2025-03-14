@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-namespace */
 import { type AiAdapter } from "../adapter.js";
 
 export interface GeminiAiAdapter extends AiAdapter {
@@ -23,6 +24,7 @@ export namespace GeminiAiAdapter {
    * details and options.
    */
   export type Model =
+    // eslint-disable-next-line @typescript-eslint/ban-types
     | (string & {})
     | "gemini-1.5-flash"
     | "gemini-1.5-flash-8b"

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-namespace */
 import { type AiAdapter } from "../adapter.js";
 import { type GeminiAiAdapter } from "../adapters/gemini.js";
 import { envKeys, processEnv } from "../env";

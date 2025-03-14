@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-namespace */
 import { type AnthropicAiAdapter } from "./adapters/anthropic.js";
 import { type GeminiAiAdapter } from "./adapters/gemini.js";
 import { type GrokAiAdapter } from "./adapters/grok.js";
