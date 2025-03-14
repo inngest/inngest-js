@@ -289,4 +289,6 @@ checkDependencies("tsconfig.build.json", [
   "src/remix.ts",
   "src/sveltekit.ts",
   "src/nitro.ts",
+  "tsup.config.ts",
+  "vitest.config.ts",
 ]);
