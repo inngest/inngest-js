@@ -1,6 +1,6 @@
 import canonicalize from "canonicalize";
 import hashjs from "hash.js";
-import * as v from "valibot";
+import { z } from "zod";
 import {
   ErrCode,
   deserializeError,
@@ -458,10 +458,9 @@ export class V0InngestExecution
     } as Context.Any;
 
     if (this.options.isFailureHandler) {
-      const eventData = v.parse(
-        v.object({ error: jsonErrorSchema }),
-        fnArg.event?.data,
-      );
+      const eventData = z
+        .object({ error: jsonErrorSchema })
+        .parse(fnArg.event?.data);
 
       (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
         ...fnArg,

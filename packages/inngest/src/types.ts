@@ -9,7 +9,7 @@
  * @module
  */
 
-import * as v from "valibot";
+import { z } from "zod";
 import type { EventSchemas } from "./components/EventSchemas.ts";
 import type {
   GetEvents,
@@ -34,36 +34,33 @@ import type {
 } from "./helpers/types.ts";
 import type { Logger } from "./middleware/logger.ts";
 
-const baseJsonErrorSchema = v.object({
-  name: v.optional(v.pipe(v.string(), v.trim())),
-  error: v.optional(v.pipe(v.string(), v.trim())),
-  message: v.optional(v.pipe(v.string(), v.trim())),
-  stack: v.optional(v.pipe(v.string(), v.trim())),
+const baseJsonErrorSchema = z.object({
+  name: z.string().trim().optional(),
+  error: z.string().trim().optional(),
+  message: z.string().trim().optional(),
+  stack: z.string().trim().optional(),
 });
 
-export type JsonError = v.InferOutput<typeof baseJsonErrorSchema> & {
+export type JsonError = z.infer<typeof baseJsonErrorSchema> & {
   name: string;
   message: string;
   cause?: JsonError;
 };
 
-export const jsonErrorSchema = v.pipe(
-  v.fallback(
-    v.looseObject({
-      ...baseJsonErrorSchema.entries,
-      cause: v.optional(v.lazy(() => jsonErrorSchema)),
-    }),
-    {},
-  ),
-  v.transform((val) => {
+export const jsonErrorSchema = baseJsonErrorSchema
+  .extend({
+    cause: z.lazy(() => jsonErrorSchema).optional(),
+  })
+  .passthrough()
+  .catch({})
+  .transform((val) => {
     return {
       ...val,
       name: val.name || "Error",
       message: val.message || val.error || "Unknown error",
       stack: val.stack,
     };
-  }),
-) as v.BaseSchema<JsonError, JsonError, never>;
+  }) as z.ZodType<JsonError>;
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -75,7 +72,7 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
   data: {
     function_id: string;
     run_id: string;
-    error: v.InferOutput<typeof jsonErrorSchema>;
+    error: z.output<typeof jsonErrorSchema>;
     event: P;
   };
 };
@@ -111,7 +108,7 @@ export type FinishedEventPayload = {
     correlation_id?: string;
   } & (
     | {
-        error: v.InferOutput<typeof jsonErrorSchema>;
+        error: z.output<typeof jsonErrorSchema>;
       }
     | {
         result: unknown;
@@ -230,14 +227,14 @@ export type Op = {
   error?: unknown;
 };
 
-export const incomingOpSchema = v.object({
-  id: v.pipe(v.string(), v.minLength(1)),
-  data: v.optional(v.any()),
-  error: v.optional(v.any()),
-  input: v.optional(v.any()),
+export const incomingOpSchema = z.object({
+  id: z.string().min(1),
+  data: z.any().optional(),
+  error: z.any().optional(),
+  input: z.any().optional(),
 });
 
-export type IncomingOp = v.InferOutput<typeof incomingOpSchema>;
+export type IncomingOp = z.output<typeof incomingOpSchema>;
 
 /**
  * The shape of a step operation that is sent to an Inngest Server from an SDK.
@@ -515,27 +512,27 @@ export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
   ts?: number;
 }
 
-export const sendEventResponseSchema = v.object({
+export const sendEventResponseSchema = z.object({
   /**
    * Event IDs
    */
-  ids: v.optional(v.array(v.string()), []),
+  ids: z.array(z.string()).default([]),
 
   /**
    * HTTP Status Code. Will be undefined if no request was sent.
    */
-  status: v.optional(v.number(), 0),
+  status: z.number().default(0),
 
   /**
    * Error message. Will be undefined if no error occurred.
    */
-  error: v.optional(v.string()),
+  error: z.string().optional(),
 });
 
 /**
  * The response from the Inngest Event API
  */
-export type SendEventResponse = v.InferOutput<typeof sendEventResponseSchema>;
+export type SendEventResponse = z.output<typeof sendEventResponseSchema>;
 
 /**
  * The response in code from sending an event to Inngest.
@@ -876,15 +873,15 @@ export interface RegisterOptions {
  * when validating config. We cannot add comments to Zod fields, so we just use
  * an extra type check to ensure it matches our exported expectations.
  */
-const concurrencyOptionSchema = v.strictObject({
-  limit: v.number(),
-  key: v.optional(v.string()),
-  scope: v.optional(v.picklist(["fn", "env", "account"])),
+const concurrencyOptionSchema = z.strictObject({
+  limit: z.number(),
+  key: z.string().optional(),
+  scope: z.enum(["fn", "env", "account"]).optional(),
 });
 
 const _checkConcurrencySchemaAligns: IsEqual<
   ConcurrencyOption,
-  v.InferOutput<typeof concurrencyOptionSchema>
+  z.output<typeof concurrencyOptionSchema>
 > = true;
 
 export interface ConcurrencyOption {
@@ -1130,125 +1127,104 @@ export interface AuthenticatedIntrospection
  * and not used for feature compatibility, such as feature X being exclusive
  * with feature Y; these should be handled on the Inngest side.
  */
-export const functionConfigSchema = v.strictObject({
-  name: v.optional(v.string()),
-  id: v.string(),
-  triggers: v.array(
-    v.union([
-      v.strictObject({
-        event: v.string(),
-        expression: v.optional(v.string()),
+export const functionConfigSchema = z.strictObject({
+  name: z.string().optional(),
+  id: z.string(),
+  triggers: z.array(
+    z.union([
+      z.strictObject({
+        event: z.string(),
+        expression: z.string().optional(),
       }),
-      v.strictObject({
-        cron: v.string(),
+      z.strictObject({
+        cron: z.string(),
       }),
     ]),
   ),
-  steps: v.record(
-    v.string(),
-    v.strictObject({
-      id: v.string(),
-      name: v.string(),
-      runtime: v.strictObject({
-        type: v.union([v.literal("http"), v.literal("ws")]),
-        url: v.string(),
+  steps: z.record(
+    z.strictObject({
+      id: z.string(),
+      name: z.string(),
+      runtime: z.strictObject({
+        type: z.union([z.literal("http"), z.literal("ws")]),
+        url: z.string(),
       }),
-      retries: v.optional(
-        v.strictObject({
-          attempts: v.optional(v.number()),
-        }),
-      ),
+      retries: z
+        .strictObject({
+          attempts: z.number().optional(),
+        })
+        .optional(),
     }),
   ),
-  idempotency: v.optional(v.string()),
-  batchEvents: v.optional(
-    v.strictObject({
-      maxSize: v.number(),
-      timeout: v.string(),
-      key: v.optional(v.string()),
-    }),
-  ),
-  rateLimit: v.optional(
-    v.strictObject({
-      key: v.optional(v.string()),
-      limit: v.number(),
-      period: v.pipe(
-        v.string(),
-        v.transform((x) => x as TimeStr),
-      ),
-    }),
-  ),
-  throttle: v.optional(
-    v.strictObject({
-      key: v.optional(v.string()),
-      limit: v.number(),
-      period: v.pipe(
-        v.string(),
-        v.transform((x) => x as TimeStr),
-      ),
-      burst: v.optional(v.number()),
-    }),
-  ),
-  cancel: v.optional(
-    v.array(
-      v.strictObject({
-        event: v.string(),
-        if: v.optional(v.string()),
-        timeout: v.optional(v.string()),
+  idempotency: z.string().optional(),
+  batchEvents: z
+    .strictObject({
+      maxSize: z.number(),
+      timeout: z.string(),
+      key: z.string().optional(),
+    })
+    .optional(),
+  rateLimit: z
+    .strictObject({
+      key: z.string().optional(),
+      limit: z.number(),
+      period: z.string().transform((x) => x as TimeStr),
+    })
+    .optional(),
+  throttle: z
+    .strictObject({
+      key: z.string().optional(),
+      limit: z.number(),
+      period: z.string().transform((x) => x as TimeStr),
+      burst: z.number().optional(),
+    })
+    .optional(),
+  cancel: z
+    .array(
+      z.strictObject({
+        event: z.string(),
+        if: z.string().optional(),
+        timeout: z.string().optional(),
       }),
-    ),
-  ),
-  debounce: v.optional(
-    v.strictObject({
-      key: v.optional(v.string()),
-      period: v.pipe(
-        v.string(),
-        v.transform((x) => x as TimeStr),
-      ),
-      timeout: v.optional(
-        v.pipe(
-          v.string(),
-          v.transform((x) => x as TimeStr),
-        ),
-      ),
-    }),
-  ),
-  timeouts: v.optional(
-    v.strictObject({
-      start: v.optional(
-        v.pipe(
-          v.string(),
-          v.transform((x) => x as TimeStr),
-        ),
-      ),
-      finish: v.optional(
-        v.pipe(
-          v.string(),
-          v.transform((x) => x as TimeStr),
-        ),
-      ),
-    }),
-  ),
-  priority: v.optional(v.strictObject({ run: v.optional(v.string()) })),
-  concurrency: v.optional(
-    v.union([
-      v.number(),
-      v.pipe(
-        concurrencyOptionSchema,
-        v.transform((x) => x as ConcurrencyOption),
-      ),
-      v.pipe(
-        v.array(
-          v.pipe(
-            concurrencyOptionSchema,
-            v.transform((x) => x as ConcurrencyOption),
-          ),
-        ),
-        v.minLength(1),
-        v.maxLength(2),
-      ),
-    ]),
-  ),
+    )
+    .optional(),
+  debounce: z
+    .strictObject({
+      key: z.string().optional(),
+      period: z.string().transform((x) => x as TimeStr),
+      timeout: z
+        .string()
+        .transform((x) => x as TimeStr)
+        .optional(),
+    })
+    .optional(),
+  timeouts: z
+    .strictObject({
+      start: z
+        .string()
+        .transform((x) => x as TimeStr)
+        .optional(),
+      finish: z
+        .string()
+        .transform((x) => x as TimeStr)
+        .optional(),
+    })
+    .optional(),
+  priority: z
+    .strictObject({
+      run: z.string().optional(),
+    })
+    .optional(),
+  concurrency: z
+    .union([
+      z.number(),
+      concurrencyOptionSchema.transform((x) => x as ConcurrencyOption),
+      z
+        .array(concurrencyOptionSchema.transform((x) => x as ConcurrencyOption))
+        .min(1)
+        .max(2),
+    ])
+    .optional(),
 });
 
 /**
@@ -1256,7 +1232,7 @@ export const functionConfigSchema = v.strictObject({
  *
  * @internal
  */
-export type FunctionConfig = v.InferOutput<typeof functionConfigSchema>;
+export type FunctionConfig = z.output<typeof functionConfigSchema>;
 
 export interface DevServerInfo {
   /**
@@ -1452,6 +1428,6 @@ export const err = <E>(error?: E): Result<never, E> => {
   return { ok: false, error };
 };
 
-export const inBandSyncRequestBodySchema = v.strictObject({
-  url: v.string(),
+export const inBandSyncRequestBodySchema = z.strictObject({
+  url: z.string(),
 });

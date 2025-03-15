@@ -1,54 +1,50 @@
-import * as v from "valibot";
+import { z } from "zod";
 import { ExecutionVersion } from "../helpers/consts.ts";
 import { type EventPayload, jsonErrorSchema } from "../types.ts";
 
-export const errorSchema = v.object({
-  error: v.string(),
-  status: v.number(),
+export const errorSchema = z.object({
+  error: z.string(),
+  status: z.number(),
 });
-export type ErrorResponse = v.InferOutput<typeof errorSchema>;
+export type ErrorResponse = z.infer<typeof errorSchema>;
 
-const v0StepSchema = v.nullish(
-  v.record(
-    v.string(),
-    v.pipe(
-      v.any(),
-      v.check(
-        (v) => typeof v !== "undefined",
-        "Values in steps must be defined",
-      ),
-    ),
-  ),
-);
+const v0StepSchema = z
+  .record(
+    z.any().refine((v) => typeof v !== "undefined", {
+      message: "Values in steps must be defined",
+    }),
+  )
+  .optional()
+  .nullable();
 
-const v1StepSchema = v.optional(
-  v.record(
-    v.string(),
-    v.union([
-      v.strictObject({
-        type: v.optional(v.literal("data"), "data"),
-        data: v.pipe(
-          v.any(),
-          v.check(
-            (v) => typeof v !== "undefined",
-            "Data in steps must be defined",
-          ),
-        ),
-      }),
-      v.strictObject({
-        type: v.optional(v.literal("error"), "error"),
-        error: jsonErrorSchema,
-      }),
-      v.strictObject({
-        type: v.optional(v.literal("input"), "input"),
-        input: v.pipe(
-          v.any(),
-          v.check(
-            (v) => typeof v !== "undefined",
-            "If input is present it must not be `undefined`",
-          ),
-        ),
-      }),
+const v1StepSchema = z
+  .record(
+    z
+      .object({
+        type: z.literal("data").optional().default("data"),
+        data: z.any().refine((v) => typeof v !== "undefined", {
+          message: "Data in steps must be defined",
+        }),
+      })
+      .strict()
+      .or(
+        z
+          .object({
+            type: z.literal("error").optional().default("error"),
+            error: jsonErrorSchema,
+          })
+          .strict(),
+      )
+      .or(
+        z
+          .object({
+            type: z.literal("input").optional().default("input"),
+            input: z.any().refine((v) => typeof v !== "undefined", {
+              message: "If input is present it must not be `undefined`",
+            }),
+          })
+          .strict(),
+      )
 
       /**
        * If the result isn't a distcint `data` or `error` object, then it's
@@ -57,17 +53,10 @@ const v1StepSchema = v.optional(
        *
        * In this case, pull the entire value through as data.
        */
-      v.pipe(
-        v.any(),
-        v.transform((v) => ({
-          type: "data" as const,
-          data: v,
-        })),
-      ),
-    ]),
-  ),
-  {},
-);
+
+      .or(z.any().transform((v) => ({ type: "data" as const, data: v }))),
+  )
+  .default({});
 
 const v2StepSchema = v1StepSchema;
 
@@ -75,20 +64,13 @@ export const stepsSchemas = {
   [ExecutionVersion.V0]: v0StepSchema,
   [ExecutionVersion.V1]: v1StepSchema,
   [ExecutionVersion.V2]: v2StepSchema,
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-} satisfies Record<ExecutionVersion, v.BaseSchema<any, any, any>>;
+} satisfies Record<ExecutionVersion, z.ZodSchema>;
 
 export type StepsResponse = {
-  [V in ExecutionVersion]: v.InferOutput<(typeof stepsSchemas)[V]>;
+  [V in ExecutionVersion]: z.infer<(typeof stepsSchemas)[V]>;
 }[ExecutionVersion];
 
-export const batchSchema = v.array(
-  v.record(
-    v.string(),
-    v.pipe(
-      v.any(),
-      v.transform((v) => v as EventPayload),
-    ),
-  ),
+export const batchSchema = z.array(
+  z.record(z.any()).transform((v) => v as EventPayload),
 );
-export type BatchResponse = v.InferOutput<typeof batchSchema>;
+export type BatchResponse = z.infer<typeof batchSchema>;

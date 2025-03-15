@@ -1,4 +1,4 @@
-import * as v from "valibot";
+import { ZodError, z } from "zod";
 import type { InngestApi } from "../api/api.ts";
 import { stepsSchemas } from "../api/schema.ts";
 import { PREFERRED_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
@@ -77,111 +77,127 @@ export const undefinedToNull = (v: unknown) => {
   return isUndefined ? null : v;
 };
 
-const FnDataVersion = v.object({
-  version: v.optional(
-    v.union([v.literal(0), v.literal(1), v.literal(2)]),
-    PREFERRED_EXECUTION_VERSION,
-  ),
+const fnDataVersionSchema = z.object({
+  version: z
+    .literal(-1)
+    .or(z.literal(0))
+    .or(z.literal(1))
+    .or(z.literal(2))
+    .optional()
+    .transform<ExecutionVersion>((v) => {
+      if (typeof v === "undefined") {
+        console.debug(
+          `No request version specified by executor; defaulting to v${PREFERRED_EXECUTION_VERSION}`,
+        );
+
+        return PREFERRED_EXECUTION_VERSION;
+      }
+
+      return v === -1 ? PREFERRED_EXECUTION_VERSION : v;
+    }),
 });
 
 export const parseFnData = (data: unknown) => {
   let version: ExecutionVersion;
 
   try {
-    ({ version } = v.parse(FnDataVersion, data));
+    ({ version } = fnDataVersionSchema.parse(data));
 
     const versionHandlers = {
-      [ExecutionVersion.V0]: () => ({
-        version: ExecutionVersion.V0 as const,
-        ...v.parse(
-          v.object({
-            event: v.record(v.string(), v.any()),
-            events: v.optional(v.array(v.record(v.string(), v.any())), []),
-            steps: stepsSchemas[ExecutionVersion.V0],
-            use_api: v.optional(v.boolean(), false),
-            ctx: v.nullish(
-              v.object({
-                run_id: v.string(),
-                attempt: v.optional(v.number(), 0),
-                stack: v.nullish(
-                  v.looseObject({
-                    stack: v.nullable(
-                      v.pipe(
-                        v.array(v.string()),
-                        v.transform((v) => (Array.isArray(v) ? v : [])),
-                      ),
-                    ),
-                    current: v.number(),
-                  }),
-                ),
-              }),
-            ),
-          }),
-          data,
-        ),
-      }),
+      [ExecutionVersion.V0]: () =>
+        ({
+          version: ExecutionVersion.V0,
+          ...z
+            .object({
+              event: z.record(z.any()),
+              events: z.array(z.record(z.any())).default([]),
+              steps: stepsSchemas[ExecutionVersion.V0],
+              ctx: z
+                .object({
+                  run_id: z.string(),
+                  attempt: z.number().default(0),
+                  stack: z
+                    .object({
+                      stack: z
+                        .array(z.string())
+                        .nullable()
+                        .transform((v) => (Array.isArray(v) ? v : [])),
+                      current: z.number(),
+                    })
+                    .passthrough()
+                    .optional()
+                    .nullable(),
+                })
+                .optional()
+                .nullable(),
+              use_api: z.boolean().default(false),
+            })
+            .parse(data),
+        }) as const,
 
-      [ExecutionVersion.V1]: () => ({
-        version: ExecutionVersion.V1 as const,
-        ...v.parse(
-          v.object({
-            event: v.record(v.string(), v.any()),
-            events: v.optional(v.array(v.record(v.string(), v.any())), []),
-            steps: stepsSchemas[ExecutionVersion.V1],
-            ctx: v.nullish(
-              v.object({
-                run_id: v.string(),
-                attempt: v.optional(v.number(), 0),
-                disable_immediate_execution: v.optional(v.boolean(), false),
-                use_api: v.optional(v.boolean(), false),
-                stack: v.nullish(
-                  v.looseObject({
-                    stack: v.nullable(
-                      v.pipe(
-                        v.array(v.string()),
-                        v.transform((v) => (Array.isArray(v) ? v : [])),
-                      ),
-                    ),
-                    current: v.number(),
-                  }),
-                ),
-              }),
-            ),
-          }),
-          data,
-        ),
-      }),
+      [ExecutionVersion.V1]: () =>
+        ({
+          version: ExecutionVersion.V1,
+          ...z
+            .object({
+              event: z.record(z.any()),
+              events: z.array(z.record(z.any())).default([]),
+              steps: stepsSchemas[ExecutionVersion.V1],
+              ctx: z
+                .object({
+                  run_id: z.string(),
+                  attempt: z.number().default(0),
+                  disable_immediate_execution: z.boolean().default(false),
+                  use_api: z.boolean().default(false),
+                  stack: z
+                    .object({
+                      stack: z
+                        .array(z.string())
+                        .nullable()
+                        .transform((v) => (Array.isArray(v) ? v : [])),
+                      current: z.number(),
+                    })
+                    .passthrough()
+                    .optional()
+                    .nullable(),
+                })
+                .optional()
+                .nullable(),
+            })
+            .parse(data),
+        }) as const,
 
-      [ExecutionVersion.V2]: () => ({
-        version: ExecutionVersion.V2 as const,
-        ...v.parse(
-          v.object({
-            event: v.record(v.string(), v.any()),
-            events: v.optional(v.array(v.record(v.string(), v.any())), []),
-            steps: stepsSchemas[ExecutionVersion.V2],
-            ctx: v.nullish(
-              v.object({
-                run_id: v.string(),
-                attempt: v.optional(v.number(), 0),
-                disable_immediate_execution: v.optional(v.boolean(), false),
-                use_api: v.optional(v.boolean(), false),
-                stack: v.nullish(
-                  v.looseObject({
-                    stack: v.nullable(
-                      v.pipe(
-                        v.array(v.string()),
-                        v.transform((v) => (Array.isArray(v) ? v : [])),
-                      ),
-                    ),
-                    current: v.number(),
-                  }),
-                ),
-              }),
-            ),
-          }),
-          data,
-        ),
-      }),
+      [ExecutionVersion.V2]: () =>
+        ({
+          version: ExecutionVersion.V2,
+          ...z
+            .object({
+              event: z.record(z.any()),
+              events: z.array(z.record(z.any())).default([]),
+              steps: stepsSchemas[ExecutionVersion.V2],
+              ctx: z
+                .object({
+                  run_id: z.string(),
+                  attempt: z.number().default(0),
+                  disable_immediate_execution: z.boolean().default(false),
+                  use_api: z.boolean().default(false),
+                  stack: z
+                    .object({
+                      stack: z
+                        .array(z.string())
+                        .nullable()
+                        .transform((v) => (Array.isArray(v) ? v : [])),
+                      current: z.number(),
+                    })
+                    .passthrough()
+                    .optional()
+                    .nullable(),
+                })
+                .optional()
+                .nullable(),
+            })
+            .parse(data),
+        }) as const,
     } satisfies Record<ExecutionVersion, () => unknown>;
 
     return versionHandlers[version]();
@@ -263,7 +279,7 @@ export const fetchAllFnData = async ({
 
 const parseFailureErr = (err: unknown) => {
   let why: string | undefined;
-  if (err instanceof v.ValiError) {
+  if (err instanceof ZodError) {
     why = err.toString();
   }
 

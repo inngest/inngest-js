@@ -1,4 +1,3 @@
-import * as v from "valibot";
 import { ExecutionVersion } from "../helpers/consts.ts";
 import { stepsSchemas } from "./schema.ts";
 
@@ -14,7 +13,7 @@ describe("stepsSchemas", () => {
         id4: { data: false },
       };
 
-      const actual = v.safeParse(schema, {
+      const actual = schema.safeParse({
         id: "something",
         id2: "something else",
         id3: true,
@@ -22,11 +21,11 @@ describe("stepsSchemas", () => {
       });
 
       expect(actual.success).toBe(true);
-      expect(actual.success && actual.output).toEqual(expected);
+      expect(actual.success && actual.data).toEqual(expected);
     });
 
     test("throws if finding undefined value", () => {
-      const result = v.safeParse(schema, {
+      const result = schema.safeParse({
         id: "something",
         id2: undefined,
       });
@@ -46,14 +45,14 @@ describe("stepsSchemas", () => {
         },
       };
 
-      const actual = v.safeParse(schema, {
+      const actual = schema.safeParse({
         id: {
           data: "something",
         },
       });
 
       expect(actual.success).toBe(true);
-      expect(actual.success && actual.output).toEqual(expected);
+      expect(actual.success && actual.data).toEqual(expected);
     });
 
     test("handles v1 { error } objects", () => {
@@ -67,7 +66,7 @@ describe("stepsSchemas", () => {
         },
       };
 
-      const actual = v.safeParse(schema, {
+      const actual = schema.safeParse({
         id: {
           error: {
             name: "Error",
@@ -77,7 +76,7 @@ describe("stepsSchemas", () => {
       });
 
       expect(actual.success).toBe(true);
-      expect(actual.success && actual.output).toEqual(expected);
+      expect(actual.success && actual.data).toEqual(expected);
     });
     test("handles null from a v0 or v1 sleep or waitForEvent", () => {
       const expected = {
@@ -87,12 +86,12 @@ describe("stepsSchemas", () => {
         },
       };
 
-      const actual = v.safeParse(schema, {
+      const actual = schema.safeParse({
         id: null,
       });
 
       expect(actual.success).toBe(true);
-      expect(actual.success && actual.output).toEqual(expected);
+      expect(actual.success && actual.data).toEqual(expected);
     });
 
     test("handles event from v0 or v1 waitForEvent", () => {
@@ -107,7 +106,7 @@ describe("stepsSchemas", () => {
         },
       };
 
-      const actual = v.safeParse(schema, {
+      const actual = schema.safeParse({
         id: {
           name: "event",
           data: { some: "data" },
@@ -116,7 +115,7 @@ describe("stepsSchemas", () => {
       });
 
       expect(actual.success).toBe(true);
-      expect(actual.success && actual.output).toEqual(expected);
+      expect(actual.success && actual.data).toEqual(expected);
     });
   });
 });

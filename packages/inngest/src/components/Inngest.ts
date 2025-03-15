@@ -1,5 +1,4 @@
 import { ulid } from "ulidx";
-import * as v from "valibot";
 import { InngestApi } from "../api/api.ts";
 import {
   defaultDevServerHost,
@@ -582,7 +581,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
         try {
           const rawBody: unknown = await response.json();
-          body = await v.parseAsync(sendEventResponseSchema, rawBody);
+          body = await sendEventResponseSchema.parseAsync(rawBody);
         } catch (_err) {
           throw await this.getResponseError(response);
         }
