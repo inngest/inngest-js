@@ -1,6 +1,7 @@
+import { trace } from "@opentelemetry/api";
 import { sha1 } from "hash.js";
 import { z } from "zod";
-import { internalEvents } from "../../helpers/consts.js";
+import { headerKeys, internalEvents } from "../../helpers/consts.js";
 import {
   ErrCode,
   deserializeError,
@@ -48,6 +49,7 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.js";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.js";
+import { InngestSpanProcessor } from "./otlp.js";
 
 export const createV2InngestExecution: InngestExecutionFactory = (options) => {
   return new V2InngestExecution(options);
@@ -96,11 +98,27 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     if (!this.execution) {
       this.debug("starting V2 execution");
 
+      const tracer = trace.getTracer("inngest");
+
       this.execution = getAsyncLocalStorage().then((als) => {
         return als.run({ ctx: this.fnArg }, async () => {
-          return this._start().then((result) => {
-            this.debug("result:", result);
-            return result;
+          return tracer.startActiveSpan("inngest.execution", (span) => {
+            // TODO We should set lots of attributes here
+            const traceparent = this.options.headers[headerKeys.TraceParent];
+            if (traceparent) {
+              // Only start capturing these spans if we have a traceparent to
+              // attribute them to
+              InngestSpanProcessor.declareStartingSpan(traceparent, span);
+            }
+
+            return this._start()
+              .then((result) => {
+                this.debug("result:", result);
+                return result;
+              })
+              .finally(() => {
+                span.end();
+              });
           });
         });
       });
