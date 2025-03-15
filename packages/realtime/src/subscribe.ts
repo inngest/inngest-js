@@ -1,5 +1,6 @@
 import debug from "debug";
 import { type Inngest } from "inngest";
+import { devServerAvailable } from "inngest/helpers/devserver";
 import { topic } from "./topic";
 import { Realtime } from "./types";
 import { createDeferredPromise } from "./util";
@@ -122,6 +123,7 @@ export const getSubscriptionToken = async <
 
 // Must be a new connection for every token used.
 class TokenSubscription {
+  #app: Inngest.Any;
   #debug = debug("inngest:realtime");
 
   #running = false;
@@ -148,9 +150,11 @@ class TokenSubscription {
   #topics: Map<string, Realtime.Topic.Definition>;
 
   constructor(
-    public app: Inngest.Like,
+    app: Inngest.Like,
     public token: Realtime.Subscribe.Token,
   ) {
+    this.#app = app as Inngest.Any;
+
     if (typeof token.channel === "string") {
       this.#channelId = token.channel;
 
@@ -174,6 +178,37 @@ class TokenSubscription {
     }
   }
 
+  private async getWsUrl(token: string): Promise<URL> {
+    let url: URL;
+    const path = "/v1/realtime/connect";
+
+    if (this.#app.apiBaseUrl) {
+      url = new URL(path, this.#app.apiBaseUrl);
+    } else {
+      url = new URL(path, "https://api.inngest.com/");
+
+      if (
+        this.#app["mode"].isDev &&
+        this.#app["mode"].isInferred &&
+        !this.#app.apiBaseUrl
+      ) {
+        const devAvailable = await devServerAvailable(
+          "http://localhost:8288/",
+          this.#app["fetch"],
+        );
+
+        if (devAvailable) {
+          url = new URL(path, "http://localhost:8288/");
+        }
+      }
+    }
+
+    url.protocol = "ws:";
+    url.searchParams.set("token", token);
+
+    return url;
+  }
+
   public async connect() {
     this.#debug(
       `Establishing connection to channel "${
@@ -186,7 +221,7 @@ class TokenSubscription {
     }
 
     const key =
-      this.token.key || (await getSubscriptionToken(this.app, this.token)).key;
+      this.token.key || (await getSubscriptionToken(this.#app, this.token)).key;
     if (!key) {
       throw new Error(
         "No subscription token key passed and failed to retrieve one automatically",
@@ -196,9 +231,7 @@ class TokenSubscription {
     const ret = createDeferredPromise<void>();
 
     try {
-      this.#ws = new WebSocket(
-        `ws://localhost:8288/v1/realtime/connect?token=${key}`,
-      );
+      this.#ws = new WebSocket(await this.getWsUrl(key));
 
       this.#ws.onopen = () => {
         this.#debug("WebSocket connection established");
