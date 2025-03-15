@@ -179,3 +179,15 @@ export enum syncKind {
   InBand = "in_band",
   OutOfBand = "out_of_band",
 }
+
+/**
+ * The execution models the SDK is aware of.
+ *
+ * This is used in a number of places to ensure all execution versions are
+ * accounted for for a given operation.
+ */
+export enum ExecutionVersion {
+  V0 = 0,
+  V1 = 1,
+  V2 = 2,
+}

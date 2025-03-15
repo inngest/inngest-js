@@ -1,38 +1,38 @@
-import { models, type AiAdapter } from "@inngest/ai";
+import { type AiAdapter, models } from "@inngest/ai";
 import { z } from "zod";
-import { logPrefix } from "../helpers/consts.js";
-import { type Jsonify } from "../helpers/jsonify.js";
-import { timeStr } from "../helpers/strings.js";
+import { logPrefix } from "../helpers/consts.ts";
+import type { Jsonify } from "../helpers/jsonify.ts";
+import { timeStr } from "../helpers/strings.ts";
+import type {
+  ExclusiveKeys,
+  ParametersExceptFirst,
+  SendEventPayload,
+  SimplifyDeep,
+  WithoutInternalStr,
+} from "../helpers/types.ts";
 import {
-  type ExclusiveKeys,
-  type ParametersExceptFirst,
-  type SendEventPayload,
-  type SimplifyDeep,
-  type WithoutInternalStr,
-} from "../helpers/types.js";
-import {
-  StepOpCode,
   type EventPayload,
   type HashedOp,
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
   type MinimalEventPayload,
   type SendEventOutput,
+  StepOpCode,
   type StepOptions,
   type StepOptionsOrId,
   type TriggerEventFromFunction,
   type TriggersFromClient,
-} from "../types.js";
-import {
-  type ClientOptionsFromInngest,
-  type GetEvents,
-  type GetFunctionOutput,
-  type Inngest,
-} from "./Inngest.js";
-import { InngestFunction } from "./InngestFunction.js";
-import { InngestFunctionReference } from "./InngestFunctionReference.js";
+} from "../types.ts";
+import type {
+  ClientOptionsFromInngest,
+  GetEvents,
+  GetFunctionOutput,
+  Inngest,
+} from "./Inngest.ts";
+import { InngestFunction } from "./InngestFunction.ts";
+import { InngestFunctionReference } from "./InngestFunctionReference.ts";
 
-import { type InngestExecution } from "./execution/InngestExecution.js";
+import type { InngestExecution } from "./execution/InngestExecution.ts";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -146,7 +146,7 @@ export const STEP_INDEXING_SUFFIX = ":";
 export const createStepTools = <TClient extends Inngest.Any>(
   client: TClient,
   execution: InngestExecution,
-  stepHandler: StepHandler
+  stepHandler: StepHandler,
 ) => {
   /**
    * A local helper used to create tools that can be used to submit an op.
@@ -154,7 +154,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
    * When using this function, a generic type should be provided which is the
    * function signature exposed to the user.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   const createTool = <T extends (...args: any[]) => Promise<unknown>>(
     /**
      * A function that returns an ID for this op. This is used to ensure that
@@ -166,7 +166,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * Most simple tools will likely only need to define this.
      */
     matchOp: MatchOpFn<T>,
-    opts?: StepToolOptions<T>
+    opts?: StepToolOptions<T>,
   ): T => {
     return (async (...args: Parameters<T>): Promise<unknown> => {
       const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
@@ -183,10 +183,10 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * The sub-type of this step tool, exposed via `opts.type` when the op is
      * reported.
      */
-    type?: string
+    type?: string,
   ) => {
     return createTool<
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       <TFn extends (...args: any[]) => unknown>(
         idOrOptions: StepOptionsOrId,
 
@@ -237,9 +237,8 @@ export const createStepTools = <TClient extends Inngest.Any>(
         };
       },
       {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         fn: (_, fn, ...input) => fn(...input),
-      }
+      },
     );
   };
 
@@ -276,12 +275,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
      *
      * Returns a promise that will resolve once the event has been sent.
      */
-    sendEvent: createTool<{
+    sendEvent: createTool<
       <Payload extends SendEventPayload<GetEvents<TClient>>>(
         idOrOptions: StepOptionsOrId,
-        payload: Payload
-      ): Promise<SendEventOutput<ClientOptionsFromInngest<TClient>>>;
-    }>(
+        payload: Payload,
+      ) => Promise<SendEventOutput<ClientOptionsFromInngest<TClient>>>
+    >(
       ({ id, name }) => {
         return {
           id,
@@ -291,13 +290,13 @@ export const createStepTools = <TClient extends Inngest.Any>(
         };
       },
       {
-        fn: (idOrOptions, payload) => {
+        fn: (_idOrOptions, payload) => {
           return client["_send"]({
             payload,
             headers: execution["options"]["headers"],
           });
         },
-      }
+      },
     ),
 
     /**
@@ -312,7 +311,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
     waitForEvent: createTool<
       <IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>>(
         idOrOptions: StepOptionsOrId,
-        opts: WaitForEventOpts<GetEvents<TClient, true>, IncomingEvent>
+        opts: WaitForEventOpts<GetEvents<TClient, true>, IncomingEvent>,
       ) => Promise<
         IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>
           ? GetEvents<TClient, false>[IncomingEvent] | null
@@ -325,7 +324,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * Options to control the event we're waiting for.
          */
-        opts
+        opts,
       ) => {
         const matchOpts: { timeout: string; if?: string } = {
           timeout: timeStr(typeof opts === "string" ? opts : opts.timeout),
@@ -346,7 +345,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
           opts: matchOpts,
           displayName: name ?? id,
         };
-      }
+      },
     ),
 
     /**
@@ -376,7 +375,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       infer: createTool<
         <TAdapter extends AiAdapter>(
           idOrOptions: StepOptionsOrId,
-          options: AiInferOpts<TAdapter>
+          options: AiInferOpts<TAdapter>,
         ) => Promise<AiAdapter.Output<TAdapter>>
       >(({ id, name }, options) => {
         const modelCopy = { ...options.model };
@@ -434,7 +433,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The amount of time to wait before continuing.
          */
-        time: number | string
+        time: number | string,
       ) => Promise<void>
     >(({ id, name }, time) => {
       /**
@@ -462,7 +461,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The date to wait until before continuing.
          */
-        time: Date | string
+        time: Date | string,
       ) => Promise<void>
     >(({ id, name }, time) => {
       const date = typeof time === "string" ? new Date(time) : time;
@@ -488,7 +487,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         // TODO PrettyError
         throw new Error(
-          `Invalid date or date string passed to sleepUntil: ${time.toString()}`
+          `Invalid date or date string passed to sleepUntil: ${time.toString()}`,
         );
       }
     }),
@@ -504,7 +503,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
     invoke: createTool<
       <TFunction extends InvokeTargetFunctionDefinition>(
         idOrOptions: StepOptionsOrId,
-        opts: InvocationOpts<TFunction>
+        opts: InvocationOpts<TFunction>,
       ) => InvocationResult<GetFunctionOutput<TFunction>>
     >(({ id, name }, invokeOpts) => {
       // Create a discriminated union to operate on based on the input types
@@ -522,19 +521,19 @@ export const createStepTools = <TClient extends Inngest.Any>(
           optsSchema.extend({
             _type: z.literal("fnInstance").optional().default("fnInstance"),
             function: z.instanceof(InngestFunction),
-          })
+          }),
         )
         .or(
           optsSchema.extend({
             _type: z.literal("refInstance").optional().default("refInstance"),
             function: z.instanceof(InngestFunctionReference),
-          })
+          }),
         )
         .safeParse(invokeOpts);
 
       if (!parsedFnOpts.success) {
         throw new Error(
-          `Invalid invocation options passed to invoke; must include either a function or functionId.`
+          `Invalid invocation options passed to invoke; must include either a function or functionId.`,
         );
       }
 
@@ -557,7 +556,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         case "fullId":
           console.warn(
-            `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`
+            `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`,
           );
           opts.function_id = fn;
           break;
