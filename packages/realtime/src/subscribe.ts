@@ -57,6 +57,7 @@ export const subscribe = async <
     close: () => Promise.resolve(subscription.close()),
     cancel: () => subscription.close(),
     getStream: () => subscription.getStream(),
+    getWebStream: () => subscription.getWebStream(),
   };
 
   if (callback) {
@@ -137,7 +138,7 @@ class TokenSubscription {
     },
   });
 
-  #createdStreamControllers = new Set<ReadableStreamDefaultController>();
+  #createdStreamWriters = new Set<WritableStreamDefaultWriter>();
 
   #ws: WebSocket | null = null;
 
@@ -501,8 +502,8 @@ class TokenSubscription {
           break;
         }
 
-        for (const controller of this.#createdStreamControllers) {
-          controller.enqueue(value);
+        for (const writer of this.#createdStreamWriters) {
+          writer.write(value);
         }
       }
     })();
@@ -519,26 +520,35 @@ class TokenSubscription {
     this.#running = false;
     this.#ws?.close(1000, reason);
 
-    this.#debug(`Closing ${this.#createdStreamControllers.size} streams...`);
+    this.#debug(`Closing ${this.#createdStreamWriters.size} streams...`);
     this.#sourceStreamContoller?.close();
-    this.#createdStreamControllers.forEach((controller) => controller.close());
+    this.#createdStreamWriters.forEach((writer) => writer.close());
   }
 
   public getStream() {
-    let controller: ReadableStreamDefaultController;
+    const { readable, writable } = new TransformStream<
+      Realtime.Message,
+      Realtime.Message
+    >();
 
-    const stream = new ReadableStream<Realtime.Message>({
-      start: (_controller) => {
-        controller = _controller;
-        this.#createdStreamControllers.add(controller);
-      },
+    this.#createdStreamWriters.add(writable.getWriter());
 
-      cancel: () => {
-        this.#createdStreamControllers.delete(controller);
+    return readable;
+  }
+
+  public getWebStream() {
+    const { readable, writable } = new TransformStream<
+      Realtime.Message,
+      string
+    >({
+      transform: (chunk, controller) => {
+        controller.enqueue(`data: ${JSON.stringify(chunk)}\n\n`);
       },
     });
 
-    return stream;
+    this.#createdStreamWriters.add(writable.getWriter());
+
+    return readable;
   }
 
   public getIterator(stream: ReadableStream<Realtime.Message>) {
