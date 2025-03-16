@@ -1,7 +1,8 @@
 import debug from "debug";
 import { z } from "zod";
-import { ServerTiming } from "../helpers/ServerTiming.js";
+import { ServerTiming } from "../helpers/ServerTiming.ts";
 import {
+  ExecutionVersion,
   debugPrefix,
   defaultInngestApiBaseUrl,
   defaultInngestEventBaseUrl,
@@ -12,37 +13,34 @@ import {
   probe as probeEnum,
   queryKeys,
   syncKind,
-} from "../helpers/consts.js";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver.js";
-import { enumFromValue } from "../helpers/enum.js";
+} from "../helpers/consts.ts";
+import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
+import { enumFromValue } from "../helpers/enum.ts";
 import {
+  type Env,
+  Mode,
   allProcessEnv,
   devServerHost,
   getFetch,
   getMode,
   getPlatformName,
   inngestHeaders,
-  Mode,
   parseAsBoolean,
   platformSupportsStreaming,
-  type Env,
-} from "../helpers/env.js";
-import { rethrowError, serializeError } from "../helpers/errors.js";
+} from "../helpers/env.ts";
+import { rethrowError, serializeError } from "../helpers/errors.ts";
 import {
+  type FnData,
   fetchAllFnData,
   parseFnData,
   undefinedToNull,
-  type FnData,
-} from "../helpers/functions.js";
-import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.js";
-import { runAsPromise } from "../helpers/promises.js";
-import { createStream } from "../helpers/stream.js";
-import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.js";
-import { type MaybePromise } from "../helpers/types.js";
+} from "../helpers/functions.ts";
+import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
+import { runAsPromise } from "../helpers/promises.ts";
+import { createStream } from "../helpers/stream.ts";
+import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
+import type { MaybePromise } from "../helpers/types.ts";
 import {
-  functionConfigSchema,
-  inBandSyncRequestBodySchema,
-  logLevels,
   type AuthenticatedIntrospection,
   type EventPayload,
   type FunctionConfig,
@@ -53,21 +51,23 @@ import {
   type RegisterRequest,
   type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
-} from "../types.js";
-import { version } from "../version.js";
-import { type Inngest } from "./Inngest.js";
+  functionConfigSchema,
+  inBandSyncRequestBodySchema,
+  logLevels,
+} from "../types.ts";
+import { version } from "../version.ts";
+import type { Inngest } from "./Inngest.ts";
+import type {
+  CreateExecutionOptions,
+  InngestFunction,
+} from "./InngestFunction.ts";
 import {
-  type CreateExecutionOptions,
-  type InngestFunction,
-} from "./InngestFunction.js";
-import {
-  ExecutionVersion,
-  PREFERRED_EXECUTION_VERSION,
   type ExecutionResult,
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
-} from "./execution/InngestExecution.js";
+  PREFERRED_EXECUTION_VERSION,
+} from "./execution/InngestExecution.ts";
 
 /**
  * A set of options that can be passed to a serve handler, intended to be used
@@ -96,11 +96,11 @@ export interface InternalServeHandlerOptions extends ServeHandlerOptions {
 }
 
 interface InngestCommHandlerOptions<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   Input extends any[] = any[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   Output = any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   StreamOutput = any,
 > extends RegisterOptions {
   /**
@@ -221,11 +221,11 @@ const registerResSchema = z.object({
  * @public
  */
 export class InngestCommHandler<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   Input extends any[] = any[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   Output = any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   StreamOutput = any,
 > {
   /**
@@ -360,7 +360,7 @@ export class InngestCommHandler<
      */
     if (Object.prototype.hasOwnProperty.call(options, "eventKey")) {
       throw new Error(
-        `${logPrefix} You've passed an Inngest client as the first argument to your serve handler. This is no longer supported in v3; please pass the Inngest client as the \`client\` property of an options object instead. See https://www.inngest.com/docs/sdk/migration`
+        `${logPrefix} You've passed an Inngest client as the first argument to your serve handler. This is no longer supported in v3; please pass the Inngest client as the \`client\` property of an options object instead. See https://www.inngest.com/docs/sdk/migration`,
       );
     }
 
@@ -369,7 +369,7 @@ export class InngestCommHandler<
 
     if (options.id) {
       console.warn(
-        `${logPrefix} The \`id\` serve option is deprecated and will be removed in v4`
+        `${logPrefix} The \`id\` serve option is deprecated and will be removed in v4`,
       );
     }
     this.id = options.id || this.client.id;
@@ -381,8 +381,8 @@ export class InngestCommHandler<
      * testing.
      */
     this.allowExpiredSignatures = Boolean(
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, prefer-rest-params
-      arguments["0"]?.__testingAllowExpiredSignatures
+      // biome-ignore lint/style/noArguments: <explanation>
+      arguments["0"]?.__testingAllowExpiredSignatures,
     );
 
     // Ensure we filter any undefined functions in case of missing imports.
@@ -391,7 +391,7 @@ export class InngestCommHandler<
     if (this.rawFns.length !== options.functions.length) {
       // TODO PrettyError
       console.warn(
-        `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`
+        `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`,
       );
     }
 
@@ -407,11 +407,12 @@ export class InngestCommHandler<
         return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
       }, {});
 
+      // biome-ignore lint/complexity/noForEach: <explanation>
       configs.forEach(({ id }) => {
         if (acc[id]) {
           // TODO PrettyError
           throw new Error(
-            `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`
+            `Duplicate function ID "${id}"; please change a function's name or provide an explicit ID to avoid conflicts.`,
           );
         }
       });
@@ -439,8 +440,8 @@ export class InngestCommHandler<
         this.log(
           "warn",
           `Unknown log level passed: ${String(
-            ctx.input
-          )}; defaulting to ${defaultLogLevel}`
+            ctx.input,
+          )}; defaulting to ${defaultLogLevel}`,
         );
 
         return defaultLogLevel;
@@ -471,8 +472,8 @@ export class InngestCommHandler<
         this.log(
           "warn",
           `Unknown streaming option passed: ${String(
-            ctx.input
-          )}; defaulting to ${String(defaultStreamingOption)}`
+            ctx.input,
+          )}; defaulting to ${String(defaultStreamingOption)}`,
         );
 
         return defaultStreamingOption;
@@ -584,11 +585,11 @@ export class InngestCommHandler<
    * capabilities.
    */
   private async shouldStream(
-    actions: HandlerResponseWithErrors
+    actions: HandlerResponseWithErrors,
   ): Promise<boolean> {
     const rawProbe = await actions.queryStringWithDefaults(
       "testing for probe",
-      queryKeys.Probe
+      queryKeys.Probe,
     );
     if (rawProbe !== undefined) {
       return false;
@@ -610,7 +611,7 @@ export class InngestCommHandler<
       this.streaming === "allow" &&
       platformSupportsStreaming(
         this.frameworkName as SupportedFrameworkName,
-        this.env
+        this.env,
       )
     );
   }
@@ -722,7 +723,7 @@ export class InngestCommHandler<
         ...promisifiedActions,
         queryStringWithDefaults: async (
           reason: string,
-          key: string
+          key: string,
         ): Promise<string | undefined> => {
           const url = await actions.url(reason);
 
@@ -740,7 +741,7 @@ export class InngestCommHandler<
         actions.env?.("starting to handle request"),
         actions.headers(
           "checking expected server kind",
-          headerKeys.InngestServerKind
+          headerKeys.InngestServerKind,
         ),
       ]);
 
@@ -769,7 +770,7 @@ export class InngestCommHandler<
         this._mode = assumedMode;
       } else {
         const serveIsProd = await actions.isProduction?.(
-          "starting to handle request"
+          "starting to handle request",
         );
         if (typeof serveIsProd === "boolean") {
           this._mode = new Mode({
@@ -791,7 +792,7 @@ export class InngestCommHandler<
       ].map(async (header) => {
         const value = await actions.headers(
           `fetching ${header} for forwarding`,
-          header
+          header,
         );
 
         return { header, value };
@@ -803,10 +804,9 @@ export class InngestCommHandler<
           if (!value) {
             return undefined;
           }
-          return parseInt(value, 10);
+          return Number.parseInt(value, 10);
         });
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const [signature, method, body] = await Promise.all([
         actions
           .headers("checking signature for request", headerKeys.Signature)
@@ -822,7 +822,7 @@ export class InngestCommHandler<
             }
 
             return actions.body(
-              `checking body for request signing as method is ${method}`
+              `checking body for request signing as method is ${method}`,
             );
           }
 
@@ -842,9 +842,9 @@ export class InngestCommHandler<
 
               return acc;
             },
-            {}
+            {},
           );
-        }
+        },
       );
 
       const actionRes = timer.wrap("action", () =>
@@ -854,11 +854,11 @@ export class InngestCommHandler<
           getInngestHeaders,
           reqArgs: args,
           signatureValidation,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           body,
           method,
           headers: headersToForwardP,
-        })
+        }),
       );
 
       /**
@@ -869,7 +869,7 @@ export class InngestCommHandler<
        * may contain important information such as `Content-Type`.
        */
       const prepareActionRes = async (
-        res: ActionResponse
+        res: ActionResponse,
       ): Promise<ActionResponse> => {
         const headers: Record<string, string> = {
           ...getInngestHeaders(),
@@ -936,7 +936,7 @@ export class InngestCommHandler<
                 headers: getInngestHeaders(),
                 body: stream,
                 version: null,
-              }
+              },
             );
           });
         }
@@ -944,7 +944,6 @@ export class InngestCommHandler<
 
       return timer.wrap("res", async () => {
         return actionRes.then(prepareActionRes).then((actionRes) => {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-return
           return actions.transformResponse("sending back response", actionRes);
         });
       });
@@ -1013,7 +1012,7 @@ export class InngestCommHandler<
     getInngestHeaders: () => Record<string, string>;
     reqArgs: unknown[];
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     body: any;
     method: string;
     headers: Promise<Record<string, string>>;
@@ -1030,7 +1029,7 @@ export class InngestCommHandler<
         if (isMissingBody) {
           this.log(
             "error",
-            "Missing body when executing, possibly due to missing request body middleware"
+            "Missing body when executing, possibly due to missing request body middleware",
           );
 
           return {
@@ -1041,9 +1040,9 @@ export class InngestCommHandler<
             body: stringify(
               serializeError(
                 new Error(
-                  "Missing request body when executing, possibly due to missing request body middleware"
-                )
-              )
+                  "Missing request body when executing, possibly due to missing request body middleware",
+                ),
+              ),
             ),
             version: undefined,
           };
@@ -1063,7 +1062,7 @@ export class InngestCommHandler<
 
         const rawProbe = await actions.queryStringWithDefaults(
           "testing for probe",
-          queryKeys.Probe
+          queryKeys.Probe,
         );
         if (rawProbe) {
           const probe = enumFromValue(probeEnum, rawProbe);
@@ -1076,7 +1075,7 @@ export class InngestCommHandler<
                 "Content-Type": "application/json",
               },
               body: stringify(
-                serializeError(new Error(`Unknown probe "${rawProbe}"`))
+                serializeError(new Error(`Unknown probe "${rawProbe}"`)),
               ),
               version: undefined,
             };
@@ -1102,7 +1101,7 @@ export class InngestCommHandler<
 
         const fnId = await actions.queryStringWithDefaults(
           "processing run request",
-          queryKeys.FnId
+          queryKeys.FnId,
         );
         if (!fnId) {
           // TODO PrettyError
@@ -1112,7 +1111,7 @@ export class InngestCommHandler<
         const stepId =
           (await actions.queryStringWithDefaults(
             "processing run request",
-            queryKeys.StepId
+            queryKeys.StepId,
           )) || null;
 
         const { version, result } = this.runStep({
@@ -1232,7 +1231,7 @@ export class InngestCommHandler<
               env,
               signatureValidation,
               url,
-            })
+            }),
           ),
           headers: {
             "Content-Type": "application/json",
@@ -1246,14 +1245,14 @@ export class InngestCommHandler<
           actions
             .queryStringWithDefaults(
               "processing deployment request",
-              queryKeys.DeployId
+              queryKeys.DeployId,
             )
             .then((deployId) => {
               return deployId === "undefined" ? undefined : deployId;
             }),
 
           Promise.resolve(
-            parseAsBoolean(this.env[envKeys.InngestAllowInBandSync])
+            parseAsBoolean(this.env[envKeys.InngestAllowInBandSync]),
           )
             .then((allowInBandSync) => {
               if (allowInBandSync !== undefined && !allowInBandSync) {
@@ -1262,7 +1261,7 @@ export class InngestCommHandler<
 
               return actions.headers(
                 "processing deployment request",
-                headerKeys.InngestSyncKind
+                headerKeys.InngestSyncKind,
               );
             })
             .then((kind) => {
@@ -1274,7 +1273,7 @@ export class InngestCommHandler<
           if (isMissingBody) {
             this.log(
               "error",
-              "Missing body when syncing, possibly due to missing request body middleware"
+              "Missing body when syncing, possibly due to missing request body middleware",
             );
 
             return {
@@ -1285,9 +1284,9 @@ export class InngestCommHandler<
               body: stringify(
                 serializeError(
                   new Error(
-                    "Missing request body when syncing, possibly due to missing request body middleware"
-                  )
-                )
+                    "Missing request body when syncing, possibly due to missing request body middleware",
+                  ),
+                ),
               ),
               version: undefined,
             };
@@ -1354,7 +1353,7 @@ export class InngestCommHandler<
         const { status, message, modified } = await this.register(
           this.reqUrl(url),
           deployId,
-          getInngestHeaders
+          getInngestHeaders,
         );
 
         return {
@@ -1437,7 +1436,7 @@ export class InngestCommHandler<
       type ExecutionStarter<V> = (
         fnData: V extends ExecutionVersion
           ? Extract<FnData, { version: V }>
-          : FnData
+          : FnData,
       ) => MaybePromise<CreateExecutionOptions>;
 
       type GenericExecutionStarters = Record<
@@ -1457,7 +1456,7 @@ export class InngestCommHandler<
           >((acc, [id, data]) => {
             return {
               ...acc,
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
               [id]: { id, data },
             };
           }, {});
@@ -1491,11 +1490,9 @@ export class InngestCommHandler<
               ...acc,
               [id]:
                 result.type === "data"
-                  ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                    { id, data: result.data }
+                  ? { id, data: result.data }
                   : result.type === "input"
-                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                      { id, input: result.input }
+                    ? { id, input: result.input }
                     : { id, error: result.error },
             };
           }, {});
@@ -1530,11 +1527,9 @@ export class InngestCommHandler<
               ...acc,
               [id]:
                 result.type === "data"
-                  ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                    { id, data: result.data }
+                  ? { id, data: result.data }
                   : result.type === "input"
-                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-                      { id, input: result.input }
+                    ? { id, input: result.input }
                     : { id, error: result.error },
             };
           }, {});
@@ -1564,7 +1559,7 @@ export class InngestCommHandler<
       });
 
       const executionOptions = await executionStarters[version](
-        anyFnData.value
+        anyFnData.value,
       );
 
       return fn.fn["createExecution"](executionOptions).start();
@@ -1579,7 +1574,7 @@ export class InngestCommHandler<
         ...acc,
         ...fn["getConfig"]({ baseUrl: url, appPrefix: this.id }),
       ],
-      []
+      [],
     );
 
     for (const config of configs) {
@@ -1589,7 +1584,7 @@ export class InngestCommHandler<
 
         this.log(
           "warn",
-          `Config invalid for function "${config.id}" : ${errors}`
+          `Config invalid for function "${config.id}" : ${errors}`,
         );
       }
     }
@@ -1789,7 +1784,7 @@ export class InngestCommHandler<
   protected async register(
     url: URL,
     deployId: string | undefined | null,
-    getHeaders: () => Record<string, string>
+    getHeaders: () => Record<string, string>,
   ): Promise<{ status: number; message: string; modified: boolean }> {
     const body = this.registerBody({ url, deployId });
 
@@ -1812,7 +1807,7 @@ export class InngestCommHandler<
     } else if (this._mode?.explicitDevUrl) {
       registerURL = devServerUrl(
         this._mode.explicitDevUrl.href,
-        "/fn/register"
+        "/fn/register",
       );
     }
 
@@ -1850,11 +1845,9 @@ export class InngestCommHandler<
 
     const raw = await res.text();
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     let data: z.input<typeof registerResSchema> = {};
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       data = JSON.parse(raw);
     } catch (err) {
       this.log("warn", "Couldn't unpack register response:", err);
@@ -1905,7 +1898,7 @@ export class InngestCommHandler<
         "registered inngest functions:",
         res.status,
         res.statusText,
-        data
+        data,
       );
     }
 
@@ -1929,7 +1922,7 @@ export class InngestCommHandler<
     if (this.env[envKeys.InngestSigningKeyFallback]) {
       if (!this.signingKeyFallback) {
         this.signingKeyFallback = String(
-          this.env[envKeys.InngestSigningKeyFallback]
+          this.env[envKeys.InngestSigningKeyFallback],
         );
       }
 
@@ -1944,7 +1937,7 @@ export class InngestCommHandler<
     if (this.env[envKeys.InngestDevServerUrl]) {
       this.log(
         "warn",
-        `Use of ${envKeys.InngestDevServerUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`
+        `Use of ${envKeys.InngestDevServerUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`,
       );
     }
   }
@@ -1953,10 +1946,10 @@ export class InngestCommHandler<
    * Validate the signature of a request and return the signing key used to
    * validate it.
    */
-  // eslint-disable-next-line @typescript-eslint/require-await
+
   protected async validateSignature(
     sig: string | undefined,
-    body: unknown
+    body: unknown,
   ): Promise<
     { success: true; keyUsed: string } | { success: false; err: Error }
   > {
@@ -1977,7 +1970,7 @@ export class InngestCommHandler<
       if (!this.signingKey) {
         // TODO PrettyError
         throw new Error(
-          `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`
+          `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`,
         );
       }
 
@@ -2063,7 +2056,7 @@ class RequestSignature {
     }
 
     const delta =
-      Date.now() - new Date(parseInt(this.timestamp) * 1000).valueOf();
+      Date.now() - new Date(Number.parseInt(this.timestamp) * 1000).valueOf();
     return delta > 1000 * 60 * 5;
   }
 
@@ -2124,17 +2117,17 @@ class RequestSignature {
  * {@link InngestCommHandler} instance.
  */
 export type Handler<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   Input extends any[] = any[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   Output = any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   StreamOutput = any,
 > = (...args: Input) => HandlerResponse<Output, StreamOutput>;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export type HandlerResponse<Output = any, StreamOutput = any> = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   body: () => MaybePromise<any>;
   env?: () => MaybePromise<Env | undefined>;
   headers: (key: string) => MaybePromise<string | null | undefined>;
@@ -2152,7 +2145,7 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
   method: () => MaybePromise<string>;
   queryString?: (
     key: string,
-    url: URL
+    url: URL,
   ) => MaybePromise<string | null | undefined>;
   url: () => MaybePromise<URL>;
 
@@ -2190,7 +2183,7 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
    * required parameters such as `res` in Express-/Connect-like frameworks.
    */
   transformStreamingResponse?: (
-    res: ActionResponse<ReadableStream>
+    res: ActionResponse<ReadableStream>,
   ) => StreamOutput;
 };
 
@@ -2260,6 +2253,6 @@ export interface HandlerResponseWithErrors
    */
   queryStringWithDefaults: (
     reason: string,
-    key: string
+    key: string,
   ) => Promise<string | undefined>;
 }

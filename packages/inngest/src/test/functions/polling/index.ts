@@ -37,5 +37,5 @@ export default inngest.createFunction(
         console.log(jobData);
       });
     }
-  }
+  },
 );
