@@ -124,6 +124,7 @@ export const getSubscriptionToken = async <
 
 // Must be a new connection for every token used.
 class TokenSubscription {
+  #encoder = new TextEncoder();
   #app: Inngest.Any;
   #debug = debug("inngest:realtime");
 
@@ -539,10 +540,10 @@ class TokenSubscription {
   public getWebStream() {
     const { readable, writable } = new TransformStream<
       Realtime.Message,
-      string
+      Uint8Array
     >({
       transform: (chunk, controller) => {
-        controller.enqueue(JSON.stringify(chunk));
+        controller.enqueue(this.#encoder.encode(`${JSON.stringify(chunk)}\n`));
       },
     });
 
