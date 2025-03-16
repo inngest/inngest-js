@@ -35,16 +35,6 @@ export namespace Realtime {
       >,
     > = ReadableStream<TData> & {
       /**
-       * Warm close.
-       */
-      close(): Promise<void>;
-
-      /**
-       * Cold close.
-       */
-      cancel(): void;
-
-      /**
        * Get a new readable stream from the subscription that delivers JSON chunks.
        *
        * The stream starts when this function is called and will not contain any

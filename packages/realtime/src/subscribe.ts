@@ -497,16 +497,11 @@ class TokenSubscription {
     }
 
     void (async () => {
-      const reader = this.#sourceStream.getReader();
-
-      while (this.#running) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
+      for await (const chunk of this.#sourceStream) {
+        if (!this.#running) return;
 
         for (const writer of this.#createdStreamWriters) {
-          writer.write(value);
+          writer.write(chunk);
         }
       }
     })();
@@ -560,15 +555,10 @@ class TokenSubscription {
     callback: Realtime.Subscribe.Callback<any>,
   ) {
     void (async () => {
-      const reader = stream.getReader();
+      for await (const chunk of stream) {
+        if (!this.#running) return;
 
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        callback(value);
+        callback(chunk);
       }
     })();
   }
