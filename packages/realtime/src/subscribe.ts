@@ -301,6 +301,7 @@ class TokenSubscription {
             return this.#sourceStreamContoller?.enqueue({
               channel: msg.channel,
               topic: msg.topic,
+
               data: msg.data,
               fnId: msg.fn_id,
               createdAt: msg.created_at || new Date(),
@@ -458,6 +459,7 @@ class TokenSubscription {
               channel: msg.channel,
               topic: msg.topic,
               kind: "chunk",
+
               data: msg.data,
               streamId: msg.stream_id,
               fnId: msg.fn_id,
@@ -466,8 +468,6 @@ class TokenSubscription {
             });
           }
 
-          // TODO Should we pass pings to the subcription so that we keep it
-          // alive?
           default: {
             this.#debug(
               `Received message on channel "${msg.channel}" with unhandled kind "${msg.kind}"`,
@@ -530,20 +530,6 @@ class TokenSubscription {
     const stream = new ReadableStream<Realtime.Message>({
       start: (_controller) => {
         controller = _controller;
-
-        // TEMP Add some data immediately to have something in the stream to
-        // consume to prove it's alive
-        controller.enqueue({
-          channel: "",
-          topic: "",
-          data: "INITIAL DATA TO TEST",
-          fnId: "",
-          createdAt: new Date(),
-          runId: "",
-          kind: "INITIAL",
-          envId: "",
-        });
-
         this.#createdStreamControllers.add(controller);
       },
 
