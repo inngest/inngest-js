@@ -62,7 +62,7 @@ export namespace Realtime {
        * The stream starts when this function is called and will not contain any
        * messages that were sent before this function was called.
        */
-      getWebStream(): ReadableStream<TData>;
+      getWebStream(): ReadableStream<Uint8Array>;
     };
 
     export type Callback<
