@@ -34,8 +34,6 @@ export namespace Realtime {
         Token.InferMessage<TSubscribeToken>
       >,
     > = ReadableStream<TData> & {
-      [Symbol.asyncIterator](): AsyncIterableIterator<TData>;
-
       /**
        * Warm close.
        */

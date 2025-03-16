@@ -49,22 +49,24 @@ export const subscribe = async <
     app,
     token as Realtime.Subscribe.Token,
   );
-  const iterator = subscription.getIterator(subscription.getStream());
+
+  const retStream = subscription.getStream();
+  const callbackStream = subscription.getStream();
 
   await subscription.connect();
 
   const extras = {
-    close: () => Promise.resolve(subscription.close()),
-    cancel: () => subscription.close(),
     getStream: () => subscription.getStream(),
     getWebStream: () => subscription.getWebStream(),
   };
 
   if (callback) {
-    subscription.useCallback(subscription.getStream(), callback);
+    subscription.useCallback(callbackStream, callback);
+  } else {
+    callbackStream.cancel("Not needed");
   }
 
-  return Object.assign(iterator, extras) as unknown as TOutput;
+  return Object.assign(retStream, extras) as unknown as TOutput;
 };
 
 /**
@@ -550,25 +552,6 @@ class TokenSubscription {
     this.#createdStreamWriters.add(writable.getWriter());
 
     return readable;
-  }
-
-  public getIterator(stream: ReadableStream<Realtime.Message>) {
-    return {
-      [Symbol.asyncIterator]: () => {
-        const reader = stream.getReader();
-
-        return {
-          next: () => {
-            return reader.read();
-          },
-
-          return: () => {
-            reader.releaseLock();
-            return Promise.resolve({ done: true, value: undefined });
-          },
-        };
-      },
-    };
   }
 
   public useCallback(
