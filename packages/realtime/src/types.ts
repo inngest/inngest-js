@@ -40,7 +40,7 @@ export namespace Realtime {
        * The stream starts when this function is called and will not contain any
        * messages that were sent before this function was called.
        */
-      getStream(): ReadableStream<TData>;
+      getJsonStream(): ReadableStream<TData>;
 
       /**
        * Get a new readable stream from the subscription that delivers
@@ -50,7 +50,7 @@ export namespace Realtime {
        * The stream starts when this function is called and will not contain any
        * messages that were sent before this function was called.
        */
-      getWebStream(): ReadableStream<TData>;
+      getEncodedStream(): ReadableStream<Uint8Array>;
     };
 
     export type Callback<

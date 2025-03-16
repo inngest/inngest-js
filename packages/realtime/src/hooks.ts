@@ -176,7 +176,7 @@ export function useInngestSubscription<
       cancelled = true;
       if (subscriptionRef.current) {
         setState(InngestSubscriptionState.Closing);
-        subscriptionRef.current.close().finally(() => {
+        subscriptionRef.current.cancel().finally(() => {
           setState(InngestSubscriptionState.Closed);
         });
       } else {
