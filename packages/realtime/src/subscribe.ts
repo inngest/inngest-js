@@ -542,7 +542,7 @@ class TokenSubscription {
       string
     >({
       transform: (chunk, controller) => {
-        controller.enqueue(`data: ${JSON.stringify(chunk)}\n\n`);
+        controller.enqueue(JSON.stringify(chunk));
       },
     });
 
