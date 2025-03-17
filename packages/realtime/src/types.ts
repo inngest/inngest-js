@@ -34,25 +34,13 @@ export namespace Realtime {
         Token.InferMessage<TSubscribeToken>
       >,
     > = ReadableStream<TData> & {
-      [Symbol.asyncIterator](): AsyncIterableIterator<TData>;
-
-      /**
-       * Warm close.
-       */
-      close(): Promise<void>;
-
-      /**
-       * Cold close.
-       */
-      cancel(): void;
-
       /**
        * Get a new readable stream from the subscription that delivers JSON chunks.
        *
        * The stream starts when this function is called and will not contain any
        * messages that were sent before this function was called.
        */
-      getStream(): ReadableStream<TData>;
+      getJsonStream(): ReadableStream<TData>;
 
       /**
        * Get a new readable stream from the subscription that delivers
@@ -62,7 +50,7 @@ export namespace Realtime {
        * The stream starts when this function is called and will not contain any
        * messages that were sent before this function was called.
        */
-      getWebStream(): ReadableStream<Uint8Array>;
+      getEncodedStream(): ReadableStream<Uint8Array>;
     };
 
     export type Callback<

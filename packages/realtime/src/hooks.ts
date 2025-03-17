@@ -12,14 +12,39 @@ export enum InngestSubscriptionState {
   Closing = "closing",
 }
 
+/**
+ * TODO
+ */
 export interface InngestSubscription<TToken extends Realtime.Subscribe.Token> {
+  /**
+   * TODO
+   */
   data: Realtime.Subscribe.Token.InferMessage<TToken>[];
+
+  /**
+   * TODO
+   */
   latestData: Realtime.Subscribe.Token.InferMessage<TToken> | null;
+
+  /**
+   * TODO
+   */
   freshData: Realtime.Subscribe.Token.InferMessage<TToken>[];
+
+  /**
+   * TODO
+   */
   error: Error | null;
+
+  /**
+   * TODO
+   */
   state: InngestSubscriptionState;
 }
 
+/**
+ * TODO
+ */
 export function useInngestSubscription<
   const TToken extends Realtime.Subscribe.Token | null | undefined,
 >({
@@ -30,11 +55,34 @@ export function useInngestSubscription<
   enabled = true,
   bufferInterval = 0,
 }: {
+  /**
+   * TODO
+   */
   app?: Inngest.Any;
+
+  /**
+   * TODO
+   */
   token?: TToken;
+
+  /**
+   * TODO
+   */
   refreshToken?: () => Promise<TToken>;
+
+  /**
+   * TODO
+   */
   key?: string;
+
+  /**
+   * TODO
+   */
   enabled?: boolean;
+
+  /**
+   * TODO
+   */
   bufferInterval?: number;
 }): InngestSubscription<NonNullable<TToken>> {
   const [token, setToken] = useState<TToken | null | undefined>(tokenInput);
@@ -128,7 +176,7 @@ export function useInngestSubscription<
       cancelled = true;
       if (subscriptionRef.current) {
         setState(InngestSubscriptionState.Closing);
-        subscriptionRef.current.close().finally(() => {
+        subscriptionRef.current.cancel().finally(() => {
           setState(InngestSubscriptionState.Closed);
         });
       } else {
