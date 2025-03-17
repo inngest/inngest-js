@@ -1,6 +1,6 @@
 import Debug from "debug";
-import { getAsyncCtx } from "inngest/experimental";
 import { type Simplify } from "../helpers/types.js";
+import { getAsyncCtx } from "./execution/als.js";
 import { gatewaySymbol, type InternalStepTools } from "./InngestStepTools.js";
 
 const globalFetch = globalThis.fetch;
