@@ -24,11 +24,11 @@ export type Instrumentations = (
 /**
  * A map of span IDs to the Inngest traceparent headers they belong to. This is
  * used to track spans that we care about, so that we can export them to the
- * OTLP endpoint.
+ * OTel endpoint.
  */
 const allowed = new Map<string, string>();
 
-const processorDebug = Debug("inngest:otlp:InngestSpanProcessor");
+const processorDebug = Debug("inngest:otel:InngestSpanProcessor");
 
 export class InngestSpanProcessor implements SpanProcessor {
   #batcher: BatchSpanProcessor | undefined;
@@ -51,7 +51,7 @@ export class InngestSpanProcessor implements SpanProcessor {
   }
 
   /**
-   * The batcher is a singleton that is used to export spans to the OTLP
+   * The batcher is a singleton that is used to export spans to the OTel
    * endpoint. It is created lazily to avoid creating it until the Inngest App
    * has been initialized and has had a chance to receive environment variables,
    * which may be from an incoming request.
@@ -155,18 +155,18 @@ export class InngestSpanProcessor implements SpanProcessor {
 }
 
 // TODO Ugh need an onClose hook to shutdown lol
-export const otlpMiddleware = ({
+export const otelMiddleware = ({
   behaviour = "auto",
   instrumentations,
 }: {
   behaviour?: Behaviour;
   instrumentations?: Instrumentations;
 } = {}) => {
-  const debug = Debug("inngest:otlp:middleware");
+  const debug = Debug("inngest:otel:middleware");
   debug("behaviour:", behaviour);
 
   return new InngestMiddleware({
-    name: "Inngest: OTLP",
+    name: "Inngest: OTel",
     async init() {
       switch (behaviour) {
         case "auto": {
@@ -194,7 +194,7 @@ export const otlpMiddleware = ({
           }
 
           console.warn(
-            "unable to create provider, OTLP middleware will not work"
+            "unable to create provider, OTel middleware will not work"
           );
 
           break;
@@ -207,7 +207,7 @@ export const otlpMiddleware = ({
           }
 
           console.warn(
-            'unable to extend provider, OTLP middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.'
+            'unable to extend provider, OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.'
           );
 
           break;
@@ -250,7 +250,7 @@ const createProvider = async (
   instrumentations: Instrumentations | undefined = []
 ): Promise<boolean> => {
   // TODO How do we tell if there's an existing provider?
-  const debug = Debug("inngest:otlp:middleware:createProvider");
+  const debug = Debug("inngest:otel:middleware:createProvider");
 
   const p = new BasicTracerProvider({
     spanProcessors: [new InngestSpanProcessor()],
@@ -262,6 +262,8 @@ const createProvider = async (
     const { AsyncHooksContextManager } = await import(
       "@opentelemetry/context-async-hooks"
     );
+    // This is critical, otherwise we won't be able to track async spans
+    // correctly
     contextManager = new AsyncHooksContextManager().enable();
   } catch (_) {
     // Not in Node, or package not installed — skip context manager
@@ -292,7 +294,7 @@ const createProvider = async (
 };
 
 /**
- * Attempts to extend the existing OTLP provider with our processor. Returns true
+ * Attempts to extend the existing OTel provider with our processor. Returns true
  * if the provider was extended, false if it was not.
  */
 const extendProvider = (behaviour: Behaviour): boolean => {
@@ -301,7 +303,7 @@ const extendProvider = (behaviour: Behaviour): boolean => {
   if (!existingProvider) {
     if (behaviour !== "auto") {
       console.warn(
-        'No existing OTLP provider found and behaviour is "extendProvider". Inngest\'s OTLP middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.'
+        'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.'
       );
     }
 
@@ -319,7 +321,7 @@ const extendProvider = (behaviour: Behaviour): boolean => {
     // providers.
     if (behaviour !== "auto") {
       console.warn(
-        "Existing OTLP provider is not a BasicTracerProvider. Inngest's OTLP middleware will not work, as it can only extend an existing processor if it's a BasicTracerProvider."
+        "Existing OTel provider is not a BasicTracerProvider. Inngest's OTel middleware will not work, as it can only extend an existing processor if it's a BasicTracerProvider."
       );
     }
 

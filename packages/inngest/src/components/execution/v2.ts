@@ -49,7 +49,7 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.js";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.js";
-import { InngestSpanProcessor } from "./otlp.js";
+import { InngestSpanProcessor } from "./otel.js";
 
 export const createV2InngestExecution: InngestExecutionFactory = (options) => {
   return new V2InngestExecution(options);

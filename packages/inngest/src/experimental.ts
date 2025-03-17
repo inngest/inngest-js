@@ -1,4 +1,4 @@
 export { getAsyncCtx } from "./components/execution/als.js";
 export type { AsyncContext } from "./components/execution/als.js";
 
-export * from "./components/execution/otlp.js";
+export * from "./components/execution/otel.js";
