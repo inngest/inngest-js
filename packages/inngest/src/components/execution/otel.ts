@@ -5,15 +5,24 @@ import {
   type InstrumentationConfig,
 } from "@opentelemetry/instrumentation";
 import {
+  detectResourcesSync,
+  envDetectorSync,
+  hostDetectorSync,
+  osDetectorSync,
+  processDetectorSync,
+  serviceInstanceIdDetectorSync,
+  type IResource,
+} from "@opentelemetry/resources";
+import {
   BasicTracerProvider,
   BatchSpanProcessor,
   type ReadableSpan,
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
-import { version } from "../..//version.js";
 import { envKeys } from "../../helpers/consts.js";
 import { processEnv } from "../../helpers/env.js";
+import { version } from "../../version.js";
 import { InngestMiddleware } from "../InngestMiddleware.js";
 
 export type Behaviour = "createProvider" | "extendProvider" | "off" | "auto";
@@ -29,12 +38,13 @@ export type Instrumentations = (
  */
 const allowed = new Map<string, string>();
 
+let _resourceAttributes: IResource | undefined;
+
 const processorDebug = Debug("inngest:otel:InngestSpanProcessor");
 
 export class InngestSpanProcessor implements SpanProcessor {
   #batcher: BatchSpanProcessor | undefined;
-
-  constructor() {}
+  #resourceAttributes: IResource | undefined;
 
   static declareStartingSpan(traceparent: string, span: Span): void {
     // This is a span that we care about, so let's make sure it and its
@@ -46,9 +56,26 @@ export class InngestSpanProcessor implements SpanProcessor {
       traceparent
     );
 
+    span.setAttributes(InngestSpanProcessor.resourceAttributes.attributes);
     span.setAttribute("inngest.traceparent", traceparent);
 
     allowed.set(span.spanContext().spanId, traceparent);
+  }
+
+  static get resourceAttributes(): IResource {
+    if (!_resourceAttributes) {
+      _resourceAttributes = detectResourcesSync({
+        detectors: [
+          osDetectorSync,
+          envDetectorSync,
+          hostDetectorSync,
+          processDetectorSync,
+          serviceInstanceIdDetectorSync,
+        ],
+      });
+    }
+
+    return _resourceAttributes;
   }
 
   /**
@@ -311,8 +338,6 @@ const extendProvider = (behaviour: Behaviour): boolean => {
     return false;
   }
 
-  // TODO We could check if the fn exists instead, as the NodeSDK one also has
-  // it
   if (
     !("addSpanProcessor" in existingProvider) ||
     typeof existingProvider.addSpanProcessor !== "function"
