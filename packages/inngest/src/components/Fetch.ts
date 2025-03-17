@@ -1,7 +1,7 @@
-import { type AiAdapter } from "@inngest/ai";
 import Debug from "debug";
 import { getAsyncCtx } from "inngest/experimental";
 import { type Simplify } from "../helpers/types.js";
+import { gatewaySymbol, type InternalStepTools } from "./InngestStepTools.js";
 
 const globalFetch = globalThis.fetch;
 type Fetch = typeof globalFetch;
@@ -20,10 +20,6 @@ export namespace StepFetch {
 
   export interface Extras extends Options {
     config: (options: Options) => StepFetch;
-  }
-
-  export interface Adapter extends AiAdapter {
-    format: "fetch";
   }
 }
 
@@ -68,42 +64,27 @@ const createFetchShim = (): StepFetch => {
       return stepFetch.fallback(input, init);
     }
 
-    const targetUrl = new URL(helpers.parseInputUrl(input));
-
-    // Attempt to parse the body; `step.ai.infer()` assumes JSON
-    let body: unknown = init?.body;
-    if (body && typeof body === "string") {
-      try {
-        body = JSON.parse(body);
-      } catch (e) {
-        // Ignore parse error
-      }
-    }
-
-    // Fetch a model unique to this request
-    const model = fetchShimModel(input, init);
+    const targetUrl = new URL(
+      input instanceof Request ? input.url : input.toString()
+    );
 
     debug("step.fetch() shimming request to", targetUrl.hostname);
 
-    // TODO Better step ID?
-    // TODO Must handle error and be able to reproduce the `Response`; atm this
-    // assumes success and a <300 code
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const result = await ctx.ctx.step.ai.infer(
-      `step.fetch: ${targetUrl.hostname}`,
-      { body, model }
-    );
+    try {
+      const jsonRes = await (ctx.ctx.step as InternalStepTools)[gatewaySymbol](
+        `step.fetch: ${targetUrl.hostname}`,
+        input,
+        init
+      );
 
-    // TODO Always stringify? Generic gateway should probably return just a
-    // string anyway
-    return new Response(JSON.stringify(result), {
-      status: 200, // TODO not the real status
-      // TODO Unknown headers
-      headers: {
-        "content-type": "application/json",
-        "x-inngest-fetch": "true",
-      },
-    });
+      return new Response(jsonRes.body, {
+        headers: jsonRes.headers,
+        status: jsonRes.status,
+      });
+    } catch (err) {
+      // TODO handleit mate
+      throw new Error("Failed to fetch");
+    }
   };
 
   const optionsRef: StepFetch.Options = {
@@ -123,35 +104,6 @@ const createFetchShim = (): StepFetch => {
   stepFetch = Object.assign(fetch, extras);
 
   return stepFetch;
-};
-
-export const fetchShimModel: AiAdapter.ModelCreator<
-  Parameters<Fetch>,
-  StepFetch.Adapter
-> = (input, init) => {
-  const url = helpers.parseInputUrl(input);
-
-  const headers: Record<string, string> = {};
-  if (input instanceof Request) {
-    input.headers.forEach((value, key) => (headers[key] = value));
-  } else if (init?.headers) {
-    const h = new Headers(init.headers);
-    h.forEach((value, key) => (headers[key] = value));
-  }
-
-  return {
-    format: "fetch",
-    url,
-    method: init?.method ?? "GET",
-    headers,
-    options: [input, init],
-  } as StepFetch.Adapter;
-};
-
-const helpers = {
-  parseInputUrl: (input: Parameters<Fetch>[0]) => {
-    return input instanceof Request ? input.url : input.toString();
-  },
 };
 
 /**

@@ -29,6 +29,7 @@ import {
   type ClientOptionsFromInngest,
   type GetEvents,
   type GetFunctionOutput,
+  type GetStepTools,
   type Inngest,
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
@@ -587,7 +588,47 @@ export const createStepTools = <TClient extends Inngest.Any>(
     fetch: stepFetch,
   };
 
+  // Add an uptyped gateway
+  (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
+    ({ id, name }, input, init) => {
+      const url = input instanceof Request ? input.url : input.toString();
+
+      const headers: Record<string, string> = {};
+      if (input instanceof Request) {
+        input.headers.forEach((value, key) => (headers[key] = value));
+      } else if (init?.headers) {
+        const h = new Headers(init.headers);
+        h.forEach((value, key) => (headers[key] = value));
+      }
+
+      return {
+        id,
+        op: StepOpCode.Gateway,
+        displayName: name ?? id,
+        opts: {
+          url,
+          method: init?.method ?? "GET",
+          headers,
+          body: init?.body,
+        },
+      };
+    }
+  );
+
   return tools;
+};
+
+export const gatewaySymbol = Symbol.for("inngest.step.gateway");
+
+export type InternalStepTools = GetStepTools<Inngest.Any> & {
+  [gatewaySymbol]: (
+    idOrOptions: StepOptionsOrId,
+    ...args: Parameters<typeof fetch>
+  ) => Promise<{
+    status: number;
+    headers: Record<string, string>;
+    body: string;
+  }>;
 };
 
 /**
