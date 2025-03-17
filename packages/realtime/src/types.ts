@@ -47,12 +47,22 @@ export namespace Realtime {
       cancel(): void;
 
       /**
-       * Get a new readable stream from the subscription.
+       * Get a new readable stream from the subscription that delivers JSON chunks.
        *
        * The stream starts when this function is called and will not contain any
        * messages that were sent before this function was called.
        */
       getStream(): ReadableStream<TData>;
+
+      /**
+       * Get a new readable stream from the subscription that delivers
+       * SSE-compatible chunks, which are compatible with the `EventSource` API
+       * and generally used for streaming data from a server to the browser.
+       *
+       * The stream starts when this function is called and will not contain any
+       * messages that were sent before this function was called.
+       */
+      getWebStream(): ReadableStream<Uint8Array>;
     };
 
     export type Callback<
@@ -439,7 +449,7 @@ export type IsEqual<A, B> = (<G>() => G extends A ? 1 : 2) extends <
   ? true
   : false;
 
-  /**
+/**
  * Given a type `T`, return `Then` if `T` is a string, number, or symbol
  * literal, else `Else`.
  *
@@ -466,14 +476,14 @@ export type IsEqual<A, B> = (<G>() => G extends A ? 1 : 2) extends <
  * ```
  */
 export type IsLiteral<T, Then = true, Else = false> = string extends T
-? Else
-: number extends T
   ? Else
-  : symbol extends T
+  : number extends T
     ? Else
-    : Then;
+    : symbol extends T
+      ? Else
+      : Then;
 
-    /**
+/**
  * Returns `true` if the given generic `T` is a string literal, e.g. `"foo"`, or
  * `false` if it is a string type, e.g. `string`.
  *
