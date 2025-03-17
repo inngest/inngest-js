@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-namespace */
 import { type AnthropicAiAdapter } from "./adapters/anthropic.js";
 import { type GeminiAiAdapter } from "./adapters/gemini.js";
 import { type GrokAiAdapter } from "./adapters/grok.js";
@@ -47,6 +46,11 @@ export interface AiAdapter {
   url?: string;
 
   /**
+   * The method to use for the format.
+   */
+  method?: string;
+
+  /**
    * Headers to pass to the format.
    */
   headers?: Record<string, string>;
@@ -54,7 +58,7 @@ export interface AiAdapter {
   /**
    * The authentication key to use for the format.
    */
-  authKey: string;
+  authKey?: string;
 
   /**
    * Given the model and a body, mutate them as needed. This is useful for
@@ -105,7 +109,12 @@ export namespace AiAdapter {
   /**
    * Supported I/O formats for AI models.
    */
-  export type Format = "openai-chat" | "anthropic" | "gemini" | "grok";
+  export type Format =
+    | "openai-chat"
+    | "anthropic"
+    | "gemini"
+    | "grok"
+    | "fetch";
 
   /**
    * A function that creates a model that adheres to an existng AI adapter
@@ -125,6 +134,7 @@ const adapters = {
   anthropic: null as unknown as AnthropicAiAdapter,
   gemini: null as unknown as GeminiAiAdapter,
   grok: null as unknown as GrokAiAdapter,
+  fetch: null as unknown as AiAdapter,
 } satisfies Record<AiAdapter.Format, AiAdapter>;
 
 /**
