@@ -23,6 +23,8 @@ import {
   type TriggerEventFromFunction,
   type TriggersFromClient,
 } from "../types.js";
+import { type InngestExecution } from "./execution/InngestExecution.js";
+import { fetch as stepFetch } from "./Fetch.js";
 import {
   type ClientOptionsFromInngest,
   type GetEvents,
@@ -31,8 +33,6 @@ import {
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { InngestFunctionReference } from "./InngestFunctionReference.js";
-
-import { type InngestExecution } from "./execution/InngestExecution.js";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -576,6 +576,15 @@ export const createStepTools = <TClient extends Inngest.Any>(
         opts,
       };
     }),
+
+    /**
+     * `step.fetch` is a Fetch-API-compatible function that can be used to make
+     * any HTTP code durable if it's called within an Inngest function.
+     *
+     * It will gracefully fall back to the global `fetch` if called outside of
+     * this context, and a custom fallback can be set using the `config` method.
+     */
+    fetch: stepFetch,
   };
 
   return tools;
