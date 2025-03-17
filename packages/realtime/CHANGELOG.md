@@ -1,5 +1,24 @@
 # @inngest/realtime
 
+## 0.1.0
+
+### Minor Changes
+
+- [#907](https://github.com/inngest/inngest-js/pull/907) [`b283b22`](https://github.com/inngest/inngest-js/commit/b283b221723d27e9d64e5f36e3751a9c697a4c09) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove `stream.getIterator()`; `ReadableStream` is iterable from Node 18+, which is our target
+
+- [#907](https://github.com/inngest/inngest-js/pull/907) [`b283b22`](https://github.com/inngest/inngest-js/commit/b283b221723d27e9d64e5f36e3751a9c697a4c09) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Renamed `stream.get*Stream()` methods to be more explicit about what each chunk of the stream will contain:
+
+  - `stream.getStream()` is now `stream.getJsonStream()`
+  - `stream.getWebStream()` is now `stream.getEncodedStream()` (making sure this isn't confused with generic Web APIs)
+
+### Patch Changes
+
+- [#905](https://github.com/inngest/inngest-js/pull/905) [`4ae971b`](https://github.com/inngest/inngest-js/commit/4ae971bda2141bf9e25a250783e5256d9b907d49) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `getWebStream()`, used to generate a stream with `Uint8Array` encoding appropriate for use within a `Response`
+
+- [#907](https://github.com/inngest/inngest-js/pull/907) [`b283b22`](https://github.com/inngest/inngest-js/commit/b283b221723d27e9d64e5f36e3751a9c697a4c09) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix typing of retrieving a `Response`-compatible stream to be `ReadableStream<Uint8Array>`
+
+- [#907](https://github.com/inngest/inngest-js/pull/907) [`b283b22`](https://github.com/inngest/inngest-js/commit/b283b221723d27e9d64e5f36e3751a9c697a4c09) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Better handle backpressure when writing to many generated streams
+
 ## 0.0.3
 
 ### Patch Changes
