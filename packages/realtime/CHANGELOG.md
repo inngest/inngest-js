@@ -1,5 +1,11 @@
 # @inngest/realtime
 
+## 0.0.3
+
+### Patch Changes
+
+- [#902](https://github.com/inngest/inngest-js/pull/902) [`9546be7`](https://github.com/inngest/inngest-js/commit/9546be72b03a01c0f9d8efcf8ca5bb2639e23473) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow connecting to cloud/dev in `@inngest/realtime`
+
 ## 0.0.2
 
 ### Patch Changes
