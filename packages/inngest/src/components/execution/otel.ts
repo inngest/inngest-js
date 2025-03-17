@@ -11,6 +11,7 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
+import { version } from "../..//version.js";
 import { envKeys } from "../../helpers/consts.js";
 import { processEnv } from "../../helpers/env.js";
 import { InngestMiddleware } from "../InngestMiddleware.js";
@@ -234,7 +235,7 @@ export const otelMiddleware = ({
                   /**
                    * TODO
                    */
-                  tracer: trace.getTracer("inngest"),
+                  tracer: trace.getTracer("inngest", version),
                 },
               };
             },

@@ -28,6 +28,7 @@ import {
   type Handler,
   type OutgoingOp,
 } from "../../types.js";
+import { version } from "../../version.js";
 import { type Inngest } from "../Inngest.js";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.js";
 import {
@@ -99,7 +100,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     if (!this.execution) {
       this.debug("starting V1 execution");
 
-      const tracer = trace.getTracer("inngest");
+      const tracer = trace.getTracer("inngest", version);
 
       this.execution = getAsyncLocalStorage().then((als) => {
         return als.run({ ctx: this.fnArg }, async () => {
