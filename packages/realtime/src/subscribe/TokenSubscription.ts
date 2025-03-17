@@ -79,7 +79,7 @@ export class TokenSubscription {
         this.#app["mode"].isInferred &&
         !this.#app.apiBaseUrl
       ) {
-        const dsUrl = devServerUrl();
+        const dsUrl = devServerUrl().toString();
         const devAvailable = await devServerAvailable(
           dsUrl,
           this.#app["fetch"],
