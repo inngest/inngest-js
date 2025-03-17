@@ -12,7 +12,7 @@
     "@browserbasehq/sdk": "^2.4.0",
     "@browserbasehq/stagehand": "^1.14.0",
     "@inngest/agent-kit": "^0.5.0",
-    "@inngest/realtime": "0.0.4-pr-905.3",
+    "@inngest/realtime": "0.1.1-pr-908.0",
     "ai": "^4.1.61",
     "inngest": "^3.32.7",
     "next": "15.2.2",
@@ -20,7 +20,7 @@
     "react-dom": "^19.0.0"
   },
   "overrides": {
-    "@inngest/realtime": "0.0.4-pr-905.3"
+    "@inngest/realtime": "0.1.1-pr-908.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

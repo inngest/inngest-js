@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     topics: ["updates"], // subscribe to one or more topics in the user channel
   });
 
-  return new Response(stream.getWebStream(), {
+  return new Response(stream.getEncodedStream(), {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
