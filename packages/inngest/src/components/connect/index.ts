@@ -106,6 +106,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
   private _hashedSigningKey: string | undefined;
   private _hashedFallbackKey: string | undefined;
 
+  private _inngestEnv: string | undefined;
+
   /**
    * A set of gateways to exclude from the connection.
    */
@@ -144,6 +146,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
 
     this.options = this.applyDefaults(options);
+
+    this._inngestEnv = inngestHeaders({
+      inngestEnv: this.inngest.env ?? undefined,
+    })[headerKeys.Environment];
+
     this.debug = debug("inngest:connect");
 
     this.messageBuffer = new MessageBuffer(this.inngest);
@@ -281,6 +288,16 @@ class WebSocketWorkerConnection implements WorkerConnection {
     this._hashedSigningKey = this.options.signingKey
       ? hashSigningKey(this.options.signingKey)
       : undefined;
+
+    if (
+      this.options.signingKey &&
+      this.options.signingKey.startsWith("signkey-branch-") &&
+      !this._inngestEnv
+    ) {
+      throw new Error(
+        "Environment is required when using branch environment signing keys"
+      );
+    }
 
     if (this.options.signingKeyFallback) {
       this._hashedFallbackKey = hashSigningKey(this.options.signingKeyFallback);
@@ -731,9 +748,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       if (!setupState.sentWorkerConnect) {
         const workerConnectRequestMsg = WorkerConnectRequestData.create({
           connectionId: startResp.connectionId,
-          environment: inngestHeaders({
-            inngestEnv: this.inngest.env ?? undefined,
-          })[headerKeys.Environment],
+          environment: this._inngestEnv,
           platform: getPlatformName({
             ...allProcessEnv(),
           }),
