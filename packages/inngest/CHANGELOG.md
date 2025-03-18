@@ -1,5 +1,11 @@
 # inngest
 
+## 3.32.9
+
+### Patch Changes
+
+- [#914](https://github.com/inngest/inngest-js/pull/914) [`9a5dd61`](https://github.com/inngest/inngest-js/commit/9a5dd61abb03936bf2df6196ee48e626508b70bf) Thanks [@tonyhb](https://github.com/tonyhb)! - Allow customization of the dev server URL in realtime
+
 ## 3.32.8
 
 ### Patch Changes
