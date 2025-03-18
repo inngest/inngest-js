@@ -550,9 +550,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
         : {}),
     };
 
-    const envOverride = this.inngest.env;
-    if (envOverride) {
-      headers[headerKeys.Environment] = envOverride;
+    if (this._inngestEnv) {
+      headers[headerKeys.Environment] = this._inngestEnv;
     }
 
     // refactor this to a more universal spot
