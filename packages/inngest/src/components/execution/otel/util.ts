@@ -15,7 +15,7 @@ export const createProvider = (
   behaviour: Behaviour,
   instrumentations: Instrumentations | undefined = []
 ): { success: true; processor: InngestSpanProcessor } | { success: false } => {
-  // TODO How do we tell if there's an existing provider?
+  // TODO Check if there's an existing provider
   const processor = new InngestSpanProcessor();
 
   const p = new BasicTracerProvider({
