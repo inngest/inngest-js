@@ -13,14 +13,29 @@ import {
 
 const debug = Debug("inngest:otel:middleware");
 
+/**
+ * TODO
+ */
+export interface OTelMiddlewareOptions {
+  /**
+   * TODO
+   */
+  behaviour?: Behaviour;
+
+  /**
+   * TODO
+   */
+  instrumentations?: Instrumentations;
+}
+
+/**
+ * TODO
+ */
 // TODO Ugh need an onClose hook to shutdown lol
 export const otelMiddleware = ({
   behaviour = "auto",
   instrumentations,
-}: {
-  behaviour?: Behaviour;
-  instrumentations?: Instrumentations;
-} = {}) => {
+}: OTelMiddlewareOptions = {}) => {
   debug("behaviour:", behaviour);
 
   let processor: InngestSpanProcessor | undefined;
