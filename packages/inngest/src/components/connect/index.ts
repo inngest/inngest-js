@@ -577,7 +577,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       if (resp.status === 401) {
         throw new AuthError(
           `Failed initial API handshake request to ${targetUrl.toString()}${
-            envOverride ? ` (env: ${envOverride})` : ""
+            this._inngestEnv ? ` (env: ${this._inngestEnv})` : ""
           }, ${await resp.text()}`,
           attempt
         );
