@@ -23,6 +23,7 @@ import Debug from "debug";
 import { envKeys } from "../../helpers/consts.js";
 import { processEnv } from "../../helpers/env.js";
 import { version } from "../../version.js";
+import { type Inngest } from "../Inngest.js";
 import { InngestMiddleware } from "../InngestMiddleware.js";
 
 export type Behaviour = "createProvider" | "extendProvider" | "off" | "auto";
@@ -31,22 +32,41 @@ export type Instrumentations = (
   | Instrumentation<InstrumentationConfig>[]
 )[];
 
-/**
- * A map of span IDs to the Inngest traceparent headers they belong to. This is
- * used to track spans that we care about, so that we can export them to the
- * OTel endpoint.
- */
-const allowed = new Map<string, string>();
-
 let _resourceAttributes: IResource | undefined;
 
 const processorDebug = Debug("inngest:otel:InngestSpanProcessor");
 
+/**
+ * TODO
+ */
+const clientProcessorMap = new WeakMap<Inngest.Any, InngestSpanProcessor>();
+
+/**
+ * TODO
+ */
+export const getClientProcessor = (client: Inngest.Any) => {
+  return clientProcessorMap.get(client);
+};
+
 export class InngestSpanProcessor implements SpanProcessor {
+  constructor(client: Inngest.Any) {
+    clientProcessorMap.set(client, this);
+  }
+
   #batcher: BatchSpanProcessor | undefined;
   #resourceAttributes: IResource | undefined;
 
-  static declareStartingSpan(traceparent: string, span: Span): void {
+  /**
+   * A map of span IDs to the Inngest traceparent headers they belong to. This is
+   * used to track spans that we care about, so that we can export them to the
+   * OTel endpoint.
+   */
+  public allowed = new Map<string, string>();
+
+  /**
+   * TODO
+   */
+  public declareStartingSpan(traceparent: string, span: Span): void {
     // This is a span that we care about, so let's make sure it and its
     // children are exported.
     processorDebug.extend("declareStartingSpan")(
@@ -59,7 +79,7 @@ export class InngestSpanProcessor implements SpanProcessor {
     span.setAttributes(InngestSpanProcessor.resourceAttributes.attributes);
     span.setAttribute("inngest.traceparent", traceparent);
 
-    allowed.set(span.spanContext().spanId, traceparent);
+    this.allowed.set(span.spanContext().spanId, traceparent);
   }
 
   static get resourceAttributes(): IResource {
@@ -130,7 +150,7 @@ export class InngestSpanProcessor implements SpanProcessor {
       return;
     }
 
-    const traceparent = allowed.get(parentSpanId);
+    const traceparent = this.allowed.get(parentSpanId);
     if (traceparent) {
       // This span is a child of a span we care about, so add it to the list of
       // tracked spans so that we also capture its children
@@ -143,7 +163,7 @@ export class InngestSpanProcessor implements SpanProcessor {
         spanId
       );
 
-      allowed.set(spanId, traceparent);
+      this.allowed.set(spanId, traceparent);
       span.setAttribute("inngest.traceparent", traceparent);
     }
   }
@@ -152,12 +172,12 @@ export class InngestSpanProcessor implements SpanProcessor {
     const debug = processorDebug.extend("onEnd");
     const spanId = span.spanContext().spanId;
 
-    if (allowed.has(spanId)) {
+    if (this.allowed.has(spanId)) {
       // This is a span that we care about, so make sure it gets exported by the
       // batcher
       debug("exporting span", spanId);
 
-      allowed.delete(spanId);
+      this.allowed.delete(spanId);
 
       return this.batcher.onEnd(span);
     }

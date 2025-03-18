@@ -51,7 +51,7 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.js";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.js";
-import { InngestSpanProcessor } from "./otel.js";
+import { getClientProcessor } from "./otel.js";
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
@@ -110,7 +110,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             if (traceparent) {
               // Only start capturing these spans if we have a traceparent to
               // attribute them to
-              InngestSpanProcessor.declareStartingSpan(traceparent, span);
+              getClientProcessor(this.options.client)?.declareStartingSpan(
+                traceparent,
+                span
+              );
             }
 
             return this._start()
