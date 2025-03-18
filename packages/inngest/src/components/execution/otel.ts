@@ -215,16 +215,20 @@ export const otelMiddleware = ({
 
   return new InngestMiddleware({
     name: "Inngest: OTel",
-    async init() {
+    async init({ client }) {
       switch (behaviour) {
         case "auto": {
-          const extended = extendProvider(behaviour);
+          const extended = extendProvider(client, behaviour);
           if (extended) {
             debug("extended existing provider");
             break;
           }
 
-          const created = await createProvider(behaviour, instrumentations);
+          const created = await createProvider(
+            client,
+            behaviour,
+            instrumentations
+          );
           if (created) {
             debug("created new provider");
             break;
@@ -235,7 +239,11 @@ export const otelMiddleware = ({
           break;
         }
         case "createProvider": {
-          const created = await createProvider(behaviour, instrumentations);
+          const created = await createProvider(
+            client,
+            behaviour,
+            instrumentations
+          );
           if (created) {
             debug("created new provider");
             break;
@@ -248,7 +256,7 @@ export const otelMiddleware = ({
           break;
         }
         case "extendProvider": {
-          const extended = extendProvider(behaviour);
+          const extended = extendProvider(client, behaviour);
           if (extended) {
             debug("extended existing provider");
             break;
@@ -294,6 +302,7 @@ export const otelMiddleware = ({
 };
 
 const createProvider = async (
+  app: Inngest.Any,
   behaviour: Behaviour,
   instrumentations: Instrumentations | undefined = []
 ): Promise<boolean> => {
@@ -301,7 +310,7 @@ const createProvider = async (
   const debug = Debug("inngest:otel:middleware:createProvider");
 
   const p = new BasicTracerProvider({
-    spanProcessors: [new InngestSpanProcessor()],
+    spanProcessors: [new InngestSpanProcessor(app)],
   });
 
   let contextManager;
@@ -345,7 +354,7 @@ const createProvider = async (
  * Attempts to extend the existing OTel provider with our processor. Returns true
  * if the provider was extended, false if it was not.
  */
-const extendProvider = (behaviour: Behaviour): boolean => {
+const extendProvider = (app: Inngest.Any, behaviour: Behaviour): boolean => {
   // Attempt to add our processor and export to the existing provider
   const existingProvider = trace.getTracerProvider();
   if (!existingProvider) {
@@ -374,7 +383,7 @@ const extendProvider = (behaviour: Behaviour): boolean => {
     return false;
   }
 
-  existingProvider.addSpanProcessor(new InngestSpanProcessor());
+  existingProvider.addSpanProcessor(new InngestSpanProcessor(app));
 
   return true;
 };
