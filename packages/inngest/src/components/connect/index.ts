@@ -2,7 +2,11 @@ import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
 import { ulid } from "ulidx";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.js";
-import { allProcessEnv, getPlatformName } from "../../helpers/env.js";
+import {
+  allProcessEnv,
+  getPlatformName,
+  inngestHeaders,
+} from "../../helpers/env.js";
 import { parseFnData } from "../../helpers/functions.js";
 import { hashSigningKey } from "../../helpers/strings.js";
 import {
@@ -131,6 +135,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
 
     this.inngest = options.apps[0].client as Inngest.Any;
+    for (const app of options.apps) {
+      if (app.client.env !== this.inngest.env) {
+        throw new Error(
+          `All apps must be configured to the same environment. ${app.client.id} is configured to ${app.client.env} but ${this.inngest.id} is configured to ${this.inngest.env}`
+        );
+      }
+    }
 
     this.options = this.applyDefaults(options);
     this.debug = debug("inngest:connect");
@@ -720,7 +731,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
       if (!setupState.sentWorkerConnect) {
         const workerConnectRequestMsg = WorkerConnectRequestData.create({
           connectionId: startResp.connectionId,
-          environment: this.inngest.env || undefined,
+          environment: inngestHeaders({
+            inngestEnv: this.inngest.env ?? undefined,
+          })[headerKeys.Environment],
           platform: getPlatformName({
             ...allProcessEnv(),
           }),
