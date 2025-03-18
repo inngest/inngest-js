@@ -52,6 +52,8 @@ import {
 const ResponseAcknowlegeDeadline = 5_000;
 const WorkerHeartbeatInterval = 10_000;
 
+const InngestBranchEnvironmentSigningKeyPrefix = "signkey-branch-";
+
 interface connectionEstablishData {
   marshaledCapabilities: string;
   manualReadinessAck: boolean;
@@ -291,7 +293,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     if (
       this.options.signingKey &&
-      this.options.signingKey.startsWith("signkey-branch-") &&
+      this.options.signingKey.startsWith(
+        InngestBranchEnvironmentSigningKeyPrefix
+      ) &&
       !this._inngestEnv
     ) {
       throw new Error(
