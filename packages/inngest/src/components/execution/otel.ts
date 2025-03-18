@@ -14,7 +14,7 @@ const importAttempts: (Instrumentation | Instrumentation[])[] = [
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const {
         getNodeAutoInstrumentations,
-      } = require("@opentelemetry/auto-ianstrumentations-node");
+      } = require("@opentelemetry/auto-instrumentations-node");
 
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-call
       return getNodeAutoInstrumentations();
