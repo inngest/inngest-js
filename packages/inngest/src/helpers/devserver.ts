@@ -60,4 +60,5 @@ export const devServerUrl = (
  * This guarantees a specific URL as a string, as opposed to the env export
  * which only returns a value of the env var is set.
  */
-export const devServerHost = (): string => envDevServerHost() || defaultDevServerHost;
+export const devServerHost = (): string =>
+  envDevServerHost() || defaultDevServerHost;
