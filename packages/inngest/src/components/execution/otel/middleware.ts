@@ -85,8 +85,6 @@ export const otelMiddleware = ({
   return new InngestMiddleware({
     name: "Inngest: OTel",
     init({ client }) {
-      // TODO Set client->processor weakmap here, from a processor that has been
-      // created either in create or extend provider.
       if (processor) {
         clientProcessorMap.set(client, processor);
       }
