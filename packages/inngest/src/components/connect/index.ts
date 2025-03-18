@@ -4,8 +4,8 @@ import { ulid } from "ulidx";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.js";
 import {
   allProcessEnv,
+  getEnvironmentName,
   getPlatformName,
-  inngestHeaders,
 } from "../../helpers/env.js";
 import { parseFnData } from "../../helpers/functions.js";
 import { hashSigningKey } from "../../helpers/strings.js";
@@ -149,9 +149,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this.options = this.applyDefaults(options);
 
-    this._inngestEnv = inngestHeaders({
-      inngestEnv: this.inngest.env ?? undefined,
-    })[headerKeys.Environment];
+    this._inngestEnv = this.inngest.env ?? getEnvironmentName();
 
     this.debug = debug("inngest:connect");
 
