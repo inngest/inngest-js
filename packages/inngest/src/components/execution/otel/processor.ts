@@ -17,6 +17,8 @@ import {
 import Debug from "debug";
 import { envKeys } from "../../../helpers/consts.js";
 import { processEnv } from "../../../helpers/env.js";
+import { type Inngest } from "../../Inngest.js";
+import { clientProcessorMap } from "./access.js";
 
 const processorDebug = Debug("inngest:otel:InngestSpanProcessor");
 let _resourceAttributes: IResource | undefined;
@@ -25,6 +27,20 @@ let _resourceAttributes: IResource | undefined;
  * TODO
  */
 export class InngestSpanProcessor implements SpanProcessor {
+  /**
+   * TODO
+   */
+  constructor(
+    /**
+     * TODO
+     */
+    app?: Inngest.Like
+  ) {
+    if (app) {
+      clientProcessorMap.set(app as Inngest.Any, this);
+    }
+  }
+
   /**
    * TODO
    */
