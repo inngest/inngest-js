@@ -224,3 +224,17 @@ export class InngestSpanProcessor implements SpanProcessor {
     return this.batcher.shutdown();
   }
 }
+
+/**
+ * TODO
+ */
+export class PublicInngestSpanProcessor extends InngestSpanProcessor {
+  constructor(
+    /**
+     * TODO
+     */
+    app: Inngest.Like
+  ) {
+    super(app);
+  }
+}
