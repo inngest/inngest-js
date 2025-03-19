@@ -1,4 +1,4 @@
-import { InngestMiddleware } from "inngest/components/InngestMiddleware";
+import { InngestMiddleware } from "../components/InngestMiddleware.js";
 
 /**
  * Adds properties to the function input for every function created using this
