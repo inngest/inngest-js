@@ -1,14 +1,9 @@
 import { models, type AiAdapter } from "@inngest/ai";
-import { type Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { logPrefix } from "../helpers/consts.js";
 import { type Jsonify } from "../helpers/jsonify.js";
 import { timeStr } from "../helpers/strings.js";
-import {
-  getISOString,
-  isTemporalDuration,
-  type InstantLike,
-} from "../helpers/temporal.js";
+import * as Temporal from "../helpers/temporal.js";
 import {
   type ExclusiveKeys,
   type ParametersExceptFirst,
@@ -447,7 +442,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
        * sleep is over and we should continue execution.
        */
       const msTimeStr: string = timeStr(
-        isTemporalDuration(time)
+        Temporal.isTemporalDuration(time)
           ? time.total({ unit: "milliseconds" })
           : (time as number | string)
       );
@@ -473,10 +468,10 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The date to wait until before continuing.
          */
-        time: Date | string | InstantLike | Temporal.ZonedDateTimeLike
+        time: Date | string | Temporal.InstantLike | Temporal.ZonedDateTimeLike
       ) => Promise<void>
     >(({ id, name }, time) => {
-      const iso = getISOString(time);
+      const iso = Temporal.getISOString(time);
 
       /**
        * The presence of this operation in the returned stack indicates that the

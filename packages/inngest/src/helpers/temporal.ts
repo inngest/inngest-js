@@ -1,15 +1,42 @@
 import { type Temporal } from "temporal-polyfill";
 
 /**
- * A type that represents a `Temporal.Duration` object.
+ * A type that represents a `Temporal.Instant` object.
  *
- * *Like types are available for many temporal objects, but not all of them.
+ * `*Like` types are available for many temporal objects, but not all of them.
+ * Also, the `*Like` types can sometimes be linked to particular
+ * implementations, and are not stable between them.
+ *
+ * Therefore, we try to detect only the hopefully-stable branding.
  */
 export type InstantLike = {
-  epochSeconds?: number;
-  epochMilliseconds?: number;
-  epochMicroseconds?: number;
-  epochNanoseconds?: number;
+  readonly [Symbol.toStringTag]: "Temporal.Instant";
+};
+
+/**
+ * A type that represents a `Temporal.Duration` object.
+ *
+ * `*Like` types are available for many temporal objects, but not all of them.
+ * Also, the `*Like` types can sometimes be linked to particular
+ * implementations, and are not stable between them.
+ *
+ * Therefore, we try to detect only the hopefully-stable branding.
+ */
+export type DurationLike = {
+  readonly [Symbol.toStringTag]: "Temporal.Duration";
+};
+
+/**
+ * A type that represents a `Temporal.ZonedDateTime` object.
+ *
+ * `*Like` types are available for many temporal objects, but not all of them.
+ * Also, the `*Like` types can sometimes be linked to particular
+ * implementations, and are not stable between them.
+ *
+ * Therefore, we try to detect only the hopefully-stable branding.
+ */
+export type ZonedDateTimeLike = {
+  readonly [Symbol.toStringTag]: "Temporal.ZonedDateTime";
 };
 
 /**
@@ -68,7 +95,7 @@ export const isTemporalZonedDateTime = (
  * `Temporal.ZonedDateTime` to an ISO 8601 string.
  */
 export const getISOString = (
-  time: Date | string | InstantLike | Temporal.ZonedDateTimeLike
+  time: Date | string | InstantLike | ZonedDateTimeLike
 ): string => {
   if (typeof time === "string") {
     return new Date(time).toISOString();
