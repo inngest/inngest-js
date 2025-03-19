@@ -4,9 +4,6 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
-  push:
-    branches:
-      - 'renovate/**'
 
 concurrency:
   group: pr-${{ github.ref }}
@@ -30,6 +27,7 @@ jobs:
           - 16
           - 18
           - 20
+          - 22
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
@@ -37,7 +35,18 @@ jobs:
         with:
           node-version: ${{ matrix.nodeVersion }}
       # Uses npm as pnpm doesn't support Node < 16
-      - run: node --version && npm --version && npm run test
+      # If we're on Node <18, restrict some framework tests that do not support
+      # Node on this version.
+      - run: |
+          node --version
+          npm --version
+          npm run test -- --testPathIgnorePatterns "<rootDir>/src/hono.test.ts"
+        if: ${{ matrix.nodeVersion < 18 }}
+      - run: |
+          node --version
+          npm --version
+          npm run test
+        if: ${{ matrix.nodeVersion >= 18 }}
 
   inngest_types:
     name: "inngest: Type tests"
@@ -49,15 +58,19 @@ jobs:
       fail-fast: false
       matrix:
         tsVersion:
-         - 'latest'
-         - '~5.4.0'
-         - '~5.3.0'
-         - '~5.2.0'
-         - '~5.1.0'
-         - '~5.0.0'
-         - '~4.9.0'
-         - '~4.8.0'
-         - "~4.7.0"
+          - "latest"
+          - "~5.8.0"
+          - "~5.7.0"
+          - "~5.6.0"
+          - "~5.5.0"
+          - "~5.4.0"
+          - "~5.3.0"
+          - "~5.2.0"
+          - "~5.1.0"
+          - "~5.0.0"
+          - "~4.9.0"
+          - "~4.8.0"
+          - "~4.7.0"
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
@@ -134,6 +147,51 @@ jobs:
       - run: pnpm install
       - run: pnpm test
 
+  "middleware-encryption_test":
+    name: "middleware-encryption: Test"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/middleware-encryption
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+      - run: pnpm install
+      - run: pnpm test
+
+  "middleware-validation_test":
+    name: "middleware-validation: Test"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/middleware-validation
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+      - run: pnpm install
+      - run: pnpm test
+
+  "realtime_test":
+    name: "realtime: Test"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/realtime
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+      - run: pnpm install
+      - run: pnpm test
+
   package_inngest:
     name: "inngest: Package"
     runs-on: ubuntu-latest
@@ -146,7 +204,7 @@ jobs:
       - name: Package as tarball
         run: pnpm run local:pack
       - name: Archive package tarball
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: inngestpkg
           path: packages/inngest/inngest.tgz
@@ -175,6 +233,13 @@ jobs:
       fail-fast: false
       matrix:
         example: ${{ fromJson(needs.examples-matrix.outputs.matrix) }}
+        streaming: [""]
+        include:
+          - example: framework-remix
+            streaming: force
+          - example: framework-nextjs-app-router
+            streaming: force
+          - example: node
     steps:
       # Checkout the repo
       - name: Checkout SDK
@@ -183,10 +248,12 @@ jobs:
       - uses: ./.github/actions/setup-and-build
 
       - name: Download pre-built SDK
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: inngestpkg
           path: packages/inngest
 
       - name: Run integration tests
         run: pnpm run itest ${{ matrix.example }}
+        env:
+          INNGEST_STREAMING: ${{ matrix.streaming }}

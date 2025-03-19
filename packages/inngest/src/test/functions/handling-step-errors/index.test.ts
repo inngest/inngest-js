@@ -34,7 +34,15 @@ describe("run", () => {
 
     const output = await item?.getOutput();
     expect(output).toEqual({
-      error: { name: "Error", message: "Oh no!", stack: expect.any(String) },
+      error: {
+        name: "Error",
+        message: "Oh no!",
+        stack: expect.any(String),
+        cause: expect.objectContaining({
+          name: "Error",
+          message: "This is the cause",
+        }),
+      },
     });
   }, 10000);
 
@@ -46,7 +54,9 @@ describe("run", () => {
     expect(item).toBeDefined();
 
     const output = await item?.getOutput();
-    expect(output).toEqual({ data: expect.any(String) });
+    expect(output).toEqual({
+      data: `err was: "Oh no!" and the cause was: "This is the cause"`,
+    });
   }, 10000);
 
   test(`ran "c succeeds" step`, async () => {

@@ -1,4 +1,4 @@
-import { runAsPromise } from "./promises";
+import { runAsPromise } from "./promises.js";
 
 interface Timing {
   description: string;
@@ -30,8 +30,7 @@ export class ServerTiming {
       };
     }
 
-    const index =
-      (this.timings[name] as Timing).timers.push({ start: Date.now() }) - 1;
+    const index = this.timings[name].timers.push({ start: Date.now() }) - 1;
 
     return (): void => {
       const target = this.timings[name];

@@ -284,4 +284,5 @@ checkDependencies("tsconfig.build.json", [
   "src/redwood.ts",
   "src/remix.ts",
   "src/sveltekit.ts",
+  "src/nitro.ts",
 ]);

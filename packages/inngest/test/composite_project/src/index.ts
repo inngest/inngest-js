@@ -1,5 +1,8 @@
 import * as Inngest from "inngest";
 
+// Prove certain types are exported and can be used
+type CatchAll = Inngest.JsonError;
+
 export const inngest = new Inngest.Inngest({
   id: "me",
   schemas: new Inngest.EventSchemas().fromRecord<{
@@ -16,7 +19,7 @@ export const inngest = new Inngest.Inngest({
 
             return {
               transformInput(ctx) {
-                console.log(ctx);
+                console.log("transformInput", ctx);
               },
               afterExecution() {
                 console.log("afterExecution");
@@ -34,7 +37,10 @@ export const inngest = new Inngest.Inngest({
                 console.log("beforeResponse");
               },
               transformOutput(ctx) {
-                console.log(ctx);
+                console.log("transformOutput", ctx);
+              },
+              finished() {
+                console.log("finished");
               },
             };
           },

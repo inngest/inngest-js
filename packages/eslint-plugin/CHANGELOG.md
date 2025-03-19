@@ -1,5 +1,19 @@
 # @inngest/eslint-plugin
 
+## 0.0.7
+
+### Patch Changes
+
+- [#669](https://github.com/inngest/inngest-js/pull/669) [`cff63ca`](https://github.com/inngest/inngest-js/commit/cff63ca32ae82088e91cad6aea574cfc1ec6f1bc) Thanks [@swiecki](https://github.com/swiecki)! - Fix `no-nested-steps` not catching nested steps other than `step.run()`
+
+## 0.0.6
+
+### Patch Changes
+
+- [#623](https://github.com/inngest/inngest-js/pull/623) [`cc96657`](https://github.com/inngest/inngest-js/commit/cc966578fce01d65a0916ae56c4a47037e2b548f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Upgraded TypeScript to 5.5.
+
+  No change in behaviour or downstream compatibility is expected, but emitted declaration files will still change, so the patch version will bump for all affected packages.
+
 ## 0.0.5
 
 ### Patch Changes

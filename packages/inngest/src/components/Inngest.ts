@@ -1,23 +1,27 @@
-import { InngestApi } from "../api/api";
+import { ulid } from "ulidx";
+import { InngestApi } from "../api/api.js";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
   defaultInngestEventBaseUrl,
   dummyEventKey,
   envKeys,
+  headerKeys,
   logPrefix,
-} from "../helpers/consts";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver";
+} from "../helpers/consts.js";
+import { devServerAvailable, devServerUrl } from "../helpers/devserver.js";
 import {
+  allProcessEnv,
   getFetch,
   getMode,
   inngestHeaders,
   processEnv,
   type Mode,
-} from "../helpers/env";
-import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors";
-import { type Jsonify } from "../helpers/jsonify";
-import { stringify } from "../helpers/strings";
+} from "../helpers/env.js";
+import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.js";
+import { type Jsonify } from "../helpers/jsonify.js";
+import { retryWithBackoff } from "../helpers/promises.js";
+import { stringify } from "../helpers/strings.js";
 import {
   type AsArray,
   type IsNever,
@@ -25,8 +29,12 @@ import {
   type SimplifyDeep,
   type SingleOrArray,
   type WithoutInternal,
-} from "../helpers/types";
-import { DefaultLogger, ProxyLogger, type Logger } from "../middleware/logger";
+} from "../helpers/types.js";
+import {
+  DefaultLogger,
+  ProxyLogger,
+  type Logger,
+} from "../middleware/logger.js";
 import {
   sendEventResponseSchema,
   type ClientOptions,
@@ -38,10 +46,10 @@ import {
   type SendEventOutput,
   type SendEventResponse,
   type TriggersFromClient,
-} from "../types";
-import { type EventSchemas } from "./EventSchemas";
-import { InngestFunction } from "./InngestFunction";
-import { type InngestFunctionReference } from "./InngestFunctionReference";
+} from "../types.js";
+import { type EventSchemas } from "./EventSchemas.js";
+import { InngestFunction } from "./InngestFunction.js";
+import { type InngestFunctionReference } from "./InngestFunctionReference.js";
 import {
   InngestMiddleware,
   getHookStack,
@@ -50,7 +58,7 @@ import {
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
-} from "./InngestMiddleware";
+} from "./InngestMiddleware.js";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -75,11 +83,11 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
  * To provide event typing, see {@link EventSchemas}.
  *
  * ```ts
- * const inngest = new Inngest({ name: "My App" });
+ * const inngest = new Inngest({ id: "my-app" });
  *
  * // or to provide event typing too
  * const inngest = new Inngest({
- *   name: "My App",
+ *   id: "my-app",
  *   schemas: new EventSchemas().fromRecord<{
  *     "app/user.created": {
  *       data: { userId: string };
@@ -90,7 +98,9 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
  *
  * @public
  */
-export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
+export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
+  implements Inngest.Like
+{
   /**
    * The ID of this instance, most commonly a reference to the application it
    * resides in.
@@ -102,12 +112,18 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
   public readonly id: string;
 
   /**
+   * Stores the options so we can remember explicit settings the user has
+   * provided.
+   */
+  private readonly options: TClientOpts;
+
+  /**
    * Inngest event key, used to send events to Inngest Cloud.
    */
   private eventKey = "";
 
-  private readonly apiBaseUrl: string | undefined;
-  private readonly eventBaseUrl: string | undefined;
+  private _apiBaseUrl: string | undefined;
+  private _eventBaseUrl: string | undefined;
 
   private readonly inngestApi: InngestApi;
 
@@ -119,11 +135,13 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     defaultInngestEventBaseUrl
   );
 
-  private readonly headers: Record<string, string>;
+  private headers!: Record<string, string>;
 
   private readonly fetch: FetchT;
 
   private readonly logger: Logger;
+
+  private localFns: InngestFunction.Any[] = [];
 
   /**
    * A promise that resolves when the middleware stack has been initialized and
@@ -141,7 +159,27 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
    * settings, but should still check for the presence of an environment
    * variable if it is not set.
    */
-  private readonly mode: Mode;
+  private _mode!: Mode;
+
+  protected readonly schemas?: NonNullable<TClientOpts["schemas"]>;
+
+  private _appVersion: string | undefined;
+
+  get apiBaseUrl(): string | undefined {
+    return this._apiBaseUrl;
+  }
+
+  get eventBaseUrl(): string | undefined {
+    return this._eventBaseUrl;
+  }
+
+  get env(): string | null {
+    return this.headers[headerKeys.Environment] ?? null;
+  }
+
+  get appVersion(): string | undefined {
+    return this._appVersion;
+  }
 
   /**
    * A client used to interact with the Inngest API by sending or reacting to
@@ -163,16 +201,19 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
    * });
    * ```
    */
-  constructor({
-    id,
-    eventKey,
-    baseUrl,
-    fetch,
-    env,
-    logger = new DefaultLogger(),
-    middleware,
-    isDev,
-  }: TClientOpts) {
+  constructor(options: TClientOpts) {
+    this.options = options;
+
+    const {
+      id,
+      fetch,
+      logger = new DefaultLogger(),
+      middleware,
+      isDev,
+      schemas,
+      appVersion,
+    } = this.options;
+
     if (!id) {
       // TODO PrettyError
       throw new Error("An `id` must be passed to create an Inngest instance.");
@@ -180,37 +221,23 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
 
     this.id = id;
 
-    this.mode = getMode({
+    this._mode = getMode({
       explicitMode:
         typeof isDev === "boolean" ? (isDev ? "dev" : "cloud") : undefined,
-    });
-
-    this.apiBaseUrl =
-      baseUrl ||
-      processEnv(envKeys.InngestApiBaseUrl) ||
-      processEnv(envKeys.InngestBaseUrl) ||
-      this.mode.getExplicitUrl(defaultInngestApiBaseUrl);
-
-    this.eventBaseUrl =
-      baseUrl ||
-      processEnv(envKeys.InngestEventApiBaseUrl) ||
-      processEnv(envKeys.InngestBaseUrl) ||
-      this.mode.getExplicitUrl(defaultInngestEventBaseUrl);
-
-    this.setEventKey(eventKey || processEnv(envKeys.InngestEventKey) || "");
-
-    this.headers = inngestHeaders({
-      inngestEnv: env,
     });
 
     this.fetch = getFetch(fetch);
 
     this.inngestApi = new InngestApi({
-      baseUrl: this.apiBaseUrl || defaultInngestApiBaseUrl,
+      baseUrl: this.apiBaseUrl,
       signingKey: processEnv(envKeys.InngestSigningKey) || "",
       signingKeyFallback: processEnv(envKeys.InngestSigningKeyFallback),
       fetch: this.fetch,
+      mode: this.mode,
     });
+
+    this.schemas = schemas;
+    this.loadModeEnvVars();
 
     this.logger = logger;
 
@@ -218,6 +245,47 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       ...builtInMiddleware,
       ...(middleware || []),
     ]);
+
+    this._appVersion = appVersion;
+  }
+
+  /**
+   * Set the environment variables for this client. This is useful if you are
+   * passed environment variables at runtime instead of as globals and need to
+   * update the client with those values as requests come in.
+   */
+  public setEnvVars(
+    env: Record<string, string | undefined> = allProcessEnv()
+  ): this {
+    this.mode = getMode({ env, client: this });
+
+    return this;
+  }
+
+  private loadModeEnvVars(): void {
+    this._apiBaseUrl =
+      this.options.baseUrl ||
+      this.mode["env"][envKeys.InngestApiBaseUrl] ||
+      this.mode["env"][envKeys.InngestBaseUrl] ||
+      this.mode.getExplicitUrl(defaultInngestApiBaseUrl);
+
+    this._eventBaseUrl =
+      this.options.baseUrl ||
+      this.mode["env"][envKeys.InngestEventApiBaseUrl] ||
+      this.mode["env"][envKeys.InngestBaseUrl] ||
+      this.mode.getExplicitUrl(defaultInngestEventBaseUrl);
+
+    this.setEventKey(
+      this.options.eventKey || this.mode["env"][envKeys.InngestEventKey] || ""
+    );
+
+    this.headers = inngestHeaders({
+      inngestEnv: this.options.env,
+      env: this.mode["env"],
+    });
+
+    this.inngestApi["mode"] = this.mode;
+    this.inngestApi["apiBaseUrl"] = this._apiBaseUrl;
   }
 
   /**
@@ -249,6 +317,15 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     );
 
     return [...prefix, ...(await stack)];
+  }
+
+  private get mode(): Mode {
+    return this._mode;
+  }
+
+  private set mode(m) {
+    this._mode = m;
+    this.loadModeEnvVars();
   }
 
   /**
@@ -349,9 +426,23 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
    * ```
    */
   public async send<Payload extends SendEventPayload<GetEvents<this>>>(
-    payload: Payload
+    payload: Payload,
+    options?: {
+      /**
+       * The Inngest environment to send events to. Defaults to whichever
+       * environment this client's event key is associated with.
+       *
+       * It's likely you never need to change this unless you're trying to sync
+       * multiple systems together using branch names.
+       */
+      env?: string;
+    }
   ): Promise<SendEventOutput<TClientOpts>> {
-    return this._send({ payload });
+    const headers: Record<string, string> = {
+      ...(options?.env ? { [headerKeys.Environment]: options.env } : {}),
+    };
+
+    return this._send({ payload, headers });
   }
 
   /**
@@ -400,6 +491,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     payloads = payloads.map((p) => {
       return {
         ...p,
+        // Always generate an idempotency ID for an event for retries
+        id: p.id || ulid(),
         ts: p.ts || new Date().getTime(),
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: p.data || {},
@@ -474,31 +567,57 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       }
     }
 
-    // We don't need to do fallback auth here because this uses event keys and
-    // not signing keys
-    const response = await this.fetch(url, {
-      method: "POST",
-      body: stringify(payloads),
-      headers: { ...this.headers, ...headers },
-    });
+    const body = await retryWithBackoff(
+      async () => {
+        let body: SendEventResponse | undefined;
 
-    let body: SendEventResponse | undefined;
+        // We don't need to do fallback auth here because this uses event keys and
+        // not signing keys
+        const response = await this.fetch(url, {
+          method: "POST",
+          body: stringify(payloads),
+          headers: { ...this.headers, ...headers },
+        });
 
-    try {
-      const rawBody: unknown = await response.json();
-      body = await sendEventResponseSchema.parseAsync(rawBody);
-    } catch (err) {
-      throw await this.getResponseError(response);
-    }
+        try {
+          const rawBody: unknown = await response.json();
+          body = await sendEventResponseSchema.parseAsync(rawBody);
+        } catch (err) {
+          throw await this.getResponseError(response);
+        }
 
-    if (body.status / 100 !== 2 || body.error) {
-      throw await this.getResponseError(response, body.error);
-    }
+        if (body.status !== 200 || body.error) {
+          throw await this.getResponseError(response, body.error);
+        }
+
+        return body;
+      },
+      {
+        maxAttempts: 5,
+        baseDelay: 100,
+      }
+    );
 
     return await applyHookToOutput({ result: { ids: body.ids } });
   }
 
   public createFunction: Inngest.CreateFunction<this> = (
+    rawOptions,
+    rawTrigger,
+    handler
+  ) => {
+    const fn = this._createFunction(rawOptions, rawTrigger, handler);
+
+    this.localFns.push(fn);
+
+    return fn;
+  };
+
+  public get funcs() {
+    return this.localFns;
+  }
+
+  private _createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
     rawTrigger,
     handler
@@ -663,21 +782,28 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
  */
 export namespace Inngest {
   /**
-   * Represents any `Inngest` instance, regardless of generics and
-   * inference.
+   * Represents any `Inngest` instance, regardless of generics and inference.
+   *
+   * Prefer use of `Inngest.Like` where possible to ensure compatibility with
+   * multiple versions.
    */
   export type Any = Inngest;
 
+  /**
+   * References any `Inngest` instance across library versions, useful for use
+   * in public APIs to ensure compatibility with multiple versions.
+   *
+   * Prefer use of `Inngest.Any` internally and `Inngest.Like` for public APIs.
+   */
+  export interface Like {
+    readonly id: string;
+    apiBaseUrl: string | undefined;
+    eventBaseUrl: string | undefined;
+    env: string | null;
+    appVersion?: string | undefined;
+  }
+
   export type CreateFunction<TClient extends Inngest.Any> = <
-    TFnOpts extends Omit<
-      InngestFunction.Options<
-        TClient,
-        TMiddleware,
-        AsArray<TTrigger>,
-        TFailureHandler
-      >,
-      "triggers"
-    >,
     TMiddleware extends InngestMiddleware.Stack,
     TTrigger extends SingleOrArray<
       InngestFunction.Trigger<TriggersFromClient<TClient>>
@@ -711,15 +837,26 @@ export namespace Inngest {
       >
     >,
   >(
-    options: TFnOpts,
+    options: Omit<
+      InngestFunction.Options<
+        TClient,
+        TMiddleware,
+        AsArray<TTrigger>,
+        TFailureHandler
+      >,
+      "triggers"
+    >,
     trigger: TTrigger,
     handler: THandler
   ) => InngestFunction<
-    InngestFunction.Options<
-      TClient,
-      TMiddleware,
-      AsArray<TTrigger>,
-      TFailureHandler
+    Omit<
+      InngestFunction.Options<
+        TClient,
+        TMiddleware,
+        AsArray<TTrigger>,
+        TFailureHandler
+      >,
+      "triggers"
     >,
     THandler,
     TFailureHandler,
@@ -747,7 +884,7 @@ export namespace Inngest {
  */
 export type GetStepTools<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TInngest extends Inngest<any>,
+  TInngest extends Inngest.Any,
   TTrigger extends keyof GetEvents<TInngest> &
     string = keyof GetEvents<TInngest> & string,
 > = GetFunctionInput<TInngest, TTrigger> extends { step: infer TStep }
@@ -893,5 +1030,5 @@ export type GetEvents<
  * @public
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ClientOptionsFromInngest<TInngest extends Inngest<any>> =
+export type ClientOptionsFromInngest<TInngest extends Inngest.Any> =
   TInngest extends Inngest<infer U> ? U : ClientOptions;

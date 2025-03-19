@@ -1,14 +1,13 @@
 import { ZodError, z } from "zod";
-import { type InngestApi } from "../api/api";
-import { stepsSchemas } from "../api/schema";
-import { type InngestFunction } from "../components/InngestFunction";
+import { type InngestApi } from "../api/api.js";
+import { stepsSchemas } from "../api/schema.js";
 import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
-} from "../components/execution/InngestExecution";
-import { err, ok, type Result } from "../types";
-import { prettyError } from "./errors";
-import { type Await } from "./types";
+} from "../components/execution/InngestExecution.js";
+import { err, ok, type Result } from "../types.js";
+import { prettyError } from "./errors.js";
+import { type Await } from "./types.js";
 
 /**
  * Wraps a function with a cache. When the returned function is run, it will
@@ -59,8 +58,17 @@ export const waterfall = <TFns extends ((arg?: any) => any)[]>(
       const prev = await acc;
       const output = (await fn(prev)) as Promise<Await<TFns[number]>>;
 
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-      return transform ? await transform(prev, output) : output;
+      if (transform) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        return await transform(prev, output);
+      }
+
+      if (typeof output === "undefined") {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+        return prev;
+      }
+
+      return output;
     }, Promise.resolve(args[0]));
 
     return chain;
@@ -80,6 +88,7 @@ const fnDataVersionSchema = z.object({
     .literal(-1)
     .or(z.literal(0))
     .or(z.literal(1))
+    .or(z.literal(2))
     .optional()
     .transform<ExecutionVersion>((v) => {
       if (typeof v === "undefined") {
@@ -94,7 +103,7 @@ const fnDataVersionSchema = z.object({
     }),
 });
 
-export const parseFnData = (fn: InngestFunction.Any, data: unknown) => {
+export const parseFnData = (data: unknown) => {
   let version: ExecutionVersion;
 
   try {
@@ -140,6 +149,38 @@ export const parseFnData = (fn: InngestFunction.Any, data: unknown) => {
               event: z.record(z.any()),
               events: z.array(z.record(z.any())).default([]),
               steps: stepsSchemas[ExecutionVersion.V1],
+              ctx: z
+                .object({
+                  run_id: z.string(),
+                  attempt: z.number().default(0),
+                  disable_immediate_execution: z.boolean().default(false),
+                  use_api: z.boolean().default(false),
+                  stack: z
+                    .object({
+                      stack: z
+                        .array(z.string())
+                        .nullable()
+                        .transform((v) => (Array.isArray(v) ? v : [])),
+                      current: z.number(),
+                    })
+                    .passthrough()
+                    .optional()
+                    .nullable(),
+                })
+                .optional()
+                .nullable(),
+            })
+            .parse(data),
+        }) as const,
+
+      [ExecutionVersion.V2]: () =>
+        ({
+          version: ExecutionVersion.V2,
+          ...z
+            .object({
+              event: z.record(z.any()),
+              events: z.array(z.record(z.any())).default([]),
+              steps: stepsSchemas[ExecutionVersion.V2],
               ctx: z
                 .object({
                   run_id: z.string(),

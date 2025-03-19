@@ -1,18 +1,56 @@
+/**
+ * An adapter for Deno's Fresh to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example
+ * ```ts
+ * import { serve } from "https://esm.sh/inngest/deno/fresh";
+ * import { inngest } from "./src/inngest/client.ts";
+ * import fnA from "./src/inngest/fnA"; // Your own function
+ *
+ * export const handler = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ * });
+ * ```
+ *
+ * @module
+ */
+
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "../components/InngestCommHandler";
-import { type SupportedFrameworkName } from "../types";
+} from "../components/InngestCommHandler.js";
+import { type SupportedFrameworkName } from "../types.js";
 
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
 export const frameworkName: SupportedFrameworkName = "deno/fresh";
 
 /**
  * With Deno's Fresh framework, serve and register any declared functions with
  * Inngest, making them available to be triggered by events.
  *
+ * @example
+ * ```ts
+ * import { serve } from "https://esm.sh/inngest/deno/fresh";
+ * import { inngest } from "./src/inngest/client.ts";
+ * import fnA from "./src/inngest/fnA"; // Your own function
+ *
+ * export const handler = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ * });
+ * ```
+ *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((req: Request) => Promise<Response>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
@@ -32,8 +70,8 @@ export const serve = (options: ServeHandlerOptions) => {
 
   const fn = handler.createHandler();
 
-  return function handleRequest(req: Request) {
-    return fn(req, Deno.env.toObject());
+  return function handleRequest(req: Request, ...other) {
+    return fn(req, Deno.env.toObject(), ...other);
   };
 };
 

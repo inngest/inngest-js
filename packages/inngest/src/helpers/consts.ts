@@ -10,9 +10,14 @@ import chalk from "chalk";
  * @public
  */
 export enum queryKeys {
-  FnId = "fnId",
-  StepId = "stepId",
   DeployId = "deployId",
+  FnId = "fnId",
+  Probe = "probe",
+  StepId = "stepId",
+}
+
+export enum probe {
+  Trust = "trust",
 }
 
 export enum envKeys {
@@ -33,6 +38,7 @@ export enum envKeys {
   InngestLogLevel = "INNGEST_LOG_LEVEL",
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
+  InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",
 
   /**
    * @deprecated It's unknown what this env var was used for, but we do not
@@ -105,6 +111,10 @@ export enum envKeys {
   RailwayEnvironment = "RAILWAY_ENVIRONMENT",
 
   VercelEnvKey = "VERCEL_ENV",
+
+  OpenAiApiKey = "OPENAI_API_KEY",
+  GeminiApiKey = "GEMINI_API_KEY",
+  AnthropicApiKey = "ANTHROPIC_API_KEY",
 }
 
 /**
@@ -117,6 +127,7 @@ export enum envKeys {
  * @public
  */
 export enum headerKeys {
+  ContentLength = "content-length",
   Signature = "x-inngest-signature",
   SdkVersion = "x-inngest-sdk",
   Environment = "x-inngest-env",
@@ -127,13 +138,14 @@ export enum headerKeys {
   RetryAfter = "retry-after",
   InngestServerKind = "x-inngest-server-kind",
   InngestExpectedServerKind = "x-inngest-expected-server-kind",
+  InngestSyncKind = "x-inngest-sync-kind",
   TraceParent = "traceparent",
   TraceState = "tracestate",
 }
 
 export const defaultInngestApiBaseUrl = "https://api.inngest.com/";
 export const defaultInngestEventBaseUrl = "https://inn.gs/";
-export const defaultDevServerHost = "http://127.0.0.1:8288/";
+export const defaultDevServerHost = "http://localhost:8288/";
 
 /**
  * Events that Inngest may send internally that can be used to trigger
@@ -152,7 +164,7 @@ export enum internalEvents {
   ScheduledTimer = "inngest/scheduled.timer",
 }
 
-export const logPrefix = chalk.magenta.bold("[Inngest]");
+export const logPrefix: string = chalk.magenta.bold("[Inngest]");
 
 export const debugPrefix = "inngest";
 
@@ -161,4 +173,9 @@ export const dummyEventKey = "NO_EVENT_KEY_SET";
 export enum serverKind {
   Dev = "dev",
   Cloud = "cloud",
+}
+
+export enum syncKind {
+  InBand = "in_band",
+  OutOfBand = "out_of_band",
 }

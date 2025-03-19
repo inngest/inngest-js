@@ -1,13 +1,54 @@
+/**
+ * The primary entrypoint for the Inngest SDK. This provides all the necessary
+ * exports to create, run, and trigger Inngest functions.
+ *
+ * Typical usage involves creating a new Inngest client with `Inngest`, and then
+ * using the client to create functions, middleware, and other tools.
+ *
+ * See {@link https://www.inngest.com/docs} for more information.
+ *
+ * @example Create an Inngest client
+ * ```ts
+ * const inngest = new Inngest({
+ *   id: "my-app-id",
+ * });
+ * ```
+ *
+ * @example Create an Inngest function
+ * ```ts
+ * const myFn = inngest.createFunction({
+ *  id: "my-function",
+ * }, {
+ *   event: "user/created",
+ * }, async ({ event, step }) => {
+ *   console.log("User created:", event.data);
+ * });
+ * ```
+ *
+ * @example Send an event
+ * ```ts
+ * await inngest.send({
+ *   name: "user/created",
+ *   data: {
+ *     id: "123",
+ *   },
+ * });
+ * ```
+ *
+ * @module
+ */
+
+export * from "@inngest/ai";
 export {
   EventSchemas,
+  type AddName,
   type AssertInternalEventPayloads,
   type Combine,
   type LiteralZodEventSchema,
-  type StandardEventSchemaToPayload,
   type StandardEventSchemas,
+  type StandardEventSchemaToPayload,
   type ZodEventSchemas,
-} from "./components/EventSchemas";
-export { Inngest } from "./components/Inngest";
+} from "./components/EventSchemas.js";
 export type {
   ClientOptionsFromInngest,
   EventsFromOpts,
@@ -16,22 +57,23 @@ export type {
   GetFunctionOutput,
   GetStepTools,
 } from "./components/Inngest";
-export { InngestCommHandler } from "./components/InngestCommHandler";
+export { Inngest } from "./components/Inngest.js";
 export type { ServeHandlerOptions } from "./components/InngestCommHandler";
+export { InngestCommHandler } from "./components/InngestCommHandler.js";
 export type { InngestFunction } from "./components/InngestFunction";
-export { referenceFunction } from "./components/InngestFunctionReference";
 export type { InngestFunctionReference } from "./components/InngestFunctionReference";
-export { InngestMiddleware } from "./components/InngestMiddleware";
+export { referenceFunction } from "./components/InngestFunctionReference.js";
 export type {
   MiddlewareOptions,
   MiddlewareRegisterFn,
   MiddlewareRegisterReturn,
 } from "./components/InngestMiddleware";
-export { NonRetriableError } from "./components/NonRetriableError";
-export { RetryAfterError } from "./components/RetryAfterError";
-export { StepError } from "./components/StepError";
-export { headerKeys, internalEvents, queryKeys } from "./helpers/consts";
-export { slugify } from "./helpers/strings";
+export { InngestMiddleware } from "./components/InngestMiddleware.js";
+export { NonRetriableError } from "./components/NonRetriableError.js";
+export { RetryAfterError } from "./components/RetryAfterError.js";
+export { StepError } from "./components/StepError.js";
+export { headerKeys, internalEvents, queryKeys } from "./helpers/consts.js";
+export { slugify } from "./helpers/strings.js";
 export type {
   IsStringLiteral,
   StrictUnion,
@@ -39,8 +81,8 @@ export type {
   UnionKeys,
   WithoutInternal,
 } from "./helpers/types";
-export { ProxyLogger } from "./middleware/logger";
 export type { LogArg } from "./middleware/logger";
+export { ProxyLogger } from "./middleware/logger.js";
 export type {
   BaseContext,
   ClientOptions,
@@ -51,11 +93,14 @@ export type {
   FailureEventPayload,
   FinishedEventPayload,
   Handler,
+  JsonError,
   LogLevel,
   OutgoingOp,
   RegisterOptions,
+  ScheduledTimerEventPayload,
   SendEventBaseOutput,
   StepOptions,
   StepOptionsOrId,
   TimeStr,
 } from "./types";
+export { version } from "./version.js";

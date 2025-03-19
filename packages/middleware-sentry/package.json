@@ -1,0 +1,51 @@
+{
+  "name": "@inngest/middleware-sentry",
+  "version": "0.1.2",
+  "description": "Sentry middleware for Inngest.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "lint": "eslint",
+    "postversion": "pnpm run build",
+    "release:version": "node ../../scripts/release/jsrVersion.js",
+    "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty"
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "inngest-middleware",
+    "inngest",
+    "middleware",
+    "sentry"
+  ],
+  "homepage": "https://github.com/inngest/inngest-js/tree/main/packages/middleware-sentry#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/middleware-sentry"
+  },
+  "author": "Inngest Inc. <hello@inngest.com>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@eslint/js": "^9.7.0",
+    "@sentry/core": "^8.8.0",
+    "@sentry/types": "^8.8.0",
+    "eslint": "^9.18.0",
+    "eslint-plugin-prettier": "^5.2.2",
+    "globals": "^15.14.0",
+    "inngest": "^3.19.11",
+    "typescript": "~5.4.0",
+    "typescript-eslint": "^7.16.1"
+  },
+  "peerDependencies": {
+    "@sentry/core": ">=8.0.0",
+    "@sentry/types": ">=8.0.0",
+    "inngest": ">=3.0.0"
+  }
+}

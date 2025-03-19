@@ -1,11 +1,38 @@
+/**
+ * An adapter for SvelteKit to serve and register any declared functions with
+ * Inngest, making them available to be triggered by events.
+ *
+ * @example
+ * ```ts
+ * // app/routes/api.inngest.ts
+ * // (for Remix 1, use app/routes/api/inngest.ts)
+ * import { serve } from "inngest/remix";
+ * import { inngest } from "~/inngest/client";
+ * import fnA from "~/inngest/fnA";
+ *
+ * const handler = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ * });
+ *
+ * export { handler as action, handler as loader };
+ * ```
+ *
+ * @module
+ */
+
 import { type RequestEvent } from "@sveltejs/kit";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler";
-import { processEnv } from "./helpers/env";
-import { type SupportedFrameworkName } from "./types";
+} from "./components/InngestCommHandler.js";
+import { processEnv } from "./helpers/env.js";
+import { type SupportedFrameworkName } from "./types.js";
 
+/**
+ * The name of the framework, used to identify the framework in Inngest
+ * dashboards and during testing.
+ */
 export const frameworkName: SupportedFrameworkName = "sveltekit";
 
 /**
@@ -14,12 +41,30 @@ export const frameworkName: SupportedFrameworkName = "sveltekit";
  *
  * @example
  * ```ts
- * export const { GET, POST, PUT } = serve(...);
+ * // app/routes/api.inngest.ts
+ * // (for Remix 1, use app/routes/api/inngest.ts)
+ * import { serve } from "inngest/remix";
+ * import { inngest } from "~/inngest/client";
+ * import fnA from "~/inngest/fnA";
+ *
+ * const handler = serve({
+ *   client: inngest,
+ *   functions: [fnA],
+ * });
+ *
+ * export { handler as action, handler as loader };
  * ```
  *
  * @public
  */
-export const serve = (options: ServeHandlerOptions) => {
+// Has explicit return type to avoid JSR-defined "slow types"
+export const serve = (
+  options: ServeHandlerOptions
+): ((event: RequestEvent) => Promise<Response>) & {
+  GET: (event: RequestEvent) => Promise<Response>;
+  POST: (event: RequestEvent) => Promise<Response>;
+  PUT: (event: RequestEvent) => Promise<Response>;
+} => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
@@ -44,9 +89,9 @@ export const serve = (options: ServeHandlerOptions) => {
         },
         transformResponse: ({ body, headers, status }) => {
           /**
-           * If `Response` isn't included in this environment, it's probably a Node
-           * env that isn't already polyfilling. In this case, we can polyfill it
-           * here to be safe.
+           * If `Response` isn't included in this environment, it's probably a
+           * Node env that isn't already polyfilling. In this case, we can
+           * polyfill it here to be safe.
            */
           let Res: typeof Response;
 

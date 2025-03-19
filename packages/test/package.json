@@ -1,0 +1,51 @@
+{
+  "name": "@inngest/test",
+  "version": "0.1.6",
+  "description": "Tooling for testing Inngest functions.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "test": "jest",
+    "build": "pnpm run build:clean && pnpm run build:tsc",
+    "build:clean": "rm -rf ./dist",
+    "build:tsc": "tsc --project tsconfig.build.json",
+    "pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest-test.tgz --cwd dist",
+    "postversion": "pnpm run build",
+    "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
+    "release:version": "node ../../scripts/release/jsrVersion.js"
+  },
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "inngest",
+    "test",
+    "testing"
+  ],
+  "homepage": "https://github.com/inngest/inngest-js/tree/main/packages/test#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/inngest/inngest-js.git",
+    "directory": "packages/test"
+  },
+  "author": "Inngest Inc. <hello@inngest.com>",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "inngest": "^3.31.1",
+    "tinyspy": "^3.0.2",
+    "ulid": "^2.3.0"
+  },
+  "devDependencies": {
+    "prettier": "^3.1.0"
+  }
+}

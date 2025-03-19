@@ -4,16 +4,20 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Inngest, InngestFunction } from "@local";
-import { type ServeHandlerOptions } from "@local/components/InngestCommHandler";
+import {
+  HandlerResponse,
+  InngestCommHandler,
+  type ServeHandlerOptions,
+} from "@local/components/InngestCommHandler";
 import {
   createStepTools,
   getStepOptions,
 } from "@local/components/InngestStepTools";
 import {
   ExecutionVersion,
-  IInngestExecution,
-  InngestExecution,
-  InngestExecutionOptions,
+  type IInngestExecution,
+  type InngestExecution,
+  type InngestExecutionOptions,
   PREFERRED_EXECUTION_VERSION,
 } from "@local/components/execution/InngestExecution";
 import { ServerTiming } from "@local/helpers/ServerTiming";
@@ -22,10 +26,12 @@ import {
   headerKeys,
   queryKeys,
   serverKind,
+  syncKind,
 } from "@local/helpers/consts";
 import { type Env } from "@local/helpers/env";
+import { signDataWithKey } from "@local/helpers/net";
 import { slugify } from "@local/helpers/strings";
-import { EventPayload, type FunctionConfig } from "@local/types";
+import { type EventPayload, type FunctionConfig } from "@local/types";
 import { fromPartial } from "@total-typescript/shoehorn";
 import fetch from "cross-fetch";
 import { type Request, type Response } from "express";
@@ -45,6 +51,23 @@ const createReqRes = (...args: Parameters<typeof httpMocks.createRequest>) => {
   const res = httpMocks.createResponse();
 
   return [req, res] as [typeof req, typeof res];
+};
+
+const retryFetch = async (
+  retries: number,
+  ...args: Parameters<typeof fetch>
+) => {
+  let lastError;
+
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fetch(...args);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError;
 };
 
 /**
@@ -103,7 +126,7 @@ export type StepTools = ReturnType<typeof getStepTools>;
  * Given an Inngest function and the appropriate execution state, return the
  * resulting data from this execution.
  */
-export const runFnWithStack = (
+export const runFnWithStack = async (
   fn: InngestFunction.Any,
   stepState: InngestExecutionOptions["stepState"],
   opts?: {
@@ -133,7 +156,9 @@ export const runFnWithStack = (
     },
   });
 
-  return execution.start();
+  const { ctx: _ctx, ops: _ops, ...rest } = await execution.start();
+
+  return rest;
 };
 
 const inngest = createClient({ id: "test", eventKey: "event-key-123" });
@@ -236,13 +261,29 @@ export const testFramework = (
   const run = async (
     handlerOpts: Parameters<(typeof handler)["serve"]> | ServeHandler,
     reqOpts: Parameters<typeof httpMocks.createRequest>,
-    env: Env = {}
+    env: Env = {},
+
+    /**
+     * Forced action overrides, directly overwriting any fields returned by the
+     * handler.
+     *
+     * This is useful to produce specific scenarios where actions like body
+     * parsing may be missing from a framework.
+     */
+    actionOverrides?: Partial<HandlerResponse>
   ): Promise<HandlerStandardReturn> => {
     const serveHandler = Array.isArray(handlerOpts)
       ? getServeHandler(handlerOpts)
       : handlerOpts;
 
-    const host = "localhost:3000";
+    const headers: Record<string, string> = {
+      host: "localhost:3000",
+    };
+
+    if (reqOpts[0]?.body !== undefined) {
+      headers["content-type"] = "application/json";
+      headers["content-length"] = `${JSON.stringify(reqOpts[0].body).length}`;
+    }
 
     const mockReqOpts: httpMocks.RequestOptions = {
       hostname: "localhost",
@@ -251,7 +292,7 @@ export const testFramework = (
       ...reqOpts[0],
       headers: {
         ...reqOpts[0]?.headers,
-        host,
+        ...headers,
       },
     };
 
@@ -271,6 +312,10 @@ export const testFramework = (
     }
 
     const args = opts?.transformReq?.(req, res, envToPass) ?? [req, res];
+    if (actionOverrides) {
+      args.push({ actionOverrides });
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ret = await (serveHandler as (...args: any[]) => any)(...args);
 
@@ -413,6 +458,29 @@ export const testFramework = (
           { [envKeys.InngestSigningKey]: "signing-key-123" }
         );
 
+        expect(ret.status).toEqual(200);
+
+        const body = JSON.parse(ret.body);
+
+        expect(body).toMatchObject({
+          has_signing_key: true,
+        });
+      });
+
+      test("#690 returns 200 if signature validation fails", async () => {
+        const ret = await run(
+          [
+            {
+              client: createClient({ id: "test", isDev: false }),
+              functions: [],
+            },
+          ],
+          [{ method: "GET" }],
+          { [envKeys.InngestSigningKey]: "signing-key-123" }
+        );
+
+        expect(ret.status).toEqual(200);
+
         const body = JSON.parse(ret.body);
 
         expect(body).toMatchObject({
@@ -422,129 +490,256 @@ export const testFramework = (
     });
 
     describe("PUT (register)", () => {
-      describe("prod env registration", () => {
-        test("register with correct default URL from request", async () => {
-          let reqToMock;
+      describe("out-of-band (legacy)", () => {
+        describe("prod env registration", () => {
+          test("register with correct default URL from request", async () => {
+            let reqToMock;
 
-          nock("https://api.inngest.com")
-            .post("/fn/register", (b) => {
-              reqToMock = b;
+            nock("https://api.inngest.com")
+              .post("/fn/register", (b) => {
+                reqToMock = b;
 
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-              return b;
-            })
-            .reply(200, {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                return b;
+              })
+              .reply(200, {
+                status: 200,
+              });
+
+            const ret = await run(
+              [{ client: inngest, functions: [] }],
+              [
+                {
+                  method: "PUT",
+                  url: "/api/inngest",
+                  headers: {
+                    [headerKeys.InngestServerKind]: serverKind.Dev,
+                  },
+                },
+              ]
+            );
+
+            const retBody = JSON.parse(ret.body);
+
+            expect(ret).toMatchObject({
+              status: 200,
+              headers: expect.objectContaining({
+                [headerKeys.SdkVersion]:
+                  expect.stringContaining("inngest-js:v"),
+                [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
+                [headerKeys.Framework]: expect.stringMatching(
+                  handler.frameworkName
+                ),
+              }),
+            });
+
+            expect(reqToMock).toMatchObject({
+              url: "https://localhost:3000/api/inngest",
+            });
+
+            expect(retBody).toMatchObject({
+              message: "Successfully registered",
+            });
+          });
+
+          test("return correct platform", async () => {
+            nock("https://api.inngest.com").post("/fn/register").reply(200, {
               status: 200,
             });
 
-          const ret = await run(
-            [{ client: inngest, functions: [] }],
-            [
+            const ret = await run(
+              [{ client: inngest, functions: [] }],
+              [
+                {
+                  method: "PUT",
+                  headers: {
+                    [headerKeys.InngestServerKind]: serverKind.Dev,
+                  },
+                },
+              ],
               {
-                method: "PUT",
-                url: "/api/inngest",
-                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
-              },
-            ]
-          );
+                [envKeys.IsNetlify]: "true",
+              }
+            );
 
-          const retBody = JSON.parse(ret.body);
-
-          expect(ret).toMatchObject({
-            status: 200,
-            headers: expect.objectContaining({
-              [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
-              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
-              [headerKeys.Framework]: expect.stringMatching(
-                handler.frameworkName
-              ),
-            }),
+            expect(ret).toMatchObject({
+              headers: expect.objectContaining({
+                [headerKeys.Platform]: "netlify",
+                [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
+              }),
+            });
           });
 
-          expect(reqToMock).toMatchObject({
-            url: "https://localhost:3000/api/inngest",
-          });
+          test("register with correct custom URL from request", async () => {
+            const customUrl = "/foo/bar/inngest/endpoint";
+            let reqToMock;
 
-          expect(retBody).toMatchObject({
-            message: "Successfully registered",
-          });
-        });
+            nock("https://api.inngest.com")
+              .post("/fn/register", (b) => {
+                reqToMock = b;
 
-        test("return correct platform", async () => {
-          nock("https://api.inngest.com").post("/fn/register").reply(200, {
-            status: 200,
-          });
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                return b;
+              })
+              .reply(200, {
+                status: 200,
+              });
 
-          const ret = await run(
-            [{ client: inngest, functions: [] }],
-            [
-              {
-                method: "PUT",
-                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
-              },
-            ],
-            {
-              [envKeys.IsNetlify]: "true",
-            }
-          );
+            const ret = await run(
+              [{ client: inngest, functions: [] }],
+              [
+                {
+                  method: "PUT",
+                  url: customUrl,
+                  headers: {
+                    [headerKeys.InngestServerKind]: serverKind.Dev,
+                  },
+                },
+              ]
+            );
 
-          expect(ret).toMatchObject({
-            headers: expect.objectContaining({
-              [headerKeys.Platform]: "netlify",
-              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
-            }),
-          });
-        });
+            const retBody = JSON.parse(ret.body);
 
-        test("register with correct custom URL from request", async () => {
-          const customUrl = "/foo/bar/inngest/endpoint";
-          let reqToMock;
-
-          nock("https://api.inngest.com")
-            .post("/fn/register", (b) => {
-              reqToMock = b;
-
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-              return b;
-            })
-            .reply(200, {
+            expect(ret).toMatchObject({
               status: 200,
+              headers: expect.objectContaining({
+                [headerKeys.SdkVersion]:
+                  expect.stringContaining("inngest-js:v"),
+                [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
+                [headerKeys.Framework]: expect.stringMatching(
+                  handler.frameworkName
+                ),
+              }),
             });
 
-          const ret = await run(
-            [{ client: inngest, functions: [] }],
-            [
-              {
-                method: "PUT",
-                url: customUrl,
-                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
-              },
-            ]
-          );
+            expect(reqToMock).toMatchObject({
+              url: `https://localhost:3000${customUrl}`,
+            });
 
-          const retBody = JSON.parse(ret.body);
-
-          expect(ret).toMatchObject({
-            status: 200,
-            headers: expect.objectContaining({
-              [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
-              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
-              [headerKeys.Framework]: expect.stringMatching(
-                handler.frameworkName
-              ),
-            }),
+            expect(retBody).toMatchObject({
+              message: "Successfully registered",
+            });
           });
 
-          expect(reqToMock).toMatchObject({
-            url: `https://localhost:3000${customUrl}`,
+          test("register with overwritten host when specified", async () => {
+            let reqToMock;
+
+            nock("https://api.inngest.com")
+              .post("/fn/register", (b) => {
+                reqToMock = b;
+
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                return b;
+              })
+              .reply(200, {
+                status: 200,
+              });
+
+            const fn1 = inngest.createFunction(
+              { id: "fn1" },
+              { event: "demo/event.sent" },
+              () => "fn1"
+            );
+            const serveHost = "https://example.com";
+            const stepId = "step";
+
+            await run(
+              [{ client: inngest, functions: [fn1], serveHost }],
+              [{ method: "PUT" }]
+            );
+
+            expect(reqToMock).toMatchObject({
+              url: `${serveHost}/api/inngest`,
+              functions: [
+                {
+                  steps: {
+                    [stepId]: {
+                      runtime: {
+                        url: `${serveHost}/api/inngest?fnId=test-fn1&stepId=${stepId}`,
+                      },
+                    },
+                  },
+                },
+              ],
+            });
           });
 
-          expect(retBody).toMatchObject({
-            message: "Successfully registered",
+          test("register with overwritten path when specified", async () => {
+            let reqToMock;
+
+            nock("https://api.inngest.com")
+              .post("/fn/register", (b) => {
+                reqToMock = b;
+
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                return b;
+              })
+              .reply(200, {
+                status: 200,
+              });
+
+            const fn1 = inngest.createFunction(
+              { id: "fn1" },
+              { event: "demo/event.sent" },
+              () => "fn1"
+            );
+            const servePath = "/foo/bar/inngest/endpoint";
+            const stepId = "step";
+
+            await run(
+              [{ client: inngest, functions: [fn1], servePath }],
+              [{ method: "PUT" }]
+            );
+
+            expect(reqToMock).toMatchObject({
+              url: `https://localhost:3000${servePath}`,
+              functions: [
+                {
+                  steps: {
+                    [stepId]: {
+                      runtime: {
+                        url: `https://localhost:3000${servePath}?fnId=test-fn1&stepId=${stepId}`,
+                      },
+                    },
+                  },
+                },
+              ],
+            });
           });
         });
 
-        test("register with overwritten host when specified", async () => {
+        describe("env detection and headers", () => {
+          test("uses env headers from client", async () => {
+            nock("https://api.inngest.com").post("/fn/register").reply(200, {});
+
+            const ret = await run(
+              [
+                {
+                  client: new Inngest({ id: "Test", env: "FOO", isDev: false }),
+                  functions: [],
+                },
+              ],
+              [
+                {
+                  method: "PUT",
+                  headers: {
+                    [headerKeys.InngestServerKind]: serverKind.Dev,
+                  },
+                },
+              ]
+            );
+
+            expect(ret).toMatchObject({
+              status: 200,
+              headers: expect.objectContaining({
+                [headerKeys.Environment]: expect.stringMatching("FOO"),
+                [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
+              }),
+            });
+          });
+        });
+
+        test("register with overwritten host and path when specified", async () => {
           let reqToMock;
 
           nock("https://api.inngest.com")
@@ -564,64 +759,22 @@ export const testFramework = (
             () => "fn1"
           );
           const serveHost = "https://example.com";
-          const stepId = "step";
-
-          await run(
-            [{ client: inngest, functions: [fn1], serveHost }],
-            [{ method: "PUT" }]
-          );
-
-          expect(reqToMock).toMatchObject({
-            url: `${serveHost}/api/inngest`,
-            functions: [
-              {
-                steps: {
-                  [stepId]: {
-                    runtime: {
-                      url: `${serveHost}/api/inngest?fnId=test-fn1&stepId=${stepId}`,
-                    },
-                  },
-                },
-              },
-            ],
-          });
-        });
-
-        test("register with overwritten path when specified", async () => {
-          let reqToMock;
-
-          nock("https://api.inngest.com")
-            .post("/fn/register", (b) => {
-              reqToMock = b;
-
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-              return b;
-            })
-            .reply(200, {
-              status: 200,
-            });
-
-          const fn1 = inngest.createFunction(
-            { id: "fn1" },
-            { event: "demo/event.sent" },
-            () => "fn1"
-          );
           const servePath = "/foo/bar/inngest/endpoint";
           const stepId = "step";
 
           await run(
-            [{ client: inngest, functions: [fn1], servePath }],
+            [{ client: inngest, functions: [fn1], serveHost, servePath }],
             [{ method: "PUT" }]
           );
 
           expect(reqToMock).toMatchObject({
-            url: `https://localhost:3000${servePath}`,
+            url: `${serveHost}${servePath}`,
             functions: [
               {
                 steps: {
                   [stepId]: {
                     runtime: {
-                      url: `https://localhost:3000${servePath}?fnId=test-fn1&stepId=${stepId}`,
+                      url: `${serveHost}${servePath}?fnId=test-fn1&stepId=${stepId}`,
                     },
                   },
                 },
@@ -629,151 +782,337 @@ export const testFramework = (
             ],
           });
         });
-      });
 
-      describe("env detection and headers", () => {
-        test("uses env headers from client", async () => {
-          nock("https://api.inngest.com").post("/fn/register").reply(200, {});
+        describe("#493", () => {
+          let serveHandler: ServeHandler;
+          let makeReqWithDeployId: (deployId: string) => Promise<any>;
 
-          const ret = await run(
-            [
-              {
-                client: new Inngest({ id: "Test", env: "FOO", isDev: false }),
-                functions: [],
-              },
-            ],
-            [
-              {
-                method: "PUT",
-                headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
-              },
-            ]
-          );
+          beforeEach(() => {
+            serveHandler = getServeHandler([
+              { client: inngest, functions: [] },
+            ]) as ServeHandler;
 
-          expect(ret).toMatchObject({
-            status: 200,
-            headers: expect.objectContaining({
-              [headerKeys.Environment]: expect.stringMatching("FOO"),
-              [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
-            }),
+            makeReqWithDeployId = async (deployId: string) => {
+              let reqToMock;
+
+              const scope = nock("https://api.inngest.com")
+                .post("/fn/register", (b) => {
+                  reqToMock = b;
+
+                  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+                  return b;
+                })
+                .query((q) =>
+                  deployId
+                    ? q[queryKeys.DeployId] === deployId
+                    : !(queryKeys.DeployId in q)
+                )
+                .reply(200, {
+                  status: 200,
+                });
+
+              await run(serveHandler, [
+                {
+                  method: "PUT",
+                  url: `/api/inngest${
+                    deployId ? `?${queryKeys.DeployId}=${deployId}` : ""
+                  }`,
+                },
+              ]);
+
+              // Asserts that the nock scope was used
+              scope.done();
+
+              return reqToMock;
+            };
+          });
+
+          test("across multiple executions, does not hold on to the deploy ID", async () => {
+            const req1 = await makeReqWithDeployId("1");
+            expect(req1).toMatchObject({
+              url: expect.stringMatching("^https://localhost:3000/api/inngest"),
+              deployId: "1",
+            });
+
+            const req2 = await makeReqWithDeployId("");
+            expect(req2).toMatchObject({
+              url: expect.stringMatching("^https://localhost:3000/api/inngest"),
+            });
+            expect(req2).not.toHaveProperty("deployId");
+
+            const req3 = await makeReqWithDeployId("3");
+            expect(req3).toMatchObject({
+              url: expect.stringMatching("^https://localhost:3000/api/inngest"),
+              deployId: "3",
+            });
           });
         });
+
+        test.todo("register with dev server host from env if specified");
+        test.todo("register with default dev server host if no env specified");
       });
 
-      test("register with overwritten host and path when specified", async () => {
-        let reqToMock;
+      describe("sync type tests", () => {
+        const expectResponse = async (
+          expectedResponse: syncKind | number,
+          {
+            serverMode,
+            sdkMode,
+            requestedSyncKind,
+            validSignature,
+            allowInBandSync,
+            actionOverrides,
+          }: {
+            serverMode: serverKind;
+            sdkMode: serverKind;
+            requestedSyncKind: syncKind | undefined;
+            validSignature: boolean | undefined;
+            allowInBandSync: boolean | undefined;
+            actionOverrides?: Partial<HandlerResponse>;
+          }
+        ) => {
+          const signingKey = "123";
+          const body = { url: "https://example.com/api/inngest" };
+          const ts = Date.now().toString();
 
-        nock("https://api.inngest.com")
-          .post("/fn/register", (b) => {
-            reqToMock = b;
+          const signature = validSignature
+            ? `t=${ts}&s=${signDataWithKey(body, signingKey, ts)}`
+            : validSignature === false
+              ? "INVALID"
+              : undefined;
 
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-            return b;
-          })
-          .reply(200, {
-            status: 200,
-          });
+          let name = `${
+            serverMode === serverKind.Cloud ? "Cloud" : "Dev"
+          } Server -> ${sdkMode === serverKind.Cloud ? "Cloud" : "Dev"} SDK - ${
+            requestedSyncKind
+              ? `requesting ${requestedSyncKind} sync`
+              : "no sync kind specified"
+          } with ${
+            validSignature
+              ? "a valid"
+              : validSignature === false
+                ? "an invalid"
+                : "no"
+          } signature (in-band syncs ${
+            allowInBandSync === false
+              ? "disallowed in"
+              : allowInBandSync === true
+                ? "allowed in"
+                : "undefined as"
+          } env var) should ${
+            typeof expectedResponse === "number" ? "return" : "perform"
+          } ${expectedResponse}`;
 
-        const fn1 = inngest.createFunction(
-          { id: "fn1" },
-          { event: "demo/event.sent" },
-          () => "fn1"
-        );
-        const serveHost = "https://example.com";
-        const servePath = "/foo/bar/inngest/endpoint";
-        const stepId = "step";
-
-        await run(
-          [{ client: inngest, functions: [fn1], serveHost, servePath }],
-          [{ method: "PUT" }]
-        );
-
-        expect(reqToMock).toMatchObject({
-          url: `${serveHost}${servePath}`,
-          functions: [
-            {
-              steps: {
-                [stepId]: {
-                  runtime: {
-                    url: `${serveHost}${servePath}?fnId=test-fn1&stepId=${stepId}`,
+          test(name, async () => {
+            const ret = await run(
+              [{ client: inngest, functions: [] }],
+              [
+                {
+                  method: "PUT",
+                  url: "/api/inngest",
+                  body,
+                  headers: {
+                    [headerKeys.InngestServerKind]: serverMode,
+                    [headerKeys.InngestSyncKind]: requestedSyncKind,
+                    [headerKeys.Signature]: signature,
                   },
                 },
+              ],
+              {
+                [envKeys.InngestSigningKey]: signingKey,
+                [envKeys.InngestDevMode]:
+                  sdkMode === serverKind.Dev ? "true" : "false",
+                ...(typeof allowInBandSync !== "undefined"
+                  ? {
+                      [envKeys.InngestAllowInBandSync]: allowInBandSync
+                        ? "true"
+                        : "false",
+                    }
+                  : {}),
               },
-            },
-          ],
-        });
-      });
+              actionOverrides
+            );
 
-      describe("#493", () => {
-        let serveHandler: ServeHandler;
-        let makeReqWithDeployId: (deployId: string) => Promise<any>;
+            if (typeof expectedResponse === "number") {
+              expect(ret.status).toEqual(expectedResponse);
+            } else {
+              expect(ret).toMatchObject({
+                status: 200,
+                headers: expect.objectContaining({
+                  [headerKeys.InngestSyncKind]: expectedResponse,
+                }),
+              });
+            }
+          });
+        };
 
         beforeEach(() => {
-          serveHandler = getServeHandler([
-            { client: inngest, functions: [] },
-          ]) as ServeHandler;
-
-          makeReqWithDeployId = async (deployId: string) => {
-            let reqToMock;
-
-            const scope = nock("https://api.inngest.com")
-              .post("/fn/register", (b) => {
-                reqToMock = b;
-
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-                return b;
-              })
-              .query((q) =>
-                deployId
-                  ? q[queryKeys.DeployId] === deployId
-                  : !(queryKeys.DeployId in q)
-              )
-              .reply(200, {
-                status: 200,
-              });
-
-            await run(serveHandler, [
-              {
-                method: "PUT",
-                url: `/api/inngest${
-                  deployId ? `?${queryKeys.DeployId}=${deployId}` : ""
-                }`,
-              },
-            ]);
-
-            // Asserts that the nock scope was used
-            scope.done();
-
-            return reqToMock;
-          };
+          nock("https://api.inngest.com").post("/fn/register").reply(200, {
+            status: 200,
+          });
         });
 
-        test("across multiple executions, does not hold on to the deploy ID", async () => {
-          const req1 = await makeReqWithDeployId("1");
-          expect(req1).toMatchObject({
-            url: expect.stringMatching("^https://localhost:3000/api/inngest"),
-            deployId: "1",
+        afterEach(() => {
+          nock.restore();
+          nock.cleanAll();
+        });
+
+        // Always perform out-of-band syncs if the env var is falsey
+        describe("env var disallow", () => {
+          Object.values(serverKind).forEach((serverMode) => {
+            Object.values(serverKind).forEach((sdkMode) => {
+              [undefined, ...Object.values(syncKind)].forEach(
+                (requestedSyncKind) => {
+                  [undefined, false, true].forEach((validSignature) => {
+                    expectResponse(syncKind.OutOfBand, {
+                      serverMode,
+                      sdkMode,
+                      requestedSyncKind,
+                      validSignature,
+                      allowInBandSync: false,
+                    });
+                  });
+                }
+              );
+            });
+          });
+        });
+
+        describe("no sync kind requested", () => {
+          Object.values(serverKind).forEach((serverMode) => {
+            Object.values(serverKind).forEach((sdkMode) => {
+              [undefined, false, true].forEach((validSignature) => {
+                [undefined, true].forEach((allowInBandSync) => {
+                  expectResponse(syncKind.OutOfBand, {
+                    serverMode,
+                    sdkMode,
+                    requestedSyncKind: undefined,
+                    validSignature,
+                    allowInBandSync,
+                  });
+                });
+              });
+            });
+          });
+        });
+
+        // Always perform out-of-band syncs if requested
+        describe("out-of-band requested", () => {
+          Object.values(serverKind).forEach((serverMode) => {
+            Object.values(serverKind).forEach((sdkMode) => {
+              [undefined, false, true].forEach((validSignature) => {
+                [undefined, true].forEach((allowInBandSync) => {
+                  expectResponse(syncKind.OutOfBand, {
+                    serverMode,
+                    sdkMode,
+                    requestedSyncKind: syncKind.OutOfBand,
+                    validSignature,
+                    allowInBandSync,
+                  });
+                });
+              });
+            });
+          });
+        });
+
+        // Perform in-band syncs if requested and allowed
+        describe("in-band requested", () => {
+          describe("with valid signature", () => {
+            Object.values(serverKind).forEach((serverMode) => {
+              Object.values(serverKind).forEach((sdkMode) => {
+                [undefined, true].forEach((allowInBandSync) => {
+                  expectResponse(syncKind.InBand, {
+                    serverMode,
+                    sdkMode,
+                    requestedSyncKind: syncKind.InBand,
+                    validSignature: true,
+                    allowInBandSync,
+                  });
+                });
+              });
+            });
           });
 
-          const req2 = await makeReqWithDeployId("");
-          expect(req2).toMatchObject({
-            url: expect.stringMatching("^https://localhost:3000/api/inngest"),
-          });
-          expect(req2).not.toHaveProperty("deployId");
+          describe("with invalid signature", () => {
+            Object.values(serverKind).forEach((serverMode) => {
+              Object.values(serverKind).forEach((sdkMode) => {
+                [undefined, true].forEach((allowInBandSync) => {
+                  const res =
+                    sdkMode === serverKind.Dev ? syncKind.InBand : 401;
 
-          const req3 = await makeReqWithDeployId("3");
-          expect(req3).toMatchObject({
-            url: expect.stringMatching("^https://localhost:3000/api/inngest"),
-            deployId: "3",
+                  expectResponse(res, {
+                    serverMode,
+                    sdkMode,
+                    requestedSyncKind: syncKind.InBand,
+                    validSignature: false,
+                    allowInBandSync,
+                  });
+                });
+              });
+            });
+          });
+
+          describe("with no signature", () => {
+            Object.values(serverKind).forEach((serverMode) => {
+              Object.values(serverKind).forEach((sdkMode) => {
+                [undefined, true].forEach((allowInBandSync) => {
+                  const res =
+                    sdkMode === serverKind.Dev ? syncKind.InBand : 401;
+
+                  expectResponse(res, {
+                    serverMode,
+                    sdkMode,
+                    requestedSyncKind: syncKind.InBand,
+                    validSignature: undefined,
+                    allowInBandSync,
+                  });
+                });
+              });
+            });
+          });
+
+          describe("#789 with no body", () => {
+            Object.values(serverKind).forEach((serverMode) => {
+              Object.values(serverKind).forEach((sdkMode) => {
+                [undefined, true].forEach((allowInBandSync) => {
+                  expectResponse(500, {
+                    actionOverrides: { body: () => undefined },
+                    serverMode,
+                    sdkMode,
+                    requestedSyncKind: syncKind.InBand,
+                    validSignature: true,
+                    allowInBandSync,
+                  });
+                });
+              });
+            });
           });
         });
       });
-
-      test.todo("register with dev server host from env if specified");
-      test.todo("register with default dev server host if no env specified");
     });
 
     describe("POST (run function)", () => {
+      describe("#789 missing body", () => {
+        test("returns 500", async () => {
+          const client = createClient({ id: "test" });
+
+          const fn = client.createFunction(
+            { name: "Test", id: "test" },
+            { event: "demo/event.sent" },
+            () => "fn"
+          );
+
+          const ret = await run(
+            [{ client, functions: [fn] }],
+            [{ method: "POST" }],
+            {},
+            { body: () => undefined }
+          );
+
+          expect(ret.status).toEqual(500);
+        });
+      });
+
       describe("signature validation", () => {
         const client = createClient({ id: "test" });
 
@@ -795,9 +1134,8 @@ export const testFramework = (
             [{ method: "POST", headers: {} }],
             env
           );
-          expect(ret.status).toEqual(500);
+          expect(ret.status).toEqual(401);
           expect(JSON.parse(ret.body)).toMatchObject({
-            type: "internal",
             message: expect.stringContaining(
               `No ${headerKeys.Signature} provided`
             ),
@@ -809,9 +1147,8 @@ export const testFramework = (
             [{ method: "POST", headers: { [headerKeys.Signature]: "t=&s=" } }],
             env
           );
-          expect(ret.status).toEqual(500);
+          expect(ret.status).toEqual(401);
           expect(JSON.parse(ret.body)).toMatchObject({
-            type: "internal",
             message: expect.stringContaining(
               `Invalid ${headerKeys.Signature} provided`
             ),
@@ -837,7 +1174,7 @@ export const testFramework = (
             env
           );
           expect(ret).toMatchObject({
-            status: 500,
+            status: 401,
             body: expect.stringContaining("Signature has expired"),
           });
         });
@@ -996,8 +1333,78 @@ export const testFramework = (
               env
             );
             expect(ret).toMatchObject({
-              status: 500,
+              status: 401,
               body: expect.stringContaining("Invalid signature"),
+            });
+          });
+        });
+
+        describe("signed response", () => {
+          beforeEach(() => {
+            jest
+              .spyOn(
+                InngestCommHandler.prototype as any,
+                "getResponseSignature"
+              )
+              .mockImplementation(() => {
+                throw new Error("Failed to sign response");
+              });
+          });
+
+          afterEach(() => {
+            jest.restoreAllMocks();
+          });
+
+          test("should throw if request is signed but we fail to sign the response", async () => {
+            const event = {
+              data: {},
+              id: "",
+              name: "inngest/scheduled.timer",
+              ts: 1674082830001,
+              user: {},
+              v: "1",
+            };
+
+            const body = {
+              ctx: {
+                fn_id: "local-testing-local-cron",
+                run_id: "01GQ3HTEZ01M7R8Z9PR1DMHDN1",
+                step_id: "step",
+              },
+              event,
+              events: [event],
+              steps: {},
+              use_api: false,
+            };
+
+            const ret = await run(
+              [
+                {
+                  client: inngest,
+                  functions: [fn],
+                  signingKey:
+                    "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+                  __testingAllowExpiredSignatures: true,
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                } as any,
+              ],
+              [
+                {
+                  method: "POST",
+                  headers: {
+                    [headerKeys.Signature]:
+                      "t=1687306735&s=70312c7815f611a4aa0b6f985910a85a6c232c845838d7f49f1d05fd8b2b0779",
+                  },
+                  url: "/api/inngest?fnId=test-test&stepId=step",
+                  body,
+                },
+              ],
+              env
+            );
+
+            expect(ret).toMatchObject({
+              status: 500,
+              body: expect.stringContaining("Failed to sign response"),
             });
           });
         });
@@ -1181,7 +1588,7 @@ export const eventRunWithName = async (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let run: any;
 
-    for (let i = 0; i < data?.data?.stream?.length ?? 0; i++) {
+    for (let i = 0; i < (data?.data?.stream?.length ?? 0); i++) {
       const item = data?.data?.stream[i];
 
       if (item?.id !== eventId) {
@@ -1350,18 +1757,14 @@ interface CheckIntrospection {
 export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
   describe("introspection", () => {
     it("should be registered in SDK UI", async () => {
-      const res = await fetch("http://localhost:3000/api/inngest");
+      const res = await retryFetch(5, "http://localhost:3000/api/inngest");
 
-      const { success } = z
-        .object({
-          has_signing_key: z.boolean(),
-          has_event_key: z.boolean(),
-          function_count: z.number(),
-          mode: z.string(),
-        })
-        .safeParse(await res.json());
-
-      expect(success).toEqual(true);
+      await expect(res.json()).resolves.toMatchObject({
+        has_signing_key: expect.any(Boolean),
+        has_event_key: expect.any(Boolean),
+        function_count: expect.any(Number),
+        mode: expect.any(String),
+      });
     });
 
     it("should be registered in Dev Server UI", async () => {

@@ -3,11 +3,11 @@
 // along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
 // string in order to read variables.
 
-import { type Inngest } from "../components/Inngest";
-import { type SupportedFrameworkName } from "../types";
-import { version } from "../version";
-import { defaultDevServerHost, envKeys, headerKeys } from "./consts";
-import { stringifyUnknown } from "./strings";
+import { type Inngest } from "../components/Inngest.js";
+import { type SupportedFrameworkName } from "../types.js";
+import { version } from "../version.js";
+import { defaultDevServerHost, envKeys, headerKeys } from "./consts.js";
+import { stringifyUnknown } from "./strings.js";
 
 /**
  * @public
@@ -93,7 +93,7 @@ interface IsProdOptions {
   /**
    * The optional environment variables to use instead of `process.env`.
    */
-  env?: Record<string, unknown>;
+  env?: Record<string, EnvValue>;
 
   /**
    * The Inngest client that's being used when performing this check. This is
@@ -121,6 +121,11 @@ export interface ModeOptions {
    * If the mode was explicitly set as a dev URL, this is the URL that was set.
    */
   explicitDevUrl?: URL;
+
+  /**
+   * Environment variables to use when determining the mode.
+   */
+  env?: Env;
 }
 
 export class Mode {
@@ -133,7 +138,15 @@ export class Mode {
 
   public readonly explicitDevUrl?: URL;
 
-  constructor({ type, isExplicit, explicitDevUrl }: ModeOptions) {
+  private readonly env: Env;
+
+  constructor({
+    type,
+    isExplicit,
+    explicitDevUrl,
+    env = allProcessEnv(),
+  }: ModeOptions) {
+    this.env = env;
     this.type = type;
     this.isExplicit = isExplicit || Boolean(explicitDevUrl);
     this.explicitDevUrl = explicitDevUrl;
@@ -187,7 +200,7 @@ export const getMode = ({
   explicitMode,
 }: IsProdOptions = {}): Mode => {
   if (explicitMode) {
-    return new Mode({ type: explicitMode, isExplicit: true });
+    return new Mode({ type: explicitMode, isExplicit: true, env });
   }
 
   if (client?.["mode"].isExplicit) {
@@ -198,7 +211,7 @@ export const getMode = ({
     if (typeof env[envKeys.InngestDevMode] === "string") {
       try {
         const explicitDevUrl = new URL(env[envKeys.InngestDevMode]);
-        return new Mode({ type: "dev", isExplicit: true, explicitDevUrl });
+        return new Mode({ type: "dev", isExplicit: true, explicitDevUrl, env });
       } catch {
         // no-op
       }
@@ -206,7 +219,11 @@ export const getMode = ({
 
     const envIsDev = parseAsBoolean(env[envKeys.InngestDevMode]);
     if (typeof envIsDev === "boolean") {
-      return new Mode({ type: envIsDev ? "dev" : "cloud", isExplicit: true });
+      return new Mode({
+        type: envIsDev ? "dev" : "cloud",
+        isExplicit: true,
+        env,
+      });
     }
   }
 
@@ -214,7 +231,7 @@ export const getMode = ({
     return checkFns[checkKey](stringifyUnknown(env[key]), expected);
   });
 
-  return new Mode({ type: isProd ? "cloud" : "dev", isExplicit: false });
+  return new Mode({ type: isProd ? "cloud" : "dev", isExplicit: false, env });
 };
 
 /**
@@ -244,7 +261,17 @@ export const processEnv = (key: string): EnvValue => {
   return allProcessEnv()[key];
 };
 
+/**
+ * The Deno environment, which is not always available.
+ */
 declare const Deno: {
+  env: { toObject: () => Env };
+};
+
+/**
+ * The Netlify environment, which is not always available.
+ */
+declare const Netlify: {
   env: { toObject: () => Env };
 };
 
@@ -257,6 +284,7 @@ declare const Deno: {
  * where it may not be defined, such as Deno or the browser.
  */
 export const allProcessEnv = (): Env => {
+  // Node, or Node-like environments
   try {
     // eslint-disable-next-line @inngest/internal/process-warn
     if (process.env) {
@@ -267,8 +295,20 @@ export const allProcessEnv = (): Env => {
     // noop
   }
 
+  // Deno
   try {
     const env = Deno.env.toObject();
+
+    if (env) {
+      return env;
+    }
+  } catch (_err) {
+    // noop
+  }
+
+  // Netlify
+  try {
+    const env = Netlify.env.toObject();
 
     if (env) {
       return env;
@@ -409,9 +449,10 @@ const streamingChecks: Partial<
    * See {@link https://vercel.com/docs/frameworks/nextjs#streaming}
    */
   vercel: (_framework, _env) => typeof EdgeRuntime === "string",
+  "cloudflare-pages": () => true,
 };
 
-const getPlatformName = (env: Env) => {
+export const getPlatformName = (env: Env) => {
   return (Object.keys(platformChecks) as (keyof typeof platformChecks)[]).find(
     (key) => {
       return platformChecks[key](env);
@@ -465,9 +506,23 @@ export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
       try {
         return await givenFetch(...args);
       } catch (err) {
-        console.warn(
-          "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope."
-        );
+        /**
+         * Capture warnings that are not simple fetch failures and highlight
+         * them for the user.
+         *
+         * We also use this opportunity to log the causing error, as code higher
+         * up the stack will likely abstract this.
+         */
+        if (
+          !(err instanceof Error) ||
+          !err.message?.startsWith("fetch failed")
+        ) {
+          console.warn(
+            "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope."
+          );
+          console.error(err);
+        }
+
         throw err;
       }
     };

@@ -1,5 +1,687 @@
 # inngest
 
+## 3.32.9
+
+### Patch Changes
+
+- [#914](https://github.com/inngest/inngest-js/pull/914) [`9a5dd61`](https://github.com/inngest/inngest-js/commit/9a5dd61abb03936bf2df6196ee48e626508b70bf) Thanks [@tonyhb](https://github.com/tonyhb)! - Allow customization of the dev server URL in realtime
+
+## 3.32.8
+
+### Patch Changes
+
+- [#910](https://github.com/inngest/inngest-js/pull/910) [`d184913`](https://github.com/inngest/inngest-js/commit/d184913eaa09f2be39354be6f66abdddefd6c3a8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `shouldOptimizeParallelism()` error when attempting to serve functions using multiple versions of `inngest`
+
+## 3.32.7
+
+### Patch Changes
+
+- [#889](https://github.com/inngest/inngest-js/pull/889) [`5d5bd10`](https://github.com/inngest/inngest-js/commit/5d5bd10169bd7c303dcf8adb93f25990b6cebcaa) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Automatically set all AI models exports in step tooling based on `@inngest/ai` version
+
+## 3.32.6
+
+### Patch Changes
+
+- [#892](https://github.com/inngest/inngest-js/pull/892) [`cb165d1`](https://github.com/inngest/inngest-js/commit/cb165d1f88211e81f61ed6e16cdf7ce23e7f770c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add APIs in preparation for realtime calls
+
+- [#892](https://github.com/inngest/inngest-js/pull/892) [`cb165d1`](https://github.com/inngest/inngest-js/commit/cb165d1f88211e81f61ed6e16cdf7ce23e7f770c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `executingStep` as an ALS property, allowing async contexts to ascertain whether we are in or out of a step
+
+## 3.32.5
+
+### Patch Changes
+
+- [#885](https://github.com/inngest/inngest-js/pull/885) [`90f7c77`](https://github.com/inngest/inngest-js/commit/90f7c7788fee1f880d8daa9a8477fa9a46b00d3a) Thanks [@charlypoly](https://github.com/charlypoly)! - chore: bump `@inngest/ai`
+
+## 3.32.4
+
+### Patch Changes
+
+- [#879](https://github.com/inngest/inngest-js/pull/879) [`94ce222`](https://github.com/inngest/inngest-js/commit/94ce2222c28e57b2b4d3bcad2d15e441faeb5c23) Thanks [@charlypoly](https://github.com/charlypoly)! - chore(inngest): bump `@inngest/ai`
+
+## 3.32.3
+
+### Patch Changes
+
+- [#877](https://github.com/inngest/inngest-js/pull/877) [`b9a6e89`](https://github.com/inngest/inngest-js/commit/b9a6e89e38990144271dc5c867d0c72944d032cd) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `getAsyncCtx()` now correctly finds context when called within:
+  - `step.run()` calls
+  - Middleware hooks
+
+## 3.32.2
+
+### Patch Changes
+
+- [#875](https://github.com/inngest/inngest-js/pull/875) [`80837fd`](https://github.com/inngest/inngest-js/commit/80837fdbe3b461834a0ac5f1613e85f068ff9e00) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Connect now sets the connection state to `CLOSING` while handling and flushing any pending messages instead of immediately going to `CLOSED`
+
+- Updated dependencies [[`6e8b258`](https://github.com/inngest/inngest-js/commit/6e8b258abe7eb48b8a46c6f15fdbc45f1441cbd3)]:
+  - @inngest/ai@0.1.0
+
+## 3.32.1
+
+### Patch Changes
+
+- [#872](https://github.com/inngest/inngest-js/pull/872) [`5c87495`](https://github.com/inngest/inngest-js/commit/5c87495592eb804b150318c6c38712da63f64e5b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Upgrade to `@inngest/ai@0.0.5` for better cross-package compatibility
+
+## 3.32.0
+
+### Minor Changes
+
+- [#862](https://github.com/inngest/inngest-js/pull/862) [`4330563`](https://github.com/inngest/inngest-js/commit/43305631575d0bdfcd3209441463d3384655005d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow opting in to optimized parallelism
+
+### Patch Changes
+
+- [#862](https://github.com/inngest/inngest-js/pull/862) [`4330563`](https://github.com/inngest/inngest-js/commit/43305631575d0bdfcd3209441463d3384655005d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Optimize step data that's been promisified using `@inngest/test` or middleware
+
+- Updated dependencies [[`58684e1`](https://github.com/inngest/inngest-js/commit/58684e19cd35271e5b5b8460443e363165155fe1), [`62e6a85`](https://github.com/inngest/inngest-js/commit/62e6a85d37e12e5772fcec1a26adaf77dbe4d837), [`f446052`](https://github.com/inngest/inngest-js/commit/f4460528585f7f67c066fd7b8b7bdd87562014a0)]:
+  - @inngest/ai@0.0.5
+
+## 3.31.13
+
+### Patch Changes
+
+- [#865](https://github.com/inngest/inngest-js/pull/865) [`b2ff76d`](https://github.com/inngest/inngest-js/commit/b2ff76d21dded71b97b3ef698bc2495136544aa6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure support for `typescript@~5.8.0`
+
+  No notable changes have been made, though minor TypeScript versions often affect transpiled outputs.
+
+## 3.31.12
+
+### Patch Changes
+
+- [#864](https://github.com/inngest/inngest-js/pull/864) [`e47965e`](https://github.com/inngest/inngest-js/commit/e47965eb1c5f4f577f96f95dd5fb2a3afb3a19d0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix event sending failing in some edge environments due to not finding `global.crypto` or `globalThis.crypto` when creating idempotency IDs
+
+- [#856](https://github.com/inngest/inngest-js/pull/856) [`cd63ce3`](https://github.com/inngest/inngest-js/commit/cd63ce32f327b47a980dd64db220b7e53b69df6b) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Connect: Prefer functions passed through `apps` but fall back to functions registered on the client
+
+- [#858](https://github.com/inngest/inngest-js/pull/858) [`ce0c5a8`](https://github.com/inngest/inngest-js/commit/ce0c5a81781ef287a3fb2a2c5500c6a058d657ae) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Optimize function memoization
+
+## 3.31.11
+
+### Patch Changes
+
+- [#851](https://github.com/inngest/inngest-js/pull/851) [`7f96793`](https://github.com/inngest/inngest-js/commit/7f967936dfdb1a332f3370135279ebf7782fb1fc) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Connect: Allow multi-app connections
+
+## 3.31.10
+
+### Patch Changes
+
+- [#852](https://github.com/inngest/inngest-js/pull/852) [`518a5b8`](https://github.com/inngest/inngest-js/commit/518a5b8602a358a78957e0e970d9ba85ef9f4d35) Thanks [@charlypoly](https://github.com/charlypoly)! - chore: bump `@inngest/ai` to `0.0.4`
+
+## 3.31.9
+
+### Patch Changes
+
+- [#848](https://github.com/inngest/inngest-js/pull/848) [`dd1bef8`](https://github.com/inngest/inngest-js/commit/dd1bef893f6e1e90a03643d0c2773af2be8dc5dc) Thanks [@amh4r](https://github.com/amh4r)! - Fix serve ID not considered for in-band syncs
+
+## 3.31.8
+
+### Patch Changes
+
+- [#845](https://github.com/inngest/inngest-js/pull/845) [`a2aadb1`](https://github.com/inngest/inngest-js/commit/a2aadb1baed2b295d9542206db9f5bd887645755) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Connect: Forward tracing and parse user tracing headers
+
+## 3.31.7
+
+### Patch Changes
+
+- [#842](https://github.com/inngest/inngest-js/pull/842) [`4237efd`](https://github.com/inngest/inngest-js/commit/4237efd04aebbca55c027f5fed249a77decf3b1c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow for use of `exactOptionalPropertyTypes: true` when serving
+
+## 3.31.6
+
+### Patch Changes
+
+- [#840](https://github.com/inngest/inngest-js/pull/840) [`b24fd30`](https://github.com/inngest/inngest-js/commit/b24fd304b339d7d216018ebe203c8b53895f5f38) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Sync: Provide app version in register request
+
+## 3.31.5
+
+### Patch Changes
+
+- [#837](https://github.com/inngest/inngest-js/pull/837) [`cb00a46`](https://github.com/inngest/inngest-js/commit/cb00a46c1a1fa4c71a9b76175e9bffd94f27fa0f) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Connect: Rename buildId -> appVersion
+
+- [#838](https://github.com/inngest/inngest-js/pull/838) [`ece27d7`](https://github.com/inngest/inngest-js/commit/ece27d79ccd91fe35f2ff9de09cefafb5745893b) Thanks [@amh4r](https://github.com/amh4r)! - Fix missing env for introspection and in-band sync
+
+## 3.31.4
+
+### Patch Changes
+
+- [#834](https://github.com/inngest/inngest-js/pull/834) [`b304e1c`](https://github.com/inngest/inngest-js/commit/b304e1c41f18ed940885409596ebf8af42050cbe) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Remove connect from inngest client, split out into `inngest/connect`
+
+## 3.31.3
+
+### Patch Changes
+
+- [#831](https://github.com/inngest/inngest-js/pull/831) [`c331190`](https://github.com/inngest/inngest-js/commit/c331190f20055c9609c5daa91d9efa5ac3eeae27) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Read signing key from env var for connect
+
+## 3.31.2
+
+### Patch Changes
+
+- [#824](https://github.com/inngest/inngest-js/pull/824) [`1d72eae`](https://github.com/inngest/inngest-js/commit/1d72eae5029517ae81bdc401ec440fe183f266c1) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Handle immediate WebSocket failure when connecting to gateway
+
+- [#822](https://github.com/inngest/inngest-js/pull/822) [`1136087`](https://github.com/inngest/inngest-js/commit/11360879aebb8cc70e0d8a6cf37ac34f8b294014) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Sending events now has retries, backing off over 5 attempts
+
+## 3.31.1
+
+### Patch Changes
+
+- [#817](https://github.com/inngest/inngest-js/pull/817) [`446be1b`](https://github.com/inngest/inngest-js/commit/446be1b5f1aa5c30328e95d0aa23260b586f04d0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `serve()` and `connect()` now have looser typing for `client` and `functions`, resulting in easier use of multiple `inngest` packages in a single process
+
+- [#823](https://github.com/inngest/inngest-js/pull/823) [`f1d2385`](https://github.com/inngest/inngest-js/commit/f1d23855bc412c0c255dc108e4edefffb203af04) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow wildcard event typing with `.fromRecord()`
+
+  The following schema is now valid:
+
+  ```ts
+  export const schemas = new EventSchemas().fromRecord<{
+    "app/blog.post.*":
+      | {
+          name: "app/blog.post.created";
+          data: {
+            postId: string;
+            authorId: string;
+            createdAt: string;
+          };
+        }
+      | {
+          name: "app/blog.post.published";
+          data: {
+            postId: string;
+            authorId: string;
+            publishedAt: string;
+          };
+        };
+  }>();
+  ```
+
+  When creating a function, this allows you to appropriately type narrow the event to pull out the correct data:
+
+  ```ts
+  inngest.createFunction(
+    { id: "my-fn" },
+    { event: "app/blog.post.*" },
+    async ({ event }) => {
+      if (event.name === "app/blog.post.created") {
+        console.log("Blog post created at:", event.data.createdAt);
+      } else if (event.name === "app/blog.post.published") {
+        console.log("Blog post published at:", event.data.publishedAt);
+      }
+    },
+  );
+  ```
+
+- [#825](https://github.com/inngest/inngest-js/pull/825) [`661ed7b`](https://github.com/inngest/inngest-js/commit/661ed7b278b017958b38e9add6987e35d1a8c616) Thanks [@jpwilliams](https://github.com/jpwilliams)! - If no `functions` are provided to `inngest.connect()`, it will now use any functions that have been created with the client instead
+
+- Updated dependencies [[`fadd94a`](https://github.com/inngest/inngest-js/commit/fadd94a998ae1e996941e88830d0f468fc649a85)]:
+  - @inngest/ai@0.0.3
+
+## 3.31.0
+
+### Minor Changes
+
+- [#820](https://github.com/inngest/inngest-js/pull/820) [`cb02190`](https://github.com/inngest/inngest-js/commit/cb021901ebd996392b345d2a443da72b61d97f9d) Thanks [@amh4r](https://github.com/amh4r)! - Make INNGEST_ALLOW_IN_BAND_SYNC opt out
+
+- [#813](https://github.com/inngest/inngest-js/pull/813) [`f42ab05`](https://github.com/inngest/inngest-js/commit/f42ab05a64f747ffc7042724d68c022a4057a2ac) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Add initial `connect()` support
+
+### Patch Changes
+
+- [#818](https://github.com/inngest/inngest-js/pull/818) [`c99b05f`](https://github.com/inngest/inngest-js/commit/c99b05fe1fb3cfdf2c644608634f02f5acadbbd4) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Add reconnection support to `connect()`
+
+- [#819](https://github.com/inngest/inngest-js/pull/819) [`7a5f4a5`](https://github.com/inngest/inngest-js/commit/7a5f4a56ff60f80366809a5a104a2ff9b65eaed1) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Set `inngest`'s ALS in global state to be able access it across versions and package boundaries
+
+## 3.30.0
+
+### Minor Changes
+
+- [#805](https://github.com/inngest/inngest-js/pull/805) [`9f4244f`](https://github.com/inngest/inngest-js/commit/9f4244f6f62f30624121e66a656a7a23ac4e5f9a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - You can now add a `description` when creating an Inngest function
+
+- [#804](https://github.com/inngest/inngest-js/pull/804) [`7459239`](https://github.com/inngest/inngest-js/commit/74592390bd120ecd82cb686a4bf5f7b82bc5cbbb) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `InngestFunction#absoluteId()` to get the absolute ID of an `InngestFunction`
+
+### Patch Changes
+
+- [#803](https://github.com/inngest/inngest-js/pull/803) [`008d971`](https://github.com/inngest/inngest-js/commit/008d9719024cf0f31e04f1160296052023dc55fa) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `myFn["client"]` is now typed
+
+- [#802](https://github.com/inngest/inngest-js/pull/802) [`32518bf`](https://github.com/inngest/inngest-js/commit/32518bf6558090379b367c1b8c1540c05755b657) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Use `@inngest/ai` to expose AI models, adapters, and types
+
+- Updated dependencies [[`32518bf`](https://github.com/inngest/inngest-js/commit/32518bf6558090379b367c1b8c1540c05755b657)]:
+  - @inngest/ai@0.0.1
+
+## 3.29.3
+
+### Patch Changes
+
+- [#798](https://github.com/inngest/inngest-js/pull/798) [`f426ba6`](https://github.com/inngest/inngest-js/commit/f426ba69f5b6ac40b77a837868cbec06f5846dfc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix named functions returning `never[]` for their parameters when passed to `step.run()`
+
+  ```ts
+  // This now works
+  step.run("", function named() {});
+  ```
+
+## 3.29.2
+
+### Patch Changes
+
+- [#789](https://github.com/inngest/inngest-js/pull/789) [`56067cd`](https://github.com/inngest/inngest-js/commit/56067cd66fa691c398b4a02d2fbfd64d8335ccd1) Thanks [@amh4r](https://github.com/amh4r)! - Better handle missing request body
+
+## 3.29.1
+
+### Patch Changes
+
+- [#794](https://github.com/inngest/inngest-js/pull/794) [`6ffe983`](https://github.com/inngest/inngest-js/commit/6ffe98342cb1b2749047a84a188d287e91fd2307) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Fix inline example to match v3
+
+## 3.29.0
+
+### Minor Changes
+
+- [#788](https://github.com/inngest/inngest-js/pull/788) [`bf1c0d1`](https://github.com/inngest/inngest-js/commit/bf1c0d1fb260bcc1846d2188748227243ce8cb6a) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Add vanilla Node.js serve handler
+
+## 3.28.0
+
+### Minor Changes
+
+- [#776](https://github.com/inngest/inngest-js/pull/776) [`0dbcc87`](https://github.com/inngest/inngest-js/commit/0dbcc874206d8d87c2c1da1773e5390968dfa527) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add experimental `getAsyncCtx()`, allowing the retrieval of a run's input (`event`, `step`, `runId`, etc) from the relevant async chain.
+
+  ```ts
+  import { getAsyncCtx } from "inngest/experimental";
+
+  const ctx = await getAsyncCtx();
+  ```
+
+### Patch Changes
+
+- [#776](https://github.com/inngest/inngest-js/pull/776) [`0dbcc87`](https://github.com/inngest/inngest-js/commit/0dbcc874206d8d87c2c1da1773e5390968dfa527) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Use `@inngest/test@workspace:^` internally for testing
+
+## 3.27.5
+
+### Patch Changes
+
+- [#773](https://github.com/inngest/inngest-js/pull/773) [`fb745ef`](https://github.com/inngest/inngest-js/commit/fb745ef749d851031c494f602ff8611a6b1dab14) Thanks [@amh4r](https://github.com/amh4r)! - Fix Nuxt and H3 uses https in dev
+
+## 3.27.4
+
+### Patch Changes
+
+- [#770](https://github.com/inngest/inngest-js/pull/770) [`3aab141`](https://github.com/inngest/inngest-js/commit/3aab1410e5d45d71404694bef0067a978b1fceae) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Widen the `AiAdapter` types to allow for easy overrides
+
+## 3.27.3
+
+### Patch Changes
+
+- [#768](https://github.com/inngest/inngest-js/pull/768) [`af66ad5`](https://github.com/inngest/inngest-js/commit/af66ad5552dc93d41756ab3b913ceafb72739f77) Thanks [@charlypoly](https://github.com/charlypoly)! - Add `o1-preview` and `o1-mini` to possible OpenAI models
+
+## 3.27.2
+
+### Patch Changes
+
+- [#766](https://github.com/inngest/inngest-js/pull/766) [`fa74c6a`](https://github.com/inngest/inngest-js/commit/fa74c6aefdd3c129ad0e5000e1b869f3507980f1) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add missing `finish_reason` to OpenAI output types
+
+## 3.27.1
+
+### Patch Changes
+
+- [#764](https://github.com/inngest/inngest-js/pull/764) [`1358b80`](https://github.com/inngest/inngest-js/commit/1358b80c758e85bc61e3f9aaa38e72af4bd1b44e) Thanks [@tonyhb](https://github.com/tonyhb)! - Add max_tokens as a param for anthropic model providers
+
+## 3.27.0
+
+### Minor Changes
+
+- [#762](https://github.com/inngest/inngest-js/pull/762) [`255416c`](https://github.com/inngest/inngest-js/commit/255416c4478ac367381da0c166b6762056d94e1d) Thanks [@tonyhb](https://github.com/tonyhb)! - Add `anthropic()` model for `step.ai.*()`
+
+### Patch Changes
+
+- [#760](https://github.com/inngest/inngest-js/pull/760) [`efc6c79`](https://github.com/inngest/inngest-js/commit/efc6c79d5a1baf7a011396b8406aea4982f03778) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure support for `typescript@~5.7.0`
+
+  No notable changes have been made, though minor TypeScript versions often affect transpiled outputs.
+
+## 3.26.3
+
+### Patch Changes
+
+- [#758](https://github.com/inngest/inngest-js/pull/758) [`8af4c25`](https://github.com/inngest/inngest-js/commit/8af4c25f96c30a7617774e7d117d7435fe2723f3) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix OpenAI `tools` types - not properly scoped
+
+- [#757](https://github.com/inngest/inngest-js/pull/757) [`36b61f0`](https://github.com/inngest/inngest-js/commit/36b61f0f4af477196482eee6a0c86061c481e2b2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix false indeterminate function warning
+
+- [#756](https://github.com/inngest/inngest-js/pull/756) [`7916c06`](https://github.com/inngest/inngest-js/commit/7916c066296a858e3b65cfddd0af4ba51689a3ef) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Expose a type that lists the `AiAdapter` for each format
+
+## 3.26.2
+
+### Patch Changes
+
+- [#754](https://github.com/inngest/inngest-js/pull/754) [`2e42438`](https://github.com/inngest/inngest-js/commit/2e42438e42954286e81080a7c6870dbe9882353c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Move AI providers to instead be adapters and models
+
+## 3.26.1
+
+### Patch Changes
+
+- [#752](https://github.com/inngest/inngest-js/pull/752) [`290ad29`](https://github.com/inngest/inngest-js/commit/290ad29d26696c9dac8cb5ab50ca75e0b3d903fc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow editing `step.ai.infer()`
+
+## 3.26.0
+
+### Minor Changes
+
+- [#747](https://github.com/inngest/inngest-js/pull/747) [`871a958`](https://github.com/inngest/inngest-js/commit/871a958bc990216d974b30adc3512672514af912) Thanks [@jacobheric](https://github.com/jacobheric)! - Add `step.ai.*()` tooling, allowing users to leverage AI workflows within Inngest functions
+
+## 3.25.1
+
+### Patch Changes
+
+- [#737](https://github.com/inngest/inngest-js/pull/737) [`aff2a3c`](https://github.com/inngest/inngest-js/commit/aff2a3c96e1037184c5daa7aae2714b2ac5ab0c0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix response signing being able to fail silently
+
+- [#739](https://github.com/inngest/inngest-js/pull/739) [`9a2043d`](https://github.com/inngest/inngest-js/commit/9a2043de3e4b6589590a55c757b126c0c170676b) Thanks [@amh4r](https://github.com/amh4r)! - Fix in-band sync URL
+
+## 3.25.0
+
+### Minor Changes
+
+- [#733](https://github.com/inngest/inngest-js/pull/733) [`96f5965`](https://github.com/inngest/inngest-js/commit/96f59653decff658bbd8c604767ed20e3c0a4c4f) Thanks [@tonyhb](https://github.com/tonyhb)! - Add timeouts as function config
+
+## 3.24.0
+
+### Minor Changes
+
+- [#685](https://github.com/inngest/inngest-js/pull/685) [`801946b`](https://github.com/inngest/inngest-js/commit/801946b349f20cdb9d0b5e77539ba253aab8348a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `"inngest/nitro"` serve handler
+
+### Patch Changes
+
+- [#729](https://github.com/inngest/inngest-js/pull/729) [`511c2a1`](https://github.com/inngest/inngest-js/commit/511c2a1e37db88b62f236247849199c1701fecfb) Thanks [@amh4r](https://github.com/amh4r)! - Fix crash when receiving a PUT without a body
+
+- [#685](https://github.com/inngest/inngest-js/pull/685) [`801946b`](https://github.com/inngest/inngest-js/commit/801946b349f20cdb9d0b5e77539ba253aab8348a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix imports requiring internal extensions when being consumed by true ESM
+
+## 3.23.1
+
+### Patch Changes
+
+- [#657](https://github.com/inngest/inngest-js/pull/657) [`7ca9537`](https://github.com/inngest/inngest-js/commit/7ca9537e11a370b2b8b37ce57ec7d9892c911eac) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Expose `EventSchemas` in `Inngest` instances
+
+- [#311](https://github.com/inngest/inngest-js/pull/311) [`a53356a`](https://github.com/inngest/inngest-js/commit/a53356a68ecfff19a14652186c5840b3a3ed7d89) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add streaming capabilities to `"inngest/cloudflare"` handler
+
+## 3.23.0
+
+### Minor Changes
+
+- [#702](https://github.com/inngest/inngest-js/pull/702) [`4df5a01`](https://github.com/inngest/inngest-js/commit/4df5a010fab833af254615098433a61846e878bc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for in-band syncing
+
+### Patch Changes
+
+- [#721](https://github.com/inngest/inngest-js/pull/721) [`59fa466`](https://github.com/inngest/inngest-js/commit/59fa466211dfe146ce2755601a5a32c49ad0fc88) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Support Next.js 15 in serve handler typing
+
+## 3.22.13
+
+### Patch Changes
+
+- [#709](https://github.com/inngest/inngest-js/pull/709) [`3041afe`](https://github.com/inngest/inngest-js/commit/3041afe290c07a680f94918b4b00072847fd017d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Ensure support for TypeScript 5.6
+
+  No changes to any runtime/user-facing code has been made, but TS upgrades often alter emitted files, so the package will be bumped for folks to take advantage of any performance/compatibility improvments there.
+
+## 3.22.12
+
+### Patch Changes
+
+- [#710](https://github.com/inngest/inngest-js/pull/710) [`fc3f1e5`](https://github.com/inngest/inngest-js/commit/fc3f1e5fb457853c4eea7b6c88bab658e47b4fc8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow access to userland promises when executing for `@inngest/test`
+
+## 3.22.11
+
+### Patch Changes
+
+- [#707](https://github.com/inngest/inngest-js/pull/707) [`8c4b9ce`](https://github.com/inngest/inngest-js/commit/8c4b9ceb70646afc585d3eabfb63fdbf8a7a9d1c) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix probe response sig with streaming
+
+## 3.22.10
+
+### Patch Changes
+
+- [#705](https://github.com/inngest/inngest-js/pull/705) [`f229dea`](https://github.com/inngest/inngest-js/commit/f229dea99e63b94c3d7225936ae92ac1396ecb63) Thanks [@goszczynskip](https://github.com/goszczynskip)! - Fix required type annotation typescript errors; `inngest/types` is now exported with a warning within the module covering its usage
+
+## 3.22.9
+
+### Patch Changes
+
+- [#688](https://github.com/inngest/inngest-js/pull/688) [`58549f3`](https://github.com/inngest/inngest-js/commit/58549f3ccb7dbe72d846b32ebde54928974a61d8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Expose some internal execution logic to make way for a new `@inngest/test` package
+
+## 3.22.8
+
+### Patch Changes
+
+- [#697](https://github.com/inngest/inngest-js/pull/697) [`56ed5c1`](https://github.com/inngest/inngest-js/commit/56ed5c11081517db2a72ae27c83cbf4263d9b6ed) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Merge given env vars with `process.env` to support partial env shims like Hono in AWS Lambda
+
+- [#696](https://github.com/inngest/inngest-js/pull/696) [`9169d0e`](https://github.com/inngest/inngest-js/commit/9169d0ea246ef880fb60c7058b237fb72ef64efa) Thanks [@albertchae](https://github.com/albertchae)! - Fix typos in debounce documentation
+
+## 3.22.7
+
+### Patch Changes
+
+- [#687](https://github.com/inngest/inngest-js/pull/687) [`9f0bdc6`](https://github.com/inngest/inngest-js/commit/9f0bdc60c920d222962e1305e62107ce6fd4c885) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Add exports for `JsonError` type to fix a TypeScript error when using Inngest in projects with `composite` setting in `tsconfig`.
+
+## 3.22.6
+
+### Patch Changes
+
+- [#690](https://github.com/inngest/inngest-js/pull/690) [`6a97e1c`](https://github.com/inngest/inngest-js/commit/6a97e1c0d92920fb14392c7005a565d2557eabe2) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix 401 on missing sig header during inspection
+
+## 3.22.5
+
+### Patch Changes
+
+- [#682](https://github.com/inngest/inngest-js/pull/682) [`2019fe2`](https://github.com/inngest/inngest-js/commit/2019fe218bba7e82c85622d9b90b7eebaa305488) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix empty response body when streaming
+
+- [#684](https://github.com/inngest/inngest-js/pull/684) [`ae7ea5c`](https://github.com/inngest/inngest-js/commit/ae7ea5c66fc7a6829a7d843a5f7f90ab9936e8cd) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow passing `error` when transforming outputs in middleware
+
+## 3.22.4
+
+### Patch Changes
+
+- [#674](https://github.com/inngest/inngest-js/pull/674) [`4100172`](https://github.com/inngest/inngest-js/commit/410017219045c29c0155ecefaf1a1e157b413a41) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add trust probes and response signing for syncing validation
+
+## 3.22.3
+
+### Patch Changes
+
+- [#677](https://github.com/inngest/inngest-js/pull/677) [`f4c3dc4`](https://github.com/inngest/inngest-js/commit/f4c3dc4664ce0727769e7a284e5b1c22ef9c4018) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix wrong URL when INNGEST_DEV=1
+
+## 3.22.2
+
+### Patch Changes
+
+- [#671](https://github.com/inngest/inngest-js/pull/671) [`4f91d9c`](https://github.com/inngest/inngest-js/commit/4f91d9c302592ecc2228914469dd057ae148005b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add de(serialization) of `Error.cause`, meaning nested errors can now be correctly used with `StepError`
+
+## 3.22.1
+
+### Patch Changes
+
+- [#667](https://github.com/inngest/inngest-js/pull/667) [`7e0fd10`](https://github.com/inngest/inngest-js/commit/7e0fd10d742839fc3521cc46b33560be8f3d8dd9) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix event key hash exists when event key is not set
+
+## 3.22.0
+
+### Minor Changes
+
+- [#665](https://github.com/inngest/inngest-js/pull/665) [`1a4962d`](https://github.com/inngest/inngest-js/commit/1a4962dd1d1ba26f41fa8477f3099ad716c57f66) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `inngest.setEnvVars(env)` to set env vars late on the client
+
+## 3.21.2
+
+### Patch Changes
+
+- [#660](https://github.com/inngest/inngest-js/pull/660) [`4ba0ccb`](https://github.com/inngest/inngest-js/commit/4ba0ccb7c616655abffae21aa2aff4932421f285) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Revert not allowing objectish (`[]`) values in `event.data`
+
+## 3.21.1
+
+### Patch Changes
+
+- [#655](https://github.com/inngest/inngest-js/pull/655) [`12df420`](https://github.com/inngest/inngest-js/commit/12df4209a972123e2a46ec2aaef3f5df8f3881b5) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Do not allow objectish `[]` for an event's `data` when providing schemas
+
+  This helps solve an issue whereby types would be happy but sending an event fails at runtime.
+
+## 3.21.0
+
+### Minor Changes
+
+- [#651](https://github.com/inngest/inngest-js/pull/651) [`a527cd3`](https://github.com/inngest/inngest-js/commit/a527cd33c89d409c7d51022517ee579dedd71b7f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add a new `onFunctionRun.finished` middleware hook, allowing you to hook into a run finishing successfully or failing
+
+  ```ts
+  new InngestMiddleware({
+    name: "My Middleware",
+    init() {
+      return {
+        onFunctionRun() {
+          finished({ result }) {
+            // ...
+          },
+        },
+      };
+    },
+  });
+  ```
+
+- [#650](https://github.com/inngest/inngest-js/pull/650) [`db9ed0e`](https://github.com/inngest/inngest-js/commit/db9ed0e24e02254cf1c49a510fb97e61f898899a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow specifying an `env` when sending events via the client
+
+  ```ts
+  await inngest.send({ name: "my.event" }, { env: "my-custom-env" });
+  ```
+
+### Patch Changes
+
+- [#646](https://github.com/inngest/inngest-js/pull/646) [`0c5865c`](https://github.com/inngest/inngest-js/commit/0c5865c17279b1ccad08ffc3fb85771bb9f207d1) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix circular `ctx` type in middleware for TS <5.1
+
+- [#651](https://github.com/inngest/inngest-js/pull/651) [`a527cd3`](https://github.com/inngest/inngest-js/commit/a527cd33c89d409c7d51022517ee579dedd71b7f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `beforeExecution()` hook order when all state has been used running before `afterMemoization()`
+
+## 3.20.0
+
+### Minor Changes
+
+- [#645](https://github.com/inngest/inngest-js/pull/645) [`809b4ef`](https://github.com/inngest/inngest-js/commit/809b4efec259a608ce77a004d98fbc2f36d2bc3a) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Introduces support for the `key` expression on the batchEvents configuration. This can be used to batch events by customer. For more details, check out the [batching documentation](https://innge.st/batching)!
+
+## 3.19.22
+
+### Patch Changes
+
+- [#644](https://github.com/inngest/inngest-js/pull/644) [`7eb27e4`](https://github.com/inngest/inngest-js/commit/7eb27e4683153a700319f820a0605c89d21c0d93) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Loosen typing on `match` options and mark as deprecated to remove performance concerns in codebases with a very large number of event types; all `match` fields are now simply typed as `string`
+
+- [#641](https://github.com/inngest/inngest-js/pull/641) [`99f196a`](https://github.com/inngest/inngest-js/commit/99f196a26b9b346c69739989b1aa38aa4b1ff7a8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove incorrect type showing internal events in `step.waitForEvent()`
+
+## 3.19.21
+
+### Patch Changes
+
+- [#622](https://github.com/inngest/inngest-js/pull/622) [`c041d6f`](https://github.com/inngest/inngest-js/commit/c041d6f08ba1039f73b62435a113128eb2435641) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix rare theoretical checkpoint hang
+
+## 3.19.20
+
+### Patch Changes
+
+- [#636](https://github.com/inngest/inngest-js/pull/636) [`b0e6237`](https://github.com/inngest/inngest-js/commit/b0e6237b427d6b8a9e2333d8198798f4c8e61339) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix inferred dev mode resulting in contacting the production API when fetching large state
+
+- [#634](https://github.com/inngest/inngest-js/pull/634) [`ac402ef`](https://github.com/inngest/inngest-js/commit/ac402ef743dbe99261a7728701df70ddd9beaf5d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Change an error when function configuration is invalid to a warning instead
+
+## 3.19.19
+
+### Patch Changes
+
+- [#631](https://github.com/inngest/inngest-js/pull/631) [`ac6796c`](https://github.com/inngest/inngest-js/commit/ac6796c4c8b381c7d8c66e5247afbb40632d0417) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix exception being thrown from `debug` when used with Nitro running on Cloudflare Pages
+
+- [`191fe36`](https://github.com/inngest/inngest-js/commit/191fe360b14d74fde73245a6acc3423ea07b7bf6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix failure handlers incorrectly inheriting config options such as `batchEvents` and `concurrency` from their parent function
+
+- [#630](https://github.com/inngest/inngest-js/pull/630) [`d4de6d7`](https://github.com/inngest/inngest-js/commit/d4de6d7db0e03f8ca896d1216d38d0b0e9f954e8) Thanks [@stefanosala](https://github.com/stefanosala)! - Fix missing config fields such as `concurrency` when validating
+
+## 3.19.18
+
+### Patch Changes
+
+- [#625](https://github.com/inngest/inngest-js/pull/625) [`3ae2c9b`](https://github.com/inngest/inngest-js/commit/3ae2c9b186613f0a441d98f5d020755b34acaa4f) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Clearly log invalid function configurations for users, circumventing non-exhaustive typing for extraneous properties in client and function config
+
+- [#628](https://github.com/inngest/inngest-js/pull/628) [`996c0c5`](https://github.com/inngest/inngest-js/commit/996c0c503bec6f0ac2fc2897c87a6a416c88c3eb) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Removed inspect message
+
+## 3.19.17
+
+### Patch Changes
+
+- [#623](https://github.com/inngest/inngest-js/pull/623) [`cc96657`](https://github.com/inngest/inngest-js/commit/cc966578fce01d65a0916ae56c4a47037e2b548f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Upgraded TypeScript to 5.5.
+
+  No change in behaviour or downstream compatibility is expected, but emitted declaration files will still change, so the patch version will bump for all affected packages.
+
+- [#626](https://github.com/inngest/inngest-js/pull/626) [`6e41c90`](https://github.com/inngest/inngest-js/commit/6e41c9080e599a43c078ef8c88bbb593183d7d4d) Thanks [@cohlar](https://github.com/cohlar)! - Export `ScheduledTimerEventPayload` for ESM
+
+## 3.19.16
+
+### Patch Changes
+
+- [#618](https://github.com/inngest/inngest-js/pull/618) [`1f0cb29`](https://github.com/inngest/inngest-js/commit/1f0cb2910776184c1444c709f6c7c8ad1fddf2e4) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Expose `InngestFunction#createExecution()` as a `protected` method to allow custom unit testing.
+
+  Note that this is an internal API and can change at any time; first-party testing tools will be adde at a later date.
+
+## 3.19.15
+
+### Patch Changes
+
+- [#619](https://github.com/inngest/inngest-js/pull/619) [`7542fc2`](https://github.com/inngest/inngest-js/commit/7542fc2512677e566ef1ba7b3ddc3dd5994069df) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `"inngest/cloudflare"` serve handler now supports both Cloudflare Pages Functions and Cloudflare Workers
+
+## 3.19.14
+
+### Patch Changes
+
+- [#611](https://github.com/inngest/inngest-js/pull/611) [`f36c442`](https://github.com/inngest/inngest-js/commit/f36c4420e066b5733e848a36d05f2cd866167a34) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for global `Netlify.env` objects when accessing environment variables
+
+- [#614](https://github.com/inngest/inngest-js/pull/614) [`7970faa`](https://github.com/inngest/inngest-js/commit/7970faa409a67ba492ac161dcc7eccb1ab814149) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix attempting to register without a path when using a URL from `INNGEST_DEV`
+
+- [#615](https://github.com/inngest/inngest-js/pull/615) [`baa9e5e`](https://github.com/inngest/inngest-js/commit/baa9e5e63397943cd3c65896d7e908bf451e3c20) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add maximum recursion depth for object path typing for `step.waitForEvent()`'s `match` and `cancelOn`
+
+## 3.19.13
+
+### Patch Changes
+
+- [#612](https://github.com/inngest/inngest-js/pull/612) [`2d6e4e1`](https://github.com/inngest/inngest-js/commit/2d6e4e1fb423c889db9c75d7e22996b1eb7864dd) Thanks [@goodoldneon](https://github.com/goodoldneon)! - Fix event key appearing invalid when securely introspected via the dashboard
+
+## 3.19.12
+
+### Patch Changes
+
+- [#604](https://github.com/inngest/inngest-js/pull/604) [`8b41f6b`](https://github.com/inngest/inngest-js/commit/8b41f6b7c7a89d62e851920970de52ba5a3b2734) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Give all `serve()`-related peer dependencies a wider range and make them optional, silencing warnings when installing `inngest`
+
+## 3.19.11
+
+### Patch Changes
+
+- [#597](https://github.com/inngest/inngest-js/pull/597) [`cf22183`](https://github.com/inngest/inngest-js/commit/cf22183668f64e1a3824b1e5a3f1239c39bc7ee6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix serve handler's `fetch` implementation incorrectly being marked as custom if no custom `fetch` is given to `new Inngest()`
+
+- [#597](https://github.com/inngest/inngest-js/pull/597) [`cf22183`](https://github.com/inngest/inngest-js/commit/cf22183668f64e1a3824b1e5a3f1239c39bc7ee6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Reduce incorrect occurences of the following log when a call with `fetch` fails
+
+  ```
+  A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope.
+  ```
+
+## 3.19.10
+
+### Patch Changes
+
+- [#599](https://github.com/inngest/inngest-js/pull/599) [`a2e7bd7`](https://github.com/inngest/inngest-js/commit/a2e7bd7e33b61b7ed866725f1354d60d7ee65a6c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Widen `@sveltejs/kit` peer dep range to `>=1.27.3` from `^1.27.3`
+
+## 3.19.9
+
+### Patch Changes
+
+- [#595](https://github.com/inngest/inngest-js/pull/595) [`dd7f5ac`](https://github.com/inngest/inngest-js/commit/dd7f5aca48d7644713357cf64035f0238cbf7e0a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Set explicit return types for `"inngest/fastify"` for JSR publishing
+
+- [`519d66b`](https://github.com/inngest/inngest-js/commit/519d66b413e5f5494f3d75bf4a768900533ff010) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allowed secure introspection of the Inngest endpoint for improved debugging and observability
+
+- [#594](https://github.com/inngest/inngest-js/pull/594) [`41b02b2`](https://github.com/inngest/inngest-js/commit/41b02b228c51ce70c2be3a67f058483b3519abf0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix typing for `"inngest/lambda"` handler being incorrect Proxy type
+
+## 3.19.8
+
+### Patch Changes
+
+- [#584](https://github.com/inngest/inngest-js/pull/584) [`ab21a6e`](https://github.com/inngest/inngest-js/commit/ab21a6e1e5f527f97bd5972a41c2cd9339e75fc4) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add JSR badge to `README.md`
+
+- [#587](https://github.com/inngest/inngest-js/pull/587) [`c51c3df`](https://github.com/inngest/inngest-js/commit/c51c3df373c2f6fbc3cf0276807bc7bb83db8f3f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Documented all entrypoints with `@module` comments
+
+## 3.19.7
+
+### Patch Changes
+
+- [#582](https://github.com/inngest/inngest-js/pull/582) [`5d1ad4a`](https://github.com/inngest/inngest-js/commit/5d1ad4af8532416d41491d0e6a9c6a9f10ce0bb4) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Allow in-CI changes when publishing to JSR; mostly a vanity bump
+
+## 3.19.6
+
+### Patch Changes
+
+- [#580](https://github.com/inngest/inngest-js/pull/580) [`d8a2de0`](https://github.com/inngest/inngest-js/commit/d8a2de0dcefd4b50b6b8216158566d77bb6ee405) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Vanity bump for JSR deploy
+
+## 3.19.5
+
+### Patch Changes
+
+- [#576](https://github.com/inngest/inngest-js/pull/576) [`f1be005`](https://github.com/inngest/inngest-js/commit/f1be0051154590bda51fe20c9bbcba8c20148d65) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix function-level middleware typing being missing; only client-level was providing types
+
 ## 3.19.4
 
 ### Patch Changes

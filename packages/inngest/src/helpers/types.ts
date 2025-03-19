@@ -1,4 +1,4 @@
-import { type EventPayload } from "../types";
+import { type EventPayload } from "../types.js";
 
 /**
  * Returns the given generic as either itself or an array of itself.
@@ -79,8 +79,12 @@ export type SendEventPayload<Events extends Record<string, EventPayload>> =
  * @public
  */
 export type WithoutInternal<T extends Record<string, EventPayload>> = {
-  [K in keyof T as K extends `inngest/${string}` ? never : K]: T[K];
+  [K in keyof T as WithoutInternalStr<K & string>]: T[K];
 };
+
+export type WithoutInternalStr<T extends string> = T extends `inngest/${string}`
+  ? never
+  : T;
 
 /**
  * A list of simple, JSON-compatible, primitive types that contain no other
@@ -94,70 +98,6 @@ export type Primitive =
   | boolean
   | symbol
   | bigint;
-
-/**
- * Returns `true` if `T` is a tuple, else `false`.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type IsTuple<T extends ReadonlyArray<any>> = number extends T["length"]
-  ? false
-  : true;
-
-/**
- * Given a tuple `T`, return the keys of that tuple, excluding any shared or
- * generic keys like `number` and standard array methods.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type TupleKeys<T extends ReadonlyArray<any>> = Exclude<keyof T, keyof any[]>;
-
-/**
- * Returns `true` if `T1` matches anything in the union `T2`, else` never`.
- */
-type AnyIsEqual<T1, T2> = T1 extends T2
-  ? IsEqual<T1, T2> extends true
-    ? true
-    : never
-  : never;
-
-/**
- * A helper for concatenating an existing path `K` with new paths from the
- * value `V`, making sure to skip those we've already seen in
- * `TraversedTypes`.
- *
- * Purposefully skips some primitive objects to avoid building unsupported or
- * recursive paths.
- */
-type PathImpl<K extends string | number, V, TraversedTypes> = V extends
-  | Primitive
-  | Date
-  ? `${K}`
-  : true extends AnyIsEqual<TraversedTypes, V>
-    ? `${K}`
-    : `${K}` | `${K}.${PathInternal<V, TraversedTypes | V>}`;
-
-/**
- * Start iterating over a given object `T` and return all string paths used to
- * access properties within that object as if you were in code.
- */
-type PathInternal<T, TraversedTypes = T> = T extends ReadonlyArray<infer V>
-  ? IsTuple<T> extends true
-    ? {
-        [K in TupleKeys<T>]-?: PathImpl<K & string, T[K], TraversedTypes>;
-      }[TupleKeys<T>]
-    : PathImpl<number, V, TraversedTypes>
-  : {
-      [K in keyof T]-?: PathImpl<K & string, T[K], TraversedTypes>;
-    }[keyof T];
-
-/**
- * Given an object, recursively return all string paths used to access
- * properties within that object as if you were in code.
- *
- * This is an exported helper method to ensure we only try to access object
- * paths of known objects.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ObjectPaths<T> = T extends any ? PathInternal<T> : never;
 
 /**
  * Returns all keys from objects in the union `T`.
@@ -475,3 +415,12 @@ export type IsLiteral<T, Then = true, Else = false> = string extends T
 export type KnownKeys<T> = keyof {
   [K in keyof T as IsLiteral<K, K, never>]: T[K];
 };
+
+/**
+ * Given an object `T`, return the keys of that object that are public, ignoring
+ * `private` and `protected` keys.
+ *
+ * This shouldn't commonly be used or exposed in user-facing types, as it can
+ * skew extension checks.
+ */
+export type Public<T> = { [K in keyof T]: T[K] };

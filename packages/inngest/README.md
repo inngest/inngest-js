@@ -15,6 +15,7 @@
 
 <a href="http://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TS-%3E%3D4.7-blue" /></a>
 <a href="https://www.npmjs.com/package/inngest"><img src="https://img.shields.io/npm/v/inngest" /></a>
+<a href="https://jsr.io/@inngest/sdk"><img src="https://jsr.io/badges/@inngest/sdk" /></a>
 <br/>
 <a href="https://www.inngest.com/discord"><img src="https://img.shields.io/discord/842170679536517141?label=discord" /></a>
 <a href="https://twitter.com/inngest"><img src="https://img.shields.io/twitter/follow/inngest?style=social" /></a>

@@ -104,3 +104,259 @@ jobs:
             The last release was built and published from ${{ github.event.pull_request.head.sha }}.
           edit-mode: replace
 
+  prerelease_middleware-sentry:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/middleware-sentry
+    if: contains(github.event.pull_request.labels.*.name, 'prerelease/middleware-sentry')
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+
+      - run: pnpm install
+
+      - run: pnpm build
+
+      - name: Prerelease PR
+        run: node ../../scripts/release/prerelease.js
+        env:
+          TAG: pr-${{ github.event.pull_request.number }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_ENV: test # disable npm access checks; they don't work in CI
+
+      - name: Update PR with latest prerelease
+        uses: edumserrano/find-create-or-update-comment@v1
+        with:
+          token: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "<!-- pr-prerelease-comment-middleware-sentry -->"
+          comment-author: "inngest-release-bot"
+          body:
+            | # can be a single value or you can compose text with multi-line values
+            <!-- pr-prerelease-comment-middleware-sentry -->
+            A user has added the <kbd>[prerelease/middleware-sentry](https://github.com/inngest/inngest-js/labels/prerelease%2Fmiddleware-sentry)</kbd> label, so this PR will be published to npm with the tag `pr-${{ github.event.pull_request.number }}`. It will be updated with the latest changes as you push commits to this PR.
+
+            You can install this prerelease version with:
+
+            ```sh
+            npm install @inngest/middleware-sentry@pr-${{ github.event.pull_request.number }}
+            ```
+
+            The last release was built and published from ${{ github.event.pull_request.head.sha }}.
+          edit-mode: replace
+
+  prerelease_middleware-encryption:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/middleware-encryption
+    if: contains(github.event.pull_request.labels.*.name, 'prerelease/middleware-encryption')
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+
+      - run: pnpm install
+
+      - run: pnpm build
+
+      - name: Prerelease PR
+        run: node ../../scripts/release/prerelease.js
+        env:
+          TAG: pr-${{ github.event.pull_request.number }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_ENV: test # disable npm access checks; they don't work in CI
+          DIST_DIR: dist
+
+      - name: Update PR with latest prerelease
+        uses: edumserrano/find-create-or-update-comment@v1
+        with:
+          token: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "<!-- pr-prerelease-comment-middleware-encryption -->"
+          comment-author: "inngest-release-bot"
+          body:
+            | # can be a single value or you can compose text with multi-line values
+            <!-- pr-prerelease-comment-middleware-encryption -->
+            A user has added the <kbd>[prerelease/middleware-encryption](https://github.com/inngest/inngest-js/labels/prerelease%2Fmiddleware-encryption)</kbd> label, so this PR will be published to npm with the tag `pr-${{ github.event.pull_request.number }}`. It will be updated with the latest changes as you push commits to this PR.
+
+            You can install this prerelease version with:
+
+            ```sh
+            npm install @inngest/middleware-encryption@pr-${{ github.event.pull_request.number }}
+            ```
+
+            The last release was built and published from ${{ github.event.pull_request.head.sha }}.
+          edit-mode: replace
+
+  prerelease_test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/test
+    if: contains(github.event.pull_request.labels.*.name, 'prerelease/test')
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+
+      - run: pnpm install
+
+      - run: pnpm build
+
+      - name: Prerelease PR
+        run: node ../../scripts/release/prerelease.js
+        env:
+          TAG: pr-${{ github.event.pull_request.number }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_ENV: test # disable npm access checks; they don't work in CI
+          DIST_DIR: dist
+
+      - name: Update PR with latest prerelease
+        uses: edumserrano/find-create-or-update-comment@v1
+        with:
+          token: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "<!-- pr-prerelease-comment-test -->"
+          comment-author: "inngest-release-bot"
+          body:
+            | # can be a single value or you can compose text with multi-line values
+            <!-- pr-prerelease-comment-test -->
+            A user has added the <kbd>[prerelease/test](https://github.com/inngest/inngest-js/labels/prerelease%2Ftest)</kbd> label, so this PR will be published to npm with the tag `pr-${{ github.event.pull_request.number }}`. It will be updated with the latest changes as you push commits to this PR.
+
+            You can install this prerelease version with:
+
+            ```sh
+            npm install @inngest/test@pr-${{ github.event.pull_request.number }}
+            ```
+
+            The last release was built and published from ${{ github.event.pull_request.head.sha }}.
+          edit-mode: replace
+
+  prerelease_ai:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/ai
+    if: contains(github.event.pull_request.labels.*.name, 'prerelease/ai')
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+
+      - run: pnpm install
+
+      - run: pnpm build
+
+      - name: Prerelease PR
+        run: node ../../scripts/release/prerelease.js
+        env:
+          TAG: pr-${{ github.event.pull_request.number }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_ENV: test # disable npm access checks; they don't work in CI
+
+      - name: Update PR with latest prerelease
+        uses: edumserrano/find-create-or-update-comment@v1
+        with:
+          token: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "<!-- pr-prerelease-comment-ai -->"
+          comment-author: "inngest-release-bot"
+          body:
+            | # can be a single value or you can compose text with multi-line values
+            <!-- pr-prerelease-comment-ai -->
+            A user has added the <kbd>[prerelease/ai](https://github.com/inngest/inngest-js/labels/prerelease%2Fai)</kbd> label, so this PR will be published to npm with the tag `pr-${{ github.event.pull_request.number }}`. It will be updated with the latest changes as you push commits to this PR.
+
+            You can install this prerelease version with:
+
+            ```sh
+            npm install @inngest/ai@pr-${{ github.event.pull_request.number }}
+            ```
+
+            The last release was built and published from ${{ github.event.pull_request.head.sha }}.
+          edit-mode: replace
+
+  prerelease_realtime:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/realtime
+    if: contains(github.event.pull_request.labels.*.name, 'prerelease/realtime')
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+
+      - run: pnpm install
+
+      - run: pnpm build
+
+      - name: Prerelease PR
+        run: node ../../scripts/release/prerelease.js
+        env:
+          TAG: pr-${{ github.event.pull_request.number }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_ENV: test # disable npm access checks; they don't work in CI
+
+      - name: Update PR with latest prerelease
+        uses: edumserrano/find-create-or-update-comment@v1
+        with:
+          token: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "<!-- pr-prerelease-comment-realtime -->"
+          comment-author: "inngest-release-bot"
+          body:
+            | # can be a single value or you can compose text with multi-line values
+            <!-- pr-prerelease-comment-realtime -->
+            A user has added the <kbd>[prerelease/realtime](https://github.com/inngest/inngest-js/labels/prerelease%2Frealtime)</kbd> label, so this PR will be published to npm with the tag `pr-${{ github.event.pull_request.number }}`. It will be updated with the latest changes as you push commits to this PR.
+
+            You can install this prerelease version with:
+
+            ```sh
+            npm install @inngest/realtime@pr-${{ github.event.pull_request.number }}
+            ```
+
+            The last release was built and published from ${{ github.event.pull_request.head.sha }}.
+          edit-mode: replace

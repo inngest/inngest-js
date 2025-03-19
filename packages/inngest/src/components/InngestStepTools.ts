@@ -1,15 +1,16 @@
+import { models, type AiAdapter } from "@inngest/ai";
 import { type Temporal } from "@js-temporal/polyfill";
 import { z } from "zod";
-import { logPrefix } from "../helpers/consts";
-import { type Jsonify } from "../helpers/jsonify";
-import { timeStr } from "../helpers/strings";
+import { logPrefix } from "../helpers/consts.js";
+import { type Jsonify } from "../helpers/jsonify.js";
+import { timeStr } from "../helpers/strings.js";
 import {
   type ExclusiveKeys,
-  type ObjectPaths,
   type ParametersExceptFirst,
   type SendEventPayload,
   type SimplifyDeep,
-} from "../helpers/types";
+  type WithoutInternalStr,
+} from "../helpers/types.js";
 import {
   StepOpCode,
   type EventPayload,
@@ -22,28 +23,61 @@ import {
   type StepOptionsOrId,
   type TriggerEventFromFunction,
   type TriggersFromClient,
-} from "../types";
+} from "../types.js";
 import {
   type ClientOptionsFromInngest,
   type GetEvents,
   type GetFunctionOutput,
   type Inngest,
-} from "./Inngest";
-import { InngestFunction } from "./InngestFunction";
-import { InngestFunctionReference } from "./InngestFunctionReference";
-import { type InngestExecution } from "./execution/InngestExecution";
+} from "./Inngest.js";
+import { InngestFunction } from "./InngestFunction.js";
+import { InngestFunctionReference } from "./InngestFunctionReference.js";
+
+import { type InngestExecution } from "./execution/InngestExecution.js";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
   fn?: (...args: unknown[]) => unknown;
+  rawArgs: unknown[];
+
+  /**
+   * A boolean representing whether the step has been fulfilled, either
+   * resolving or rejecting the `Promise` returned to userland code.
+   *
+   * Note that this is distinct from {@link hasStepState}, which instead tracks
+   * whether the step has been given some state from the Executor. State from
+   * the Executor could be data other than a resolution or rejection, such as
+   * inputs.
+   */
   fulfilled: boolean;
+
+  /**
+   * A boolean representing whether the step has been given some state from the
+   * Executor. State from the Executor could be data other than a resolution or
+   * rejection, such as inputs.
+   *
+   * This is distinct from {@link fulfilled}, which instead tracks whether the
+   * step has been fulfilled, either resolving or rejecting the `Promise`
+   * returned to userland code.
+   */
+  hasStepState: boolean;
+
   handled: boolean;
+
+  /**
+   * The promise that has been returned to userland code for this step.
+   */
+  promise: Promise<unknown>;
 
   /**
    * Returns a boolean representing whether or not the step was handled on this
    * invocation.
    */
   handle: () => boolean;
+
+  // TODO This is used to track the input we want for this step. Might be
+  // present in ctx from Executor.
+  input?: unknown;
 }
 
 export type MatchOpFn<
@@ -110,10 +144,7 @@ export const STEP_INDEXING_SUFFIX = ":";
  * An op stack (function state) is passed in as well as some mutable properties
  * that the tools can use to submit a new op.
  */
-export const createStepTools = <
-  TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
->(
+export const createStepTools = <TClient extends Inngest.Any>(
   client: TClient,
   execution: InngestExecution,
   stepHandler: StepHandler
@@ -142,6 +173,75 @@ export const createStepTools = <
       const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
       return stepHandler({ args: parsedArgs, matchOp, opts });
     }) as T;
+  };
+
+  /**
+   * Create a new step run tool that can be used to run a step function using
+   * `step.run()` as a shim.
+   */
+  const createStepRun = (
+    /**
+     * The sub-type of this step tool, exposed via `opts.type` when the op is
+     * reported.
+     */
+    type?: string
+  ) => {
+    return createTool<
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <TFn extends (...args: any[]) => unknown>(
+        idOrOptions: StepOptionsOrId,
+
+        /**
+         * The function to run when this step is executed. Can be synchronous or
+         * asynchronous.
+         *
+         * The return value of this function will be the return value of this
+         * call to `run`, meaning you can return and reason about return data
+         * for next steps.
+         */
+        fn: TFn,
+
+        /**
+         * Optional input to pass to the function. If this is specified, Inngest
+         * will keep track of the input for this step and be able to display it
+         * in the UI.
+         */
+        ...input: Parameters<TFn>
+      ) => Promise<
+        /**
+         * TODO Middleware can affect this. If run input middleware has returned
+         * new step data, do not Jsonify.
+         */
+        SimplifyDeep<
+          Jsonify<
+            TFn extends (...args: Parameters<TFn>) => Promise<infer U>
+              ? Awaited<U extends void ? null : U>
+              : ReturnType<TFn> extends void
+                ? null
+                : ReturnType<TFn>
+          >
+        >
+      >
+    >(
+      ({ id, name }, _fn, ...input) => {
+        const opts: HashedOp["opts"] = {
+          ...(input.length ? { input } : {}),
+          ...(type ? { type } : {}),
+        };
+
+        return {
+          id,
+          op: StepOpCode.StepPlanned,
+          name: id,
+          displayName: name ?? id,
+          ...(Object.keys(opts).length ? { opts } : {}),
+        };
+      },
+      {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        fn: (_, fn, ...input) => fn(...input),
+      }
+    );
   };
 
   /**
@@ -211,16 +311,12 @@ export const createStepTools = <
      * returning `null` instead of any event data.
      */
     waitForEvent: createTool<
-      <IncomingEvent extends TriggersFromClient<TClient>>(
+      <IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>>(
         idOrOptions: StepOptionsOrId,
-        opts: WaitForEventOpts<
-          GetEvents<TClient, true>,
-          TTriggers & string,
-          IncomingEvent
-        >
+        opts: WaitForEventOpts<GetEvents<TClient, true>, IncomingEvent>
       ) => Promise<
-        IncomingEvent extends TriggersFromClient<TClient>
-          ? GetEvents<TClient, true>[IncomingEvent] | null
+        IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>
+          ? GetEvents<TClient, false>[IncomingEvent] | null
           : IncomingEvent | null
       >
     >(
@@ -266,45 +362,61 @@ export const createStepTools = <
      * of the `run` tool, meaning you can return and reason about return data
      * for next steps.
      */
-    run: createTool<
-      <T extends () => unknown>(
-        idOrOptions: StepOptionsOrId,
+    run: createStepRun(),
 
-        /**
-         * The function to run when this step is executed. Can be synchronous or
-         * asynchronous.
-         *
-         * The return value of this function will be the return value of this
-         * call to `run`, meaning you can return and reason about return data
-         * for next steps.
-         */
-        fn: T
-      ) => Promise<
-        /**
-         * TODO Middleware can affect this. If run input middleware has returned
-         * new step data, do not Jsonify.
-         */
-        SimplifyDeep<
-          Jsonify<
-            T extends () => Promise<infer U>
-              ? Awaited<U extends void ? null : U>
-              : ReturnType<T> extends void
-                ? null
-                : ReturnType<T>
-          >
-        >
-      >
-    >(
-      ({ id, name }) => {
+    /**
+     * AI tooling for running AI models and other AI-related tasks.
+     */
+    ai: {
+      /**
+       * Use this tool to have Inngest make your AI calls. Useful for agentic workflows.
+       *
+       * Input is also tracked for this tool, meaning you can pass input to the
+       * function and it will be displayed and editable in the UI.
+       */
+      infer: createTool<
+        <TAdapter extends AiAdapter>(
+          idOrOptions: StepOptionsOrId,
+          options: AiInferOpts<TAdapter>
+        ) => Promise<AiAdapter.Output<TAdapter>>
+      >(({ id, name }, options) => {
+        const modelCopy = { ...options.model };
+
+        // Allow the model to mutate options and body for this call
+        options.model.onCall?.(modelCopy, options.body);
+
         return {
           id,
-          op: StepOpCode.StepPlanned,
-          name: id,
+          op: StepOpCode.AiGateway,
           displayName: name ?? id,
+          opts: {
+            type: "step.ai.infer",
+            url: modelCopy.url,
+            headers: modelCopy.headers,
+            auth_key: modelCopy.authKey,
+            format: modelCopy.format,
+            body: options.body,
+          },
         };
+      }),
+
+      /**
+       * Use this tool to wrap AI models and other AI-related tasks. Each call
+       * to `wrap` will be retried individually, meaning you can compose complex
+       * workflows that safely retry dependent asynchronous actions.
+       *
+       * Input is also tracked for this tool, meaning you can pass input to the
+       * function and it will be displayed and editable in the UI.
+       */
+      wrap: createStepRun("step.ai.wrap"),
+
+      /**
+       * Models for AI inference and other AI-related tasks.
+       */
+      models: {
+        ...models,
       },
-      { fn: (stepOptions, fn) => fn() }
-    ),
+    },
 
     /**
      * Wait a specified amount of time before continuing.
@@ -515,7 +627,6 @@ type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
  */
 type WaitForEventOpts<
   Events extends Record<string, EventPayload>,
-  TriggeringEvent extends keyof Events,
   IncomingEvent extends keyof Events,
 > = {
   event: IncomingEvent;
@@ -553,9 +664,10 @@ type WaitForEventOpts<
      * See the Inngest expressions docs for more information.
      *
      * {@link https://www.inngest.com/docs/functions/expressions}
+     *
+     * @deprecated Use `if` instead.
      */
-    match?: ObjectPaths<Events[TriggeringEvent]> &
-      ObjectPaths<Events[IncomingEvent]>;
+    match?: string;
 
     /**
      * If provided, the step function will wait for the incoming event to match
@@ -574,3 +686,33 @@ type WaitForEventOpts<
   "match",
   "if"
 >;
+
+/**
+ * Options for `step.ai.infer()`.
+ */
+type AiInferOpts<TModel extends AiAdapter> = {
+  /**
+   * The model to use for the inference. Create a model by importing from
+   * `"inngest"` or by using `step.ai.models.*`.
+   *
+   * @example Import `openai()`
+   * ```ts
+   * import { openai } from "inngest";
+   *
+   * const model = openai({ model: "gpt-4" });
+   * ```
+   *
+   * @example Use a model from `step.ai.models`
+   * ```ts
+   * async ({ step }) => {
+   *            const model = step.ai.models.openai({ model: "gpt-4" });
+   * }
+   * ```
+   */
+  model: TModel;
+
+  /**
+   * The input to pass to the model.
+   */
+  body: AiAdapter.Input<TModel>;
+};

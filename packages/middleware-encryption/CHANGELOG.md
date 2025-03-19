@@ -1,5 +1,49 @@
 # @inngest/middleware-encryption
 
+## 1.0.0
+
+### Major Changes
+
+- [#555](https://github.com/inngest/inngest-js/pull/555) [`4469bff`](https://github.com/inngest/inngest-js/commit/4469bffda77a0f3dce614816f1dd79a81ca6f098) Thanks [@goodoldneon](https://github.com/goodoldneon)! - ## Breaking changes
+
+  - Default to using [LibSodium](https://libsodium.gitbook.io/doc)
+  - Changed field-level event encryption
+  - Custom encryption services now require identifiers
+
+  ## Features
+
+  - Added strategies for AES and LibSodium
+
+  For information on how to migrate, see [MIGRATION.md](https://github.com/inngest/inngest-js/blob/main/packages/middleware-encryption/MIGRATION.md).
+
+## 0.1.7
+
+### Patch Changes
+
+- [#623](https://github.com/inngest/inngest-js/pull/623) [`cc96657`](https://github.com/inngest/inngest-js/commit/cc966578fce01d65a0916ae56c4a47037e2b548f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Upgraded TypeScript to 5.5.
+
+  No change in behaviour or downstream compatibility is expected, but emitted declaration files will still change, so the patch version will bump for all affected packages.
+
+## 0.1.6
+
+### Patch Changes
+
+- [#604](https://github.com/inngest/inngest-js/pull/604) [`8b41f6b`](https://github.com/inngest/inngest-js/commit/8b41f6b7c7a89d62e851920970de52ba5a3b2734) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Widen range of `inngest` peer dependency
+
+## 0.1.5
+
+### Patch Changes
+
+- [#589](https://github.com/inngest/inngest-js/pull/589) [`8d2a015`](https://github.com/inngest/inngest-js/commit/8d2a0150c722da07f7f2228f3cea677ccd56f29b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `inngest` not being correctly defined as a peer dependency of `@inngest/middleware-encryption`
+
+- [#589](https://github.com/inngest/inngest-js/pull/589) [`8d2a015`](https://github.com/inngest/inngest-js/commit/8d2a0150c722da07f7f2228f3cea677ccd56f29b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Documented all exports
+
+## 0.1.4
+
+### Patch Changes
+
+- [#588](https://github.com/inngest/inngest-js/pull/588) [`b398c6d`](https://github.com/inngest/inngest-js/commit/b398c6d016936b057a3af6c43c717aa9ee723fc7) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Publish `@inngest/middleware-encryption` to JSR
+
 ## 0.1.3
 
 ### Patch Changes

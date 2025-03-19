@@ -7,17 +7,17 @@ import {
   functionStoppedRunningErr,
   prettyError,
   serializeError,
-} from "../../helpers/errors";
-import { undefinedToNull } from "../../helpers/functions";
+} from "../../helpers/errors.js";
+import { undefinedToNull } from "../../helpers/functions.js";
 import {
   resolveAfterPending,
   resolveNextTick,
   runAsPromise,
-} from "../../helpers/promises";
-import { type MaybePromise, type PartialK } from "../../helpers/types";
+} from "../../helpers/promises.js";
+import { type MaybePromise, type PartialK } from "../../helpers/types.js";
 import {
   StepOpCode,
-  failureEventErrorSchema,
+  jsonErrorSchema,
   type BaseContext,
   type Context,
   type EventPayload,
@@ -27,23 +27,24 @@ import {
   type IncomingOp,
   type OpStack,
   type OutgoingOp,
-} from "../../types";
-import { type Inngest } from "../Inngest";
-import { getHookStack, type RunHookStack } from "../InngestMiddleware";
+} from "../../types.js";
+import { type Inngest } from "../Inngest.js";
+import { getHookStack, type RunHookStack } from "../InngestMiddleware.js";
 import {
   createStepTools,
   getStepOptions,
   type StepHandler,
-} from "../InngestStepTools";
-import { NonRetriableError } from "../NonRetriableError";
-import { RetryAfterError } from "../RetryAfterError";
+} from "../InngestStepTools.js";
+import { NonRetriableError } from "../NonRetriableError.js";
+import { RetryAfterError } from "../RetryAfterError.js";
 import {
   InngestExecution,
   type ExecutionResult,
   type IInngestExecution,
   type InngestExecutionFactory,
   type InngestExecutionOptions,
-} from "./InngestExecution";
+  type MemoizedOp,
+} from "./InngestExecution.js";
 
 export const createV0InngestExecution: InngestExecutionFactory = (options) => {
   return new V0InngestExecution(options);
@@ -188,7 +189,12 @@ export class V0InngestExecution
 
         const { type: _type, ...rest } = result;
 
-        return { type: "step-ran", step: { ...outgoingUserFnOp, ...rest } };
+        return {
+          type: "step-ran",
+          ctx: this.fnArg,
+          ops: this.ops,
+          step: { ...outgoingUserFnOp, ...rest },
+        };
       }
 
       if (!discoveredOps.length) {
@@ -235,6 +241,8 @@ export class V0InngestExecution
 
       return {
         type: "steps-found",
+        ctx: this.fnArg,
+        ops: this.ops,
         steps: discoveredOps as [OutgoingOp, ...OutgoingOp[]],
       };
     } catch (error) {
@@ -312,6 +320,24 @@ export class V0InngestExecution
     return state;
   }
 
+  get ops(): Record<string, MemoizedOp> {
+    return Object.fromEntries(
+      Object.entries(this.state.allFoundOps).map<[string, MemoizedOp]>(
+        ([id, op]) => [
+          id,
+          {
+            id: op.id,
+            rawArgs: op.rawArgs,
+            data: op.data,
+            error: op.error,
+            fulfilled: op.fulfilled,
+            seen: true,
+          },
+        ]
+      )
+    );
+  }
+
   private getUserFnToRun(): Handler.Any {
     if (!this.options.isFailureHandler) {
       return this.options.fn["fn"];
@@ -360,7 +386,13 @@ export class V0InngestExecution
         parent: this.state.currentOp?.id ?? null,
         op: op.op,
         name: op.name as string,
-        opts: op.opts ?? null,
+
+        // Historically, no v0 runs could have options for `step.run()` call,
+        // but this object can be specified in future versions.
+        //
+        // For this purpose, we change this to always use `null` if the op is
+        // that of a `step.run()`.
+        opts: op.op === StepOpCode.StepPlanned ? null : op.opts ?? null,
       };
 
       const collisionHash = _internals.hashData(obj);
@@ -406,6 +438,7 @@ export class V0InngestExecution
         this.state.tickOps[opId.id] = {
           ...opId,
           ...(opts?.fn ? { fn: () => opts.fn?.(...args) } : {}),
+          rawArgs: args,
           resolve,
           reject,
           fulfilled: false,
@@ -422,7 +455,7 @@ export class V0InngestExecution
 
     if (this.options.isFailureHandler) {
       const eventData = z
-        .object({ error: failureEventErrorSchema })
+        .object({ error: jsonErrorSchema })
         .parse(fnArg.event?.data);
 
       (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
@@ -431,7 +464,7 @@ export class V0InngestExecution
       };
     }
 
-    return fnArg;
+    return this.options.transformCtx?.(fnArg) ?? fnArg;
   }
 
   /**
@@ -461,8 +494,11 @@ export class V0InngestExecution
 
     if (
       op &&
-      op.op === StepOpCode.StepPlanned &&
-      typeof op.opts === "undefined"
+      op.op === StepOpCode.StepPlanned
+      // TODO We must individually check properties here that we do not want to
+      // execute on, such as retry counts. Nothing exists here that falls in to
+      // this case, but should be accounted for when we add them.
+      // && typeof op.opts === "undefined"
     ) {
       return op.id;
     }
@@ -490,6 +526,12 @@ export class V0InngestExecution
 
     const { data, error } = { ...output, ...transformedOutput?.result };
 
+    if (!step) {
+      await this.state.hooks?.finished?.({
+        result: { ...(typeof error !== "undefined" ? { error } : { data }) },
+      });
+    }
+
     if (typeof error !== "undefined") {
       /**
        * Ensure we give middleware the chance to decide on retriable behaviour
@@ -502,14 +544,26 @@ export class V0InngestExecution
 
       const serializedError = serializeError(error);
 
-      return { type: "function-rejected", error: serializedError, retriable };
+      return {
+        type: "function-rejected",
+        ctx: this.fnArg,
+        ops: this.ops,
+        error: serializedError,
+        retriable,
+      };
     }
 
-    return { type: "function-resolved", data: undefinedToNull(data) };
+    return {
+      type: "function-resolved",
+      ctx: this.fnArg,
+      ops: this.ops,
+      data: undefinedToNull(data),
+    };
   }
 }
 
 interface TickOp extends HashedOp {
+  rawArgs: unknown[];
   fn?: (...args: unknown[]) => unknown;
   fulfilled: boolean;
   resolve: (value: MaybePromise<unknown>) => void;

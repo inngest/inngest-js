@@ -1,44 +1,64 @@
-import AES from "crypto-js/aes";
-import CryptoJSUtf8 from "crypto-js/enc-utf8";
-import { InngestMiddleware, type MiddlewareRegisterReturn } from "inngest";
-
-/**
- * A marker used to identify encrypted values without having to guess.
- */
-const ENCRYPTION_MARKER = "__ENCRYPTED__";
-export const DEFAULT_ENCRYPTION_FIELD = "encrypted";
-
-export type EventEncryptionFieldInput =
-  | string
-  | string[]
-  | ((field: string) => boolean)
-  | false;
+import { InngestMiddleware, type MiddlewareOptions } from "inngest";
+import { getEncryptionStages } from "./stages";
+import { type LEGACY_V0Service } from "./strategies/legacy";
 
 /**
  * Options used to configure the encryption middleware.
  */
 export interface EncryptionMiddlewareOptions {
   /**
-   * The key or keys used to encrypt and decrypt data. If multiple keys are
-   * provided, the first key will be used to encrypt data and all keys will
-   * be tried when decrypting data.
+   * The key used to encrypt and decrypt data. If you are rotating keys, you can
+   * add `fallbackDecryptionKeys` to allow the middleware to decrypt data with
+   * multiple keys.
+   *
+   * This key will always be used to encrypt.
    */
-  key?: string | string[];
+  key: string;
 
   /**
-   * The encryption service used to encrypt and decrypt data. If not provided,
-   * a default encryption service will be used.
+   * If you are rotating keys, you can add `fallbackDecryptionKeys` to allow the
+   * middleware to decrypt data with multiple keys.
+   *
+   * None of these keys will be used for encryption.
+   */
+  fallbackDecryptionKeys?: string[];
+
+  /**
+   * Puts the encryption middleware into a mode where it only decrypts data and
+   * does not encrypt it.
+   *
+   * This is useful for adding the middleware to many services (or the same
+   * service with rolling deploys) before enabling encryption, so that all
+   * services are ready to decrypt data when it is encrypted.
+   *
+   * It can also be used to slowly phase out E2E encryption so that it can be
+   * safely removed from services once no more data from current runs is
+   * encrypted.
+   */
+  decryptOnly?: boolean;
+
+  /**
+   * The encryption service used to encrypt and decrypt data. If not provided, a
+   * default encryption service will be used.
    */
   encryptionService?: EncryptionService;
 
   /**
-   * The top-level fields of the event that will be encrypted. Can be a single
-   * field name, an array of field names, a function that returns `true` if
-   * a field should be encrypted, or `false` to disable all event encryption.
+   * The name of the top-level field of the event that will be encrypted.
    *
-   * By default, the top-level field named `"encrypted"` will be encrypted (exported as `DEFAULT_ENCRYPTION_FIELD`).
+   * By default, the top-level field named `"encrypted"` will be encrypted.
    */
-  eventEncryptionField?: EventEncryptionFieldInput;
+  eventEncryptionField?: string;
+
+  /**
+   * If set and `enabled` is `true, the encryption middleware will only encrypt
+   * using the legacy V0 AES encryption service. This is useful for
+   * transitioning all services to using the new encryption service before then
+   * removing the flag and moving all encryption to LibSodium.
+   *
+   * If you used a custom `encryptionService` beforehand, continue using that.
+   */
+  legacyV0Service?: Omit<LEGACY_V0Service.Options, "key">;
 }
 
 /**
@@ -50,161 +70,26 @@ export const encryptionMiddleware = (
    * `encryptionService` is not provided, the `key` option is required.
    */
   opts: EncryptionMiddlewareOptions
-) => {
-  const service =
-    opts.encryptionService || new DefaultEncryptionService(opts.key);
-  const shouldEncryptEvents = Boolean(
-    opts.eventEncryptionField ?? DEFAULT_ENCRYPTION_FIELD
-  );
-
-  const encryptValue = (value: unknown): EncryptedValue => {
-    return {
-      [ENCRYPTION_MARKER]: true,
-      data: service.encrypt(value),
-    };
-  };
-
-  const decryptValue = (value: unknown): unknown => {
-    if (isEncryptedValue(value)) {
-      return service.decrypt(value.data);
-    }
-
-    return value;
-  };
-
-  const fieldShouldBeEncrypted = (field: string): boolean => {
-    if (typeof opts.eventEncryptionField === "undefined") {
-      return field === DEFAULT_ENCRYPTION_FIELD;
-    }
-
-    if (typeof opts.eventEncryptionField === "function") {
-      return opts.eventEncryptionField(field);
-    }
-
-    if (Array.isArray(opts.eventEncryptionField)) {
-      return opts.eventEncryptionField.includes(field);
-    }
-
-    return opts.eventEncryptionField === field;
-  };
-
-  const encryptEventData = (data: Record<string, unknown>): unknown => {
-    const encryptedData = Object.keys(data).reduce((acc, key) => {
-      if (fieldShouldBeEncrypted(key)) {
-        return { ...acc, [key]: encryptValue(data[key]) };
-      }
-
-      return { ...acc, [key]: data[key] };
-    }, {});
-
-    return encryptedData;
-  };
-
-  const decryptEventData = (data: Record<string, unknown>): unknown => {
-    const decryptedData = Object.keys(data).reduce((acc, key) => {
-      if (isEncryptedValue(data[key])) {
-        return { ...acc, [key]: decryptValue(data[key]) };
-      }
-
-      return { ...acc, [key]: data[key] };
-    }, {});
-
-    return decryptedData;
-  };
+): InngestMiddleware<MiddlewareOptions> => {
+  const { encrypt, decrypt } = getEncryptionStages(opts);
 
   return new InngestMiddleware({
     name: "@inngest/middleware-encryption",
     init: () => {
-      const registration: MiddlewareRegisterReturn = {
-        onFunctionRun: () => {
+      return {
+        onFunctionRun: (...args) => {
           return {
-            transformInput: ({ ctx, steps }) => {
-              const inputTransformer: InputTransformer = {
-                steps: steps.map((step) => ({
-                  ...step,
-                  data: step.data && decryptValue(step.data),
-                })),
-              };
-
-              if (shouldEncryptEvents) {
-                inputTransformer.ctx = {
-                  event: ctx.event && {
-                    ...ctx.event,
-                    data: ctx.event.data && decryptEventData(ctx.event.data),
-                  },
-                  events:
-                    ctx.events &&
-                    ctx.events?.map((event) => ({
-                      ...event,
-                      data: event.data && decryptEventData(event.data),
-                    })),
-                } as {};
-              }
-
-              return inputTransformer;
-            },
-            transformOutput: (ctx) => {
-              if (!ctx.step) {
-                return;
-              }
-
-              return {
-                result: {
-                  data: ctx.result.data && encryptValue(ctx.result.data),
-                },
-              };
-            },
+            ...encrypt.onFunctionRun(...args),
+            ...decrypt.onFunctionRun(...args),
           };
         },
+        onSendEvent: encrypt.onSendEvent,
       };
-
-      if (shouldEncryptEvents) {
-        registration.onSendEvent = () => {
-          return {
-            transformInput: ({ payloads }) => {
-              return {
-                payloads: payloads.map((payload) => ({
-                  ...payload,
-                  data: payload.data && encryptEventData(payload.data),
-                })),
-              };
-            },
-          };
-        };
-      }
-
-      return registration;
     },
   });
 };
 
-export interface EncryptedValue {
-  [ENCRYPTION_MARKER]: true;
-  data: string;
-}
-
-type InputTransformer = NonNullable<
-  Awaited<
-    ReturnType<
-      NonNullable<
-        Awaited<
-          ReturnType<NonNullable<MiddlewareRegisterReturn["onFunctionRun"]>>
-        >["transformInput"]
-      >
-    >
-  >
->;
-
-const isEncryptedValue = (value: unknown): value is EncryptedValue => {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    ENCRYPTION_MARKER in value &&
-    value[ENCRYPTION_MARKER] === true &&
-    "data" in value &&
-    typeof value["data"] === "string"
-  );
-};
+export type MaybePromise<T> = T | Promise<T>;
 
 /**
  * A service that encrypts and decrypts data. You can implement this abstract
@@ -212,58 +97,66 @@ const isEncryptedValue = (value: unknown): value is EncryptedValue => {
  * service provided by this package.
  */
 export abstract class EncryptionService {
-  public abstract encrypt(value: unknown): string;
-  public abstract decrypt(value: string): unknown;
+  /**
+   * A unique identifier for this encryption service. This is used to identify
+   * the encryption service when serializing and deserializing encrypted values.
+   */
+  public abstract identifier: string;
+
+  /**
+   * Given an `unknown` value, encrypts it and returns the the encrypted value.
+   */
+  public abstract encrypt(value: unknown): MaybePromise<string>;
+
+  /**
+   * Given an encrypted `string`, decrypts it and returns the decrypted value as
+   * any value.
+   */
+  public abstract decrypt(value: string): MaybePromise<unknown>;
 }
 
-/**
- * The default encryption service used by the encryption middleware.
- *
- * This service uses AES encryption to encrypt and decrypt data. It supports
- * multiple keys, so that you can rotate keys without breaking existing
- * encrypted data.
- */
-export class DefaultEncryptionService extends EncryptionService {
-  private readonly keys: [string, ...string[]];
+export namespace EncryptionService {
+  /**
+   * A marker used to identify encrypted values without having to guess.
+   */
+  export const ENCRYPTION_MARKER = "__ENCRYPTED__";
 
-  constructor(key: string | string[] | undefined) {
-    super();
+  /**
+   * A marker used to identify the strategy used for encryption.
+   */
+  export const STRATEGY_MARKER = "__STRATEGY__";
 
-    if (!key) {
-      throw new Error("Missing encryption key(s) in encryption middleware");
-    }
+  /**
+   * The default field used to store encrypted values in events.
+   */
+  export const DEFAULT_ENCRYPTED_EVENT_FIELD = "encrypted";
 
-    const keys = (Array.isArray(key) ? key : [key])
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    if (!keys.length) {
-      throw new Error("Missing encryption key(s) in encryption middleware");
-    }
-
-    this.keys = keys as [string, ...string[]];
+  /**
+   * The encrypted value as it will be sent to Inngest.
+   */
+  export interface EncryptedValue {
+    [ENCRYPTION_MARKER]: true;
+    [STRATEGY_MARKER]: string | undefined;
+    data: string;
   }
 
-  encrypt(value: unknown): string {
-    return AES.encrypt(JSON.stringify(value), this.keys[0]).toString();
+  /**
+   * A V0 encrypted value, which only contains the encrypted data.
+   */
+  export interface V0EncryptedValue {
+    [ENCRYPTION_MARKER]: true;
+    data: string;
   }
 
-  decrypt(value: string): unknown {
-    let err: unknown;
-
-    for (const key of this.keys) {
-      try {
-        const decrypted = AES.decrypt(value, key).toString(CryptoJSUtf8);
-        return JSON.parse(decrypted);
-      } catch (decryptionError) {
-        err = decryptionError;
-        continue;
-      }
-    }
-
-    throw (
-      err ||
-      new Error("Unable to decrypt value; no keys were able to decrypt it")
-    );
+  /**
+   * A partial encrypted value, allowing an encryption service to specify the
+   * data and any other metadata needed to decrypt the value.
+   */
+  export interface PartialEncryptedValue
+    extends Omit<
+      EncryptedValue,
+      typeof ENCRYPTION_MARKER | typeof STRATEGY_MARKER
+    > {
+    [key: string]: unknown;
   }
 }

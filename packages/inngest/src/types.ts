@@ -1,44 +1,66 @@
+/**
+ * Internal types and schemas used throughout the Inngest SDK.
+ *
+ * Note that types intended to be imported and utilized in userland code will be
+ * exported from the main entrypoint of the SDK, `inngest`; importing types
+ * directly from this file may result in breaking changes in non-major bumps as
+ * only those exported from `inngest` are considered stable.
+ *
+ * @module
+ */
+
 import { z } from "zod";
-import { type EventSchemas } from "./components/EventSchemas";
+import { type EventSchemas } from "./components/EventSchemas.js";
 import {
+  type builtInMiddleware,
   type GetEvents,
   type Inngest,
-  type builtInMiddleware,
-} from "./components/Inngest";
-import { type InngestFunction } from "./components/InngestFunction";
-import { type InngestFunctionReference } from "./components/InngestFunctionReference";
+} from "./components/Inngest.js";
+import { type InngestFunction } from "./components/InngestFunction.js";
+import { type InngestFunctionReference } from "./components/InngestFunctionReference.js";
 import {
   type ExtendSendEventWithMiddleware,
   type InngestMiddleware,
-} from "./components/InngestMiddleware";
-import { type createStepTools } from "./components/InngestStepTools";
-import { type internalEvents } from "./helpers/consts";
+} from "./components/InngestMiddleware.js";
+import { type createStepTools } from "./components/InngestStepTools.js";
+import { type internalEvents } from "./helpers/consts.js";
 import {
   type AsTuple,
   type IsEqual,
   type IsNever,
-  type IsStringLiteral,
-  type ObjectPaths,
+  type Public,
   type Simplify,
   type WithoutInternal,
-} from "./helpers/types";
-import { type Logger } from "./middleware/logger";
+} from "./helpers/types.js";
+import { type Logger } from "./middleware/logger.js";
 
-export const failureEventErrorSchema = z
-  .object({
-    name: z.string().trim().optional(),
-    error: z.string().trim().optional(),
-    message: z.string().trim().optional(),
-    stack: z.string().trim().optional(),
+const baseJsonErrorSchema = z.object({
+  name: z.string().trim().optional(),
+  error: z.string().trim().optional(),
+  message: z.string().trim().optional(),
+  stack: z.string().trim().optional(),
+});
+
+export type JsonError = z.infer<typeof baseJsonErrorSchema> & {
+  name: string;
+  message: string;
+  cause?: JsonError;
+};
+
+export const jsonErrorSchema = baseJsonErrorSchema
+  .extend({
+    cause: z.lazy(() => jsonErrorSchema).optional(),
   })
+  .passthrough()
   .catch({})
   .transform((val) => {
     return {
+      ...val,
       name: val.name || "Error",
       message: val.message || val.error || "Unknown error",
       stack: val.stack,
     };
-  });
+  }) as z.ZodType<JsonError>;
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -50,7 +72,7 @@ export type FailureEventPayload<P extends EventPayload = EventPayload> = {
   data: {
     function_id: string;
     run_id: string;
-    error: z.output<typeof failureEventErrorSchema>;
+    error: z.output<typeof jsonErrorSchema>;
     event: P;
   };
 };
@@ -86,7 +108,7 @@ export type FinishedEventPayload = {
     correlation_id?: string;
   } & (
     | {
-        error: z.output<typeof failureEventErrorSchema>;
+        error: z.output<typeof jsonErrorSchema>;
       }
     | {
         result: unknown;
@@ -153,6 +175,7 @@ export enum StepOpCode {
   StepNotFound = "StepNotFound",
 
   InvokeFunction = "InvokeFunction",
+  AiGateway = "AIGateway",
 }
 
 /**
@@ -208,6 +231,7 @@ export const incomingOpSchema = z.object({
   id: z.string().min(1),
   data: z.any().optional(),
   error: z.any().optional(),
+  input: z.any().optional(),
 });
 
 export type IncomingOp = z.output<typeof incomingOpSchema>;
@@ -346,7 +370,7 @@ export type BaseContext<
    */
   runId: string;
 
-  step: ReturnType<typeof createStepTools<TClient, TTriggers>>;
+  step: ReturnType<typeof createStepTools<TClient>>;
 
   /**
    * The current zero-indexed attempt number for this function execution. The
@@ -684,6 +708,25 @@ export interface ClientOptions {
    * running in a production-like environment.
    */
   isDev?: boolean;
+
+  /**
+   * The application-specific version identifier. This can be an arbitrary value
+   * such as a version string, a Git commit SHA, or any other unique identifier.
+   */
+  appVersion?: string;
+
+  /**
+   * If `true`, parallel steps within functions are optimized to reduce traffic
+   * during `Promise` resolution, which can hugely reduce the time taken and
+   * number of requests for each run.
+   *
+   * Note that this will be the default behaviour in v4 and in its current form
+   * will cause `Promise.*()` to wait for all promises to settle before
+   * resolving.
+   *
+   * @default false
+   */
+  optimizeParallelism?: boolean;
 }
 
 /**
@@ -820,9 +863,26 @@ export interface RegisterOptions {
   /**
    * The ID of this app. This is used to group functions together in the Inngest
    * UI. The ID of the passed client is used by default.
+   * @deprecated Will be removed in v4.
    */
   id?: string;
 }
+
+/**
+ * This schema is used internally to share the shape of a concurrency option
+ * when validating config. We cannot add comments to Zod fields, so we just use
+ * an extra type check to ensure it matches our exported expectations.
+ */
+const concurrencyOptionSchema = z.strictObject({
+  limit: z.number(),
+  key: z.string().optional(),
+  scope: z.enum(["fn", "env", "account"]).optional(),
+});
+
+const _checkConcurrencySchemaAligns: IsEqual<
+  ConcurrencyOption,
+  z.output<typeof concurrencyOptionSchema>
+> = true;
 
 export interface ConcurrencyOption {
   /**
@@ -860,10 +920,7 @@ export interface ConcurrencyOption {
  *
  * @public
  */
-export type Cancellation<
-  Events extends Record<string, EventPayload>,
-  TriggeringEvent extends keyof Events & string,
-> = {
+export type Cancellation<Events extends Record<string, EventPayload>> = {
   [K in keyof Events & string]: {
     /**
      * The name of the event that should cancel the function run.
@@ -907,10 +964,10 @@ export type Cancellation<
      * See the Inngest expressions docs for more information.
      *
      * {@link https://www.inngest.com/docs/functions/expressions}
+     *
+     * @deprecated Use `if` instead.
      */
-    match?: IsStringLiteral<keyof Events & string> extends true
-      ? ObjectPaths<Events[TriggeringEvent]> & ObjectPaths<Events[K]>
-      : string;
+    match?: string;
 
     /**
      * An optional timeout that the cancel is valid for.  If this isn't
@@ -969,6 +1026,12 @@ export interface RegisterRequest {
   appName: string;
 
   /**
+   * AppVersion represents an optional application version identifier. This should change
+   * whenever code within one of your Inngest function or any dependency thereof changes.
+   */
+  appVersion?: string;
+
+  /**
    * The functions available at this particular handler.
    */
   functions: FunctionConfig[];
@@ -977,6 +1040,44 @@ export interface RegisterRequest {
    * The deploy ID used to identify this particular deployment.
    */
   deployId?: string;
+
+  /**
+   * Capabilities of the SDK.
+   */
+  capabilities: Capabilities;
+}
+
+export interface Capabilities {
+  trust_probe: "v1";
+  connect: "v1";
+}
+
+export interface InBandRegisterRequest
+  extends Pick<
+      RegisterRequest,
+      "capabilities" | "framework" | "functions" | "sdk" | "url" | "appVersion"
+    >,
+    Pick<AuthenticatedIntrospection, "sdk_language" | "sdk_version" | "env"> {
+  /**
+   * The ID of the app that this handler is associated with.
+   */
+  app_id: string;
+
+  /**
+   * The result of the introspection request.
+   */
+  inspection: AuthenticatedIntrospection | UnauthenticatedIntrospection;
+
+  /**
+   * ?
+   */
+  platform?: string;
+
+  /**
+   * The person or organization that authored this SDK. Ideally this is
+   * synonymous with a GitHub username or organization name.
+   */
+  sdk_author: "inngest";
 }
 
 /**
@@ -985,68 +1086,153 @@ export interface RegisterRequest {
  *
  * @internal
  */
-export interface InsecureIntrospection {
+export interface UnauthenticatedIntrospection {
+  authentication_succeeded: false | null;
   extra: {
     is_mode_explicit: boolean;
-    message: string;
   };
   function_count: number;
   has_event_key: boolean;
   has_signing_key: boolean;
   mode: "cloud" | "dev";
+  schema_version: "2024-05-24";
 }
 
-export interface SecureIntrospection extends InsecureIntrospection {
+export interface AuthenticatedIntrospection
+  extends Omit<UnauthenticatedIntrospection, "authentication_succeeded"> {
+  api_origin: string;
+  app_id: string;
+  authentication_succeeded: true;
+  capabilities: Capabilities;
+  env: string | null;
+  event_api_origin: string;
+  event_key_hash: string | null;
+  extra: UnauthenticatedIntrospection["extra"] & {
+    is_streaming: boolean;
+  };
+  framework: string;
+  sdk_language: string;
+  sdk_version: string;
+  serve_origin: string | null;
+  serve_path: string | null;
   signing_key_fallback_hash: string | null;
   signing_key_hash: string | null;
 }
 
 /**
- * A block representing an individual function being registered to Inngest
- * Cloud.
+ * The schema used to represent an individual function being synced with
+ * Inngest.
+ *
+ * Note that this should only be used to validate the shape of a config object
+ * and not used for feature compatibility, such as feature X being exclusive
+ * with feature Y; these should be handled on the Inngest side.
+ */
+export const functionConfigSchema = z.strictObject({
+  name: z.string().optional(),
+  id: z.string(),
+  triggers: z.array(
+    z.union([
+      z.strictObject({
+        event: z.string(),
+        expression: z.string().optional(),
+      }),
+      z.strictObject({
+        cron: z.string(),
+      }),
+    ])
+  ),
+  steps: z.record(
+    z.strictObject({
+      id: z.string(),
+      name: z.string(),
+      runtime: z.strictObject({
+        type: z.union([z.literal("http"), z.literal("ws")]),
+        url: z.string(),
+      }),
+      retries: z
+        .strictObject({
+          attempts: z.number().optional(),
+        })
+        .optional(),
+    })
+  ),
+  idempotency: z.string().optional(),
+  batchEvents: z
+    .strictObject({
+      maxSize: z.number(),
+      timeout: z.string(),
+      key: z.string().optional(),
+    })
+    .optional(),
+  rateLimit: z
+    .strictObject({
+      key: z.string().optional(),
+      limit: z.number(),
+      period: z.string().transform((x) => x as TimeStr),
+    })
+    .optional(),
+  throttle: z
+    .strictObject({
+      key: z.string().optional(),
+      limit: z.number(),
+      period: z.string().transform((x) => x as TimeStr),
+      burst: z.number().optional(),
+    })
+    .optional(),
+  cancel: z
+    .array(
+      z.strictObject({
+        event: z.string(),
+        if: z.string().optional(),
+        timeout: z.string().optional(),
+      })
+    )
+    .optional(),
+  debounce: z
+    .strictObject({
+      key: z.string().optional(),
+      period: z.string().transform((x) => x as TimeStr),
+      timeout: z
+        .string()
+        .transform((x) => x as TimeStr)
+        .optional(),
+    })
+    .optional(),
+  timeouts: z
+    .strictObject({
+      start: z
+        .string()
+        .transform((x) => x as TimeStr)
+        .optional(),
+      finish: z
+        .string()
+        .transform((x) => x as TimeStr)
+        .optional(),
+    })
+    .optional(),
+  priority: z
+    .strictObject({
+      run: z.string().optional(),
+    })
+    .optional(),
+  concurrency: z
+    .union([
+      z.number(),
+      concurrencyOptionSchema.transform((x) => x as ConcurrencyOption),
+      z
+        .array(concurrencyOptionSchema.transform((x) => x as ConcurrencyOption))
+        .min(1)
+        .max(2),
+    ])
+    .optional(),
+});
+
+/**
+ * The shape of an individual function being synced with Inngest.
  *
  * @internal
  */
-export interface FunctionConfig {
-  name?: string;
-  id: string;
-  triggers: ({ event: string; expression?: string } | { cron: string })[];
-  steps: Record<
-    string,
-    {
-      id: string;
-      name: string;
-      runtime: {
-        type: "http";
-        url: string;
-      };
-      retries?: {
-        attempts?: number;
-      };
-    }
-  >;
-  idempotency?: string;
-  batchEvents?: {
-    maxSize: number;
-    timeout: string;
-  };
-  rateLimit?: {
-    key?: string;
-    limit: number;
-    period: TimeStr;
-  };
-  throttle?: {
-    key?: string;
-    limit: number;
-    period: TimeStr;
-    burst?: number;
-  };
-  cancel?: {
-    event: string;
-    if?: string;
-    timeout?: string;
-  }[];
-}
+export type FunctionConfig = z.output<typeof functionConfigSchema>;
 
 export interface DevServerInfo {
   /**
@@ -1095,6 +1281,7 @@ export type SupportedFrameworkName =
   | "express"
   | "aws-lambda"
   | "nextjs"
+  | "nodejs"
   | "nuxt"
   | "h3"
   | "redwoodjs"
@@ -1103,7 +1290,8 @@ export type SupportedFrameworkName =
   | "sveltekit"
   | "fastify"
   | "koa"
-  | "hono";
+  | "hono"
+  | "nitro";
 
 /**
  * A set of options that can be passed to any step to configure it.
@@ -1144,8 +1332,8 @@ export type EventsFromFunction<T extends InngestFunction.Any> =
  * @public
  */
 export type InvokeTargetFunctionDefinition =
-  | InngestFunctionReference.Any
-  | InngestFunction.Any
+  | Public<InngestFunctionReference.Any>
+  | Public<InngestFunction.Any>
   | string;
 
 /**
@@ -1239,3 +1427,7 @@ export const ok = <T>(data: T): Result<T, never> => {
 export const err = <E>(error?: E): Result<never, E> => {
   return { ok: false, error };
 };
+
+export const inBandSyncRequestBodySchema = z.strictObject({
+  url: z.string(),
+});

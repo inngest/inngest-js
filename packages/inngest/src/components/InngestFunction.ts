@@ -1,28 +1,28 @@
-import { internalEvents, queryKeys } from "../helpers/consts";
-import { timeStr } from "../helpers/strings";
-import { type RecursiveTuple, type StrictUnion } from "../helpers/types";
+import { internalEvents, queryKeys } from "../helpers/consts.js";
+import { timeStr } from "../helpers/strings.js";
+import { type RecursiveTuple, type StrictUnion } from "../helpers/types.js";
 import {
   type Cancellation,
   type ConcurrencyOption,
-  type EventNameFromTrigger,
   type FunctionConfig,
   type Handler,
   type TimeStr,
   type TimeStrBatch,
   type TriggersFromClient,
-} from "../types";
-import { type GetEvents, type Inngest } from "./Inngest";
+} from "../types.js";
+import { type GetEvents, type Inngest } from "./Inngest.js";
 import {
   type InngestMiddleware,
   type MiddlewareRegisterReturn,
-} from "./InngestMiddleware";
+} from "./InngestMiddleware.js";
 import {
   ExecutionVersion,
   type IInngestExecution,
   type InngestExecutionOptions,
-} from "./execution/InngestExecution";
-import { createV0InngestExecution } from "./execution/v0";
-import { createV1InngestExecution } from "./execution/v1";
+} from "./execution/InngestExecution.js";
+import { createV0InngestExecution } from "./execution/v0.js";
+import { createV1InngestExecution } from "./execution/v1.js";
+import { createV2InngestExecution } from "./execution/v2.js";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -47,14 +47,15 @@ export class InngestFunction<
   TTriggers extends InngestFunction.Trigger<
     TriggersFromClient<TClient>
   >[] = InngestFunction.Trigger<TriggersFromClient<TClient>>[],
-> {
+> implements InngestFunction.Like
+{
   static stepId = "step";
   static failureSuffix = "-failure";
 
   public readonly opts: TFnOpts;
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
-  private readonly client: TClient;
+  protected readonly client: TClient;
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
   /**
@@ -92,6 +93,14 @@ export class InngestFunction<
   }
 
   /**
+   * The generated or given ID for this function, prefixed with the app ID. This
+   * is used for routing invokes and identifying the function across apps.
+   */
+  protected get absoluteId(): string {
+    return this.id(this.client.id);
+  }
+
+  /**
    * The name of this function as it will appear in the Inngest Cloud UI.
    */
   public get name(): string {
@@ -99,23 +108,54 @@ export class InngestFunction<
   }
 
   /**
+   * The description of this function.
+   */
+  public get description(): string | undefined {
+    return this.opts.description;
+  }
+
+  /**
    * Retrieve the Inngest config for this function.
    */
-  private getConfig(
+  private getConfig({
+    baseUrl,
+    appPrefix,
+    isConnect,
+  }: {
     /**
      * Must be provided a URL that will be used to access the function and step.
      * This function can't be expected to know how it will be accessed, so
      * relies on an outside method providing context.
      */
-    baseUrl: URL,
-    appPrefix?: string
-  ): FunctionConfig[] {
+    baseUrl: URL;
+
+    /**
+     * The prefix for the app that this function is part of.
+     */
+    appPrefix: string;
+
+    /**
+     * Whether this function is being used in a Connect handler.
+     */
+    isConnect?: boolean;
+  }): FunctionConfig[] {
     const fnId = this.id(appPrefix);
     const stepUrl = new URL(baseUrl.href);
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
     stepUrl.searchParams.set(queryKeys.StepId, InngestFunction.stepId);
 
-    const { retries: attempts, cancelOn, ...opts } = this.opts;
+    const {
+      retries: attempts,
+      cancelOn,
+      idempotency,
+      batchEvents,
+      rateLimit,
+      throttle,
+      concurrency,
+      debounce,
+      timeouts,
+      priority,
+    } = this.opts;
 
     /**
      * Convert retries into the format required when defining function
@@ -124,13 +164,12 @@ export class InngestFunction<
     const retries = typeof attempts === "undefined" ? undefined : { attempts };
 
     const fn: FunctionConfig = {
-      ...opts,
       id: fnId,
       name: this.name,
       triggers: (this.opts.triggers ?? []).map((trigger) => {
         if ("event" in trigger) {
           return {
-            event: trigger.event,
+            event: trigger.event as string,
             expression: trigger.if,
           };
         }
@@ -144,12 +183,20 @@ export class InngestFunction<
           id: InngestFunction.stepId,
           name: InngestFunction.stepId,
           runtime: {
-            type: "http",
+            type: isConnect ? "ws" : "http",
             url: stepUrl.href,
           },
           retries,
         },
       },
+      idempotency,
+      batchEvents,
+      rateLimit,
+      throttle,
+      concurrency,
+      debounce,
+      priority,
+      timeouts,
     };
 
     if (cancelOn) {
@@ -175,7 +222,6 @@ export class InngestFunction<
     const config: FunctionConfig[] = [fn];
 
     if (this.onFailureFn) {
-      const failureOpts = { ...opts };
       const id = `${fn.id}${InngestFunction.failureSuffix}`;
       const name = `${fn.name ?? fn.id} (failure)`;
 
@@ -183,7 +229,6 @@ export class InngestFunction<
       failureStepUrl.searchParams.set(queryKeys.FnId, id);
 
       config.push({
-        ...failureOpts,
         id,
         name,
         triggers: [
@@ -209,7 +254,7 @@ export class InngestFunction<
     return config;
   }
 
-  private createExecution(opts: CreateExecutionOptions): IInngestExecution {
+  protected createExecution(opts: CreateExecutionOptions): IInngestExecution {
     const options: InngestExecutionOptions = {
       client: this.client,
       fn: this,
@@ -217,11 +262,21 @@ export class InngestFunction<
     };
 
     const versionHandlers = {
+      [ExecutionVersion.V2]: () => createV2InngestExecution(options),
       [ExecutionVersion.V1]: () => createV1InngestExecution(options),
       [ExecutionVersion.V0]: () => createV0InngestExecution(options),
     } satisfies Record<ExecutionVersion, () => IInngestExecution>;
 
     return versionHandlers[opts.version]();
+  }
+
+  private shouldOptimizeParallelism(): boolean {
+    // TODO We should check the commhandler's client instead of this one?
+    return (
+      this.opts.optimizeParallelism ??
+      this.client["options"].optimizeParallelism ??
+      false
+    );
   }
 }
 
@@ -251,6 +306,11 @@ export namespace InngestFunction {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     any
   >;
+
+  export interface Like {
+    name: string;
+    description?: string | undefined;
+  }
 
   /**
    * A user-friendly method of specifying a trigger for an Inngest function.
@@ -302,6 +362,11 @@ export namespace InngestFunction {
     name?: string;
 
     /**
+     * A description of the function.
+     */
+    description?: string;
+
+    /**
      * Concurrency specifies a limit on the total number of concurrent steps that
      * can occur across all runs of the function.  A value of 0 (or undefined) means
      * use the maximum available concurrency.
@@ -333,6 +398,14 @@ export namespace InngestFunction {
        * Expects 1s to 60s.
        */
       timeout: TimeStrBatch;
+
+      /**
+       * An optional key to use for batching.
+       *
+       * See [batch documentation](https://innge.st/batching) for more
+       * information on how to use `key` expressions.
+       */
+      key?: string;
     };
 
     /**
@@ -398,13 +471,12 @@ export namespace InngestFunction {
       burst?: number;
     };
 
-
     /**
      * Debounce delays functions for the `period` specified. If an event is sent,
      * the function will not run until at least `period` has elapsed.
      *
      * If any new events are received that match the same debounce `key`, the
-     * function is reshceduled for another `period` delay, and the triggering
+     * function is rescheduled for another `period` delay, and the triggering
      * event is replaced with the latest event received.
      *
      * See the [Debounce documentation](https://innge.st/debounce) for more
@@ -420,7 +492,7 @@ export namespace InngestFunction {
       key?: string;
 
       /**
-       * The period of time to after receiving the last trigger to run the
+       * The period of time to delay after receiving the last trigger to run the
        * function.
        *
        * See [Debounce documentation](https://innge.st/debounce) for more
@@ -460,10 +532,40 @@ export namespace InngestFunction {
       run?: string;
     };
 
-    cancelOn?: Cancellation<
-      GetEvents<TClient, true>,
-      EventNameFromTrigger<GetEvents<TClient, true>, TTriggers[number]> & string
-    >[];
+    /**
+     * Configure timeouts for the function.  If any of the timeouts are hit, the
+     * function run will be cancelled.
+     */
+    timeouts?: {
+      /**
+       * Start represents the timeout for starting a function.  If the time
+       * between scheduling and starting a function exceeds this value, the
+       * function will be cancelled.
+       *
+       * This is, essentially, the amount of time that a function sits in the
+       * queue before starting.
+       *
+       * A function may exceed this duration because of concurrency limits,
+       * throttling, etc.
+       */
+      start?: TimeStr;
+
+      /**
+       * Finish represents the time between a function starting and the function
+       * finishing. If a function takes longer than this time to finish, the
+       * function is marked as cancelled.
+       *
+       * The start time is taken from the time that the first successful
+       * function request begins, and does not include the time spent in the
+       * queue before the function starts.
+       *
+       * Note that if the final request to a function begins before this
+       * timeout, and completes after this timeout, the function will succeed.
+       */
+      finish?: TimeStr;
+    };
+
+    cancelOn?: Cancellation<GetEvents<TClient, true>>[];
 
     /**
      * Specifies the maximum number of retries for all steps across this function.
@@ -526,6 +628,22 @@ export namespace InngestFunction {
      * ```
      */
     middleware?: TMiddleware;
+
+    /**
+     * If `true`, parallel steps within this function are optimized to reduce
+     * traffic during `Promise` resolution, which can hugely reduce the time
+     * taken and number of requests for each run.
+     *
+     * Note that this will be the default behaviour in v4 and in its current
+     * form will cause `Promise.*()` to wait for all promises to settle before
+     * resolving.
+     *
+     * Providing this value here will overwrite the same value given on the
+     * client.
+     *
+     * @default false
+     */
+    optimizeParallelism?: boolean;
   }
 }
 

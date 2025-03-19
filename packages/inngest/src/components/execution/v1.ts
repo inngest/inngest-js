@@ -1,33 +1,34 @@
 import { sha1 } from "hash.js";
 import { z } from "zod";
-import { internalEvents } from "../../helpers/consts";
+import { internalEvents } from "../../helpers/consts.js";
 import {
   ErrCode,
   deserializeError,
   minifyPrettyError,
   prettyError,
   serializeError,
-} from "../../helpers/errors";
-import { undefinedToNull } from "../../helpers/functions";
+} from "../../helpers/errors.js";
+import { undefinedToNull } from "../../helpers/functions.js";
 import {
   createDeferredPromise,
+  createDeferredPromiseWithStack,
   createTimeoutPromise,
   resolveAfterPending,
   runAsPromise,
-} from "../../helpers/promises";
-import { type MaybePromise, type Simplify } from "../../helpers/types";
+} from "../../helpers/promises.js";
+import { type MaybePromise, type Simplify } from "../../helpers/types.js";
 import {
   StepOpCode,
-  failureEventErrorSchema,
+  jsonErrorSchema,
   type BaseContext,
   type Context,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
   type OutgoingOp,
-} from "../../types";
-import { type Inngest } from "../Inngest";
-import { getHookStack, type RunHookStack } from "../InngestMiddleware";
+} from "../../types.js";
+import { type Inngest } from "../Inngest.js";
+import { getHookStack, type RunHookStack } from "../InngestMiddleware.js";
 import {
   STEP_INDEXING_SUFFIX,
   createStepTools,
@@ -35,10 +36,10 @@ import {
   invokePayloadSchema,
   type FoundStep,
   type StepHandler,
-} from "../InngestStepTools";
-import { NonRetriableError } from "../NonRetriableError";
-import { RetryAfterError } from "../RetryAfterError";
-import { StepError } from "../StepError";
+} from "../InngestStepTools.js";
+import { NonRetriableError } from "../NonRetriableError.js";
+import { RetryAfterError } from "../RetryAfterError.js";
+import { StepError } from "../StepError.js";
 import {
   InngestExecution,
   type ExecutionResult,
@@ -46,7 +47,8 @@ import {
   type InngestExecutionFactory,
   type InngestExecutionOptions,
   type MemoizedOp,
-} from "./InngestExecution";
+} from "./InngestExecution.js";
+import { getAsyncCtx, getAsyncLocalStorage } from "./als.js";
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
@@ -92,12 +94,20 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * Idempotently start the execution of the user's function.
    */
   public start() {
-    this.debug("starting V1 execution");
+    if (!this.execution) {
+      this.debug("starting V1 execution");
 
-    return (this.execution ??= this._start().then((result) => {
-      this.debug("result:", result);
-      return result;
-    }));
+      this.execution = getAsyncLocalStorage().then((als) => {
+        return als.run({ ctx: this.fnArg }, async () => {
+          return this._start().then((result) => {
+            this.debug("result:", result);
+            return result;
+          });
+        });
+      });
+    }
+
+    return this.execution;
   }
 
   /**
@@ -178,15 +188,18 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           if (transformResult.type === "function-resolved") {
             return {
               type: "step-ran",
+              ctx: transformResult.ctx,
+              ops: transformResult.ops,
               step: _internals.hashOp({
                 ...stepResult,
                 data: transformResult.data,
               }),
             };
-            // }
           } else if (transformResult.type === "function-rejected") {
             return {
               type: "step-ran",
+              ctx: transformResult.ctx,
+              ops: transformResult.ops,
               step: _internals.hashOp({
                 ...stepResult,
                 error: transformResult.error,
@@ -199,11 +212,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         }
 
         const newSteps = await this.filterNewSteps(
-          Object.values(this.state.steps)
+          Array.from(this.state.steps.values())
         );
         if (newSteps) {
           return {
             type: "steps-found",
+            ctx: this.fnArg,
+            ops: this.ops,
             steps: newSteps,
           };
         }
@@ -214,7 +229,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * timed out or have otherwise decided that it doesn't exist.
        */
       "step-not-found": ({ step }) => {
-        return { type: "step-not-found", step };
+        return { type: "step-not-found", ctx: this.fnArg, ops: this.ops, step };
       },
     };
   }
@@ -265,15 +280,18 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     if (
       op &&
-      op.op === StepOpCode.StepPlanned &&
-      typeof op.opts === "undefined"
+      op.op === StepOpCode.StepPlanned
+      // TODO We must individually check properties here that we do not want to
+      // execute on, such as retry counts. Nothing exists here that falls in to
+      // this case, but should be accounted for when we add them.
+      // && typeof op.opts === "undefined"
     ) {
       return op.hashedId;
     }
   }
 
   private async filterNewSteps(
-    steps: FoundStep[]
+    foundSteps: FoundStep[]
   ): Promise<[OutgoingOp, ...OutgoingOp[]] | void> {
     if (this.options.requestedRunStep) {
       return;
@@ -282,7 +300,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     /**
      * Gather any steps that aren't memoized and report them.
      */
-    const newSteps = steps.filter((step) => !step.fulfilled);
+    const newSteps = foundSteps.filter((step) => !step.fulfilled);
 
     if (!newSteps.length) {
       return;
@@ -292,9 +310,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * Warn if we've found new steps but haven't yet seen all previous
      * steps. This may indicate that step presence isn't determinate.
      */
-    const stepsToFulfil = Object.keys(this.state.stepState).length;
-    const fulfilledSteps = steps.filter((step) => step.fulfilled).length;
-    const foundAllCompletedSteps = stepsToFulfil === fulfilledSteps;
+    let knownSteps = 0;
+    for (const step of foundSteps) {
+      if (step.fulfilled) {
+        knownSteps++;
+      }
+    }
+    const foundAllCompletedSteps = this.state.stepsToFulfill === knownSteps;
 
     if (!foundAllCompletedSteps) {
       // TODO Tag
@@ -419,12 +441,26 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       displayName,
     };
     this.state.executingStep = outgoingOp;
+
+    const store = await getAsyncCtx();
+
+    if (store) {
+      store.executingStep = {
+        id,
+        name: displayName,
+      };
+    }
+
     this.debug(`executing step "${id}"`);
 
     return (
       runAsPromise(fn)
         // eslint-disable-next-line @typescript-eslint/no-misused-promises
         .finally(async () => {
+          if (store) {
+            delete store.executingStep;
+          }
+
           await this.state.hooks?.afterExecution?.();
         })
         .then<OutgoingOp>((data) => {
@@ -505,12 +541,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     if (inputMutations?.steps) {
-      this.state.stepState = inputMutations.steps.reduce(
-        (steps, step) => ({
-          ...steps,
-          [step.id]: step,
-        }),
-        {}
+      this.state.stepState = Object.fromEntries(
+        inputMutations.steps.map((step) => [step.id, step])
       );
     }
   }
@@ -533,12 +565,20 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       output.data = serializeError(output.error);
     }
 
+    const isStepExecution = Boolean(this.state.executingStep);
+
     const transformedOutput = await this.state.hooks?.transformOutput?.({
       result: { ...output },
       step: this.state.executingStep,
     });
 
     const { data, error } = { ...output, ...transformedOutput?.result };
+
+    if (!isStepExecution) {
+      await this.state.hooks?.finished?.({
+        result: { ...(typeof error !== "undefined" ? { error } : { data }) },
+      });
+    }
 
     if (typeof error !== "undefined") {
       /**
@@ -554,48 +594,69 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       const serializedError = minifyPrettyError(serializeError(error));
 
-      return { type: "function-rejected", error: serializedError, retriable };
+      return {
+        type: "function-rejected",
+        ctx: this.fnArg,
+        ops: this.ops,
+        error: serializedError,
+        retriable,
+      };
     }
 
-    return { type: "function-resolved", data: undefinedToNull(data) };
+    return {
+      type: "function-resolved",
+      ctx: this.fnArg,
+      ops: this.ops,
+      data: undefinedToNull(data),
+    };
   }
 
   private createExecutionState(): V1ExecutionState {
-    let { promise: checkpointPromise, resolve: checkpointResolve } =
-      createDeferredPromise<Checkpoint>();
+    const d = createDeferredPromiseWithStack<Checkpoint>();
+    let checkpointResolve = d.deferred.resolve;
+    const checkpointResults = d.results;
 
     const loop: V1ExecutionState["loop"] = (async function* (
       cleanUp?: () => void
     ) {
       try {
         while (true) {
-          yield await checkpointPromise;
+          const res = (await checkpointResults.next()).value;
+          if (res) {
+            yield res;
+          }
         }
       } finally {
         cleanUp?.();
       }
     })(() => {
       this.timeout?.clear();
+      void checkpointResults.return();
     });
+
+    const stepsToFulfill = Object.keys(this.options.stepState).length;
 
     const state: V1ExecutionState = {
       stepState: this.options.stepState,
-      steps: {},
+      stepsToFulfill,
+      steps: new Map(),
       loop,
-      hasSteps: Boolean(Object.keys(this.options.stepState).length),
-      stepCompletionOrder: this.options.stepCompletionOrder,
+      hasSteps: Boolean(stepsToFulfill),
+      stepCompletionOrder: [...this.options.stepCompletionOrder],
+      remainingStepsToBeSeen: new Set(this.options.stepCompletionOrder),
       setCheckpoint: (checkpoint: Checkpoint) => {
-        ({ promise: checkpointPromise, resolve: checkpointResolve } =
-          checkpointResolve(checkpoint));
+        ({ resolve: checkpointResolve } = checkpointResolve(checkpoint));
       },
       allStateUsed: () => {
-        return Object.values(state.stepState).every((step) => {
-          return step.seen;
-        });
+        return this.state.remainingStepsToBeSeen.size === 0;
       },
     };
 
     return state;
+  }
+
+  get ops(): Record<string, MemoizedOp> {
+    return Object.fromEntries(this.state.steps);
   }
 
   private createFnArg(): Context.Any {
@@ -611,7 +672,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      */
     if (this.options.isFailureHandler) {
       const eventData = z
-        .object({ error: failureEventErrorSchema })
+        .object({ error: jsonErrorSchema })
         .parse(fnArg.event?.data);
 
       (fnArg as Partial<Pick<FailureEventArgs, "error">>) = {
@@ -620,7 +681,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       };
     }
 
-    return fnArg;
+    return this.options.transformCtx?.(fnArg) ?? fnArg;
   }
 
   private createStepTools(): ReturnType<typeof createStepTools> {
@@ -628,13 +689,23 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * A list of steps that have been found and are being rolled up before being
      * reported to the core loop.
      */
-    let foundStepsToReport: FoundStep[] = [];
+    const foundStepsToReport: Map<string, FoundStep> = new Map();
 
     /**
      * A map of the subset of found steps to report that have not yet been
      * handled. Used for fast access to steps that need to be handled in order.
      */
-    let unhandledFoundStepsToReport: Record<string, FoundStep> = {};
+    const unhandledFoundStepsToReport: Map<string, FoundStep> = new Map();
+
+    /**
+     * A map of the latest sequential step indexes found for each step ID. Used
+     * to ensure that we don't index steps in parallel.
+     *
+     * Note that these must be sequential; if we've seen or assigned `a:1`,
+     * `a:2` and `a:4`, the latest sequential step index is `2`.
+     *
+     */
+    const expectedNextStepIndexes: Map<string, number> = new Map();
 
     /**
      * An ordered list of step IDs that have yet to be handled in this
@@ -663,6 +734,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     let warnOfParallelIndexing = false;
 
     /**
+     * Counts the number of times we've extended this tick.
+     */
+    let tickExtensionCount = 0;
+
+    /**
      * Given a colliding step ID, maybe warn the user about parallel indexing.
      */
     const maybeWarnOfParallelIndexing = (collisionId: string) => {
@@ -670,30 +746,28 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      const stepExists = Boolean(this.state.steps[collisionId]);
+      const stepExists = this.state.steps.has(collisionId);
+      if (stepExists) {
+        const stepFoundThisTick = foundStepsToReport.has(collisionId);
+        if (!stepFoundThisTick) {
+          warnOfParallelIndexing = true;
 
-      const stepFoundThisTick = foundStepsToReport.some((step) => {
-        return step.id === collisionId;
-      });
-
-      if (stepExists && !stepFoundThisTick) {
-        warnOfParallelIndexing = true;
-
-        console.warn(
-          prettyError({
-            type: "warn",
-            whatHappened:
-              "We detected that you have multiple steps with the same ID.",
-            code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
-            why: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${collisionId}".`,
-            reassurance:
-              "Your function is still running, though it may exhibit unexpected behaviour.",
-            consequences:
-              "Using the same IDs across parallel chains of work can cause unexpected behaviour.",
-            toFixNow:
-              "We recommend using a unique ID for each step, especially those happening in parallel.",
-          })
-        );
+          console.warn(
+            prettyError({
+              type: "warn",
+              whatHappened:
+                "We detected that you have multiple steps with the same ID.",
+              code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
+              why: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${collisionId}".`,
+              reassurance:
+                "Your function is still running, though it may exhibit unexpected behaviour.",
+              consequences:
+                "Using the same IDs across parallel chains of work can cause unexpected behaviour.",
+              toFixNow:
+                "We recommend using a unique ID for each step, especially those happening in parallel.",
+            })
+          );
+        }
       }
     };
 
@@ -707,7 +781,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      foundStepsReportPromise = resolveAfterPending()
+      let extensionPromise: Promise<void>;
+      if (++tickExtensionCount >= 10) {
+        tickExtensionCount = 0;
+        extensionPromise = new Promise((resolve) => setTimeout(resolve));
+      } else {
+        extensionPromise = resolveAfterPending();
+      }
+
+      foundStepsReportPromise = extensionPromise
         /**
          * Ensure that we wait for this promise to resolve before continuing.
          *
@@ -727,24 +809,28 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
             const nextStepId = remainingStepCompletionOrder[i];
             if (!nextStepId) {
-              // Strange - removed this empty index
-              remainingStepCompletionOrder.splice(i, 1);
+              // Strange - skip this empty index
               continue;
             }
 
-            const handled = unhandledFoundStepsToReport[nextStepId]?.handle();
+            const handled = unhandledFoundStepsToReport
+              .get(nextStepId)
+              ?.handle();
             if (handled) {
               remainingStepCompletionOrder.splice(i, 1);
-              delete unhandledFoundStepsToReport[nextStepId];
+              unhandledFoundStepsToReport.delete(nextStepId);
               return void reportNextTick();
             }
           }
 
           // If we've handled no steps in this "tick," roll up everything we've
           // found and report it.
-          const steps = [...foundStepsToReport] as [FoundStep, ...FoundStep[]];
-          foundStepsToReport = [];
-          unhandledFoundStepsToReport = {};
+          const steps = [...foundStepsToReport.values()] as [
+            FoundStep,
+            ...FoundStep[],
+          ];
+          foundStepsToReport.clear();
+          unhandledFoundStepsToReport.clear();
 
           return void this.state.setCheckpoint({
             type: "steps-found",
@@ -757,8 +843,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * A helper used to push a step to the list of steps to report.
      */
     const pushStepToReport = (step: FoundStep) => {
-      foundStepsToReport.push(step);
-      unhandledFoundStepsToReport[step.hashedId] = step;
+      foundStepsToReport.set(step.id, step);
+      unhandledFoundStepsToReport.set(step.hashedId, step);
       reportNextTick();
     };
 
@@ -788,7 +874,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          */
         console.warn(
           prettyError({
-            whatHappened: `We detected that you have nested \`step.*\` tooling in \`${opId.displayName ?? opId.id}\``, 
+            whatHappened: `We detected that you have nested \`step.*\` tooling in \`${
+              opId.displayName ?? opId.id
+            }\``,
             consequences: "Nesting `step.*` tooling is not supported.",
             type: "warn",
             reassurance:
@@ -801,14 +889,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         );
       }
 
-      if (this.state.steps[opId.id]) {
+      if (this.state.steps.has(opId.id)) {
         const originalId = opId.id;
         maybeWarnOfParallelIndexing(originalId);
 
-        for (let i = 1; ; i++) {
-          const newId = [originalId, STEP_INDEXING_SUFFIX, i].join("");
+        const expectedNextIndex = expectedNextStepIndexes.get(originalId) ?? 1;
+        for (let i = expectedNextIndex; ; i++) {
+          const newId = originalId + STEP_INDEXING_SUFFIX + i;
 
-          if (!this.state.steps[newId]) {
+          if (!this.state.steps.has(newId)) {
+            expectedNextStepIndexes.set(originalId, i + 1);
             opId.id = newId;
             break;
           }
@@ -818,16 +908,59 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       const { promise, resolve, reject } = createDeferredPromise();
       const hashedId = _internals.hashId(opId.id);
       const stepState = this.state.stepState[hashedId];
+      let isFulfilled = false;
       if (stepState) {
         stepState.seen = true;
+        this.state.remainingStepsToBeSeen.delete(hashedId);
+
+        if (typeof stepState.input === "undefined") {
+          isFulfilled = true;
+        }
+      }
+
+      let extraOpts: Record<string, unknown> | undefined;
+      let fnArgs = [...args];
+
+      if (
+        typeof stepState?.input !== "undefined" &&
+        Array.isArray(stepState.input)
+      ) {
+        switch (opId.op) {
+          // `step.run()` has its function input affected
+          case StepOpCode.StepPlanned: {
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            fnArgs = [...args.slice(0, 2), ...stepState.input];
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            extraOpts = { input: [...stepState.input] };
+            break;
+          }
+
+          // `step.ai.infer()` has its body affected
+          case StepOpCode.AiGateway: {
+            extraOpts = {
+              body: {
+                ...(typeof opId.opts?.body === "object"
+                  ? { ...opId.opts.body }
+                  : {}),
+                ...stepState.input[0],
+              },
+            };
+            break;
+          }
+        }
       }
 
       const step: FoundStep = {
         ...opId,
+        opts: { ...opId.opts, ...extraOpts },
+        rawArgs: fnArgs, // TODO What is the right value here? Should this be raw args without affected input?
         hashedId,
+        input: stepState?.input,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        fn: opts?.fn ? () => opts.fn?.(...args) : undefined,
-        fulfilled: Boolean(stepState),
+        fn: opts?.fn ? () => opts.fn?.(...fnArgs) : undefined,
+        promise,
+        fulfilled: isFulfilled,
+        hasStepState: Boolean(stepState),
         displayName: opId.displayName ?? opId.id,
         handled: false,
         handle: () => {
@@ -837,26 +970,36 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
           step.handled = true;
 
-          if (stepState) {
+          if (isFulfilled && stepState) {
             stepState.fulfilled = true;
 
-            if (typeof stepState.data !== "undefined") {
-              resolve(stepState.data);
-            } else {
-              this.state.recentlyRejectedStepError = new StepError(
-                opId.id,
-                stepState.error
-              );
+            // For some execution scenarios such as testing, `data`, `error`,
+            // and `input` may be `Promises`. This could also be the case for
+            // future middleware applications. For this reason, we'll make sure
+            // the values are fully resolved before continuing.
+            void Promise.all([
+              stepState.data,
+              stepState.error,
+              stepState.input,
+            ]).then(() => {
+              if (typeof stepState.data !== "undefined") {
+                resolve(stepState.data);
+              } else {
+                this.state.recentlyRejectedStepError = new StepError(
+                  opId.id,
+                  stepState.error
+                );
 
-              reject(this.state.recentlyRejectedStepError);
-            }
+                reject(this.state.recentlyRejectedStepError);
+              }
+            });
           }
 
           return true;
         },
       };
 
-      this.state.steps[opId.id] = step;
+      this.state.steps.set(opId.id, step);
       this.state.hasSteps = true;
       pushStepToReport(step);
 
@@ -866,8 +1009,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        */
       if (!beforeExecHooksPromise && this.state.allStateUsed()) {
         await (beforeExecHooksPromise = (async () => {
-          await this.state.hooks?.beforeExecution?.();
           await this.state.hooks?.afterMemoization?.();
+          await this.state.hooks?.beforeExecution?.();
         })());
       }
 
@@ -992,10 +1135,16 @@ export interface V1ExecutionState {
   stepState: Record<string, MemoizedOp>;
 
   /**
+   * The number of steps we expect to fulfil based on the state passed from the
+   * Executor.
+   */
+  stepsToFulfill: number;
+
+  /**
    * A map of step IDs to their functions to run. The executor can request a
    * specific step to run, so we need to store the function to run here.
    */
-  steps: Record<string, FoundStep>;
+  steps: Map<string, FoundStep>;
 
   /**
    * A flag which represents whether or not steps are understood to be used in
@@ -1035,6 +1184,12 @@ export interface V1ExecutionState {
    * execution was completed.
    */
   stepCompletionOrder: string[];
+
+  /**
+   * An set of step IDs that have yet to be seen in this execution. Used to
+   * decide when to trigger middleware based on the current state.
+   */
+  remainingStepsToBeSeen: Set<string>;
 
   /**
    * If defined, this is the error that purposefully thrown when memoizing step

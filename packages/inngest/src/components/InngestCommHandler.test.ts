@@ -1,4 +1,4 @@
-import { EventSchemas } from "@local";
+import { EventSchemas, InngestCommHandler } from "@local";
 import { serve } from "@local/next";
 import { z } from "zod";
 import { createClient } from "../test/helpers";
@@ -63,5 +63,26 @@ describe("ServeHandler", () => {
 
       serve({ client: inngest, functions });
     });
+  });
+});
+
+describe("#597", () => {
+  test("does not mark `fetch` as custom if none given to `new Inngest()`", () => {
+    const inngest = createClient({ id: "test" });
+
+    const commHandler = new InngestCommHandler({
+      client: inngest,
+      frameworkName: "test-framework",
+      functions: [],
+      handler: () => ({
+        body: () => "body",
+        headers: () => undefined,
+        method: () => "GET",
+        url: () => new URL("https://www.inngest.com"),
+        transformResponse: (response) => response,
+      }),
+    });
+
+    expect(commHandler["fetch"]).toBe(inngest["fetch"]);
   });
 });
