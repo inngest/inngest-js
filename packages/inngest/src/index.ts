@@ -103,3 +103,4 @@ export type {
   StepOptionsOrId,
   TimeStr,
 } from "./types";
+export { version } from "./version.js";
