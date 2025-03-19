@@ -1,6 +1,18 @@
 import { type Temporal } from "temporal-polyfill";
 
 /**
+ * A type that represents a `Temporal.Duration` object.
+ *
+ * *Like types are available for many temporal objects, but not all of them.
+ */
+export type InstantLike = {
+  epochSeconds?: number;
+  epochMilliseconds?: number;
+  epochMicroseconds?: number;
+  epochNanoseconds?: number;
+};
+
+/**
  * Asserts that the given `input` is a `Temporal.Duration` object.
  */
 export const isTemporalDuration = (
@@ -56,7 +68,7 @@ export const isTemporalZonedDateTime = (
  * `Temporal.ZonedDateTime` to an ISO 8601 string.
  */
 export const getISOString = (
-  time: Date | string | Temporal.Instant | Temporal.ZonedDateTime
+  time: Date | string | InstantLike | Temporal.ZonedDateTimeLike
 ): string => {
   if (typeof time === "string") {
     return new Date(time).toISOString();

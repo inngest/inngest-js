@@ -4,7 +4,11 @@ import { z } from "zod";
 import { logPrefix } from "../helpers/consts.js";
 import { type Jsonify } from "../helpers/jsonify.js";
 import { timeStr } from "../helpers/strings.js";
-import { getISOString, isTemporalDuration } from "../helpers/temporal.js";
+import {
+  getISOString,
+  isTemporalDuration,
+  type InstantLike,
+} from "../helpers/temporal.js";
 import {
   type ExclusiveKeys,
   type ParametersExceptFirst,
@@ -435,7 +439,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The amount of time to wait before continuing.
          */
-        time: number | string | Temporal.Duration
+        time: number | string | Temporal.DurationLike
       ) => Promise<void>
     >(({ id, name }, time) => {
       /**
@@ -443,7 +447,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
        * sleep is over and we should continue execution.
        */
       const msTimeStr: string = timeStr(
-        isTemporalDuration(time) ? time.milliseconds : time
+        isTemporalDuration(time) ? time.milliseconds : (time as number | string)
       );
 
       return {
@@ -467,7 +471,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The date to wait until before continuing.
          */
-        time: Date | string | Temporal.Instant | Temporal.ZonedDateTime
+        time: Date | string | InstantLike | Temporal.ZonedDateTimeLike
       ) => Promise<void>
     >(({ id, name }, time) => {
       // const date = typeof time === "string" ? new Date(time) : time;
@@ -495,7 +499,8 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         // TODO PrettyError
         throw new Error(
-          `Invalid date or date string passed to sleepUntil: ${time.toString()}`
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          `Invalid date or date string passed to sleepUntil: ${time as any}`
         );
       }
     }),
