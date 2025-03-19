@@ -1,5 +1,5 @@
 import { models, type AiAdapter } from "@inngest/ai";
-import { type Temporal } from "@js-temporal/polyfill";
+import { type Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import { logPrefix } from "../helpers/consts.js";
 import { type Jsonify } from "../helpers/jsonify.js";

@@ -1,4 +1,4 @@
-import { type Temporal } from "@js-temporal/polyfill";
+import { type Temporal } from "temporal-polyfill";
 
 /**
  * Asserts that the given `input` is a `Temporal.Duration` object.
