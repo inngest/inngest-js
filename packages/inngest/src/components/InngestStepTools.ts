@@ -4,6 +4,7 @@ import { z } from "zod";
 import { logPrefix } from "../helpers/consts.js";
 import { type Jsonify } from "../helpers/jsonify.js";
 import { timeStr } from "../helpers/strings.js";
+import { getISOString, isTemporalDuration } from "../helpers/temporal.js";
 import {
   type ExclusiveKeys,
   type ParametersExceptFirst,
@@ -24,6 +25,7 @@ import {
   type TriggerEventFromFunction,
   type TriggersFromClient,
 } from "../types.js";
+import { type InngestExecution } from "./execution/InngestExecution.js";
 import {
   type ClientOptionsFromInngest,
   type GetEvents,
@@ -32,8 +34,6 @@ import {
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { InngestFunctionReference } from "./InngestFunctionReference.js";
-
-import { type InngestExecution } from "./execution/InngestExecution.js";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -435,22 +435,21 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The amount of time to wait before continuing.
          */
-        time:
-          | number
-          | string
-          | Temporal.Duration
-          | Temporal.Instant
-          | Temporal.ZonedDateTime
+        time: number | string | Temporal.Duration
       ) => Promise<void>
     >(({ id, name }, time) => {
       /**
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
+      const msTimeStr: string = timeStr(
+        isTemporalDuration(time) ? time.milliseconds : time
+      );
+
       return {
         id,
         op: StepOpCode.Sleep,
-        name: timeStr(time),
+        name: msTimeStr,
         displayName: name ?? id,
       };
     }),
@@ -468,10 +467,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The date to wait until before continuing.
          */
-        time: Date | string
+        time: Date | string | Temporal.Instant | Temporal.ZonedDateTime
       ) => Promise<void>
     >(({ id, name }, time) => {
-      const date = typeof time === "string" ? new Date(time) : time;
+      // const date = typeof time === "string" ? new Date(time) : time;
+
+      const iso = getISOString(time);
 
       /**
        * The presence of this operation in the returned stack indicates that the
@@ -481,7 +482,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         return {
           id,
           op: StepOpCode.Sleep,
-          name: date.toISOString(),
+          name: iso,
           displayName: name ?? id,
         };
       } catch (err) {
