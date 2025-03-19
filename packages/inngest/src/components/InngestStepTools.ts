@@ -447,7 +447,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
        * sleep is over and we should continue execution.
        */
       const msTimeStr: string = timeStr(
-        isTemporalDuration(time) ? time.milliseconds : (time as number | string)
+        isTemporalDuration(time)
+          ? time.total({ unit: "milliseconds" })
+          : (time as number | string)
       );
 
       return {
@@ -474,8 +476,6 @@ export const createStepTools = <TClient extends Inngest.Any>(
         time: Date | string | InstantLike | Temporal.ZonedDateTimeLike
       ) => Promise<void>
     >(({ id, name }, time) => {
-      // const date = typeof time === "string" ? new Date(time) : time;
-
       const iso = getISOString(time);
 
       /**
