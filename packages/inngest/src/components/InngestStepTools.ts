@@ -471,13 +471,13 @@ export const createStepTools = <TClient extends Inngest.Any>(
         time: Date | string | Temporal.InstantLike | Temporal.ZonedDateTimeLike
       ) => Promise<void>
     >(({ id, name }, time) => {
-      const iso = Temporal.getISOString(time);
-
-      /**
-       * The presence of this operation in the returned stack indicates that the
-       * sleep is over and we should continue execution.
-       */
       try {
+        const iso = Temporal.getISOString(time);
+
+        /**
+         * The presence of this operation in the returned stack indicates that the
+         * sleep is over and we should continue execution.
+         */
         return {
           id,
           op: StepOpCode.Sleep,
@@ -490,12 +490,17 @@ export const createStepTools = <TClient extends Inngest.Any>(
          * error here to standardise this response.
          */
         // TODO PrettyError
-        console.warn("Invalid date or date string passed to sleepUntil;", err);
+        console.warn(
+          "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil;",
+          err
+        );
 
         // TODO PrettyError
         throw new Error(
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          `Invalid date or date string passed to sleepUntil: ${time as any}`
+          `Invalid \`Date\`, date string, \`Temporal.Instant\`, or \`Temporal.ZonedDateTime\` passed to sleepUntil: ${
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            time as any
+          }`
         );
       }
     }),
