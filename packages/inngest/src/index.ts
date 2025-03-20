@@ -81,6 +81,7 @@ export type {
   UnionKeys,
   WithoutInternal,
 } from "./helpers/types";
+export { dependencyInjectionMiddleware } from "./middleware/dependencyInjection.js";
 export type { LogArg } from "./middleware/logger";
 export { ProxyLogger } from "./middleware/logger.js";
 export type {
