@@ -1,24 +1,14 @@
-import crypto from "crypto";
 import { inngest } from "@/inngest/client";
 import { subscribe } from "@inngest/realtime";
 
 export async function POST(req: Request) {
-  const json = await req.json();
-  const { prompt } = json;
-
-  const uuid = crypto.randomUUID();
-
   await inngest.send({
-    name: "app/simple-search-agent.run",
-    data: {
-      uuid,
-      input: prompt,
-    },
+    name: "app/hello-world.run",
   });
 
   const stream = await subscribe(inngest, {
-    channel: `simple-search.${uuid}`,
-    topics: ["updates"], // subscribe to one or more topics in the user channel
+    channel: `hello-world`,
+    topics: ["messages"],
   });
 
   return new Response(stream.getEncodedStream(), {

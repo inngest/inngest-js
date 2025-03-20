@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
 
 export function SimpleSearch() {
@@ -68,7 +69,15 @@ export function SimpleSearch() {
   };
 
   return (
-    <div className="max-w-3xl max-w-full bg-gray-50 min-h-screen flex flex-col">
+    <div className="max-w-3xl max-w-full bg-gray-50 min-h-screen flex flex-col px-20">
+      <div className="flex pt-6 px-6">
+        <Link
+          href="/"
+          className={`px-3 py-1.5 bg-white text-black rounded-md border border-gray-200 hover:bg-gray-100 focus:outline-none disabled:opacity-70 transition-all duration-300 ease-in-out`}
+        >
+          Back to examples
+        </Link>
+      </div>
       <div className="p-6">
         <div className="bg-white p-6 rounded-lg border border-gray-200 shadow-sm mb-6">
           <h2 className="text-xl font-bold text-gray-900">
@@ -106,7 +115,7 @@ export function SimpleSearch() {
       </div>
 
       {/* Floating input at the bottom */}
-      <div className="mt-auto p-4 border-t border-gray-200 bg-white overflow-hidden">
+      <div className="mt-auto p-4 border-t border-gray-200 bg-white overflow-hidden rounded-lg">
         <form onSubmit={handleSubmit} className="flex items-center">
           <div
             className={`flex-1 transition-all duration-300 ease-in-out transform ${
