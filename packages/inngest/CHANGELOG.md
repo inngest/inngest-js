@@ -1,5 +1,13 @@
 # inngest
 
+## 3.32.10
+
+### Patch Changes
+
+- [#916](https://github.com/inngest/inngest-js/pull/916) [`ab835ee`](https://github.com/inngest/inngest-js/commit/ab835eeb891be45302c8bbe07d781d6a3de9f2a0) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Connect: Allow supplying Inngest env as environment variable
+
+- [#913](https://github.com/inngest/inngest-js/pull/913) [`b090e27`](https://github.com/inngest/inngest-js/commit/b090e278d471f425c8a216836c8109bd5086fd56) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export the `version` of the package
+
 ## 3.32.9
 
 ### Patch Changes
