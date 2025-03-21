@@ -654,7 +654,7 @@ describe("sleepUntil", () => {
     const next = new Date("bad");
 
     await expect(() => step.sleepUntil("id", next)).rejects.toThrow(
-      "Invalid date or date string passed"
+      "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil"
     );
   });
 
@@ -662,7 +662,7 @@ describe("sleepUntil", () => {
     const next = "bad";
 
     await expect(() => step.sleepUntil("id", next)).rejects.toThrow(
-      "Invalid date or date string passed"
+      "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil"
     );
   });
 });
