@@ -12,7 +12,7 @@
         pkgs = import nixpkgs { inherit system; };
         corepack = pkgs.stdenv.mkDerivation {
           name = "corepack";
-          buildInputs = [ pkgs.nodejs_20 ];
+          buildInputs = [ pkgs.nodejs_22 ];
           phases = [ "installPhase" ];
           installPhase = ''
             mkdir -p $out/bin
@@ -27,13 +27,17 @@
           nativeBuildInputs = with pkgs; [
             # Node
             typescript
-            nodejs_20
+            nodejs_22
 
             # LSPs
             nodePackages.typescript-language-server
             nodePackages.vscode-json-languageserver
             nodePackages.yaml-language-server
           ];
+
+          shellHook = ''
+            export COREPACK_ENABLE_AUTO_PIN=0
+          '';
         };
       });
 }

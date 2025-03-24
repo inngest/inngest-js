@@ -70,8 +70,8 @@ export const serve = (
 
   const fn = handler.createHandler();
 
-  return function handleRequest(req: Request) {
-    return fn(req, Deno.env.toObject());
+  return function handleRequest(req: Request, ...other) {
+    return fn(req, Deno.env.toObject(), ...other);
   };
 };
 

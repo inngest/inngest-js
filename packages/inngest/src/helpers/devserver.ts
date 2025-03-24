@@ -1,4 +1,6 @@
 import { defaultDevServerHost } from "./consts.js";
+import { devServerHost as envDevServerHost } from "./env.js";
+// re-export from devserver.ts
 
 /**
  * A simple type map that we can transparently use `fetch` later without having
@@ -45,8 +47,18 @@ export const devServerAvailable = async (
  * @example devServerUrl("http://localhost:8288/", "/your-path")
  */
 export const devServerUrl = (
-  host: string = defaultDevServerHost,
+  host: string = devServerHost(),
   pathname = ""
 ): URL => {
   return new URL(pathname, host.includes("://") ? host : `http://${host}`);
 };
+
+/**
+ * devServerHost exports the development server's domain by inspecting env
+ * variables, or returns the default development server URL.
+ *
+ * This guarantees a specific URL as a string, as opposed to the env export
+ * which only returns a value of the env var is set.
+ */
+export const devServerHost = (): string =>
+  envDevServerHost() || defaultDevServerHost;

@@ -89,13 +89,17 @@ export const serve = (
         body: () => readBody(event),
         headers: (key) => getHeader(event, key),
         method: () => event.method,
-        url: () =>
-          new URL(
+        url: () => {
+          let scheme = "https";
+          if ((processEnv("NODE_ENV") ?? "dev").startsWith("dev")) {
+            scheme = "http";
+          }
+
+          return new URL(
             String(event.path),
-            `${
-              processEnv("NODE_ENV") === "development" ? "http" : "https"
-            }://${String(getHeader(event, "host"))}`
-          ),
+            `${scheme}://${String(getHeader(event, "host"))}`
+          );
+        },
         queryString: (key) => {
           const param = getQuery(event)[key];
           if (param) {

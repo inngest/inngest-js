@@ -1,3 +1,4 @@
+import { ulid } from "ulidx";
 import { InngestApi } from "../api/api.js";
 import {
   defaultDevServerHost,
@@ -19,6 +20,7 @@ import {
 } from "../helpers/env.js";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.js";
 import { type Jsonify } from "../helpers/jsonify.js";
+import { retryWithBackoff } from "../helpers/promises.js";
 import { stringify } from "../helpers/strings.js";
 import {
   type AsArray,
@@ -81,11 +83,11 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
  * To provide event typing, see {@link EventSchemas}.
  *
  * ```ts
- * const inngest = new Inngest({ name: "My App" });
+ * const inngest = new Inngest({ id: "my-app" });
  *
  * // or to provide event typing too
  * const inngest = new Inngest({
- *   name: "My App",
+ *   id: "my-app",
  *   schemas: new EventSchemas().fromRecord<{
  *     "app/user.created": {
  *       data: { userId: string };
@@ -96,7 +98,9 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
  *
  * @public
  */
-export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
+export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
+  implements Inngest.Like
+{
   /**
    * The ID of this instance, most commonly a reference to the application it
    * resides in.
@@ -137,6 +141,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
 
   private readonly logger: Logger;
 
+  private localFns: InngestFunction.Any[] = [];
+
   /**
    * A promise that resolves when the middleware stack has been initialized and
    * the client is ready to be used.
@@ -157,6 +163,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
 
   protected readonly schemas?: NonNullable<TClientOpts["schemas"]>;
 
+  private _appVersion: string | undefined;
+
   get apiBaseUrl(): string | undefined {
     return this._apiBaseUrl;
   }
@@ -167,6 +175,10 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
 
   get env(): string | null {
     return this.headers[headerKeys.Environment] ?? null;
+  }
+
+  get appVersion(): string | undefined {
+    return this._appVersion;
   }
 
   /**
@@ -199,6 +211,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       middleware,
       isDev,
       schemas,
+      appVersion,
     } = this.options;
 
     if (!id) {
@@ -232,6 +245,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       ...builtInMiddleware,
       ...(middleware || []),
     ]);
+
+    this._appVersion = appVersion;
   }
 
   /**
@@ -481,6 +496,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
     payloads = payloads.map((p) => {
       return {
         ...p,
+        // Always generate an idempotency ID for an event for retries
+        id: p.id || ulid(),
         ts: p.ts || new Date().getTime(),
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: p.data || {},
@@ -555,32 +572,58 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions> {
       }
     }
 
-    // We don't need to do fallback auth here because this uses event keys and
-    // not signing keys
-    const response = await this.fetch(url, {
-      method: "POST",
-      body: stringify(payloads),
-      headers: { ...this.headers, ...headers },
-    });
+    const body = await retryWithBackoff(
+      async () => {
+        let rawBody: unknown;
+        let body: SendEventResponse | undefined;
 
-    let rawBody: unknown;
-    let body: SendEventResponse | undefined;
+        // We don't need to do fallback auth here because this uses event keys and
+        // not signing keys
+        const response = await this.fetch(url, {
+          method: "POST",
+          body: stringify(payloads),
+          headers: { ...this.headers, ...headers },
+        });
 
-    try {
-      rawBody = await response.json();
-      body = await sendEventResponseSchema.parseAsync(rawBody);
-    } catch (err) {
-      throw await this.getResponseError(response, rawBody);
-    }
+        try {
+          rawBody = await response.json();
+          body = await sendEventResponseSchema.parseAsync(rawBody);
+        } catch (err) {
+          throw await this.getResponseError(response, rawBody);
+        }
 
-    if (body.status / 100 !== 2 || body.error) {
-      throw await this.getResponseError(response, rawBody, body.error);
-    }
+        if (body.status !== 200 || body.error) {
+          throw await this.getResponseError(response, rawBody, body.error);
+        }
+
+        return body;
+      },
+      {
+        maxAttempts: 5,
+        baseDelay: 100,
+      }
+    );
 
     return await applyHookToOutput({ result: { ids: body.ids } });
   }
 
   public createFunction: Inngest.CreateFunction<this> = (
+    rawOptions,
+    rawTrigger,
+    handler
+  ) => {
+    const fn = this._createFunction(rawOptions, rawTrigger, handler);
+
+    this.localFns.push(fn);
+
+    return fn;
+  };
+
+  public get funcs() {
+    return this.localFns;
+  }
+
+  private _createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
     rawTrigger,
     handler
@@ -745,10 +788,26 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
  */
 export namespace Inngest {
   /**
-   * Represents any `Inngest` instance, regardless of generics and
-   * inference.
+   * Represents any `Inngest` instance, regardless of generics and inference.
+   *
+   * Prefer use of `Inngest.Like` where possible to ensure compatibility with
+   * multiple versions.
    */
   export type Any = Inngest;
+
+  /**
+   * References any `Inngest` instance across library versions, useful for use
+   * in public APIs to ensure compatibility with multiple versions.
+   *
+   * Prefer use of `Inngest.Any` internally and `Inngest.Like` for public APIs.
+   */
+  export interface Like {
+    readonly id: string;
+    apiBaseUrl: string | undefined;
+    eventBaseUrl: string | undefined;
+    env: string | null;
+    appVersion?: string | undefined;
+  }
 
   export type CreateFunction<TClient extends Inngest.Any> = <
     TMiddleware extends InngestMiddleware.Stack,
@@ -831,7 +890,7 @@ export namespace Inngest {
  */
 export type GetStepTools<
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  TInngest extends Inngest<any>,
+  TInngest extends Inngest.Any,
   TTrigger extends keyof GetEvents<TInngest> &
     string = keyof GetEvents<TInngest> & string,
 > = GetFunctionInput<TInngest, TTrigger> extends { step: infer TStep }
@@ -977,5 +1036,5 @@ export type GetEvents<
  * @public
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ClientOptionsFromInngest<TInngest extends Inngest<any>> =
+export type ClientOptionsFromInngest<TInngest extends Inngest.Any> =
   TInngest extends Inngest<infer U> ? U : ClientOptions;

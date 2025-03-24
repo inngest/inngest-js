@@ -1,3 +1,4 @@
+import { models, type AiAdapter } from "@inngest/ai";
 import { z } from "zod";
 import { logPrefix } from "../helpers/consts.js";
 import { type Jsonify } from "../helpers/jsonify.js";
@@ -30,7 +31,6 @@ import {
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { InngestFunctionReference } from "./InngestFunctionReference.js";
-import { gemini, openai, type AiAdapter } from "./ai/index.js";
 
 import { type InngestExecution } from "./execution/InngestExecution.js";
 
@@ -72,7 +72,7 @@ export interface FoundStep extends HashedOp {
    * Returns a boolean representing whether or not the step was handled on this
    * invocation.
    */
-  handle: () => Promise<boolean>;
+  handle: () => boolean;
 
   // TODO This is used to track the input we want for this step. Might be
   // present in ctx from Executor.
@@ -186,7 +186,8 @@ export const createStepTools = <TClient extends Inngest.Any>(
     type?: string
   ) => {
     return createTool<
-      <TFn extends (...args: Parameters<TFn>) => unknown>(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <TFn extends (...args: any[]) => unknown>(
         idOrOptions: StepOptionsOrId,
 
         /**
@@ -236,6 +237,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         };
       },
       {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         fn: (_, fn, ...input) => fn(...input),
       }
     );
@@ -411,20 +413,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
        * Models for AI inference and other AI-related tasks.
        */
       models: {
-        /**
-         * Create an OpenAI model using the OpenAI chat format.
-         *
-         * By default it targets the `https://api.openai.com/v1/` base URL.
-         */
-        openai,
-
-        /**
-         * Create a Gemini model using the OpenAI chat format.
-         *
-         * By default it targets the `https://generativelanguage.googleapis.com/v1beta/`
-         * base URL.
-         */
-        gemini,
+        ...models,
       },
     },
 

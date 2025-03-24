@@ -38,14 +38,15 @@
  * @module
  */
 
-export * from "./components/ai/index.js";
+export * from "@inngest/ai";
 export {
   EventSchemas,
+  type AddName,
   type AssertInternalEventPayloads,
   type Combine,
   type LiteralZodEventSchema,
-  type StandardEventSchemaToPayload,
   type StandardEventSchemas,
+  type StandardEventSchemaToPayload,
   type ZodEventSchemas,
 } from "./components/EventSchemas.js";
 export type {
@@ -102,3 +103,4 @@ export type {
   StepOptionsOrId,
   TimeStr,
 } from "./types";
+export { version } from "./version.js";

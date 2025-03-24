@@ -45,7 +45,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.7.0",
-    "@inngest/test": "0.1.1-pr-741.0",
+    "@inngest/test": "^0.1.6",
     "@types/eslint__js": "^8.42.3",
     "@types/jest": "^29.5.14",
     "eslint": "^8.30.0",

@@ -79,12 +79,12 @@ export interface ServeHandlerOptions extends RegisterOptions {
   /**
    * The `Inngest` instance used to declare all functions.
    */
-  client: Inngest.Any;
+  client: Inngest.Like;
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly InngestFunction.Any[];
+  functions: readonly InngestFunction.Like[];
 }
 
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
@@ -122,12 +122,12 @@ interface InngestCommHandlerOptions<
    * receiving events from the same service, as you can reuse a single
    * definition of Inngest.
    */
-  client: Inngest.Any;
+  client: Inngest.Like;
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly InngestFunction.Any[];
+  functions: readonly InngestFunction.Like[];
 
   /**
    * The `handler` is the function that will be called with your framework's
@@ -157,6 +157,8 @@ interface InngestCommHandlerOptions<
    * See any existing handler for a full example.
    */
   handler: Handler<Input, Output, StreamOutput>;
+
+  skipSignatureValidation?: boolean;
 }
 
 /**
@@ -343,6 +345,8 @@ export class InngestCommHandler<
     StreamOutput
   >;
 
+  private readonly skipSignatureValidation: boolean;
+
   constructor(options: InngestCommHandlerOptions<Input, Output, StreamOutput>) {
     // Set input options directly so we can reference them later
     this._options = options;
@@ -361,7 +365,13 @@ export class InngestCommHandler<
     }
 
     this.frameworkName = options.frameworkName;
-    this.client = options.client;
+    this.client = options.client as Inngest.Any;
+
+    if (options.id) {
+      console.warn(
+        `${logPrefix} The \`id\` serve option is deprecated and will be removed in v4`
+      );
+    }
     this.id = options.id || this.client.id;
 
     this.handler = options.handler as Handler;
@@ -376,7 +386,7 @@ export class InngestCommHandler<
     );
 
     // Ensure we filter any undefined functions in case of missing imports.
-    this.rawFns = options.functions.filter(Boolean);
+    this.rawFns = options.functions.filter(Boolean) as InngestFunction.Any[];
 
     if (this.rawFns.length !== options.functions.length) {
       // TODO PrettyError
@@ -388,7 +398,10 @@ export class InngestCommHandler<
     this.fns = this.rawFns.reduce<
       Record<string, { fn: InngestFunction.Any; onFailure: boolean }>
     >((acc, fn) => {
-      const configs = fn["getConfig"](new URL("https://example.com"), this.id);
+      const configs = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: this.id,
+      });
 
       const fns = configs.reduce((acc, { id }, index) => {
         return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
@@ -415,6 +428,8 @@ export class InngestCommHandler<
     this.signingKeyFallback = options.signingKeyFallback;
     this._serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
     this._servePath = options.servePath || this.env[envKeys.InngestServePath];
+
+    this.skipSignatureValidation = options.skipSignatureValidation || false;
 
     const defaultLogLevel: typeof this.logLevel = "info";
     this.logLevel = z
@@ -638,12 +653,29 @@ export class InngestCommHandler<
       const timer = new ServerTiming();
 
       /**
+       * Used for testing, allow setting action overrides externally when
+       * calling the handler. Always search the final argument.
+       */
+      const lastArg = args[args.length - 1] as unknown;
+      const actionOverrides =
+        typeof lastArg === "object" &&
+        lastArg !== null &&
+        "actionOverrides" in lastArg &&
+        typeof lastArg["actionOverrides"] === "object" &&
+        lastArg["actionOverrides"] !== null
+          ? lastArg["actionOverrides"]
+          : {};
+
+      /**
        * We purposefully `await` the handler, as it could be either sync or
        * async.
        */
-      const rawActions = await timer
-        .wrap("handler", () => this.handler(...args))
-        .catch(rethrowError("Serve handler failed to run"));
+      const rawActions = {
+        ...(await timer
+          .wrap("handler", () => this.handler(...args))
+          .catch(rethrowError("Serve handler failed to run"))),
+        ...actionOverrides,
+      };
 
       /**
        * Map over every `action` in `rawActions` and create a new `actions`
@@ -701,6 +733,7 @@ export class InngestCommHandler<
 
           return ret;
         },
+        ...actionOverrides,
       };
 
       const [env, expectedServerKind] = await Promise.all([
@@ -985,10 +1018,37 @@ export class InngestCommHandler<
     method: string;
     headers: Promise<Record<string, string>>;
   }): Promise<ActionResponse> {
+    // This is when the request body is completely missing; it does not
+    // include an empty body. This commonly happens when the HTTP framework
+    // doesn't have body parsing middleware.
+    const isMissingBody = body === undefined;
+
     try {
       let url = await actions.url("starting to handle request");
 
       if (method === "POST") {
+        if (isMissingBody) {
+          this.log(
+            "error",
+            "Missing body when executing, possibly due to missing request body middleware"
+          );
+
+          return {
+            status: 500,
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: stringify(
+              serializeError(
+                new Error(
+                  "Missing request body when executing, possibly due to missing request body middleware"
+                )
+              )
+            ),
+            version: undefined,
+          };
+        }
+
         const validationResult = await signatureValidation;
         if (!validationResult.success) {
           return {
@@ -1160,11 +1220,19 @@ export class InngestCommHandler<
         }
       }
 
+      // TODO: This feels hacky, so we should probably make it not hacky.
+      const env = getInngestHeaders()[headerKeys.Environment] ?? null;
+
       if (method === "GET") {
         return {
           status: 200,
           body: stringify(
-            await this.introspectionBody({ actions, signatureValidation, url })
+            await this.introspectionBody({
+              actions,
+              env,
+              signatureValidation,
+              url,
+            })
           ),
           headers: {
             "Content-Type": "application/json",
@@ -1188,7 +1256,7 @@ export class InngestCommHandler<
             parseAsBoolean(this.env[envKeys.InngestAllowInBandSync])
           )
             .then((allowInBandSync) => {
-              if (!allowInBandSync) {
+              if (allowInBandSync !== undefined && !allowInBandSync) {
                 return syncKind.OutOfBand;
               }
 
@@ -1203,6 +1271,28 @@ export class InngestCommHandler<
         ]);
 
         if (inBandSyncRequested) {
+          if (isMissingBody) {
+            this.log(
+              "error",
+              "Missing body when syncing, possibly due to missing request body middleware"
+            );
+
+            return {
+              status: 500,
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: stringify(
+                serializeError(
+                  new Error(
+                    "Missing request body when syncing, possibly due to missing request body middleware"
+                  )
+                )
+              ),
+              version: undefined,
+            };
+          }
+
           // Validation can be successful if we're in dev mode and did not
           // actually validate a key. In this case, also check that we did indeed
           // use a particular key to validate.
@@ -1244,6 +1334,7 @@ export class InngestCommHandler<
           const respBody = await this.inBandRegisterBody({
             actions,
             deployId,
+            env,
             signatureValidation,
             url,
           });
@@ -1322,8 +1413,16 @@ export class InngestCommHandler<
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
 
-    const immediateFnData = parseFnData(fn.fn, data);
-    const { version } = immediateFnData;
+    const immediateFnData = parseFnData(data);
+    let { version } = immediateFnData;
+
+    // Handle opting in to optimized parallelism in v3.
+    if (
+      version === ExecutionVersion.V1 &&
+      fn.fn["shouldOptimizeParallelism"]?.()
+    ) {
+      version = ExecutionVersion.V2;
+    }
 
     const result = runAsPromise(async () => {
       const anyFnData = await fetchAllFnData({
@@ -1423,9 +1522,48 @@ export class InngestCommHandler<
             },
           };
         },
+        [ExecutionVersion.V2]: ({ event, events, steps, ctx, version }) => {
+          const stepState = Object.entries(steps ?? {}).reduce<
+            InngestExecutionOptions["stepState"]
+          >((acc, [id, result]) => {
+            return {
+              ...acc,
+              [id]:
+                result.type === "data"
+                  ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    { id, data: result.data }
+                  : result.type === "input"
+                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                      { id, input: result.input }
+                    : { id, error: result.error },
+            };
+          }, {});
+
+          return {
+            version,
+            partialOptions: {
+              runId: ctx?.run_id || "",
+              data: {
+                event: event as EventPayload,
+                events: events as [EventPayload, ...EventPayload[]],
+                runId: ctx?.run_id || "",
+                attempt: ctx?.attempt ?? 0,
+              },
+              stepState,
+              requestedRunStep:
+                stepId === "step" ? undefined : stepId || undefined,
+              timer,
+              isFailureHandler: fn.onFailure,
+              disableImmediateExecution: ctx?.disable_immediate_execution,
+              stepCompletionOrder: ctx?.stack?.stack ?? [],
+              reqArgs,
+              headers,
+            },
+          };
+        },
       });
 
-      const executionOptions = await executionStarters[anyFnData.value.version](
+      const executionOptions = await executionStarters[version](
         anyFnData.value
       );
 
@@ -1437,7 +1575,10 @@ export class InngestCommHandler<
 
   protected configs(url: URL): FunctionConfig[] {
     const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
-      (acc, fn) => [...acc, ...fn["getConfig"](url, this.id)],
+      (acc, fn) => [
+        ...acc,
+        ...fn["getConfig"]({ baseUrl: url, appPrefix: this.id }),
+      ],
       []
     );
 
@@ -1502,7 +1643,9 @@ export class InngestCommHandler<
       deployId: deployId || undefined,
       capabilities: {
         trust_probe: "v1",
+        connect: "v1",
       },
+      appVersion: this.client.appVersion,
     };
 
     return body;
@@ -1511,6 +1654,7 @@ export class InngestCommHandler<
   protected async inBandRegisterBody({
     actions,
     deployId,
+    env,
     signatureValidation,
     url,
   }: {
@@ -1522,6 +1666,7 @@ export class InngestCommHandler<
      */
     deployId: string | undefined | null;
 
+    env: string | null;
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
 
     url: URL;
@@ -1529,14 +1674,16 @@ export class InngestCommHandler<
     const registerBody = this.registerBody({ deployId, url });
     const introspectionBody = await this.introspectionBody({
       actions,
+      env,
       signatureValidation,
       url,
     });
 
     const body: InBandRegisterRequest = {
-      app_id: this.client.id,
+      app_id: this.id,
+      appVersion: this.client.appVersion,
       capabilities: registerBody.capabilities,
-      env: null,
+      env,
       framework: registerBody.framework,
       functions: registerBody.functions,
       inspection: introspectionBody,
@@ -1552,7 +1699,6 @@ export class InngestCommHandler<
     };
 
     if (introspectionBody.authentication_succeeded) {
-      body.env = introspectionBody.env;
       body.sdk_language = introspectionBody.sdk_language;
       body.sdk_version = introspectionBody.sdk_version;
     }
@@ -1562,10 +1708,12 @@ export class InngestCommHandler<
 
   protected async introspectionBody({
     actions,
+    env,
     signatureValidation,
     url,
   }: {
     actions: HandlerResponseWithErrors;
+    env: string | null;
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     url: URL;
   }): Promise<UnauthenticatedIntrospection | AuthenticatedIntrospection> {
@@ -1605,15 +1753,12 @@ export class InngestCommHandler<
           ...introspection,
           authentication_succeeded: true,
           api_origin: this.apiBaseUrl,
-          app_id: this.client.id,
+          app_id: this.id,
           capabilities: {
             trust_probe: "v1",
+            connect: "v1",
           },
-          env:
-            (await actions.headers(
-              "fetching environment for introspection request",
-              headerKeys.Environment
-            )) || null,
+          env,
           event_api_origin: this.eventApiBaseUrl,
           event_key_hash: this.hashedEventKey ?? null,
           extra: {
@@ -1816,6 +1961,11 @@ export class InngestCommHandler<
     { success: true; keyUsed: string } | { success: false; err: Error }
   > {
     try {
+      // Skip signature validation if requested (used by connect)
+      if (this.skipSignatureValidation) {
+        return { success: true, keyUsed: "" };
+      }
+
       // Never validate signatures outside of prod. Make sure to check the mode
       // exists here instead of using nullish coalescing to confirm that the check
       // has been completed.
@@ -2070,7 +2220,8 @@ export interface ActionResponse<
    * The version of the execution engine that was used to run this action.
    *
    * If the action didn't use the execution engine (for example, a GET request
-   * as a health check), this will be `undefined`.
+   * as a health check) or would have but errored before reaching it, this will
+   * be `undefined`.
    *
    * If the version should be entirely omitted from the response (for example,
    * when sending preliminary headers when streaming), this will be `null`.

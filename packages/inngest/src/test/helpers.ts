@@ -5,6 +5,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 import { Inngest, InngestFunction } from "@local";
 import {
+  HandlerResponse,
   InngestCommHandler,
   type ServeHandlerOptions,
 } from "@local/components/InngestCommHandler";
@@ -260,7 +261,16 @@ export const testFramework = (
   const run = async (
     handlerOpts: Parameters<(typeof handler)["serve"]> | ServeHandler,
     reqOpts: Parameters<typeof httpMocks.createRequest>,
-    env: Env = {}
+    env: Env = {},
+
+    /**
+     * Forced action overrides, directly overwriting any fields returned by the
+     * handler.
+     *
+     * This is useful to produce specific scenarios where actions like body
+     * parsing may be missing from a framework.
+     */
+    actionOverrides?: Partial<HandlerResponse>
   ): Promise<HandlerStandardReturn> => {
     const serveHandler = Array.isArray(handlerOpts)
       ? getServeHandler(handlerOpts)
@@ -302,6 +312,10 @@ export const testFramework = (
     }
 
     const args = opts?.transformReq?.(req, res, envToPass) ?? [req, res];
+    if (actionOverrides) {
+      args.push({ actionOverrides });
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ret = await (serveHandler as (...args: any[]) => any)(...args);
 
@@ -847,12 +861,14 @@ export const testFramework = (
             requestedSyncKind,
             validSignature,
             allowInBandSync,
+            actionOverrides,
           }: {
             serverMode: serverKind;
             sdkMode: serverKind;
             requestedSyncKind: syncKind | undefined;
             validSignature: boolean | undefined;
-            allowInBandSync: boolean;
+            allowInBandSync: boolean | undefined;
+            actionOverrides?: Partial<HandlerResponse>;
           }
         ) => {
           const signingKey = "123";
@@ -877,9 +893,13 @@ export const testFramework = (
               : validSignature === false
                 ? "an invalid"
                 : "no"
-          } signature ${
-            allowInBandSync ? "" : "(in-band syncs disallowed in env var) "
-          }should ${
+          } signature (in-band syncs ${
+            allowInBandSync === false
+              ? "disallowed in"
+              : allowInBandSync === true
+                ? "allowed in"
+                : "undefined as"
+          } env var) should ${
             typeof expectedResponse === "number" ? "return" : "perform"
           } ${expectedResponse}`;
 
@@ -902,10 +922,15 @@ export const testFramework = (
                 [envKeys.InngestSigningKey]: signingKey,
                 [envKeys.InngestDevMode]:
                   sdkMode === serverKind.Dev ? "true" : "false",
-                [envKeys.InngestAllowInBandSync]: allowInBandSync
-                  ? "true"
-                  : "false",
-              }
+                ...(typeof allowInBandSync !== "undefined"
+                  ? {
+                      [envKeys.InngestAllowInBandSync]: allowInBandSync
+                        ? "true"
+                        : "false",
+                    }
+                  : {}),
+              },
+              actionOverrides
             );
 
             if (typeof expectedResponse === "number") {
@@ -957,12 +982,14 @@ export const testFramework = (
           Object.values(serverKind).forEach((serverMode) => {
             Object.values(serverKind).forEach((sdkMode) => {
               [undefined, false, true].forEach((validSignature) => {
-                expectResponse(syncKind.OutOfBand, {
-                  serverMode,
-                  sdkMode,
-                  requestedSyncKind: undefined,
-                  validSignature,
-                  allowInBandSync: true,
+                [undefined, true].forEach((allowInBandSync) => {
+                  expectResponse(syncKind.OutOfBand, {
+                    serverMode,
+                    sdkMode,
+                    requestedSyncKind: undefined,
+                    validSignature,
+                    allowInBandSync,
+                  });
                 });
               });
             });
@@ -974,12 +1001,14 @@ export const testFramework = (
           Object.values(serverKind).forEach((serverMode) => {
             Object.values(serverKind).forEach((sdkMode) => {
               [undefined, false, true].forEach((validSignature) => {
-                expectResponse(syncKind.OutOfBand, {
-                  serverMode,
-                  sdkMode,
-                  requestedSyncKind: syncKind.OutOfBand,
-                  validSignature,
-                  allowInBandSync: true,
+                [undefined, true].forEach((allowInBandSync) => {
+                  expectResponse(syncKind.OutOfBand, {
+                    serverMode,
+                    sdkMode,
+                    requestedSyncKind: syncKind.OutOfBand,
+                    validSignature,
+                    allowInBandSync,
+                  });
                 });
               });
             });
@@ -991,12 +1020,14 @@ export const testFramework = (
           describe("with valid signature", () => {
             Object.values(serverKind).forEach((serverMode) => {
               Object.values(serverKind).forEach((sdkMode) => {
-                expectResponse(syncKind.InBand, {
-                  serverMode,
-                  sdkMode,
-                  requestedSyncKind: syncKind.InBand,
-                  validSignature: true,
-                  allowInBandSync: true,
+                [undefined, true].forEach((allowInBandSync) => {
+                  expectResponse(syncKind.InBand, {
+                    serverMode,
+                    sdkMode,
+                    requestedSyncKind: syncKind.InBand,
+                    validSignature: true,
+                    allowInBandSync,
+                  });
                 });
               });
             });
@@ -1005,14 +1036,17 @@ export const testFramework = (
           describe("with invalid signature", () => {
             Object.values(serverKind).forEach((serverMode) => {
               Object.values(serverKind).forEach((sdkMode) => {
-                const res = sdkMode === serverKind.Dev ? syncKind.InBand : 401;
+                [undefined, true].forEach((allowInBandSync) => {
+                  const res =
+                    sdkMode === serverKind.Dev ? syncKind.InBand : 401;
 
-                expectResponse(res, {
-                  serverMode,
-                  sdkMode,
-                  requestedSyncKind: syncKind.InBand,
-                  validSignature: false,
-                  allowInBandSync: true,
+                  expectResponse(res, {
+                    serverMode,
+                    sdkMode,
+                    requestedSyncKind: syncKind.InBand,
+                    validSignature: false,
+                    allowInBandSync,
+                  });
                 });
               });
             });
@@ -1021,14 +1055,34 @@ export const testFramework = (
           describe("with no signature", () => {
             Object.values(serverKind).forEach((serverMode) => {
               Object.values(serverKind).forEach((sdkMode) => {
-                const res = sdkMode === serverKind.Dev ? syncKind.InBand : 401;
+                [undefined, true].forEach((allowInBandSync) => {
+                  const res =
+                    sdkMode === serverKind.Dev ? syncKind.InBand : 401;
 
-                expectResponse(res, {
-                  serverMode,
-                  sdkMode,
-                  requestedSyncKind: syncKind.InBand,
-                  validSignature: undefined,
-                  allowInBandSync: true,
+                  expectResponse(res, {
+                    serverMode,
+                    sdkMode,
+                    requestedSyncKind: syncKind.InBand,
+                    validSignature: undefined,
+                    allowInBandSync,
+                  });
+                });
+              });
+            });
+          });
+
+          describe("#789 with no body", () => {
+            Object.values(serverKind).forEach((serverMode) => {
+              Object.values(serverKind).forEach((sdkMode) => {
+                [undefined, true].forEach((allowInBandSync) => {
+                  expectResponse(500, {
+                    actionOverrides: { body: () => undefined },
+                    serverMode,
+                    sdkMode,
+                    requestedSyncKind: syncKind.InBand,
+                    validSignature: true,
+                    allowInBandSync,
+                  });
                 });
               });
             });
@@ -1038,6 +1092,27 @@ export const testFramework = (
     });
 
     describe("POST (run function)", () => {
+      describe("#789 missing body", () => {
+        test("returns 500", async () => {
+          const client = createClient({ id: "test" });
+
+          const fn = client.createFunction(
+            { name: "Test", id: "test" },
+            { event: "demo/event.sent" },
+            () => "fn"
+          );
+
+          const ret = await run(
+            [{ client, functions: [fn] }],
+            [{ method: "POST" }],
+            {},
+            { body: () => undefined }
+          );
+
+          expect(ret.status).toEqual(500);
+        });
+      });
+
       describe("signature validation", () => {
         const client = createClient({ id: "test" });
 

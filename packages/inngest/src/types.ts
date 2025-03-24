@@ -708,6 +708,25 @@ export interface ClientOptions {
    * running in a production-like environment.
    */
   isDev?: boolean;
+
+  /**
+   * The application-specific version identifier. This can be an arbitrary value
+   * such as a version string, a Git commit SHA, or any other unique identifier.
+   */
+  appVersion?: string;
+
+  /**
+   * If `true`, parallel steps within functions are optimized to reduce traffic
+   * during `Promise` resolution, which can hugely reduce the time taken and
+   * number of requests for each run.
+   *
+   * Note that this will be the default behaviour in v4 and in its current form
+   * will cause `Promise.*()` to wait for all promises to settle before
+   * resolving.
+   *
+   * @default false
+   */
+  optimizeParallelism?: boolean;
 }
 
 /**
@@ -844,6 +863,7 @@ export interface RegisterOptions {
   /**
    * The ID of this app. This is used to group functions together in the Inngest
    * UI. The ID of the passed client is used by default.
+   * @deprecated Will be removed in v4.
    */
   id?: string;
 }
@@ -1006,6 +1026,12 @@ export interface RegisterRequest {
   appName: string;
 
   /**
+   * AppVersion represents an optional application version identifier. This should change
+   * whenever code within one of your Inngest function or any dependency thereof changes.
+   */
+  appVersion?: string;
+
+  /**
    * The functions available at this particular handler.
    */
   functions: FunctionConfig[];
@@ -1023,12 +1049,13 @@ export interface RegisterRequest {
 
 export interface Capabilities {
   trust_probe: "v1";
+  connect: "v1";
 }
 
 export interface InBandRegisterRequest
   extends Pick<
       RegisterRequest,
-      "capabilities" | "framework" | "functions" | "sdk" | "url"
+      "capabilities" | "framework" | "functions" | "sdk" | "url" | "appVersion"
     >,
     Pick<AuthenticatedIntrospection, "sdk_language" | "sdk_version" | "env"> {
   /**
@@ -1119,7 +1146,7 @@ export const functionConfigSchema = z.strictObject({
       id: z.string(),
       name: z.string(),
       runtime: z.strictObject({
-        type: z.literal("http"),
+        type: z.union([z.literal("http"), z.literal("ws")]),
         url: z.string(),
       }),
       retries: z
@@ -1254,6 +1281,7 @@ export type SupportedFrameworkName =
   | "express"
   | "aws-lambda"
   | "nextjs"
+  | "nodejs"
   | "nuxt"
   | "h3"
   | "redwoodjs"
