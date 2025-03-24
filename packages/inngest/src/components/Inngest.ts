@@ -333,6 +333,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    */
   private async getResponseError(
     response: globalThis.Response,
+    rawBody: unknown,
     foundErr = "Unknown error"
   ): Promise<Error> {
     let errorMessage = foundErr;
@@ -352,7 +353,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
           errorMessage = "Event key not found";
           break;
         case 406:
-          errorMessage = `${JSON.stringify(await response.json())}`;
+          errorMessage = `${JSON.stringify(await rawBody)}`;
           break;
         case 409:
         case 412:
@@ -365,7 +366,11 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
           errorMessage = "Internal server error";
           break;
         default:
-          errorMessage = await response.text();
+          try {
+            errorMessage = await response.text();
+          } catch (err) {
+            errorMessage = `${JSON.stringify(await rawBody)}`;
+          }
           break;
       }
     }
@@ -569,6 +574,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
     const body = await retryWithBackoff(
       async () => {
+        let rawBody: unknown;
         let body: SendEventResponse | undefined;
 
         // We don't need to do fallback auth here because this uses event keys and
@@ -580,14 +586,14 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         });
 
         try {
-          const rawBody: unknown = await response.json();
+          rawBody = await response.json();
           body = await sendEventResponseSchema.parseAsync(rawBody);
         } catch (err) {
-          throw await this.getResponseError(response);
+          throw await this.getResponseError(response, rawBody);
         }
 
         if (body.status !== 200 || body.error) {
-          throw await this.getResponseError(response, body.error);
+          throw await this.getResponseError(response, rawBody, body.error);
         }
 
         return body;
