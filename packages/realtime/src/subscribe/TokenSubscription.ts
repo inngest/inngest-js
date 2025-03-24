@@ -1,156 +1,43 @@
 import debug from "debug";
 import { type Inngest } from "inngest";
-import { devServerAvailable } from "inngest/helpers/devserver";
-import { topic } from "./topic";
-import { Realtime } from "./types";
-import { createDeferredPromise } from "./util";
+import { devServerAvailable, devServerUrl } from "inngest/helpers/devserver";
+import { topic } from "../topic";
+import { Realtime } from "../types";
+import { createDeferredPromise } from "../util";
+import { getSubscriptionToken } from "./helpers";
+import { StreamFanout } from "./StreamFanout";
 
 /**
  * TODO
  */
-export const subscribe = async <
-  const InputChannel extends Realtime.Channel | string,
-  const InputTopics extends (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[],
-  const TToken extends Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  >,
-  const TOutput extends Realtime.Subscribe.StreamSubscription<TToken>,
->(
-  /**
-   * TODO
-   */
-  app: Inngest.Like,
-
-  /**
-   * TODO
-   */
-  token: {
-    /**
-     * TODO
-     */
-    channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
-
-    /**
-     * TODO
-     */
-    topics: InputTopics;
-  },
-
-  /**
-   * TODO
-   */
-  callback?: Realtime.Subscribe.Callback<TToken>,
-): Promise<TOutput> => {
-  const subscription = new TokenSubscription(
-    app,
-    token as Realtime.Subscribe.Token,
-  );
-  const iterator = subscription.getIterator(subscription.getStream());
-
-  await subscription.connect();
-
-  const extras = {
-    close: () => Promise.resolve(subscription.close()),
-    cancel: () => subscription.close(),
-    getStream: () => subscription.getStream(),
-  };
-
-  if (callback) {
-    subscription.useCallback(subscription.getStream(), callback);
-  }
-
-  return Object.assign(iterator, extras) as unknown as TOutput;
-};
-
-/**
- * TODO
- */
-export const getSubscriptionToken = async <
-  const InputChannel extends Realtime.Channel | string,
-  const InputTopics extends (keyof Realtime.Channel.InferTopics<
-    Realtime.Channel.AsChannel<InputChannel>
-  > &
-    string)[],
-  const TToken extends Realtime.Subscribe.Token<
-    Realtime.Channel.AsChannel<InputChannel>,
-    InputTopics
-  >,
->(
-  /**
-   * TODO
-   */
-  app: Inngest.Like,
-
-  /**
-   * TODO
-   */
-  args: {
-    /**
-     * TODO
-     */
-    channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
-
-    /**
-     * TODO
-     */
-    topics: InputTopics;
-  },
-): Promise<TToken> => {
-  const channelId =
-    typeof args.channel === "string" ? args.channel : args.channel.name;
-
-  if (!channelId) {
-    throw new Error("Channel ID is required to create a subscription token");
-  }
-
-  const key = await (app as Inngest.Any)["inngestApi"].getSubscriptionToken(
-    channelId,
-    args.topics,
-  );
-
-  const token = {
-    channel: channelId,
-    topics: args.topics,
-    key,
-  } as TToken;
-
-  return token;
-};
-
-// Must be a new connection for every token used.
-class TokenSubscription {
+export class TokenSubscription {
   #app: Inngest.Any;
+  #channelId: string;
   #debug = debug("inngest:realtime");
-
+  #encoder = new TextEncoder();
+  #fanout = new StreamFanout<Realtime.Message>();
   #running = false;
-
-  #sourceStreamContoller: ReadableStreamDefaultController<Realtime.Message> | null =
-    null;
-
-  #sourceStream = new ReadableStream<Realtime.Message>({
-    start: (controller) => {
-      this.#sourceStreamContoller = controller;
-    },
-  });
-
-  #createdStreamControllers = new Set<ReadableStreamDefaultController>();
-
+  #topics: Map<string, Realtime.Topic.Definition>;
   #ws: WebSocket | null = null;
 
+  /**
+   * This is a map that tracks stream IDs to their corresponding streams and
+   * controllers.
+   */
   #chunkStreams = new Map<
     string,
     { stream: ReadableStream; controller: ReadableStreamDefaultController }
   >();
 
-  #channelId: string;
-  #topics: Map<string, Realtime.Topic.Definition>;
-
   constructor(
+    /**
+     * TODO
+     */
     app: Inngest.Like,
+
+    /**
+     * TODO
+     */
     public token: Realtime.Subscribe.Token,
   ) {
     this.#app = app as Inngest.Any;
@@ -192,13 +79,14 @@ class TokenSubscription {
         this.#app["mode"].isInferred &&
         !this.#app.apiBaseUrl
       ) {
+        const dsUrl = devServerUrl().toString();
         const devAvailable = await devServerAvailable(
-          "http://localhost:8288/",
+          dsUrl,
           this.#app["fetch"],
         );
 
         if (devAvailable) {
-          url = new URL(path, "http://localhost:8288/");
+          url = new URL(path, dsUrl);
         }
       }
     }
@@ -209,6 +97,9 @@ class TokenSubscription {
     return url;
   }
 
+  /**
+   * TODO
+   */
   public async connect() {
     this.#debug(
       `Establishing connection to channel "${
@@ -298,10 +189,9 @@ class TokenSubscription {
               `Received message on channel "${msg.channel}" for topic "${msg.topic}":`,
               msg.data,
             );
-            return this.#sourceStreamContoller?.enqueue({
+            return this.#fanout.write({
               channel: msg.channel,
               topic: msg.topic,
-
               data: msg.data,
               fnId: msg.fn_id,
               createdAt: msg.created_at || new Date(),
@@ -355,7 +245,7 @@ class TokenSubscription {
             this.#debug(
               `Created stream ID "${streamId}" on channel "${msg.channel}"`,
             );
-            return this.#sourceStreamContoller?.enqueue({
+            return this.#fanout.write({
               channel: msg.channel,
               topic: msg.topic,
               kind: "datastream-start",
@@ -405,7 +295,7 @@ class TokenSubscription {
             this.#debug(
               `Closed stream ID "${streamId}" on channel "${msg.channel}"`,
             );
-            return this.#sourceStreamContoller?.enqueue({
+            return this.#fanout.write({
               channel: msg.channel,
               topic: msg.topic,
               kind: "datastream-end",
@@ -455,11 +345,10 @@ class TokenSubscription {
 
             stream.controller.enqueue(msg.data);
 
-            return this.#sourceStreamContoller?.enqueue({
+            return this.#fanout.write({
               channel: msg.channel,
               topic: msg.topic,
               kind: "chunk",
-
               data: msg.data,
               streamId: msg.stream_id,
               fnId: msg.fn_id,
@@ -492,25 +381,18 @@ class TokenSubscription {
       ret.reject(err);
     }
 
-    void (async () => {
-      const reader = this.#sourceStream.getReader();
-
-      while (this.#running) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        for (const controller of this.#createdStreamControllers) {
-          controller.enqueue(value);
-        }
-      }
-    })();
-
     return ret.promise;
   }
 
-  public close(reason: string = "Userland closed connection") {
+  /**
+   * TODO
+   */
+  public close(
+    /**
+     * TODO
+     */
+    reason: string = "Userland closed connection",
+  ) {
     if (!this.#running) {
       return;
     }
@@ -519,62 +401,38 @@ class TokenSubscription {
     this.#running = false;
     this.#ws?.close(1000, reason);
 
-    this.#debug(`Closing ${this.#createdStreamControllers.size} streams...`);
-    this.#sourceStreamContoller?.close();
-    this.#createdStreamControllers.forEach((controller) => controller.close());
+    this.#debug(`Closing ${this.#fanout.size()} streams...`);
+    this.#fanout.close();
   }
 
-  public getStream() {
-    let controller: ReadableStreamDefaultController;
+  /**
+   * TODO
+   */
+  public getJsonStream() {
+    return this.#fanout.createStream();
+  }
 
-    const stream = new ReadableStream<Realtime.Message>({
-      start: (_controller) => {
-        controller = _controller;
-        this.#createdStreamControllers.add(controller);
-      },
-
-      cancel: () => {
-        this.#createdStreamControllers.delete(controller);
-      },
+  /**
+   * TODO
+   */
+  public getEncodedStream() {
+    return this.#fanout.createStream((chunk) => {
+      return this.#encoder.encode(`${JSON.stringify(chunk)}\n`);
     });
-
-    return stream;
   }
 
-  public getIterator(stream: ReadableStream<Realtime.Message>) {
-    return {
-      [Symbol.asyncIterator]: () => {
-        const reader = stream.getReader();
-
-        return {
-          next: () => {
-            return reader.read();
-          },
-
-          return: () => {
-            reader.releaseLock();
-            return Promise.resolve({ done: true, value: undefined });
-          },
-        };
-      },
-    };
-  }
-
+  /**
+   * TODO
+   */
   public useCallback(
-    stream: ReadableStream<Realtime.Message>,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    callback: Realtime.Subscribe.Callback<any>,
+    callback: Realtime.Subscribe.Callback,
+    stream: ReadableStream<Realtime.Message> = this.getJsonStream(),
   ) {
     void (async () => {
-      const reader = stream.getReader();
+      for await (const chunk of stream) {
+        if (!this.#running) return;
 
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-
-        callback(value);
+        callback(chunk);
       }
     })();
   }
