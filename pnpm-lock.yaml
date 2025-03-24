@@ -127,6 +127,9 @@ importers:
       strip-ansi:
         specifier: ^5.2.0
         version: 5.2.0
+      temporal-polyfill:
+        specifier: ^0.2.5
+        version: 0.2.5
       ulidx:
         specifier: ^2.4.1
         version: 2.4.1
@@ -229,7 +232,7 @@ importers:
         version: 0.1.11
       next:
         specifier: ^13.5.4
-        version: 13.5.4(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
+        version: 13.5.4(@babel/core@7.23.6)(react-dom@18.2.0(react@19.0.0))(react@19.0.0)
       nock:
         specifier: ^13.2.9
         version: 13.2.9
@@ -5172,6 +5175,12 @@ packages:
   synckit@0.9.2:
     resolution: {integrity: sha512-vrozgXDQwYO72vHjUb/HnFbQx1exDjoKzqx23aXEg2a9VIg2TSFZ8FmeZpTjUCFMYw7mpX4BE2SFu8wI7asYsw==}
     engines: {node: ^14.18.0 || >=16.0.0}
+
+  temporal-polyfill@0.2.5:
+    resolution: {integrity: sha512-ye47xp8Cb0nDguAhrrDS1JT1SzwEV9e26sSsrWzVu+yPZ7LzceEcH0i2gci9jWfOfSCCgM3Qv5nOYShVUUFUXA==}
+
+  temporal-spec@0.2.4:
+    resolution: {integrity: sha512-lDMFv4nKQrSjlkHKAlHVqKrBG4DyFfa9F74cmBZ3Iy3ed8yvWnlWSIdi4IKfSqwmazAohBNwiN64qGx4y5Q3IQ==}
 
   term-size@2.2.1:
     resolution: {integrity: sha512-wK0Ri4fOGjv/XPy8SBHZChl8CM7uMc5VML7SqiQ0zG7+J5Vr+RMQDoHa2CNT6KHUnTGIXH34UDMkPzAUyapBZg==}
@@ -10705,32 +10714,6 @@ snapshots:
     transitivePeerDependencies:
       - '@babel/core'
       - babel-plugin-macros
-    optional: true
-
-  next@13.5.4(react-dom@18.2.0(react@19.0.0))(react@19.0.0):
-    dependencies:
-      '@next/env': 13.5.4
-      '@swc/helpers': 0.5.2
-      busboy: 1.6.0
-      caniuse-lite: 1.0.30001571
-      postcss: 8.4.31
-      react: 19.0.0
-      react-dom: 18.2.0(react@19.0.0)
-      styled-jsx: 5.1.1(react@19.0.0)
-      watchpack: 2.4.0
-    optionalDependencies:
-      '@next/swc-darwin-arm64': 13.5.4
-      '@next/swc-darwin-x64': 13.5.4
-      '@next/swc-linux-arm64-gnu': 13.5.4
-      '@next/swc-linux-arm64-musl': 13.5.4
-      '@next/swc-linux-x64-gnu': 13.5.4
-      '@next/swc-linux-x64-musl': 13.5.4
-      '@next/swc-win32-arm64-msvc': 13.5.4
-      '@next/swc-win32-ia32-msvc': 13.5.4
-      '@next/swc-win32-x64-msvc': 13.5.4
-    transitivePeerDependencies:
-      - '@babel/core'
-      - babel-plugin-macros
 
   nock@13.2.9:
     dependencies:
@@ -11511,12 +11494,6 @@ snapshots:
       react: 19.0.0
     optionalDependencies:
       '@babel/core': 7.23.6
-    optional: true
-
-  styled-jsx@5.1.1(react@19.0.0):
-    dependencies:
-      client-only: 0.0.1
-      react: 19.0.0
 
   sucrase@3.35.0:
     dependencies:
@@ -11566,6 +11543,12 @@ snapshots:
     dependencies:
       '@pkgr/core': 0.1.1
       tslib: 2.6.2
+
+  temporal-polyfill@0.2.5:
+    dependencies:
+      temporal-spec: 0.2.4
+
+  temporal-spec@0.2.4: {}
 
   term-size@2.2.1: {}
 

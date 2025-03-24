@@ -3,6 +3,7 @@ import { z } from "zod";
 import { logPrefix } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { timeStr } from "../helpers/strings.ts";
+import * as Temporal from "../helpers/temporal.ts";
 import type {
   ExclusiveKeys,
   ParametersExceptFirst,
@@ -31,7 +32,6 @@ import type {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
-
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 
 export interface FoundStep extends HashedOp {
@@ -433,17 +433,23 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The amount of time to wait before continuing.
          */
-        time: number | string,
+        time: number | string | Temporal.DurationLike,
       ) => Promise<void>
     >(({ id, name }, time) => {
       /**
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
+      const msTimeStr: string = timeStr(
+        Temporal.isTemporalDuration(time)
+          ? time.total({ unit: "milliseconds" })
+          : (time as number | string),
+      );
+
       return {
         id,
         op: StepOpCode.Sleep,
-        name: timeStr(time),
+        name: msTimeStr,
         displayName: name ?? id,
       };
     }),
@@ -461,20 +467,20 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The date to wait until before continuing.
          */
-        time: Date | string,
+        time: Date | string | Temporal.InstantLike | Temporal.ZonedDateTimeLike,
       ) => Promise<void>
     >(({ id, name }, time) => {
-      const date = typeof time === "string" ? new Date(time) : time;
-
-      /**
-       * The presence of this operation in the returned stack indicates that the
-       * sleep is over and we should continue execution.
-       */
       try {
+        const iso = Temporal.getISOString(time);
+
+        /**
+         * The presence of this operation in the returned stack indicates that the
+         * sleep is over and we should continue execution.
+         */
         return {
           id,
           op: StepOpCode.Sleep,
-          name: date.toISOString(),
+          name: iso,
           displayName: name ?? id,
         };
       } catch (err) {
@@ -483,11 +489,16 @@ export const createStepTools = <TClient extends Inngest.Any>(
          * error here to standardise this response.
          */
         // TODO PrettyError
-        console.warn("Invalid date or date string passed to sleepUntil;", err);
+        console.warn(
+          "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil;",
+          err,
+        );
 
         // TODO PrettyError
         throw new Error(
-          `Invalid date or date string passed to sleepUntil: ${time.toString()}`,
+          `Invalid \`Date\`, date string, \`Temporal.Instant\`, or \`Temporal.ZonedDateTime\` passed to sleepUntil: ${
+            time
+          }`,
         );
       }
     }),
