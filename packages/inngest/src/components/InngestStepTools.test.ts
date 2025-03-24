@@ -12,6 +12,7 @@ import {
   type InvocationResult,
 } from "@local/types";
 import ms from "ms";
+import { Temporal } from "temporal-polyfill";
 import { z } from "zod";
 import {
   assertType,
@@ -587,6 +588,26 @@ describe("sleep", () => {
       displayName: "name",
     });
   });
+
+  test("parses number of milliseconds", async () => {
+    await expect(step.sleep("id", 60000)).resolves.toMatchObject({
+      name: "1m",
+    });
+  });
+
+  test("parses ms time string", async () => {
+    await expect(step.sleep("id", "1m")).resolves.toMatchObject({
+      name: "1m",
+    });
+  });
+
+  test("parses Temporal.Duration", async () => {
+    const duration = Temporal.Duration.from({ minutes: 1 });
+
+    await expect(step.sleep("id", duration)).resolves.toMatchObject({
+      name: "1m",
+    });
+  });
 });
 
 describe("sleepUntil", () => {
@@ -650,11 +671,35 @@ describe("sleepUntil", () => {
     });
   });
 
+  test("parses Temporal.Instant", async () => {
+    const instant = Temporal.Instant.from(new Date().toISOString());
+
+    await expect(step.sleepUntil("id", instant)).resolves.toMatchObject({
+      name: instant.toString(),
+    });
+  });
+
+  test("parses Temporal.ZonedDateTime", async () => {
+    const zonedDateTime = Temporal.ZonedDateTime.from({
+      year: 2023,
+      month: 10,
+      day: 1,
+      hour: 12,
+      minute: 0,
+      second: 0,
+      timeZone: "UTC",
+    });
+
+    await expect(step.sleepUntil("id", zonedDateTime)).resolves.toMatchObject({
+      name: zonedDateTime.toInstant().toString(),
+    });
+  });
+
   test("throws if invalid date given", async () => {
     const next = new Date("bad");
 
     await expect(() => step.sleepUntil("id", next)).rejects.toThrow(
-      "Invalid date or date string passed"
+      "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil"
     );
   });
 
@@ -662,7 +707,7 @@ describe("sleepUntil", () => {
     const next = "bad";
 
     await expect(() => step.sleepUntil("id", next)).rejects.toThrow(
-      "Invalid date or date string passed"
+      "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil"
     );
   });
 });
