@@ -1,1 +1,1 @@
-export * from "./components/connect/index.js";
+export * from "./components/connect/index.ts";

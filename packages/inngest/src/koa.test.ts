@@ -1,8 +1,7 @@
-import * as KoaHandler from "@local/koa";
-import { createMockContext } from "@shopify/jest-koa-mocks";
-import { type Dictionary } from "@shopify/jest-koa-mocks/build/ts/create-mock-cookies";
-import { type RequestMethod } from "node-mocks-http";
-import { testFramework } from "./test/helpers";
+import { createMockContext } from "@story-health/vitest-koa-mocks";
+import type { RequestMethod } from "node-mocks-http";
+import * as KoaHandler from "./koa.ts";
+import { testFramework } from "./test/helpers.ts";
 
 testFramework("Koa", KoaHandler, {
   transformReq: (req, _res, _env) => {
@@ -10,9 +9,10 @@ testFramework("Koa", KoaHandler, {
       url: `https://${req.headers.host || req.hostname}${req.url}`,
       method: req.method as RequestMethod,
       statusCode: req.statusCode,
-      headers: req.headers as Dictionary<string>,
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      headers: req.headers as any,
       host: req.hostname,
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
       requestBody: req.body,
     });
 
