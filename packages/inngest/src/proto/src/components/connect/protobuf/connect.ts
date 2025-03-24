@@ -264,6 +264,7 @@ export interface GatewayExecutorRequestData {
   requestPayload: Uint8Array;
   systemTraceCtx: Uint8Array;
   userTraceCtx: Uint8Array;
+  runId: string;
 }
 
 export interface WorkerRequestAckData {
@@ -275,6 +276,7 @@ export interface WorkerRequestAckData {
   stepId?: string | undefined;
   systemTraceCtx: Uint8Array;
   userTraceCtx: Uint8Array;
+  runId: string;
 }
 
 export interface SDKResponse {
@@ -290,6 +292,7 @@ export interface SDKResponse {
   requestVersion: number;
   systemTraceCtx: Uint8Array;
   userTraceCtx: Uint8Array;
+  runId: string;
 }
 
 export interface WorkerReplyAckData {
@@ -301,7 +304,8 @@ export interface ConnMetadata {
   id: string;
   gatewayId: string;
   instanceId: string;
-  workerGroups: { [key: string]: string };
+  allWorkerGroups: { [key: string]: string };
+  syncedWorkerGroups: { [key: string]: string };
   status: ConnectionStatus;
   lastHeartbeatAt: Date | undefined;
   sdkLanguage: string;
@@ -309,7 +313,12 @@ export interface ConnMetadata {
   attributes: SystemAttributes | undefined;
 }
 
-export interface ConnMetadata_WorkerGroupsEntry {
+export interface ConnMetadata_AllWorkerGroupsEntry {
+  key: string;
+  value: string;
+}
+
+export interface ConnMetadata_SyncedWorkerGroupsEntry {
   key: string;
   value: string;
 }
@@ -887,6 +896,7 @@ function createBaseGatewayExecutorRequestData(): GatewayExecutorRequestData {
     requestPayload: new Uint8Array(0),
     systemTraceCtx: new Uint8Array(0),
     userTraceCtx: new Uint8Array(0),
+    runId: "",
   };
 }
 
@@ -924,6 +934,9 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     }
     if (message.userTraceCtx.length !== 0) {
       writer.uint32(90).bytes(message.userTraceCtx);
+    }
+    if (message.runId !== "") {
+      writer.uint32(98).string(message.runId);
     }
     return writer;
   },
@@ -1023,6 +1036,14 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
           message.userTraceCtx = reader.bytes();
           continue;
         }
+        case 12: {
+          if (tag !== 98) {
+            break;
+          }
+
+          message.runId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1045,6 +1066,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
       requestPayload: isSet(object.requestPayload) ? bytesFromBase64(object.requestPayload) : new Uint8Array(0),
       systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
       userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
+      runId: isSet(object.runId) ? globalThis.String(object.runId) : "",
     };
   },
 
@@ -1083,6 +1105,9 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     if (message.userTraceCtx.length !== 0) {
       obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
     }
+    if (message.runId !== "") {
+      obj.runId = message.runId;
+    }
     return obj;
   },
 
@@ -1102,6 +1127,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     message.requestPayload = object.requestPayload ?? new Uint8Array(0);
     message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
     message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
+    message.runId = object.runId ?? "";
     return message;
   },
 };
@@ -1116,6 +1142,7 @@ function createBaseWorkerRequestAckData(): WorkerRequestAckData {
     stepId: undefined,
     systemTraceCtx: new Uint8Array(0),
     userTraceCtx: new Uint8Array(0),
+    runId: "",
   };
 }
 
@@ -1144,6 +1171,9 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     }
     if (message.userTraceCtx.length !== 0) {
       writer.uint32(66).bytes(message.userTraceCtx);
+    }
+    if (message.runId !== "") {
+      writer.uint32(74).string(message.runId);
     }
     return writer;
   },
@@ -1219,6 +1249,14 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
           message.userTraceCtx = reader.bytes();
           continue;
         }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.runId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1238,6 +1276,7 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
       stepId: isSet(object.stepId) ? globalThis.String(object.stepId) : undefined,
       systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
       userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
+      runId: isSet(object.runId) ? globalThis.String(object.runId) : "",
     };
   },
 
@@ -1267,6 +1306,9 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     if (message.userTraceCtx.length !== 0) {
       obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
     }
+    if (message.runId !== "") {
+      obj.runId = message.runId;
+    }
     return obj;
   },
 
@@ -1283,6 +1325,7 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     message.stepId = object.stepId ?? undefined;
     message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
     message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
+    message.runId = object.runId ?? "";
     return message;
   },
 };
@@ -1301,6 +1344,7 @@ function createBaseSDKResponse(): SDKResponse {
     requestVersion: 0,
     systemTraceCtx: new Uint8Array(0),
     userTraceCtx: new Uint8Array(0),
+    runId: "",
   };
 }
 
@@ -1341,6 +1385,9 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     }
     if (message.userTraceCtx.length !== 0) {
       writer.uint32(98).bytes(message.userTraceCtx);
+    }
+    if (message.runId !== "") {
+      writer.uint32(106).string(message.runId);
     }
     return writer;
   },
@@ -1448,6 +1495,14 @@ export const SDKResponse: MessageFns<SDKResponse> = {
           message.userTraceCtx = reader.bytes();
           continue;
         }
+        case 13: {
+          if (tag !== 106) {
+            break;
+          }
+
+          message.runId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1471,6 +1526,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
       requestVersion: isSet(object.requestVersion) ? globalThis.Number(object.requestVersion) : 0,
       systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
       userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
+      runId: isSet(object.runId) ? globalThis.String(object.runId) : "",
     };
   },
 
@@ -1512,6 +1568,9 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     if (message.userTraceCtx.length !== 0) {
       obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
     }
+    if (message.runId !== "") {
+      obj.runId = message.runId;
+    }
     return obj;
   },
 
@@ -1532,6 +1591,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     message.requestVersion = object.requestVersion ?? 0;
     message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
     message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
+    message.runId = object.runId ?? "";
     return message;
   },
 };
@@ -1599,7 +1659,8 @@ function createBaseConnMetadata(): ConnMetadata {
     id: "",
     gatewayId: "",
     instanceId: "",
-    workerGroups: {},
+    allWorkerGroups: {},
+    syncedWorkerGroups: {},
     status: 0,
     lastHeartbeatAt: undefined,
     sdkLanguage: "",
@@ -1619,23 +1680,26 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
     if (message.instanceId !== "") {
       writer.uint32(26).string(message.instanceId);
     }
-    Object.entries(message.workerGroups).forEach(([key, value]) => {
-      ConnMetadata_WorkerGroupsEntry.encode({ key: key as any, value }, writer.uint32(34).fork()).join();
+    Object.entries(message.allWorkerGroups).forEach(([key, value]) => {
+      ConnMetadata_AllWorkerGroupsEntry.encode({ key: key as any, value }, writer.uint32(34).fork()).join();
+    });
+    Object.entries(message.syncedWorkerGroups).forEach(([key, value]) => {
+      ConnMetadata_SyncedWorkerGroupsEntry.encode({ key: key as any, value }, writer.uint32(42).fork()).join();
     });
     if (message.status !== 0) {
-      writer.uint32(40).int32(message.status);
+      writer.uint32(48).int32(message.status);
     }
     if (message.lastHeartbeatAt !== undefined) {
-      Timestamp.encode(toTimestamp(message.lastHeartbeatAt), writer.uint32(50).fork()).join();
+      Timestamp.encode(toTimestamp(message.lastHeartbeatAt), writer.uint32(58).fork()).join();
     }
     if (message.sdkLanguage !== "") {
-      writer.uint32(58).string(message.sdkLanguage);
+      writer.uint32(66).string(message.sdkLanguage);
     }
     if (message.sdkVersion !== "") {
-      writer.uint32(66).string(message.sdkVersion);
+      writer.uint32(74).string(message.sdkVersion);
     }
     if (message.attributes !== undefined) {
-      SystemAttributes.encode(message.attributes, writer.uint32(74).fork()).join();
+      SystemAttributes.encode(message.attributes, writer.uint32(82).fork()).join();
     }
     return writer;
   },
@@ -1676,26 +1740,29 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
             break;
           }
 
-          const entry4 = ConnMetadata_WorkerGroupsEntry.decode(reader, reader.uint32());
+          const entry4 = ConnMetadata_AllWorkerGroupsEntry.decode(reader, reader.uint32());
           if (entry4.value !== undefined) {
-            message.workerGroups[entry4.key] = entry4.value;
+            message.allWorkerGroups[entry4.key] = entry4.value;
           }
           continue;
         }
         case 5: {
-          if (tag !== 40) {
+          if (tag !== 42) {
+            break;
+          }
+
+          const entry5 = ConnMetadata_SyncedWorkerGroupsEntry.decode(reader, reader.uint32());
+          if (entry5.value !== undefined) {
+            message.syncedWorkerGroups[entry5.key] = entry5.value;
+          }
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
             break;
           }
 
           message.status = reader.int32() as any;
-          continue;
-        }
-        case 6: {
-          if (tag !== 50) {
-            break;
-          }
-
-          message.lastHeartbeatAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
         }
         case 7: {
@@ -1703,7 +1770,7 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
             break;
           }
 
-          message.sdkLanguage = reader.string();
+          message.lastHeartbeatAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
         }
         case 8: {
@@ -1711,11 +1778,19 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
             break;
           }
 
-          message.sdkVersion = reader.string();
+          message.sdkLanguage = reader.string();
           continue;
         }
         case 9: {
           if (tag !== 74) {
+            break;
+          }
+
+          message.sdkVersion = reader.string();
+          continue;
+        }
+        case 10: {
+          if (tag !== 82) {
             break;
           }
 
@@ -1736,8 +1811,14 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
       id: isSet(object.id) ? globalThis.String(object.id) : "",
       gatewayId: isSet(object.gatewayId) ? globalThis.String(object.gatewayId) : "",
       instanceId: isSet(object.instanceId) ? globalThis.String(object.instanceId) : "",
-      workerGroups: isObject(object.workerGroups)
-        ? Object.entries(object.workerGroups).reduce<{ [key: string]: string }>((acc, [key, value]) => {
+      allWorkerGroups: isObject(object.allWorkerGroups)
+        ? Object.entries(object.allWorkerGroups).reduce<{ [key: string]: string }>((acc, [key, value]) => {
+          acc[key] = String(value);
+          return acc;
+        }, {})
+        : {},
+      syncedWorkerGroups: isObject(object.syncedWorkerGroups)
+        ? Object.entries(object.syncedWorkerGroups).reduce<{ [key: string]: string }>((acc, [key, value]) => {
           acc[key] = String(value);
           return acc;
         }, {})
@@ -1761,12 +1842,21 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
     if (message.instanceId !== "") {
       obj.instanceId = message.instanceId;
     }
-    if (message.workerGroups) {
-      const entries = Object.entries(message.workerGroups);
+    if (message.allWorkerGroups) {
+      const entries = Object.entries(message.allWorkerGroups);
       if (entries.length > 0) {
-        obj.workerGroups = {};
+        obj.allWorkerGroups = {};
         entries.forEach(([k, v]) => {
-          obj.workerGroups[k] = v;
+          obj.allWorkerGroups[k] = v;
+        });
+      }
+    }
+    if (message.syncedWorkerGroups) {
+      const entries = Object.entries(message.syncedWorkerGroups);
+      if (entries.length > 0) {
+        obj.syncedWorkerGroups = {};
+        entries.forEach(([k, v]) => {
+          obj.syncedWorkerGroups[k] = v;
         });
       }
     }
@@ -1796,7 +1886,16 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
     message.id = object.id ?? "";
     message.gatewayId = object.gatewayId ?? "";
     message.instanceId = object.instanceId ?? "";
-    message.workerGroups = Object.entries(object.workerGroups ?? {}).reduce<{ [key: string]: string }>(
+    message.allWorkerGroups = Object.entries(object.allWorkerGroups ?? {}).reduce<{ [key: string]: string }>(
+      (acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = globalThis.String(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    message.syncedWorkerGroups = Object.entries(object.syncedWorkerGroups ?? {}).reduce<{ [key: string]: string }>(
       (acc, [key, value]) => {
         if (value !== undefined) {
           acc[key] = globalThis.String(value);
@@ -1816,12 +1915,12 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
   },
 };
 
-function createBaseConnMetadata_WorkerGroupsEntry(): ConnMetadata_WorkerGroupsEntry {
+function createBaseConnMetadata_AllWorkerGroupsEntry(): ConnMetadata_AllWorkerGroupsEntry {
   return { key: "", value: "" };
 }
 
-export const ConnMetadata_WorkerGroupsEntry: MessageFns<ConnMetadata_WorkerGroupsEntry> = {
-  encode(message: ConnMetadata_WorkerGroupsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+export const ConnMetadata_AllWorkerGroupsEntry: MessageFns<ConnMetadata_AllWorkerGroupsEntry> = {
+  encode(message: ConnMetadata_AllWorkerGroupsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     if (message.key !== "") {
       writer.uint32(10).string(message.key);
     }
@@ -1831,10 +1930,10 @@ export const ConnMetadata_WorkerGroupsEntry: MessageFns<ConnMetadata_WorkerGroup
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): ConnMetadata_WorkerGroupsEntry {
+  decode(input: BinaryReader | Uint8Array, length?: number): ConnMetadata_AllWorkerGroupsEntry {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseConnMetadata_WorkerGroupsEntry();
+    const message = createBaseConnMetadata_AllWorkerGroupsEntry();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -1863,14 +1962,14 @@ export const ConnMetadata_WorkerGroupsEntry: MessageFns<ConnMetadata_WorkerGroup
     return message;
   },
 
-  fromJSON(object: any): ConnMetadata_WorkerGroupsEntry {
+  fromJSON(object: any): ConnMetadata_AllWorkerGroupsEntry {
     return {
       key: isSet(object.key) ? globalThis.String(object.key) : "",
       value: isSet(object.value) ? globalThis.String(object.value) : "",
     };
   },
 
-  toJSON(message: ConnMetadata_WorkerGroupsEntry): unknown {
+  toJSON(message: ConnMetadata_AllWorkerGroupsEntry): unknown {
     const obj: any = {};
     if (message.key !== "") {
       obj.key = message.key;
@@ -1881,13 +1980,95 @@ export const ConnMetadata_WorkerGroupsEntry: MessageFns<ConnMetadata_WorkerGroup
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<ConnMetadata_WorkerGroupsEntry>, I>>(base?: I): ConnMetadata_WorkerGroupsEntry {
-    return ConnMetadata_WorkerGroupsEntry.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<ConnMetadata_AllWorkerGroupsEntry>, I>>(
+    base?: I,
+  ): ConnMetadata_AllWorkerGroupsEntry {
+    return ConnMetadata_AllWorkerGroupsEntry.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ConnMetadata_WorkerGroupsEntry>, I>>(
+  fromPartial<I extends Exact<DeepPartial<ConnMetadata_AllWorkerGroupsEntry>, I>>(
     object: I,
-  ): ConnMetadata_WorkerGroupsEntry {
-    const message = createBaseConnMetadata_WorkerGroupsEntry();
+  ): ConnMetadata_AllWorkerGroupsEntry {
+    const message = createBaseConnMetadata_AllWorkerGroupsEntry();
+    message.key = object.key ?? "";
+    message.value = object.value ?? "";
+    return message;
+  },
+};
+
+function createBaseConnMetadata_SyncedWorkerGroupsEntry(): ConnMetadata_SyncedWorkerGroupsEntry {
+  return { key: "", value: "" };
+}
+
+export const ConnMetadata_SyncedWorkerGroupsEntry: MessageFns<ConnMetadata_SyncedWorkerGroupsEntry> = {
+  encode(message: ConnMetadata_SyncedWorkerGroupsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== "") {
+      writer.uint32(18).string(message.value);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ConnMetadata_SyncedWorkerGroupsEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseConnMetadata_SyncedWorkerGroupsEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.key = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.value = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ConnMetadata_SyncedWorkerGroupsEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? globalThis.String(object.value) : "",
+    };
+  },
+
+  toJSON(message: ConnMetadata_SyncedWorkerGroupsEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== "") {
+      obj.value = message.value;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ConnMetadata_SyncedWorkerGroupsEntry>, I>>(
+    base?: I,
+  ): ConnMetadata_SyncedWorkerGroupsEntry {
+    return ConnMetadata_SyncedWorkerGroupsEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ConnMetadata_SyncedWorkerGroupsEntry>, I>>(
+    object: I,
+  ): ConnMetadata_SyncedWorkerGroupsEntry {
+    const message = createBaseConnMetadata_SyncedWorkerGroupsEntry();
     message.key = object.key ?? "";
     message.value = object.value ?? "";
     return message;
