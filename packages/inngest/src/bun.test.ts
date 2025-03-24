@@ -1,6 +1,6 @@
-import * as BunHandler from "@local/bun";
 import fetch, { Headers, Response } from "cross-fetch";
-import { testFramework } from "./test/helpers";
+import * as BunHandler from "./bun.ts";
+import { testFramework } from "./test/helpers.ts";
 
 const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;
@@ -9,7 +9,7 @@ const originalHeaders = globalThis.Headers;
 testFramework("Bun", BunHandler, {
   lifecycleChanges: () => {
     beforeEach(() => {
-      jest.resetModules();
+      vi.resetModules();
 
       Object.defineProperties(globalThis, {
         /**
@@ -45,14 +45,15 @@ testFramework("Bun", BunHandler, {
   },
   transformReq: (req) => {
     const headers = new Headers();
+    // biome-ignore lint/complexity/noForEach: <explanation>
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     (req as any).headers = headers;
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     (req as any).json = () => Promise.resolve(req.body);
 
     return [req];

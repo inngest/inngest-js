@@ -1,18 +1,16 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { Inngest } from "@local/components/Inngest";
-import { referenceFunction } from "@local/components/InngestFunctionReference";
-import { InngestMiddleware } from "@local/components/InngestMiddleware";
-import { NonRetriableError } from "@local/components/NonRetriableError";
-import { ExecutionVersion } from "@local/components/execution/InngestExecution";
-import { type IsEqual, type IsUnknown } from "@local/helpers/types";
-import { StepOpCode } from "@local/types";
+import { ExecutionVersion } from "../helpers/consts.ts";
+import type { IsEqual, IsUnknown } from "../helpers/types.ts";
 import {
   assertType,
   createClient,
   runFnWithStack,
   testClientId,
-} from "../test/helpers";
+} from "../test/helpers.ts";
+import { StepOpCode } from "../types.ts";
+import { Inngest } from "./Inngest.ts";
+import { referenceFunction } from "./InngestFunctionReference.ts";
+import { InngestMiddleware } from "./InngestMiddleware.ts";
+import { NonRetriableError } from "./NonRetriableError.ts";
 
 describe("stacking and inference", () => {
   describe("onFunctionRun", () => {
@@ -95,7 +93,7 @@ describe("stacking and inference", () => {
 
               assertType<IsEqual<(typeof ctx)["bar"], string>>(true);
               expect(ctx.bar).toBe("bar");
-            }
+            },
           );
         });
       });
@@ -160,7 +158,7 @@ describe("stacking and inference", () => {
 
               assertType<IsEqual<(typeof ctx)["bar"], "bar">>(true);
               expect(ctx.bar).toBe("bar");
-            }
+            },
           );
         });
       });
@@ -222,7 +220,7 @@ describe("stacking and inference", () => {
 
               assertType<IsEqual<(typeof ctx)["step"], boolean>>(true);
               expect(ctx.step).toBe(true);
-            }
+            },
           );
         });
       });
@@ -321,7 +319,7 @@ describe("stacking and inference", () => {
 
               assertType<IsEqual<(typeof ctx)["fooFn"], string>>(true);
               expect(ctx.fooFn).toBe("foo");
-            }
+            },
           );
         });
 
@@ -345,7 +343,7 @@ describe("stacking and inference", () => {
 
               assertType<IsEqual<(typeof ctx)["barFn"], boolean>>(true);
               expect(ctx.barFn).toBe(true);
-            }
+            },
           );
         });
       });
@@ -436,7 +434,7 @@ describe("stacking and inference", () => {
             { event: "" },
             (ctx) => {
               assertType<IsEqual<(typeof ctx)["foo"], number>>(true);
-            }
+            },
           );
         });
       });
@@ -517,7 +515,7 @@ describe("stacking and inference", () => {
         const res = await runFnWithStack(
           fn,
           {},
-          { executionVersion: ExecutionVersion.V1 }
+          { executionVersion: ExecutionVersion.V1 },
         );
 
         expect(res).toMatchObject({
@@ -555,7 +553,7 @@ describe("stacking and inference", () => {
         const res = await runFnWithStack(
           fn,
           {},
-          { executionVersion: ExecutionVersion.V1 }
+          { executionVersion: ExecutionVersion.V1 },
         );
 
         expect(res).toMatchObject({
@@ -569,17 +567,17 @@ describe("stacking and inference", () => {
 
   describe("onSendEvent", () => {
     describe("transformInput", () => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const mockFetch = jest.fn(() =>
-        Promise.resolve({
-          status: 200,
-          json: () => Promise.resolve({ ids: [], status: 200 }),
-          text: () => Promise.resolve(""),
-        })
+      const mockFetch = vi.fn(
+        () =>
+          Promise.resolve({
+            status: 200,
+            json: () => Promise.resolve({ ids: [], status: 200 }),
+            text: () => Promise.resolve(""),
+          }),
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       ) as any;
 
       beforeEach(() => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         mockFetch.mockClear();
       });
 
@@ -620,13 +618,13 @@ describe("stacking and inference", () => {
                   data: { dataFromStep: true },
                 }),
               });
-            }
+            },
           );
 
           const res = await runFnWithStack(
             fn,
             {},
-            { executionVersion: ExecutionVersion.V1 }
+            { executionVersion: ExecutionVersion.V1 },
           );
 
           expect(res).toMatchObject({
@@ -674,13 +672,13 @@ describe("stacking and inference", () => {
                 }),
                 data: { dataFromStep: true },
               });
-            }
+            },
           );
 
           const res = await runFnWithStack(
             fn,
             {},
-            { executionVersion: ExecutionVersion.V1 }
+            { executionVersion: ExecutionVersion.V1 },
           );
 
           expect(res).toMatchObject({
@@ -733,13 +731,13 @@ describe("stacking and inference", () => {
                 }),
                 data: { dataFromStep: true },
               });
-            }
+            },
           );
 
           const res = await runFnWithStack(
             fn,
             {},
-            { executionVersion: ExecutionVersion.V1 }
+            { executionVersion: ExecutionVersion.V1 },
           );
 
           expect(res).toMatchObject({
@@ -762,9 +760,9 @@ describe("stacking and inference", () => {
         });
 
         test("hook runs once per invocation", async () => {
-          const transformInputSpy = jest.fn(() => undefined);
+          const transformInputSpy = vi.fn(() => undefined);
 
-          const onSendEventSpy = jest.fn(() => ({
+          const onSendEventSpy = vi.fn(() => ({
             transformInput: transformInputSpy,
           }));
 
@@ -798,13 +796,13 @@ describe("stacking and inference", () => {
                   }),
                 }),
               ]);
-            }
+            },
           );
 
           await runFnWithStack(
             fn,
             {},
-            { executionVersion: ExecutionVersion.V1 }
+            { executionVersion: ExecutionVersion.V1 },
           );
 
           expect(onSendEventSpy).toHaveBeenCalledTimes(2);
@@ -814,17 +812,17 @@ describe("stacking and inference", () => {
     });
 
     describe("transformOutput", () => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const mockFetch = jest.fn(() =>
-        Promise.resolve({
-          status: 200,
-          json: () => Promise.resolve({ ids: [], status: 200 }),
-          text: () => Promise.resolve(""),
-        })
+      const mockFetch = vi.fn(
+        () =>
+          Promise.resolve({
+            status: 200,
+            json: () => Promise.resolve({ ids: [], status: 200 }),
+            text: () => Promise.resolve(""),
+          }),
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       ) as any;
 
       beforeEach(() => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         mockFetch.mockClear();
       });
 
@@ -850,7 +848,7 @@ describe("stacking and inference", () => {
           id: "test",
           middleware: [mw],
           eventKey: "123",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           fetch: mockFetch,
         });
 
@@ -870,7 +868,7 @@ describe("stacking and inference", () => {
           inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
             const directRes = inngest.send(payload);
             assertType<IsEqual<Awaited<typeof directRes>["ids"], string[]>>(
-              true
+              true,
             );
 
             const res = step.sendEvent("id", payload);
@@ -901,7 +899,7 @@ describe("stacking and inference", () => {
           id: "test",
           middleware: [mw],
           eventKey: "123",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           fetch: mockFetch,
         });
 
@@ -921,7 +919,7 @@ describe("stacking and inference", () => {
           inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
             const directRes = inngest.send(payload);
             assertType<IsEqual<Awaited<typeof directRes>["ids"], string[]>>(
-              true
+              true,
             );
 
             const res = step.sendEvent("id", payload);
@@ -952,7 +950,7 @@ describe("stacking and inference", () => {
           id: "test",
           middleware: [mw],
           eventKey: "123",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           fetch: mockFetch,
         });
 
@@ -962,7 +960,7 @@ describe("stacking and inference", () => {
           inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
             const directRes = inngest.send(payload);
             assertType<IsEqual<Awaited<typeof directRes>["ids"], boolean>>(
-              true
+              true,
             );
 
             const res = step.sendEvent("id", payload);
@@ -1010,7 +1008,7 @@ describe("stacking and inference", () => {
           id: "test",
           middleware: [mw1, mw2],
           eventKey: "123",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           fetch: mockFetch,
         });
 
@@ -1030,7 +1028,7 @@ describe("stacking and inference", () => {
           inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
             const directRes = inngest.send(payload);
             assertType<IsEqual<Awaited<typeof directRes>["bar"], boolean>>(
-              true
+              true,
             );
 
             const res = step.sendEvent("id", payload);
@@ -1078,7 +1076,7 @@ describe("stacking and inference", () => {
           id: "test",
           middleware: [mw1, mw2],
           eventKey: "123",
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
           fetch: mockFetch,
         });
 
@@ -1088,7 +1086,7 @@ describe("stacking and inference", () => {
           inngest.createFunction({ id: "" }, { event: "" }, ({ step }) => {
             const directRes = inngest.send(payload);
             assertType<IsEqual<Awaited<typeof directRes>["foo"], boolean>>(
-              true
+              true,
             );
 
             const res = step.sendEvent("id", payload);
