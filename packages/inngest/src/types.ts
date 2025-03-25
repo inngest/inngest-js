@@ -41,15 +41,29 @@ const baseJsonErrorSchema = z.object({
   stack: z.string().trim().optional(),
 });
 
+const maybeJsonErrorSchema: z.ZodType<{
+  name: string;
+  message: string;
+  stack?: string;
+  cause?: unknown;
+}> = z.lazy(() =>
+  z.object({
+    name: z.string().trim(),
+    message: z.string().trim(),
+    stack: z.string().trim().optional(),
+    cause: z.union([maybeJsonErrorSchema, z.unknown()]).optional(),
+  })
+);
+
 export type JsonError = z.infer<typeof baseJsonErrorSchema> & {
   name: string;
   message: string;
-  cause?: JsonError;
+  cause?: unknown;
 };
 
 export const jsonErrorSchema = baseJsonErrorSchema
   .extend({
-    cause: z.lazy(() => jsonErrorSchema).optional(),
+    cause: z.union([maybeJsonErrorSchema, z.unknown()]).optional(),
   })
   .passthrough()
   .catch({})

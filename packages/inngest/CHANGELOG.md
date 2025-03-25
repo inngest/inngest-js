@@ -1,5 +1,55 @@
 # inngest
 
+## 3.33.0
+
+### Minor Changes
+
+- [#918](https://github.com/inngest/inngest-js/pull/918) [`a305a15`](https://github.com/inngest/inngest-js/commit/a305a154eb73c54a0d90a437130ab32f7e388c90) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for [Temporal](https://tc39.es/proposal-temporal/) APIs.
+
+  ```ts
+  inngest.createFunction(
+    {
+      id: "my-fn",
+    },
+    {
+      event: "test/hello.world",
+    },
+    async ({ event, step }) => {
+      // sleep with a `Temporal.Duration`
+      await step.sleep("😴", Temporal.Duration.from({ seconds: 10 }));
+      await step.sleep("😴", Temporal.Duration.from({ minutes: 5 }));
+      await step.sleep("😴", Temporal.Duration.from({ hours: 1 }));
+
+      // sleepUntil using a `Temporal.Instant` or `Temporal.ZonedDateTime`
+      await step.sleepUntil(
+        "😴",
+        Temporal.Instant.from("2025-03-19T12:00:00Z"),
+      );
+      await step.sleepUntil(
+        "😴",
+        Temporal.ZonedDateTime.from("2025-03-19T12:00[Europe/London]"),
+      );
+
+      // sleepUntil also works with relative time
+      const now = Temporal.Instant.from(event.user.createdAtISO);
+      await step.sleepUntil(
+        "😴",
+        now.add(Temporal.Duration.from({ minutes: 30 })),
+      );
+    },
+  );
+  ```
+
+### Patch Changes
+
+- [#745](https://github.com/inngest/inngest-js/pull/745) [`ff01cd2`](https://github.com/inngest/inngest-js/commit/ff01cd29a4b93f268c3eefb81d44100c2a4c1919) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix rare body reuse when parsing failure returns from `inngest.send()` and `step.sendEvent()`
+
+- [#916](https://github.com/inngest/inngest-js/pull/916) [`ab835ee`](https://github.com/inngest/inngest-js/commit/ab835eeb891be45302c8bbe07d781d6a3de9f2a0) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Connect: Allow supplying Inngest env as environment variable
+
+- [#913](https://github.com/inngest/inngest-js/pull/913) [`b090e27`](https://github.com/inngest/inngest-js/commit/b090e278d471f425c8a216836c8109bd5086fd56) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export the `version` of the package
+
+- [#921](https://github.com/inngest/inngest-js/pull/921) [`374727f`](https://github.com/inngest/inngest-js/commit/374727f316bb9e71eee64328d0cb1afe95574126) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - connect: Include RunID in acks / sdk response
+
 ## 3.32.9
 
 ### Patch Changes
