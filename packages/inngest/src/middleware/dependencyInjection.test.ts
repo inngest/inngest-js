@@ -1,6 +1,6 @@
 import { Inngest } from "@local/components/Inngest";
+import { dependencyInjectionMiddleware } from "@local/middleware/dependencyInjection";
 import { assertType } from "../test/helpers";
-import { dependencyInjectionMiddleware } from "./dependencyInjection";
 
 describe("Mutates ctx", () => {
   test("ctx is injected into the function input", () => {
@@ -13,7 +13,7 @@ describe("Mutates ctx", () => {
       ],
     });
 
-    const _fn = inngest.createFunction({ id: "test" }, { event: "" }, (ctx) => {
+    inngest.createFunction({ id: "test" }, { event: "" }, (ctx) => {
       assertType<string>(ctx.foo);
     });
   });
@@ -28,7 +28,7 @@ describe("Mutates ctx", () => {
       ],
     });
 
-    const _fn = inngest.createFunction({ id: "test" }, { event: "" }, (ctx) => {
+    inngest.createFunction({ id: "test" }, { event: "" }, (ctx) => {
       assertType<"bar">(ctx.foo);
     });
   });
