@@ -52,6 +52,10 @@ export class InngestFunction<
   static stepId = "step";
   static failureSuffix = "-failure";
 
+  get [Symbol.toStringTag]() {
+    return "Inngest.Function" as const;
+  }
+
   public readonly opts: TFnOpts;
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
@@ -308,8 +312,7 @@ export namespace InngestFunction {
   >;
 
   export interface Like {
-    name: string;
-    description?: string | undefined;
+    readonly [Symbol.toStringTag]: "Inngest.Function";
   }
 
   /**
