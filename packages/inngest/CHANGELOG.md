@@ -1,5 +1,26 @@
 # inngest
 
+## 3.34.0
+
+### Minor Changes
+
+- [#919](https://github.com/inngest/inngest-js/pull/919) [`ebeaaff`](https://github.com/inngest/inngest-js/commit/ebeaaffa2fde4f6cec0f0554cc9f5f033da07f40) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `dependencyInjectionMiddleware()`, allowing you to easily add data to function input
+
+  ```ts
+  import { dependencyInjectionMiddleware } from "inngest";
+
+  const prisma = new Prisma();
+
+  const inngest = new Inngest({
+    id: "my-app",
+    middleware: [dependencyInjectionMiddleware({ prisma })],
+  });
+  ```
+
+### Patch Changes
+
+- [#922](https://github.com/inngest/inngest-js/pull/922) [`3374187`](https://github.com/inngest/inngest-js/commit/3374187eca44bbbc83daaaea511d7bbe84112a9d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `Error.cause` can now be any `unknown` value, though we still attempt to recursively expand causes until we hit an `unknown` value
+
 ## 3.33.0
 
 ### Minor Changes
