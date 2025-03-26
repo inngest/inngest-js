@@ -1,5 +1,11 @@
 # inngest
 
+## 3.34.1
+
+### Patch Changes
+
+- [#925](https://github.com/inngest/inngest-js/pull/925) [`11fd15b`](https://github.com/inngest/inngest-js/commit/11fd15be198d20a73bf95e93d863d8150ec4fdb6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export `fastifyPlugin` as a named export to resolve CJS<->ESM interop issues
+
 ## 3.34.0
 
 ### Minor Changes
