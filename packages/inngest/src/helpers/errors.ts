@@ -50,19 +50,40 @@ export interface SerializedError extends Readonly<CjsSerializedError> {
  *
  * Will not reserialise existing serialised errors.
  */
-export const serializeError = (subject: unknown): SerializedError => {
+export const serializeError = <
+  TAllowUnknown extends boolean = false,
+  TOutput extends TAllowUnknown extends true
+    ? unknown
+    : SerializedError = TAllowUnknown extends true ? unknown : SerializedError,
+>(
+  /**
+   * The suspected error to serialize.
+   */
+  subject: unknown,
+
+  /**
+   * If `true` and the error is not serializable, will return the original value
+   * as `unknown` instead of coercing it to a serialized error.
+   */
+  allowUnknown: TAllowUnknown = false as TAllowUnknown
+): TOutput => {
   try {
     // Try to understand if this is already done.
     // Will handle stringified errors.
     const existingSerializedError = isSerializedError(subject);
 
     if (existingSerializedError) {
-      return existingSerializedError;
+      return existingSerializedError as TOutput;
     }
 
     if (typeof subject === "object" && subject !== null) {
       // Is an object, so let's try and serialize it.
       const serializedErr = cjsSerializeError(subject as Error);
+
+      // Not a proper error was caught, so give us a chance to return `unknown`.
+      if (!serializedErr.name && allowUnknown) {
+        return subject as TOutput;
+      }
 
       // Serialization can succeed but assign no name or message, so we'll
       // map over the result here to ensure we have everything.
@@ -82,7 +103,9 @@ export const serializeError = (subject: unknown): SerializedError => {
         [SERIALIZED_KEY]: SERIALIZED_VALUE,
       } as const;
 
-      // If we have a cause, make sure we recursively serialize them too.
+      // If we have a cause, make sure we recursively serialize them too. We are
+      // lighter with causes though; attempt to recursively serialize them, but
+      // stop if we find something that doesn't work and just return `unknown`.
       let target: unknown = ret;
       const maxDepth = 5;
       for (let i = 0; i < maxDepth; i++) {
@@ -92,32 +115,39 @@ export const serializeError = (subject: unknown): SerializedError => {
           "cause" in target &&
           target.cause
         ) {
-          target = target.cause = serializeError(target.cause);
+          target = target.cause = serializeError(target.cause, true);
           continue;
         }
 
         break;
       }
 
-      return ret;
+      return ret as TOutput;
     }
 
     // If it's not an object, it's hard to parse this as an Error. In this case,
     // we'll throw an error to start attempting backup strategies.
     throw new Error("Error is not an object; strange throw value.");
   } catch (err) {
+    if (allowUnknown) {
+      // If we are allowed to return unknown, we'll just return the original
+      // value.
+      return subject as TOutput;
+    }
+
     try {
       // If serialization fails, fall back to a regular Error and use the
       // original object as the message for an Error. We don't know what this
       // object looks like, so we can't do anything else with it.
       return {
         ...serializeError(
-          new Error(typeof subject === "string" ? subject : stringify(subject))
+          new Error(typeof subject === "string" ? subject : stringify(subject)),
+          false
         ),
         // Remove the stack; it's not relevant here
         stack: "",
         [SERIALIZED_KEY]: SERIALIZED_VALUE,
-      };
+      } as TOutput;
     } catch (err) {
       // If this failed, then stringifying the object also failed, so we'll just
       // return a completely generic error.
@@ -127,7 +157,7 @@ export const serializeError = (subject: unknown): SerializedError => {
         message: "Serializing the source error failed.",
         stack: "",
         [SERIALIZED_KEY]: SERIALIZED_VALUE,
-      };
+      } as TOutput;
     }
   }
 };
@@ -183,7 +213,15 @@ export const isSerializedError = (
  * applicability, inclusive of error handling to ensure that badly serialized
  * errors are still handled.
  */
-export const deserializeError = (subject: Partial<SerializedError>): Error => {
+export const deserializeError = <
+  TAllowUnknown extends boolean = false,
+  TOutput extends TAllowUnknown extends true
+    ? unknown
+    : Error = TAllowUnknown extends true ? unknown : Error,
+>(
+  subject: Partial<SerializedError>,
+  allowUnknown: TAllowUnknown = false as TAllowUnknown
+): TOutput => {
   const requiredFields: (keyof SerializedError)[] = ["name", "message"];
 
   try {
@@ -199,12 +237,19 @@ export const deserializeError = (subject: Partial<SerializedError>): Error => {
 
     if ("cause" in deserializedErr) {
       deserializedErr.cause = deserializeError(
-        deserializedErr.cause as Partial<SerializedError>
+        deserializedErr.cause as Partial<SerializedError>,
+        true
       );
     }
 
-    return deserializedErr;
+    return deserializedErr as TOutput;
   } catch {
+    if (allowUnknown) {
+      // If we are allowed to return unknown, we'll just return the original
+      // value.
+      return subject as TOutput;
+    }
+
     const err = new Error("Unknown error; could not reserialize");
 
     /**
@@ -213,7 +258,7 @@ export const deserializeError = (subject: Partial<SerializedError>): Error => {
      */
     err.stack = undefined;
 
-    return err;
+    return err as TOutput;
   }
 };
 
