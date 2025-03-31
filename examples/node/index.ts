@@ -1,5 +1,9 @@
+// Import the client first
+import { inngest } from './inngest';
+
+// Then import everything else
 import { createServer } from 'inngest/node';
-import { functions, inngest } from './inngest';
+import { functions } from './inngest';
 
 const server = createServer({ client: inngest, functions });
 
