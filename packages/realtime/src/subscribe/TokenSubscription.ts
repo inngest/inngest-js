@@ -72,7 +72,7 @@ export class TokenSubscription {
     if (this.#app.apiBaseUrl) {
       url = new URL(path, this.#app.apiBaseUrl);
     } else {
-      url = new URL(path, "wss://api.inngest.com/");
+      url = new URL(path, "https://api.inngest.com/");
 
       if (
         this.#app["mode"].isDev &&
