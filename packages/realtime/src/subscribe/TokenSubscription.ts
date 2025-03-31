@@ -91,7 +91,7 @@ export class TokenSubscription {
       }
     }
 
-    url.protocol = "ws:";
+    url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
     url.searchParams.set("token", token);
 
     return url;
