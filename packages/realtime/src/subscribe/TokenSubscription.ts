@@ -71,8 +71,12 @@ export class TokenSubscription {
 
     if (this.#app.apiBaseUrl) {
       url = new URL(path, this.#app.apiBaseUrl);
+
+      // If INNGEST_API_BASE_URL=url is set instead of INNGEST_DEV=url, assume
+      // that we should be connecting to a dev server
+      url.protocol = "ws:";
     } else {
-      url = new URL(path, "https://api.inngest.com/");
+      url = new URL(path, "wss://api.inngest.com/");
 
       if (
         this.#app["mode"].isDev &&
@@ -87,11 +91,11 @@ export class TokenSubscription {
 
         if (devAvailable) {
           url = new URL(path, dsUrl);
+          url.protocol = "ws:";
         }
       }
     }
 
-    url.protocol = "ws:";
     url.searchParams.set("token", token);
 
     return url;
