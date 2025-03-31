@@ -367,8 +367,20 @@ export class TokenSubscription {
       };
 
       this.#ws.onerror = (event) => {
-        console.error("WebSocket error observed:", event);
-        ret.reject(event);
+        const serializedErr = {
+          event,
+          message: (event as ErrorEvent).message,
+          type: (event as ErrorEvent).type,
+          target: (event as ErrorEvent).target,
+          error: (event as ErrorEvent).error,
+          filename: (event as ErrorEvent).filename,
+          lineno: (event as ErrorEvent).lineno,
+          colno: (event as ErrorEvent).colno,
+        };
+
+        console.error("WebSocket error observed:", serializedErr);
+
+        ret.reject(serializedErr);
       };
 
       this.#ws.onclose = (event) => {
