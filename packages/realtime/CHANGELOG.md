@@ -1,5 +1,11 @@
 # @inngest/realtime
 
+## 0.1.2
+
+### Patch Changes
+
+- [#927](https://github.com/inngest/inngest-js/pull/927) [`dc00cbf`](https://github.com/inngest/inngest-js/commit/dc00cbf197c776b8ff04fb67cbc1d3a62569f6d0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix connecting to production; avoid `ws://` `301` redirect
+
 ## 0.1.1
 
 ### Patch Changes
