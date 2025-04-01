@@ -250,6 +250,14 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   }
 
   /**
+   * Returns a `Promise` that resolves when the app is ready and all middleware
+   * has been initialized.
+   */
+  public get ready(): Promise<void> {
+    return this.middleware.then(() => {});
+  }
+
+  /**
    * Set the environment variables for this client. This is useful if you are
    * passed environment variables at runtime instead of as globals and need to
    * update the client with those values as requests come in.
