@@ -47,12 +47,12 @@ export const getAsyncLocalStorage = async (): Promise<AsyncLocalStorageIsh> => {
       // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
       async (resolve) => {
         try {
-          const { AsyncLocalStorage } = await import("node:async_hooks");
+          const { AsyncLocalStorage } = await import("async_hooks");
 
           resolve(new AsyncLocalStorage<AsyncContext>());
         } catch (err) {
           console.warn(
-            "node:async_hooks is not supported in this runtime. Experimental async context is disabled."
+            "async_hooks is not supported in this runtime. Experimental async context is disabled."
           );
 
           resolve({
