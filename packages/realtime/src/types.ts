@@ -112,8 +112,8 @@ export namespace Realtime {
       channel: z.string().optional(),
       topic: z.string().optional(),
       data: z.any(),
-      run_id: z.string(),
-      fn_id: z.string(),
+      run_id: z.string().optional(),
+      fn_id: z.string().optional(),
       created_at: z
         .string()
         .optional()
@@ -199,8 +199,8 @@ export namespace Realtime {
         stream_id?: string;
         data: Realtime.Topic.InferSubscribe<TTopics[K]>;
         channel?: TChannelId;
-        run_id: string;
-        fn_id: string;
+        run_id?: string;
+        fn_id?: string;
         created_at?: Date;
         env_id?: string;
         kind:
