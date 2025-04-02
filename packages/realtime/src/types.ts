@@ -5,7 +5,7 @@ export namespace Realtime {
   export type PublishFn = <
     TMessage extends MaybePromise<Realtime.Message.Input>,
   >(
-    message: TMessage
+    message: TMessage,
   ) => Promise<Awaited<TMessage>["data"]>;
 
   export type Token<
@@ -103,6 +103,7 @@ export namespace Realtime {
   //
   // Ideally in the future we use protobuf for this, but for now we use Zod.
   // This type is used to assert that the Zod schema matches the generic type.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   type _AssertMessageSchemaMatchesGeneric = Expect<
     IsEqual<z.output<typeof messageSchema>, Message.Raw>
   >;
@@ -138,7 +139,6 @@ export namespace Realtime {
     .transform(({ data, ...rest }) => {
       return {
         ...rest,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: data ?? undefined,
       };
     });
@@ -280,7 +280,7 @@ export namespace Realtime {
       ): Channel<ReturnType<TChannelBuilderFn>, TTopics>;
 
       addTopic<UTopic extends Topic.Definition>(
-        topic: UTopic
+        topic: UTopic,
       ): Definition<TChannelBuilderFn, AddTopic<TTopics, UTopic>>;
 
       topics: TTopics;
@@ -330,7 +330,7 @@ export namespace Realtime {
       const TChannelId extends string,
       const TIdInput extends TChannelId | BuilderFn<TChannelId>,
     >(
-      id: TIdInput
+      id: TIdInput,
     ) => TIdInput extends TChannelId
       ? Channel.Definition<() => TIdInput>
       : TIdInput extends BuilderFn<TChannelId>
@@ -342,7 +342,7 @@ export namespace Realtime {
     TChannelId extends string = string,
     TTopic extends Topic.Definition = Topic.Definition,
   > = (
-    data: Topic.InferPublish<TTopic>
+    data: Topic.InferPublish<TTopic>,
   ) => Promise<
     Realtime.Message.Input<
       TChannelId,
@@ -360,6 +360,7 @@ export namespace Realtime {
       TTopicId extends string = string,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       TPublish = any,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       _TSubscribe = TPublish,
     > {
       name: TTopicId;
@@ -369,7 +370,7 @@ export namespace Realtime {
       type<const UPublish>(): Definition<TTopicId, UPublish>;
 
       schema<const TSchema extends StandardSchemaV1>(
-        schema: TSchema
+        schema: TSchema,
       ): Definition<
         TTopicId,
         StandardSchemaV1.InferInput<TSchema>,
@@ -398,7 +399,7 @@ export namespace Realtime {
           any;
 
     export type Builder = <const TTopicId extends string>(
-      id: TTopicId
+      id: TTopicId,
     ) => Topic.Definition<TTopicId>;
   }
 }
