@@ -43,24 +43,8 @@ export const getAsyncCtx = async (): Promise<AsyncContext | undefined> => {
  */
 export const getAsyncLocalStorage = async (): Promise<AsyncLocalStorageIsh> => {
   (globalThis as Record<string | symbol | number, unknown>)[alsSymbol] ??=
-    new Promise<AsyncLocalStorageIsh>(
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
-      async (resolve) => {
-        try {
-          const { AsyncLocalStorage } = await import("async_hooks");
-
-          resolve(new AsyncLocalStorage<AsyncContext>());
-        } catch (err) {
-          console.warn(
-            "async_hooks is not supported in this runtime. Experimental async context is disabled."
-          );
-
-          resolve({
-            getStore: () => undefined,
-            run: (_, fn) => fn(),
-          });
-        }
-      }
+    import("./als.import.cjs" as string).then(
+      ({ als }: { als: AsyncLocalStorageIsh }) => als
     );
 
   return (globalThis as Record<string | symbol | number, unknown>)[
