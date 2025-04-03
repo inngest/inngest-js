@@ -41,7 +41,7 @@ export namespace InngestApi {
   }
 
   export interface PublishOptions extends Subscription {
-    runId: string;
+    runId?: string;
   }
 }
 
@@ -175,7 +175,10 @@ export class InngestApi {
     const url = await this.getTargetUrl("/v1/realtime/publish");
 
     url.searchParams.set("channel", publishOptions.channel);
-    url.searchParams.set("run_id", publishOptions.runId);
+
+    if (publishOptions.runId) {
+      url.searchParams.set("run_id", publishOptions.runId);
+    }
 
     publishOptions.topics.forEach((topic) => {
       url.searchParams.append("topic", topic);
