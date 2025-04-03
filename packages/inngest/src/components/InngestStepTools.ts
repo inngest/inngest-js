@@ -1,8 +1,9 @@
-import { gemini, openai, type AiAdapter } from "@inngest/ai";
+import { models, type AiAdapter } from "@inngest/ai";
 import { z } from "zod";
 import { logPrefix } from "../helpers/consts.js";
 import { type Jsonify } from "../helpers/jsonify.js";
 import { timeStr } from "../helpers/strings.js";
+import * as Temporal from "../helpers/temporal.js";
 import {
   type ExclusiveKeys,
   type ParametersExceptFirst,
@@ -23,6 +24,7 @@ import {
   type TriggerEventFromFunction,
   type TriggersFromClient,
 } from "../types.js";
+import { type InngestExecution } from "./execution/InngestExecution.js";
 import {
   type ClientOptionsFromInngest,
   type GetEvents,
@@ -31,8 +33,6 @@ import {
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
 import { InngestFunctionReference } from "./InngestFunctionReference.js";
-
-import { type InngestExecution } from "./execution/InngestExecution.js";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -72,7 +72,7 @@ export interface FoundStep extends HashedOp {
    * Returns a boolean representing whether or not the step was handled on this
    * invocation.
    */
-  handle: () => Promise<boolean>;
+  handle: () => boolean;
 
   // TODO This is used to track the input we want for this step. Might be
   // present in ctx from Executor.
@@ -413,20 +413,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
        * Models for AI inference and other AI-related tasks.
        */
       models: {
-        /**
-         * Create an OpenAI model using the OpenAI chat format.
-         *
-         * By default it targets the `https://api.openai.com/v1/` base URL.
-         */
-        openai,
-
-        /**
-         * Create a Gemini model using the OpenAI chat format.
-         *
-         * By default it targets the `https://generativelanguage.googleapis.com/v1beta/`
-         * base URL.
-         */
-        gemini,
+        ...models,
       },
     },
 
@@ -447,17 +434,23 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The amount of time to wait before continuing.
          */
-        time: number | string
+        time: number | string | Temporal.DurationLike
       ) => Promise<void>
     >(({ id, name }, time) => {
       /**
        * The presence of this operation in the returned stack indicates that the
        * sleep is over and we should continue execution.
        */
+      const msTimeStr: string = timeStr(
+        Temporal.isTemporalDuration(time)
+          ? time.total({ unit: "milliseconds" })
+          : (time as number | string)
+      );
+
       return {
         id,
         op: StepOpCode.Sleep,
-        name: timeStr(time),
+        name: msTimeStr,
         displayName: name ?? id,
       };
     }),
@@ -475,20 +468,20 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The date to wait until before continuing.
          */
-        time: Date | string
+        time: Date | string | Temporal.InstantLike | Temporal.ZonedDateTimeLike
       ) => Promise<void>
     >(({ id, name }, time) => {
-      const date = typeof time === "string" ? new Date(time) : time;
-
-      /**
-       * The presence of this operation in the returned stack indicates that the
-       * sleep is over and we should continue execution.
-       */
       try {
+        const iso = Temporal.getISOString(time);
+
+        /**
+         * The presence of this operation in the returned stack indicates that the
+         * sleep is over and we should continue execution.
+         */
         return {
           id,
           op: StepOpCode.Sleep,
-          name: date.toISOString(),
+          name: iso,
           displayName: name ?? id,
         };
       } catch (err) {
@@ -497,11 +490,17 @@ export const createStepTools = <TClient extends Inngest.Any>(
          * error here to standardise this response.
          */
         // TODO PrettyError
-        console.warn("Invalid date or date string passed to sleepUntil;", err);
+        console.warn(
+          "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil;",
+          err
+        );
 
         // TODO PrettyError
         throw new Error(
-          `Invalid date or date string passed to sleepUntil: ${time.toString()}`
+          `Invalid \`Date\`, date string, \`Temporal.Instant\`, or \`Temporal.ZonedDateTime\` passed to sleepUntil: ${
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            time as any
+          }`
         );
       }
     }),

@@ -1,12 +1,8 @@
+/* eslint-disable @typescript-eslint/no-namespace */
 import { type AnthropicAiAdapter } from "./adapters/anthropic.js";
+import { type GeminiAiAdapter } from "./adapters/gemini.js";
+import { type GrokAiAdapter } from "./adapters/grok.js";
 import { type OpenAiAiAdapter } from "./adapters/openai.js";
-
-/**
- * A symbol used internally to define the types for a model whilst keeping
- * generics clean. Must not be exported outside of this module.
- */
-export declare const types: unique symbol;
-export type types = typeof types;
 
 /**
  * An AI model, defining the I/O format and typing, and how to call the model.
@@ -32,7 +28,7 @@ export interface AiAdapter {
    * This is not accessible externally, and is only used internally to define
    * the user-facing types for each model in a way that avoids using generics.
    */
-  [types]: {
+  "~types": {
     /**
      * The input typing for the format.
      */
@@ -74,7 +70,7 @@ export interface AiAdapter {
     /**
      * The input to pass to the model.
      */
-    body: this[types]["input"],
+    body: this["~types"]["input"],
   ) => void;
 }
 
@@ -99,17 +95,17 @@ export namespace AiAdapter {
   /**
    * A helper used to infer the input type of an adapter.
    */
-  export type Input<TAdapter extends AiAdapter> = TAdapter[types]["input"];
+  export type Input<TAdapter extends AiAdapter> = TAdapter["~types"]["input"];
 
   /**
    * A helper used to infer the output type of an adapter.
    */
-  export type Output<TAdapter extends AiAdapter> = TAdapter[types]["output"];
+  export type Output<TAdapter extends AiAdapter> = TAdapter["~types"]["output"];
 
   /**
    * Supported I/O formats for AI models.
    */
-  export type Format = "openai-chat" | "anthropic";
+  export type Format = "openai-chat" | "anthropic" | "gemini" | "grok";
 
   /**
    * A function that creates a model that adheres to an existng AI adapter
@@ -127,6 +123,8 @@ export namespace AiAdapter {
 const adapters = {
   "openai-chat": null as unknown as OpenAiAiAdapter,
   anthropic: null as unknown as AnthropicAiAdapter,
+  gemini: null as unknown as GeminiAiAdapter,
+  grok: null as unknown as GrokAiAdapter,
 } satisfies Record<AiAdapter.Format, AiAdapter>;
 
 /**

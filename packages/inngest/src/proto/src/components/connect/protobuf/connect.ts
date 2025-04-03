@@ -225,19 +225,9 @@ export interface ConnectMessage {
   payload: Uint8Array;
 }
 
-export interface SessionIdentifier {
-  instanceId: string;
-  connectionId: string;
-  buildId?: string | undefined;
-}
-
-export interface SessionDetails {
-  sessionId: SessionIdentifier | undefined;
-  functionHash: Uint8Array;
-}
-
-export interface ConfigDetails {
-  capabilities: Uint8Array;
+export interface AppConfiguration {
+  appName: string;
+  appVersion?: string | undefined;
   functions: Uint8Array;
 }
 
@@ -247,10 +237,11 @@ export interface AuthData {
 }
 
 export interface WorkerConnectRequestData {
-  sessionId: SessionIdentifier | undefined;
+  connectionId: string;
+  instanceId: string;
   authData: AuthData | undefined;
-  appName: string;
-  config: ConfigDetails | undefined;
+  capabilities: Uint8Array;
+  apps: AppConfiguration[];
   workerManualReadinessAck: boolean;
   systemAttributes: SystemAttributes | undefined;
   environment?: string | undefined;
@@ -261,28 +252,36 @@ export interface WorkerConnectRequestData {
   startedAt: Date | undefined;
 }
 
-export interface GatewaySyncRequestData {
-  deployId?: string | undefined;
-}
-
 export interface GatewayExecutorRequestData {
   requestId: string;
+  accountId: string;
   envId: string;
   appId: string;
+  appName: string;
+  functionId: string;
   functionSlug: string;
   stepId?: string | undefined;
   requestPayload: Uint8Array;
+  systemTraceCtx: Uint8Array;
+  userTraceCtx: Uint8Array;
+  runId: string;
 }
 
 export interface WorkerRequestAckData {
   requestId: string;
+  accountId: string;
+  envId: string;
   appId: string;
   functionSlug: string;
   stepId?: string | undefined;
+  systemTraceCtx: Uint8Array;
+  userTraceCtx: Uint8Array;
+  runId: string;
 }
 
 export interface SDKResponse {
   requestId: string;
+  accountId: string;
   envId: string;
   appId: string;
   status: SDKResponseStatus;
@@ -291,6 +290,9 @@ export interface SDKResponse {
   retryAfter?: string | undefined;
   sdkVersion: string;
   requestVersion: number;
+  systemTraceCtx: Uint8Array;
+  userTraceCtx: Uint8Array;
+  runId: string;
 }
 
 export interface WorkerReplyAckData {
@@ -302,12 +304,23 @@ export interface ConnMetadata {
   id: string;
   gatewayId: string;
   instanceId: string;
-  groupId: string;
+  allWorkerGroups: { [key: string]: string };
+  syncedWorkerGroups: { [key: string]: string };
   status: ConnectionStatus;
   lastHeartbeatAt: Date | undefined;
-  language: string;
-  version: string;
+  sdkLanguage: string;
+  sdkVersion: string;
   attributes: SystemAttributes | undefined;
+}
+
+export interface ConnMetadata_AllWorkerGroupsEntry {
+  key: string;
+  value: string;
+}
+
+export interface ConnMetadata_SyncedWorkerGroupsEntry {
+  key: string;
+  value: string;
 }
 
 export interface SystemAttributes {
@@ -319,13 +332,15 @@ export interface SystemAttributes {
 export interface ConnGroup {
   envId: string;
   appId: string;
+  appName: string;
   hash: string;
   conns: ConnMetadata[];
   syncId?: string | undefined;
-  buildId?: string | undefined;
+  appVersion?: string | undefined;
 }
 
 export interface StartResponse {
+  connectionId: string;
   gatewayEndpoint: string;
   gatewayGroup: string;
   sessionToken: string;
@@ -338,6 +353,18 @@ export interface StartRequest {
 
 export interface FlushResponse {
   requestId: string;
+}
+
+export interface PubSubAckMessage {
+  ts: Date | undefined;
+  nack?: boolean | undefined;
+  nackReason?: SystemError | undefined;
+}
+
+export interface SystemError {
+  code: string;
+  data?: Uint8Array | undefined;
+  message: string;
 }
 
 function createBaseConnectMessage(): ConnectMessage {
@@ -416,28 +443,28 @@ export const ConnectMessage: MessageFns<ConnectMessage> = {
   },
 };
 
-function createBaseSessionIdentifier(): SessionIdentifier {
-  return { instanceId: "", connectionId: "", buildId: undefined };
+function createBaseAppConfiguration(): AppConfiguration {
+  return { appName: "", appVersion: undefined, functions: new Uint8Array(0) };
 }
 
-export const SessionIdentifier: MessageFns<SessionIdentifier> = {
-  encode(message: SessionIdentifier, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.instanceId !== "") {
-      writer.uint32(10).string(message.instanceId);
+export const AppConfiguration: MessageFns<AppConfiguration> = {
+  encode(message: AppConfiguration, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.appName !== "") {
+      writer.uint32(10).string(message.appName);
     }
-    if (message.connectionId !== "") {
-      writer.uint32(18).string(message.connectionId);
+    if (message.appVersion !== undefined) {
+      writer.uint32(18).string(message.appVersion);
     }
-    if (message.buildId !== undefined) {
-      writer.uint32(34).string(message.buildId);
+    if (message.functions.length !== 0) {
+      writer.uint32(34).bytes(message.functions);
     }
     return writer;
   },
 
-  decode(input: BinaryReader | Uint8Array, length?: number): SessionIdentifier {
+  decode(input: BinaryReader | Uint8Array, length?: number): AppConfiguration {
     const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
     let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseSessionIdentifier();
+    const message = createBaseAppConfiguration();
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
@@ -446,7 +473,7 @@ export const SessionIdentifier: MessageFns<SessionIdentifier> = {
             break;
           }
 
-          message.instanceId = reader.string();
+          message.appName = reader.string();
           continue;
         }
         case 2: {
@@ -454,170 +481,11 @@ export const SessionIdentifier: MessageFns<SessionIdentifier> = {
             break;
           }
 
-          message.connectionId = reader.string();
+          message.appVersion = reader.string();
           continue;
         }
         case 4: {
           if (tag !== 34) {
-            break;
-          }
-
-          message.buildId = reader.string();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): SessionIdentifier {
-    return {
-      instanceId: isSet(object.instanceId) ? globalThis.String(object.instanceId) : "",
-      connectionId: isSet(object.connectionId) ? globalThis.String(object.connectionId) : "",
-      buildId: isSet(object.buildId) ? globalThis.String(object.buildId) : undefined,
-    };
-  },
-
-  toJSON(message: SessionIdentifier): unknown {
-    const obj: any = {};
-    if (message.instanceId !== "") {
-      obj.instanceId = message.instanceId;
-    }
-    if (message.connectionId !== "") {
-      obj.connectionId = message.connectionId;
-    }
-    if (message.buildId !== undefined) {
-      obj.buildId = message.buildId;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<SessionIdentifier>, I>>(base?: I): SessionIdentifier {
-    return SessionIdentifier.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<SessionIdentifier>, I>>(object: I): SessionIdentifier {
-    const message = createBaseSessionIdentifier();
-    message.instanceId = object.instanceId ?? "";
-    message.connectionId = object.connectionId ?? "";
-    message.buildId = object.buildId ?? undefined;
-    return message;
-  },
-};
-
-function createBaseSessionDetails(): SessionDetails {
-  return { sessionId: undefined, functionHash: new Uint8Array(0) };
-}
-
-export const SessionDetails: MessageFns<SessionDetails> = {
-  encode(message: SessionDetails, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.sessionId !== undefined) {
-      SessionIdentifier.encode(message.sessionId, writer.uint32(10).fork()).join();
-    }
-    if (message.functionHash.length !== 0) {
-      writer.uint32(26).bytes(message.functionHash);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): SessionDetails {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseSessionDetails();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.sessionId = SessionIdentifier.decode(reader, reader.uint32());
-          continue;
-        }
-        case 3: {
-          if (tag !== 26) {
-            break;
-          }
-
-          message.functionHash = reader.bytes();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): SessionDetails {
-    return {
-      sessionId: isSet(object.sessionId) ? SessionIdentifier.fromJSON(object.sessionId) : undefined,
-      functionHash: isSet(object.functionHash) ? bytesFromBase64(object.functionHash) : new Uint8Array(0),
-    };
-  },
-
-  toJSON(message: SessionDetails): unknown {
-    const obj: any = {};
-    if (message.sessionId !== undefined) {
-      obj.sessionId = SessionIdentifier.toJSON(message.sessionId);
-    }
-    if (message.functionHash.length !== 0) {
-      obj.functionHash = base64FromBytes(message.functionHash);
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<SessionDetails>, I>>(base?: I): SessionDetails {
-    return SessionDetails.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<SessionDetails>, I>>(object: I): SessionDetails {
-    const message = createBaseSessionDetails();
-    message.sessionId = (object.sessionId !== undefined && object.sessionId !== null)
-      ? SessionIdentifier.fromPartial(object.sessionId)
-      : undefined;
-    message.functionHash = object.functionHash ?? new Uint8Array(0);
-    return message;
-  },
-};
-
-function createBaseConfigDetails(): ConfigDetails {
-  return { capabilities: new Uint8Array(0), functions: new Uint8Array(0) };
-}
-
-export const ConfigDetails: MessageFns<ConfigDetails> = {
-  encode(message: ConfigDetails, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.capabilities.length !== 0) {
-      writer.uint32(10).bytes(message.capabilities);
-    }
-    if (message.functions.length !== 0) {
-      writer.uint32(18).bytes(message.functions);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): ConfigDetails {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseConfigDetails();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.capabilities = reader.bytes();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
             break;
           }
 
@@ -633,17 +501,21 @@ export const ConfigDetails: MessageFns<ConfigDetails> = {
     return message;
   },
 
-  fromJSON(object: any): ConfigDetails {
+  fromJSON(object: any): AppConfiguration {
     return {
-      capabilities: isSet(object.capabilities) ? bytesFromBase64(object.capabilities) : new Uint8Array(0),
+      appName: isSet(object.appName) ? globalThis.String(object.appName) : "",
+      appVersion: isSet(object.appVersion) ? globalThis.String(object.appVersion) : undefined,
       functions: isSet(object.functions) ? bytesFromBase64(object.functions) : new Uint8Array(0),
     };
   },
 
-  toJSON(message: ConfigDetails): unknown {
+  toJSON(message: AppConfiguration): unknown {
     const obj: any = {};
-    if (message.capabilities.length !== 0) {
-      obj.capabilities = base64FromBytes(message.capabilities);
+    if (message.appName !== "") {
+      obj.appName = message.appName;
+    }
+    if (message.appVersion !== undefined) {
+      obj.appVersion = message.appVersion;
     }
     if (message.functions.length !== 0) {
       obj.functions = base64FromBytes(message.functions);
@@ -651,12 +523,13 @@ export const ConfigDetails: MessageFns<ConfigDetails> = {
     return obj;
   },
 
-  create<I extends Exact<DeepPartial<ConfigDetails>, I>>(base?: I): ConfigDetails {
-    return ConfigDetails.fromPartial(base ?? ({} as any));
+  create<I extends Exact<DeepPartial<AppConfiguration>, I>>(base?: I): AppConfiguration {
+    return AppConfiguration.fromPartial(base ?? ({} as any));
   },
-  fromPartial<I extends Exact<DeepPartial<ConfigDetails>, I>>(object: I): ConfigDetails {
-    const message = createBaseConfigDetails();
-    message.capabilities = object.capabilities ?? new Uint8Array(0);
+  fromPartial<I extends Exact<DeepPartial<AppConfiguration>, I>>(object: I): AppConfiguration {
+    const message = createBaseAppConfiguration();
+    message.appName = object.appName ?? "";
+    message.appVersion = object.appVersion ?? undefined;
     message.functions = object.functions ?? new Uint8Array(0);
     return message;
   },
@@ -740,10 +613,11 @@ export const AuthData: MessageFns<AuthData> = {
 
 function createBaseWorkerConnectRequestData(): WorkerConnectRequestData {
   return {
-    sessionId: undefined,
+    connectionId: "",
+    instanceId: "",
     authData: undefined,
-    appName: "",
-    config: undefined,
+    capabilities: new Uint8Array(0),
+    apps: [],
     workerManualReadinessAck: false,
     systemAttributes: undefined,
     environment: undefined,
@@ -757,41 +631,44 @@ function createBaseWorkerConnectRequestData(): WorkerConnectRequestData {
 
 export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
   encode(message: WorkerConnectRequestData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.sessionId !== undefined) {
-      SessionIdentifier.encode(message.sessionId, writer.uint32(10).fork()).join();
+    if (message.connectionId !== "") {
+      writer.uint32(10).string(message.connectionId);
+    }
+    if (message.instanceId !== "") {
+      writer.uint32(18).string(message.instanceId);
     }
     if (message.authData !== undefined) {
-      AuthData.encode(message.authData, writer.uint32(18).fork()).join();
+      AuthData.encode(message.authData, writer.uint32(26).fork()).join();
     }
-    if (message.appName !== "") {
-      writer.uint32(26).string(message.appName);
+    if (message.capabilities.length !== 0) {
+      writer.uint32(34).bytes(message.capabilities);
     }
-    if (message.config !== undefined) {
-      ConfigDetails.encode(message.config, writer.uint32(34).fork()).join();
+    for (const v of message.apps) {
+      AppConfiguration.encode(v!, writer.uint32(42).fork()).join();
     }
     if (message.workerManualReadinessAck !== false) {
-      writer.uint32(40).bool(message.workerManualReadinessAck);
+      writer.uint32(48).bool(message.workerManualReadinessAck);
     }
     if (message.systemAttributes !== undefined) {
-      SystemAttributes.encode(message.systemAttributes, writer.uint32(50).fork()).join();
+      SystemAttributes.encode(message.systemAttributes, writer.uint32(58).fork()).join();
     }
     if (message.environment !== undefined) {
-      writer.uint32(58).string(message.environment);
+      writer.uint32(66).string(message.environment);
     }
     if (message.framework !== "") {
-      writer.uint32(66).string(message.framework);
+      writer.uint32(74).string(message.framework);
     }
     if (message.platform !== undefined) {
-      writer.uint32(74).string(message.platform);
+      writer.uint32(82).string(message.platform);
     }
     if (message.sdkVersion !== "") {
-      writer.uint32(82).string(message.sdkVersion);
+      writer.uint32(90).string(message.sdkVersion);
     }
     if (message.sdkLanguage !== "") {
-      writer.uint32(90).string(message.sdkLanguage);
+      writer.uint32(98).string(message.sdkLanguage);
     }
     if (message.startedAt !== undefined) {
-      Timestamp.encode(toTimestamp(message.startedAt), writer.uint32(98).fork()).join();
+      Timestamp.encode(toTimestamp(message.startedAt), writer.uint32(106).fork()).join();
     }
     return writer;
   },
@@ -808,7 +685,7 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
             break;
           }
 
-          message.sessionId = SessionIdentifier.decode(reader, reader.uint32());
+          message.connectionId = reader.string();
           continue;
         }
         case 2: {
@@ -816,7 +693,7 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
             break;
           }
 
-          message.authData = AuthData.decode(reader, reader.uint32());
+          message.instanceId = reader.string();
           continue;
         }
         case 3: {
@@ -824,7 +701,7 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
             break;
           }
 
-          message.appName = reader.string();
+          message.authData = AuthData.decode(reader, reader.uint32());
           continue;
         }
         case 4: {
@@ -832,23 +709,23 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
             break;
           }
 
-          message.config = ConfigDetails.decode(reader, reader.uint32());
+          message.capabilities = reader.bytes();
           continue;
         }
         case 5: {
-          if (tag !== 40) {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.apps.push(AppConfiguration.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
             break;
           }
 
           message.workerManualReadinessAck = reader.bool();
-          continue;
-        }
-        case 6: {
-          if (tag !== 50) {
-            break;
-          }
-
-          message.systemAttributes = SystemAttributes.decode(reader, reader.uint32());
           continue;
         }
         case 7: {
@@ -856,7 +733,7 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
             break;
           }
 
-          message.environment = reader.string();
+          message.systemAttributes = SystemAttributes.decode(reader, reader.uint32());
           continue;
         }
         case 8: {
@@ -864,7 +741,7 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
             break;
           }
 
-          message.framework = reader.string();
+          message.environment = reader.string();
           continue;
         }
         case 9: {
@@ -872,7 +749,7 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
             break;
           }
 
-          message.platform = reader.string();
+          message.framework = reader.string();
           continue;
         }
         case 10: {
@@ -880,7 +757,7 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
             break;
           }
 
-          message.sdkVersion = reader.string();
+          message.platform = reader.string();
           continue;
         }
         case 11: {
@@ -888,11 +765,19 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
             break;
           }
 
-          message.sdkLanguage = reader.string();
+          message.sdkVersion = reader.string();
           continue;
         }
         case 12: {
           if (tag !== 98) {
+            break;
+          }
+
+          message.sdkLanguage = reader.string();
+          continue;
+        }
+        case 13: {
+          if (tag !== 106) {
             break;
           }
 
@@ -910,10 +795,11 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
 
   fromJSON(object: any): WorkerConnectRequestData {
     return {
-      sessionId: isSet(object.sessionId) ? SessionIdentifier.fromJSON(object.sessionId) : undefined,
+      connectionId: isSet(object.connectionId) ? globalThis.String(object.connectionId) : "",
+      instanceId: isSet(object.instanceId) ? globalThis.String(object.instanceId) : "",
       authData: isSet(object.authData) ? AuthData.fromJSON(object.authData) : undefined,
-      appName: isSet(object.appName) ? globalThis.String(object.appName) : "",
-      config: isSet(object.config) ? ConfigDetails.fromJSON(object.config) : undefined,
+      capabilities: isSet(object.capabilities) ? bytesFromBase64(object.capabilities) : new Uint8Array(0),
+      apps: globalThis.Array.isArray(object?.apps) ? object.apps.map((e: any) => AppConfiguration.fromJSON(e)) : [],
       workerManualReadinessAck: isSet(object.workerManualReadinessAck)
         ? globalThis.Boolean(object.workerManualReadinessAck)
         : false,
@@ -929,17 +815,20 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
 
   toJSON(message: WorkerConnectRequestData): unknown {
     const obj: any = {};
-    if (message.sessionId !== undefined) {
-      obj.sessionId = SessionIdentifier.toJSON(message.sessionId);
+    if (message.connectionId !== "") {
+      obj.connectionId = message.connectionId;
+    }
+    if (message.instanceId !== "") {
+      obj.instanceId = message.instanceId;
     }
     if (message.authData !== undefined) {
       obj.authData = AuthData.toJSON(message.authData);
     }
-    if (message.appName !== "") {
-      obj.appName = message.appName;
+    if (message.capabilities.length !== 0) {
+      obj.capabilities = base64FromBytes(message.capabilities);
     }
-    if (message.config !== undefined) {
-      obj.config = ConfigDetails.toJSON(message.config);
+    if (message.apps?.length) {
+      obj.apps = message.apps.map((e) => AppConfiguration.toJSON(e));
     }
     if (message.workerManualReadinessAck !== false) {
       obj.workerManualReadinessAck = message.workerManualReadinessAck;
@@ -973,16 +862,13 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
   },
   fromPartial<I extends Exact<DeepPartial<WorkerConnectRequestData>, I>>(object: I): WorkerConnectRequestData {
     const message = createBaseWorkerConnectRequestData();
-    message.sessionId = (object.sessionId !== undefined && object.sessionId !== null)
-      ? SessionIdentifier.fromPartial(object.sessionId)
-      : undefined;
+    message.connectionId = object.connectionId ?? "";
+    message.instanceId = object.instanceId ?? "";
     message.authData = (object.authData !== undefined && object.authData !== null)
       ? AuthData.fromPartial(object.authData)
       : undefined;
-    message.appName = object.appName ?? "";
-    message.config = (object.config !== undefined && object.config !== null)
-      ? ConfigDetails.fromPartial(object.config)
-      : undefined;
+    message.capabilities = object.capabilities ?? new Uint8Array(0);
+    message.apps = object.apps?.map((e) => AppConfiguration.fromPartial(e)) || [];
     message.workerManualReadinessAck = object.workerManualReadinessAck ?? false;
     message.systemAttributes = (object.systemAttributes !== undefined && object.systemAttributes !== null)
       ? SystemAttributes.fromPartial(object.systemAttributes)
@@ -997,72 +883,20 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
   },
 };
 
-function createBaseGatewaySyncRequestData(): GatewaySyncRequestData {
-  return { deployId: undefined };
-}
-
-export const GatewaySyncRequestData: MessageFns<GatewaySyncRequestData> = {
-  encode(message: GatewaySyncRequestData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.deployId !== undefined) {
-      writer.uint32(10).string(message.deployId);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): GatewaySyncRequestData {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    let end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseGatewaySyncRequestData();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.deployId = reader.string();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): GatewaySyncRequestData {
-    return { deployId: isSet(object.deployId) ? globalThis.String(object.deployId) : undefined };
-  },
-
-  toJSON(message: GatewaySyncRequestData): unknown {
-    const obj: any = {};
-    if (message.deployId !== undefined) {
-      obj.deployId = message.deployId;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<GatewaySyncRequestData>, I>>(base?: I): GatewaySyncRequestData {
-    return GatewaySyncRequestData.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<GatewaySyncRequestData>, I>>(object: I): GatewaySyncRequestData {
-    const message = createBaseGatewaySyncRequestData();
-    message.deployId = object.deployId ?? undefined;
-    return message;
-  },
-};
-
 function createBaseGatewayExecutorRequestData(): GatewayExecutorRequestData {
   return {
     requestId: "",
+    accountId: "",
     envId: "",
     appId: "",
+    appName: "",
+    functionId: "",
     functionSlug: "",
     stepId: undefined,
     requestPayload: new Uint8Array(0),
+    systemTraceCtx: new Uint8Array(0),
+    userTraceCtx: new Uint8Array(0),
+    runId: "",
   };
 }
 
@@ -1071,20 +905,38 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     if (message.requestId !== "") {
       writer.uint32(10).string(message.requestId);
     }
+    if (message.accountId !== "") {
+      writer.uint32(18).string(message.accountId);
+    }
     if (message.envId !== "") {
-      writer.uint32(18).string(message.envId);
+      writer.uint32(26).string(message.envId);
     }
     if (message.appId !== "") {
-      writer.uint32(26).string(message.appId);
+      writer.uint32(34).string(message.appId);
+    }
+    if (message.appName !== "") {
+      writer.uint32(42).string(message.appName);
+    }
+    if (message.functionId !== "") {
+      writer.uint32(50).string(message.functionId);
     }
     if (message.functionSlug !== "") {
-      writer.uint32(34).string(message.functionSlug);
+      writer.uint32(58).string(message.functionSlug);
     }
     if (message.stepId !== undefined) {
-      writer.uint32(42).string(message.stepId);
+      writer.uint32(66).string(message.stepId);
     }
     if (message.requestPayload.length !== 0) {
-      writer.uint32(50).bytes(message.requestPayload);
+      writer.uint32(74).bytes(message.requestPayload);
+    }
+    if (message.systemTraceCtx.length !== 0) {
+      writer.uint32(82).bytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      writer.uint32(90).bytes(message.userTraceCtx);
+    }
+    if (message.runId !== "") {
+      writer.uint32(98).string(message.runId);
     }
     return writer;
   },
@@ -1109,7 +961,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
             break;
           }
 
-          message.envId = reader.string();
+          message.accountId = reader.string();
           continue;
         }
         case 3: {
@@ -1117,7 +969,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
             break;
           }
 
-          message.appId = reader.string();
+          message.envId = reader.string();
           continue;
         }
         case 4: {
@@ -1125,7 +977,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
             break;
           }
 
-          message.functionSlug = reader.string();
+          message.appId = reader.string();
           continue;
         }
         case 5: {
@@ -1133,7 +985,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
             break;
           }
 
-          message.stepId = reader.string();
+          message.appName = reader.string();
           continue;
         }
         case 6: {
@@ -1141,7 +993,55 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
             break;
           }
 
+          message.functionId = reader.string();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.functionSlug = reader.string();
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.stepId = reader.string();
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
           message.requestPayload = reader.bytes();
+          continue;
+        }
+        case 10: {
+          if (tag !== 82) {
+            break;
+          }
+
+          message.systemTraceCtx = reader.bytes();
+          continue;
+        }
+        case 11: {
+          if (tag !== 90) {
+            break;
+          }
+
+          message.userTraceCtx = reader.bytes();
+          continue;
+        }
+        case 12: {
+          if (tag !== 98) {
+            break;
+          }
+
+          message.runId = reader.string();
           continue;
         }
       }
@@ -1156,11 +1056,17 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
   fromJSON(object: any): GatewayExecutorRequestData {
     return {
       requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "",
+      accountId: isSet(object.accountId) ? globalThis.String(object.accountId) : "",
       envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
       appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
+      appName: isSet(object.appName) ? globalThis.String(object.appName) : "",
+      functionId: isSet(object.functionId) ? globalThis.String(object.functionId) : "",
       functionSlug: isSet(object.functionSlug) ? globalThis.String(object.functionSlug) : "",
       stepId: isSet(object.stepId) ? globalThis.String(object.stepId) : undefined,
       requestPayload: isSet(object.requestPayload) ? bytesFromBase64(object.requestPayload) : new Uint8Array(0),
+      systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
+      userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
+      runId: isSet(object.runId) ? globalThis.String(object.runId) : "",
     };
   },
 
@@ -1169,11 +1075,20 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     if (message.requestId !== "") {
       obj.requestId = message.requestId;
     }
+    if (message.accountId !== "") {
+      obj.accountId = message.accountId;
+    }
     if (message.envId !== "") {
       obj.envId = message.envId;
     }
     if (message.appId !== "") {
       obj.appId = message.appId;
+    }
+    if (message.appName !== "") {
+      obj.appName = message.appName;
+    }
+    if (message.functionId !== "") {
+      obj.functionId = message.functionId;
     }
     if (message.functionSlug !== "") {
       obj.functionSlug = message.functionSlug;
@@ -1184,6 +1099,15 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     if (message.requestPayload.length !== 0) {
       obj.requestPayload = base64FromBytes(message.requestPayload);
     }
+    if (message.systemTraceCtx.length !== 0) {
+      obj.systemTraceCtx = base64FromBytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
+    }
+    if (message.runId !== "") {
+      obj.runId = message.runId;
+    }
     return obj;
   },
 
@@ -1193,17 +1117,33 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
   fromPartial<I extends Exact<DeepPartial<GatewayExecutorRequestData>, I>>(object: I): GatewayExecutorRequestData {
     const message = createBaseGatewayExecutorRequestData();
     message.requestId = object.requestId ?? "";
+    message.accountId = object.accountId ?? "";
     message.envId = object.envId ?? "";
     message.appId = object.appId ?? "";
+    message.appName = object.appName ?? "";
+    message.functionId = object.functionId ?? "";
     message.functionSlug = object.functionSlug ?? "";
     message.stepId = object.stepId ?? undefined;
     message.requestPayload = object.requestPayload ?? new Uint8Array(0);
+    message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
+    message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
+    message.runId = object.runId ?? "";
     return message;
   },
 };
 
 function createBaseWorkerRequestAckData(): WorkerRequestAckData {
-  return { requestId: "", appId: "", functionSlug: "", stepId: undefined };
+  return {
+    requestId: "",
+    accountId: "",
+    envId: "",
+    appId: "",
+    functionSlug: "",
+    stepId: undefined,
+    systemTraceCtx: new Uint8Array(0),
+    userTraceCtx: new Uint8Array(0),
+    runId: "",
+  };
 }
 
 export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
@@ -1211,14 +1151,29 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     if (message.requestId !== "") {
       writer.uint32(10).string(message.requestId);
     }
+    if (message.accountId !== "") {
+      writer.uint32(18).string(message.accountId);
+    }
+    if (message.envId !== "") {
+      writer.uint32(26).string(message.envId);
+    }
     if (message.appId !== "") {
-      writer.uint32(18).string(message.appId);
+      writer.uint32(34).string(message.appId);
     }
     if (message.functionSlug !== "") {
-      writer.uint32(26).string(message.functionSlug);
+      writer.uint32(42).string(message.functionSlug);
     }
     if (message.stepId !== undefined) {
-      writer.uint32(34).string(message.stepId);
+      writer.uint32(50).string(message.stepId);
+    }
+    if (message.systemTraceCtx.length !== 0) {
+      writer.uint32(58).bytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      writer.uint32(66).bytes(message.userTraceCtx);
+    }
+    if (message.runId !== "") {
+      writer.uint32(74).string(message.runId);
     }
     return writer;
   },
@@ -1243,7 +1198,7 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
             break;
           }
 
-          message.appId = reader.string();
+          message.accountId = reader.string();
           continue;
         }
         case 3: {
@@ -1251,7 +1206,7 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
             break;
           }
 
-          message.functionSlug = reader.string();
+          message.envId = reader.string();
           continue;
         }
         case 4: {
@@ -1259,7 +1214,47 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
             break;
           }
 
+          message.appId = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.functionSlug = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
           message.stepId = reader.string();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.systemTraceCtx = reader.bytes();
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.userTraceCtx = reader.bytes();
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.runId = reader.string();
           continue;
         }
       }
@@ -1274,9 +1269,14 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
   fromJSON(object: any): WorkerRequestAckData {
     return {
       requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "",
+      accountId: isSet(object.accountId) ? globalThis.String(object.accountId) : "",
+      envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
       appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
       functionSlug: isSet(object.functionSlug) ? globalThis.String(object.functionSlug) : "",
       stepId: isSet(object.stepId) ? globalThis.String(object.stepId) : undefined,
+      systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
+      userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
+      runId: isSet(object.runId) ? globalThis.String(object.runId) : "",
     };
   },
 
@@ -1284,6 +1284,12 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     const obj: any = {};
     if (message.requestId !== "") {
       obj.requestId = message.requestId;
+    }
+    if (message.accountId !== "") {
+      obj.accountId = message.accountId;
+    }
+    if (message.envId !== "") {
+      obj.envId = message.envId;
     }
     if (message.appId !== "") {
       obj.appId = message.appId;
@@ -1294,6 +1300,15 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     if (message.stepId !== undefined) {
       obj.stepId = message.stepId;
     }
+    if (message.systemTraceCtx.length !== 0) {
+      obj.systemTraceCtx = base64FromBytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
+    }
+    if (message.runId !== "") {
+      obj.runId = message.runId;
+    }
     return obj;
   },
 
@@ -1303,9 +1318,14 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
   fromPartial<I extends Exact<DeepPartial<WorkerRequestAckData>, I>>(object: I): WorkerRequestAckData {
     const message = createBaseWorkerRequestAckData();
     message.requestId = object.requestId ?? "";
+    message.accountId = object.accountId ?? "";
+    message.envId = object.envId ?? "";
     message.appId = object.appId ?? "";
     message.functionSlug = object.functionSlug ?? "";
     message.stepId = object.stepId ?? undefined;
+    message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
+    message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
+    message.runId = object.runId ?? "";
     return message;
   },
 };
@@ -1313,6 +1333,7 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
 function createBaseSDKResponse(): SDKResponse {
   return {
     requestId: "",
+    accountId: "",
     envId: "",
     appId: "",
     status: 0,
@@ -1321,6 +1342,9 @@ function createBaseSDKResponse(): SDKResponse {
     retryAfter: undefined,
     sdkVersion: "",
     requestVersion: 0,
+    systemTraceCtx: new Uint8Array(0),
+    userTraceCtx: new Uint8Array(0),
+    runId: "",
   };
 }
 
@@ -1329,29 +1353,41 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     if (message.requestId !== "") {
       writer.uint32(10).string(message.requestId);
     }
+    if (message.accountId !== "") {
+      writer.uint32(18).string(message.accountId);
+    }
     if (message.envId !== "") {
-      writer.uint32(18).string(message.envId);
+      writer.uint32(26).string(message.envId);
     }
     if (message.appId !== "") {
-      writer.uint32(26).string(message.appId);
+      writer.uint32(34).string(message.appId);
     }
     if (message.status !== 0) {
-      writer.uint32(32).int32(message.status);
+      writer.uint32(40).int32(message.status);
     }
     if (message.body.length !== 0) {
-      writer.uint32(42).bytes(message.body);
+      writer.uint32(50).bytes(message.body);
     }
     if (message.noRetry !== false) {
-      writer.uint32(48).bool(message.noRetry);
+      writer.uint32(56).bool(message.noRetry);
     }
     if (message.retryAfter !== undefined) {
-      writer.uint32(58).string(message.retryAfter);
+      writer.uint32(66).string(message.retryAfter);
     }
     if (message.sdkVersion !== "") {
       writer.uint32(74).string(message.sdkVersion);
     }
     if (message.requestVersion !== 0) {
       writer.uint32(80).uint32(message.requestVersion);
+    }
+    if (message.systemTraceCtx.length !== 0) {
+      writer.uint32(90).bytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      writer.uint32(98).bytes(message.userTraceCtx);
+    }
+    if (message.runId !== "") {
+      writer.uint32(106).string(message.runId);
     }
     return writer;
   },
@@ -1376,7 +1412,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
             break;
           }
 
-          message.envId = reader.string();
+          message.accountId = reader.string();
           continue;
         }
         case 3: {
@@ -1384,35 +1420,43 @@ export const SDKResponse: MessageFns<SDKResponse> = {
             break;
           }
 
-          message.appId = reader.string();
+          message.envId = reader.string();
           continue;
         }
         case 4: {
-          if (tag !== 32) {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.appId = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 40) {
             break;
           }
 
           message.status = reader.int32() as any;
           continue;
         }
-        case 5: {
-          if (tag !== 42) {
+        case 6: {
+          if (tag !== 50) {
             break;
           }
 
           message.body = reader.bytes();
           continue;
         }
-        case 6: {
-          if (tag !== 48) {
+        case 7: {
+          if (tag !== 56) {
             break;
           }
 
           message.noRetry = reader.bool();
           continue;
         }
-        case 7: {
-          if (tag !== 58) {
+        case 8: {
+          if (tag !== 66) {
             break;
           }
 
@@ -1435,6 +1479,30 @@ export const SDKResponse: MessageFns<SDKResponse> = {
           message.requestVersion = reader.uint32();
           continue;
         }
+        case 11: {
+          if (tag !== 90) {
+            break;
+          }
+
+          message.systemTraceCtx = reader.bytes();
+          continue;
+        }
+        case 12: {
+          if (tag !== 98) {
+            break;
+          }
+
+          message.userTraceCtx = reader.bytes();
+          continue;
+        }
+        case 13: {
+          if (tag !== 106) {
+            break;
+          }
+
+          message.runId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1447,6 +1515,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
   fromJSON(object: any): SDKResponse {
     return {
       requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "",
+      accountId: isSet(object.accountId) ? globalThis.String(object.accountId) : "",
       envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
       appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
       status: isSet(object.status) ? sDKResponseStatusFromJSON(object.status) : 0,
@@ -1455,6 +1524,9 @@ export const SDKResponse: MessageFns<SDKResponse> = {
       retryAfter: isSet(object.retryAfter) ? globalThis.String(object.retryAfter) : undefined,
       sdkVersion: isSet(object.sdkVersion) ? globalThis.String(object.sdkVersion) : "",
       requestVersion: isSet(object.requestVersion) ? globalThis.Number(object.requestVersion) : 0,
+      systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
+      userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
+      runId: isSet(object.runId) ? globalThis.String(object.runId) : "",
     };
   },
 
@@ -1462,6 +1534,9 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     const obj: any = {};
     if (message.requestId !== "") {
       obj.requestId = message.requestId;
+    }
+    if (message.accountId !== "") {
+      obj.accountId = message.accountId;
     }
     if (message.envId !== "") {
       obj.envId = message.envId;
@@ -1487,6 +1562,15 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     if (message.requestVersion !== 0) {
       obj.requestVersion = Math.round(message.requestVersion);
     }
+    if (message.systemTraceCtx.length !== 0) {
+      obj.systemTraceCtx = base64FromBytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
+    }
+    if (message.runId !== "") {
+      obj.runId = message.runId;
+    }
     return obj;
   },
 
@@ -1496,6 +1580,7 @@ export const SDKResponse: MessageFns<SDKResponse> = {
   fromPartial<I extends Exact<DeepPartial<SDKResponse>, I>>(object: I): SDKResponse {
     const message = createBaseSDKResponse();
     message.requestId = object.requestId ?? "";
+    message.accountId = object.accountId ?? "";
     message.envId = object.envId ?? "";
     message.appId = object.appId ?? "";
     message.status = object.status ?? 0;
@@ -1504,6 +1589,9 @@ export const SDKResponse: MessageFns<SDKResponse> = {
     message.retryAfter = object.retryAfter ?? undefined;
     message.sdkVersion = object.sdkVersion ?? "";
     message.requestVersion = object.requestVersion ?? 0;
+    message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
+    message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
+    message.runId = object.runId ?? "";
     return message;
   },
 };
@@ -1571,11 +1659,12 @@ function createBaseConnMetadata(): ConnMetadata {
     id: "",
     gatewayId: "",
     instanceId: "",
-    groupId: "",
+    allWorkerGroups: {},
+    syncedWorkerGroups: {},
     status: 0,
     lastHeartbeatAt: undefined,
-    language: "",
-    version: "",
+    sdkLanguage: "",
+    sdkVersion: "",
     attributes: undefined,
   };
 }
@@ -1591,23 +1680,26 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
     if (message.instanceId !== "") {
       writer.uint32(26).string(message.instanceId);
     }
-    if (message.groupId !== "") {
-      writer.uint32(34).string(message.groupId);
-    }
+    Object.entries(message.allWorkerGroups).forEach(([key, value]) => {
+      ConnMetadata_AllWorkerGroupsEntry.encode({ key: key as any, value }, writer.uint32(34).fork()).join();
+    });
+    Object.entries(message.syncedWorkerGroups).forEach(([key, value]) => {
+      ConnMetadata_SyncedWorkerGroupsEntry.encode({ key: key as any, value }, writer.uint32(42).fork()).join();
+    });
     if (message.status !== 0) {
-      writer.uint32(40).int32(message.status);
+      writer.uint32(48).int32(message.status);
     }
     if (message.lastHeartbeatAt !== undefined) {
-      Timestamp.encode(toTimestamp(message.lastHeartbeatAt), writer.uint32(50).fork()).join();
+      Timestamp.encode(toTimestamp(message.lastHeartbeatAt), writer.uint32(58).fork()).join();
     }
-    if (message.language !== "") {
-      writer.uint32(58).string(message.language);
+    if (message.sdkLanguage !== "") {
+      writer.uint32(66).string(message.sdkLanguage);
     }
-    if (message.version !== "") {
-      writer.uint32(66).string(message.version);
+    if (message.sdkVersion !== "") {
+      writer.uint32(74).string(message.sdkVersion);
     }
     if (message.attributes !== undefined) {
-      SystemAttributes.encode(message.attributes, writer.uint32(74).fork()).join();
+      SystemAttributes.encode(message.attributes, writer.uint32(82).fork()).join();
     }
     return writer;
   },
@@ -1648,23 +1740,29 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
             break;
           }
 
-          message.groupId = reader.string();
+          const entry4 = ConnMetadata_AllWorkerGroupsEntry.decode(reader, reader.uint32());
+          if (entry4.value !== undefined) {
+            message.allWorkerGroups[entry4.key] = entry4.value;
+          }
           continue;
         }
         case 5: {
-          if (tag !== 40) {
+          if (tag !== 42) {
+            break;
+          }
+
+          const entry5 = ConnMetadata_SyncedWorkerGroupsEntry.decode(reader, reader.uint32());
+          if (entry5.value !== undefined) {
+            message.syncedWorkerGroups[entry5.key] = entry5.value;
+          }
+          continue;
+        }
+        case 6: {
+          if (tag !== 48) {
             break;
           }
 
           message.status = reader.int32() as any;
-          continue;
-        }
-        case 6: {
-          if (tag !== 50) {
-            break;
-          }
-
-          message.lastHeartbeatAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
         }
         case 7: {
@@ -1672,7 +1770,7 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
             break;
           }
 
-          message.language = reader.string();
+          message.lastHeartbeatAt = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
           continue;
         }
         case 8: {
@@ -1680,11 +1778,19 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
             break;
           }
 
-          message.version = reader.string();
+          message.sdkLanguage = reader.string();
           continue;
         }
         case 9: {
           if (tag !== 74) {
+            break;
+          }
+
+          message.sdkVersion = reader.string();
+          continue;
+        }
+        case 10: {
+          if (tag !== 82) {
             break;
           }
 
@@ -1705,11 +1811,22 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
       id: isSet(object.id) ? globalThis.String(object.id) : "",
       gatewayId: isSet(object.gatewayId) ? globalThis.String(object.gatewayId) : "",
       instanceId: isSet(object.instanceId) ? globalThis.String(object.instanceId) : "",
-      groupId: isSet(object.groupId) ? globalThis.String(object.groupId) : "",
+      allWorkerGroups: isObject(object.allWorkerGroups)
+        ? Object.entries(object.allWorkerGroups).reduce<{ [key: string]: string }>((acc, [key, value]) => {
+          acc[key] = String(value);
+          return acc;
+        }, {})
+        : {},
+      syncedWorkerGroups: isObject(object.syncedWorkerGroups)
+        ? Object.entries(object.syncedWorkerGroups).reduce<{ [key: string]: string }>((acc, [key, value]) => {
+          acc[key] = String(value);
+          return acc;
+        }, {})
+        : {},
       status: isSet(object.status) ? connectionStatusFromJSON(object.status) : 0,
       lastHeartbeatAt: isSet(object.lastHeartbeatAt) ? fromJsonTimestamp(object.lastHeartbeatAt) : undefined,
-      language: isSet(object.language) ? globalThis.String(object.language) : "",
-      version: isSet(object.version) ? globalThis.String(object.version) : "",
+      sdkLanguage: isSet(object.sdkLanguage) ? globalThis.String(object.sdkLanguage) : "",
+      sdkVersion: isSet(object.sdkVersion) ? globalThis.String(object.sdkVersion) : "",
       attributes: isSet(object.attributes) ? SystemAttributes.fromJSON(object.attributes) : undefined,
     };
   },
@@ -1725,8 +1842,23 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
     if (message.instanceId !== "") {
       obj.instanceId = message.instanceId;
     }
-    if (message.groupId !== "") {
-      obj.groupId = message.groupId;
+    if (message.allWorkerGroups) {
+      const entries = Object.entries(message.allWorkerGroups);
+      if (entries.length > 0) {
+        obj.allWorkerGroups = {};
+        entries.forEach(([k, v]) => {
+          obj.allWorkerGroups[k] = v;
+        });
+      }
+    }
+    if (message.syncedWorkerGroups) {
+      const entries = Object.entries(message.syncedWorkerGroups);
+      if (entries.length > 0) {
+        obj.syncedWorkerGroups = {};
+        entries.forEach(([k, v]) => {
+          obj.syncedWorkerGroups[k] = v;
+        });
+      }
     }
     if (message.status !== 0) {
       obj.status = connectionStatusToJSON(message.status);
@@ -1734,11 +1866,11 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
     if (message.lastHeartbeatAt !== undefined) {
       obj.lastHeartbeatAt = message.lastHeartbeatAt.toISOString();
     }
-    if (message.language !== "") {
-      obj.language = message.language;
+    if (message.sdkLanguage !== "") {
+      obj.sdkLanguage = message.sdkLanguage;
     }
-    if (message.version !== "") {
-      obj.version = message.version;
+    if (message.sdkVersion !== "") {
+      obj.sdkVersion = message.sdkVersion;
     }
     if (message.attributes !== undefined) {
       obj.attributes = SystemAttributes.toJSON(message.attributes);
@@ -1754,14 +1886,191 @@ export const ConnMetadata: MessageFns<ConnMetadata> = {
     message.id = object.id ?? "";
     message.gatewayId = object.gatewayId ?? "";
     message.instanceId = object.instanceId ?? "";
-    message.groupId = object.groupId ?? "";
+    message.allWorkerGroups = Object.entries(object.allWorkerGroups ?? {}).reduce<{ [key: string]: string }>(
+      (acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = globalThis.String(value);
+        }
+        return acc;
+      },
+      {},
+    );
+    message.syncedWorkerGroups = Object.entries(object.syncedWorkerGroups ?? {}).reduce<{ [key: string]: string }>(
+      (acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = globalThis.String(value);
+        }
+        return acc;
+      },
+      {},
+    );
     message.status = object.status ?? 0;
     message.lastHeartbeatAt = object.lastHeartbeatAt ?? undefined;
-    message.language = object.language ?? "";
-    message.version = object.version ?? "";
+    message.sdkLanguage = object.sdkLanguage ?? "";
+    message.sdkVersion = object.sdkVersion ?? "";
     message.attributes = (object.attributes !== undefined && object.attributes !== null)
       ? SystemAttributes.fromPartial(object.attributes)
       : undefined;
+    return message;
+  },
+};
+
+function createBaseConnMetadata_AllWorkerGroupsEntry(): ConnMetadata_AllWorkerGroupsEntry {
+  return { key: "", value: "" };
+}
+
+export const ConnMetadata_AllWorkerGroupsEntry: MessageFns<ConnMetadata_AllWorkerGroupsEntry> = {
+  encode(message: ConnMetadata_AllWorkerGroupsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== "") {
+      writer.uint32(18).string(message.value);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ConnMetadata_AllWorkerGroupsEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseConnMetadata_AllWorkerGroupsEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.key = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.value = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ConnMetadata_AllWorkerGroupsEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? globalThis.String(object.value) : "",
+    };
+  },
+
+  toJSON(message: ConnMetadata_AllWorkerGroupsEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== "") {
+      obj.value = message.value;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ConnMetadata_AllWorkerGroupsEntry>, I>>(
+    base?: I,
+  ): ConnMetadata_AllWorkerGroupsEntry {
+    return ConnMetadata_AllWorkerGroupsEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ConnMetadata_AllWorkerGroupsEntry>, I>>(
+    object: I,
+  ): ConnMetadata_AllWorkerGroupsEntry {
+    const message = createBaseConnMetadata_AllWorkerGroupsEntry();
+    message.key = object.key ?? "";
+    message.value = object.value ?? "";
+    return message;
+  },
+};
+
+function createBaseConnMetadata_SyncedWorkerGroupsEntry(): ConnMetadata_SyncedWorkerGroupsEntry {
+  return { key: "", value: "" };
+}
+
+export const ConnMetadata_SyncedWorkerGroupsEntry: MessageFns<ConnMetadata_SyncedWorkerGroupsEntry> = {
+  encode(message: ConnMetadata_SyncedWorkerGroupsEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.key !== "") {
+      writer.uint32(10).string(message.key);
+    }
+    if (message.value !== "") {
+      writer.uint32(18).string(message.value);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): ConnMetadata_SyncedWorkerGroupsEntry {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseConnMetadata_SyncedWorkerGroupsEntry();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.key = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.value = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): ConnMetadata_SyncedWorkerGroupsEntry {
+    return {
+      key: isSet(object.key) ? globalThis.String(object.key) : "",
+      value: isSet(object.value) ? globalThis.String(object.value) : "",
+    };
+  },
+
+  toJSON(message: ConnMetadata_SyncedWorkerGroupsEntry): unknown {
+    const obj: any = {};
+    if (message.key !== "") {
+      obj.key = message.key;
+    }
+    if (message.value !== "") {
+      obj.value = message.value;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<ConnMetadata_SyncedWorkerGroupsEntry>, I>>(
+    base?: I,
+  ): ConnMetadata_SyncedWorkerGroupsEntry {
+    return ConnMetadata_SyncedWorkerGroupsEntry.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<ConnMetadata_SyncedWorkerGroupsEntry>, I>>(
+    object: I,
+  ): ConnMetadata_SyncedWorkerGroupsEntry {
+    const message = createBaseConnMetadata_SyncedWorkerGroupsEntry();
+    message.key = object.key ?? "";
+    message.value = object.value ?? "";
     return message;
   },
 };
@@ -1859,7 +2168,7 @@ export const SystemAttributes: MessageFns<SystemAttributes> = {
 };
 
 function createBaseConnGroup(): ConnGroup {
-  return { envId: "", appId: "", hash: "", conns: [], syncId: undefined, buildId: undefined };
+  return { envId: "", appId: "", appName: "", hash: "", conns: [], syncId: undefined, appVersion: undefined };
 }
 
 export const ConnGroup: MessageFns<ConnGroup> = {
@@ -1870,17 +2179,20 @@ export const ConnGroup: MessageFns<ConnGroup> = {
     if (message.appId !== "") {
       writer.uint32(18).string(message.appId);
     }
+    if (message.appName !== "") {
+      writer.uint32(26).string(message.appName);
+    }
     if (message.hash !== "") {
-      writer.uint32(26).string(message.hash);
+      writer.uint32(34).string(message.hash);
     }
     for (const v of message.conns) {
-      ConnMetadata.encode(v!, writer.uint32(34).fork()).join();
+      ConnMetadata.encode(v!, writer.uint32(42).fork()).join();
     }
     if (message.syncId !== undefined) {
-      writer.uint32(42).string(message.syncId);
+      writer.uint32(50).string(message.syncId);
     }
-    if (message.buildId !== undefined) {
-      writer.uint32(50).string(message.buildId);
+    if (message.appVersion !== undefined) {
+      writer.uint32(58).string(message.appVersion);
     }
     return writer;
   },
@@ -1913,7 +2225,7 @@ export const ConnGroup: MessageFns<ConnGroup> = {
             break;
           }
 
-          message.hash = reader.string();
+          message.appName = reader.string();
           continue;
         }
         case 4: {
@@ -1921,7 +2233,7 @@ export const ConnGroup: MessageFns<ConnGroup> = {
             break;
           }
 
-          message.conns.push(ConnMetadata.decode(reader, reader.uint32()));
+          message.hash = reader.string();
           continue;
         }
         case 5: {
@@ -1929,7 +2241,7 @@ export const ConnGroup: MessageFns<ConnGroup> = {
             break;
           }
 
-          message.syncId = reader.string();
+          message.conns.push(ConnMetadata.decode(reader, reader.uint32()));
           continue;
         }
         case 6: {
@@ -1937,7 +2249,15 @@ export const ConnGroup: MessageFns<ConnGroup> = {
             break;
           }
 
-          message.buildId = reader.string();
+          message.syncId = reader.string();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.appVersion = reader.string();
           continue;
         }
       }
@@ -1953,10 +2273,11 @@ export const ConnGroup: MessageFns<ConnGroup> = {
     return {
       envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
       appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
+      appName: isSet(object.appName) ? globalThis.String(object.appName) : "",
       hash: isSet(object.hash) ? globalThis.String(object.hash) : "",
       conns: globalThis.Array.isArray(object?.conns) ? object.conns.map((e: any) => ConnMetadata.fromJSON(e)) : [],
       syncId: isSet(object.syncId) ? globalThis.String(object.syncId) : undefined,
-      buildId: isSet(object.buildId) ? globalThis.String(object.buildId) : undefined,
+      appVersion: isSet(object.appVersion) ? globalThis.String(object.appVersion) : undefined,
     };
   },
 
@@ -1968,6 +2289,9 @@ export const ConnGroup: MessageFns<ConnGroup> = {
     if (message.appId !== "") {
       obj.appId = message.appId;
     }
+    if (message.appName !== "") {
+      obj.appName = message.appName;
+    }
     if (message.hash !== "") {
       obj.hash = message.hash;
     }
@@ -1977,8 +2301,8 @@ export const ConnGroup: MessageFns<ConnGroup> = {
     if (message.syncId !== undefined) {
       obj.syncId = message.syncId;
     }
-    if (message.buildId !== undefined) {
-      obj.buildId = message.buildId;
+    if (message.appVersion !== undefined) {
+      obj.appVersion = message.appVersion;
     }
     return obj;
   },
@@ -1990,31 +2314,35 @@ export const ConnGroup: MessageFns<ConnGroup> = {
     const message = createBaseConnGroup();
     message.envId = object.envId ?? "";
     message.appId = object.appId ?? "";
+    message.appName = object.appName ?? "";
     message.hash = object.hash ?? "";
     message.conns = object.conns?.map((e) => ConnMetadata.fromPartial(e)) || [];
     message.syncId = object.syncId ?? undefined;
-    message.buildId = object.buildId ?? undefined;
+    message.appVersion = object.appVersion ?? undefined;
     return message;
   },
 };
 
 function createBaseStartResponse(): StartResponse {
-  return { gatewayEndpoint: "", gatewayGroup: "", sessionToken: "", syncToken: "" };
+  return { connectionId: "", gatewayEndpoint: "", gatewayGroup: "", sessionToken: "", syncToken: "" };
 }
 
 export const StartResponse: MessageFns<StartResponse> = {
   encode(message: StartResponse, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.connectionId !== "") {
+      writer.uint32(10).string(message.connectionId);
+    }
     if (message.gatewayEndpoint !== "") {
-      writer.uint32(10).string(message.gatewayEndpoint);
+      writer.uint32(18).string(message.gatewayEndpoint);
     }
     if (message.gatewayGroup !== "") {
-      writer.uint32(18).string(message.gatewayGroup);
+      writer.uint32(26).string(message.gatewayGroup);
     }
     if (message.sessionToken !== "") {
-      writer.uint32(26).string(message.sessionToken);
+      writer.uint32(34).string(message.sessionToken);
     }
     if (message.syncToken !== "") {
-      writer.uint32(34).string(message.syncToken);
+      writer.uint32(42).string(message.syncToken);
     }
     return writer;
   },
@@ -2031,7 +2359,7 @@ export const StartResponse: MessageFns<StartResponse> = {
             break;
           }
 
-          message.gatewayEndpoint = reader.string();
+          message.connectionId = reader.string();
           continue;
         }
         case 2: {
@@ -2039,7 +2367,7 @@ export const StartResponse: MessageFns<StartResponse> = {
             break;
           }
 
-          message.gatewayGroup = reader.string();
+          message.gatewayEndpoint = reader.string();
           continue;
         }
         case 3: {
@@ -2047,11 +2375,19 @@ export const StartResponse: MessageFns<StartResponse> = {
             break;
           }
 
-          message.sessionToken = reader.string();
+          message.gatewayGroup = reader.string();
           continue;
         }
         case 4: {
           if (tag !== 34) {
+            break;
+          }
+
+          message.sessionToken = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
             break;
           }
 
@@ -2069,6 +2405,7 @@ export const StartResponse: MessageFns<StartResponse> = {
 
   fromJSON(object: any): StartResponse {
     return {
+      connectionId: isSet(object.connectionId) ? globalThis.String(object.connectionId) : "",
       gatewayEndpoint: isSet(object.gatewayEndpoint) ? globalThis.String(object.gatewayEndpoint) : "",
       gatewayGroup: isSet(object.gatewayGroup) ? globalThis.String(object.gatewayGroup) : "",
       sessionToken: isSet(object.sessionToken) ? globalThis.String(object.sessionToken) : "",
@@ -2078,6 +2415,9 @@ export const StartResponse: MessageFns<StartResponse> = {
 
   toJSON(message: StartResponse): unknown {
     const obj: any = {};
+    if (message.connectionId !== "") {
+      obj.connectionId = message.connectionId;
+    }
     if (message.gatewayEndpoint !== "") {
       obj.gatewayEndpoint = message.gatewayEndpoint;
     }
@@ -2098,6 +2438,7 @@ export const StartResponse: MessageFns<StartResponse> = {
   },
   fromPartial<I extends Exact<DeepPartial<StartResponse>, I>>(object: I): StartResponse {
     const message = createBaseStartResponse();
+    message.connectionId = object.connectionId ?? "";
     message.gatewayEndpoint = object.gatewayEndpoint ?? "";
     message.gatewayGroup = object.gatewayGroup ?? "";
     message.sessionToken = object.sessionToken ?? "";
@@ -2226,6 +2567,192 @@ export const FlushResponse: MessageFns<FlushResponse> = {
   },
 };
 
+function createBasePubSubAckMessage(): PubSubAckMessage {
+  return { ts: undefined, nack: undefined, nackReason: undefined };
+}
+
+export const PubSubAckMessage: MessageFns<PubSubAckMessage> = {
+  encode(message: PubSubAckMessage, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.ts !== undefined) {
+      Timestamp.encode(toTimestamp(message.ts), writer.uint32(10).fork()).join();
+    }
+    if (message.nack !== undefined) {
+      writer.uint32(16).bool(message.nack);
+    }
+    if (message.nackReason !== undefined) {
+      SystemError.encode(message.nackReason, writer.uint32(26).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): PubSubAckMessage {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBasePubSubAckMessage();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.ts = fromTimestamp(Timestamp.decode(reader, reader.uint32()));
+          continue;
+        }
+        case 2: {
+          if (tag !== 16) {
+            break;
+          }
+
+          message.nack = reader.bool();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.nackReason = SystemError.decode(reader, reader.uint32());
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): PubSubAckMessage {
+    return {
+      ts: isSet(object.ts) ? fromJsonTimestamp(object.ts) : undefined,
+      nack: isSet(object.nack) ? globalThis.Boolean(object.nack) : undefined,
+      nackReason: isSet(object.nackReason) ? SystemError.fromJSON(object.nackReason) : undefined,
+    };
+  },
+
+  toJSON(message: PubSubAckMessage): unknown {
+    const obj: any = {};
+    if (message.ts !== undefined) {
+      obj.ts = message.ts.toISOString();
+    }
+    if (message.nack !== undefined) {
+      obj.nack = message.nack;
+    }
+    if (message.nackReason !== undefined) {
+      obj.nackReason = SystemError.toJSON(message.nackReason);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<PubSubAckMessage>, I>>(base?: I): PubSubAckMessage {
+    return PubSubAckMessage.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<PubSubAckMessage>, I>>(object: I): PubSubAckMessage {
+    const message = createBasePubSubAckMessage();
+    message.ts = object.ts ?? undefined;
+    message.nack = object.nack ?? undefined;
+    message.nackReason = (object.nackReason !== undefined && object.nackReason !== null)
+      ? SystemError.fromPartial(object.nackReason)
+      : undefined;
+    return message;
+  },
+};
+
+function createBaseSystemError(): SystemError {
+  return { code: "", data: undefined, message: "" };
+}
+
+export const SystemError: MessageFns<SystemError> = {
+  encode(message: SystemError, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.code !== "") {
+      writer.uint32(10).string(message.code);
+    }
+    if (message.data !== undefined) {
+      writer.uint32(18).bytes(message.data);
+    }
+    if (message.message !== "") {
+      writer.uint32(26).string(message.message);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): SystemError {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseSystemError();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.code = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.data = reader.bytes();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.message = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): SystemError {
+    return {
+      code: isSet(object.code) ? globalThis.String(object.code) : "",
+      data: isSet(object.data) ? bytesFromBase64(object.data) : undefined,
+      message: isSet(object.message) ? globalThis.String(object.message) : "",
+    };
+  },
+
+  toJSON(message: SystemError): unknown {
+    const obj: any = {};
+    if (message.code !== "") {
+      obj.code = message.code;
+    }
+    if (message.data !== undefined) {
+      obj.data = base64FromBytes(message.data);
+    }
+    if (message.message !== "") {
+      obj.message = message.message;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<SystemError>, I>>(base?: I): SystemError {
+    return SystemError.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<SystemError>, I>>(object: I): SystemError {
+    const message = createBaseSystemError();
+    message.code = object.code ?? "";
+    message.data = object.data ?? undefined;
+    message.message = object.message ?? "";
+    return message;
+  },
+};
+
 function bytesFromBase64(b64: string): Uint8Array {
   if ((globalThis as any).Buffer) {
     return Uint8Array.from(globalThis.Buffer.from(b64, "base64"));
@@ -2294,6 +2821,10 @@ function longToNumber(int64: { toString(): string }): number {
     throw new globalThis.Error("Value is smaller than Number.MIN_SAFE_INTEGER");
   }
   return num;
+}
+
+function isObject(value: any): boolean {
+  return typeof value === "object" && value !== null;
 }
 
 function isSet(value: any): boolean {

@@ -29,7 +29,7 @@ export namespace InngestTestEngine {
      * TODO Potentially later allow many functions such that we can invoke and
      * send events.
      */
-    function: InngestFunction<any, any, any, any, any, any>;
+    function: InngestFunction.Like;
 
     /**
      * The event payloads to send to the function. If none is given, an
@@ -95,14 +95,18 @@ export namespace InngestTestEngine {
     handler: () => any;
   }
 
+  export type DeepMock<T> = T extends (...args: any[]) => any
+    ? Mock<T>
+    : T extends object
+      ? { [K in keyof T]: DeepMock<T[K]> }
+      : T;
+
   /**
    * A mocked context object that allows you to assert step usage, input, and
    * output.
    */
   export interface MockContext extends Omit<Context.Any, "step"> {
-    step: {
-      [K in keyof Context.Any["step"]]: Mock<Context.Any["step"][K]>;
-    };
+    step: DeepMock<Context.Any["step"]>;
   }
 
   /**
@@ -349,6 +353,7 @@ export class InngestTestEngine {
       [StepOpCode.StepRun]: () => ({ ...baseRet, result: step.data }),
       [StepOpCode.WaitForEvent]: () => baseRet,
       [StepOpCode.Step]: () => ({ ...baseRet, result: step.data }),
+      [StepOpCode.AiGateway]: () => baseRet,
     };
 
     const result = opHandlers[step.op]();
@@ -475,7 +480,9 @@ export class InngestTestEngine {
 
     const runId = ulid();
 
-    const execution = options.function["createExecution"]({
+    const execution = (options.function as InngestFunction.Any)[
+      "createExecution"
+    ]({
       version: ExecutionVersion.V1,
       partialOptions: {
         runId,

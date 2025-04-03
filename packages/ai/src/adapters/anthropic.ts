@@ -1,4 +1,4 @@
-import { type AiAdapter, type types } from "../adapter.js";
+import { type AiAdapter } from "../adapter.js";
 
 export interface AnthropicAiAdapter extends AiAdapter {
   /**
@@ -6,7 +6,7 @@ export interface AnthropicAiAdapter extends AiAdapter {
    */
   format: "anthropic";
 
-  [types]: {
+  "~types": {
     input: AnthropicAiAdapter.Input;
     output: AnthropicAiAdapter.Output;
   };
@@ -66,6 +66,7 @@ export namespace AnthropicAiAdapter {
           | ImageBlockParam
           | ToolUseBlockParam
           | ToolResultBlockParam
+          | DocumentBlockParam
         >;
 
     role: "user" | "assistant";
@@ -121,6 +122,21 @@ export namespace AnthropicAiAdapter {
 
       type: "base64";
     }
+  }
+
+  export interface DocumentBlockParam {
+    source:
+      | {
+          type: "url";
+          url: string;
+        }
+      | {
+          type: "base64";
+          media_type: "application/pdf";
+          data: string;
+        };
+
+    type: "document";
   }
 
   export interface Message {
@@ -213,8 +229,14 @@ export namespace AnthropicAiAdapter {
      * Object type.
      *
      * For Messages, this is always `"message"`.
+     * When an error occurs, this will be `"error"`.
      */
-    type: "message";
+    type: "message" | "error";
+
+    error?: {
+      type: string;
+      message: string;
+    };
 
     /**
      * Billing and rate-limit usage.
@@ -382,7 +404,7 @@ export namespace AnthropicAiAdapter {
      * Different models have different maximum values for this parameter. See
      * [models](https://docs.anthropic.com/en/docs/models-overview) for details.
      */
-    max_tokens: number;
+    max_tokens?: number;
 
     /**
      * Input messages.
@@ -479,7 +501,7 @@ export namespace AnthropicAiAdapter {
      * [models](https://docs.anthropic.com/en/docs/models-overview) for additional
      * details and options.
      */
-    model: Model;
+    model?: Model;
 
     /**
      * An object describing metadata about the request.

@@ -22,6 +22,7 @@ import {
 } from "./execution/InngestExecution.js";
 import { createV0InngestExecution } from "./execution/v0.js";
 import { createV1InngestExecution } from "./execution/v1.js";
+import { createV2InngestExecution } from "./execution/v2.js";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -46,7 +47,8 @@ export class InngestFunction<
   TTriggers extends InngestFunction.Trigger<
     TriggersFromClient<TClient>
   >[] = InngestFunction.Trigger<TriggersFromClient<TClient>>[],
-> {
+> implements InngestFunction.Like
+{
   static stepId = "step";
   static failureSuffix = "-failure";
 
@@ -115,15 +117,28 @@ export class InngestFunction<
   /**
    * Retrieve the Inngest config for this function.
    */
-  private getConfig(
+  private getConfig({
+    baseUrl,
+    appPrefix,
+    isConnect,
+  }: {
     /**
      * Must be provided a URL that will be used to access the function and step.
      * This function can't be expected to know how it will be accessed, so
      * relies on an outside method providing context.
      */
-    baseUrl: URL,
-    appPrefix?: string
-  ): FunctionConfig[] {
+    baseUrl: URL;
+
+    /**
+     * The prefix for the app that this function is part of.
+     */
+    appPrefix: string;
+
+    /**
+     * Whether this function is being used in a Connect handler.
+     */
+    isConnect?: boolean;
+  }): FunctionConfig[] {
     const fnId = this.id(appPrefix);
     const stepUrl = new URL(baseUrl.href);
     stepUrl.searchParams.set(queryKeys.FnId, fnId);
@@ -168,7 +183,7 @@ export class InngestFunction<
           id: InngestFunction.stepId,
           name: InngestFunction.stepId,
           runtime: {
-            type: "http",
+            type: isConnect ? "ws" : "http",
             url: stepUrl.href,
           },
           retries,
@@ -247,11 +262,21 @@ export class InngestFunction<
     };
 
     const versionHandlers = {
+      [ExecutionVersion.V2]: () => createV2InngestExecution(options),
       [ExecutionVersion.V1]: () => createV1InngestExecution(options),
       [ExecutionVersion.V0]: () => createV0InngestExecution(options),
     } satisfies Record<ExecutionVersion, () => IInngestExecution>;
 
     return versionHandlers[opts.version]();
+  }
+
+  private shouldOptimizeParallelism(): boolean {
+    // TODO We should check the commhandler's client instead of this one?
+    return (
+      this.opts.optimizeParallelism ??
+      this.client["options"].optimizeParallelism ??
+      false
+    );
   }
 }
 
@@ -281,6 +306,11 @@ export namespace InngestFunction {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     any
   >;
+
+  export interface Like {
+    name: string;
+    description?: string | undefined;
+  }
 
   /**
    * A user-friendly method of specifying a trigger for an Inngest function.
@@ -598,6 +628,22 @@ export namespace InngestFunction {
      * ```
      */
     middleware?: TMiddleware;
+
+    /**
+     * If `true`, parallel steps within this function are optimized to reduce
+     * traffic during `Promise` resolution, which can hugely reduce the time
+     * taken and number of requests for each run.
+     *
+     * Note that this will be the default behaviour in v4 and in its current
+     * form will cause `Promise.*()` to wait for all promises to settle before
+     * resolving.
+     *
+     * Providing this value here will overwrite the same value given on the
+     * client.
+     *
+     * @default false
+     */
+    optimizeParallelism?: boolean;
   }
 }
 

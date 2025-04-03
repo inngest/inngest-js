@@ -1,6 +1,6 @@
 {
   "name": "@inngest/test",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Tooling for testing Inngest functions.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -41,7 +41,7 @@
   "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "dependencies": {
-    "inngest": "^3.22.12",
+    "inngest": "^3.31.1",
     "tinyspy": "^3.0.2",
     "ulid": "^2.3.0"
   },

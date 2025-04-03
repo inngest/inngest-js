@@ -1,38 +1,74 @@
 import { Inngest } from "inngest";
+import { connect } from "inngest/connect";
 
 console.log("Starting up worker with pid", process.pid);
 
-const inngest = new Inngest({
-  id: "my-connect-js-app",
+const app1 = new Inngest({
+  id: "my-connect-js-app-1",
   eventKey: "abc123",
-  buildId: "v1.0",
+  appVersion: "v1.0",
+});
+
+const app2 = new Inngest({
+  id: "my-connect-js-app-2",
+  eventKey: "abc123",
+  appVersion: "v1.0",
 });
 
 console.log("Connecting...");
 
-inngest["connect"]({
-  functions: [
-    inngest.createFunction(
-      { id: "test-function" },
-      { event: "connect-demo/test" },
-      async ({ step }) => {
-        await step.run("test", async () => {
-          console.log("via connect!");
-          await new Promise((resolve) => setTimeout(resolve, 10000));
-          console.log("function done");
-          return "this works";
-        });
-      }
-    ),
+connect({
+  apps: [
+    {
+      client: app1,
+      functions: [
+        app1.createFunction(
+          { id: "test-function" },
+          { event: "connect-demo/test" },
+          async ({ step }) => {
+            await step.run("test", async () => {
+              console.log("via connect!");
+              await new Promise((resolve) => setTimeout(resolve, 10000));
+              console.log("function done");
+              return "this works";
+            });
+          }
+        ),
+        app1.createFunction(
+          { id: "hello-world" },
+          { event: "connect-demo/hello-world" },
+          async ({ step }) => {
+            return { success: true };
+          }
+        ),
+      ],
+    },
+    {
+      client: app2,
+      functions: [
+        app2.createFunction(
+          { id: "hello-world" },
+          { event: "connect-demo/hello-world" },
+          async ({ step }) => {
+            return { success: true };
+          }
+        ),
+      ],
+    },
   ],
   instanceId: "my-worker",
-  signingKey: "signkey-test-12345678",
-  signingKeyFallback: "signkey-test-00000000",
-  //     baseUrl: "http://127.0.0.1:8288",
-}).then((conn) => {
-  console.log("Connected!", conn.connectionId);
+  rewriteGatewayEndpoint: (endpoint) => {
+    return endpoint.replace("connect-gateway:8080", "localhost:8100");
+  },
+}).then(async (conn) => {
+  console.log("Connected!");
 
-  setInterval(() => {
-    console.log("State:", conn.state);
+  const statusLog = setInterval(() => {
+    console.log(conn.state);
   }, 1000);
+
+  await conn.closed;
+
+  console.log("Closed, clearing");
+  clearInterval(statusLog);
 });

@@ -79,12 +79,12 @@ export interface ServeHandlerOptions extends RegisterOptions {
   /**
    * The `Inngest` instance used to declare all functions.
    */
-  client: Inngest.Any;
+  client: Inngest.Like;
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly InngestFunction.Any[];
+  functions: readonly InngestFunction.Like[];
 }
 
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
@@ -122,12 +122,12 @@ interface InngestCommHandlerOptions<
    * receiving events from the same service, as you can reuse a single
    * definition of Inngest.
    */
-  client: Inngest.Any;
+  client: Inngest.Like;
 
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly InngestFunction.Any[];
+  functions: readonly InngestFunction.Like[];
 
   /**
    * The `handler` is the function that will be called with your framework's
@@ -365,7 +365,13 @@ export class InngestCommHandler<
     }
 
     this.frameworkName = options.frameworkName;
-    this.client = options.client;
+    this.client = options.client as Inngest.Any;
+
+    if (options.id) {
+      console.warn(
+        `${logPrefix} The \`id\` serve option is deprecated and will be removed in v4`
+      );
+    }
     this.id = options.id || this.client.id;
 
     this.handler = options.handler as Handler;
@@ -380,7 +386,7 @@ export class InngestCommHandler<
     );
 
     // Ensure we filter any undefined functions in case of missing imports.
-    this.rawFns = options.functions.filter(Boolean);
+    this.rawFns = options.functions.filter(Boolean) as InngestFunction.Any[];
 
     if (this.rawFns.length !== options.functions.length) {
       // TODO PrettyError
@@ -392,7 +398,10 @@ export class InngestCommHandler<
     this.fns = this.rawFns.reduce<
       Record<string, { fn: InngestFunction.Any; onFailure: boolean }>
     >((acc, fn) => {
-      const configs = fn["getConfig"](new URL("https://example.com"), this.id);
+      const configs = fn["getConfig"]({
+        baseUrl: new URL("https://example.com"),
+        appPrefix: this.id,
+      });
 
       const fns = configs.reduce((acc, { id }, index) => {
         return { ...acc, [id]: { fn, onFailure: Boolean(index) } };
@@ -1211,11 +1220,19 @@ export class InngestCommHandler<
         }
       }
 
+      // TODO: This feels hacky, so we should probably make it not hacky.
+      const env = getInngestHeaders()[headerKeys.Environment] ?? null;
+
       if (method === "GET") {
         return {
           status: 200,
           body: stringify(
-            await this.introspectionBody({ actions, signatureValidation, url })
+            await this.introspectionBody({
+              actions,
+              env,
+              signatureValidation,
+              url,
+            })
           ),
           headers: {
             "Content-Type": "application/json",
@@ -1239,7 +1256,7 @@ export class InngestCommHandler<
             parseAsBoolean(this.env[envKeys.InngestAllowInBandSync])
           )
             .then((allowInBandSync) => {
-              if (!allowInBandSync) {
+              if (allowInBandSync !== undefined && !allowInBandSync) {
                 return syncKind.OutOfBand;
               }
 
@@ -1317,6 +1334,7 @@ export class InngestCommHandler<
           const respBody = await this.inBandRegisterBody({
             actions,
             deployId,
+            env,
             signatureValidation,
             url,
           });
@@ -1396,7 +1414,15 @@ export class InngestCommHandler<
     }
 
     const immediateFnData = parseFnData(data);
-    const { version } = immediateFnData;
+    let { version } = immediateFnData;
+
+    // Handle opting in to optimized parallelism in v3.
+    if (
+      version === ExecutionVersion.V1 &&
+      fn.fn["shouldOptimizeParallelism"]?.()
+    ) {
+      version = ExecutionVersion.V2;
+    }
 
     const result = runAsPromise(async () => {
       const anyFnData = await fetchAllFnData({
@@ -1496,9 +1522,48 @@ export class InngestCommHandler<
             },
           };
         },
+        [ExecutionVersion.V2]: ({ event, events, steps, ctx, version }) => {
+          const stepState = Object.entries(steps ?? {}).reduce<
+            InngestExecutionOptions["stepState"]
+          >((acc, [id, result]) => {
+            return {
+              ...acc,
+              [id]:
+                result.type === "data"
+                  ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                    { id, data: result.data }
+                  : result.type === "input"
+                    ? // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                      { id, input: result.input }
+                    : { id, error: result.error },
+            };
+          }, {});
+
+          return {
+            version,
+            partialOptions: {
+              runId: ctx?.run_id || "",
+              data: {
+                event: event as EventPayload,
+                events: events as [EventPayload, ...EventPayload[]],
+                runId: ctx?.run_id || "",
+                attempt: ctx?.attempt ?? 0,
+              },
+              stepState,
+              requestedRunStep:
+                stepId === "step" ? undefined : stepId || undefined,
+              timer,
+              isFailureHandler: fn.onFailure,
+              disableImmediateExecution: ctx?.disable_immediate_execution,
+              stepCompletionOrder: ctx?.stack?.stack ?? [],
+              reqArgs,
+              headers,
+            },
+          };
+        },
       });
 
-      const executionOptions = await executionStarters[anyFnData.value.version](
+      const executionOptions = await executionStarters[version](
         anyFnData.value
       );
 
@@ -1510,7 +1575,10 @@ export class InngestCommHandler<
 
   protected configs(url: URL): FunctionConfig[] {
     const configs = Object.values(this.rawFns).reduce<FunctionConfig[]>(
-      (acc, fn) => [...acc, ...fn["getConfig"](url, this.id)],
+      (acc, fn) => [
+        ...acc,
+        ...fn["getConfig"]({ baseUrl: url, appPrefix: this.id }),
+      ],
       []
     );
 
@@ -1577,6 +1645,7 @@ export class InngestCommHandler<
         trust_probe: "v1",
         connect: "v1",
       },
+      appVersion: this.client.appVersion,
     };
 
     return body;
@@ -1585,6 +1654,7 @@ export class InngestCommHandler<
   protected async inBandRegisterBody({
     actions,
     deployId,
+    env,
     signatureValidation,
     url,
   }: {
@@ -1596,6 +1666,7 @@ export class InngestCommHandler<
      */
     deployId: string | undefined | null;
 
+    env: string | null;
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
 
     url: URL;
@@ -1603,14 +1674,16 @@ export class InngestCommHandler<
     const registerBody = this.registerBody({ deployId, url });
     const introspectionBody = await this.introspectionBody({
       actions,
+      env,
       signatureValidation,
       url,
     });
 
     const body: InBandRegisterRequest = {
-      app_id: this.client.id,
+      app_id: this.id,
+      appVersion: this.client.appVersion,
       capabilities: registerBody.capabilities,
-      env: null,
+      env,
       framework: registerBody.framework,
       functions: registerBody.functions,
       inspection: introspectionBody,
@@ -1626,7 +1699,6 @@ export class InngestCommHandler<
     };
 
     if (introspectionBody.authentication_succeeded) {
-      body.env = introspectionBody.env;
       body.sdk_language = introspectionBody.sdk_language;
       body.sdk_version = introspectionBody.sdk_version;
     }
@@ -1636,10 +1708,12 @@ export class InngestCommHandler<
 
   protected async introspectionBody({
     actions,
+    env,
     signatureValidation,
     url,
   }: {
     actions: HandlerResponseWithErrors;
+    env: string | null;
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     url: URL;
   }): Promise<UnauthenticatedIntrospection | AuthenticatedIntrospection> {
@@ -1679,16 +1753,12 @@ export class InngestCommHandler<
           ...introspection,
           authentication_succeeded: true,
           api_origin: this.apiBaseUrl,
-          app_id: this.client.id,
+          app_id: this.id,
           capabilities: {
             trust_probe: "v1",
             connect: "v1",
           },
-          env:
-            (await actions.headers(
-              "fetching environment for introspection request",
-              headerKeys.Environment
-            )) || null,
+          env,
           event_api_origin: this.eventApiBaseUrl,
           event_key_hash: this.hashedEventKey ?? null,
           extra: {

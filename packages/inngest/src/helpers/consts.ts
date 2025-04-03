@@ -145,7 +145,7 @@ export enum headerKeys {
 
 export const defaultInngestApiBaseUrl = "https://api.inngest.com/";
 export const defaultInngestEventBaseUrl = "https://inn.gs/";
-export const defaultDevServerHost = "http://127.0.0.1:8288/";
+export const defaultDevServerHost = "http://localhost:8288/";
 
 /**
  * Events that Inngest may send internally that can be used to trigger

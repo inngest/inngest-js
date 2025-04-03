@@ -1,15 +1,25 @@
 import { type RegisterOptions } from "../../types.js";
+import { type Inngest } from "../Inngest.js";
 import { type InngestFunction } from "../InngestFunction.js";
 
 export const DEFAULT_SHUTDOWN_SIGNALS = ["SIGINT", "SIGTERM"];
 
-export interface ConnectHandlerOptions extends RegisterOptions {
-  /**
-   * An array of the functions to serve and register with Inngest.
-   */
-  functions: readonly InngestFunction.Any[];
+export interface ConnectApp {
+  client: Inngest.Like;
+  functions?: Array<InngestFunction.Like>;
+}
 
-  instanceId: string;
+export interface ConnectHandlerOptions extends RegisterOptions {
+  apps: ConnectApp[];
+
+  /**
+   * InstanceId represents a stable identifier to be used for identifying connected SDKs.
+   * This can be a hostname or other identifier that remains stable across restarts.
+   *
+   * If nil, this defaults to the current machine's hostname.
+   */
+  instanceId?: string;
+
   maxConcurrency?: number;
 
   /**
@@ -17,6 +27,8 @@ export interface ConnectHandlerOptions extends RegisterOptions {
    * process receives a SIGINT or SIGTERM signal. Set this to an empty array to disable this behavior.
    */
   handleShutdownSignals?: string[];
+
+  rewriteGatewayEndpoint?: (endpoint: string) => string;
 }
 
 export interface WorkerConnection {

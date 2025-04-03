@@ -1,7 +1,6 @@
 import { ZodError, z } from "zod";
 import { type InngestApi } from "../api/api.js";
 import { stepsSchemas } from "../api/schema.js";
-import { type InngestFunction } from "../components/InngestFunction.js";
 import {
   ExecutionVersion,
   PREFERRED_EXECUTION_VERSION,
@@ -89,6 +88,7 @@ const fnDataVersionSchema = z.object({
     .literal(-1)
     .or(z.literal(0))
     .or(z.literal(1))
+    .or(z.literal(2))
     .optional()
     .transform<ExecutionVersion>((v) => {
       if (typeof v === "undefined") {
@@ -149,6 +149,38 @@ export const parseFnData = (data: unknown) => {
               event: z.record(z.any()),
               events: z.array(z.record(z.any())).default([]),
               steps: stepsSchemas[ExecutionVersion.V1],
+              ctx: z
+                .object({
+                  run_id: z.string(),
+                  attempt: z.number().default(0),
+                  disable_immediate_execution: z.boolean().default(false),
+                  use_api: z.boolean().default(false),
+                  stack: z
+                    .object({
+                      stack: z
+                        .array(z.string())
+                        .nullable()
+                        .transform((v) => (Array.isArray(v) ? v : [])),
+                      current: z.number(),
+                    })
+                    .passthrough()
+                    .optional()
+                    .nullable(),
+                })
+                .optional()
+                .nullable(),
+            })
+            .parse(data),
+        }) as const,
+
+      [ExecutionVersion.V2]: () =>
+        ({
+          version: ExecutionVersion.V2,
+          ...z
+            .object({
+              event: z.record(z.any()),
+              events: z.array(z.record(z.any())).default([]),
+              steps: stepsSchemas[ExecutionVersion.V2],
               ctx: z
                 .object({
                   run_id: z.string(),

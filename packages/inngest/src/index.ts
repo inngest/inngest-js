@@ -41,6 +41,7 @@
 export * from "@inngest/ai";
 export {
   EventSchemas,
+  type AddName,
   type AssertInternalEventPayloads,
   type Combine,
   type LiteralZodEventSchema,
@@ -80,6 +81,7 @@ export type {
   UnionKeys,
   WithoutInternal,
 } from "./helpers/types";
+export { dependencyInjectionMiddleware } from "./middleware/dependencyInjection.js";
 export type { LogArg } from "./middleware/logger";
 export { ProxyLogger } from "./middleware/logger.js";
 export type {
@@ -102,3 +104,4 @@ export type {
   StepOptionsOrId,
   TimeStr,
 } from "./types";
+export { version } from "./version.js";

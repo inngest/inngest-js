@@ -1,3 +1,5 @@
+import { type MaybePromise } from "./types.js";
+
 /**
  * Some environments don't allow access to the global queueMicrotask(). While we
  * had assumed this was only true for those powered by earlier versions of Node
@@ -33,12 +35,12 @@ export const createFrozenPromise = (): Promise<unknown> => {
  * Returns a Promise that resolves after the current event loop's microtasks
  * have finished, but before the next event loop tick.
  */
-export const resolveAfterPending = (count = 1000): Promise<void> => {
+export const resolveAfterPending = (count = 10): Promise<void> => {
   /**
    * This uses a brute force implementation that will continue to enqueue
-   * microtasks 1000 times before resolving. This is to ensure that the
-   * microtask queue is drained, even if the microtask queue is being
-   * manipulated by other code.
+   * microtasks 10 times before resolving. This is to ensure that the microtask
+   * queue is drained, even if the microtask queue is being manipulated by other
+   * code.
    *
    * While this still doesn't guarantee that the microtask queue is drained,
    * it's our best bet for giving other non-controlled promises a chance to
@@ -228,4 +230,31 @@ export const runAsPromise = <T extends (() => any) | undefined>(
  */
 export const resolveNextTick = (): Promise<void> => {
   return new Promise((resolve) => setTimeout(resolve));
+};
+
+export const retryWithBackoff = async <T>(
+  fn: () => MaybePromise<T>,
+  opts?: {
+    maxAttempts?: number;
+    baseDelay?: number;
+  }
+): Promise<T> => {
+  const maxAttempts = opts?.maxAttempts || 5;
+  const baseDelay = opts?.baseDelay ?? 100;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= maxAttempts) {
+        throw err;
+      }
+
+      const jitter = Math.random() * baseDelay;
+      const delay = baseDelay * Math.pow(2, attempt - 1) + jitter;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw new Error("Max retries reached; this should be unreachable.");
 };

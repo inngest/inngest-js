@@ -1,4 +1,5 @@
 import { type fetch } from "cross-fetch";
+import { z } from "zod";
 import { type ExecutionVersion } from "../components/execution/InngestExecution.js";
 import {
   defaultDevServerHost,
@@ -21,6 +22,10 @@ import {
 
 type FetchT = typeof fetch;
 
+const realtimeSubscriptionTokenSchema = z.object({
+  jwt: z.string(),
+});
+
 export namespace InngestApi {
   export interface Options {
     baseUrl?: string;
@@ -28,6 +33,15 @@ export namespace InngestApi {
     signingKeyFallback: string | undefined;
     fetch: FetchT;
     mode: Mode;
+  }
+
+  export interface Subscription {
+    topics: string[];
+    channel: string;
+  }
+
+  export interface PublishOptions extends Subscription {
+    runId?: string;
   }
 }
 
@@ -148,6 +162,105 @@ export class InngestApi {
           error: getErrorMessage(error, "Unknown error retrieving event batch"),
           status: 500,
         });
+      });
+  }
+
+  async publish(
+    publishOptions: InngestApi.PublishOptions,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data: any
+  ): Promise<Result<void, ErrorResponse>> {
+    // todo it may not be a "text/stream"
+    const isStream = data instanceof ReadableStream;
+    const url = await this.getTargetUrl("/v1/realtime/publish");
+
+    url.searchParams.set("channel", publishOptions.channel || "");
+
+    if (publishOptions.runId) {
+      url.searchParams.set("run_id", publishOptions.runId);
+    }
+
+    publishOptions.topics.forEach((topic) => {
+      url.searchParams.append("topic", topic);
+    });
+
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url,
+      options: {
+        method: "POST",
+        body: isStream
+          ? data
+          : typeof data === "string"
+            ? data
+            : JSON.stringify(data),
+        headers: {
+          "Content-Type": isStream ? "text/stream" : "application/json",
+        },
+        ...(isStream ? { duplex: "half" } : {}),
+      },
+    })
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(
+            `Failed to publish event: ${res.status} ${res.statusText}`
+          );
+        }
+
+        return ok<void>(undefined);
+      })
+      .catch((error) => {
+        return err({
+          error: getErrorMessage(error, "Unknown error publishing event"),
+          status: 500,
+        });
+      });
+  }
+
+  async getSubscriptionToken(
+    channel: string,
+    topics: string[]
+  ): Promise<string> {
+    const url = await this.getTargetUrl("/v1/realtime/token");
+
+    const body = topics.map((topic) => ({
+      channel,
+      name: topic,
+      kind: "run",
+    }));
+
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url,
+      options: {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      },
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          throw new Error(
+            `Failed to get subscription token: ${res.status} ${
+              res.statusText
+            } - ${await res.text()}`
+          );
+        }
+
+        const data = realtimeSubscriptionTokenSchema.parse(await res.json());
+
+        return data.jwt;
+      })
+      .catch((error) => {
+        throw new Error(
+          getErrorMessage(error, "Unknown error getting subscription token")
+        );
       });
   }
 }

@@ -70,7 +70,7 @@ import { type RegisterOptions, type SupportedFrameworkName } from "./types.js";
 export const frameworkName: SupportedFrameworkName = "fastify";
 
 type InngestPluginOptions = {
-  client: Inngest.Any;
+  client: Inngest.Like;
   functions: InngestFunction.Any[];
   options?: RegisterOptions;
 };
@@ -179,7 +179,7 @@ export const serve = (
  *
  * @public
  */
-const fastifyPlugin: (
+export const fastifyPlugin: (
   fastify: FastifyInstance,
   options: InngestPluginOptions,
   done: (err?: Error | undefined) => void

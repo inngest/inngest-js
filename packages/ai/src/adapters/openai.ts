@@ -1,4 +1,4 @@
-import { type AiAdapter, type types } from "../adapter.js";
+import { type AiAdapter } from "../adapter.js";
 
 /**
  * An OpenAI model using the OpenAI format for I/O.
@@ -9,7 +9,7 @@ export interface OpenAiAiAdapter extends AiAdapter {
    */
   format: "openai-chat";
 
-  [types]: {
+  "~types": {
     input: {
       /**
        * ID of the model to use. See the [model endpoint
@@ -349,6 +349,16 @@ export interface OpenAiAiAdapter extends AiAdapter {
        * A unique identifier for the chat completion.
        */
       id: string;
+
+      /**
+       * If an error occurs, this will be an object containing the error details.
+       */
+      error?: {
+        message: string;
+        type: string;
+        param: string | null;
+        code: string | null;
+      };
 
       /**
        * A list of chat completion choices. Can be more than one if `n` is

@@ -66,4 +66,6 @@ export enum envKeys {
   OpenAiApiKey = "OPENAI_API_KEY",
   GeminiApiKey = "GEMINI_API_KEY",
   AnthropicApiKey = "ANTHROPIC_API_KEY",
+  DeepSeekApiKey = "DEEPSEEK_API_KEY",
+  GrokApiKey = "XAI_API_KEY",
 }

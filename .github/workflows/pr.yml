@@ -59,6 +59,7 @@ jobs:
       matrix:
         tsVersion:
           - "latest"
+          - "~5.8.0"
           - "~5.7.0"
           - "~5.6.0"
           - "~5.5.0"
@@ -176,6 +177,21 @@ jobs:
       - run: pnpm install
       - run: pnpm test
 
+  "realtime_test":
+    name: "realtime: Test"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/realtime
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
+      - run: pnpm install
+      - run: pnpm test
+
   package_inngest:
     name: "inngest: Package"
     runs-on: ubuntu-latest
@@ -188,7 +204,7 @@ jobs:
       - name: Package as tarball
         run: pnpm run local:pack
       - name: Archive package tarball
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: inngestpkg
           path: packages/inngest/inngest.tgz
@@ -232,7 +248,7 @@ jobs:
       - uses: ./.github/actions/setup-and-build
 
       - name: Download pre-built SDK
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: inngestpkg
           path: packages/inngest
