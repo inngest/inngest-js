@@ -39,6 +39,10 @@ export namespace InngestApi {
     topics: string[];
     channel: string;
   }
+
+  export interface PublishOptions extends Subscription {
+    runId: string;
+  }
 }
 
 export class InngestApi {
@@ -162,7 +166,7 @@ export class InngestApi {
   }
 
   async publish(
-    subscription: InngestApi.Subscription,
+    publishOptions: InngestApi.PublishOptions,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: any
   ): Promise<Result<void, ErrorResponse>> {
@@ -170,9 +174,10 @@ export class InngestApi {
     const isStream = data instanceof ReadableStream;
     const url = await this.getTargetUrl("/v1/realtime/publish");
 
-    url.searchParams.set("channel", subscription.channel || "");
+    url.searchParams.set("channel", publishOptions.channel);
+    url.searchParams.set("run_id", publishOptions.runId);
 
-    subscription.topics.forEach((topic) => {
+    publishOptions.topics.forEach((topic) => {
       url.searchParams.append("topic", topic);
     });
 
