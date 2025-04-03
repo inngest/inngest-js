@@ -1,5 +1,11 @@
 # inngest
 
+## 3.34.2
+
+### Patch Changes
+
+- [#934](https://github.com/inngest/inngest-js/pull/934) [`abae7fc`](https://github.com/inngest/inngest-js/commit/abae7fce16f4b3171705d23bed9bfdda3b70bdec) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Require `runId` when publishing realtime messages
+
 ## 3.34.1
 
 ### Patch Changes
