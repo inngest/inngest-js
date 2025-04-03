@@ -355,8 +355,8 @@ export namespace InngestFunction {
      */
     batchEvents?: {
       /**
-       * The maximum number of events to be consumed in one batch,
-       * Currently allowed max value is 100.
+       * The maximum number of events to be consumed in one batch.
+       * Check the pricing page to verify the limit for each plan.
        */
       maxSize: number;
 
