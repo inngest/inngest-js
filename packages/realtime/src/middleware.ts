@@ -8,7 +8,7 @@ export const realtimeMiddleware = () => {
     name: "publish",
     init({ client }) {
       return {
-        onFunctionRun() {
+        onFunctionRun({ ctx: { runId } }) {
           return {
             transformInput({ ctx: { step } }) {
               const publish: Realtime.PublishFn = async (input) => {
@@ -21,14 +21,15 @@ export const realtimeMiddleware = () => {
                   );
                 }
 
-                const subscription: InngestApi.Subscription = {
+                const publishOpts: InngestApi.PublishOptions = {
                   topics: [topic],
                   channel,
+                  runId,
                 };
 
                 const action = async () => {
                   const result = await client["inngestApi"].publish(
-                    subscription,
+                    publishOpts,
                     data,
                   );
 
@@ -42,7 +43,7 @@ export const realtimeMiddleware = () => {
                 return (
                   store.executingStep
                     ? action()
-                    : step.run(`publish:${subscription.channel}`, action)
+                    : step.run(`publish:${publishOpts.channel}`, action)
                 ).then(() => {
                   // Always return the data passed in to the `publish` call.
 
