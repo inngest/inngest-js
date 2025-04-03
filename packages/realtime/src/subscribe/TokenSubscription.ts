@@ -216,20 +216,6 @@ export class TokenSubscription {
               return;
             }
 
-            if (!msg.fn_id) {
-              this.#debug(
-                `Received message on channel "${msg.channel}" with no function ID`,
-              );
-              return;
-            }
-
-            if (!msg.run_id) {
-              this.#debug(
-                `Received message on channel "${msg.channel}" with no run ID`,
-              );
-              return;
-            }
-
             const streamId: unknown = msg.data;
             if (typeof streamId !== "string" || !streamId) {
               this.#debug(
@@ -286,20 +272,6 @@ export class TokenSubscription {
               return;
             }
 
-            if (!msg.fn_id) {
-              this.#debug(
-                `Received message on channel "${msg.channel}" with no function ID`,
-              );
-              return;
-            }
-
-            if (!msg.run_id) {
-              this.#debug(
-                `Received message on channel "${msg.channel}" with no run ID`,
-              );
-              return;
-            }
-
             const streamId: unknown = msg.data;
             if (typeof streamId !== "string" || !streamId) {
               this.#debug(
@@ -346,20 +318,6 @@ export class TokenSubscription {
             if (!msg.topic) {
               this.#debug(
                 `Received message on channel "${msg.channel}" with no topic`,
-              );
-              return;
-            }
-
-            if (!msg.fn_id) {
-              this.#debug(
-                `Received message on channel "${msg.channel}" with no function ID`,
-              );
-              return;
-            }
-
-            if (!msg.run_id) {
-              this.#debug(
-                `Received message on channel "${msg.channel}" with no run ID`,
               );
               return;
             }
