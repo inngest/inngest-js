@@ -163,13 +163,6 @@ export class TokenSubscription {
               return;
             }
 
-            if (!msg.run_id) {
-              this.#debug(
-                `Received message on channel "${msg.channel}" with no run ID`,
-              );
-              return;
-            }
-
             const topic = this.#topics.get(msg.topic);
             if (!topic) {
               this.#debug(
