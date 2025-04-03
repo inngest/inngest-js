@@ -174,7 +174,7 @@ export class InngestApi {
     const isStream = data instanceof ReadableStream;
     const url = await this.getTargetUrl("/v1/realtime/publish");
 
-    url.searchParams.set("channel", publishOptions.channel);
+    url.searchParams.set("channel", publishOptions.channel || "");
 
     if (publishOptions.runId) {
       url.searchParams.set("run_id", publishOptions.runId);
