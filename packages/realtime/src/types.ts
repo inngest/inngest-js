@@ -113,7 +113,7 @@ export namespace Realtime {
       channel: z.string().optional(),
       topic: z.string().optional(),
       data: z.any(),
-      run_id: z.string().optional(),
+      run_id: z.string(),
       fn_id: z.string().optional(),
       created_at: z
         .string()
@@ -157,7 +157,7 @@ export namespace Realtime {
           channel: TChannelId;
           data: Realtime.Topic.InferSubscribe<TTopics[K]>;
           runId: string;
-          fnId: string;
+          fnId?: string;
           createdAt: Date;
           envId?: string;
           kind: "data";
@@ -167,7 +167,7 @@ export namespace Realtime {
           channel: TChannelId;
           data: Realtime.Topic.InferSubscribe<TTopics[K]>;
           runId: string;
-          fnId: string;
+          fnId?: string;
           kind: "datastream-start" | "datastream-end" | "chunk";
           streamId: string;
           stream: ReadableStream<Realtime.Topic.InferSubscribe<TTopics[K]>>;
@@ -199,7 +199,7 @@ export namespace Realtime {
         stream_id?: string;
         data: Realtime.Topic.InferSubscribe<TTopics[K]>;
         channel?: TChannelId;
-        run_id?: string;
+        run_id: string;
         fn_id?: string;
         created_at?: Date;
         env_id?: string;

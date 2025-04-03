@@ -163,13 +163,6 @@ export class TokenSubscription {
               return;
             }
 
-            if (!msg.fn_id) {
-              this.#debug(
-                `Received message on channel "${msg.channel}" with no function ID`,
-              );
-              return;
-            }
-
             if (!msg.run_id) {
               this.#debug(
                 `Received message on channel "${msg.channel}" with no run ID`,
