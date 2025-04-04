@@ -6,7 +6,7 @@ import {
 } from "../helpers/types.js";
 import type * as z from "../helpers/validators/zod.js";
 import {
-  CancelledEventPayload,
+  type CancelledEventPayload,
   type EventPayload,
   type FailureEventPayload,
   type FinishedEventPayload,
