@@ -1,5 +1,11 @@
 # inngest
 
+## 3.34.3
+
+### Patch Changes
+
+- [#938](https://github.com/inngest/inngest-js/pull/938) [`efd658c`](https://github.com/inngest/inngest-js/commit/efd658cd0293b58aeea14db32c73bcf49483b35e) Thanks [@anafilipadealmeida](https://github.com/anafilipadealmeida)! - Update description for `batchSize`; pricing plans decide on max limits
+
 ## 3.34.2
 
 ### Patch Changes
