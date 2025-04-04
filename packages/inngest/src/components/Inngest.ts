@@ -465,7 +465,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
     let maxAttempts = 5;
 
-    // Atempt to set the event ID seed header. If it fails then disable retries
+    // Attempt to set the event ID seed header. If it fails then disable retries
     // (but we still want to send the event).
     try {
       const entropy = createEntropy(10);
