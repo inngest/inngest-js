@@ -6,6 +6,7 @@ import {
 } from "../helpers/types.js";
 import type * as z from "../helpers/validators/zod.js";
 import {
+  type CancelledEventPayload,
   type EventPayload,
   type FailureEventPayload,
   type FinishedEventPayload,
@@ -258,6 +259,7 @@ export class EventSchemas<
     [internalEvents.FunctionFailed]: FailureEventPayload;
     [internalEvents.FunctionFinished]: FinishedEventPayload;
     [internalEvents.FunctionInvoked]: InvokedEventPayload;
+    [internalEvents.FunctionCancelled]: CancelledEventPayload;
     [internalEvents.ScheduledTimer]: ScheduledTimerEventPayload;
   }>,
 > {
