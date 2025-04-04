@@ -1,4 +1,3 @@
-import { ulid } from "ulidx";
 import { InngestApi } from "../api/api.js";
 import {
   defaultDevServerHost,
@@ -59,6 +58,7 @@ import {
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
 } from "./InngestMiddleware.js";
+import { createEntropy } from "../helpers/crypto.js";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -461,6 +461,31 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     payload: Payload;
     headers?: Record<string, string>;
   }): Promise<SendEventOutput<TClientOpts>> {
+    const nowMillis = new Date().getTime();
+
+    let maxAttempts = 5;
+
+    // Atempt to set the event ID seed header. If it fails then disable retries
+    // (but we still want to send the event).
+    try {
+      const entropy = createEntropy(10);
+      const entropyBase64 = Buffer.from(entropy).toString("base64");
+      headers = {
+        ...headers,
+        [headerKeys.EventIdSeed]: `${nowMillis},${entropyBase64}`,
+      };
+    } catch (err) {
+      let message = "Event-sending retries disabled";
+      if (err instanceof Error) {
+        message += `: ${err.message}`;
+      }
+
+      console.debug(message);
+
+      // Disable retries.
+      maxAttempts = 1;
+    }
+
     const hooks = await getHookStack(
       this.middleware,
       "onSendEvent",
@@ -497,8 +522,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       return {
         ...p,
         // Always generate an idempotency ID for an event for retries
-        id: p.id || ulid(),
-        ts: p.ts || new Date().getTime(),
+        id: p.id,
+        ts: p.ts || nowMillis,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         data: p.data || {},
       };
@@ -599,7 +624,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         return body;
       },
       {
-        maxAttempts: 5,
+        maxAttempts,
         baseDelay: 100,
       }
     );
