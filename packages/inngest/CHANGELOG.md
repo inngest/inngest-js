@@ -1,5 +1,100 @@
 # inngest
 
+## 3.34.3
+
+### Patch Changes
+
+- [#938](https://github.com/inngest/inngest-js/pull/938) [`efd658c`](https://github.com/inngest/inngest-js/commit/efd658cd0293b58aeea14db32c73bcf49483b35e) Thanks [@anafilipadealmeida](https://github.com/anafilipadealmeida)! - Update description for `batchSize`; pricing plans decide on max limits
+
+## 3.34.2
+
+### Patch Changes
+
+- [#934](https://github.com/inngest/inngest-js/pull/934) [`abae7fc`](https://github.com/inngest/inngest-js/commit/abae7fce16f4b3171705d23bed9bfdda3b70bdec) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Require `runId` when publishing realtime messages
+
+## 3.34.1
+
+### Patch Changes
+
+- [#925](https://github.com/inngest/inngest-js/pull/925) [`11fd15b`](https://github.com/inngest/inngest-js/commit/11fd15be198d20a73bf95e93d863d8150ec4fdb6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export `fastifyPlugin` as a named export to resolve CJS<->ESM interop issues
+
+## 3.34.0
+
+### Minor Changes
+
+- [#919](https://github.com/inngest/inngest-js/pull/919) [`ebeaaff`](https://github.com/inngest/inngest-js/commit/ebeaaffa2fde4f6cec0f0554cc9f5f033da07f40) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `dependencyInjectionMiddleware()`, allowing you to easily add data to function input
+
+  ```ts
+  import { dependencyInjectionMiddleware } from "inngest";
+
+  const prisma = new Prisma();
+
+  const inngest = new Inngest({
+    id: "my-app",
+    middleware: [dependencyInjectionMiddleware({ prisma })],
+  });
+  ```
+
+### Patch Changes
+
+- [#922](https://github.com/inngest/inngest-js/pull/922) [`3374187`](https://github.com/inngest/inngest-js/commit/3374187eca44bbbc83daaaea511d7bbe84112a9d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `Error.cause` can now be any `unknown` value, though we still attempt to recursively expand causes until we hit an `unknown` value
+
+## 3.33.0
+
+### Minor Changes
+
+- [#918](https://github.com/inngest/inngest-js/pull/918) [`a305a15`](https://github.com/inngest/inngest-js/commit/a305a154eb73c54a0d90a437130ab32f7e388c90) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for [Temporal](https://tc39.es/proposal-temporal/) APIs.
+
+  ```ts
+  inngest.createFunction(
+    {
+      id: "my-fn",
+    },
+    {
+      event: "test/hello.world",
+    },
+    async ({ event, step }) => {
+      // sleep with a `Temporal.Duration`
+      await step.sleep("😴", Temporal.Duration.from({ seconds: 10 }));
+      await step.sleep("😴", Temporal.Duration.from({ minutes: 5 }));
+      await step.sleep("😴", Temporal.Duration.from({ hours: 1 }));
+
+      // sleepUntil using a `Temporal.Instant` or `Temporal.ZonedDateTime`
+      await step.sleepUntil(
+        "😴",
+        Temporal.Instant.from("2025-03-19T12:00:00Z"),
+      );
+      await step.sleepUntil(
+        "😴",
+        Temporal.ZonedDateTime.from("2025-03-19T12:00[Europe/London]"),
+      );
+
+      // sleepUntil also works with relative time
+      const now = Temporal.Instant.from(event.user.createdAtISO);
+      await step.sleepUntil(
+        "😴",
+        now.add(Temporal.Duration.from({ minutes: 30 })),
+      );
+    },
+  );
+  ```
+
+### Patch Changes
+
+- [#745](https://github.com/inngest/inngest-js/pull/745) [`ff01cd2`](https://github.com/inngest/inngest-js/commit/ff01cd29a4b93f268c3eefb81d44100c2a4c1919) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix rare body reuse when parsing failure returns from `inngest.send()` and `step.sendEvent()`
+
+- [#916](https://github.com/inngest/inngest-js/pull/916) [`ab835ee`](https://github.com/inngest/inngest-js/commit/ab835eeb891be45302c8bbe07d781d6a3de9f2a0) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - - Connect: Allow supplying Inngest env as environment variable
+
+- [#913](https://github.com/inngest/inngest-js/pull/913) [`b090e27`](https://github.com/inngest/inngest-js/commit/b090e278d471f425c8a216836c8109bd5086fd56) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export the `version` of the package
+
+- [#921](https://github.com/inngest/inngest-js/pull/921) [`374727f`](https://github.com/inngest/inngest-js/commit/374727f316bb9e71eee64328d0cb1afe95574126) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - connect: Include RunID in acks / sdk response
+
+## 3.32.9
+
+### Patch Changes
+
+- [#914](https://github.com/inngest/inngest-js/pull/914) [`9a5dd61`](https://github.com/inngest/inngest-js/commit/9a5dd61abb03936bf2df6196ee48e626508b70bf) Thanks [@tonyhb](https://github.com/tonyhb)! - Allow customization of the dev server URL in realtime
+
 ## 3.32.8
 
 ### Patch Changes

@@ -2,7 +2,11 @@ import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
 import { ulid } from "ulidx";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.js";
-import { allProcessEnv, getPlatformName } from "../../helpers/env.js";
+import {
+  allProcessEnv,
+  getEnvironmentName,
+  getPlatformName,
+} from "../../helpers/env.js";
 import { parseFnData } from "../../helpers/functions.js";
 import { hashSigningKey } from "../../helpers/strings.js";
 import {
@@ -47,6 +51,8 @@ import {
 
 const ResponseAcknowlegeDeadline = 5_000;
 const WorkerHeartbeatInterval = 10_000;
+
+const InngestBranchEnvironmentSigningKeyPrefix = "signkey-branch-";
 
 interface connectionEstablishData {
   marshaledCapabilities: string;
@@ -102,6 +108,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
   private _hashedSigningKey: string | undefined;
   private _hashedFallbackKey: string | undefined;
 
+  private _inngestEnv: string | undefined;
+
   /**
    * A set of gateways to exclude from the connection.
    */
@@ -131,8 +139,18 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
 
     this.inngest = options.apps[0].client as Inngest.Any;
+    for (const app of options.apps) {
+      if (app.client.env !== this.inngest.env) {
+        throw new Error(
+          `All apps must be configured to the same environment. ${app.client.id} is configured to ${app.client.env} but ${this.inngest.id} is configured to ${this.inngest.env}`
+        );
+      }
+    }
 
     this.options = this.applyDefaults(options);
+
+    this._inngestEnv = this.inngest.env ?? getEnvironmentName();
+
     this.debug = debug("inngest:connect");
 
     this.messageBuffer = new MessageBuffer(this.inngest);
@@ -270,6 +288,18 @@ class WebSocketWorkerConnection implements WorkerConnection {
     this._hashedSigningKey = this.options.signingKey
       ? hashSigningKey(this.options.signingKey)
       : undefined;
+
+    if (
+      this.options.signingKey &&
+      this.options.signingKey.startsWith(
+        InngestBranchEnvironmentSigningKeyPrefix
+      ) &&
+      !this._inngestEnv
+    ) {
+      throw new Error(
+        "Environment is required when using branch environment signing keys"
+      );
+    }
 
     if (this.options.signingKeyFallback) {
       this._hashedFallbackKey = hashSigningKey(this.options.signingKeyFallback);
@@ -413,6 +443,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
                 ),
                 systemTraceCtx: msg.systemTraceCtx,
                 userTraceCtx: msg.userTraceCtx,
+                runId: msg.runId,
               });
             },
             url() {
@@ -520,9 +551,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
         : {}),
     };
 
-    const envOverride = this.inngest.env;
-    if (envOverride) {
-      headers[headerKeys.Environment] = envOverride;
+    if (this._inngestEnv) {
+      headers[headerKeys.Environment] = this._inngestEnv;
     }
 
     // refactor this to a more universal spot
@@ -548,7 +578,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       if (resp.status === 401) {
         throw new AuthError(
           `Failed initial API handshake request to ${targetUrl.toString()}${
-            envOverride ? ` (env: ${envOverride})` : ""
+            this._inngestEnv ? ` (env: ${this._inngestEnv})` : ""
           }, ${await resp.text()}`,
           attempt
         );
@@ -720,7 +750,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       if (!setupState.sentWorkerConnect) {
         const workerConnectRequestMsg = WorkerConnectRequestData.create({
           connectionId: startResp.connectionId,
-          environment: this.inngest.env || undefined,
+          environment: this._inngestEnv,
           platform: getPlatformName({
             ...allProcessEnv(),
           }),
@@ -973,6 +1003,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
                   stepId: gatewayExecutorRequest.stepId,
                   userTraceCtx: gatewayExecutorRequest.userTraceCtx,
                   systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
+                  runId: gatewayExecutorRequest.runId,
                 })
               ).finish(),
             })

@@ -1,6 +1,6 @@
 import debug from "debug";
 import { type Inngest } from "inngest";
-import { devServerAvailable } from "inngest/helpers/devserver";
+import { devServerAvailable, devServerUrl } from "inngest/helpers/devserver";
 import { topic } from "../topic";
 import { Realtime } from "../types";
 import { createDeferredPromise } from "../util";
@@ -79,18 +79,19 @@ export class TokenSubscription {
         this.#app["mode"].isInferred &&
         !this.#app.apiBaseUrl
       ) {
+        const dsUrl = devServerUrl().toString();
         const devAvailable = await devServerAvailable(
-          "http://localhost:8288/",
+          dsUrl,
           this.#app["fetch"],
         );
 
         if (devAvailable) {
-          url = new URL(path, "http://localhost:8288/");
+          url = new URL(path, dsUrl);
         }
       }
     }
 
-    url.protocol = "ws:";
+    url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
     url.searchParams.set("token", token);
 
     return url;
