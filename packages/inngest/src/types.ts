@@ -190,6 +190,7 @@ export enum StepOpCode {
 
   InvokeFunction = "InvokeFunction",
   AiGateway = "AIGateway",
+  Gateway = "Gateway",
 }
 
 /**
