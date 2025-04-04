@@ -161,6 +161,7 @@ export enum internalEvents {
   FunctionFailed = "inngest/function.failed",
   FunctionInvoked = "inngest/function.invoked",
   FunctionFinished = "inngest/function.finished",
+  FunctionCancelled = "inngest/function.cancelled",
   ScheduledTimer = "inngest/scheduled.timer",
 }
 
