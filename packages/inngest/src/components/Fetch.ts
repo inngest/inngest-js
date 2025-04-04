@@ -36,7 +36,7 @@ const createFetchShim = (): StepFetch => {
       if (!stepFetch.fallback) {
         // TODO Tell the user how to solve
         throw new Error(
-          "step.fetch() called outside of a function had and had no fallback set"
+          "step.fetch() called outside of a function and had no fallback set"
         );
       }
 
@@ -53,7 +53,7 @@ const createFetchShim = (): StepFetch => {
       if (!stepFetch.fallback) {
         // TODO Tell the user how to solve
         throw new Error(
-          `step.fetch() called inside step "${ctx.executingStep.id}" had and had no fallback set`
+          `step.fetch() called inside step "${ctx.executingStep.id}" and had no fallback set`
         );
       }
 
