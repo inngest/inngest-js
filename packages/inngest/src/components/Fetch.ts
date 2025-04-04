@@ -70,21 +70,18 @@ const createFetchShim = (): StepFetch => {
 
     debug("step.fetch() shimming request to", targetUrl.hostname);
 
-    try {
-      const jsonRes = await (ctx.ctx.step as InternalStepTools)[gatewaySymbol](
-        `step.fetch: ${targetUrl.hostname}`,
-        input,
-        init
-      );
+    // Purposefully do not try/cacth this; if it throws then we treat that as a
+    // regular `fetch()` throw, which also would not return a `Response`.
+    const jsonRes = await (ctx.ctx.step as InternalStepTools)[gatewaySymbol](
+      `step.fetch: ${targetUrl.hostname}`,
+      input,
+      init
+    );
 
-      return new Response(jsonRes.body, {
-        headers: jsonRes.headers,
-        status: jsonRes.status,
-      });
-    } catch (err) {
-      // TODO handleit mate
-      throw new Error("Failed to fetch");
-    }
+    return new Response(jsonRes.body, {
+      headers: jsonRes.headers,
+      status: jsonRes.status,
+    });
   };
 
   const optionsRef: StepFetch.Options = {
