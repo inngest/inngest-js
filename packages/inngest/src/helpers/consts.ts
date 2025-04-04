@@ -139,6 +139,7 @@ export enum headerKeys {
   InngestServerKind = "x-inngest-server-kind",
   InngestExpectedServerKind = "x-inngest-expected-server-kind",
   InngestSyncKind = "x-inngest-sync-kind",
+  EventIdSeed = "x-inngest-event-id-seed",
   TraceParent = "traceparent",
   TraceState = "tracestate",
 }
