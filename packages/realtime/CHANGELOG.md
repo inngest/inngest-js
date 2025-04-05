@@ -1,5 +1,21 @@
 # @inngest/realtime
 
+## 0.2.0
+
+### Minor Changes
+
+- [#930](https://github.com/inngest/inngest-js/pull/930) [`8e71cdd`](https://github.com/inngest/inngest-js/commit/8e71cddda13289bcc3a1f0bff7cff9cec54439ae) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `fnId` and `runId` in streamed messages are now optional
+
+### Patch Changes
+
+- [#930](https://github.com/inngest/inngest-js/pull/930) [`8e71cdd`](https://github.com/inngest/inngest-js/commit/8e71cddda13289bcc3a1f0bff7cff9cec54439ae) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix bad parsing of some message types
+
+## 0.1.2
+
+### Patch Changes
+
+- [#927](https://github.com/inngest/inngest-js/pull/927) [`dc00cbf`](https://github.com/inngest/inngest-js/commit/dc00cbf197c776b8ff04fb67cbc1d3a62569f6d0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix connecting to production; avoid `ws://` `301` redirect
+
 ## 0.1.1
 
 ### Patch Changes

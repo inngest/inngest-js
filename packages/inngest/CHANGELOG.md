@@ -1,5 +1,50 @@
 # inngest
 
+## 3.34.4
+
+### Patch Changes
+
+- [#942](https://github.com/inngest/inngest-js/pull/942) [`3903aa7`](https://github.com/inngest/inngest-js/commit/3903aa7e1db4c2335f8e1bf1d0a570577440e1d4) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `inngest/function.cancelled` event to known internal schemas
+
+## 3.34.3
+
+### Patch Changes
+
+- [#938](https://github.com/inngest/inngest-js/pull/938) [`efd658c`](https://github.com/inngest/inngest-js/commit/efd658cd0293b58aeea14db32c73bcf49483b35e) Thanks [@anafilipadealmeida](https://github.com/anafilipadealmeida)! - Update description for `batchSize`; pricing plans decide on max limits
+
+## 3.34.2
+
+### Patch Changes
+
+- [#934](https://github.com/inngest/inngest-js/pull/934) [`abae7fc`](https://github.com/inngest/inngest-js/commit/abae7fce16f4b3171705d23bed9bfdda3b70bdec) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Require `runId` when publishing realtime messages
+
+## 3.34.1
+
+### Patch Changes
+
+- [#925](https://github.com/inngest/inngest-js/pull/925) [`11fd15b`](https://github.com/inngest/inngest-js/commit/11fd15be198d20a73bf95e93d863d8150ec4fdb6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export `fastifyPlugin` as a named export to resolve CJS<->ESM interop issues
+
+## 3.34.0
+
+### Minor Changes
+
+- [#919](https://github.com/inngest/inngest-js/pull/919) [`ebeaaff`](https://github.com/inngest/inngest-js/commit/ebeaaffa2fde4f6cec0f0554cc9f5f033da07f40) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `dependencyInjectionMiddleware()`, allowing you to easily add data to function input
+
+  ```ts
+  import { dependencyInjectionMiddleware } from "inngest";
+
+  const prisma = new Prisma();
+
+  const inngest = new Inngest({
+    id: "my-app",
+    middleware: [dependencyInjectionMiddleware({ prisma })],
+  });
+  ```
+
+### Patch Changes
+
+- [#922](https://github.com/inngest/inngest-js/pull/922) [`3374187`](https://github.com/inngest/inngest-js/commit/3374187eca44bbbc83daaaea511d7bbe84112a9d) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `Error.cause` can now be any `unknown` value, though we still attempt to recursively expand causes until we hit an `unknown` value
+
 ## 3.33.0
 
 ### Minor Changes
