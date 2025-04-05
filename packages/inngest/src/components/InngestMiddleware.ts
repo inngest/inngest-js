@@ -40,7 +40,13 @@ import { type InngestFunction } from "./InngestFunction.js";
  *
  * @public
  */
-export class InngestMiddleware<TOpts extends MiddlewareOptions> {
+export class InngestMiddleware<TOpts extends MiddlewareOptions>
+  implements InngestMiddleware.Like
+{
+  get [Symbol.toStringTag]() {
+    return "Inngest.Middleware" as const;
+  }
+
   /**
    * The name of this middleware. Used primarily for debugging and logging
    * purposes.
@@ -72,7 +78,10 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
 
 export namespace InngestMiddleware {
   export type Any = InngestMiddleware<MiddlewareOptions>;
-  export type Stack = [InngestMiddleware.Any, ...InngestMiddleware.Any[]];
+  export interface Like {
+    readonly [Symbol.toStringTag]: "Inngest.Middleware";
+  }
+  export type Stack = [InngestMiddleware.Like, ...InngestMiddleware.Like[]];
 }
 
 type FnsWithSameInputAsOutput<
@@ -510,30 +519,29 @@ type MiddlewareRunFinished = (ctx: {
 /**
  * @internal
  */
-type GetMiddlewareRunInputMutation<
-  TMiddleware extends InngestMiddleware<MiddlewareOptions>,
-> = TMiddleware extends InngestMiddleware<infer TOpts>
-  ? TOpts["init"] extends MiddlewareRegisterFn
-    ? Await<
-        Await<Await<TOpts["init"]>["onFunctionRun"]>["transformInput"]
-      > extends {
-        ctx: infer TCtx;
-      }
-      ? {
-          [K in keyof TCtx]: TCtx[K];
+type GetMiddlewareRunInputMutation<TMiddleware extends InngestMiddleware.Like> =
+  TMiddleware extends InngestMiddleware<infer TOpts>
+    ? TOpts["init"] extends MiddlewareRegisterFn
+      ? Await<
+          Await<Await<TOpts["init"]>["onFunctionRun"]>["transformInput"]
+        > extends {
+          ctx: infer TCtx;
         }
+        ? {
+            [K in keyof TCtx]: TCtx[K];
+          }
+        : // eslint-disable-next-line @typescript-eslint/ban-types
+          {}
       : // eslint-disable-next-line @typescript-eslint/ban-types
         {}
     : // eslint-disable-next-line @typescript-eslint/ban-types
-      {}
-  : // eslint-disable-next-line @typescript-eslint/ban-types
-    {};
+      {};
 
 /**
  * @internal
  */
 type GetMiddlewareSendEventOutputMutation<
-  TMiddleware extends InngestMiddleware<MiddlewareOptions>,
+  TMiddleware extends InngestMiddleware.Like,
 > = TMiddleware extends InngestMiddleware<infer TOpts>
   ? TOpts["init"] extends MiddlewareRegisterFn
     ? Await<
