@@ -140,9 +140,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this.inngest = options.apps[0].client as Inngest.Any;
     for (const app of options.apps) {
-      if (app.client.env !== this.inngest.env) {
+      const client = app.client as Inngest.Any;
+
+      if (client.env !== this.inngest.env) {
         throw new Error(
-          `All apps must be configured to the same environment. ${app.client.id} is configured to ${app.client.env} but ${this.inngest.id} is configured to ${this.inngest.env}`
+          `All apps must be configured to the same environment. ${client.id} is configured to ${client.env} but ${this.inngest.id} is configured to ${this.inngest.env}`
         );
       }
     }
@@ -175,13 +177,13 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
     > = {};
     for (const app of this.options.apps) {
-      if (functions[app.client.id]) {
-        throw new Error(`Duplicate app id: ${app.client.id}`);
-      }
-
       const client = app.client as Inngest.Any;
 
-      functions[app.client.id] = {
+      if (functions[client.id]) {
+        throw new Error(`Duplicate app id: ${client.id}`);
+      }
+
+      functions[client.id] = {
         client: app.client,
         functions: (app.functions as InngestFunction.Any[]) ?? client.funcs,
       };
@@ -332,7 +334,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         functions: functions.flatMap((f) =>
           f["getConfig"]({
             baseUrl: new URL("wss://connect"),
-            appPrefix: client.id,
+            appPrefix: (client as Inngest.Any).id,
             isConnect: true,
           })
         ),
@@ -360,7 +362,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       apps: Object.entries(functionConfigs).map(
         ([appId, { client, functions }]) => ({
           appName: appId,
-          appVersion: client.appVersion,
+          appVersion: (client as Inngest.Any).appVersion,
           functions: new TextEncoder().encode(JSON.stringify(functions)),
         })
       ),
