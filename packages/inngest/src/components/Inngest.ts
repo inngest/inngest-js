@@ -54,7 +54,6 @@ import {
   InngestMiddleware,
   getHookStack,
   type ExtendWithMiddleware,
-  type MiddlewareOptions,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
@@ -101,6 +100,10 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
 export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   implements Inngest.Like
 {
+  get [Symbol.toStringTag]() {
+    return "Inngest.App" as const;
+  }
+
   /**
    * The ID of this instance, most commonly a reference to the application it
    * resides in.
@@ -293,7 +296,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * in sequence and returning the requested hook registrations.
    */
   private async initializeMiddleware(
-    middleware: InngestMiddleware<MiddlewareOptions>[] = [],
+    middleware: InngestMiddleware.Like[] = [],
     opts?: {
       registerInput?: Omit<Parameters<MiddlewareRegisterFn>[0], "client">;
       prefixStack?: Promise<MiddlewareRegisterReturn[]>;
@@ -309,7 +312,10 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       async (acc, m) => {
         // Be explicit about waiting for the previous middleware to finish
         const prev = await acc;
-        const next = await m.init({ client: this, ...opts?.registerInput });
+        const next = await (m as InngestMiddleware.Any).init({
+          client: this,
+          ...opts?.registerInput,
+        });
 
         return [...prev, next];
       },
@@ -802,11 +808,7 @@ export namespace Inngest {
    * Prefer use of `Inngest.Any` internally and `Inngest.Like` for public APIs.
    */
   export interface Like {
-    readonly id: string;
-    apiBaseUrl: string | undefined;
-    eventBaseUrl: string | undefined;
-    env: string | null;
-    appVersion?: string | undefined;
+    readonly [Symbol.toStringTag]: "Inngest.App";
   }
 
   export type CreateFunction<TClient extends Inngest.Any> = <
