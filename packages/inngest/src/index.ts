@@ -72,6 +72,11 @@ export { InngestMiddleware } from "./components/InngestMiddleware.js";
 export { NonRetriableError } from "./components/NonRetriableError.js";
 export { RetryAfterError } from "./components/RetryAfterError.js";
 export { StepError } from "./components/StepError.js";
+export {
+  isInngest,
+  isInngestFunction,
+  isInngestMiddleware,
+} from "./helpers/assertions.js";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts.js";
 export { slugify } from "./helpers/strings.js";
 export type {
