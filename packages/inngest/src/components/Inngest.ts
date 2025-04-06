@@ -100,8 +100,8 @@ export type EventsFromOpts<TOpts extends ClientOptions> =
 export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   implements Inngest.Like
 {
-  get [Symbol.toStringTag]() {
-    return "Inngest.App" as const;
+  get [Symbol.toStringTag](): typeof Inngest.Tag {
+    return Inngest.Tag;
   }
 
   /**
@@ -793,6 +793,8 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
  * @public
  */
 export namespace Inngest {
+  export const Tag = "Inngest.App" as const;
+
   /**
    * Represents any `Inngest` instance, regardless of generics and inference.
    *
@@ -808,7 +810,7 @@ export namespace Inngest {
    * Prefer use of `Inngest.Any` internally and `Inngest.Like` for public APIs.
    */
   export interface Like {
-    readonly [Symbol.toStringTag]: "Inngest.App";
+    readonly [Symbol.toStringTag]: typeof Inngest.Tag;
   }
 
   export type CreateFunction<TClient extends Inngest.Any> = <

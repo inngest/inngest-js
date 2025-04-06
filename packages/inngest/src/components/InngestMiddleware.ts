@@ -43,8 +43,8 @@ import { type InngestFunction } from "./InngestFunction.js";
 export class InngestMiddleware<TOpts extends MiddlewareOptions>
   implements InngestMiddleware.Like
 {
-  get [Symbol.toStringTag]() {
-    return "Inngest.Middleware" as const;
+  get [Symbol.toStringTag](): typeof InngestMiddleware.Tag {
+    return InngestMiddleware.Tag;
   }
 
   /**
@@ -77,9 +77,11 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions>
 }
 
 export namespace InngestMiddleware {
+  export const Tag = "Inngest.Middleware" as const;
+
   export type Any = InngestMiddleware<MiddlewareOptions>;
   export interface Like {
-    readonly [Symbol.toStringTag]: "Inngest.Middleware";
+    readonly [Symbol.toStringTag]: typeof InngestMiddleware.Tag;
   }
   export type Stack = [InngestMiddleware.Like, ...InngestMiddleware.Like[]];
 }

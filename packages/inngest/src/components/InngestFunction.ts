@@ -52,8 +52,8 @@ export class InngestFunction<
   static stepId = "step";
   static failureSuffix = "-failure";
 
-  get [Symbol.toStringTag]() {
-    return "Inngest.Function" as const;
+  get [Symbol.toStringTag](): typeof InngestFunction.Tag {
+    return InngestFunction.Tag;
   }
 
   public readonly opts: TFnOpts;
@@ -294,6 +294,8 @@ export class InngestFunction<
  * @public
  */
 export namespace InngestFunction {
+  export const Tag = "Inngest.Function" as const;
+
   /**
    * Represents any `InngestFunction` instance, regardless of generics and
    * inference.
@@ -312,7 +314,7 @@ export namespace InngestFunction {
   >;
 
   export interface Like {
-    readonly [Symbol.toStringTag]: "Inngest.Function";
+    readonly [Symbol.toStringTag]: typeof InngestFunction.Tag;
   }
 
   /**
