@@ -1138,6 +1138,7 @@ describe("helper types", () => {
         | `${internalEvents.FunctionFailed}`
         | `${internalEvents.FunctionFinished}`
         | `${internalEvents.FunctionInvoked}`
+        | `${internalEvents.FunctionCancelled}`
         | `${internalEvents.ScheduledTimer}`
         | "foo"
         | "bar";
