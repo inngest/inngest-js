@@ -129,7 +129,7 @@ importers:
         version: 2.4.1
       zod:
         specifier: ^3.22.3
-        version: 3.24.2
+        version: 3.22.3
     devDependencies:
       '@actions/core':
         specifier: ^1.10.0
