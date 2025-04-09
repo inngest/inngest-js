@@ -1,5 +1,5 @@
 import type { Inngest } from "inngest";
-import { InngestApi } from "inngest/api/api";
+import type { InngestApi } from "inngest/api/api";
 import { Realtime } from "../types";
 import { TokenSubscription } from "./TokenSubscription";
 
