@@ -1,4 +1,5 @@
-import { Inngest } from "inngest";
+import type { Inngest } from "inngest";
+import { InngestApi } from "inngest/api/api";
 import { Realtime } from "../types";
 import { TokenSubscription } from "./TokenSubscription";
 
@@ -20,12 +21,12 @@ export const subscribe = async <
   /**
    * TODO
    */
-  app: Inngest.Like,
-
-  /**
-   * TODO
-   */
   token: {
+    /**
+     * TODO
+     */
+    app?: Inngest.Like;
+
     /**
      * TODO
      */
@@ -42,9 +43,14 @@ export const subscribe = async <
    */
   callback?: Realtime.Subscribe.Callback<TToken>,
 ): Promise<TOutput> => {
+  const app: Inngest.Any | undefined = token.app as Inngest.Any | undefined;
+  const api: InngestApi | undefined = app?.["inngestApi"];
+
   const subscription = new TokenSubscription(
-    app,
     token as Realtime.Subscribe.Token,
+    app?.apiBaseUrl,
+    api?.["signingKey"],
+    api?.["signingKeyFallback"],
   );
 
   const retStream = subscription.getJsonStream();
