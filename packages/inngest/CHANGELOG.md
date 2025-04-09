@@ -1,5 +1,15 @@
 # inngest
 
+## 3.34.5
+
+### Patch Changes
+
+- [#944](https://github.com/inngest/inngest-js/pull/944) [`54b860a`](https://github.com/inngest/inngest-js/commit/54b860a88dc84511390e73993d77511b9b323635) Thanks [@amh4r](https://github.com/amh4r)! - Use x-inngest-event-id-seed header instead of event idempotency ID
+
+- [#937](https://github.com/inngest/inngest-js/pull/937) [`c6e9131`](https://github.com/inngest/inngest-js/commit/c6e9131900fcea3184661dd9573e0e2669224fd4) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Normalize headers in `"inngest/lambda"` - mocked requests with non-lowercase headers are now handled
+
+- [#945](https://github.com/inngest/inngest-js/pull/945) [`4506581`](https://github.com/inngest/inngest-js/commit/4506581520fe55270b78a23ade2f61b7b7107ce8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Bump `resolveAfterPending()` microtask shim count to `100`, reducing parallel index warnings
+
 ## 3.34.4
 
 ### Patch Changes
