@@ -42,8 +42,8 @@ export async function fetchWithAuthFallback<TFetch extends typeof fetch>({
   options,
   url,
 }: {
-  authToken?: string;
-  authTokenFallback?: string;
+  authToken: string;
+  authTokenFallback: string | undefined;
   fetch: TFetch;
   options?: Parameters<TFetch>[1];
   url: URL | string;
