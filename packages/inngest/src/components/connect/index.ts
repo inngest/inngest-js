@@ -619,20 +619,19 @@ class WebSocketWorkerConnection implements WorkerConnection {
     attempt: number,
     path: string[] = []
   ): Promise<{ cleanup: () => void }> {
-    const connectionId = ulid();
-    path.push(connectionId);
-
     let closed = false;
 
     this.debug("Preparing connection", {
       attempt,
-      connectionId,
       path,
     });
 
     const startedAt = new Date();
 
     const startResp = await this.sendStartRequest(hashedSigningKey, attempt);
+
+    const connectionId = startResp.connectionId;
+    path.push(connectionId);
 
     let resolveWebsocketConnected:
       | ((value: void | PromiseLike<void>) => void)
