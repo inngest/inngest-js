@@ -1159,6 +1159,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
             extendLeaseAck.requestId
           ];
         }
+
+        return;
       }
 
       this.debug("Unexpected message type", {
