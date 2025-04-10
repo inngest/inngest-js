@@ -117,6 +117,12 @@ export const otelMiddleware = ({
                 },
               };
             },
+
+            async beforeResponse() {
+              // Should this be awaited? And is it fine to flush after every
+              // execution?
+              await processor?.forceFlush();
+            },
           };
         },
       };
