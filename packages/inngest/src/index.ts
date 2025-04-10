@@ -49,6 +49,7 @@ export {
   type StandardEventSchemaToPayload,
   type ZodEventSchemas,
 } from "./components/EventSchemas.js";
+export { fetch } from "./components/Fetch.js";
 export type {
   ClientOptionsFromInngest,
   EventsFromOpts,

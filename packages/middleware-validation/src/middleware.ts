@@ -6,7 +6,7 @@ import {
   type InngestFunction,
   type MiddlewareOptions,
 } from "inngest";
-import { ZodType, type ZodObject } from "zod";
+import { type ZodObject } from "zod";
 
 /**
  * Middleware that validates events using Zod schemas passed using
@@ -232,7 +232,7 @@ export const validationMiddleware = (opts?: {
 
 const helpers = {
   isZodObject: (value: unknown): value is ZodObject<any> => {
-    return value instanceof ZodType && value._def.typeName === "ZodObject";
+    return (value as any)?._def?.typeName === "ZodObject";
   },
 
   isObject: (value: unknown): value is Record<string, any> => {

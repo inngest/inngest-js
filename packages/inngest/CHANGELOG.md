@@ -1,5 +1,86 @@
 # inngest
 
+## 3.35.0
+
+### Minor Changes
+
+- [#912](https://github.com/inngest/inngest-js/pull/912) [`a641cc2`](https://github.com/inngest/inngest-js/commit/a641cc219846a2c6ef66ad62fb371725555e7caa) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Adds a `fetch` export from `"inngest"` to allow any library that accepts a Fetch API-compatible function to automatically turn any call into a durable step if used within the context of an Inngest Function.
+
+  By default, if called outside of the context of an Inngest Function (or within an existing step), it will fall back to using the global `fetch`, or a fallback of the user's choice.
+
+  ```ts
+  // Basic use
+  import { fetch } from "inngest";
+
+  const api = new MyProductApi({ fetch });
+  ```
+
+  ```ts
+  // With a fallback
+  import { fetch } from "inngest";
+
+  const api = new MyProductApi({
+    fetch: fetch.config({
+      fallback: myCustomFetchFallback,
+    }),
+  });
+  ```
+
+  ```ts
+  // Remove the default fallback and error if called outside an Inngest Function
+  import { fetch } from "inngest";
+
+  const api = new MyProductApi({
+    fetch: fetch.config({
+      fallback: undefined,
+    }),
+  });
+  ```
+
+  It's also available within a function as `step.fetch`.
+
+  ```ts
+  inngest.createFunction(
+    {
+      id: "my-fn",
+    },
+    {
+      event: "my-event",
+    },
+    async ({ step }) => {
+      const api = new MyProductApi({ fetch: step.fetch });
+    },
+  );
+  ```
+
+## 3.34.5
+
+### Patch Changes
+
+- [#944](https://github.com/inngest/inngest-js/pull/944) [`54b860a`](https://github.com/inngest/inngest-js/commit/54b860a88dc84511390e73993d77511b9b323635) Thanks [@amh4r](https://github.com/amh4r)! - Use x-inngest-event-id-seed header instead of event idempotency ID
+
+- [#937](https://github.com/inngest/inngest-js/pull/937) [`c6e9131`](https://github.com/inngest/inngest-js/commit/c6e9131900fcea3184661dd9573e0e2669224fd4) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Normalize headers in `"inngest/lambda"` - mocked requests with non-lowercase headers are now handled
+
+- [#945](https://github.com/inngest/inngest-js/pull/945) [`4506581`](https://github.com/inngest/inngest-js/commit/4506581520fe55270b78a23ade2f61b7b7107ce8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Bump `resolveAfterPending()` microtask shim count to `100`, reducing parallel index warnings
+
+## 3.34.4
+
+### Patch Changes
+
+- [#942](https://github.com/inngest/inngest-js/pull/942) [`3903aa7`](https://github.com/inngest/inngest-js/commit/3903aa7e1db4c2335f8e1bf1d0a570577440e1d4) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `inngest/function.cancelled` event to known internal schemas
+
+## 3.34.3
+
+### Patch Changes
+
+- [#938](https://github.com/inngest/inngest-js/pull/938) [`efd658c`](https://github.com/inngest/inngest-js/commit/efd658cd0293b58aeea14db32c73bcf49483b35e) Thanks [@anafilipadealmeida](https://github.com/anafilipadealmeida)! - Update description for `batchSize`; pricing plans decide on max limits
+
+## 3.34.2
+
+### Patch Changes
+
+- [#934](https://github.com/inngest/inngest-js/pull/934) [`abae7fc`](https://github.com/inngest/inngest-js/commit/abae7fce16f4b3171705d23bed9bfdda3b70bdec) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Require `runId` when publishing realtime messages
+
 ## 3.34.1
 
 ### Patch Changes

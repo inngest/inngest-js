@@ -131,6 +131,19 @@ export type FinishedEventPayload = {
 };
 
 /**
+ * The payload for an internal Inngest event that is sent when a function is
+ * cancelled.
+ */
+export type CancelledEventPayload = {
+  name: `${internalEvents.FunctionCancelled}`;
+  data: {
+    function_id: string;
+    run_id: string;
+    correlation_id?: string;
+  };
+};
+
+/**
  * The payload for any generic function invocation event. In practice, the event
  * data will be more specific to the function being invoked.
  *
@@ -190,6 +203,7 @@ export enum StepOpCode {
 
   InvokeFunction = "InvokeFunction",
   AiGateway = "AIGateway",
+  Gateway = "Gateway",
 }
 
 /**

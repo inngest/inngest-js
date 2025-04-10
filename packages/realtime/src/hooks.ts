@@ -1,4 +1,3 @@
-import { Inngest } from "inngest";
 import { useEffect, useRef, useState } from "react";
 import { subscribe } from "./subscribe";
 import { type Realtime } from "./types";
@@ -48,18 +47,12 @@ export interface InngestSubscription<TToken extends Realtime.Subscribe.Token> {
 export function useInngestSubscription<
   const TToken extends Realtime.Subscribe.Token | null | undefined,
 >({
-  app = new Inngest({ id: "useInngestSubscription" }),
   token: tokenInput,
   refreshToken,
   key,
   enabled = true,
   bufferInterval = 0,
 }: {
-  /**
-   * TODO
-   */
-  app?: Inngest.Any;
-
   /**
    * TODO
    */
@@ -131,7 +124,7 @@ export function useInngestSubscription<
     const start = async () => {
       try {
         setState(InngestSubscriptionState.Connecting);
-        const stream = await subscribe(app, { ...token });
+        const stream = await subscribe({ ...token });
         if (cancelled) return;
 
         subscriptionRef.current = stream;
