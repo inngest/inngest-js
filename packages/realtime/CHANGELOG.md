@@ -1,5 +1,31 @@
 # @inngest/realtime
 
+## 0.3.0
+
+### Minor Changes
+
+- [#949](https://github.com/inngest/inngest-js/pull/949) [`d18006d`](https://github.com/inngest/inngest-js/commit/d18006dbffe7501b145f914992951439a9859261) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `useInngestSubscription()` no longer accepts an `app`; always use a `token` when subscribing on the client
+
+- [#949](https://github.com/inngest/inngest-js/pull/949) [`d18006d`](https://github.com/inngest/inngest-js/commit/d18006dbffe7501b145f914992951439a9859261) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `subscribe()` call no longer accepts an `app` as the first parameter
+
+  One can be passed alongside other arguments, e.g.
+
+  ```ts
+  subscribe({
+    app,
+    channel: "hello-world",
+    topics: ["messages"],
+  });
+  ```
+
+  An app is still required if you are not using a token retrieved from `getSubscriptionToken()`.
+
+### Patch Changes
+
+- [#949](https://github.com/inngest/inngest-js/pull/949) [`d18006d`](https://github.com/inngest/inngest-js/commit/d18006dbffe7501b145f914992951439a9859261) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Public environment variables (such as `NEXT_PUBLIC_*`) are now also accessed when looking for Inngest during subscriptions
+
+- [#949](https://github.com/inngest/inngest-js/pull/949) [`d18006d`](https://github.com/inngest/inngest-js/commit/d18006dbffe7501b145f914992951439a9859261) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Environment variables are also now captured in Deno and Netlify
+
 ## 0.2.0
 
 ### Minor Changes
