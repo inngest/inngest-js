@@ -2,7 +2,12 @@ name: Prerelease
 
 on:
   pull_request:
-    types: [labeled, unlabeled, opened, reopened, synchronize]
+    types: [labeled, opened, reopened, synchronize]
+
+concurrency: prerelease-${{ github.ref }}
+
+env:
+  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
 jobs:
   generate-matrix:
@@ -12,26 +17,28 @@ jobs:
     steps:
       - id: set-matrix
         run: |
-          LABELS=${{ toJson(github.event.pull_request.labels.*.name) }}
+          LABELS='${{ toJson(github.event.pull_request.labels.*.name) }}'
 
-          MATRIX=$(jq -n --argjson labels "$LABELS" '
+          MATRIX=$(jq -n --arg labels "$LABELS" '
+            ($labels | fromjson) as $labelList |
             [
               {package: "inngest", dist_dir: "dist"},
               {package: "eslint-plugin"},
               {package: "middleware-sentry"},
               {package: "middleware-encryption", dist_dir: "dist"},
-              {package: "test", dist_dir: "dist"},
+              {package: "test"},
               {package: "ai"},
               {package: "realtime"},
               {package: "middleware-validation", dist_dir: "dist"}
-            ] | map(select(labels | index("prerelease/" + .package)))
+            ] | map(. as $pkg | select($labelList | index("prerelease/" + $pkg.package)))
           ')
 
-          echo "matrix=$(echo $MATRIX | jq -c)" >> $GITHUB_OUTPUT
+          echo "matrix=$(jq -cn --argjson data "$MATRIX" '{include: $data}')" >> $GITHUB_OUTPUT
 
   prereleases:
     needs: generate-matrix
     if: needs.generate-matrix.outputs.matrix != '[]'
+    continue-on-error: true
     strategy:
       matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
     runs-on: ubuntu-latest
@@ -50,6 +57,9 @@ jobs:
         with:
           install-dependencies: true
           build: ${{ matrix.package == 'inngest' }}
+
+      - run: pnpm build
+        if: matrix.package != 'inngest'
 
       - name: Prerelease PR
         run: |
