@@ -20,7 +20,7 @@ import { type IsAny, type IsEqual, type IsNever } from "@local/helpers/types";
 import { type Logger } from "@local/middleware/logger";
 import { type SendEventResponse } from "@local/types";
 import { literal } from "zod";
-import { assertType, createClient } from "../test/helpers";
+import { assertType, createClient, nodeVersion } from "../test/helpers";
 
 const testEvent: EventPayload = {
   name: "test",
@@ -473,6 +473,38 @@ describe("send", () => {
         })
       );
     });
+
+    if (nodeVersion?.major && nodeVersion.major >= 19) {
+      test("should use seed header for idempotency ID if none given", async () => {
+        const inngest = createClient({ id: "test" });
+        inngest.setEventKey(testEventKey);
+
+        const testEventWithoutId = {
+          name: "test.without.id",
+          data: {},
+        };
+
+        const mockedFetch = jest.mocked(global.fetch);
+
+        await expect(inngest.send(testEventWithoutId)).resolves.toMatchObject({
+          ids: Array(1).fill(expect.any(String)),
+        });
+
+        expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
+        expect(mockedFetch.mock.calls[1]).toHaveLength(2);
+
+        const reqHeaders = mockedFetch.mock.calls[1]?.[1]?.headers as Record<
+          string,
+          string
+        >;
+        expect(reqHeaders).toBeDefined();
+        expect(typeof reqHeaders).toBe("object");
+
+        expect(reqHeaders[headerKeys.EventIdSeed]).toBeDefined();
+        expect(typeof reqHeaders[headerKeys.EventIdSeed]).toBe("string");
+        expect(reqHeaders[headerKeys.EventIdSeed]).toBeTruthy();
+      });
+    }
 
     test("should allow middleware to mutate input", async () => {
       const inngest = createClient({
