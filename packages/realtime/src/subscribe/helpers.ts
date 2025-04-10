@@ -1,6 +1,7 @@
 import type { Inngest } from "inngest";
 import type { InngestApi } from "inngest/api/api";
 import type { Realtime } from "../types";
+import { getEnvVar, getPublicEnvVar } from "../util";
 import { TokenSubscription } from "./TokenSubscription";
 
 /**
@@ -46,11 +47,24 @@ export const subscribe = async <
   const app: Inngest.Any | undefined = token.app as Inngest.Any | undefined;
   const api: InngestApi | undefined = app?.["inngestApi"];
 
+  // Allow users to specify public env vars for the target URLs, but do not
+  // allow this for signing keys, as they should never be on a client.
+  const maybeApiBaseUrl =
+    app?.apiBaseUrl ||
+    getPublicEnvVar("INNGEST_BASE_URL") ||
+    getPublicEnvVar("INNGEST_API_BASE_URL");
+
+  const maybeSigningKey =
+    api?.["signingKey"] || getEnvVar("INNGEST_SIGNING_KEY");
+
+  const maybeSigningKeyFallback =
+    api?.["signingKeyFallback"] || getEnvVar("INNGEST_SIGNING_KEY_FALLBACK");
+
   const subscription = new TokenSubscription(
     token as Realtime.Subscribe.Token,
-    app?.apiBaseUrl,
-    api?.["signingKey"],
-    api?.["signingKeyFallback"],
+    maybeApiBaseUrl,
+    maybeSigningKey,
+    maybeSigningKeyFallback,
   );
 
   const retStream = subscription.getJsonStream();

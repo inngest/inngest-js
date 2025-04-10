@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fetchWithAuthFallback, parseAsBoolean } from "./util";
+import { fetchWithAuthFallback, getEnvVar, parseAsBoolean } from "./util";
 
 const tokenSchema = z.object({ jwt: z.string() });
 
@@ -21,17 +21,19 @@ export const api = {
     const path = "/v1/realtime/token";
     const inputBaseUrl =
       apiBaseUrl ||
-      process.env.INNGEST_BASE_URL ||
-      process.env.INNGEST_API_BASE_URL;
+      getEnvVar("INNGEST_BASE_URL") ||
+      getEnvVar("INNGEST_API_BASE_URL");
+
+    const devEnvVar = getEnvVar("INNGEST_DEV");
 
     if (inputBaseUrl) {
       url = new URL(path, inputBaseUrl);
-    } else if (process.env.INNGEST_DEV) {
+    } else if (devEnvVar) {
       try {
-        const devUrl = new URL(process.env.INNGEST_DEV);
+        const devUrl = new URL(devEnvVar);
         url = new URL(path, devUrl);
       } catch {
-        if (parseAsBoolean(process.env.INNGEST_DEV)) {
+        if (parseAsBoolean(devEnvVar)) {
           url = new URL(path, "http://localhost:8288/");
         } else {
           url = new URL(path, "https://api.inngest.com/");
@@ -40,7 +42,7 @@ export const api = {
     } else {
       url = new URL(
         path,
-        process.env.NODE_ENV === "production"
+        getEnvVar("NODE_ENV") === "production"
           ? "https://api.inngest.com/"
           : "http://localhost:8288/",
       );

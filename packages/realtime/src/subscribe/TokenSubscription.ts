@@ -2,7 +2,11 @@ import debug from "debug";
 import { api } from "../api";
 import { topic } from "../topic";
 import { Realtime } from "../types";
-import { createDeferredPromise, parseAsBoolean } from "../util";
+import {
+  createDeferredPromise,
+  getPublicEnvVar,
+  parseAsBoolean,
+} from "../util";
 import { StreamFanout } from "./StreamFanout";
 
 /**
@@ -38,13 +42,9 @@ export class TokenSubscription {
     signingKey: string | undefined,
     signingKeyFallback: string | undefined,
   ) {
-    this.#apiBaseUrl =
-      apiBaseUrl ||
-      process.env.INNGEST_BASE_URL ||
-      process.env.INNGEST_API_BASE_URL;
-    this.#signingKey = signingKey || process.env.INNGEST_SIGNING_KEY;
-    this.#signingKeyFallback =
-      signingKeyFallback || process.env.INNGEST_SIGNING_KEY_FALLBACK;
+    this.#apiBaseUrl = apiBaseUrl;
+    this.#signingKey = signingKey;
+    this.#signingKeyFallback = signingKeyFallback;
 
     if (typeof token.channel === "string") {
       this.#channelId = token.channel;
@@ -72,15 +72,16 @@ export class TokenSubscription {
   private async getWsUrl(token: string): Promise<URL> {
     let url: URL;
     const path = "/v1/realtime/connect";
+    const devEnvVar = getPublicEnvVar("INNGEST_DEV");
 
     if (this.#apiBaseUrl) {
       url = new URL(path, this.#apiBaseUrl);
-    } else if (process.env.INNGEST_DEV) {
+    } else if (devEnvVar) {
       try {
-        const devUrl = new URL(process.env.INNGEST_DEV);
+        const devUrl = new URL(devEnvVar);
         url = new URL(path, devUrl);
       } catch {
-        if (parseAsBoolean(process.env.INNGEST_DEV)) {
+        if (parseAsBoolean(devEnvVar)) {
           url = new URL(path, "http://localhost:8288/");
         } else {
           url = new URL(path, "https://api.inngest.com/");
@@ -89,7 +90,7 @@ export class TokenSubscription {
     } else {
       url = new URL(
         path,
-        process.env.NODE_ENV === "production"
+        getPublicEnvVar("NODE_ENV") === "production"
           ? "https://api.inngest.com/"
           : "http://localhost:8288/",
       );
@@ -477,7 +478,7 @@ export class TokenSubscription {
     /**
      * TODO
      */
-    reason: string = "Userland closed connection",
+    reason = "Userland closed connection",
   ) {
     if (!this.#running) {
       return;
