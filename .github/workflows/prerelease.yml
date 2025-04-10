@@ -2,7 +2,7 @@ name: Prerelease
 
 on:
   pull_request:
-    types: [labeled]
+    types: [labeled, unlabeled, opened, reopened, synchronize]
 
 jobs:
   generate-matrix:
