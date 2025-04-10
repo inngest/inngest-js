@@ -10,12 +10,12 @@
   },
   "author": "",
   "license": "ISC",
-  "dependencies": {
-    "inngest": "^3.0.0"
-  },
   "devDependencies": {
     "@types/node": "^20.5.2",
     "tsx": "^4.7.3",
     "typescript": "^5.1.6"
+  },
+  "dependencies": {
+    "inngest": "file:../../packages/inngest/inngest.tgz"
   }
 }
