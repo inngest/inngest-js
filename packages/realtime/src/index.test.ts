@@ -342,7 +342,6 @@ describe("subscribe", () => {
       test("can subscribe with just strings", () => {
         const _fn = async () => {
           const stream = await subscribe(
-            app,
             {
               channel: "test",
               topics: ["foo", "bar"],
@@ -389,7 +388,7 @@ describe("subscribe", () => {
     describe("type-only channel import", () => {
       test("errors if channel name is incorrect", () => {
         const _fn = () => {
-          void subscribe(app, {
+          void subscribe({
             // @ts-expect-error Incorrect channel
             channel: typeOnlyChannel<typeof userChannel>("test"),
             topics: ["created", "updated"],
@@ -399,7 +398,7 @@ describe("subscribe", () => {
 
       test("errors if topic names are incorrect with static channel", () => {
         const _fn = () => {
-          void subscribe(app, {
+          void subscribe({
             channel: typeOnlyChannel<typeof staticChannel>("static"),
             // @ts-expect-error Incorrect topic
             topics: ["created", "updated", "test"],
@@ -409,7 +408,7 @@ describe("subscribe", () => {
 
       test("errors if topic names are incorrect with dynamic channel", () => {
         const _fn = () => {
-          void subscribe(app, {
+          void subscribe({
             channel: typeOnlyChannel<typeof userChannel>("user/123"),
             // @ts-expect-error Incorrect topic
             topics: ["created", "updated", "test"],
@@ -420,7 +419,6 @@ describe("subscribe", () => {
       test("can subscribe using types only of a static channel", () => {
         const _fn = async () => {
           const stream = await subscribe(
-            app,
             {
               channel: typeOnlyChannel<typeof staticChannel>("static"),
               topics: ["created", "updated"],
@@ -466,7 +464,6 @@ describe("subscribe", () => {
       test("can subscribe using types only of a dynamic channel", () => {
         const _fn = async () => {
           const stream = await subscribe(
-            app,
             {
               channel: typeOnlyChannel<typeof userChannel>("user/123"),
               topics: ["created", "updated"],
@@ -513,7 +510,7 @@ describe("subscribe", () => {
     describe("runtime channel import", () => {
       test("errors if static definition given", () => {
         const _fn = () => {
-          void subscribe(app, {
+          void subscribe({
             // @ts-expect-error Definition given
             channel: staticChannel,
             topics: ["created", "updated"],
@@ -523,7 +520,7 @@ describe("subscribe", () => {
 
       test("errors if dynamic definition given", () => {
         const _fn = () => {
-          void subscribe(app, {
+          void subscribe({
             // @ts-expect-error Definition given
             channel: userChannel,
             topics: ["created", "updated"],
@@ -533,7 +530,7 @@ describe("subscribe", () => {
 
       test("errors if topic names are incorrect with static channel", () => {
         const _fn = () => {
-          void subscribe(app, {
+          void subscribe({
             channel: staticChannel(),
             // @ts-expect-error Incorrect topic
             topics: ["created", "updated", "test"],
@@ -543,7 +540,7 @@ describe("subscribe", () => {
 
       test("errors if topic names are incorrect with dynamic channel", () => {
         const _fn = () => {
-          void subscribe(app, {
+          void subscribe({
             channel: userChannel("123"),
             // @ts-expect-error Incorrect topic
             topics: ["created", "updated", "test"],
@@ -553,7 +550,7 @@ describe("subscribe", () => {
 
       test("can subscribe with runtime import of a static channel", () => {
         const _fn = async () => {
-          const stream = await subscribe(app, {
+          const stream = await subscribe({
             channel: staticChannel(),
             topics: ["created", "updated"],
           });
@@ -586,7 +583,7 @@ describe("subscribe", () => {
 
       test("can subscribe with runtime import of a dynamic channel", () => {
         const _fn = async () => {
-          const stream = await subscribe(app, {
+          const stream = await subscribe({
             channel: userChannel("123"),
             topics: ["created", "updated"],
           });
@@ -626,7 +623,7 @@ describe("subscribe", () => {
             topics: ["foo", "bar"],
           });
 
-          const stream = await subscribe(app, token, (message) => {
+          const stream = await subscribe(token, (message) => {
             assertType<"test">(message.channel);
             assertType<"foo" | "bar">(message.topic);
 
@@ -670,7 +667,7 @@ describe("subscribe", () => {
             topics: ["created", "updated"],
           });
 
-          const stream = await subscribe(app, token, (message) => {
+          const stream = await subscribe(token, (message) => {
             assertType<"static">(message.channel);
             assertType<"created" | "updated">(message.topic);
 
@@ -714,7 +711,7 @@ describe("subscribe", () => {
             topics: ["created", "updated"],
           });
 
-          const stream = await subscribe(app, token, (message) => {
+          const stream = await subscribe(token, (message) => {
             assertType<"static">(message.channel);
             assertType<"created" | "updated">(message.topic);
 
@@ -758,7 +755,7 @@ describe("subscribe", () => {
             topics: ["created", "updated"],
           });
 
-          const stream = await subscribe(app, token, (message) => {
+          const stream = await subscribe(token, (message) => {
             assertType<`user/${string}`>(message.channel);
             assertType<"created" | "updated">(message.topic);
 
@@ -802,7 +799,7 @@ describe("subscribe", () => {
             topics: ["created", "updated"],
           });
 
-          const stream = await subscribe(app, token, (message) => {
+          const stream = await subscribe(token, (message) => {
             assertType<`user/${string}`>(message.channel);
             assertType<"created" | "updated">(message.topic);
 
