@@ -19,7 +19,7 @@ import {
   referenceFunction,
 } from "../index.ts";
 import type { Logger } from "../middleware/logger.ts";
-import { assertType, createClient } from "../test/helpers.ts";
+import { assertType, createClient, nodeVersion } from "../test/helpers.ts";
 import type { SendEventResponse } from "../types.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 
@@ -475,6 +475,38 @@ describe("send", () => {
         }),
       );
     });
+
+    if (nodeVersion?.major && nodeVersion.major >= 19) {
+      test("should use seed header for idempotency ID if none given", async () => {
+        const inngest = createClient({ id: "test" });
+        inngest.setEventKey(testEventKey);
+
+        const testEventWithoutId = {
+          name: "test.without.id",
+          data: {},
+        };
+
+        const mockedFetch = vi.mocked(global.fetch);
+
+        await expect(inngest.send(testEventWithoutId)).resolves.toMatchObject({
+          ids: Array(1).fill(expect.any(String)),
+        });
+
+        expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
+        expect(mockedFetch.mock.calls[1]).toHaveLength(2);
+
+        const reqHeaders = mockedFetch.mock.calls[1]?.[1]?.headers as Record<
+          string,
+          string
+        >;
+        expect(reqHeaders).toBeDefined();
+        expect(typeof reqHeaders).toBe("object");
+
+        expect(reqHeaders[headerKeys.EventIdSeed]).toBeDefined();
+        expect(typeof reqHeaders[headerKeys.EventIdSeed]).toBe("string");
+        expect(reqHeaders[headerKeys.EventIdSeed]).toBeTruthy();
+      });
+    }
 
     test("should allow middleware to mutate input", async () => {
       const inngest = createClient({
@@ -1139,6 +1171,7 @@ describe("helper types", () => {
         | `${internalEvents.FunctionFailed}`
         | `${internalEvents.FunctionFinished}`
         | `${internalEvents.FunctionInvoked}`
+        | `${internalEvents.FunctionCancelled}`
         | `${internalEvents.ScheduledTimer}`
         | "foo"
         | "bar";

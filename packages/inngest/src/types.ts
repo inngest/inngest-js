@@ -41,15 +41,29 @@ const baseJsonErrorSchema = z.object({
   stack: z.string().trim().optional(),
 });
 
+const maybeJsonErrorSchema: z.ZodType<{
+  name: string;
+  message: string;
+  stack?: string;
+  cause?: unknown;
+}> = z.lazy(() =>
+  z.object({
+    name: z.string().trim(),
+    message: z.string().trim(),
+    stack: z.string().trim().optional(),
+    cause: z.union([maybeJsonErrorSchema, z.unknown()]).optional(),
+  })
+);
+
 export type JsonError = z.infer<typeof baseJsonErrorSchema> & {
   name: string;
   message: string;
-  cause?: JsonError;
+  cause?: unknown;
 };
 
 export const jsonErrorSchema = baseJsonErrorSchema
   .extend({
-    cause: z.lazy(() => jsonErrorSchema).optional(),
+    cause: z.union([maybeJsonErrorSchema, z.unknown()]).optional(),
   })
   .passthrough()
   .catch({})
@@ -117,6 +131,19 @@ export type FinishedEventPayload = {
 };
 
 /**
+ * The payload for an internal Inngest event that is sent when a function is
+ * cancelled.
+ */
+export type CancelledEventPayload = {
+  name: `${internalEvents.FunctionCancelled}`;
+  data: {
+    function_id: string;
+    run_id: string;
+    correlation_id?: string;
+  };
+};
+
+/**
  * The payload for any generic function invocation event. In practice, the event
  * data will be more specific to the function being invoked.
  *
@@ -176,6 +203,7 @@ export enum StepOpCode {
 
   InvokeFunction = "InvokeFunction",
   AiGateway = "AIGateway",
+  Gateway = "Gateway",
 }
 
 /**

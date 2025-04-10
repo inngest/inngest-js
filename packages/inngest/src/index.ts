@@ -49,6 +49,7 @@ export {
   type StandardEventSchemaToPayload,
   type ZodEventSchemas,
 } from "./components/EventSchemas.ts";
+export { fetch } from "./components/Fetch.ts";
 export type {
   ClientOptionsFromInngest,
   EventsFromOpts,
@@ -81,6 +82,7 @@ export type {
   UnionKeys,
   WithoutInternal,
 } from "./helpers/types";
+export { dependencyInjectionMiddleware } from "./middleware/dependencyInjection.js";
 export type { LogArg } from "./middleware/logger";
 export { ProxyLogger } from "./middleware/logger.ts";
 export type {

@@ -1,5 +1,14 @@
 # @inngest/middleware-validation
 
+## 0.0.2
+
+### Patch Changes
+
+- [#953](https://github.com/inngest/inngest-js/pull/953) [`6ac90b5`](https://github.com/inngest/inngest-js/commit/6ac90b5680c8f4f7dbe9fcdc3c6fda3a5d4e284c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix possibility of silently failing when multiple versions of Zod are installed
+
+- Updated dependencies [[`a641cc2`](https://github.com/inngest/inngest-js/commit/a641cc219846a2c6ef66ad62fb371725555e7caa)]:
+  - inngest@3.35.0
+
 ## 0.0.1
 
 ### Patch Changes

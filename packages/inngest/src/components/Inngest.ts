@@ -1,4 +1,3 @@
-import { ulid } from "ulidx";
 import { InngestApi } from "../api/api.ts";
 import {
   defaultDevServerHost,
@@ -9,6 +8,7 @@ import {
   headerKeys,
   logPrefix,
 } from "../helpers/consts.ts";
+import { createEntropy } from "../helpers/crypto.ts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
 import {
   type Mode,
@@ -334,7 +334,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   private async getResponseError(
     response: globalThis.Response,
     rawBody: unknown,
-    foundErr = "Unknown error"
+    foundErr = "Unknown error",
   ): Promise<Error> {
     let errorMessage = foundErr;
 
@@ -461,6 +461,31 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     payload: Payload;
     headers?: Record<string, string>;
   }): Promise<SendEventOutput<TClientOpts>> {
+    const nowMillis = new Date().getTime();
+
+    let maxAttempts = 5;
+
+    // Attempt to set the event ID seed header. If it fails then disable retries
+    // (but we still want to send the event).
+    try {
+      const entropy = createEntropy(10);
+      const entropyBase64 = Buffer.from(entropy).toString("base64");
+      headers = {
+        ...headers,
+        [headerKeys.EventIdSeed]: `${nowMillis},${entropyBase64}`,
+      };
+    } catch (err) {
+      let message = "Event-sending retries disabled";
+      if (err instanceof Error) {
+        message += `: ${err.message}`;
+      }
+
+      console.debug(message);
+
+      // Disable retries.
+      maxAttempts = 1;
+    }
+
     const hooks = await getHookStack(
       this.middleware,
       "onSendEvent",
@@ -497,9 +522,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       return {
         ...p,
         // Always generate an idempotency ID for an event for retries
-        id: p.id || ulid(),
-        ts: p.ts || new Date().getTime(),
-
+        id: p.id,
+        ts: p.ts || nowMillis,
         data: p.data || {},
       };
     });
@@ -599,7 +623,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         return body;
       },
       {
-        maxAttempts: 5,
+        maxAttempts,
         baseDelay: 100,
       },
     );

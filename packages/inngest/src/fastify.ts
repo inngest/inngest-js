@@ -179,7 +179,7 @@ export const serve = (
  *
  * @public
  */
-const fastifyPlugin: (
+export const fastifyPlugin: (
   fastify: FastifyInstance,
   options: InngestPluginOptions,
   done: (err?: Error | undefined) => void,

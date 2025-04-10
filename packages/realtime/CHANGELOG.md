@@ -1,5 +1,47 @@
 # @inngest/realtime
 
+## 0.3.0
+
+### Minor Changes
+
+- [#949](https://github.com/inngest/inngest-js/pull/949) [`d18006d`](https://github.com/inngest/inngest-js/commit/d18006dbffe7501b145f914992951439a9859261) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `useInngestSubscription()` no longer accepts an `app`; always use a `token` when subscribing on the client
+
+- [#949](https://github.com/inngest/inngest-js/pull/949) [`d18006d`](https://github.com/inngest/inngest-js/commit/d18006dbffe7501b145f914992951439a9859261) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `subscribe()` call no longer accepts an `app` as the first parameter
+
+  One can be passed alongside other arguments, e.g.
+
+  ```ts
+  subscribe({
+    app,
+    channel: "hello-world",
+    topics: ["messages"],
+  });
+  ```
+
+  An app is still required if you are not using a token retrieved from `getSubscriptionToken()`.
+
+### Patch Changes
+
+- [#949](https://github.com/inngest/inngest-js/pull/949) [`d18006d`](https://github.com/inngest/inngest-js/commit/d18006dbffe7501b145f914992951439a9859261) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Public environment variables (such as `NEXT_PUBLIC_*`) are now also accessed when looking for Inngest during subscriptions
+
+- [#949](https://github.com/inngest/inngest-js/pull/949) [`d18006d`](https://github.com/inngest/inngest-js/commit/d18006dbffe7501b145f914992951439a9859261) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Environment variables are also now captured in Deno and Netlify
+
+## 0.2.0
+
+### Minor Changes
+
+- [#930](https://github.com/inngest/inngest-js/pull/930) [`8e71cdd`](https://github.com/inngest/inngest-js/commit/8e71cddda13289bcc3a1f0bff7cff9cec54439ae) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `fnId` and `runId` in streamed messages are now optional
+
+### Patch Changes
+
+- [#930](https://github.com/inngest/inngest-js/pull/930) [`8e71cdd`](https://github.com/inngest/inngest-js/commit/8e71cddda13289bcc3a1f0bff7cff9cec54439ae) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix bad parsing of some message types
+
+## 0.1.2
+
+### Patch Changes
+
+- [#927](https://github.com/inngest/inngest-js/pull/927) [`dc00cbf`](https://github.com/inngest/inngest-js/commit/dc00cbf197c776b8ff04fb67cbc1d3a62569f6d0) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix connecting to production; avoid `ws://` `301` redirect
+
 ## 0.1.1
 
 ### Patch Changes

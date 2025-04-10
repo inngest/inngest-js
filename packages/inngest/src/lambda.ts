@@ -94,6 +94,18 @@ export const serve = (
         return (ev as APIGatewayProxyEventV2).version === "2.0";
       })(event);
 
+      // Create a map of headers
+      const headersMap = new Map<string, string | undefined>([
+        ...Object.entries(event.headers).map(
+          ([key, value]) =>
+            [key.toLowerCase().trim(), value] as [string, string | undefined]
+        ),
+      ]);
+
+      const getHeader = (key: string): string | undefined => {
+        return headersMap.get(key.toLowerCase().trim());
+      };
+
       return {
         body: () => {
           return JSON.parse(
@@ -104,7 +116,7 @@ export const serve = (
               : "{}",
           );
         },
-        headers: (key) => event.headers[key],
+        headers: getHeader,
         method: () => {
           return eventIsV2
             ? event.requestContext.http.method
@@ -112,8 +124,8 @@ export const serve = (
         },
         url: () => {
           const path = eventIsV2 ? event.requestContext.http.path : event.path;
-          const proto = event.headers["x-forwarded-proto"] || "https";
-          const url = new URL(path, `${proto}://${event.headers.host || ""}`);
+          const proto = getHeader("x-forwarded-proto") || "https";
+          const url = new URL(path, `${proto}://${getHeader("host") || ""}`);
 
           return url;
         },

@@ -39,6 +39,10 @@ export namespace InngestApi {
     topics: string[];
     channel: string;
   }
+
+  export interface PublishOptions extends Subscription {
+    runId?: string;
+  }
 }
 
 export class InngestApi {
@@ -162,18 +166,22 @@ export class InngestApi {
   }
 
   async publish(
-    subscription: InngestApi.Subscription,
+    publishOptions: InngestApi.PublishOptions,
     // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    data: any,
+    data: any
   ): Promise<Result<void, ErrorResponse>> {
     // todo it may not be a "text/stream"
     const isStream = data instanceof ReadableStream;
     const url = await this.getTargetUrl("/v1/realtime/publish");
 
-    url.searchParams.set("channel", subscription.channel || "");
+    url.searchParams.set("channel", publishOptions.channel || "");
+
+    if (publishOptions.runId) {
+      url.searchParams.set("run_id", publishOptions.runId);
+    }
 
     // biome-ignore lint/complexity/noForEach: <explanation>
-    subscription.topics.forEach((topic) => {
+    publishOptions.topics.forEach((topic) => {
       url.searchParams.append("topic", topic);
     });
 

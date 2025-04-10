@@ -442,6 +442,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
                 ),
                 systemTraceCtx: msg.systemTraceCtx,
                 userTraceCtx: msg.userTraceCtx,
+                runId: msg.runId,
               });
             },
             url() {
@@ -993,6 +994,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
                   stepId: gatewayExecutorRequest.stepId,
                   userTraceCtx: gatewayExecutorRequest.userTraceCtx,
                   systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
+                  runId: gatewayExecutorRequest.runId,
                 }),
               ).finish(),
             }),
