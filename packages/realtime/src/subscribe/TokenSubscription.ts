@@ -38,8 +38,13 @@ export class TokenSubscription {
     signingKey: string | undefined,
     signingKeyFallback: string | undefined,
   ) {
-    this.#signingKey = signingKey;
-    this.#signingKeyFallback = signingKeyFallback;
+    this.#apiBaseUrl =
+      apiBaseUrl ||
+      process.env.INNGEST_BASE_URL ||
+      process.env.INNGEST_API_BASE_URL;
+    this.#signingKey = signingKey || process.env.INNGEST_SIGNING_KEY;
+    this.#signingKeyFallback =
+      signingKeyFallback || process.env.INNGEST_SIGNING_KEY_FALLBACK;
 
     if (typeof token.channel === "string") {
       this.#channelId = token.channel;
