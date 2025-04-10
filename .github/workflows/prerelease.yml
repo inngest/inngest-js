@@ -12,7 +12,7 @@ jobs:
     steps:
       - id: set-matrix
         run: |
-          LABELS='${{ toJson(github.event.pull_request.labels.*.name) }}'
+          LABELS=${{ toJson(github.event.pull_request.labels.*.name) }}
 
           MATRIX=$(jq -n --argjson labels "$LABELS" '
             [
@@ -24,7 +24,7 @@ jobs:
               {package: "ai"},
               {package: "realtime"},
               {package: "middleware-validation", dist_dir: "dist"}
-            ] | map(select($labels | index("prerelease/" + .package)))
+            ] | map(select(labels | index("prerelease/" + .package)))
           ')
 
           echo "matrix=$(echo $MATRIX | jq -c)" >> $GITHUB_OUTPUT
