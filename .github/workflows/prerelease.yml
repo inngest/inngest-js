@@ -32,16 +32,16 @@ jobs:
           TAG: pr-${{ github.event.pull_request.number }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_ENV: test # disable npm access checks; they don't work in CI
-          DIST_DIR: dist
 
       - name: Update PR with latest prerelease
         uses: edumserrano/find-create-or-update-comment@v1
         with:
           token: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
           issue-number: ${{ github.event.pull_request.number }}
-          body-includes: '<!-- pr-prerelease-comment-inngest -->'
-          comment-author: 'inngest-release-bot'
-          body: | # can be a single value or you can compose text with multi-line values
+          body-includes: "<!-- pr-prerelease-comment-inngest -->"
+          comment-author: "inngest-release-bot"
+          body:
+            | # can be a single value or you can compose text with multi-line values
             <!-- pr-prerelease-comment-inngest -->
             A user has added the <kbd>[prerelease/inngest](https://github.com/inngest/inngest-js/labels/prerelease%2Finngest)</kbd> label, so this PR will be published to npm with the tag `pr-${{ github.event.pull_request.number }}`. It will be updated with the latest changes as you push commits to this PR.
 
@@ -89,9 +89,10 @@ jobs:
         with:
           token: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
           issue-number: ${{ github.event.pull_request.number }}
-          body-includes: '<!-- pr-prerelease-comment-eslint-plugin -->'
-          comment-author: 'inngest-release-bot'
-          body: | # can be a single value or you can compose text with multi-line values
+          body-includes: "<!-- pr-prerelease-comment-eslint-plugin -->"
+          comment-author: "inngest-release-bot"
+          body:
+            | # can be a single value or you can compose text with multi-line values
             <!-- pr-prerelease-comment-eslint-plugin -->
             A user has added the <kbd>[prerelease/eslint-plugin](https://github.com/inngest/inngest-js/labels/prerelease%2Feslint-plugin)</kbd> label, so this PR will be published to npm with the tag `pr-${{ github.event.pull_request.number }}`. It will be updated with the latest changes as you push commits to this PR.
 

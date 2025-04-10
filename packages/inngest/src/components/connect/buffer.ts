@@ -1,11 +1,11 @@
 import debug, { type Debugger } from "debug";
-import { headerKeys } from "../../helpers/consts.js";
-import { type Inngest } from "../Inngest.js";
+import { headerKeys } from "../../helpers/consts.ts";
 import {
   FlushResponse,
   SDKResponse,
-} from "../../proto/src/components/connect/protobuf/connect.js";
-import { expBackoff } from "./util.js";
+} from "../../proto/src/components/connect/protobuf/connect.ts";
+import type { Inngest } from "../Inngest.ts";
+import { expBackoff } from "./util.ts";
 
 export class MessageBuffer {
   private buffered: Record<string, SDKResponse> = {};
@@ -39,7 +39,7 @@ export class MessageBuffer {
 
   private async sendFlushRequest(
     hashedSigningKey: string | undefined,
-    msg: SDKResponse
+    msg: SDKResponse,
   ) {
     const headers: Record<string, string> = {
       "Content-Type": "application/protobuf",
@@ -59,7 +59,7 @@ export class MessageBuffer {
         method: "POST",
         body: SDKResponse.encode(msg).finish(),
         headers: headers,
-      }
+      },
     );
 
     if (!resp.ok) {
@@ -68,7 +68,7 @@ export class MessageBuffer {
     }
 
     const flushResp = FlushResponse.decode(
-      new Uint8Array(await resp.arrayBuffer())
+      new Uint8Array(await resp.arrayBuffer()),
     );
 
     return flushResp;

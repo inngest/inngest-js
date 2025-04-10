@@ -1,48 +1,52 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/require-await */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { jest } from "@jest/globals";
-import {
-  EventSchemas,
-  InngestMiddleware,
-  NonRetriableError,
-  type EventPayload,
-} from "@local";
-import {
-  ExecutionVersion,
-  PREFERRED_EXECUTION_VERSION,
-  type ExecutionResult,
-  type ExecutionResults,
-  type InngestExecutionOptions,
-} from "@local/components/execution/InngestExecution";
-import { _internals as _v1Internals } from "@local/components/execution/v1";
-import { _internals as _v2Internals } from "@local/components/execution/v2";
-import { InngestFunction } from "@local/components/InngestFunction";
-import { STEP_INDEXING_SUFFIX } from "@local/components/InngestStepTools";
-import { internalEvents } from "@local/helpers/consts";
+globalThis.console = {
+  ...globalThis.console,
+  log: vi.fn(() => undefined),
+  warn: vi.fn(() => undefined),
+  error: vi.fn(() => undefined),
+};
+
+const clearConsole = () => {
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  (globalThis.console.log as any).mockClear();
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  (globalThis.console.warn as any).mockClear();
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  (globalThis.console.error as any).mockClear();
+};
+
+import { fromPartial } from "@total-typescript/shoehorn";
+import type { Mock, MockInstance } from "vitest";
+import { ExecutionVersion, internalEvents } from "../helpers/consts.ts";
 import {
   ErrCode,
   OutgoingResultError,
   serializeError,
-} from "@local/helpers/errors";
-import { type IsEqual } from "@local/helpers/types";
+} from "../helpers/errors.ts";
+import type { IsEqual } from "../helpers/types.ts";
 import {
-  DefaultLogger,
-  ProxyLogger,
-  type Logger,
-} from "@local/middleware/logger";
+  type EventPayload,
+  EventSchemas,
+  InngestMiddleware,
+  NonRetriableError,
+} from "../index.ts";
+import { type Logger, ProxyLogger } from "../middleware/logger.ts";
+import { assertType, createClient, runFnWithStack } from "../test/helpers.ts";
 import {
-  StepOpCode,
   type ClientOptions,
   type FailureEventPayload,
   type OutgoingOp,
-} from "@local/types";
-import { fromPartial } from "@total-typescript/shoehorn";
-import { assertType, createClient, runFnWithStack } from "../test/helpers";
+  StepOpCode,
+} from "../types.ts";
+import { InngestFunction } from "./InngestFunction.ts";
+import { STEP_INDEXING_SUFFIX } from "./InngestStepTools.ts";
+import {
+  type ExecutionResult,
+  type ExecutionResults,
+  type InngestExecutionOptions,
+  PREFERRED_EXECUTION_VERSION,
+} from "./execution/InngestExecution.ts";
+import { _internals as _v1Internals } from "./execution/v1.ts";
+import { _internals as _v2Internals } from "./execution/v2.ts";
 
 type TestEvents = {
   foo: { data: { foo: string } };
@@ -52,10 +56,25 @@ type TestEvents = {
 
 const schemas = new EventSchemas().fromRecord<TestEvents>();
 
+const mockLogger = {
+  info: vi.fn(globalThis.console.log),
+  warn: vi.fn(globalThis.console.warn),
+  error: vi.fn(globalThis.console.error),
+  debug: vi.fn(globalThis.console.debug),
+};
+
+const clearLogger = () => {
+  mockLogger.info.mockClear();
+  mockLogger.warn.mockClear();
+  mockLogger.error.mockClear();
+  mockLogger.debug.mockClear();
+};
+
 const opts = (<T extends ClientOptions>(x: T): T => x)({
   id: "test",
   eventKey: "event-key-123",
   schemas,
+  logger: mockLogger,
   /**
    * Create some test middleware that purposefully takes time for every hook.
    * This ensures that the engine accounts for the potential time taken by
@@ -95,6 +114,7 @@ const opts = (<T extends ClientOptions>(x: T): T => x)({
 
 const inngest = createClient(opts);
 
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 const matchError = (err: any) => {
   const serializedErr = serializeError(err);
   return expect.objectContaining({
@@ -112,6 +132,7 @@ describe("runFn", () => {
     const stepRet = { someProperty: "step done" };
     const stepErr = new Error("step error");
 
+    // biome-ignore lint/complexity/noForEach: <explanation>
     [
       {
         type: "synchronous",
@@ -132,11 +153,11 @@ describe("runFn", () => {
         describe("success", () => {
           let fn: InngestFunction.Any;
           let ret: ExecutionResult;
-          let flush: jest.SpiedFunction<() => void>;
+          let flush: MockInstance<() => void>;
 
           beforeAll(async () => {
-            jest.restoreAllMocks();
-            flush = jest
+            vi.restoreAllMocks();
+            flush = vi
               .spyOn(ProxyLogger.prototype, "flush")
               .mockImplementation(async () => {
                 /* noop */
@@ -145,7 +166,7 @@ describe("runFn", () => {
             fn = new InngestFunction(
               createClient(opts),
               { id: "Foo", triggers: [{ event: "foo" }] },
-              flowFn
+              flowFn,
             );
 
             const execution = fn["createExecution"]({
@@ -171,7 +192,7 @@ describe("runFn", () => {
 
           test("returns data on success", () => {
             expect((ret as ExecutionResults["function-resolved"]).data).toBe(
-              stepRet
+              stepRet,
             );
           });
 
@@ -188,7 +209,7 @@ describe("runFn", () => {
             fn = new InngestFunction(
               createClient(opts),
               { id: "Foo", triggers: [{ event: "foo" }] },
-              badFlowFn
+              badFlowFn,
             );
           });
 
@@ -221,9 +242,7 @@ describe("runFn", () => {
   });
 
   describe("step functions", () => {
-    const getHashDataSpy = () => jest.spyOn(_v1Internals, "hashOp");
-    const getWarningSpy = () => jest.spyOn(console, "warn");
-    const getErrorSpy = () => jest.spyOn(console, "error");
+    const getHashDataSpy = () => vi.spyOn(_v1Internals, "hashOp");
 
     const executionIdHashes: Partial<
       Record<ExecutionVersion, (id: string) => string>
@@ -234,14 +253,13 @@ describe("runFn", () => {
 
     const testFn = <
       T extends {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         fn: InngestFunction.Any;
         steps: Record<
           string,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          | jest.Mock<(...args: any[]) => string>
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          | jest.Mock<(...args: any[]) => Promise<string>>
+          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+          | Mock<(...args: any[]) => string>
+          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+          | Mock<(...args: any[]) => Promise<string>>
         >;
         event?: EventPayload;
         onFailure?: boolean;
@@ -273,8 +291,9 @@ describe("runFn", () => {
             }
           >;
         } | null
-      >
+      >,
     ) => {
+      // biome-ignore lint/complexity/noForEach: <explanation>
       Object.entries(executionTests).forEach(([version, specs]) => {
         if (!specs) return;
         const { hashes, tests } = specs;
@@ -288,30 +307,30 @@ describe("runFn", () => {
             ? (Object.fromEntries(
                 Object.entries(hashes).map(([key, value]) => {
                   return [key, hashId(value)];
-                })
+                }),
               ) as typeof hashes)
             : hashes;
 
+          // biome-ignore lint/complexity/noForEach: <explanation>
           Object.entries(tests(processedHashes)).forEach(([name, t]) => {
             describe(name, () => {
               let hashDataSpy: ReturnType<typeof getHashDataSpy>;
-              let warningSpy: ReturnType<typeof getWarningSpy>;
-              let errorSpy: ReturnType<typeof getErrorSpy>;
               let tools: T;
               let ret: Awaited<ReturnType<typeof runFnWithStack>> | undefined;
               let retErr: Error | undefined;
-              let flush: jest.SpiedFunction<() => void>;
+              let flush: MockInstance<() => void>;
 
               beforeAll(() => {
-                jest.restoreAllMocks();
-                flush = jest
+                vi.restoreAllMocks();
+                vi.resetModules();
+                clearLogger();
+                clearConsole();
+                flush = vi
                   .spyOn(ProxyLogger.prototype, "flush")
                   .mockImplementation(async () => {
                     /* noop */
                   });
                 hashDataSpy = getHashDataSpy();
-                warningSpy = getWarningSpy();
-                errorSpy = getErrorSpy();
                 tools = createTools();
               });
 
@@ -336,7 +355,7 @@ describe("runFn", () => {
                   expect(
                     retErr instanceof OutgoingResultError
                       ? (retErr.result.error as Error)?.message
-                      : retErr?.message ?? ""
+                      : (retErr?.message ?? ""),
                   ).toContain(t.expectedThrowMessage);
                 });
               } else {
@@ -347,6 +366,7 @@ describe("runFn", () => {
 
               if (t.expectedHashOps?.length) {
                 test("hashes expected ops", () => {
+                  // biome-ignore lint/complexity/noForEach: <explanation>
                   t.expectedHashOps?.forEach((h) => {
                     expect(hashDataSpy).toHaveBeenCalledWith(h);
                   });
@@ -357,16 +377,16 @@ describe("runFn", () => {
                 describe("warning logs", () => {
                   t.expectedWarnings?.forEach((warning, i) => {
                     test(`warning log #${i + 1} includes "${warning}"`, () => {
-                      expect(warningSpy).toHaveBeenNthCalledWith(
+                      expect(globalThis.console.warn).toHaveBeenNthCalledWith(
                         i + 1,
-                        expect.stringContaining(warning)
+                        expect.stringContaining(warning),
                       );
                     });
                   });
                 });
               } else {
                 test("no warning logs", () => {
-                  expect(warningSpy).not.toHaveBeenCalled();
+                  expect(globalThis.console.warn).not.toHaveBeenCalled();
                 });
               }
 
@@ -374,10 +394,16 @@ describe("runFn", () => {
                 describe("error logs", () => {
                   t.expectedErrors?.forEach((error, i) => {
                     test(`error log #${i + 1} includes "${error}"`, () => {
-                      const call = errorSpy.mock.calls[i];
-                      const stringifiedArgs = call?.map((arg) => {
-                        return arg instanceof Error ? serializeError(arg) : arg;
-                      });
+                      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                      const call = (globalThis.console.error as any).mock.calls[
+                        i
+                      ];
+                      const stringifiedArgs =
+                        call?.map((arg: unknown) => {
+                          return arg instanceof Error
+                            ? serializeError(arg)
+                            : arg;
+                        }) ?? "";
 
                       expect(JSON.stringify(stringifiedArgs)).toContain(error);
                     });
@@ -385,11 +411,12 @@ describe("runFn", () => {
                 });
               } else {
                 test("no error logs", () => {
-                  expect(errorSpy).not.toHaveBeenCalled();
+                  expect(globalThis.console.error).not.toHaveBeenCalled();
                 });
               }
 
               test("runs expected steps", () => {
+                // biome-ignore lint/complexity/noForEach: <explanation>
                 Object.keys(tools.steps).forEach((k) => {
                   const step = tools.steps[k];
 
@@ -423,6 +450,7 @@ describe("runFn", () => {
                             .steps
                         : [];
 
+                  // biome-ignore lint/complexity/noForEach: <explanation>
                   outgoingOps.forEach((op) => {
                     expect(op.id).toMatch(/^[a-f0-9]{40}$/i);
                   });
@@ -439,8 +467,8 @@ describe("runFn", () => {
     testFn(
       "simple A to B",
       () => {
-        const A = jest.fn(() => "A");
-        const B = jest.fn(() => "B");
+        const A = vi.fn(() => "A");
+        const B = vi.fn(() => "B");
 
         const fn = inngest.createFunction(
           { id: "name" },
@@ -448,7 +476,7 @@ describe("runFn", () => {
           async ({ step: { run } }) => {
             await run("A", A);
             await run("B", B);
-          }
+          },
         );
 
         return { fn, steps: { A, B } };
@@ -610,14 +638,14 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
       "change path based on data",
       () => {
-        const A = jest.fn(() => "A");
-        const B = jest.fn(() => "B");
+        const A = vi.fn(() => "A");
+        const B = vi.fn(() => "B");
 
         const fn = inngest.createFunction(
           { id: "name" },
@@ -633,7 +661,7 @@ describe("runFn", () => {
             } else if (foo?.data.foo === "bar") {
               await run("B", B);
             }
-          }
+          },
         );
 
         return { fn, steps: { A, B } };
@@ -840,15 +868,15 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
       "Promise.all",
       () => {
-        const A = jest.fn(() => "A");
-        const B = jest.fn(() => "B");
-        const C = jest.fn(() => "C");
+        const A = vi.fn(() => "A");
+        const B = vi.fn(() => "B");
+        const C = vi.fn(() => "C");
 
         const fn = inngest.createFunction(
           { id: "name" },
@@ -856,7 +884,7 @@ describe("runFn", () => {
           async ({ step: { run } }) => {
             await Promise.all([run("A", A), run("B", B)]);
             await run("C", C);
-          }
+          },
         );
 
         return { fn, steps: { A, B, C } };
@@ -1283,16 +1311,16 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
       "Promise.race",
       () => {
-        const A = jest.fn(() => Promise.resolve("A"));
-        const B = jest.fn(() => Promise.resolve("B"));
-        const AWins = jest.fn(() => Promise.resolve("A wins"));
-        const BWins = jest.fn(() => Promise.resolve("B wins"));
+        const A = vi.fn(() => Promise.resolve("A"));
+        const B = vi.fn(() => Promise.resolve("B"));
+        const AWins = vi.fn(() => Promise.resolve("A wins"));
+        const BWins = vi.fn(() => Promise.resolve("B wins"));
 
         const fn = inngest.createFunction(
           { id: "name" },
@@ -1305,7 +1333,7 @@ describe("runFn", () => {
             } else if (winner === "B") {
               await run("B wins", BWins);
             }
-          }
+          },
         );
 
         return { fn, steps: { A, B, AWins, BWins } };
@@ -1529,17 +1557,17 @@ describe("runFn", () => {
           }),
         },
         [ExecutionVersion.V2]: null,
-      }
+      },
     );
 
     testFn(
       "Deep Promise.race",
       () => {
-        const A = jest.fn(() => Promise.resolve("A"));
-        const B = jest.fn(() => Promise.resolve("B"));
-        const B2 = jest.fn(() => Promise.resolve("B2"));
-        const AWins = jest.fn(() => Promise.resolve("A wins"));
-        const BWins = jest.fn(() => Promise.resolve("B wins"));
+        const A = vi.fn(() => Promise.resolve("A"));
+        const B = vi.fn(() => Promise.resolve("B"));
+        const B2 = vi.fn(() => Promise.resolve("B2"));
+        const AWins = vi.fn(() => Promise.resolve("A wins"));
+        const BWins = vi.fn(() => Promise.resolve("B wins"));
 
         const fn = inngest.createFunction(
           { id: "name" },
@@ -1555,7 +1583,7 @@ describe("runFn", () => {
             } else if (winner === "B2") {
               await run("B wins", BWins);
             }
-          }
+          },
         );
 
         return { fn, steps: { A, B, B2, AWins, BWins } };
@@ -1658,15 +1686,15 @@ describe("runFn", () => {
           }),
         },
         [ExecutionVersion.V2]: null,
-      }
+      },
     );
 
     testFn(
       "step indexing in sequence",
       () => {
-        const A = jest.fn(() => "A");
-        const B = jest.fn(() => "B");
-        const C = jest.fn(() => "C");
+        const A = vi.fn(() => "A");
+        const B = vi.fn(() => "B");
+        const C = vi.fn(() => "C");
 
         const id = "A";
 
@@ -1677,7 +1705,7 @@ describe("runFn", () => {
             await run(id, A);
             await run(id, B);
             await run(id, C);
-          }
+          },
         );
 
         return { fn, steps: { A, B, C } };
@@ -1813,15 +1841,15 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
       "step indexing synchronously",
       () => {
-        const A = jest.fn(() => "A");
-        const B = jest.fn(() => "B");
-        const C = jest.fn(() => "C");
+        const A = vi.fn(() => "A");
+        const B = vi.fn(() => "B");
+        const C = vi.fn(() => "C");
 
         const id = "A";
 
@@ -1830,7 +1858,7 @@ describe("runFn", () => {
           { event: "foo" },
           async ({ step: { run } }) => {
             await Promise.all([run(id, A), run(id, B), run(id, C)]);
-          }
+          },
         );
 
         return { fn, steps: { A, B, C } };
@@ -1906,14 +1934,14 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
       "step indexing in parallel",
       () => {
-        const A = jest.fn(() => "A");
-        const B = jest.fn(() => "B");
+        const A = vi.fn(() => "A");
+        const B = vi.fn(() => "B");
 
         const id = "A";
         const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -1925,7 +1953,7 @@ describe("runFn", () => {
             await run(id, A);
             await wait(200);
             await run(id, B);
-          }
+          },
         );
 
         return { fn, steps: { A, B } };
@@ -2016,15 +2044,15 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
       "step indexing in parallel with separated indexes",
       () => {
-        const A = jest.fn(() => "A");
-        const B = jest.fn(() => "B");
-        const C = jest.fn(() => "C");
+        const A = vi.fn(() => "A");
+        const B = vi.fn(() => "B");
+        const C = vi.fn(() => "C");
 
         const id = "A";
         const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -2036,7 +2064,7 @@ describe("runFn", () => {
             await Promise.all([run(id, A), run(id, B)]);
             await wait(200);
             await run(id, C);
-          }
+          },
         );
 
         return { fn, steps: { A, B, C } };
@@ -2111,17 +2139,17 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
       "silently handle step error",
       () => {
-        const A = jest.fn(() => "A");
-        const B = jest.fn(() => {
+        const A = vi.fn(() => "A");
+        const B = vi.fn(() => {
           throw "B failed message";
         });
-        const BFailed = jest.fn(() => "B failed");
+        const BFailed = vi.fn(() => "B failed");
 
         const fn = inngest.createFunction(
           { id: "name" },
@@ -2131,7 +2159,7 @@ describe("runFn", () => {
               run("A", A),
               run("B", B).catch(() => run("B failed", BFailed)),
             ]);
-          }
+          },
         );
 
         return { fn, steps: { A, B, BFailed } };
@@ -2492,13 +2520,13 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
       "throws a NonRetriableError when one is thrown inside a step",
       () => {
-        const A = jest.fn(() => {
+        const A = vi.fn(() => {
           throw new NonRetriableError("A error message");
         });
 
@@ -2507,7 +2535,7 @@ describe("runFn", () => {
           { event: "foo" },
           async ({ step: { run } }) => {
             await run("A", A);
-          }
+          },
         );
 
         return { fn, steps: { A } };
@@ -2577,7 +2605,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -2588,7 +2616,7 @@ describe("runFn", () => {
           { event: "foo" },
           async () => {
             throw new NonRetriableError("Error message");
-          }
+          },
         );
 
         return { fn, steps: {} };
@@ -2637,7 +2665,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -2648,7 +2676,7 @@ describe("runFn", () => {
           { event: "foo" },
           async () => {
             throw "foo";
-          }
+          },
         );
 
         return { fn, steps: {} };
@@ -2695,7 +2723,7 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
@@ -2706,7 +2734,7 @@ describe("runFn", () => {
           { event: "foo" },
           async () => {
             throw {};
-          }
+          },
         );
 
         return { fn, steps: {} };
@@ -2753,14 +2781,14 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
       "handle onFailure calls",
       () => {
-        const A = jest.fn(() => "A");
-        const B = jest.fn(() => "B");
+        const A = vi.fn(() => "A");
+        const B = vi.fn(() => "B");
 
         const fn = inngest.createFunction(
           {
@@ -2771,7 +2799,7 @@ describe("runFn", () => {
             },
           },
           { event: "foo" },
-          () => undefined
+          () => undefined,
         );
 
         const event: FailureEventPayload = {
@@ -2974,18 +3002,18 @@ describe("runFn", () => {
             },
           }),
         },
-      }
+      },
     );
 
     testFn(
       "can use built-in logger middleware",
       () => {
-        const A = jest.fn((logger: Logger) => {
+        const A = vi.fn((logger: Logger) => {
           logger.info("A");
           return "A";
         });
 
-        const B = jest.fn((logger: Logger) => {
+        const B = vi.fn((logger: Logger) => {
           logger.info("B");
           return "B";
         });
@@ -3000,7 +3028,7 @@ describe("runFn", () => {
             logger.info("2");
             await run("B", () => B(logger));
             logger.info("3");
-          }
+          },
         );
 
         return { fn, steps: { A, B } };
@@ -3024,14 +3052,11 @@ describe("runFn", () => {
               },
               expectedStepsRun: ["A"],
               customTests() {
-                let loggerInfoSpy: jest.SpiedFunction<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["info1"], ["A"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([
+                    ["info1"],
+                    ["A"],
+                  ]);
                 });
               },
             },
@@ -3053,14 +3078,8 @@ describe("runFn", () => {
               },
               expectedStepsRun: ["B"],
               customTests() {
-                let loggerInfoSpy: jest.SpiedFunction<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["2"], ["B"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([["2"], ["B"]]);
                 });
               },
             },
@@ -3080,14 +3099,8 @@ describe("runFn", () => {
                 data: null,
               },
               customTests() {
-                let loggerInfoSpy: jest.SpiedFunction<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["3"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([["3"]]);
                 });
               },
             },
@@ -3112,14 +3125,11 @@ describe("runFn", () => {
               },
               expectedStepsRun: ["A"],
               customTests() {
-                let loggerInfoSpy: jest.SpiedFunction<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["info1"], ["A"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([
+                    ["info1"],
+                    ["A"],
+                  ]);
                 });
               },
             },
@@ -3142,14 +3152,8 @@ describe("runFn", () => {
               },
               expectedStepsRun: ["B"],
               customTests() {
-                let loggerInfoSpy: jest.SpiedFunction<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["2"], ["B"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([["2"], ["B"]]);
                 });
               },
             },
@@ -3169,14 +3173,8 @@ describe("runFn", () => {
                 data: null,
               },
               customTests() {
-                let loggerInfoSpy: jest.SpiedFunction<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["3"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([["3"]]);
                 });
               },
             },
@@ -3201,14 +3199,11 @@ describe("runFn", () => {
               },
               expectedStepsRun: ["A"],
               customTests() {
-                let loggerInfoSpy: jest.SpiedFunction<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["info1"], ["A"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([
+                    ["info1"],
+                    ["A"],
+                  ]);
                 });
               },
             },
@@ -3231,14 +3226,8 @@ describe("runFn", () => {
               },
               expectedStepsRun: ["B"],
               customTests() {
-                let loggerInfoSpy: jest.SpiedFunction<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["2"], ["B"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([["2"], ["B"]]);
                 });
               },
             },
@@ -3258,20 +3247,14 @@ describe("runFn", () => {
                 data: null,
               },
               customTests() {
-                let loggerInfoSpy: jest.SpiedFunction<() => void>;
-
-                beforeAll(() => {
-                  loggerInfoSpy = jest.spyOn(DefaultLogger.prototype, "info");
-                });
-
                 test("log called", () => {
-                  expect(loggerInfoSpy.mock.calls).toEqual([["3"]]);
+                  expect(mockLogger.info.mock.calls).toEqual([["3"]]);
                 });
               },
             },
           }),
         },
-      }
+      },
     );
   });
 
@@ -3293,7 +3276,7 @@ describe("runFn", () => {
             { event: "test" },
             () => {
               // no-op
-            }
+            },
           );
         });
       });
@@ -3330,7 +3313,7 @@ describe("runFn", () => {
             { event: "foo" },
             () => {
               // no-op
-            }
+            },
           );
         });
       });
@@ -3363,7 +3346,7 @@ describe("runFn", () => {
         { event: "foo" },
         () => {
           // no-op
-        }
+        },
       );
 
       expect(fn).toBeInstanceOf(InngestFunction);
@@ -3421,7 +3404,7 @@ describe("runFn", () => {
             { event: "test" },
             () => {
               // no-op
-            }
+            },
           );
         });
 
@@ -3434,7 +3417,7 @@ describe("runFn", () => {
             { event: "test" },
             () => {
               // no-op
-            }
+            },
           );
         });
       });
@@ -3469,7 +3452,7 @@ describe("runFn", () => {
             { event: "foo" },
             () => {
               // no-op
-            }
+            },
           );
         });
 
@@ -3479,7 +3462,7 @@ describe("runFn", () => {
             { event: "foo" },
             () => {
               // no-op
-            }
+            },
           );
         });
 
@@ -3492,7 +3475,7 @@ describe("runFn", () => {
             { event: "foo" },
             () => {
               // no-op
-            }
+            },
           );
         });
       });
@@ -3524,7 +3507,7 @@ describe("runFn", () => {
         { event: "foo" },
         () => {
           // no-op
-        }
+        },
       );
 
       const [fnConfig] = fn["getConfig"]({
