@@ -25,10 +25,12 @@ import {
   type TriggersFromClient,
 } from "../types.js";
 import { type InngestExecution } from "./execution/InngestExecution.js";
+import { fetch as stepFetch } from "./Fetch.js";
 import {
   type ClientOptionsFromInngest,
   type GetEvents,
   type GetFunctionOutput,
+  type GetStepTools,
   type Inngest,
 } from "./Inngest.js";
 import { InngestFunction } from "./InngestFunction.js";
@@ -588,9 +590,58 @@ export const createStepTools = <TClient extends Inngest.Any>(
         opts,
       };
     }),
+
+    /**
+     * `step.fetch` is a Fetch-API-compatible function that can be used to make
+     * any HTTP code durable if it's called within an Inngest function.
+     *
+     * It will gracefully fall back to the global `fetch` if called outside of
+     * this context, and a custom fallback can be set using the `config` method.
+     */
+    fetch: stepFetch,
   };
 
+  // Add an uptyped gateway
+  (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
+    ({ id, name }, input, init) => {
+      const url = input instanceof Request ? input.url : input.toString();
+
+      const headers: Record<string, string> = {};
+      if (input instanceof Request) {
+        input.headers.forEach((value, key) => (headers[key] = value));
+      } else if (init?.headers) {
+        const h = new Headers(init.headers);
+        h.forEach((value, key) => (headers[key] = value));
+      }
+
+      return {
+        id,
+        op: StepOpCode.Gateway,
+        displayName: name ?? id,
+        opts: {
+          url,
+          method: init?.method ?? "GET",
+          headers,
+          body: init?.body,
+        },
+      };
+    }
+  );
+
   return tools;
+};
+
+export const gatewaySymbol = Symbol.for("inngest.step.gateway");
+
+export type InternalStepTools = GetStepTools<Inngest.Any> & {
+  [gatewaySymbol]: (
+    idOrOptions: StepOptionsOrId,
+    ...args: Parameters<typeof fetch>
+  ) => Promise<{
+    status: number;
+    headers: Record<string, string>;
+    body: string;
+  }>;
 };
 
 /**
