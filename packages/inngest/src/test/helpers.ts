@@ -1819,3 +1819,14 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
  * @type T the type to check against.
  */
 export function assertType<T>(subject: T): asserts subject is T {}
+
+/**
+ * Get the current Node.js version.
+ */
+export const nodeVersion = process.version
+  ? (() => {
+      const [major, minor, patch] = process.versions.node.split(".").map(Number);
+
+      return { major, minor, patch };
+    })()
+  : undefined;
