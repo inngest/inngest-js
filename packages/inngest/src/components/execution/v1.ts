@@ -103,28 +103,31 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       const tracer = trace.getTracer("inngest", version);
 
       this.execution = getAsyncLocalStorage().then((als) => {
-        return als.run({ ctx: this.fnArg }, async () => {
-          return tracer.startActiveSpan("inngest.execution", (span) => {
-            // TODO We should set lots of attributes here
-            const traceparent = this.options.headers[headerKeys.TraceParent];
-            if (traceparent) {
-              // Only start capturing these spans if we have a traceparent to
-              // attribute them to
-              clientProcessorMap
-                .get(this.options.client)
-                ?.declareStartingSpan(traceparent, span);
-            }
+        return als.run(
+          { app: this.options.client, ctx: this.fnArg },
+          async () => {
+            return tracer.startActiveSpan("inngest.execution", (span) => {
+              // TODO We should set lots of attributes here
+              const traceparent = this.options.headers[headerKeys.TraceParent];
+              if (traceparent) {
+                // Only start capturing these spans if we have a traceparent to
+                // attribute them to
+                clientProcessorMap
+                  .get(this.options.client)
+                  ?.declareStartingSpan(traceparent, span);
+              }
 
-            return this._start()
-              .then((result) => {
-                this.debug("result:", result);
-                return result;
-              })
-              .finally(() => {
-                span.end();
-              });
-          });
-        });
+              return this._start()
+                .then((result) => {
+                  this.debug("result:", result);
+                  return result;
+                })
+                .finally(() => {
+                  span.end();
+                });
+            });
+          }
+        );
       });
     }
 

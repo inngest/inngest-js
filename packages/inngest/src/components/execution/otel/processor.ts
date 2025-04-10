@@ -15,9 +15,14 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
-import { envKeys } from "../../../helpers/consts.js";
-import { processEnv } from "../../../helpers/env.js";
+import {
+  defaultDevServerHost,
+  defaultInngestApiBaseUrl,
+} from "../../../helpers/consts.js";
+import { devServerAvailable } from "../../../helpers/devserver.js";
+import { devServerHost } from "../../../helpers/env.js";
 import { type Inngest } from "../../Inngest.js";
+import { getAsyncCtx } from "../als.js";
 import { clientProcessorMap } from "./access.js";
 
 const processorDebug = Debug("inngest:otel:InngestSpanProcessor");
@@ -44,7 +49,7 @@ export class InngestSpanProcessor implements SpanProcessor {
   /**
    * TODO
    */
-  #batcher: BatchSpanProcessor | undefined;
+  #batcher: Promise<BatchSpanProcessor> | undefined;
 
   /**
    * A set of spans used to track spans that we care about, so that we can
@@ -117,28 +122,59 @@ export class InngestSpanProcessor implements SpanProcessor {
    * The batcher is only referenced once we've found a span we're interested in,
    * so this should always have everything it needs on the app by then.
    */
-  private get batcher(): BatchSpanProcessor {
+  private getBatcher(): Promise<BatchSpanProcessor> {
     if (!this.#batcher) {
-      // TODO Get the app from context? Or maybe we pass it in to this class.
-      // Remember that this instance could be created by our middleware or by a
-      // user manually creating it and passing it to their own providers.
-      const url = "http://localhost:8288/v1/traces";
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
+      this.#batcher = new Promise(async (resolve, reject) => {
+        try {
+          const store = await getAsyncCtx();
+          if (!store) {
+            throw new Error(
+              "No async context found; cannot create batcher to export traces"
+            );
+          }
 
-      processorDebug(
-        "batcher lazily accessed; creating new batcher with URL",
-        url
-      );
+          const app = store.app as Inngest.Any;
 
-      const exporter = new OTLPTraceExporter({
-        url,
+          let url: URL;
+          const path = "/v1/traces";
+          if (app.apiBaseUrl) {
+            url = new URL(path, app.apiBaseUrl);
+          } else {
+            url = new URL(path, defaultInngestApiBaseUrl);
 
-        // TODO This doesn't exist on the app rn, but will
-        headers: {
-          Authorization: `Bearer ${processEnv(envKeys.InngestSigningKey)}}`,
-        },
+            if (app["mode"] && app["mode"].isDev && app["mode"].isInferred) {
+              const devHost = devServerHost() || defaultDevServerHost;
+              const hasDevServer = await devServerAvailable(
+                devHost,
+                app["fetch"]
+              );
+              if (hasDevServer) {
+                url = new URL(path, devHost);
+              }
+            } else if (app["mode"]?.explicitDevUrl) {
+              url = new URL(path, app["mode"].explicitDevUrl.href);
+            }
+          }
+
+          processorDebug(
+            "batcher lazily accessed; creating new batcher with URL",
+            url
+          );
+
+          const exporter = new OTLPTraceExporter({
+            url: url.href,
+
+            headers: {
+              Authorization: `Bearer ${app["inngestApi"]["signingKey"]}}`,
+            },
+          });
+
+          resolve(new BatchSpanProcessor(exporter));
+        } catch (err) {
+          reject(err);
+        }
       });
-
-      this.#batcher = new BatchSpanProcessor(exporter);
     }
 
     return this.#batcher;
@@ -203,7 +239,7 @@ export class InngestSpanProcessor implements SpanProcessor {
     try {
       if (this.#spansToExport.has(span as unknown as Span)) {
         debug("exporting span", spanId);
-        return this.batcher.onEnd(span);
+        return void this.getBatcher().then((batcher) => batcher.onEnd(span));
       }
 
       debug("not exporting span", spanId, "as we don't care about it");
@@ -212,16 +248,18 @@ export class InngestSpanProcessor implements SpanProcessor {
     }
   }
 
-  forceFlush(): Promise<void> {
+  async forceFlush(): Promise<void> {
     processorDebug.extend("forceFlush")("force flushing batcher");
 
-    return this.batcher.forceFlush();
+    const batcher = await this.getBatcher();
+    return batcher.forceFlush();
   }
 
-  shutdown(): Promise<void> {
+  async shutdown(): Promise<void> {
     processorDebug.extend("shutdown")("shutting down batcher");
 
-    return this.batcher.shutdown();
+    const batcher = await this.getBatcher();
+    return batcher.shutdown();
   }
 }
 
