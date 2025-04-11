@@ -81,7 +81,7 @@ interface connection {
   id: string;
   ws: WebSocket;
   cleanup: () => void | Promise<void>;
-  lastGatewayHeartbeatAt: Date | undefined;
+  pendingHeartbeats: number;
 }
 
 class WebSocketWorkerConnection implements WorkerConnection {
@@ -861,7 +861,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         ws.onclose = () => {};
         ws.close();
       },
-      lastGatewayHeartbeatAt: undefined,
+      pendingHeartbeats: 0,
     };
     this.currentConnection = conn;
 
@@ -957,7 +957,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_HEARTBEAT) {
-        conn.lastGatewayHeartbeatAt = new Date();
+        conn.pendingHeartbeats = 0;
         this.debug("Handled gateway heartbeat", {
           connectionId,
         });
@@ -1183,11 +1183,24 @@ class WebSocketWorkerConnection implements WorkerConnection {
           return;
         }
 
+        // Check if we've missed 2 consecutive heartbeats
+        if (conn.pendingHeartbeats >= 2) {
+          this.debug("Gateway heartbeat missed");
+          void onConnectionError(
+            new ReconnectError(
+              `Consecutive gateway heartbeats missed (${connectionId})`,
+              attempt
+            )
+          );
+          return;
+        }
+
         this.debug("Sending worker heartbeat", {
           connectionId,
         });
 
         // Send worker heartbeat
+        conn.pendingHeartbeats++;
         ws.send(
           ConnectMessage.encode(
             ConnectMessage.create({
@@ -1195,39 +1208,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
             })
           ).finish()
         );
-
-        // Wait for gateway to respond
-        setTimeout(() => {
-          if (heartbeatIntervalMs === undefined) {
-            return;
-          }
-
-          if (!conn.lastGatewayHeartbeatAt) {
-            this.debug("Gateway heartbeat missed");
-            void onConnectionError(
-              new ReconnectError(
-                `Gateway heartbeat missed (${connectionId})`,
-                attempt
-              )
-            );
-            return;
-          }
-          const timeSinceLastHeartbeat =
-            new Date().getTime() - conn.lastGatewayHeartbeatAt.getTime();
-          if (timeSinceLastHeartbeat > heartbeatIntervalMs * 2) {
-            this.debug("Gateway heartbeat missed");
-            void onConnectionError(
-              new ReconnectError(
-                `Gateway heartbeat missed (${connectionId})`,
-                attempt
-              )
-            );
-            return;
-          }
-
-          // eslint-disable-next-line @typescript-eslint/no-floating-promises
-          this.messageBuffer.flush(hashedSigningKey);
-        }, heartbeatIntervalMs / 2);
       }, heartbeatIntervalMs);
     }
 
