@@ -16,6 +16,8 @@ import {
   SDKResponse,
   SDKResponseStatus,
   WorkerConnectRequestData,
+  WorkerDisconnectReason,
+  workerDisconnectReasonToJSON,
   WorkerRequestAckData,
   WorkerRequestExtendLeaseAckData,
   WorkerRequestExtendLeaseData,
@@ -696,7 +698,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
         // Make sure to close the WebSocket if it's still open
         ws.onerror = () => {};
         ws.onclose = () => {};
-        ws.close();
+        ws.close(
+          4001, // incomplete setup
+          workerDisconnectReasonToJSON(WorkerDisconnectReason.UNEXPECTED)
+        );
 
         rejectWebsocketConnected?.(
           new ReconnectError(
@@ -1253,7 +1258,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
       this.debug("Closing connection", { connectionId });
       ws.onerror = () => {};
       ws.onclose = () => {};
-      ws.close();
+      ws.close(
+        1000,
+        workerDisconnectReasonToJSON(WorkerDisconnectReason.WORKER_SHUTDOWN)
+      );
 
       if (this.currentConnection?.id === connectionId) {
         this.currentConnection = undefined;
