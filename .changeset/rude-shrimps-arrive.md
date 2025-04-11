@@ -1,5 +1,5 @@
 ---
-"inngest": minor
+"inngest": patch
 ---
 
 Connect: Reliability improvements
