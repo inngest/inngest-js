@@ -17,6 +17,8 @@ export enum GatewayMessageType {
   GATEWAY_EXECUTOR_REQUEST = 3,
   WORKER_READY = 4,
   WORKER_REQUEST_ACK = 5,
+  WORKER_REQUEST_EXTEND_LEASE = 12,
+  WORKER_REQUEST_EXTEND_LEASE_ACK = 13,
   WORKER_REPLY = 6,
   WORKER_REPLY_ACK = 7,
   WORKER_PAUSE = 8,
@@ -46,6 +48,12 @@ export function gatewayMessageTypeFromJSON(object: any): GatewayMessageType {
     case 5:
     case "WORKER_REQUEST_ACK":
       return GatewayMessageType.WORKER_REQUEST_ACK;
+    case 12:
+    case "WORKER_REQUEST_EXTEND_LEASE":
+      return GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE;
+    case 13:
+    case "WORKER_REQUEST_EXTEND_LEASE_ACK":
+      return GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE_ACK;
     case 6:
     case "WORKER_REPLY":
       return GatewayMessageType.WORKER_REPLY;
@@ -85,6 +93,10 @@ export function gatewayMessageTypeToJSON(object: GatewayMessageType): string {
       return "WORKER_READY";
     case GatewayMessageType.WORKER_REQUEST_ACK:
       return "WORKER_REQUEST_ACK";
+    case GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE:
+      return "WORKER_REQUEST_EXTEND_LEASE";
+    case GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE_ACK:
+      return "WORKER_REQUEST_EXTEND_LEASE_ACK";
     case GatewayMessageType.WORKER_REPLY:
       return "WORKER_REPLY";
     case GatewayMessageType.WORKER_REPLY_ACK:
@@ -195,6 +207,8 @@ export function connectionStatusToJSON(object: ConnectionStatus): string {
 
 export enum WorkerDisconnectReason {
   WORKER_SHUTDOWN = 0,
+  UNEXPECTED = 1,
+  GATEWAY_DRAINING = 2,
   UNRECOGNIZED = -1,
 }
 
@@ -203,6 +217,12 @@ export function workerDisconnectReasonFromJSON(object: any): WorkerDisconnectRea
     case 0:
     case "WORKER_SHUTDOWN":
       return WorkerDisconnectReason.WORKER_SHUTDOWN;
+    case 1:
+    case "UNEXPECTED":
+      return WorkerDisconnectReason.UNEXPECTED;
+    case 2:
+    case "GATEWAY_DRAINING":
+      return WorkerDisconnectReason.GATEWAY_DRAINING;
     case -1:
     case "UNRECOGNIZED":
     default:
@@ -214,6 +234,10 @@ export function workerDisconnectReasonToJSON(object: WorkerDisconnectReason): st
   switch (object) {
     case WorkerDisconnectReason.WORKER_SHUTDOWN:
       return "WORKER_SHUTDOWN";
+    case WorkerDisconnectReason.UNEXPECTED:
+      return "UNEXPECTED";
+    case WorkerDisconnectReason.GATEWAY_DRAINING:
+      return "GATEWAY_DRAINING";
     case WorkerDisconnectReason.UNRECOGNIZED:
     default:
       return "UNRECOGNIZED";
@@ -252,6 +276,11 @@ export interface WorkerConnectRequestData {
   startedAt: Date | undefined;
 }
 
+export interface GatewayConnectionReadyData {
+  heartbeatInterval: string;
+  extendLeaseInterval: string;
+}
+
 export interface GatewayExecutorRequestData {
   requestId: string;
   accountId: string;
@@ -265,6 +294,7 @@ export interface GatewayExecutorRequestData {
   systemTraceCtx: Uint8Array;
   userTraceCtx: Uint8Array;
   runId: string;
+  leaseId: string;
 }
 
 export interface WorkerRequestAckData {
@@ -277,6 +307,28 @@ export interface WorkerRequestAckData {
   systemTraceCtx: Uint8Array;
   userTraceCtx: Uint8Array;
   runId: string;
+}
+
+export interface WorkerRequestExtendLeaseData {
+  requestId: string;
+  accountId: string;
+  envId: string;
+  appId: string;
+  functionSlug: string;
+  stepId?: string | undefined;
+  systemTraceCtx: Uint8Array;
+  userTraceCtx: Uint8Array;
+  runId: string;
+  leaseId: string;
+}
+
+export interface WorkerRequestExtendLeaseAckData {
+  requestId: string;
+  accountId: string;
+  envId: string;
+  appId: string;
+  functionSlug: string;
+  newLeaseId?: string | undefined;
 }
 
 export interface SDKResponse {
@@ -883,6 +935,82 @@ export const WorkerConnectRequestData: MessageFns<WorkerConnectRequestData> = {
   },
 };
 
+function createBaseGatewayConnectionReadyData(): GatewayConnectionReadyData {
+  return { heartbeatInterval: "", extendLeaseInterval: "" };
+}
+
+export const GatewayConnectionReadyData: MessageFns<GatewayConnectionReadyData> = {
+  encode(message: GatewayConnectionReadyData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.heartbeatInterval !== "") {
+      writer.uint32(10).string(message.heartbeatInterval);
+    }
+    if (message.extendLeaseInterval !== "") {
+      writer.uint32(18).string(message.extendLeaseInterval);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): GatewayConnectionReadyData {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseGatewayConnectionReadyData();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.heartbeatInterval = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.extendLeaseInterval = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): GatewayConnectionReadyData {
+    return {
+      heartbeatInterval: isSet(object.heartbeatInterval) ? globalThis.String(object.heartbeatInterval) : "",
+      extendLeaseInterval: isSet(object.extendLeaseInterval) ? globalThis.String(object.extendLeaseInterval) : "",
+    };
+  },
+
+  toJSON(message: GatewayConnectionReadyData): unknown {
+    const obj: any = {};
+    if (message.heartbeatInterval !== "") {
+      obj.heartbeatInterval = message.heartbeatInterval;
+    }
+    if (message.extendLeaseInterval !== "") {
+      obj.extendLeaseInterval = message.extendLeaseInterval;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<GatewayConnectionReadyData>, I>>(base?: I): GatewayConnectionReadyData {
+    return GatewayConnectionReadyData.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<GatewayConnectionReadyData>, I>>(object: I): GatewayConnectionReadyData {
+    const message = createBaseGatewayConnectionReadyData();
+    message.heartbeatInterval = object.heartbeatInterval ?? "";
+    message.extendLeaseInterval = object.extendLeaseInterval ?? "";
+    return message;
+  },
+};
+
 function createBaseGatewayExecutorRequestData(): GatewayExecutorRequestData {
   return {
     requestId: "",
@@ -897,6 +1025,7 @@ function createBaseGatewayExecutorRequestData(): GatewayExecutorRequestData {
     systemTraceCtx: new Uint8Array(0),
     userTraceCtx: new Uint8Array(0),
     runId: "",
+    leaseId: "",
   };
 }
 
@@ -937,6 +1066,9 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     }
     if (message.runId !== "") {
       writer.uint32(98).string(message.runId);
+    }
+    if (message.leaseId !== "") {
+      writer.uint32(106).string(message.leaseId);
     }
     return writer;
   },
@@ -1044,6 +1176,14 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
           message.runId = reader.string();
           continue;
         }
+        case 13: {
+          if (tag !== 106) {
+            break;
+          }
+
+          message.leaseId = reader.string();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1067,6 +1207,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
       systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
       userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
       runId: isSet(object.runId) ? globalThis.String(object.runId) : "",
+      leaseId: isSet(object.leaseId) ? globalThis.String(object.leaseId) : "",
     };
   },
 
@@ -1108,6 +1249,9 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     if (message.runId !== "") {
       obj.runId = message.runId;
     }
+    if (message.leaseId !== "") {
+      obj.leaseId = message.leaseId;
+    }
     return obj;
   },
 
@@ -1128,6 +1272,7 @@ export const GatewayExecutorRequestData: MessageFns<GatewayExecutorRequestData> 
     message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
     message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
     message.runId = object.runId ?? "";
+    message.leaseId = object.leaseId ?? "";
     return message;
   },
 };
@@ -1326,6 +1471,363 @@ export const WorkerRequestAckData: MessageFns<WorkerRequestAckData> = {
     message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
     message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
     message.runId = object.runId ?? "";
+    return message;
+  },
+};
+
+function createBaseWorkerRequestExtendLeaseData(): WorkerRequestExtendLeaseData {
+  return {
+    requestId: "",
+    accountId: "",
+    envId: "",
+    appId: "",
+    functionSlug: "",
+    stepId: undefined,
+    systemTraceCtx: new Uint8Array(0),
+    userTraceCtx: new Uint8Array(0),
+    runId: "",
+    leaseId: "",
+  };
+}
+
+export const WorkerRequestExtendLeaseData: MessageFns<WorkerRequestExtendLeaseData> = {
+  encode(message: WorkerRequestExtendLeaseData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.requestId !== "") {
+      writer.uint32(10).string(message.requestId);
+    }
+    if (message.accountId !== "") {
+      writer.uint32(18).string(message.accountId);
+    }
+    if (message.envId !== "") {
+      writer.uint32(26).string(message.envId);
+    }
+    if (message.appId !== "") {
+      writer.uint32(34).string(message.appId);
+    }
+    if (message.functionSlug !== "") {
+      writer.uint32(42).string(message.functionSlug);
+    }
+    if (message.stepId !== undefined) {
+      writer.uint32(50).string(message.stepId);
+    }
+    if (message.systemTraceCtx.length !== 0) {
+      writer.uint32(58).bytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      writer.uint32(66).bytes(message.userTraceCtx);
+    }
+    if (message.runId !== "") {
+      writer.uint32(74).string(message.runId);
+    }
+    if (message.leaseId !== "") {
+      writer.uint32(82).string(message.leaseId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): WorkerRequestExtendLeaseData {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseWorkerRequestExtendLeaseData();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.requestId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.accountId = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.envId = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.appId = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.functionSlug = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.stepId = reader.string();
+          continue;
+        }
+        case 7: {
+          if (tag !== 58) {
+            break;
+          }
+
+          message.systemTraceCtx = reader.bytes();
+          continue;
+        }
+        case 8: {
+          if (tag !== 66) {
+            break;
+          }
+
+          message.userTraceCtx = reader.bytes();
+          continue;
+        }
+        case 9: {
+          if (tag !== 74) {
+            break;
+          }
+
+          message.runId = reader.string();
+          continue;
+        }
+        case 10: {
+          if (tag !== 82) {
+            break;
+          }
+
+          message.leaseId = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): WorkerRequestExtendLeaseData {
+    return {
+      requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "",
+      accountId: isSet(object.accountId) ? globalThis.String(object.accountId) : "",
+      envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
+      appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
+      functionSlug: isSet(object.functionSlug) ? globalThis.String(object.functionSlug) : "",
+      stepId: isSet(object.stepId) ? globalThis.String(object.stepId) : undefined,
+      systemTraceCtx: isSet(object.systemTraceCtx) ? bytesFromBase64(object.systemTraceCtx) : new Uint8Array(0),
+      userTraceCtx: isSet(object.userTraceCtx) ? bytesFromBase64(object.userTraceCtx) : new Uint8Array(0),
+      runId: isSet(object.runId) ? globalThis.String(object.runId) : "",
+      leaseId: isSet(object.leaseId) ? globalThis.String(object.leaseId) : "",
+    };
+  },
+
+  toJSON(message: WorkerRequestExtendLeaseData): unknown {
+    const obj: any = {};
+    if (message.requestId !== "") {
+      obj.requestId = message.requestId;
+    }
+    if (message.accountId !== "") {
+      obj.accountId = message.accountId;
+    }
+    if (message.envId !== "") {
+      obj.envId = message.envId;
+    }
+    if (message.appId !== "") {
+      obj.appId = message.appId;
+    }
+    if (message.functionSlug !== "") {
+      obj.functionSlug = message.functionSlug;
+    }
+    if (message.stepId !== undefined) {
+      obj.stepId = message.stepId;
+    }
+    if (message.systemTraceCtx.length !== 0) {
+      obj.systemTraceCtx = base64FromBytes(message.systemTraceCtx);
+    }
+    if (message.userTraceCtx.length !== 0) {
+      obj.userTraceCtx = base64FromBytes(message.userTraceCtx);
+    }
+    if (message.runId !== "") {
+      obj.runId = message.runId;
+    }
+    if (message.leaseId !== "") {
+      obj.leaseId = message.leaseId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<WorkerRequestExtendLeaseData>, I>>(base?: I): WorkerRequestExtendLeaseData {
+    return WorkerRequestExtendLeaseData.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<WorkerRequestExtendLeaseData>, I>>(object: I): WorkerRequestExtendLeaseData {
+    const message = createBaseWorkerRequestExtendLeaseData();
+    message.requestId = object.requestId ?? "";
+    message.accountId = object.accountId ?? "";
+    message.envId = object.envId ?? "";
+    message.appId = object.appId ?? "";
+    message.functionSlug = object.functionSlug ?? "";
+    message.stepId = object.stepId ?? undefined;
+    message.systemTraceCtx = object.systemTraceCtx ?? new Uint8Array(0);
+    message.userTraceCtx = object.userTraceCtx ?? new Uint8Array(0);
+    message.runId = object.runId ?? "";
+    message.leaseId = object.leaseId ?? "";
+    return message;
+  },
+};
+
+function createBaseWorkerRequestExtendLeaseAckData(): WorkerRequestExtendLeaseAckData {
+  return { requestId: "", accountId: "", envId: "", appId: "", functionSlug: "", newLeaseId: undefined };
+}
+
+export const WorkerRequestExtendLeaseAckData: MessageFns<WorkerRequestExtendLeaseAckData> = {
+  encode(message: WorkerRequestExtendLeaseAckData, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.requestId !== "") {
+      writer.uint32(10).string(message.requestId);
+    }
+    if (message.accountId !== "") {
+      writer.uint32(18).string(message.accountId);
+    }
+    if (message.envId !== "") {
+      writer.uint32(26).string(message.envId);
+    }
+    if (message.appId !== "") {
+      writer.uint32(34).string(message.appId);
+    }
+    if (message.functionSlug !== "") {
+      writer.uint32(42).string(message.functionSlug);
+    }
+    if (message.newLeaseId !== undefined) {
+      writer.uint32(50).string(message.newLeaseId);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): WorkerRequestExtendLeaseAckData {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    let end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseWorkerRequestExtendLeaseAckData();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.requestId = reader.string();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.accountId = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.envId = reader.string();
+          continue;
+        }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.appId = reader.string();
+          continue;
+        }
+        case 5: {
+          if (tag !== 42) {
+            break;
+          }
+
+          message.functionSlug = reader.string();
+          continue;
+        }
+        case 6: {
+          if (tag !== 50) {
+            break;
+          }
+
+          message.newLeaseId = reader.string();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): WorkerRequestExtendLeaseAckData {
+    return {
+      requestId: isSet(object.requestId) ? globalThis.String(object.requestId) : "",
+      accountId: isSet(object.accountId) ? globalThis.String(object.accountId) : "",
+      envId: isSet(object.envId) ? globalThis.String(object.envId) : "",
+      appId: isSet(object.appId) ? globalThis.String(object.appId) : "",
+      functionSlug: isSet(object.functionSlug) ? globalThis.String(object.functionSlug) : "",
+      newLeaseId: isSet(object.newLeaseId) ? globalThis.String(object.newLeaseId) : undefined,
+    };
+  },
+
+  toJSON(message: WorkerRequestExtendLeaseAckData): unknown {
+    const obj: any = {};
+    if (message.requestId !== "") {
+      obj.requestId = message.requestId;
+    }
+    if (message.accountId !== "") {
+      obj.accountId = message.accountId;
+    }
+    if (message.envId !== "") {
+      obj.envId = message.envId;
+    }
+    if (message.appId !== "") {
+      obj.appId = message.appId;
+    }
+    if (message.functionSlug !== "") {
+      obj.functionSlug = message.functionSlug;
+    }
+    if (message.newLeaseId !== undefined) {
+      obj.newLeaseId = message.newLeaseId;
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<WorkerRequestExtendLeaseAckData>, I>>(base?: I): WorkerRequestExtendLeaseAckData {
+    return WorkerRequestExtendLeaseAckData.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<WorkerRequestExtendLeaseAckData>, I>>(
+    object: I,
+  ): WorkerRequestExtendLeaseAckData {
+    const message = createBaseWorkerRequestExtendLeaseAckData();
+    message.requestId = object.requestId ?? "";
+    message.accountId = object.accountId ?? "";
+    message.envId = object.envId ?? "";
+    message.appId = object.appId ?? "";
+    message.functionSlug = object.functionSlug ?? "";
+    message.newLeaseId = object.newLeaseId ?? undefined;
     return message;
   },
 };
