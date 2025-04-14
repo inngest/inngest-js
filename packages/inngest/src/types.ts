@@ -655,6 +655,36 @@ export interface ClientOptions {
   eventKey?: string;
 
   /**
+   * A key used to sign requests to and from Inngest in order to prove that the
+   * source is legitimate.
+   *
+   * You must provide a signing key to communicate securely with Inngest. If
+   * your key is not provided here, we'll try to retrieve it from the
+   * `INNGEST_SIGNING_KEY` environment variable.
+   *
+   * You can retrieve your signing key from the Inngest UI inside the "Secrets"
+   * section at {@link https://app.inngest.com/secrets}. We highly recommend
+   * that you add this to your platform's available environment variables as
+   * `INNGEST_SIGNING_KEY`.
+   *
+   * If no key can be found, you will not be able to register your functions or
+   * receive events from Inngest.
+   *
+   * Note that though setting a `signingKey` when calling `serve()` is
+   * deprecated, that value will still overwrite this one if provided.
+   */
+  signingKey?: string;
+
+  /**
+   * The same as signingKey, except used as a fallback when auth fails using the
+   * primary signing key.
+   *
+   * Note that though setting a `signingKeyFallback` when calling `serve()` is
+   * deprecated, that value will still overwrite this one if provided.
+   */
+  signingKeyFallback?: string;
+
+  /**
    * The base URL to use when contacting Inngest.
    *
    * Defaults to https://inn.gs/ for sending events and https://api.inngest.com
@@ -801,12 +831,18 @@ export interface RegisterOptions {
    *
    * If no key can be found, you will not be able to register your functions or
    * receive events from Inngest.
+   *
+   * @deprecated If you want to explicitly set this value, set it when creating
+   * the app in `new Inngest()` instead.
    */
   signingKey?: string;
 
   /**
    * The same as signingKey, except used as a fallback when auth fails using the
    * primary signing key.
+   *
+   * @deprecated If you want to explicitly set this value, set it when creating
+   * the app in `new Inngest()` instead.
    */
   signingKeyFallback?: string;
 
