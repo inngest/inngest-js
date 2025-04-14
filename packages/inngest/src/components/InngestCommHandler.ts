@@ -424,8 +424,9 @@ export class InngestCommHandler<
 
     this.inngestRegisterUrl = new URL("/fn/register", this.apiBaseUrl);
 
-    this.signingKey = options.signingKey;
-    this.signingKeyFallback = options.signingKeyFallback;
+    this.signingKey = options.signingKey || this.client["signingKey"];
+    this.signingKeyFallback =
+      options.signingKeyFallback || this.client["signingKeyFallback"];
     this._serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
     this._servePath = options.servePath || this.env[envKeys.InngestServePath];
 
@@ -1922,8 +1923,6 @@ export class InngestCommHandler<
       if (!this.signingKey) {
         this.signingKey = String(this.env[envKeys.InngestSigningKey]);
       }
-
-      this.client["inngestApi"].setSigningKey(this.signingKey);
     }
 
     if (this.env[envKeys.InngestSigningKeyFallback]) {
@@ -1932,21 +1931,9 @@ export class InngestCommHandler<
           this.env[envKeys.InngestSigningKeyFallback]
         );
       }
-
-      this.client["inngestApi"].setSigningKeyFallback(this.signingKeyFallback);
     }
 
-    if (!this.client["eventKeySet"]() && this.env[envKeys.InngestEventKey]) {
-      this.client.setEventKey(String(this.env[envKeys.InngestEventKey]));
-    }
-
-    // v2 -> v3 migration warnings
-    if (this.env[envKeys.InngestDevServerUrl]) {
-      this.log(
-        "warn",
-        `Use of ${envKeys.InngestDevServerUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`
-      );
-    }
+    this.client["loadModeEnvVars"](this.env);
   }
 
   /**
