@@ -137,7 +137,7 @@ export class InngestSpanProcessor implements SpanProcessor {
           const app = store.app as Inngest.Any;
 
           let url: URL;
-          const path = "/v1/traces";
+          const path = "/v1/traces/userland";
           if (app.apiBaseUrl) {
             url = new URL(path, app.apiBaseUrl);
           } else {
