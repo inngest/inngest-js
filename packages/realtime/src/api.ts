@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { fetchWithAuthFallback, getEnvVar, parseAsBoolean } from "./util";
+import { getEnvVar } from "./env";
+import { fetchWithAuthFallback, parseAsBoolean } from "./util";
 
 const tokenSchema = z.object({ jwt: z.string() });
 

@@ -1,12 +1,9 @@
 import debug from "debug";
 import { api } from "../api";
+import { getEnvVar } from "../env";
 import { topic } from "../topic";
 import { Realtime } from "../types";
-import {
-  createDeferredPromise,
-  getPublicEnvVar,
-  parseAsBoolean,
-} from "../util";
+import { createDeferredPromise, parseAsBoolean } from "../util";
 import { StreamFanout } from "./StreamFanout";
 
 /**
@@ -72,7 +69,7 @@ export class TokenSubscription {
   private async getWsUrl(token: string): Promise<URL> {
     let url: URL;
     const path = "/v1/realtime/connect";
-    const devEnvVar = getPublicEnvVar("INNGEST_DEV");
+    const devEnvVar = getEnvVar("INNGEST_DEV");
 
     if (this.#apiBaseUrl) {
       url = new URL(path, this.#apiBaseUrl);
@@ -90,7 +87,7 @@ export class TokenSubscription {
     } else {
       url = new URL(
         path,
-        getPublicEnvVar("NODE_ENV") === "production"
+        getEnvVar("NODE_ENV") === "production"
           ? "https://api.inngest.com/"
           : "http://localhost:8288/",
       );

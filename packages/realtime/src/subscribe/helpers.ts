@@ -1,7 +1,7 @@
 import type { Inngest } from "inngest";
 import type { InngestApi } from "inngest/api/api";
+import { getEnvVar } from "../env";
 import type { Realtime } from "../types";
-import { getEnvVar, getPublicEnvVar } from "../util";
 import { TokenSubscription } from "./TokenSubscription";
 
 /**
@@ -51,8 +51,8 @@ export const subscribe = async <
   // allow this for signing keys, as they should never be on a client.
   const maybeApiBaseUrl =
     app?.apiBaseUrl ||
-    getPublicEnvVar("INNGEST_BASE_URL") ||
-    getPublicEnvVar("INNGEST_API_BASE_URL");
+    getEnvVar("INNGEST_BASE_URL") ||
+    getEnvVar("INNGEST_API_BASE_URL");
 
   const maybeSigningKey =
     api?.["signingKey"] || getEnvVar("INNGEST_SIGNING_KEY");
