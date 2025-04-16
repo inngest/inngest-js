@@ -122,12 +122,6 @@ export class TokenSubscription {
         "No subscription token key passed; attempting to retrieve one automatically...",
       );
 
-      if (!this.#signingKey) {
-        throw new Error(
-          "No subscription token key passed but have no signing key so cannot retrieve one",
-        );
-      }
-
       key = (
         await this.lazilyGetSubscriptionToken({
           ...this.token,
@@ -439,12 +433,12 @@ export class TokenSubscription {
       /**
        * TODO
        */
-      signingKey: string;
+      signingKey: string | undefined;
 
       /**
        * TODO
        */
-      signingKeyFallback?: string | undefined;
+      signingKeyFallback: string | undefined;
     },
   ): Promise<TToken> {
     const channelId =

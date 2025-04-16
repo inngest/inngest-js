@@ -13,7 +13,7 @@ export const api = {
   }: {
     channel: string;
     topics: string[];
-    signingKey: string;
+    signingKey: string | undefined;
     signingKeyFallback: string | undefined;
     apiBaseUrl: string | undefined;
   }): Promise<string> {
