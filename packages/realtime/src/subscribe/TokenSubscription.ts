@@ -109,7 +109,7 @@ export class TokenSubscription {
     this.#debug(
       `Establishing connection to channel "${
         this.#channelId
-      }" with topics ${JSON.stringify(this.#topics)}...`,
+      }" with topics ${JSON.stringify([...this.#topics.keys()])}...`,
     );
 
     if (typeof WebSocket === "undefined") {
