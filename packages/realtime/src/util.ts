@@ -42,7 +42,7 @@ export async function fetchWithAuthFallback<TFetch extends typeof fetch>({
   options,
   url,
 }: {
-  authToken: string;
+  authToken: string | undefined;
   authTokenFallback: string | undefined;
   fetch: TFetch;
   options?: Parameters<TFetch>[1];
@@ -52,7 +52,7 @@ export async function fetchWithAuthFallback<TFetch extends typeof fetch>({
     ...options,
     headers: {
       ...options?.headers,
-      Authorization: `Bearer ${authToken}`,
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
     },
   });
 
