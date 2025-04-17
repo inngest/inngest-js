@@ -516,10 +516,18 @@ export class TokenSubscription {
     stream: ReadableStream<Realtime.Message> = this.getJsonStream(),
   ) {
     void (async () => {
-      for await (const chunk of stream) {
-        if (!this.#running) return;
+      // Explicitly get and manage the reader so that we can manually release
+      // the lock if anything goes wrong or we're done with it.
+      const reader = stream.getReader();
+      try {
+        while (this.#running) {
+          const { done, value } = await reader.read();
+          if (done || !this.#running) break;
 
-        callback(chunk);
+          callback(value);
+        }
+      } finally {
+        reader.releaseLock();
       }
     })();
   }

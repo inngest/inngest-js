@@ -26,7 +26,15 @@ export class StreamFanout<TInput = unknown> {
       },
     });
 
-    this.#writers.add(writable.getWriter());
+    const writer = writable.getWriter();
+    this.#writers.add(writer);
+
+    // Eagerly remove the writer is the stream is closed
+    writer.closed
+      .catch(() => {}) // suppress unhandledpromiserejection fun
+      .finally(() => {
+        this.#writers.delete(writer);
+      });
 
     return readable;
   }

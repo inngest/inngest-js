@@ -130,15 +130,25 @@ export function useInngestSubscription<
         subscriptionRef.current = stream;
         setState(InngestSubscriptionState.Active);
 
-        for await (const message of stream) {
-          if (cancelled) break;
+        // Explicitly get and manage the reader so that we can manually release
+        // the lock if anything goes wrong or we're done with it.
+        //
+        // Especially when this is unmounted.
+        const reader = stream.getReader();
+        try {
+          while (!cancelled) {
+            const { done, value } = await reader.read();
+            if (done || cancelled) break;
 
-          if (bufferIntervalRef.current === 0) {
-            setFreshData([message]);
-            setData((prev) => [...prev, message]);
-          } else {
-            messageBuffer.current.push(message);
+            if (bufferIntervalRef.current === 0) {
+              setFreshData([value]);
+              setData((prev) => [...prev, value]);
+            } else {
+              messageBuffer.current.push(value);
+            }
           }
+        } finally {
+          reader.releaseLock();
         }
 
         // Stream has closed cleanly
