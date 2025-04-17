@@ -166,7 +166,7 @@ export class InngestSpanProcessor implements SpanProcessor {
             url: url.href,
 
             headers: {
-              Authorization: `Bearer ${app["inngestApi"]["signingKey"]}}`,
+              Authorization: `Bearer ${app["inngestApi"]["signingKey"]}`,
             },
           });
 
