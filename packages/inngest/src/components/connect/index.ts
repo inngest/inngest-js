@@ -1,6 +1,5 @@
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
-import { ulid } from "ulidx";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.js";
 import {
   allProcessEnv,
@@ -11,12 +10,17 @@ import { parseFnData } from "../../helpers/functions.js";
 import { hashSigningKey } from "../../helpers/strings.js";
 import {
   ConnectMessage,
+  GatewayConnectionReadyData,
   GatewayMessageType,
   gatewayMessageTypeToJSON,
   SDKResponse,
   SDKResponseStatus,
   WorkerConnectRequestData,
+  WorkerDisconnectReason,
+  workerDisconnectReasonToJSON,
   WorkerRequestAckData,
+  WorkerRequestExtendLeaseAckData,
+  WorkerRequestExtendLeaseData,
   type GatewayExecutorRequestData,
 } from "../../proto/src/components/connect/protobuf/connect.js";
 import { type Capabilities, type FunctionConfig } from "../../types.js";
@@ -48,9 +52,9 @@ import {
   ReconnectError,
   waitWithCancel,
 } from "./util.js";
+import ms from "ms";
 
 const ResponseAcknowlegeDeadline = 5_000;
-const WorkerHeartbeatInterval = 10_000;
 
 const InngestBranchEnvironmentSigningKeyPrefix = "signkey-branch-";
 
@@ -77,7 +81,7 @@ interface connection {
   id: string;
   ws: WebSocket;
   cleanup: () => void | Promise<void>;
-  lastGatewayHeartbeatAt: Date | undefined;
+  pendingHeartbeats: number;
 }
 
 class WebSocketWorkerConnection implements WorkerConnection {
@@ -95,10 +99,17 @@ class WebSocketWorkerConnection implements WorkerConnection {
    */
   private currentConnection: connection | undefined;
 
-  /**
-   * A wait group to track in-flight requests.
-   */
-  private inProgressRequests = new WaitGroup();
+  private inProgressRequests: {
+    /**
+     * A wait group to track in-flight requests.
+     */
+    wg: WaitGroup;
+
+    requestLeases: Record<string, string>;
+  } = {
+    wg: new WaitGroup(),
+    requestLeases: {},
+  };
 
   /**
    * The buffer of messages to be sent to the gateway.
@@ -224,7 +235,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this.debug("Waiting for in-flight requests to complete");
 
-    await this.inProgressRequests.wait();
+    await this.inProgressRequests.wg.wait();
 
     this.debug("Flushing messages before closing");
 
@@ -609,20 +620,19 @@ class WebSocketWorkerConnection implements WorkerConnection {
     attempt: number,
     path: string[] = []
   ): Promise<{ cleanup: () => void }> {
-    const connectionId = ulid();
-    path.push(connectionId);
-
     let closed = false;
 
     this.debug("Preparing connection", {
       attempt,
-      connectionId,
       path,
     });
 
     const startedAt = new Date();
 
     const startResp = await this.sendStartRequest(hashedSigningKey, attempt);
+
+    const connectionId = startResp.connectionId;
+    path.push(connectionId);
 
     let resolveWebsocketConnected:
       | ((value: void | PromiseLike<void>) => void)
@@ -688,7 +698,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
         // Make sure to close the WebSocket if it's still open
         ws.onerror = () => {};
         ws.onclose = () => {};
-        ws.close();
+        ws.close(
+          4001, // incomplete setup
+          workerDisconnectReasonToJSON(WorkerDisconnectReason.UNEXPECTED)
+        );
 
         rejectWebsocketConnected?.(
           new ReconnectError(
@@ -719,6 +732,9 @@ class WebSocketWorkerConnection implements WorkerConnection {
       sentWorkerConnect: false,
       receivedConnectionReady: false,
     };
+
+    let heartbeatIntervalMs: number | undefined;
+    let extendLeaseIntervalMs: number | undefined;
 
     ws.onmessage = async (event) => {
       const messageBytes = new Uint8Array(event.data as ArrayBuffer);
@@ -801,7 +817,22 @@ class WebSocketWorkerConnection implements WorkerConnection {
           return;
         }
 
+        const readyPayload = GatewayConnectionReadyData.decode(
+          connectMessage.payload
+        );
+
         setupState.receivedConnectionReady = true;
+
+        // The intervals should be supplied by the gateway, but we should fall back just in case
+        heartbeatIntervalMs =
+          readyPayload.heartbeatInterval.length > 0
+            ? ms(readyPayload.heartbeatInterval)
+            : 10_000;
+        extendLeaseIntervalMs =
+          readyPayload.extendLeaseInterval.length > 0
+            ? ms(readyPayload.extendLeaseInterval)
+            : 5_000;
+
         resolveWebsocketConnected?.();
         return;
       }
@@ -837,7 +868,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         ws.onclose = () => {};
         ws.close();
       },
-      lastGatewayHeartbeatAt: undefined,
+      pendingHeartbeats: 0,
     };
     this.currentConnection = conn;
 
@@ -933,7 +964,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_HEARTBEAT) {
-        conn.lastGatewayHeartbeatAt = new Date();
+        conn.pendingHeartbeats = 0;
         this.debug("Handled gateway heartbeat", {
           connectionId,
         });
@@ -1010,8 +1041,58 @@ class WebSocketWorkerConnection implements WorkerConnection {
           ).finish()
         );
 
-        this.inProgressRequests.add(1);
+        this.inProgressRequests.wg.add(1);
+        this.inProgressRequests.requestLeases[
+          gatewayExecutorRequest.requestId
+        ] = gatewayExecutorRequest.leaseId;
+
+        let extendLeaseInterval: NodeJS.Timeout | undefined;
         try {
+          extendLeaseInterval = setInterval(() => {
+            if (extendLeaseIntervalMs === undefined) {
+              return;
+            }
+
+            // Only extend lease if it's still set on the request
+            const currentLeaseId =
+              this.inProgressRequests.requestLeases[
+                gatewayExecutorRequest.requestId
+              ];
+            if (!currentLeaseId) {
+              clearInterval(extendLeaseInterval);
+              return;
+            }
+
+            this.debug("extending lease", {
+              connectionId,
+              leaseId: currentLeaseId,
+            });
+
+            // Send extend lease request
+            ws.send(
+              ConnectMessage.encode(
+                ConnectMessage.create({
+                  kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+                  payload: WorkerRequestExtendLeaseData.encode(
+                    WorkerRequestExtendLeaseData.create({
+                      accountId: gatewayExecutorRequest.accountId,
+                      envId: gatewayExecutorRequest.envId,
+                      appId: gatewayExecutorRequest.appId,
+                      functionSlug: gatewayExecutorRequest.functionSlug,
+                      requestId: gatewayExecutorRequest.requestId,
+                      stepId: gatewayExecutorRequest.stepId,
+                      runId: gatewayExecutorRequest.runId,
+                      userTraceCtx: gatewayExecutorRequest.userTraceCtx,
+                      systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
+
+                      leaseId: currentLeaseId,
+                    })
+                  ).finish(),
+                })
+              ).finish()
+            );
+          }, extendLeaseIntervalMs);
+
           const res = await requestHandler(gatewayExecutorRequest);
 
           this.debug("Sending worker reply", {
@@ -1040,7 +1121,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
             ).finish()
           );
         } finally {
-          this.inProgressRequests.done();
+          this.inProgressRequests.wg.done();
+          delete this.inProgressRequests.requestLeases[
+            gatewayExecutorRequest.requestId
+          ];
+          clearInterval(extendLeaseInterval);
         }
 
         return;
@@ -1059,6 +1144,35 @@ class WebSocketWorkerConnection implements WorkerConnection {
         return;
       }
 
+      if (
+        connectMessage.kind ===
+        GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE_ACK
+      ) {
+        const extendLeaseAck = WorkerRequestExtendLeaseAckData.decode(
+          connectMessage.payload
+        );
+
+        this.debug("received extend lease ack", {
+          connectionId,
+          newLeaseId: extendLeaseAck.newLeaseId,
+        });
+
+        if (extendLeaseAck.newLeaseId) {
+          this.inProgressRequests.requestLeases[extendLeaseAck.requestId] =
+            extendLeaseAck.newLeaseId;
+        } else {
+          this.debug("unable to extend lease", {
+            connectionId,
+            requestId: extendLeaseAck.requestId,
+          });
+          delete this.inProgressRequests.requestLeases[
+            extendLeaseAck.requestId
+          ];
+        }
+
+        return;
+      }
+
       this.debug("Unexpected message type", {
         kind: gatewayMessageTypeToJSON(connectMessage.kind),
         rawKind: connectMessage.kind,
@@ -1069,49 +1183,40 @@ class WebSocketWorkerConnection implements WorkerConnection {
       });
     };
 
-    const heartbeatInterval = setInterval(() => {
-      this.debug("Sending worker heartbeat", {
-        connectionId,
-      });
-
-      // Send worker heartbeat
-      ws.send(
-        ConnectMessage.encode(
-          ConnectMessage.create({
-            kind: GatewayMessageType.WORKER_HEARTBEAT,
-          })
-        ).finish()
-      );
-
-      // Wait for gateway to respond
-      setTimeout(() => {
-        if (!conn.lastGatewayHeartbeatAt) {
-          this.debug("Gateway heartbeat missed");
-          void onConnectionError(
-            new ReconnectError(
-              `Gateway heartbeat missed (${connectionId})`,
-              attempt
-            )
-          );
+    let heartbeatInterval = undefined;
+    if (heartbeatIntervalMs !== undefined) {
+      heartbeatInterval = setInterval(() => {
+        if (heartbeatIntervalMs === undefined) {
           return;
         }
-        const timeSinceLastHeartbeat =
-          new Date().getTime() - conn.lastGatewayHeartbeatAt.getTime();
-        if (timeSinceLastHeartbeat > WorkerHeartbeatInterval * 2) {
+
+        // Check if we've missed 2 consecutive heartbeats
+        if (conn.pendingHeartbeats >= 2) {
           this.debug("Gateway heartbeat missed");
           void onConnectionError(
             new ReconnectError(
-              `Gateway heartbeat missed (${connectionId})`,
+              `Consecutive gateway heartbeats missed (${connectionId})`,
               attempt
             )
           );
           return;
         }
 
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
-        this.messageBuffer.flush(hashedSigningKey);
-      }, WorkerHeartbeatInterval / 2);
-    }, WorkerHeartbeatInterval);
+        this.debug("Sending worker heartbeat", {
+          connectionId,
+        });
+
+        // Send worker heartbeat
+        conn.pendingHeartbeats++;
+        ws.send(
+          ConnectMessage.encode(
+            ConnectMessage.create({
+              kind: GatewayMessageType.WORKER_HEARTBEAT,
+            })
+          ).finish()
+        );
+      }, heartbeatIntervalMs);
+    }
 
     conn.cleanup = () => {
       this.debug("Cleaning up worker heartbeat", {
@@ -1140,7 +1245,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
       this.debug("Closing connection", { connectionId });
       ws.onerror = () => {};
       ws.onclose = () => {};
-      ws.close();
+      ws.close(
+        1000,
+        workerDisconnectReasonToJSON(WorkerDisconnectReason.WORKER_SHUTDOWN)
+      );
 
       if (this.currentConnection?.id === connectionId) {
         this.currentConnection = undefined;
