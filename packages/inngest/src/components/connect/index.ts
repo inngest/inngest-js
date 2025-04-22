@@ -823,8 +823,15 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
         setupState.receivedConnectionReady = true;
 
-        heartbeatIntervalMs = ms(readyPayload.heartbeatInterval);
-        extendLeaseIntervalMs = ms(readyPayload.extendLeaseInterval);
+        // The intervals should be supplied by the gateway, but we should fall back just in case
+        heartbeatIntervalMs =
+          readyPayload.heartbeatInterval.length > 0
+            ? ms(readyPayload.heartbeatInterval)
+            : 10_000;
+        extendLeaseIntervalMs =
+          readyPayload.extendLeaseInterval.length > 0
+            ? ms(readyPayload.extendLeaseInterval)
+            : 5_000;
 
         resolveWebsocketConnected?.();
         return;
