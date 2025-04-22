@@ -1,5 +1,11 @@
 # inngest
 
+## 3.35.1
+
+### Patch Changes
+
+- [#950](https://github.com/inngest/inngest-js/pull/950) [`0099c56`](https://github.com/inngest/inngest-js/commit/0099c562c54d44d476800af74c7cae775aaa1cdc) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Connect: Reliability improvements
+
 ## 3.35.0
 
 ### Minor Changes
