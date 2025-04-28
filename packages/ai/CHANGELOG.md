@@ -1,5 +1,14 @@
 # @inngest/ai
 
+## 0.1.4
+
+### Patch Changes
+
+- [#962](https://github.com/inngest/inngest-js/pull/962) [`ef50e59`](https://github.com/inngest/inngest-js/commit/ef50e59de229f2e9b0748272f3caf8934a7fbd88) Thanks [@jonmagic](https://github.com/jonmagic)! - Add new GPT-4.1 models:
+
+  - `gpt-4.1`
+  - `gpt-4.1-mini`
+
 ## 0.1.3
 
 ### Patch Changes

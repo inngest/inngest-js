@@ -1,5 +1,19 @@
 # @inngest/realtime
 
+## 0.3.1
+
+### Patch Changes
+
+- [#960](https://github.com/inngest/inngest-js/pull/960) [`fc966ca`](https://github.com/inngest/inngest-js/commit/fc966ca94f699d6534f2fc5c85bbcf5be3c6795a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix requiring signing key for dev in `@inngest/realtime`
+
+- [#965](https://github.com/inngest/inngest-js/pull/965) [`e55d93e`](https://github.com/inngest/inngest-js/commit/e55d93ef481010e677623978ec89e918fcdd606e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix throw of `TypeError: Failed to execute 'cancel' on 'ReadableStream': Cannot cancel a locked stream` when unmounting or cancelling a stream utilizing the callback feature
+
+- [#964](https://github.com/inngest/inngest-js/pull/964) [`e674884`](https://github.com/inngest/inngest-js/commit/e67488412e4d052ce161f6d5ea719db6786880de) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix fanout writers throwing during some closures
+
+- [#959](https://github.com/inngest/inngest-js/pull/959) [`50d627e`](https://github.com/inngest/inngest-js/commit/50d627ecdc2fc28ebca046e3a4ab9980f1714132) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix being unable to access environment variables in some bundled environments
+
+- [#960](https://github.com/inngest/inngest-js/pull/960) [`fc966ca`](https://github.com/inngest/inngest-js/commit/fc966ca94f699d6534f2fc5c85bbcf5be3c6795a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix debug log incorrectly displaying topics we're subscribing to
+
 ## 0.3.0
 
 ### Minor Changes
