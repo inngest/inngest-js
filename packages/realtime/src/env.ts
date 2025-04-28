@@ -27,7 +27,7 @@ export type ExpectedEnv = {
  */
 const env: ExpectedEnv | undefined = (() => {
   try {
-    // Nodeish
+    // Nodeish, including Vite
     if (process.env) {
       return {
         INNGEST_DEV:
@@ -107,50 +107,6 @@ const env: ExpectedEnv | undefined = (() => {
   } catch {
     // noop
   }
-
-  // Vite
-  try {
-    // @ts-expect-error Accessing import.meta intentional here
-    if (import.meta.env) {
-      return {
-        INNGEST_DEV:
-          // @ts-expect-error Accessing import.meta intentional here
-          import.meta.env.INNGEST_DEV ??
-          // @ts-expect-error Accessing import.meta intentional here
-          import.meta.env.VITE_INNGEST_DEV,
-
-        NODE_ENV:
-          // @ts-expect-error Accessing import.meta intentional here
-          import.meta.env.NODE_ENV ??
-          // @ts-expect-error Accessing import.meta intentional here
-          import.meta.env.VITE_NODE_ENV ??
-          // @ts-expect-error Accessing import.meta intentional here
-          import.meta.env.VITE_MODE,
-
-        INNGEST_BASE_URL:
-          // @ts-expect-error Accessing import.meta intentional here
-          import.meta.env.INNGEST_BASE_URL ??
-          // @ts-expect-error Accessing import.meta intentional here
-          import.meta.env.VITE_INNGEST_BASE_URL,
-
-        INNGEST_API_BASE_URL:
-          // @ts-expect-error Accessing import.meta intentional here
-          import.meta.env.INNGEST_API_BASE_URL ??
-          // @ts-expect-error Accessing import.meta intentional here
-          import.meta.env.VITE_INNGEST_API_BASE_URL,
-
-        // @ts-expect-error Accessing import.meta intentional here
-        INNGEST_SIGNING_KEY: import.meta.env.INNGEST_SIGNING_KEY,
-        // @ts-expect-error Accessing import.meta intentional here
-        INNGEST_SIGNING_KEY_FALLBACK: import.meta.env
-          .INNGEST_SIGNING_KEY_FALLBACK,
-      };
-    }
-  } catch {
-    // noop
-  }
-
-  return;
 })();
 
 /**
