@@ -109,7 +109,7 @@ export class TokenSubscription {
     this.#debug(
       `Establishing connection to channel "${
         this.#channelId
-      }" with topics ${JSON.stringify(this.#topics)}...`,
+      }" with topics ${JSON.stringify([...this.#topics.keys()])}...`,
     );
 
     if (typeof WebSocket === "undefined") {
@@ -121,12 +121,6 @@ export class TokenSubscription {
       this.#debug(
         "No subscription token key passed; attempting to retrieve one automatically...",
       );
-
-      if (!this.#signingKey) {
-        throw new Error(
-          "No subscription token key passed but have no signing key so cannot retrieve one",
-        );
-      }
 
       key = (
         await this.lazilyGetSubscriptionToken({
@@ -439,12 +433,12 @@ export class TokenSubscription {
       /**
        * TODO
        */
-      signingKey: string;
+      signingKey: string | undefined;
 
       /**
        * TODO
        */
-      signingKeyFallback?: string | undefined;
+      signingKeyFallback: string | undefined;
     },
   ): Promise<TToken> {
     const channelId =
