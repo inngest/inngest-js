@@ -31,7 +31,7 @@ export class StreamFanout<TInput = unknown> {
 
     // Eagerly remove the writer is the stream is closed
     writer.closed
-      .catch(() => {}) // suppress unhandledpromiserejection fun
+      .catch(() => {}) // Suppress unhandled promise rejection to avoid noisy logs
       .finally(() => {
         this.#writers.delete(writer);
       });
