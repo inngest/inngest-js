@@ -145,9 +145,6 @@ importers:
       temporal-polyfill:
         specifier: ^0.2.5
         version: 0.2.5
-      ulidx:
-        specifier: ^2.4.1
-        version: 2.4.1
       zod:
         specifier: ~3.22.3
         version: 3.22.3
