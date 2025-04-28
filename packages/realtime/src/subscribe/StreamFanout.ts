@@ -61,7 +61,13 @@ export class StreamFanout<TInput = unknown> {
    */
   close() {
     for (const writer of this.#writers) {
-      writer.close();
+      try {
+        writer.close();
+      } catch {
+        // Ignore errors, as we are closing the stream and the writer may
+        // already be closed, especially if the stream is closed before the
+        // writer is closed or if the stream is cancelled.
+      }
     }
 
     this.#writers.clear();
