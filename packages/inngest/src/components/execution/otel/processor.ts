@@ -81,6 +81,15 @@ export class InngestSpanProcessor implements SpanProcessor {
    * TODO
    */
   public declareStartingSpan(traceparent: string, span: Span): void {
+    // Upsert the batcher ready for later. We do this here to bootstrap it with
+    // the correct async context as soon as we can. As this method is only
+    // called just before execution, we know we're all set up.
+    //
+    // Waiting to call this until we actually need the batcher would mean that
+    // we might not have the correct async context set up, as we'd likely be in
+    // some span lifecycle method that doesn't have the same chain of execution.
+    void this.ensureBatcherInitialized();
+
     // This is a span that we care about, so let's make sure it and its
     // children are exported.
     processorDebug.extend("declareStartingSpan")(
@@ -122,7 +131,7 @@ export class InngestSpanProcessor implements SpanProcessor {
    * The batcher is only referenced once we've found a span we're interested in,
    * so this should always have everything it needs on the app by then.
    */
-  private getBatcher(): Promise<BatchSpanProcessor> {
+  private ensureBatcherInitialized(): Promise<BatchSpanProcessor> {
     if (!this.#batcher) {
       // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
       this.#batcher = new Promise(async (resolve, reject) => {
@@ -238,8 +247,15 @@ export class InngestSpanProcessor implements SpanProcessor {
 
     try {
       if (this.#spansToExport.has(span as unknown as Span)) {
+        if (!this.#batcher) {
+          return debug(
+            "batcher not initialized, so failed exporting span",
+            spanId
+          );
+        }
+
         debug("exporting span", spanId);
-        return void this.getBatcher().then((batcher) => batcher.onEnd(span));
+        return void this.#batcher?.then((batcher) => batcher.onEnd(span));
       }
 
       debug("not exporting span", spanId, "as we don't care about it");
@@ -251,15 +267,13 @@ export class InngestSpanProcessor implements SpanProcessor {
   async forceFlush(): Promise<void> {
     processorDebug.extend("forceFlush")("force flushing batcher");
 
-    const batcher = await this.getBatcher();
-    return batcher.forceFlush();
+    return this.#batcher?.then((batcher) => batcher.forceFlush());
   }
 
   async shutdown(): Promise<void> {
     processorDebug.extend("shutdown")("shutting down batcher");
 
-    const batcher = await this.getBatcher();
-    return batcher.shutdown();
+    return this.#batcher?.then((batcher) => batcher.shutdown());
   }
 }
 
