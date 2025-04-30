@@ -34,10 +34,10 @@
       "import": "./strategies/aes.js",
       "types": "./strategies/aes.d.ts"
     },
-    "./strategies/libsodium": {
-      "require": "./strategies/libsodium.js",
-      "import": "./strategies/libsodium.js",
-      "types": "./strategies/libsodium.d.ts"
+    "./strategies/libSodium": {
+      "require": "./strategies/libSodium.js",
+      "import": "./strategies/libSodium.js",
+      "types": "./strategies/libSodium.d.ts"
     }
   },
   "keywords": [
