@@ -265,10 +265,14 @@ export class InngestSpanProcessor implements SpanProcessor {
   }
 
   async forceFlush(): Promise<void> {
-    //
     // TODO: disabled for now as it's contributing to incorrect traces
-    // processorDebug.extend("forceFlush")("force flushing batcher");
-    // return this.#batcher?.then((batcher) => batcher.forceFlush());
+    // const flushDebug = processorDebug.extend("forceFlush");
+    // flushDebug("force flushing batcher");
+    // return this.#batcher
+    //   ?.then((batcher) => batcher.forceFlush())
+    //   .catch((err) => {
+    //     flushDebug("error flushing batcher", err, "ignoring");
+    //   });
   }
 
   async shutdown(): Promise<void> {
