@@ -1,17 +1,27 @@
-import { trace } from "@opentelemetry/api";
+import { diag, DiagLogLevel, trace, type DiagLogger } from "@opentelemetry/api";
 import Debug from "debug";
 import { version } from "../../../version.js";
 import { InngestMiddleware } from "../../InngestMiddleware.js";
 import { clientProcessorMap } from "./access.js";
 import { type InngestSpanProcessor } from "./processor.js";
 import {
-  type Behaviour,
   createProvider,
   extendProvider,
+  type Behaviour,
   type Instrumentations,
 } from "./util.js";
 
 const debug = Debug("inngest:otel:middleware");
+
+class InngestOtelDiagLogger implements DiagLogger {
+  #logger = Debug("inngest:otel:diag");
+
+  debug = this.#logger;
+  error = this.#logger;
+  info = this.#logger;
+  verbose = this.#logger;
+  warn = this.#logger;
+}
 
 /**
  * TODO
@@ -26,6 +36,11 @@ export interface OTelMiddlewareOptions {
    * TODO
    */
   instrumentations?: Instrumentations;
+
+  /**
+   * TODO
+   */
+  logLevel?: DiagLogLevel;
 }
 
 /**
@@ -35,6 +50,7 @@ export interface OTelMiddlewareOptions {
 export const otelMiddleware = ({
   behaviour = "auto",
   instrumentations,
+  logLevel = DiagLogLevel.VERBOSE, // TODO make the default ERROR
 }: OTelMiddlewareOptions = {}) => {
   debug("behaviour:", behaviour);
 
@@ -100,6 +116,16 @@ export const otelMiddleware = ({
   return new InngestMiddleware({
     name: "Inngest: OTel",
     init({ client }) {
+      // Set the logger for our otel processors and exporters.
+      // If this is called multiple times (for example by the user in some other
+      // custom code), then only the first call is set, so we don't have to
+      // worry about overwriting it here accidentally.
+      //
+      debug(
+        "set otel diagLogger:",
+        diag.setLogger(new InngestOtelDiagLogger(), logLevel)
+      );
+
       if (processor) {
         clientProcessorMap.set(client, processor);
       }
