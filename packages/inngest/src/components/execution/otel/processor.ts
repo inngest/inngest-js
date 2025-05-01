@@ -255,7 +255,7 @@ export class InngestSpanProcessor implements SpanProcessor {
         }
 
         debug("exporting span", spanId);
-        return void this.#batcher?.then((batcher) => batcher.onEnd(span));
+        return void this.#batcher.then((batcher) => batcher.onEnd(span));
       }
 
       debug("not exporting span", spanId, "as we don't care about it");
