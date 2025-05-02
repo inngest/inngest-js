@@ -63,7 +63,7 @@ export class InngestSpanProcessor implements SpanProcessor {
   /**
    * TODO
    */
-  #traceParents = new Map<string, string>();
+  #traceParents = new Map<string, { traceparent: string; runId: string }>();
 
   /**
    * A registry used to clean up items from the `traceParents` map when spans
@@ -80,7 +80,11 @@ export class InngestSpanProcessor implements SpanProcessor {
   /**
    * TODO
    */
-  public declareStartingSpan(traceparent: string, span: Span): void {
+  public declareStartingSpan(
+    traceparent: string,
+    runId: string,
+    span: Span
+  ): void {
     // Upsert the batcher ready for later. We do this here to bootstrap it with
     // the correct async context as soon as we can. As this method is only
     // called just before execution, we know we're all set up.
@@ -100,7 +104,7 @@ export class InngestSpanProcessor implements SpanProcessor {
     );
 
     span.setAttributes(InngestSpanProcessor.resourceAttributes.attributes);
-    this.trackSpan(span, traceparent);
+    this.trackSpan(span, runId, traceparent);
   }
 
   /**
@@ -189,13 +193,15 @@ export class InngestSpanProcessor implements SpanProcessor {
     return this.#batcher;
   }
 
-  private trackSpan(span: Span, traceparent: string): void {
+  private trackSpan(span: Span, runId: string, traceparent: string): void {
     const spanId = span.spanContext().spanId;
 
     this.#spanCleanup.register(span, spanId, span);
     this.#spansToExport.add(span);
-    this.#traceParents.set(spanId, traceparent);
+    this.#traceParents.set(spanId, { traceparent, runId });
+
     span.setAttribute("inngest.traceparent", traceparent);
+    span.setAttribute("sdk.run.id", runId);
   }
 
   private cleanupSpan(span: Span): void {
@@ -237,7 +243,7 @@ export class InngestSpanProcessor implements SpanProcessor {
         spanId
       );
 
-      this.trackSpan(span, traceparent);
+      this.trackSpan(span, traceparent.runId, traceparent.traceparent);
     }
   }
 
@@ -265,14 +271,14 @@ export class InngestSpanProcessor implements SpanProcessor {
   }
 
   async forceFlush(): Promise<void> {
-    // TODO: disabled for now as it's contributing to incorrect traces
-    // const flushDebug = processorDebug.extend("forceFlush");
-    // flushDebug("force flushing batcher");
-    // return this.#batcher
-    //   ?.then((batcher) => batcher.forceFlush())
-    //   .catch((err) => {
-    //     flushDebug("error flushing batcher", err, "ignoring");
-    //   });
+    const flushDebug = processorDebug.extend("forceFlush");
+    flushDebug("force flushing batcher");
+
+    return this.#batcher
+      ?.then((batcher) => batcher.forceFlush())
+      .catch((err) => {
+        flushDebug("error flushing batcher", err, "ignoring");
+      });
   }
 
   async shutdown(): Promise<void> {

@@ -114,7 +114,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 // attribute them to
                 clientProcessorMap
                   .get(this.options.client)
-                  ?.declareStartingSpan(traceparent, span);
+                  ?.declareStartingSpan(traceparent, this.options.runId, span);
               }
 
               return this._start()
