@@ -28,6 +28,13 @@ import { clientProcessorMap } from "./access.js";
 const processorDebug = Debug("inngest:otel:InngestSpanProcessor");
 let _resourceAttributes: IResource | undefined;
 
+export type ParentState = {
+  traceparent: string;
+  runId: string;
+  appId: string | undefined;
+  functionId: string | undefined;
+};
+
 /**
  * TODO
  */
@@ -63,7 +70,7 @@ export class InngestSpanProcessor implements SpanProcessor {
   /**
    * TODO
    */
-  #traceParents = new Map<string, { traceparent: string; runId: string }>();
+  #traceParents = new Map<string, ParentState>();
 
   /**
    * A registry used to clean up items from the `traceParents` map when spans
@@ -80,11 +87,7 @@ export class InngestSpanProcessor implements SpanProcessor {
   /**
    * TODO
    */
-  public declareStartingSpan(
-    traceparent: string,
-    runId: string,
-    span: Span
-  ): void {
+  public declareStartingSpan(parentState: ParentState, span: Span): void {
     // Upsert the batcher ready for later. We do this here to bootstrap it with
     // the correct async context as soon as we can. As this method is only
     // called just before execution, we know we're all set up.
@@ -100,11 +103,11 @@ export class InngestSpanProcessor implements SpanProcessor {
       "declaring:",
       span.spanContext().spanId,
       "for traceparent",
-      traceparent
+      parentState.traceparent
     );
 
     span.setAttributes(InngestSpanProcessor.resourceAttributes.attributes);
-    this.trackSpan(span, runId, traceparent);
+    this.trackSpan(parentState, span);
   }
 
   /**
@@ -193,15 +196,24 @@ export class InngestSpanProcessor implements SpanProcessor {
     return this.#batcher;
   }
 
-  private trackSpan(span: Span, runId: string, traceparent: string): void {
+  private trackSpan(parentState: ParentState, span: Span): void {
     const spanId = span.spanContext().spanId;
 
     this.#spanCleanup.register(span, spanId, span);
     this.#spansToExport.add(span);
-    this.#traceParents.set(spanId, { traceparent, runId });
+    this.#traceParents.set(spanId, parentState);
 
-    span.setAttribute("inngest.traceparent", traceparent);
-    span.setAttribute("sdk.run.id", runId);
+    span.setAttribute("inngest.traceparent", parentState.traceparent);
+    span.setAttribute("sdk.run.id", parentState.runId);
+
+    if (parentState.appId) {
+      span.setAttribute("sdk.app.id", parentState.appId);
+      span.setAttribute("sys.app.id", parentState.appId);
+    }
+
+    if (parentState.functionId) {
+      span.setAttribute("sys.function.id", parentState.functionId);
+    }
   }
 
   private cleanupSpan(span: Span): void {
@@ -230,20 +242,20 @@ export class InngestSpanProcessor implements SpanProcessor {
       return;
     }
 
-    const traceparent = this.#traceParents.get(parentSpanId);
-    if (traceparent) {
+    const parentState = this.#traceParents.get(parentSpanId);
+    if (parentState) {
       // This span is a child of a span we care about, so add it to the list of
       // tracked spans so that we also capture its children
       debug(
         "found traceparent",
-        traceparent,
+        parentState,
         "in span ID",
         parentSpanId,
         "so adding",
         spanId
       );
 
-      this.trackSpan(span, traceparent.runId, traceparent.traceparent);
+      this.trackSpan(parentState, span);
     }
   }
 
