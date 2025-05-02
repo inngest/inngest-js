@@ -26,8 +26,19 @@ import { getAsyncCtx } from "../als.js";
 import { clientProcessorMap } from "./access.js";
 
 const processorDebug = Debug("inngest:otel:InngestSpanProcessor");
+
+/**
+ * A set of resource attributes that are used to identify the Inngest app and
+ *  the function that is being executed. This is used to store the resource
+ * attributes for the spans that are exported to the Inngest endpoint, and cache
+ *  them for later use.
+ */
 let _resourceAttributes: IResource | undefined;
 
+/**
+ * A set of information about an execution that's used to set attributes on
+ * userland spans sent to Inngest for proper indexing.
+ */
 export type ParentState = {
   traceparent: string;
   runId: string;
@@ -36,15 +47,37 @@ export type ParentState = {
 };
 
 /**
- * TODO
+ * An OTel span processor that is used to export spans to the Inngest endpoint.
+ * This is used to track spans that are created within an Inngest run and export
+ * them to the Inngest endpoint for tracing.
+ *
+ * It's careful to only pick relevant spans to export and will not send any
+ * irrelevant spans to the Inngest endpoint.
+ *
+ * THIS IS THE INTERNAL IMPLEMENTATION OF THE SPAN PROCESSOR AND SHOULD NOT BE
+ * USED BY USERS DIRECTLY. USE THE {@link PublicInngestSpanProcessor} CLASS
+ * INSTEAD.
  */
 export class InngestSpanProcessor implements SpanProcessor {
   /**
-   * TODO
+   * An OTel span processor that is used to export spans to the Inngest endpoint.
+   * This is used to track spans that are created within an Inngest run and export
+   * them to the Inngest endpoint for tracing.
+   *
+   * It's careful to only pick relevant spans to export and will not send any
+   * irrelevant spans to the Inngest endpoint.
    */
   constructor(
     /**
-     * TODO
+     * The app that this span processor is associated with. This is used to
+     * determine the Inngest endpoint to export spans to.
+     *
+     * It is optional here as this is the private constructor and only used
+     * internally; we set `app` elsewhere as when we create the processor (as
+     * early as possible when the process starts) we don't necessarily have the
+     * app available yet.
+     *
+     * So, internally we can delay setting ths until later.
      */
     app?: Inngest.Like
   ) {
@@ -54,7 +87,10 @@ export class InngestSpanProcessor implements SpanProcessor {
   }
 
   /**
-   * TODO
+   * A `BatchSpanProcessor` that is used to export spans to the Inngest
+   * endpoint. This is created lazily to avoid creating it until the Inngest App
+   * has been initialized and has had a chance to receive environment variables,
+   * which may be from an incoming request.
    */
   #batcher: Promise<BatchSpanProcessor> | undefined;
 
@@ -68,7 +104,9 @@ export class InngestSpanProcessor implements SpanProcessor {
   #spansToExport = new WeakSet<Span>();
 
   /**
-   * TODO
+   * A map of span IDs to their parent state, which includes a block of
+   * information that can be used and pushed back to the Inngest endpoint to
+   * ingest spans.
    */
   #traceParents = new Map<string, ParentState>();
 
@@ -85,7 +123,12 @@ export class InngestSpanProcessor implements SpanProcessor {
   });
 
   /**
-   * TODO
+   * In order to only capture a subset of spans, we need to declare the initial
+   * span that we care about and then export its children.
+   *
+   * Call this method (ideally just before execution starts) with that initial
+   * span to trigger capturing all following children as well as initialize the
+   * batcher.
    */
   public declareStartingSpan(parentState: ParentState, span: Span): void {
     // Upsert the batcher ready for later. We do this here to bootstrap it with
@@ -111,7 +154,9 @@ export class InngestSpanProcessor implements SpanProcessor {
   }
 
   /**
-   * TODO
+   * A getter for retrieving resource attributes for the current process. This
+   * is used to set the resource attributes for the spans that are exported to
+   * the Inngest endpoint, and cache them for later use.
    */
   static get resourceAttributes(): IResource {
     if (!_resourceAttributes) {
@@ -143,6 +188,8 @@ export class InngestSpanProcessor implements SpanProcessor {
       // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
       this.#batcher = new Promise(async (resolve, reject) => {
         try {
+          // We retrieve the app from the async context, so we must make sure
+          // that this function is called from the correct chain.
           const store = await getAsyncCtx();
           if (!store) {
             throw new Error(
@@ -152,6 +199,7 @@ export class InngestSpanProcessor implements SpanProcessor {
 
           const app = store.app as Inngest.Any;
 
+          // Fetch the URL for the Inngest endpoint using the app's config.
           let url: URL;
           const path = "/v1/traces/userland";
           if (app.apiBaseUrl) {
@@ -196,6 +244,10 @@ export class InngestSpanProcessor implements SpanProcessor {
     return this.#batcher;
   }
 
+  /**
+   * Mark a span as being tracked by this processor, meaning it will be exported
+   * to the Inggest endpoint when it ends.
+   */
   private trackSpan(parentState: ParentState, span: Span): void {
     const spanId = span.spanContext().spanId;
 
@@ -216,6 +268,11 @@ export class InngestSpanProcessor implements SpanProcessor {
     }
   }
 
+  /**
+   * Clean up any references to a span that has ended. This is used to avoid
+   * memory leaks in the case where a span is not exported, remains unended, and
+   * is left in memory before being GC'd.
+   */
   private cleanupSpan(span: Span): void {
     const spanId = span.spanContext().spanId;
 
@@ -226,6 +283,11 @@ export class InngestSpanProcessor implements SpanProcessor {
     this.#traceParents.delete(spanId);
   }
 
+  /**
+   * An implementation of the `onStart` method from the `SpanProcessor`
+   * interface. This is called when a span is started, and is used to track
+   * spans that are children of spans we care about.
+   */
   onStart(span: Span): void {
     const debug = processorDebug.extend("onStart");
     const spanId = span.spanContext().spanId;
@@ -259,6 +321,11 @@ export class InngestSpanProcessor implements SpanProcessor {
     }
   }
 
+  /**
+   * An implementation of the `onEnd` method from the `SpanProcessor` interface.
+   * This is called when a span ends, and is used to export spans to the Inngest
+   * endpoint.
+   */
   onEnd(span: ReadableSpan): void {
     const debug = processorDebug.extend("onEnd");
     const spanId = span.spanContext().spanId;
@@ -282,6 +349,16 @@ export class InngestSpanProcessor implements SpanProcessor {
     }
   }
 
+  /**
+   * An implementation of the `forceFlush` method from the `SpanProcessor`
+   * interface. This is called to force the processor to flush any spans that
+   * are currently in the batcher. This is used to ensure that spans are
+   * exported to the Inngest endpoint before the process exits.
+   *
+   * Notably, we call this in the `beforeResponse` middleware hook to ensure
+   * that spans for a run as exported as soon as possible and before the
+   * serverless process is killed.
+   */
   async forceFlush(): Promise<void> {
     const flushDebug = processorDebug.extend("forceFlush");
     flushDebug("force flushing batcher");
@@ -301,12 +378,18 @@ export class InngestSpanProcessor implements SpanProcessor {
 }
 
 /**
- * TODO
+ * An OTel span processor that is used to export spans to the Inngest endpoint.
+ * This is used to track spans that are created within an Inngest run and export
+ * them to the Inngest endpoint for tracing.
+ *
+ * It's careful to only pick relevant spans to export and will not send any
+ * irrelevant spans to the Inngest endpoint.
  */
 export class PublicInngestSpanProcessor extends InngestSpanProcessor {
   constructor(
     /**
-     * TODO
+     * The app that this span processor is associated with. This is used to
+     * determine the Inngest endpoint to export spans to.
      */
     app: Inngest.Like
   ) {

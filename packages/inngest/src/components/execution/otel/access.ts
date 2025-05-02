@@ -8,7 +8,10 @@ import { type Inngest } from "../../Inngest.js";
 import { type InngestSpanProcessor } from "./processor.js";
 
 /**
- * TODO
+ * A map of Inngest clients to their OTel span processors. This is used to
+ * ensure that we only create one span processor per client, and that we can
+ * access the span processor from the client without exposing the OTel
+ * libraries to the user.
  */
 export const clientProcessorMap = new WeakMap<
   Inngest.Any,

@@ -24,33 +24,52 @@ class InngestOtelDiagLogger implements DiagLogger {
 }
 
 /**
- * TODO
+ * A set of options for the OTel middleware.
  */
 export interface OTelMiddlewareOptions {
   /**
-   * TODO
+   * The behaviour of the OTel middleware. This controls whether the
+   * middleware will create a new OTel provider, extend an existing one, or
+   * do nothing. The default is "auto", which will attempt to extend an
+   * existing provider, and if that fails, create a new one.
+   *
+   * - `"auto"`: Attempt to extend an existing provider, and if that fails,
+   *   create a new one.
+   * - `"createProvider"`: Create a new OTel provider.
+   * - `"extendProvider"`: Attempt to extend an existing provider.
+   * - `"off"`: Do nothing.
    */
   behaviour?: Behaviour;
 
   /**
-   * TODO
+   * Add additional instrumentations to the OTel provider.
+   *
+   * Note that these only apply if the provider is created by the middleware;
+   * extending an existing provider cannot add instrumentations and it instead
+   * must be done wherever the provider is created.
    */
   instrumentations?: Instrumentations;
 
   /**
-   * TODO
+   * The log level for the OTel middleware, specifially a diagnostic logger
+   * attached to the global OTel provider.
+   *
+   * Defaults to `DiagLogLevel.ERROR`.
    */
   logLevel?: DiagLogLevel;
 }
 
 /**
- * TODO
+ * Middleware the captures and exports spans relevant to Inngest runs using
+ * OTel.
+ *
+ * This can be used to attach additional spans and data to the existing traces
+ * in your Inngest dashboard (or Dev Server).
  */
-// TODO Ugh need an onClose hook to shutdown lol
 export const otelMiddleware = ({
   behaviour = "auto",
   instrumentations,
-  logLevel = DiagLogLevel.VERBOSE, // TODO make the default ERROR
+  logLevel = DiagLogLevel.ERROR,
 }: OTelMiddlewareOptions = {}) => {
   debug("behaviour:", behaviour);
 
@@ -137,7 +156,12 @@ export const otelMiddleware = ({
               return {
                 ctx: {
                   /**
-                   * TODO
+                   * A tracer that can be used to create spans within a step
+                   * that will be displayed on the Inngest dashboard (or Dev
+                   * Server).
+                   *
+                   * Note that creating spans outside of steps when the function
+                   * contains `step.*()` calls is not currently supported.
                    */
                   tracer: trace.getTracer("inngest", version),
                 },
