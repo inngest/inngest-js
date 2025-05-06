@@ -1,3 +1,5 @@
 export type Hello = {
-  data: {};
+  data: {
+    [key: string]: any;
+  };
 };
