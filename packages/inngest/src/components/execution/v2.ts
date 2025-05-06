@@ -106,38 +106,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           { app: this.options.client, ctx: this.fnArg },
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
-              // TODO We should set lots of attributes here
-              const traceparent = this.options.headers[headerKeys.TraceParent];
-              if (traceparent) {
-                let appId: string | undefined;
-                let functionId: string | undefined;
-
-                const tracestate = this.options.headers[headerKeys.TraceState];
-                if (tracestate) {
-                  const entries = Object.fromEntries(
-                    tracestate
-                      .split(",")
-                      .map((kv) => kv.split("=") as [string, string])
-                  );
-
-                  appId = entries["inngest@app"] as string;
-                  functionId = entries["inngest@fn"] as string;
-                }
-
-                // Only start capturing these spans if we have a traceparent to
-                // attribute them to
-                clientProcessorMap
-                  .get(this.options.client)
-                  ?.declareStartingSpan(
-                    {
-                      appId,
-                      functionId,
-                      runId: this.options.runId,
-                      traceparent,
-                    },
-                    span
-                  );
-              }
+              clientProcessorMap.get(this.options.client)?.declareStartingSpan({
+                span,
+                runId: this.options.runId,
+                traceparent: this.options.headers[headerKeys.TraceParent],
+                tracestate: this.options.headers[headerKeys.TraceState],
+              });
 
               return this._start()
                 .then((result) => {

@@ -1,13 +1,13 @@
 import { type Span } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import {
-  type IResource,
   detectResourcesSync,
   envDetectorSync,
   hostDetectorSync,
   osDetectorSync,
   processDetectorSync,
   serviceInstanceIdDetectorSync,
+  type IResource,
 } from "@opentelemetry/resources";
 import {
   BatchSpanProcessor,
@@ -24,8 +24,9 @@ import { devServerHost } from "../../../helpers/env.js";
 import { type Inngest } from "../../Inngest.js";
 import { getAsyncCtx } from "../als.js";
 import { clientProcessorMap } from "./access.js";
+import { Attribute, debugPrefix, TraceStateKey } from "./consts.js";
 
-const processorDebug = Debug("inngest:otel:InngestSpanProcessor");
+const processorDebug = Debug(`${debugPrefix}:InngestSpanProcessor`);
 
 /**
  * A set of resource attributes that are used to identify the Inngest app and
@@ -130,7 +131,17 @@ export class InngestSpanProcessor implements SpanProcessor {
    * span to trigger capturing all following children as well as initialize the
    * batcher.
    */
-  public declareStartingSpan(parentState: ParentState, span: Span): void {
+  public declareStartingSpan({
+    span,
+    runId,
+    traceparent,
+    tracestate,
+  }: {
+    span: Span;
+    runId: string;
+    traceparent: string | undefined;
+    tracestate: string | undefined;
+  }): void {
     // Upsert the batcher ready for later. We do this here to bootstrap it with
     // the correct async context as soon as we can. As this method is only
     // called just before execution, we know we're all set up.
@@ -140,17 +151,62 @@ export class InngestSpanProcessor implements SpanProcessor {
     // some span lifecycle method that doesn't have the same chain of execution.
     void this.ensureBatcherInitialized();
 
+    // If we don't have a traceparent, then we can't track this span. This is
+    // likely a span that we don't care about, so we can ignore it.
+    if (!traceparent) {
+      return processorDebug(
+        "no traceparent found for span",
+        span.spanContext().spanId,
+        "so skipping it"
+      );
+    }
+
+    // We also attempt to use `tracestate`. The values we fetch from these
+    // should be optional, as it's likely the Executor won't need us to parrot
+    // them back in later versions.
+    let appId: string | undefined;
+    let functionId: string | undefined;
+
+    if (tracestate) {
+      try {
+        const entries = Object.fromEntries(
+          tracestate.split(",").map((kv) => kv.split("=") as [string, string])
+        );
+
+        appId = entries[TraceStateKey.AppId];
+        functionId = entries[TraceStateKey.FunctionId];
+      } catch (err) {
+        processorDebug(
+          "failed to parse tracestate",
+          tracestate,
+          "so skipping it;",
+          err
+        );
+      }
+    }
+
     // This is a span that we care about, so let's make sure it and its
     // children are exported.
     processorDebug.extend("declareStartingSpan")(
       "declaring:",
       span.spanContext().spanId,
       "for traceparent",
-      parentState.traceparent
+      traceparent
     );
 
+    // Set a load of attributes on this span so that we can nicely identify
+    // runtime, paths, etc. Only this span will have these attributes.
     span.setAttributes(InngestSpanProcessor.resourceAttributes.attributes);
-    this.trackSpan(parentState, span);
+
+    this.trackSpan(
+      {
+        appId,
+        functionId,
+        runId,
+        traceparent,
+      },
+      span
+    );
   }
 
   /**
@@ -255,16 +311,20 @@ export class InngestSpanProcessor implements SpanProcessor {
     this.#spansToExport.add(span);
     this.#traceParents.set(spanId, parentState);
 
-    span.setAttribute("inngest.traceparent", parentState.traceparent);
-    span.setAttribute("sdk.run.id", parentState.runId);
+    span.setAttribute(Attribute.InngestTraceparent, parentState.traceparent);
+    span.setAttribute(Attribute.InngestRunId, parentState.runId);
 
+    // Setting app ID is optional; it's likely in future versions of the
+    // Executor that we don't need to parrot this back.
     if (parentState.appId) {
-      span.setAttribute("sdk.app.id", parentState.appId);
-      span.setAttribute("sys.app.id", parentState.appId);
+      span.setAttribute(Attribute.InngestAppId1, parentState.appId);
+      span.setAttribute(Attribute.InngestAppId2, parentState.appId);
     }
 
+    // Setting function ID is optional; it's likely in future versions of the
+    // Executor that we don't need to parrot this back.
     if (parentState.functionId) {
-      span.setAttribute("sys.function.id", parentState.functionId);
+      span.setAttribute(Attribute.InngestFunctionId, parentState.functionId);
     }
   }
 

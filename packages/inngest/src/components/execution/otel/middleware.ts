@@ -3,6 +3,7 @@ import Debug from "debug";
 import { version } from "../../../version.js";
 import { InngestMiddleware } from "../../InngestMiddleware.js";
 import { clientProcessorMap } from "./access.js";
+import { debugPrefix } from "./consts.js";
 import { type InngestSpanProcessor } from "./processor.js";
 import {
   createProvider,
@@ -11,10 +12,10 @@ import {
   type Instrumentations,
 } from "./util.js";
 
-const debug = Debug("inngest:otel:middleware");
+const debug = Debug(`${debugPrefix}:middleware`);
 
 class InngestOtelDiagLogger implements DiagLogger {
-  #logger = Debug("inngest:otel:diag");
+  #logger = Debug(`${debugPrefix}:diag`);
 
   debug = this.#logger;
   error = this.#logger;
