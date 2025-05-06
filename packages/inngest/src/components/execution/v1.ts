@@ -1,6 +1,7 @@
+import { trace } from "@opentelemetry/api";
 import { sha1 } from "hash.js";
 import { z } from "zod";
-import { internalEvents } from "../../helpers/consts.js";
+import { headerKeys, internalEvents } from "../../helpers/consts.js";
 import {
   ErrCode,
   deserializeError,
@@ -27,6 +28,7 @@ import {
   type Handler,
   type OutgoingOp,
 } from "../../types.js";
+import { version } from "../../version.js";
 import { type Inngest } from "../Inngest.js";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.js";
 import {
@@ -49,6 +51,7 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.js";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.js";
+import { clientProcessorMap } from "./otel/access.js";
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
@@ -97,13 +100,31 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     if (!this.execution) {
       this.debug("starting V1 execution");
 
+      const tracer = trace.getTracer("inngest", version);
+
       this.execution = getAsyncLocalStorage().then((als) => {
-        return als.run({ ctx: this.fnArg }, async () => {
-          return this._start().then((result) => {
-            this.debug("result:", result);
-            return result;
-          });
-        });
+        return als.run(
+          { app: this.options.client, ctx: this.fnArg },
+          async () => {
+            return tracer.startActiveSpan("inngest.execution", (span) => {
+              clientProcessorMap.get(this.options.client)?.declareStartingSpan({
+                span,
+                runId: this.options.runId,
+                traceparent: this.options.headers[headerKeys.TraceParent],
+                tracestate: this.options.headers[headerKeys.TraceState],
+              });
+
+              return this._start()
+                .then((result) => {
+                  this.debug("result:", result);
+                  return result;
+                })
+                .finally(() => {
+                  span.end();
+                });
+            });
+          }
+        );
       });
     }
 
