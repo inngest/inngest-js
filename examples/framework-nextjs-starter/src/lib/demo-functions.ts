@@ -58,3 +58,35 @@ export const multiStepStreamingFunction = inngest.createFunction(
     return { message: "All steps completed!" };
   }
 );
+
+export const failingFunction = inngest.createFunction(
+  { id: "failing-function", retries: 1 },
+  { event: "demo/failing.function" },
+  async ({ step }) => {
+    // first step sleeps for 5 seconds
+    await step.sleep("wait-5s", "5s");
+
+    // second step fails
+    await step.run("Failing step", async () => {
+      throw new Error("This step always fails!");
+    });
+    return "done";
+  }
+);
+
+export const throttledFunction = inngest.createFunction(
+  {
+    id: "throttled-function",
+    throttle: {
+      limit: 2,
+      period: "2s",
+    },
+  },
+  { event: "demo/throttled.function" },
+  async ({ step }) => {
+    // first step sleeps for 1 second
+    await step.sleep("wait-1s", "1s");
+
+    return "done";
+  }
+);

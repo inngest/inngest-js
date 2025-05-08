@@ -3,10 +3,16 @@ import { inngest } from "../../../lib/inngest";
 import {
   simpleSleepFunction,
   multiStepStreamingFunction,
-} from "../../../lib/demoFunctions";
-import failingFunction from "../../../../inngest/failing-step";
+  failingFunction,
+  throttledFunction,
+} from "../../../lib/demo-functions";
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [simpleSleepFunction, multiStepStreamingFunction, failingFunction],
+  functions: [
+    simpleSleepFunction,
+    multiStepStreamingFunction,
+    failingFunction,
+    throttledFunction,
+  ],
 });

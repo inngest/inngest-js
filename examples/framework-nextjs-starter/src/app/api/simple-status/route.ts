@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const DEV_SERVER_URL =
+const INNGEST_SERVER_URL =
   process.env.INNGEST_DEV_SERVER_URL || "http://127.0.0.1:8288";
 
 async function getRuns(eventId: string) {
-  const response = await fetch(`${DEV_SERVER_URL}/v1/events/${eventId}/runs`, {
-    headers: {
-      Authorization: `Bearer ${process.env.INNGEST_SIGNING_KEY}`,
-    },
-  });
+  const response = await fetch(
+    `${INNGEST_SERVER_URL}/v1/events/${eventId}/runs`,
+    {
+      headers: {
+        Authorization: `Bearer ${process.env.INNGEST_SIGNING_KEY}`,
+      },
+    }
+  );
   const json = await response.json();
   return json.data;
 }

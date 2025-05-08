@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Inngest Tour",
+  title: "Inngest Starter Tour",
   description: "An interactive tour of Inngest features",
 };
 
