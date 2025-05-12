@@ -175,6 +175,8 @@ export type ScheduledTimerEventPayload = Simplify<
  * from SDK step functions.
  */
 export enum StepOpCode {
+  WaitForSignal = "WaitForSignal",
+
   WaitForEvent = "WaitForEvent",
 
   /**
