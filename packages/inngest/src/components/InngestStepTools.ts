@@ -303,14 +303,19 @@ export const createStepTools = <TClient extends Inngest.Any>(
     ),
 
     /**
+     * EXPERIMENTAL: This API is not yet stable and may change in the future
+     * without a major version bump.
+     *
      * Wait for a particular signal to be received before continuing. When the
      * signal is received, its data will be returned.
      */
     waitForSignal: createTool<
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (idOrOptions: StepOptionsOrId, opts: WaitForSignalOpts) => Promise<any>
+      <TData>(
+        idOrOptions: StepOptionsOrId,
+        opts: WaitForSignalOpts
+      ) => Promise<{ signal: string; data: TData } | null>
     >(({ id, name }, opts) => {
-      // TODO Should support Temporal.DurationLike, Temporal.InstantLike |
+      // TODO Should support Temporal.DurationLike, Temporal.InstantLike,
       // Temporal.ZonedDateTimeLike
       return {
         id,
