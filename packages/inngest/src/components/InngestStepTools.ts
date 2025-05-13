@@ -334,19 +334,25 @@ export const createStepTools = <TClient extends Inngest.Any>(
      */
     sendSignal: createTool<
       (idOrOptions: StepOptionsOrId, opts: SendSignalOpts) => Promise<null>
-    >(({ id, name }, opts) => {
-      return {
-        id,
-        op: StepOpCode.StepPlanned,
-        name: "sendSignal",
-        displayName: name ?? id,
-        opts: {
-          type: "step.sendSignal",
-          signal: opts.signal,
-          data: opts.data,
+    >(
+      ({ id, name }, opts) => {
+        return {
+          id,
+          op: StepOpCode.StepPlanned,
+          name: "sendSignal",
+          displayName: name ?? id,
+          opts: {
+            type: "step.sendSignal",
+            signal: opts.signal,
+          },
+        };
+      },
+      {
+        fn: (idOrOptions, opts) => {
+          // TODO Hit API endpoint
         },
-      };
-    }),
+      }
+    ),
 
     /**
      * Wait for a particular event to be received before continuing. When the
