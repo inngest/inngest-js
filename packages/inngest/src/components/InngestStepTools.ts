@@ -330,7 +330,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
     }),
 
     /**
-     * Send a signal to Inngest.
+     * Send a Signal to Inngest.
      */
     sendSignal: createTool<
       (idOrOptions: StepOptionsOrId, opts: SendSignalOpts) => Promise<null>
