@@ -313,7 +313,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       <TData>(
         idOrOptions: StepOptionsOrId,
         opts: WaitForSignalOpts
-      ) => Promise<{ signal: string; data: TData } | null>
+      ) => Promise<{ signal: string; data: Jsonify<TData> } | null>
     >(({ id, name }, opts) => {
       // TODO Should support Temporal.DurationLike, Temporal.InstantLike,
       // Temporal.ZonedDateTimeLike
