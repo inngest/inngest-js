@@ -26,6 +26,10 @@ const realtimeSubscriptionTokenSchema = z.object({
   jwt: z.string(),
 });
 
+const sendSignalSuccessResponseSchema = z.object({
+  run_id: z.string().min(1),
+});
+
 export namespace InngestApi {
   export interface Options {
     baseUrl?: string;
@@ -42,6 +46,20 @@ export namespace InngestApi {
 
   export interface PublishOptions extends Subscription {
     runId?: string;
+  }
+
+  export interface SendSignalOptions {
+    signal: string;
+    data?: unknown;
+  }
+
+  export interface SendSignalResponse {
+    /**
+     * The ID of the run that was signaled.
+     *
+     * If this is undefined, the signal could not be matched to a run.
+     */
+    runId: string | undefined;
   }
 }
 
@@ -214,6 +232,83 @@ export class InngestApi {
       .catch((error) => {
         return err({
           error: getErrorMessage(error, "Unknown error publishing event"),
+          status: 500,
+        });
+      });
+  }
+
+  async sendSignal(
+    signalOptions: InngestApi.SendSignalOptions,
+    options?: {
+      headers?: Record<string, string>;
+    }
+  ): Promise<Result<InngestApi.SendSignalResponse, ErrorResponse>> {
+    const url = await this.getTargetUrl("/v1/signals");
+
+    const body = {
+      signal: signalOptions.signal,
+      data: signalOptions.data,
+    };
+
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url,
+      options: {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+        },
+      },
+    })
+      .then(async (res) => {
+        // A 404 is valid if the signal was not found.
+        if (res.status === 404) {
+          return ok<InngestApi.SendSignalResponse>({
+            runId: undefined,
+          });
+        }
+
+        // If we're not 2xx, something went wrong.
+        if (!res.ok) {
+          try {
+            return err(errorSchema.parse(await res.json()));
+          } catch {
+            // res.json() failed so not a valid JSON response or the schema
+            // parse failed
+            return err({
+              error: `Failed to send signal: ${res.status} ${
+                res.statusText
+              } - ${await res.text()}`,
+              status: res.status,
+            });
+          }
+        }
+
+        // If we are 2xx, we should have a run_id.
+        const parseRes = sendSignalSuccessResponseSchema.safeParse(
+          await res.json()
+        );
+        if (!parseRes.success) {
+          return err({
+            error: `Successfully sent signal, but response parsing failed: ${
+              res.status
+            } ${res.statusText} - ${await res.text()}`,
+            status: res.status,
+          });
+        }
+
+        return ok({
+          runId: parseRes.data.run_id,
+        });
+      })
+      .catch((error) => {
+        // Catch-all if various things go wrong
+        return err({
+          error: getErrorMessage(error, "Unknown error sending signal"),
           status: 500,
         });
       });

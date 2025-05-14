@@ -348,8 +348,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
         };
       },
       {
-        fn: (idOrOptions, opts) => {
-          // TODO Hit API endpoint
+        fn: (_idOrOptions, opts) => {
+          return client["_sendSignal"]({
+            signal: opts.signal,
+            data: opts.data,
+            headers: execution["options"]["headers"],
+          });
         },
       }
     ),
