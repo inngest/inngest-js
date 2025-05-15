@@ -1,5 +1,11 @@
 # inngest
 
+## 3.36.0
+
+### Minor Changes
+
+- [#909](https://github.com/inngest/inngest-js/pull/909) [`35cf326`](https://github.com/inngest/inngest-js/commit/35cf326fe3877f2688a73322a481df0e2b2fc064) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added experimental otel for capturing userland spans
+
 ## 3.35.1
 
 ### Patch Changes
