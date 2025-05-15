@@ -46,7 +46,7 @@ type FilterJsonableKeys<T extends object> = {
 /**
 JSON serialize objects (not including arrays) and classes.
 */
-type JsonifyObject<T extends object> = {
+export type JsonifyObject<T extends object> = {
   [Key in keyof Pick<T, FilterJsonableKeys<T>>]: Jsonify<T[Key]>;
 };
 
