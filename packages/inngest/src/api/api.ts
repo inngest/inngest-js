@@ -27,7 +27,9 @@ const realtimeSubscriptionTokenSchema = z.object({
 });
 
 const sendSignalSuccessResponseSchema = z.object({
-  run_id: z.string().min(1),
+  data: z.object({
+    run_id: z.string().min(1),
+  }),
 });
 
 export namespace InngestApi {
@@ -272,13 +274,30 @@ export class InngestApi {
           });
         }
 
+        // Save a clone of the response we can use to get the text of if we fail
+        // to parse the JSON.
+        const resClone = res.clone();
+
+        // JSON!
+        let json: unknown;
+        try {
+          json = await res.json();
+        } catch (error) {
+          // res.json() failed so not a valid JSON response
+          return err({
+            error: `Failed to send signal: ${res.status} ${
+              res.statusText
+            } - ${await resClone.text()}`,
+            status: res.status,
+          });
+        }
+
         // If we're not 2xx, something went wrong.
         if (!res.ok) {
           try {
-            return err(errorSchema.parse(await res.json()));
+            return err(errorSchema.parse(json));
           } catch {
-            // res.json() failed so not a valid JSON response or the schema
-            // parse failed
+            // schema parse failed
             return err({
               error: `Failed to send signal: ${res.status} ${
                 res.statusText
@@ -289,20 +308,18 @@ export class InngestApi {
         }
 
         // If we are 2xx, we should have a run_id.
-        const parseRes = sendSignalSuccessResponseSchema.safeParse(
-          await res.json()
-        );
+        const parseRes = sendSignalSuccessResponseSchema.safeParse(json);
         if (!parseRes.success) {
           return err({
             error: `Successfully sent signal, but response parsing failed: ${
               res.status
-            } ${res.statusText} - ${await res.text()}`,
+            } ${res.statusText} - ${await resClone.text()}`,
             status: res.status,
           });
         }
 
         return ok({
-          runId: parseRes.data.run_id,
+          runId: parseRes.data.data.run_id,
         });
       })
       .catch((error) => {
