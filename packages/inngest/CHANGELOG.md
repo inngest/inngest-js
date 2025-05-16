@@ -1,5 +1,11 @@
 # inngest
 
+## 3.37.0
+
+### Minor Changes
+
+- [#979](https://github.com/inngest/inngest-js/pull/979) [`3e6a3e5`](https://github.com/inngest/inngest-js/commit/3e6a3e52c69af47ccc4baf014d5a67f21cd80235) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `step.waitForSignal()`, `step.sendSignal()`, and `inngest.sendSignal()` as experimental new tooling
+
 ## 3.36.0
 
 ### Minor Changes
