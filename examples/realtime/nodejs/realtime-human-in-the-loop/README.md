@@ -1,7 +1,7 @@
-# realtime-simple
+# Realtime: Implementing Human in the loop with `step.waitForEvent()`
 
-A simple one-file realtime example using channels, topics, publish, and
-subcribe.
+This demos showcases how to combine [Realtime](https://www.inngest.com/docs/features/realtime)'s `publish()` with `step.waitForEvent()` to
+enable users to interact with ongoing workflows.
 
 ```
 npm install
@@ -11,5 +11,5 @@ npm install
 npm run dev
 ```
 
-The app will send periodic `app/post.like` events to the server, causing
-publishes and the subscriptions to fire.
+The app will send an event kicking off a workflow and prompt in the terminal to choose
+to stop or continue the workflow.

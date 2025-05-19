@@ -1,7 +1,7 @@
-# realtime-simple
+# Realtime: stream updates from multiple function runs
 
-A simple one-file realtime example using channels, topics, publish, and
-subcribe.
+This demo Node.js project shows how to use [Realtime](https://www.inngest.com/docs/features/realtime) to stream updates from
+multiple Inngest Function runs by a mix of global and dynamics channels.
 
 ```
 npm install

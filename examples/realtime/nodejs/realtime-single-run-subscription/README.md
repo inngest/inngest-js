@@ -1,7 +1,6 @@
-# realtime-simple
+# Realtime: stream updates from a single function run
 
-A simple one-file realtime example using channels, topics, publish, and
-subcribe.
+This demo Node.js project shows how to [stream](https://www.inngest.com/docs/features/realtime) and subscribe to updates from a single Inngest Function run.
 
 ```
 npm install
@@ -11,5 +10,4 @@ npm install
 npm run dev
 ```
 
-The app will send periodic `app/post.like` events to the server, causing
-publishes and the subscriptions to fire.
+The app will send 10 `app/process-upload` events while subscribing to a specific run using a `uuid`.
