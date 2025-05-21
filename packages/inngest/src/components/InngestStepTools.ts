@@ -325,8 +325,8 @@ export const createStepTools = <TClient extends Inngest.Any>(
         opts: {
           signal: opts.signal,
           timeout: timeStr(opts.timeout),
-          ...(opts.supersedeOnConflict
-            ? { supersede: Boolean(opts.supersedeOnConflict) }
+          ...(opts.overwriteOnConflict
+            ? { overwrite: Boolean(opts.overwriteOnConflict) }
             : {}),
         },
       };
@@ -777,14 +777,14 @@ type WaitForSignalOpts = {
   /**
    * When this `step.waitForSignal()` call is made, choose whether an existing
    * wait for the same signal should cause this run to be cancelled or if we
-   * should supersede it.
+   * should overwrite it.
    *
    * Be aware that if this is `true`, the previous wait will be removed and will
    * remain pending until it reaches its timeout.
    *
    * @default false
    */
-  supersedeOnConflict?: boolean;
+  overwriteOnConflict?: boolean;
 };
 
 /**
