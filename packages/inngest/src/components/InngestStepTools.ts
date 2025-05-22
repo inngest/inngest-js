@@ -325,6 +325,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         opts: {
           signal: opts.signal,
           timeout: timeStr(opts.timeout),
+          conflict: opts.onConflict,
         },
       };
     }),
@@ -770,6 +771,19 @@ type WaitForSignalOpts = {
    * {@link https://npm.im/ms}
    */
   timeout: number | string | Date;
+
+  /**
+   * When this `step.waitForSignal()` call is made, choose whether an existing
+   * wait for the same signal should be replaced, or whether this run should
+   * fail.
+   *
+   * `"replace"` will replace any existing wait with this one, and the existing
+   * wait will remain pending until it reaches its timeout.
+   *
+   * `"fail"` will cause this run to fail if there is already a wait for the
+   * same signal.
+   */
+  onConflict: "replace" | "fail";
 };
 
 /**
