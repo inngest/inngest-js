@@ -1,4 +1,6 @@
 import { headerKeys } from "inngest/helpers/consts";
+import { GatewayExecutorRequestData } from "inngest/proto/src/components/connect/protobuf/connect";
+import { TraceStateKey } from "../execution/otel/consts";
 
 export class ReconnectError extends Error {
   constructor(
@@ -65,10 +67,46 @@ function isString(value: unknown): value is string {
   return typeof value === "string";
 }
 
-export function parseTraceCtx(serializedTraceCtx: Uint8Array<ArrayBufferLike>) {
+function userlandAttrs(appId: string, functionId: string) {
+  return {
+    [TraceStateKey.FunctionId]: functionId,
+    [TraceStateKey.AppId]: appId,
+  };
+}
+
+function convertAttrs(attrs: Record<string, string>) {
+  return Object.entries(attrs)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(",");
+}
+
+//
+// Ensure trace state contains appId and functionId as
+// we the source of truth for those in userland traces
+function parseTraceState(
+  traceState: unknown,
+  appId: string,
+  functionId: string
+): string | null {
+  if (!isString(traceState)) {
+    return convertAttrs(userlandAttrs(appId, functionId));
+  }
+
+  const entries = Object.fromEntries(
+    traceState.split(",").map((kv) => kv.split("=") as [string, string])
+  );
+
+  return convertAttrs({ ...entries, ...userlandAttrs(appId, functionId) });
+}
+
+export function parseTraceCtx({
+  appId,
+  userTraceCtx,
+  functionId,
+}: GatewayExecutorRequestData) {
   const parsedTraceCtx: unknown =
-    serializedTraceCtx.length > 0
-      ? JSON.parse(new TextDecoder().decode(serializedTraceCtx))
+    userTraceCtx.length > 0
+      ? JSON.parse(new TextDecoder().decode(userTraceCtx))
       : null;
 
   if (!isObject(parsedTraceCtx)) {
@@ -80,10 +118,11 @@ export function parseTraceCtx(serializedTraceCtx: Uint8Array<ArrayBufferLike>) {
     return null;
   }
 
-  const traceState = parsedTraceCtx[headerKeys.TraceState];
-  if (!isString(traceState)) {
-    return null;
-  }
+  const traceState = parseTraceState(
+    parsedTraceCtx[headerKeys.TraceState],
+    appId,
+    functionId
+  );
 
   return {
     traceParent,

@@ -394,8 +394,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         handler: (msg: GatewayExecutorRequestData) => {
           const asString = new TextDecoder().decode(msg.requestPayload);
           const parsed = parseFnData(JSON.parse(asString));
-
-          const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
+          const userTraceCtx = parseTraceCtx(msg);
 
           return {
             body() {
