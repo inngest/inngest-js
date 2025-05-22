@@ -1,5 +1,19 @@
 # inngest
 
+## 3.38.0
+
+### Minor Changes
+
+- [#985](https://github.com/inngest/inngest-js/pull/985) [`4616919`](https://github.com/inngest/inngest-js/commit/46169199801719727da8d5e44f9505a06e21055c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add ability for signal waits to supersede others
+
+  ```ts
+  await step.waitForSignal("step-id", {
+    signal: "my-signal",
+    timeout: "5m",
+    onConflict: "replace",
+  });
+  ```
+
 ## 3.37.0
 
 ### Minor Changes
