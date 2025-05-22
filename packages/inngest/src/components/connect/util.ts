@@ -67,43 +67,7 @@ function isString(value: unknown): value is string {
   return typeof value === "string";
 }
 
-function userlandAttrs(appId: string, functionId: string) {
-  return {
-    [TraceStateKey.FunctionId]: functionId,
-    [TraceStateKey.AppId]: appId,
-  };
-}
-
-function convertAttrs(attrs: Record<string, string>) {
-  return Object.entries(attrs)
-    .map(([key, value]) => `${key}=${value}`)
-    .join(",");
-}
-
-//
-// Ensure trace state contains appId and functionId as
-// we the source of truth for those in userland traces
-function parseTraceState(
-  traceState: unknown,
-  appId: string,
-  functionId: string
-): string | null {
-  if (!isString(traceState)) {
-    return convertAttrs(userlandAttrs(appId, functionId));
-  }
-
-  const entries = Object.fromEntries(
-    traceState.split(",").map((kv) => kv.split("=") as [string, string])
-  );
-
-  return convertAttrs({ ...entries, ...userlandAttrs(appId, functionId) });
-}
-
-export function parseTraceCtx({
-  appId,
-  userTraceCtx,
-  functionId,
-}: GatewayExecutorRequestData) {
+export function parseTraceCtx(userTraceCtx: Uint8Array<ArrayBufferLike>) {
   const parsedTraceCtx: unknown =
     userTraceCtx.length > 0
       ? JSON.parse(new TextDecoder().decode(userTraceCtx))
@@ -118,11 +82,10 @@ export function parseTraceCtx({
     return null;
   }
 
-  const traceState = parseTraceState(
-    parsedTraceCtx[headerKeys.TraceState],
-    appId,
-    functionId
-  );
+  const traceState = parsedTraceCtx[headerKeys.TraceState];
+  if (!isString(traceState)) {
+    return null;
+  }
 
   return {
     traceParent,
