@@ -104,6 +104,13 @@ export const serve = (options: ServeHandlerOptions): any => {
 
           return res.status(status).send(body);
         },
+        transformStreamingResponse: ({ body, headers, status }) => {
+          for (const [name, value] of Object.entries(headers)) {
+            res.setHeader(name, value);
+          }
+
+          return res.status(status).send(body);
+        },
       };
     },
   });
