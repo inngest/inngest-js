@@ -34,7 +34,9 @@ import { createV2InngestExecution } from "./execution/v2.js";
  * @public
  */
 export class InngestFunction<
+  ID extends string,
   TFnOpts extends InngestFunction.Options<
+    ID,
     TClient,
     TMiddleware,
     TTriggers,
@@ -90,6 +92,10 @@ export class InngestFunction<
    */
   public id(prefix?: string): string {
     return [prefix, this.opts.id].filter(Boolean).join("-");
+  }
+
+  public get rawId(): ID {
+    return this.opts.id;
   }
 
   /**
@@ -294,7 +300,8 @@ export namespace InngestFunction {
    * Represents any `InngestFunction` instance, regardless of generics and
    * inference.
    */
-  export type Any = InngestFunction<
+  export type Any<ID extends string = string> = InngestFunction<
+    ID,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     any,
     Handler.Any,
@@ -337,6 +344,7 @@ export namespace InngestFunction {
    * @public
    */
   export interface Options<
+    ID extends string,
     TClient extends Inngest.Any = Inngest.Any,
     TMiddleware extends InngestMiddleware.Stack = InngestMiddleware.Stack,
     TTriggers extends InngestFunction.Trigger<
@@ -354,7 +362,7 @@ export namespace InngestFunction {
      * If you'd like to set a prettier name for your function, use the `name`
      * option.
      */
-    id: string;
+    id: ID;
 
     /**
      * A name for the function as it will appear in the Inngest Cloud UI.

@@ -1350,11 +1350,25 @@ export interface StepOptions {
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
-export type EventsFromFunction<T extends InngestFunction.Any> =
+export type EventsFromFunction<
+  ID extends string = string,
+  T extends InngestFunction.Any<ID> = InngestFunction.Any<ID>,
+> = T extends InngestFunction<
+  ID,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  T extends InngestFunction<any, any, any, infer IClient, any, any>
-    ? GetEvents<IClient, true>
-    : never;
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  infer IClient extends Inngest<ClientOptions>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  any
+>
+  ? GetEvents<IClient, true>
+  : never;
 
 /**
  * A function that can be invoked by Inngest.
@@ -1375,7 +1389,7 @@ export type InvokeTargetFunctionDefinition =
 export type TriggerEventFromFunction<
   TFunction extends InvokeTargetFunctionDefinition,
 > = TFunction extends InngestFunction.Any
-  ? PayloadForAnyInngestFunction<TFunction>
+  ? PayloadForAnyInngestFunction<TFunction["opts"]["id"], TFunction>
   : TFunction extends InngestFunctionReference<
         infer IInput extends MinimalEventPayload,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1399,14 +1413,16 @@ export type TriggerEventFromFunction<
  * @internal
  */
 export type PayloadForAnyInngestFunction<
-  TFunction extends InngestFunction.Any,
+  ID extends string,
+  TFunction extends InngestFunction.Any<ID>,
   TEvents extends Record<
     string,
     EventPayload
-  > = TFunction extends InngestFunction.Any
-    ? EventsFromFunction<TFunction>
+  > = TFunction extends InngestFunction.Any<ID>
+    ? EventsFromFunction<ID, TFunction>
     : never,
 > = TFunction extends InngestFunction<
+  ID,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
