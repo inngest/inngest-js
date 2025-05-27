@@ -256,7 +256,6 @@ export class InngestFunction<
 
   protected createExecution(opts: CreateExecutionOptions): IInngestExecution {
     const options: InngestExecutionOptions = {
-      client: this.client,
       fn: this,
       ...opts.partialOptions,
     };
@@ -649,5 +648,5 @@ export namespace InngestFunction {
 
 export type CreateExecutionOptions = {
   version: ExecutionVersion;
-  partialOptions: Omit<InngestExecutionOptions, "client" | "fn">;
+  partialOptions: Omit<InngestExecutionOptions, "fn">;
 };
