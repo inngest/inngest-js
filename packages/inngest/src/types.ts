@@ -1209,6 +1209,12 @@ export const functionConfigSchema = z.strictObject({
       burst: z.number().optional(),
     })
     .optional(),
+  singleton: z
+    .strictObject({
+      key: z.string().optional(),
+      mode: z.enum(["ignore", "cancel"]),
+    })
+    .optional(),
   cancel: z
     .array(
       z.strictObject({
