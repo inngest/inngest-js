@@ -584,10 +584,10 @@ export namespace InngestFunction {
 
       /**
        * Determines how to handle new runs when one is already active for the same key.
-       * - `"ignore"` skips the new run.
+       * - `"skip"` skips the new run.
        * - `"cancel"` cancels the existing run and starts the new one.
        */
-      mode: "ignore" | "cancel";
+      mode: "skip" | "cancel";
     };
 
     cancelOn?: Cancellation<GetEvents<TClient, true>>[];
