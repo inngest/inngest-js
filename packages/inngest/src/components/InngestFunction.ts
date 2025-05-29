@@ -158,6 +158,7 @@ export class InngestFunction<
       debounce,
       timeouts,
       priority,
+      singleton,
     } = this.opts;
 
     /**
@@ -200,6 +201,7 @@ export class InngestFunction<
       debounce,
       priority,
       timeouts,
+      singleton,
     };
 
     if (cancelOn) {
@@ -259,7 +261,6 @@ export class InngestFunction<
 
   protected createExecution(opts: CreateExecutionOptions): IInngestExecution {
     const options: InngestExecutionOptions = {
-      client: this.client,
       fn: this,
       ...opts.partialOptions,
     };
@@ -568,6 +569,29 @@ export namespace InngestFunction {
       finish?: TimeStr;
     };
 
+    /**
+     * Ensures that only one run of the function is active at a time for a given key.
+     * If a new run is triggered while another is still in progress with the same key,
+     * the new run will either be skipped or replace the active one, depending on the mode.
+     *
+     * This is useful for deduplication or enforcing exclusive execution.
+     */
+    singleton?: {
+      /**
+       * An optional key expression used to scope singleton execution.
+       * Each unique key has its own singleton lock. Event data can be referenced,
+       * e.g. "event.data.user_id".
+       */
+      key?: string;
+
+      /**
+       * Determines how to handle new runs when one is already active for the same key.
+       * - `"skip"` skips the new run.
+       * - `"cancel"` cancels the existing run and starts the new one.
+       */
+      mode: "skip" | "cancel";
+    };
+
     cancelOn?: Cancellation<GetEvents<TClient, true>>[];
 
     /**
@@ -652,5 +676,5 @@ export namespace InngestFunction {
 
 export type CreateExecutionOptions = {
   version: ExecutionVersion;
-  partialOptions: Omit<InngestExecutionOptions, "client" | "fn">;
+  partialOptions: Omit<InngestExecutionOptions, "fn">;
 };

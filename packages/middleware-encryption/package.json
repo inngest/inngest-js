@@ -1,6 +1,6 @@
 {
   "name": "@inngest/middleware-encryption",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "E2E encryption middleware for Inngest.",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -34,10 +34,10 @@
       "import": "./strategies/aes.js",
       "types": "./strategies/aes.d.ts"
     },
-    "./strategies/libsodium": {
-      "require": "./strategies/libsodium.js",
-      "import": "./strategies/libsodium.js",
-      "types": "./strategies/libsodium.d.ts"
+    "./strategies/libSodium": {
+      "require": "./strategies/libSodium.js",
+      "import": "./strategies/libSodium.js",
+      "types": "./strategies/libSodium.d.ts"
     }
   },
   "keywords": [

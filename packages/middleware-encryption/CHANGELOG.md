@@ -1,5 +1,11 @@
 # @inngest/middleware-encryption
 
+## 1.0.1
+
+### Patch Changes
+
+- [#971](https://github.com/inngest/inngest-js/pull/971) [`22ca420`](https://github.com/inngest/inngest-js/commit/22ca420ba3222e537d7f94e250c633ec560d6c69) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Use consistent casing for `libSodium` export
+
 ## 1.0.0
 
 ### Major Changes

@@ -1,5 +1,37 @@
 # inngest
 
+## 3.38.0
+
+### Minor Changes
+
+- [#985](https://github.com/inngest/inngest-js/pull/985) [`4616919`](https://github.com/inngest/inngest-js/commit/46169199801719727da8d5e44f9505a06e21055c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add ability for signal waits to supersede others
+
+  ```ts
+  await step.waitForSignal("step-id", {
+    signal: "my-signal",
+    timeout: "5m",
+    onConflict: "replace",
+  });
+  ```
+
+## 3.37.0
+
+### Minor Changes
+
+- [#979](https://github.com/inngest/inngest-js/pull/979) [`3e6a3e5`](https://github.com/inngest/inngest-js/commit/3e6a3e52c69af47ccc4baf014d5a67f21cd80235) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `step.waitForSignal()`, `step.sendSignal()`, and `inngest.sendSignal()` as experimental new tooling
+
+## 3.36.0
+
+### Minor Changes
+
+- [#909](https://github.com/inngest/inngest-js/pull/909) [`35cf326`](https://github.com/inngest/inngest-js/commit/35cf326fe3877f2688a73322a481df0e2b2fc064) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added experimental otel for capturing userland spans
+
+## 3.35.1
+
+### Patch Changes
+
+- [#950](https://github.com/inngest/inngest-js/pull/950) [`0099c56`](https://github.com/inngest/inngest-js/commit/0099c562c54d44d476800af74c7cae775aaa1cdc) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Connect: Reliability improvements
+
 ## 3.35.0
 
 ### Minor Changes

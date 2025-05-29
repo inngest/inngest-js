@@ -302,6 +302,63 @@ export const createStepTools = <TClient extends Inngest.Any>(
     ),
 
     /**
+     * EXPERIMENTAL: This API is not yet stable and may change in the future
+     * without a major version bump.
+     *
+     * Wait for a particular signal to be received before continuing. When the
+     * signal is received, its data will be returned.
+     */
+    waitForSignal: createTool<
+      <TData>(
+        idOrOptions: StepOptionsOrId,
+        opts: WaitForSignalOpts
+      ) => Promise<{ signal: string; data: Jsonify<TData> } | null>
+    >(({ id, name }, opts) => {
+      // TODO Should support Temporal.DurationLike, Temporal.InstantLike,
+      // Temporal.ZonedDateTimeLike
+      return {
+        id,
+        op: StepOpCode.WaitForSignal,
+        name: opts.signal,
+        displayName: name ?? id,
+        opts: {
+          signal: opts.signal,
+          timeout: timeStr(opts.timeout),
+          conflict: opts.onConflict,
+        },
+      };
+    }),
+
+    /**
+     * Send a Signal to Inngest.
+     */
+    sendSignal: createTool<
+      (idOrOptions: StepOptionsOrId, opts: SendSignalOpts) => Promise<null>
+    >(
+      ({ id, name }, opts) => {
+        return {
+          id,
+          op: StepOpCode.StepPlanned,
+          name: "sendSignal",
+          displayName: name ?? id,
+          opts: {
+            type: "step.sendSignal",
+            signal: opts.signal,
+          },
+        };
+      },
+      {
+        fn: (_idOrOptions, opts) => {
+          return client["_sendSignal"]({
+            signal: opts.signal,
+            data: opts.data,
+            headers: execution["options"]["headers"],
+          });
+        },
+      }
+    ),
+
+    /**
      * Wait for a particular event to be received before continuing. When the
      * event is received, it will be returned.
      *
@@ -679,6 +736,57 @@ type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
        */
       timeout?: number | string | Date;
     };
+
+/**
+ * A set of parameters given to a `sendSignal` call.
+ */
+type SendSignalOpts = {
+  /**
+   * The signal to send.
+   */
+  signal: string;
+
+  /**
+   * The data to send with the signal.
+   */
+  data?: unknown;
+};
+
+/**
+ * A set of parameters given to a `waitForSignal` call.
+ */
+type WaitForSignalOpts = {
+  /**
+   * The signal to wait for.
+   */
+  signal: string;
+
+  /**
+   * The step function will wait for the signal for a maximum of this time, at
+   * which point the signal will be returned as `null` instead of any signal
+   * data.
+   *
+   * The time to wait can be specified using a `number` of milliseconds, an
+   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
+   * a `Date` object.
+   *
+   * {@link https://npm.im/ms}
+   */
+  timeout: number | string | Date;
+
+  /**
+   * When this `step.waitForSignal()` call is made, choose whether an existing
+   * wait for the same signal should be replaced, or whether this run should
+   * fail.
+   *
+   * `"replace"` will replace any existing wait with this one, and the existing
+   * wait will remain pending until it reaches its timeout.
+   *
+   * `"fail"` will cause this run to fail if there is already a wait for the
+   * same signal.
+   */
+  onConflict: "replace" | "fail";
+};
 
 /**
  * A set of optional parameters given to a `waitForEvent` call to control how

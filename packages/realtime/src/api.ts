@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { fetchWithAuthFallback, getEnvVar, parseAsBoolean } from "./util";
+import { getEnvVar } from "./env";
+import { fetchWithAuthFallback, parseAsBoolean } from "./util";
 
 const tokenSchema = z.object({ jwt: z.string() });
 
@@ -13,7 +14,7 @@ export const api = {
   }: {
     channel: string;
     topics: string[];
-    signingKey: string;
+    signingKey: string | undefined;
     signingKeyFallback: string | undefined;
     apiBaseUrl: string | undefined;
   }): Promise<string> {

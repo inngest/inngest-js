@@ -6,13 +6,20 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils, ... }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      flake-utils,
+      ...
+    }:
+    flake-utils.lib.eachDefaultSystem (
+      system:
       let
         pkgs = import nixpkgs { inherit system; };
         corepack = pkgs.stdenv.mkDerivation {
           name = "corepack";
-          buildInputs = [ pkgs.nodejs_22 ];
+          buildInputs = [ pkgs.nodejs_24 ];
           phases = [ "installPhase" ];
           installPhase = ''
             mkdir -p $out/bin
@@ -20,24 +27,29 @@
           '';
         };
 
-      in {
+      in
+      {
         devShells.default = pkgs.mkShell {
           packages = [ corepack ];
 
           nativeBuildInputs = with pkgs; [
             # Node
             typescript
-            nodejs_22
+            nodejs_24
 
             # LSPs
             nodePackages.typescript-language-server
             nodePackages.vscode-json-languageserver
             nodePackages.yaml-language-server
+
+            # Tools
+            protobuf_29
           ];
 
           shellHook = ''
             export COREPACK_ENABLE_AUTO_PIN=0
           '';
         };
-      });
+      }
+    );
 }

@@ -1,6 +1,12 @@
-import type { Context, StepOptions } from "../../types.ts";
+import { type Context, type StepOptions } from "../../types.ts";
+import { type Inngest } from "../Inngest.ts";
 
 export interface AsyncContext {
+  /**
+   * The Inngest App that is currently being used to execute the function.
+   */
+  app: Inngest.Like;
+
   /**
    * The `ctx` object that has been passed in to this function execution,
    * including values such as `step` and `event`.

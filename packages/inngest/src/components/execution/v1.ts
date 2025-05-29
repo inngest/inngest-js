@@ -1,6 +1,7 @@
+import { trace } from "@opentelemetry/api";
 import hashjs from "hash.js";
 import { z } from "zod";
-import { internalEvents } from "../../helpers/consts.ts";
+import { headerKeys, internalEvents } from "../../helpers/consts.ts";
 import {
   ErrCode,
   deserializeError,
@@ -18,17 +19,18 @@ import {
 } from "../../helpers/promises.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
+  jsonErrorSchema,
+  StepOpCode,
   type BaseContext,
   type Context,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
   type OutgoingOp,
-  StepOpCode,
-  jsonErrorSchema,
 } from "../../types.ts";
-import type { Inngest } from "../Inngest.ts";
-import { type RunHookStack, getHookStack } from "../InngestMiddleware.ts";
+import { version } from "../../version.ts";
+import { type Inngest } from "../Inngest.ts";
+import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   type FoundStep,
   STEP_INDEXING_SUFFIX,
@@ -47,8 +49,9 @@ import {
   type InngestExecutionFactory,
   type InngestExecutionOptions,
   type MemoizedOp,
-} from "./InngestExecution.ts";
+} from "./InngestExecution.js";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
+import { clientProcessorMap } from "./otel/access.ts";
 
 const { sha1 } = hashjs;
 
@@ -99,13 +102,31 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     if (!this.execution) {
       this.debug("starting V1 execution");
 
+      const tracer = trace.getTracer("inngest", version);
+
       this.execution = getAsyncLocalStorage().then((als) => {
-        return als.run({ ctx: this.fnArg }, async () => {
-          return this._start().then((result) => {
-            this.debug("result:", result);
-            return result;
-          });
-        });
+        return als.run(
+          { app: this.options.client, ctx: this.fnArg },
+          async () => {
+            return tracer.startActiveSpan("inngest.execution", (span) => {
+              clientProcessorMap.get(this.options.client)?.declareStartingSpan({
+                span,
+                runId: this.options.runId,
+                traceparent: this.options.headers[headerKeys.TraceParent],
+                tracestate: this.options.headers[headerKeys.TraceState],
+              });
+
+              return this._start()
+                .then((result) => {
+                  this.debug("result:", result);
+                  return result;
+                })
+                .finally(() => {
+                  span.end();
+                });
+            });
+          }
+        );
       });
     }
 

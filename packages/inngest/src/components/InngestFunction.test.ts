@@ -172,6 +172,7 @@ describe("runFn", () => {
             const execution = fn["createExecution"]({
               version: PREFERRED_EXECUTION_VERSION,
               partialOptions: {
+                client: fn["client"],
                 data: fromPartial({
                   event: { name: "foo", data: { foo: "foo" } },
                 }),
@@ -217,6 +218,7 @@ describe("runFn", () => {
             const execution = fn["createExecution"]({
               version: PREFERRED_EXECUTION_VERSION,
               partialOptions: {
+                client: fn["client"],
                 data: fromPartial({
                   event: { name: "foo", data: { foo: "foo" } },
                 }),
