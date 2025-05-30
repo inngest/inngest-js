@@ -1,6 +1,6 @@
-import * as HonoHandler from "@local/hono";
 import fetch, { Headers, Response } from "cross-fetch";
-import { testFramework } from "./test/helpers";
+import * as HonoHandler from "./hono.ts";
+import { testFramework } from "./test/helpers.ts";
 
 const originalFetch = globalThis.fetch;
 const originalResponse = globalThis.Response;
@@ -12,7 +12,7 @@ testFramework("Hono", HonoHandler, {
    */
   lifecycleChanges: () => {
     beforeEach(() => {
-      jest.resetModules();
+      vi.resetModules();
       Object.defineProperties(globalThis, {
         /**
          * Fake a global `fetch` value, which is available as as a Web Standard

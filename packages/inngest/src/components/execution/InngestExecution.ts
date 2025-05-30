@@ -1,11 +1,11 @@
 import Debug, { type Debugger } from "debug";
-import { type ServerTiming } from "../../helpers/ServerTiming.js";
-import { debugPrefix } from "../../helpers/consts.js";
-import { type MaybePromise, type Simplify } from "../../helpers/types.js";
-import { type Context, type IncomingOp, type OutgoingOp } from "../../types.js";
-import { type Inngest } from "../Inngest.js";
-import { type ActionResponse } from "../InngestCommHandler.js";
-import { type InngestFunction } from "../InngestFunction.js";
+import type { ServerTiming } from "../../helpers/ServerTiming.ts";
+import { ExecutionVersion, debugPrefix } from "../../helpers/consts.ts";
+import type { MaybePromise, Simplify } from "../../helpers/types.ts";
+import type { Context, IncomingOp, OutgoingOp } from "../../types.ts";
+import type { Inngest } from "../Inngest.ts";
+import type { ActionResponse } from "../InngestCommHandler.ts";
+import type { InngestFunction } from "../InngestFunction.ts";
 
 /**
  * The possible results of an execution.
@@ -29,7 +29,7 @@ export type ExecutionResult = {
 }[keyof ExecutionResults];
 
 export type ExecutionResultHandler<T = ActionResponse> = (
-  result: ExecutionResult
+  result: ExecutionResult,
 ) => MaybePromise<T>;
 
 export type ExecutionResultHandlers<T = ActionResponse> = {
@@ -52,18 +52,6 @@ export interface MemoizedOp extends IncomingOp {
 }
 
 /**
- * The execution models the SDK is aware of.
- *
- * This is used in a number of places to ensure all execution versions are
- * accounted for for a given operation.
- */
-export enum ExecutionVersion {
-  V0 = 0,
-  V1 = 1,
-  V2 = 2,
-}
-
-/**
  * The preferred execution version that will be used by the SDK when handling
  * brand new runs where the Executor is allowing us to choose.
  *
@@ -71,7 +59,7 @@ export enum ExecutionVersion {
  * new runs, not existing ones.
  */
 export const PREFERRED_EXECUTION_VERSION =
-  ExecutionVersion.V1 satisfies ExecutionVersion;
+  ExecutionVersion.V2 satisfies ExecutionVersion;
 
 /**
  * Options for creating a new {@link InngestExecution} instance.
@@ -102,7 +90,7 @@ export interface InngestExecutionOptions {
 }
 
 export type InngestExecutionFactory = (
-  options: InngestExecutionOptions
+  options: InngestExecutionOptions,
 ) => IInngestExecution;
 
 export class InngestExecution {

@@ -10,5 +10,5 @@ export default inngest.createFunction(
     ]);
 
     await step.run("Step C", () => `${winner} is the winner!`);
-  }
+  },
 );

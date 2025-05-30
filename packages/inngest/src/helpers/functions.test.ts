@@ -1,6 +1,6 @@
-import { ExecutionVersion } from "@local/components/execution/InngestExecution";
-import { parseFnData, type FnData } from "@local/helpers/functions";
-import { type EventPayload } from "@local/types";
+import type { EventPayload } from "../types.ts";
+import { ExecutionVersion } from "./consts.ts";
+import { type FnData, parseFnData } from "./functions.ts";
 
 const randomstr = (): string => {
   return (Math.random() + 1).toString(36).substring(2);
@@ -69,6 +69,7 @@ describe("#parseFnData", () => {
     },
   ];
 
+  // biome-ignore lint/complexity/noForEach: <explanation>
   specs.forEach((test) => {
     it(test.name, () => {
       if (test.isOk) {
