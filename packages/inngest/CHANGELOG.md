@@ -1,5 +1,11 @@
 # inngest
 
+## 3.38.1
+
+### Patch Changes
+
+- [#989](https://github.com/inngest/inngest-js/pull/989) [`5e3ec3b`](https://github.com/inngest/inngest-js/commit/5e3ec3b59730b83ecccae2569812cd3ced5794d9) Thanks [@jpwilliams](https://github.com/jpwilliams)! - When executing, use the `serve()` call's client instead of the function's
+
 ## 3.38.0
 
 ### Minor Changes
