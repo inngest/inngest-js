@@ -1,5 +1,6 @@
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
+import ms from "ms";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.js";
 import {
   allProcessEnv,
@@ -41,6 +42,7 @@ import { getHostname, onShutdown, retrieveSystemAttributes } from "./os.js";
 import {
   ConnectionState,
   DEFAULT_SHUTDOWN_SIGNALS,
+  type ConnectApp,
   type ConnectHandlerOptions,
   type WorkerConnection,
 } from "./types.js";
@@ -52,7 +54,6 @@ import {
   ReconnectError,
   waitWithCancel,
 } from "./util.js";
-import ms from "ms";
 
 const ResponseAcknowlegeDeadline = 5_000;
 
@@ -1276,6 +1277,15 @@ class WebSocketWorkerConnection implements WorkerConnection {
     };
   }
 }
+
+// Export types for convenience
+export {
+  DEFAULT_SHUTDOWN_SIGNALS,
+  type ConnectApp,
+  type ConnectHandlerOptions,
+  type ConnectionState,
+  type WorkerConnection,
+};
 
 export const connect = async (
   options: ConnectHandlerOptions
