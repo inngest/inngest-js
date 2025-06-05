@@ -1,5 +1,11 @@
 # inngest
 
+## 3.39.0
+
+### Minor Changes
+
+- [#994](https://github.com/inngest/inngest-js/pull/994) [`a1e8adb`](https://github.com/inngest/inngest-js/commit/a1e8adba73eff9df9bf9b067a0115c9089d8e1c6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for function singletons
+
 ## 3.38.1
 
 ### Patch Changes
