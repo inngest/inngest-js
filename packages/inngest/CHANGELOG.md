@@ -1,5 +1,11 @@
 # inngest
 
+## 3.39.1
+
+### Patch Changes
+
+- [#999](https://github.com/inngest/inngest-js/pull/999) [`c5d3b6e`](https://github.com/inngest/inngest-js/commit/c5d3b6ecceee0cde61dc3f920e548ce52895c03a) Thanks [@amh4r](https://github.com/amh4r)! - Allow arbitrary field/method access to underlying logger
+
 ## 3.39.0
 
 ### Minor Changes
