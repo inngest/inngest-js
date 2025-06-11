@@ -104,12 +104,38 @@ export const serve = (options: ServeHandlerOptions): any => {
 
           return res.status(status).send(body);
         },
-        transformStreamingResponse: ({ body, headers, status }) => {
+        transformStreamingResponse: async ({ body, headers, status }) => {
+          if (!(body instanceof ReadableStream)) {
+            // Unreachable
+            throw new Error("body is not a ReadableStream");
+          }
+
           for (const [name, value] of Object.entries(headers)) {
             res.setHeader(name, value);
           }
 
-          return res.status(status).send(body);
+          res.status(status);
+
+          const reader = body.getReader();
+          try {
+            // Keep writing from the stream until it's done
+            let done = false;
+            while (!done) {
+              const result = await reader.read();
+              done = result.done;
+              if (!done) {
+                res.write(result.value);
+              }
+            }
+            res.end();
+          } catch (error) {
+            if (error instanceof Error) {
+              res.destroy(error);
+            } else {
+              // Unreachable
+              res.destroy(new Error(String(error)));
+            }
+          }
         },
       };
     },
