@@ -1,4 +1,4 @@
-import type { MockInstance } from "vitest";
+import type { Mock, MockInstance } from "vitest";
 import { DefaultLogger, type Logger, ProxyLogger } from "./logger.ts";
 
 describe("ProxyLogger", () => {
@@ -60,22 +60,22 @@ describe("ProxyLogger", () => {
 
   describe("arbitrary property/method access", () => {
     let internalLogger: Logger & {
-      foo: jest.MockedFunction<() => string>;
+      foo: Mock<() => string>;
       bar: string;
-      customLog: jest.MockedFunction<(msg: string) => void>;
-      anotherLogMethod: jest.MockedFunction<(msg: string) => void>;
+      customLog: Mock<(msg: string) => void>;
+      anotherLogMethod: Mock<(msg: string) => void>;
     };
 
     beforeEach(() => {
       internalLogger = {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn(),
-        foo: jest.fn(() => "custom result"),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        foo: vi.fn(() => "custom result"),
         bar: "custom property",
-        customLog: jest.fn(),
-        anotherLogMethod: jest.fn(),
+        customLog: vi.fn(),
+        anotherLogMethod: vi.fn(),
       };
 
       logger = new ProxyLogger(internalLogger);
