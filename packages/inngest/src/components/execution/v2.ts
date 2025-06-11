@@ -1,5 +1,5 @@
 import { trace } from "@opentelemetry/api";
-import { sha1 } from "hash.js";
+import hashjs from "hash.js";
 import { z } from "zod";
 import { headerKeys, internalEvents } from "../../helpers/consts.ts";
 import {
@@ -51,6 +51,8 @@ import {
 } from "./InngestExecution.ts";
 import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
 import { clientProcessorMap } from "./otel/access.ts";
+
+const { sha1 } = hashjs;
 
 export const createV2InngestExecution: InngestExecutionFactory = (options) => {
   return new V2InngestExecution(options);
