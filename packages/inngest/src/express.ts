@@ -104,12 +104,20 @@ export const serve = (options: ServeHandlerOptions): any => {
 
           return res.status(status).send(body);
         },
-        transformStreamingResponse: async ({ body, headers, status }) => {
-          if (!(body instanceof ReadableStream)) {
-            // Unreachable
-            throw new Error("body is not a ReadableStream");
-          }
 
+        /**
+         * Express doesn't support a Web API `ReadableStream` being written as
+         * the response body (only `node:stream` `ReadableStream`s), so we
+         * manually read the stream we're given and call `res.write()` for each
+         * chunk.
+         *
+         * See {@link https://github.com/expressjs/discussions/issues/288}.
+         *
+         * Alternatively, we could pipe this through a transform and create a
+         * Node stream, but the feels more dangerous than just writing directly
+         * to the response.
+         */
+        transformStreamingResponse: async ({ body, headers, status }) => {
           for (const [name, value] of Object.entries(headers)) {
             res.setHeader(name, value);
           }
@@ -132,7 +140,6 @@ export const serve = (options: ServeHandlerOptions): any => {
             if (error instanceof Error) {
               res.destroy(error);
             } else {
-              // Unreachable
               res.destroy(new Error(String(error)));
             }
           }
