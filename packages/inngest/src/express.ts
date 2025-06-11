@@ -103,6 +103,46 @@ export const serve = (options: ServeHandlerOptions): any => {
 
           return res.status(status).send(body);
         },
+
+        /**
+         * Express doesn't support a Web API `ReadableStream` being written as
+         * the response body (only `node:stream` `ReadableStream`s), so we
+         * manually read the stream we're given and call `res.write()` for each
+         * chunk.
+         *
+         * See {@link https://github.com/expressjs/discussions/issues/288}.
+         *
+         * Alternatively, we could pipe this through a transform and create a
+         * Node stream, but the feels more dangerous than just writing directly
+         * to the response.
+         */
+        transformStreamingResponse: async ({ body, headers, status }) => {
+          for (const [name, value] of Object.entries(headers)) {
+            res.setHeader(name, value);
+          }
+
+          res.status(status);
+
+          const reader = body.getReader();
+          try {
+            // Keep writing from the stream until it's done
+            let done = false;
+            while (!done) {
+              const result = await reader.read();
+              done = result.done;
+              if (!done) {
+                res.write(result.value);
+              }
+            }
+            res.end();
+          } catch (error) {
+            if (error instanceof Error) {
+              res.destroy(error);
+            } else {
+              res.destroy(new Error(String(error)));
+            }
+          }
+        },
       };
     },
   });

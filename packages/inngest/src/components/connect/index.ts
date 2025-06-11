@@ -1,5 +1,6 @@
 import { WaitGroup } from "@jpwilliams/waitgroup";
 import debug, { type Debugger } from "debug";
+import ms from "ms";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.ts";
 import {
   allProcessEnv,
@@ -39,20 +40,20 @@ import {
 } from "./messages.ts";
 import { getHostname, onShutdown, retrieveSystemAttributes } from "./os.ts";
 import {
-  type ConnectHandlerOptions,
   ConnectionState,
   DEFAULT_SHUTDOWN_SIGNALS,
+  type ConnectApp,
+  type ConnectHandlerOptions,
   type WorkerConnection,
 } from "./types.ts";
 import {
   AuthError,
   ConnectionLimitError,
-  ReconnectError,
   expBackoff,
   parseTraceCtx,
+  ReconnectError,
   waitWithCancel,
 } from "./util.ts";
-import ms from "ms";
 
 const ResponseAcknowlegeDeadline = 5_000;
 
@@ -826,11 +827,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
         // The intervals should be supplied by the gateway, but we should fall back just in case
         heartbeatIntervalMs =
           readyPayload.heartbeatInterval.length > 0
-            ? ms(readyPayload.heartbeatInterval as ms.StringValue) // TODO Grim cast
+            ? ms(readyPayload.heartbeatInterval)
             : 10_000;
         extendLeaseIntervalMs =
           readyPayload.extendLeaseInterval.length > 0
-            ? ms(readyPayload.extendLeaseInterval as ms.StringValue) // TODO Grim cast
+            ? ms(readyPayload.extendLeaseInterval)
             : 5_000;
 
         resolveWebsocketConnected?.();
@@ -1276,6 +1277,15 @@ class WebSocketWorkerConnection implements WorkerConnection {
     };
   }
 }
+
+// Export types for convenience
+export {
+  DEFAULT_SHUTDOWN_SIGNALS,
+  type ConnectApp,
+  type ConnectHandlerOptions,
+  type ConnectionState,
+  type WorkerConnection
+};
 
 export const connect = async (
   options: ConnectHandlerOptions

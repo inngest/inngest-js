@@ -1212,7 +1212,7 @@ export const functionConfigSchema = z.strictObject({
   singleton: z
     .strictObject({
       key: z.string().optional(),
-      mode: z.enum(["skip", "cancel"]),
+      mode: z.enum(["skip"]),
     })
     .optional(),
   cancel: z

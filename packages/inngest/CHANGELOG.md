@@ -1,5 +1,25 @@
 # inngest
 
+## 3.39.1
+
+### Patch Changes
+
+- [#999](https://github.com/inngest/inngest-js/pull/999) [`c5d3b6e`](https://github.com/inngest/inngest-js/commit/c5d3b6ecceee0cde61dc3f920e548ce52895c03a) Thanks [@amh4r](https://github.com/amh4r)! - Allow arbitrary field/method access to underlying logger
+
+## 3.39.0
+
+### Minor Changes
+
+- [#994](https://github.com/inngest/inngest-js/pull/994) [`a1e8adb`](https://github.com/inngest/inngest-js/commit/a1e8adba73eff9df9bf9b067a0115c9089d8e1c6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for function singletons
+
+## 3.38.1
+
+### Patch Changes
+
+- [#989](https://github.com/inngest/inngest-js/pull/989) [`5e3ec3b`](https://github.com/inngest/inngest-js/commit/5e3ec3b59730b83ecccae2569812cd3ced5794d9) Thanks [@jpwilliams](https://github.com/jpwilliams)! - When executing, use the `serve()` call's client instead of the function's
+
+- [#997](https://github.com/inngest/inngest-js/pull/997) [`4120413`](https://github.com/inngest/inngest-js/commit/41204139dab6ce3767cc3692eb3eeee52db8a6bb) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Add connect types for convenience and discoverability
+
 ## 3.38.0
 
 ### Minor Changes

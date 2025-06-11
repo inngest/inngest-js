@@ -11,3 +11,6 @@ dist
 *.tgz
 examples/**/*/.env
 examples/**/*/dist
+
+# AI
+CLAUDE.md
