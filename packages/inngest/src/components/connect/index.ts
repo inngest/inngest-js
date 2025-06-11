@@ -827,11 +827,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
         // The intervals should be supplied by the gateway, but we should fall back just in case
         heartbeatIntervalMs =
           readyPayload.heartbeatInterval.length > 0
-            ? ms(readyPayload.heartbeatInterval)
+            ? ms(readyPayload.heartbeatInterval as ms.StringValue) // TODO Grim cast
             : 10_000;
         extendLeaseIntervalMs =
           readyPayload.extendLeaseInterval.length > 0
-            ? ms(readyPayload.extendLeaseInterval)
+            ? ms(readyPayload.extendLeaseInterval as ms.StringValue) // TODO Grim cast
             : 5_000;
 
         resolveWebsocketConnected?.();
