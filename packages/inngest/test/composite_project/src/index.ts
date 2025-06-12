@@ -68,7 +68,7 @@ const fn = inngest.createFunction(
   async (ctx) => {
     console.log(ctx);
     return { foo: "bar" };
-  }
+  },
 );
 
 const fn2 = inngest.createFunction(
@@ -77,7 +77,7 @@ const fn2 = inngest.createFunction(
   async (ctx) => {
     console.log(ctx);
     return { foo: "bar" };
-  }
+  },
 );
 
 inngest.createFunction(
@@ -95,5 +95,5 @@ inngest.createFunction(
     });
 
     return { foo: "bar" };
-  }
+  },
 );

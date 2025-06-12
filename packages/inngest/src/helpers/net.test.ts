@@ -1,5 +1,8 @@
-import fetchMock from "jest-fetch-mock";
-import { fetchWithAuthFallback } from "./net";
+import { vi } from "vitest";
+import createFetchMock from "vitest-fetch-mock";
+import { fetchWithAuthFallback } from "./net.ts";
+
+const fetchMock = createFetchMock(vi);
 
 describe("fetchWithAuthFallback", () => {
   beforeEach(() => {
@@ -26,7 +29,7 @@ describe("fetchWithAuthFallback", () => {
   it("should retry with the fallback token if the first request fails with 401", async () => {
     fetchMock.mockResponses(
       [JSON.stringify({}), { status: 401 }],
-      [JSON.stringify({ data: "12345" }), { status: 200 }]
+      [JSON.stringify({ data: "12345" }), { status: 200 }],
     );
 
     const response = await fetchWithAuthFallback({

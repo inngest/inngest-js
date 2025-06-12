@@ -1,6 +1,6 @@
-import { Inngest } from "@local/components/Inngest";
-import { dependencyInjectionMiddleware } from "@local/middleware/dependencyInjection";
-import { assertType } from "../test/helpers";
+import { Inngest } from "../components/Inngest.ts";
+import { assertType } from "../test/helpers.ts";
+import { dependencyInjectionMiddleware } from "./dependencyInjection.ts";
 
 describe("Mutates ctx", () => {
   test("ctx is injected into the function input", () => {

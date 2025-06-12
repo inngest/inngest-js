@@ -6,6 +6,9 @@ node_modules
 
 .idea
 
+# Build output
+dist
+*.tgz
 examples/**/*/.env
 examples/**/*/dist
 
