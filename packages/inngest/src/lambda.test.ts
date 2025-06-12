@@ -14,7 +14,7 @@ testFramework("AWS Lambda", LambdaHandler, {
           Object.entries(req.headers).map(([key, value]) => [
             key.toUpperCase(),
             value,
-          ])
+          ]),
         ),
         httpMethod: req.method,
         queryStringParameters: req.query,

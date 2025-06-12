@@ -83,14 +83,14 @@ describe("ProxyLogger", () => {
 
     test("should access custom methods on underlying logger", () => {
       expect((logger as unknown as Logger & { foo: () => string }).foo()).toBe(
-        "custom result"
+        "custom result",
       );
       expect(internalLogger.foo).toHaveBeenCalledTimes(1);
     });
 
     test("should access custom properties on underlying logger", () => {
       expect((logger as unknown as Logger & { bar: string }).bar).toBe(
-        "custom property"
+        "custom property",
       );
       expect(internalLogger.bar).toBe("custom property");
     });
@@ -107,18 +107,16 @@ describe("ProxyLogger", () => {
       logger.disable();
 
       (logger as unknown as Logger & { info: (msg: string) => void }).info(
-        "disabled message"
+        "disabled message",
       );
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(internalLogger.info).not.toHaveBeenCalled();
 
       logger.enable();
       (logger as unknown as Logger & { info: (msg: string) => void }).info(
-        "enabled message"
+        "enabled message",
       );
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(internalLogger.info).toHaveBeenCalledWith("enabled message");
     });
 
@@ -132,7 +130,7 @@ describe("ProxyLogger", () => {
       ).anotherLogMethod("custom log message");
 
       expect(internalLogger.anotherLogMethod).toHaveBeenCalledWith(
-        "custom log message"
+        "custom log message",
       );
     });
 

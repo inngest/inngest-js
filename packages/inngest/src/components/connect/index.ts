@@ -12,24 +12,24 @@ import { hashSigningKey } from "../../helpers/strings.ts";
 import {
   ConnectMessage,
   GatewayConnectionReadyData,
+  type GatewayExecutorRequestData,
   GatewayMessageType,
-  gatewayMessageTypeToJSON,
   SDKResponse,
   SDKResponseStatus,
   WorkerConnectRequestData,
   WorkerDisconnectReason,
-  workerDisconnectReasonToJSON,
   WorkerRequestAckData,
   WorkerRequestExtendLeaseAckData,
   WorkerRequestExtendLeaseData,
-  type GatewayExecutorRequestData,
+  gatewayMessageTypeToJSON,
+  workerDisconnectReasonToJSON,
 } from "../../proto/src/components/connect/protobuf/connect.ts";
-import { type Capabilities, type FunctionConfig } from "../../types.ts";
+import type { Capabilities, FunctionConfig } from "../../types.ts";
 import { version } from "../../version.ts";
-import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
-import { type Inngest } from "../Inngest.ts";
+import type { Inngest } from "../Inngest.ts";
 import { InngestCommHandler } from "../InngestCommHandler.ts";
-import { type InngestFunction } from "../InngestFunction.ts";
+import type { InngestFunction } from "../InngestFunction.ts";
+import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
 import { MessageBuffer } from "./buffer.ts";
 import {
   createStartRequest,
@@ -40,18 +40,18 @@ import {
 } from "./messages.ts";
 import { getHostname, onShutdown, retrieveSystemAttributes } from "./os.ts";
 import {
-  ConnectionState,
-  DEFAULT_SHUTDOWN_SIGNALS,
   type ConnectApp,
   type ConnectHandlerOptions,
+  ConnectionState,
+  DEFAULT_SHUTDOWN_SIGNALS,
   type WorkerConnection,
 } from "./types.ts";
 import {
   AuthError,
   ConnectionLimitError,
+  ReconnectError,
   expBackoff,
   parseTraceCtx,
-  ReconnectError,
   waitWithCancel,
 } from "./util.ts";
 
@@ -74,7 +74,7 @@ const ConnectWebSocketProtocol = "v0.connect.inngest.com";
 type ConnectCommHandler = InngestCommHandler<
   [GatewayExecutorRequestData],
   SDKResponse,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   any
 >;
 
@@ -154,7 +154,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     for (const app of options.apps) {
       if (app.client.env !== this.inngest.env) {
         throw new Error(
-          `All apps must be configured to the same environment. ${app.client.id} is configured to ${app.client.env} but ${this.inngest.id} is configured to ${this.inngest.env}`
+          `All apps must be configured to the same environment. ${app.client.id} is configured to ${app.client.env} but ${this.inngest.id} is configured to ${this.inngest.env}`,
         );
       }
     }
@@ -215,7 +215,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
     return options;
   }
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   async close(): Promise<void> {
     // Remove the shutdown signal handler
     if (this.cleanupShutdownSignal) {
@@ -304,12 +303,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
     if (
       this.options.signingKey &&
       this.options.signingKey.startsWith(
-        InngestBranchEnvironmentSigningKeyPrefix
+        InngestBranchEnvironmentSigningKeyPrefix,
       ) &&
       !this._inngestEnv
     ) {
       throw new Error(
-        "Environment is required when using branch environment signing keys"
+        "Environment is required when using branch environment signing keys",
       );
     }
 
@@ -337,7 +336,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }
     > = {};
     for (const [appId, { client, functions }] of Object.entries(
-      this.functions
+      this.functions,
     )) {
       functionConfigs[appId] = {
         client: client,
@@ -346,7 +345,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
             baseUrl: new URL("wss://connect"),
             appPrefix: client.id,
             isConnect: true,
-          })
+          }),
         ),
       };
     }
@@ -361,7 +360,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
               stepUrls: Object.values(f.steps).map((s) => s.runtime["url"]),
             })),
           });
-        }
+        },
       ),
     });
 
@@ -374,7 +373,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           appName: appId,
           appVersion: client.appVersion,
           functions: new TextEncoder().encode(JSON.stringify(functions)),
-        })
+        }),
       ),
     };
 
@@ -383,7 +382,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       (msg: GatewayExecutorRequestData) => Promise<SDKResponse>
     > = {};
     for (const [appId, { client, functions }] of Object.entries(
-      this.functions
+      this.functions,
     )) {
       const inngestCommHandler: ConnectCommHandler = new InngestCommHandler({
         client: client,
@@ -451,7 +450,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
                 requestVersion: parseInt(
                   headers[headerKeys.RequestVersion] ??
                     PREFERRED_EXECUTION_VERSION.toString(),
-                  10
+                  10,
                 ),
                 systemTraceCtx: msg.systemTraceCtx,
                 userTraceCtx: msg.userTraceCtx,
@@ -500,7 +499,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           useSigningKey,
           data,
           attempt,
-          [...path]
+          [...path],
         );
         return;
       } catch (err) {
@@ -524,7 +523,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
         if (err instanceof ConnectionLimitError) {
           console.error(
-            "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue."
+            "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue.",
           );
           // Continue reconnecting, do not throw.
         }
@@ -536,7 +535,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           delay,
           () =>
             this.state === ConnectionState.CLOSING ||
-            this.state === ConnectionState.CLOSED
+            this.state === ConnectionState.CLOSED,
         );
         if (cancelled) {
           this.debug("Reconnect backoff cancelled");
@@ -552,7 +551,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
   private async sendStartRequest(
     hashedSigningKey: string | undefined,
-    attempt: number
+    attempt: number,
   ) {
     const msg = createStartRequest(Array.from(this.excludeGateways));
 
@@ -582,7 +581,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       const errMsg = err instanceof Error ? err.message : "Unknown error";
       throw new ReconnectError(
         `Failed initial API handshake request to ${targetUrl.toString()}, ${errMsg}`,
-        attempt
+        attempt,
       );
     }
 
@@ -592,7 +591,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           `Failed initial API handshake request to ${targetUrl.toString()}${
             this._inngestEnv ? ` (env: ${this._inngestEnv})` : ""
           }, ${await resp.text()}`,
-          attempt
+          attempt,
         );
       }
 
@@ -602,7 +601,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
       throw new ReconnectError(
         `Failed initial API handshake request to ${targetUrl.toString()}, ${await resp.text()}`,
-        attempt
+        attempt,
       );
     }
 
@@ -619,7 +618,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     hashedSigningKey: string | undefined,
     data: connectionEstablishData,
     attempt: number,
-    path: string[] = []
+    path: string[] = [],
   ): Promise<{ cleanup: () => void }> {
     let closed = false;
 
@@ -638,7 +637,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     let resolveWebsocketConnected:
       | ((value: void | PromiseLike<void>) => void)
       | undefined;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     let rejectWebsocketConnected: ((reason?: any) => void) | undefined;
     const websocketConnectedPromise = new Promise((resolve, reject) => {
       resolveWebsocketConnected = resolve;
@@ -648,14 +647,14 @@ class WebSocketWorkerConnection implements WorkerConnection {
     const connectTimeout = setTimeout(() => {
       this.excludeGateways.add(startResp.gatewayGroup);
       rejectWebsocketConnected?.(
-        new ReconnectError(`Connection ${connectionId} timed out`, attempt)
+        new ReconnectError(`Connection ${connectionId} timed out`, attempt),
       );
     }, 10_000);
 
     let finalEndpoint = startResp.gatewayEndpoint;
     if (this.options.rewriteGatewayEndpoint) {
       const rewritten = this.options.rewriteGatewayEndpoint(
-        startResp.gatewayEndpoint
+        startResp.gatewayEndpoint,
       );
       this.debug("Rewriting gateway endpoint", {
         original: startResp.gatewayEndpoint,
@@ -682,7 +681,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
             `Connection error while initializing but already in closed state, skipping`,
             {
               connectionId,
-            }
+            },
           );
           return;
         }
@@ -701,7 +700,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         ws.onclose = () => {};
         ws.close(
           4001, // incomplete setup
-          workerDisconnectReasonToJSON(WorkerDisconnectReason.UNEXPECTED)
+          workerDisconnectReasonToJSON(WorkerDisconnectReason.UNEXPECTED),
         );
 
         rejectWebsocketConnected?.(
@@ -709,8 +708,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
             `Error while connecting (${connectionId}): ${
               error instanceof Error ? error.message : "Unknown error"
             }`,
-            attempt
-          )
+            attempt,
+          ),
         );
       };
 
@@ -719,8 +718,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
         void onConnectionError(
           new ReconnectError(
             `Connection ${connectionId} closed: ${ev.reason}`,
-            attempt
-          )
+            attempt,
+          ),
         );
       };
     }
@@ -746,7 +745,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         `Received message: ${gatewayMessageTypeToJSON(connectMessage.kind)}`,
         {
           connectionId,
-        }
+        },
       );
 
       if (!setupState.receivedGatewayHello) {
@@ -754,10 +753,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
           void onConnectionError(
             new ReconnectError(
               `Expected hello message, got ${gatewayMessageTypeToJSON(
-                connectMessage.kind
+                connectMessage.kind,
               )}`,
-              attempt
-            )
+              attempt,
+            ),
           );
           return;
         }
@@ -787,7 +786,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         });
 
         const workerConnectRequestMsgBytes = WorkerConnectRequestData.encode(
-          workerConnectRequestMsg
+          workerConnectRequestMsg,
         ).finish();
 
         ws.send(
@@ -795,8 +794,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
             ConnectMessage.create({
               kind: GatewayMessageType.WORKER_CONNECT,
               payload: workerConnectRequestMsgBytes,
-            })
-          ).finish()
+            }),
+          ).finish(),
         );
 
         setupState.sentWorkerConnect = true;
@@ -810,16 +809,16 @@ class WebSocketWorkerConnection implements WorkerConnection {
           void onConnectionError(
             new ReconnectError(
               `Expected ready message, got ${gatewayMessageTypeToJSON(
-                connectMessage.kind
+                connectMessage.kind,
               )}`,
-              attempt
-            )
+              attempt,
+            ),
           );
           return;
         }
 
         const readyPayload = GatewayConnectionReadyData.decode(
-          connectMessage.payload
+          connectMessage.payload,
         );
 
         setupState.receivedConnectionReady = true;
@@ -898,7 +897,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           this.state === ConnectionState.CLOSED
         ) {
           this.debug(
-            `Connection error (${connectionId}) but already closing or closed, skipping`
+            `Connection error (${connectionId}) but already closing or closed, skipping`,
           );
           return;
         }
@@ -909,20 +908,19 @@ class WebSocketWorkerConnection implements WorkerConnection {
         // If this connection is draining and got closed unexpectedly, there's already a new connection being established
         if (isDraining) {
           this.debug(
-            `Connection error (${connectionId}) but already draining, skipping`
+            `Connection error (${connectionId}) but already draining, skipping`,
           );
           return;
         }
 
         this.debug(`Connection error (${connectionId})`, error);
-        // eslint-disable-next-line @typescript-eslint/no-floating-promises
         this.connect(attempt + 1, [...path, "onConnectionError"]);
       };
 
       ws.onerror = (err) => onConnectionError(err);
       ws.onclose = (ev) => {
         void onConnectionError(
-          new ReconnectError(`Connection closed: ${ev.reason}`, attempt)
+          new ReconnectError(`Connection closed: ${ev.reason}`, attempt),
         );
       };
     }
@@ -938,7 +936,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         try {
           this.debug(
             "Setting up new connection while keeping previous connection open",
-            { connectionId }
+            { connectionId },
           );
 
           // Wait for new conn to be successfully established
@@ -949,6 +947,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         } catch (err) {
           this.debug("Failed to reconnect after receiving draining message", {
             connectionId,
+            err,
           });
 
           // Clean up the old connection
@@ -957,8 +956,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
           void onConnectionError(
             new ReconnectError(
               `Failed to reconnect after receiving draining message (${connectionId})`,
-              attempt
-            )
+              attempt,
+            ),
           );
         }
         return;
@@ -981,7 +980,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         }
 
         const gatewayExecutorRequest = parseGatewayExecutorRequest(
-          connectMessage.payload
+          connectMessage.payload,
         );
 
         this.debug("Received gateway executor request", {
@@ -1036,10 +1035,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
                   userTraceCtx: gatewayExecutorRequest.userTraceCtx,
                   systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
                   runId: gatewayExecutorRequest.runId,
-                })
+                }),
               ).finish(),
-            })
-          ).finish()
+            }),
+          ).finish(),
         );
 
         this.inProgressRequests.wg.add(1);
@@ -1087,10 +1086,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
                       systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
 
                       leaseId: currentLeaseId,
-                    })
+                    }),
                   ).finish(),
-                })
-              ).finish()
+                }),
+              ).finish(),
             );
           }, extendLeaseIntervalMs);
 
@@ -1118,8 +1117,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
               ConnectMessage.create({
                 kind: GatewayMessageType.WORKER_REPLY,
                 payload: SDKResponse.encode(res).finish(),
-              })
-            ).finish()
+              }),
+            ).finish(),
           );
         } finally {
           this.inProgressRequests.wg.done();
@@ -1150,7 +1149,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE_ACK
       ) {
         const extendLeaseAck = WorkerRequestExtendLeaseAckData.decode(
-          connectMessage.payload
+          connectMessage.payload,
         );
 
         this.debug("received extend lease ack", {
@@ -1197,8 +1196,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
           void onConnectionError(
             new ReconnectError(
               `Consecutive gateway heartbeats missed (${connectionId})`,
-              attempt
-            )
+              attempt,
+            ),
           );
           return;
         }
@@ -1213,8 +1212,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
           ConnectMessage.encode(
             ConnectMessage.create({
               kind: GatewayMessageType.WORKER_HEARTBEAT,
-            })
-          ).finish()
+            }),
+          ).finish(),
         );
       }, heartbeatIntervalMs);
     }
@@ -1238,8 +1237,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
           ConnectMessage.encode(
             ConnectMessage.create({
               kind: GatewayMessageType.WORKER_PAUSE,
-            })
-          ).finish()
+            }),
+          ).finish(),
         );
       }
 
@@ -1248,7 +1247,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       ws.onclose = () => {};
       ws.close(
         1000,
-        workerDisconnectReasonToJSON(WorkerDisconnectReason.WORKER_SHUTDOWN)
+        workerDisconnectReasonToJSON(WorkerDisconnectReason.WORKER_SHUTDOWN),
       );
 
       if (this.currentConnection?.id === connectionId) {
@@ -1284,12 +1283,11 @@ export {
   type ConnectApp,
   type ConnectHandlerOptions,
   type ConnectionState,
-  type WorkerConnection
+  type WorkerConnection,
 };
 
 export const connect = async (
-  options: ConnectHandlerOptions
-  // eslint-disable-next-line @typescript-eslint/require-await
+  options: ConnectHandlerOptions,
 ): Promise<WorkerConnection> => {
   if (options.apps.length === 0) {
     throw new Error("No apps provided");

@@ -19,18 +19,18 @@ import {
 } from "../../helpers/promises.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
-  jsonErrorSchema,
-  StepOpCode,
   type BaseContext,
   type Context,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
   type OutgoingOp,
+  StepOpCode,
+  jsonErrorSchema,
 } from "../../types.ts";
 import { version } from "../../version.ts";
-import { type Inngest } from "../Inngest.ts";
-import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
+import type { Inngest } from "../Inngest.ts";
+import { type RunHookStack, getHookStack } from "../InngestMiddleware.ts";
 import {
   type FoundStep,
   STEP_INDEXING_SUFFIX,
@@ -125,7 +125,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                   span.end();
                 });
             });
-          }
+          },
         );
       });
     }

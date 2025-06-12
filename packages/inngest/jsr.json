@@ -3,9 +3,7 @@
   "name": "@inngest/sdk",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "version": "3.39.1",
-  "include": [
-    "./src/**/*.ts"
-  ],
+  "include": ["./src/**/*.ts"],
   "exclude": [
     "./src/test/**",
     "./test/**",

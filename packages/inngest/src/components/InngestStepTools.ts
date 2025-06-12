@@ -311,7 +311,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
     waitForSignal: createTool<
       <TData>(
         idOrOptions: StepOptionsOrId,
-        opts: WaitForSignalOpts
+        opts: WaitForSignalOpts,
       ) => Promise<{ signal: string; data: Jsonify<TData> } | null>
     >(({ id, name }, opts) => {
       // TODO Should support Temporal.DurationLike, Temporal.InstantLike,
@@ -355,7 +355,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
             headers: execution["options"]["headers"],
           });
         },
-      }
+      },
     ),
 
     /**

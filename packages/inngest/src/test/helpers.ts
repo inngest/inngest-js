@@ -137,7 +137,7 @@ export const runFnWithStack = async (
   const execution = fn["createExecution"]({
     version: opts?.executionVersion ?? PREFERRED_EXECUTION_VERSION,
     partialOptions: {
-      client: fn['client'],
+      client: fn["client"],
       data: fromPartial({
         event: opts?.event || { name: "foo", data: {} },
       }),
@@ -1805,7 +1805,9 @@ export function assertType<T>(subject: T): asserts subject is T {}
  */
 export const nodeVersion = process.version
   ? (() => {
-      const [major, minor, patch] = process.versions.node.split(".").map(Number);
+      const [major, minor, patch] = process.versions.node
+        .split(".")
+        .map(Number);
 
       return { major, minor, patch };
     })()

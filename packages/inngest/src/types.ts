@@ -52,7 +52,7 @@ const maybeJsonErrorSchema: z.ZodType<{
     message: z.string().trim(),
     stack: z.string().trim().optional(),
     cause: z.union([maybeJsonErrorSchema, z.unknown()]).optional(),
-  })
+  }),
 );
 
 export type JsonError = z.infer<typeof baseJsonErrorSchema> & {

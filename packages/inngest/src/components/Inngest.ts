@@ -52,12 +52,12 @@ import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
   type ExtendWithMiddleware,
-  getHookStack,
   InngestMiddleware,
   type MiddlewareOptions,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
+  getHookStack,
 } from "./InngestMiddleware.ts";
 
 /**
@@ -459,14 +459,14 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   }): Promise<InngestApi.SendSignalResponse> {
     const res = await this.inngestApi.sendSignal(
       { signal, data },
-      { ...this.headers, ...headers }
+      { ...this.headers, ...headers },
     );
     if (res.ok) {
       return res.value;
     }
 
     throw new Error(
-      `Failed to send signal: ${res.error?.error || "Unknown error"}`
+      `Failed to send signal: ${res.error?.error || "Unknown error"}`,
     );
   }
 

@@ -98,7 +98,7 @@ export const serve = (
       const headersMap = new Map<string, string | undefined>([
         ...Object.entries(event.headers).map(
           ([key, value]) =>
-            [key.toLowerCase().trim(), value] as [string, string | undefined]
+            [key.toLowerCase().trim(), value] as [string, string | undefined],
         ),
       ]);
 

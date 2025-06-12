@@ -188,7 +188,7 @@ export class InngestApi {
   async publish(
     publishOptions: InngestApi.PublishOptions,
     // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    data: any
+    data: any,
   ): Promise<Result<void, ErrorResponse>> {
     // todo it may not be a "text/stream"
     const isStream = data instanceof ReadableStream;
@@ -244,7 +244,7 @@ export class InngestApi {
     signalOptions: InngestApi.SendSignalOptions,
     options?: {
       headers?: Record<string, string>;
-    }
+    },
   ): Promise<Result<InngestApi.SendSignalResponse, ErrorResponse>> {
     const url = await this.getTargetUrl("/v1/signals");
 
@@ -283,7 +283,7 @@ export class InngestApi {
         let json: unknown;
         try {
           json = await res.json();
-        } catch (error) {
+        } catch {
           // res.json() failed so not a valid JSON response
           return err({
             error: `Failed to send signal: ${res.status} ${

@@ -1,5 +1,5 @@
-import { type Context, type StepOptions } from "../../types.ts";
-import { type Inngest } from "../Inngest.ts";
+import type { Context, StepOptions } from "../../types.ts";
+import type { Inngest } from "../Inngest.ts";
 
 export interface AsyncContext {
   /**
