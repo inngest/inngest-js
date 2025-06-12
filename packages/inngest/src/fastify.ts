@@ -71,7 +71,7 @@ export const frameworkName: SupportedFrameworkName = "fastify";
 
 type InngestPluginOptions = {
   client: Inngest.Like;
-  functions: InngestFunction.Any[];
+  functions: InngestFunction.Like[];
   options?: RegisterOptions;
 };
 
