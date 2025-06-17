@@ -569,7 +569,7 @@ export namespace InngestFunction {
     /**
      * Ensures that only one run of the function is active at a time for a given key.
      * If a new run is triggered while another is still in progress with the same key,
-     * the new run will be skipped.
+     * the new run will either be skipped or replace the active one, depending on the mode.
      *
      * This is useful for deduplication or enforcing exclusive execution.
      */
@@ -584,8 +584,9 @@ export namespace InngestFunction {
       /**
        * Determines how to handle new runs when one is already active for the same key.
        * - `"skip"` skips the new run.
+       * - `"cancel"` cancels the existing run and starts the new one.
        */
-      mode: "skip";
+      mode: "skip" | "cancel";
     };
 
     cancelOn?: Cancellation<GetEvents<TClient, true>>[];
