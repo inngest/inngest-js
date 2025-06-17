@@ -28,7 +28,7 @@
     "dev:build": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run build'",
     "dev:lint": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run lint'",
     "build:copy": "cp package.json LICENSE.md README.md CHANGELOG.md dist",
-    "local:pack": "pnpm run build && pnpm run build:copy && yarn pack --verbose --frozen-lockfile --filename inngest.tgz --cwd dist",
+    "local:pack": "pnpm run build && pnpm run build:copy && mv $(npm pack ./dist --pack-destination . --silent) inngest.tgz",
     "dev:example": "tsx scripts/runExample.ts",
     "bench": "tsx test/benchmark/main.ts"
   },
