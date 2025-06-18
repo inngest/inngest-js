@@ -27,7 +27,7 @@ All functions source code are available in the [`src/lib/demo-functions.ts`](./s
 ## Deploy on Vercel
 
 1. Using the following button to create a new Vercel project using this repository:
-   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Finngest%2Fexamples%2Ftree%2Fmain%2Fexamples%2Fframework-nextjs-starter)
+   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Finngest%2Finngest-js%2Ftree%2Fmain%2Fexamples%2Fframework-nextjs-starter)
 
 2. Once your Vercel project is deployed, navigate to the [Inngest Vercel Integration](https://vercel.com/integrations/inngest) page and click **Connect Account** (_you can create an Inngest account during this step_).
 

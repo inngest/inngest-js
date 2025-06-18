@@ -121,7 +121,12 @@ function Step1({ onNext }: { onNext: () => void }) {
       const res = await fetch("/api/trigger-simple", { method: "POST" });
       const data = await res.json();
       setStatus("Pending...");
-      pollStatus(data.eventId);
+      setTimeout(
+        () => {
+          pollStatus(data.eventId);
+        },
+        process.env.NEXT_PUBLIC_VERCEL_ENV ? 3000 : 500
+      );
     } catch {
       setError("Failed to trigger function");
       setLoading(false);
@@ -556,11 +561,8 @@ export const throttledFunction = inngest.createFunction(
       );
       const data = await res.json();
 
-      console.log(data);
-
       const runs = data.runs.filter((run: any) => !!run.eventId);
 
-      console.log(runs);
       setRuns(runs);
 
       if (
@@ -770,28 +772,28 @@ export default function Home() {
                 </div>
               </Card>
             </CarouselItem>
-            <CarouselItem>
-              <Card className="p-8 space-y-6 border border-gray-200 bg-white">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                  {steps[2].title}
-                </h2>
-                <p className="text-gray-600 mb-4">{steps[2].description}</p>
-                <div className="min-h-[120px] flex items-center justify-center text-gray-400">
-                  <Step3 onNext={onNext} />
-                </div>
-              </Card>
-            </CarouselItem>
             {!process.env.NEXT_PUBLIC_VERCEL_ENV && (
               <CarouselItem>
                 <Card className="p-8 space-y-6 border border-gray-200 bg-white">
                   <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                    {steps[3].title}
+                    {steps[2].title}
                   </h2>
-                  <p className="text-gray-600 mb-0">{steps[3].description}</p>
-                  <Step4 onNext={onNext} />
+                  <p className="text-gray-600 mb-4">{steps[2].description}</p>
+                  <div className="min-h-[120px] flex items-center justify-center text-gray-400">
+                    <Step3 onNext={onNext} />
+                  </div>
                 </Card>
               </CarouselItem>
             )}
+            <CarouselItem>
+              <Card className="p-8 space-y-6 border border-gray-200 bg-white">
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                  {steps[3].title}
+                </h2>
+                <p className="text-gray-600 mb-0">{steps[3].description}</p>
+                <Step4 onNext={onNext} />
+              </Card>
+            </CarouselItem>
             <CarouselItem>
               <Card className="p-8 space-y-6 border border-gray-200 bg-white">
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">
