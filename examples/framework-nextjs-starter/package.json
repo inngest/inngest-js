@@ -9,14 +9,14 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@inngest/realtime": "^0.3.1",
+    "@inngest/realtime": "latest",
     "@radix-ui/react-slot": "^1.2.2",
     "@radix-ui/react-toast": "^1.2.13",
     "@tailwindcss/postcss": "^4.1.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "embla-carousel-react": "^8.6.0",
-    "inngest": "^3.35.1",
+    "inngest": "latest",
     "lucide-react": "^0.507.0",
     "next": "15.3.2",
     "postcss": "^8.5.3",

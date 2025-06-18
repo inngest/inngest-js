@@ -2,7 +2,7 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
-import { BookOpen, BookMarked, CheckIcon, VideoIcon } from "lucide-react";
+import { BookOpen, BookMarked, VideoIcon } from "lucide-react";
 import { useCallback, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -158,39 +158,43 @@ function Step1({ onNext }: { onNext: () => void }) {
 
   return (
     <div className="flex flex-col items-start gap-8 w-full">
-      <div className="flex-1 flex flex-row items-center">
-        <div
-          className={`rounded-full w-8 h-8 mr-2 flex items-center justify-center font-bold text-white shadow bg-gray-300`}
-        >
-          1
-        </div>
-        <span className="text-sm text-center text-gray-700 font-medium">
-          Start your Inngest Dev Server
-        </span>
-      </div>
-      <Alert className="w-full bg-blue-50 border-blue-200">
-        <AlertTitle className="text-blue-900">
-          Start the Inngest Dev Server
-        </AlertTitle>
-        <AlertDescription>
-          <div className="flex flex-row gap-2 mt-2 items-center">
-            <code
-              onClick={copyDevServerCmd}
-              className="cursor-pointer bg-blue-100 px-2 py-1 rounded text-blue-800 font-mono text-sm"
+      {process.env.NEXT_PUBLIC_VERCEL_ENV ? null : (
+        <>
+          <div className="flex-1 flex flex-row items-center">
+            <div
+              className={`rounded-full w-8 h-8 mr-2 flex items-center justify-center font-bold text-white shadow bg-gray-300`}
             >
-              npx inngest-cli@latest dev
-            </code>
-            <span className="text-xs font-thin text-blue-700">
-              (Click to copy)
+              1
+            </div>
+            <span className="text-sm text-center text-gray-700 font-medium">
+              Start your Inngest Dev Server
             </span>
           </div>
-        </AlertDescription>
-      </Alert>
+          <Alert className="w-full bg-blue-50 border-blue-200">
+            <AlertTitle className="text-blue-900">
+              Start the Inngest Dev Server
+            </AlertTitle>
+            <AlertDescription>
+              <div className="flex flex-row gap-2 mt-2 items-center">
+                <code
+                  onClick={copyDevServerCmd}
+                  className="cursor-pointer bg-blue-100 px-2 py-1 rounded text-blue-800 font-mono text-sm"
+                >
+                  npx inngest-cli@latest dev
+                </code>
+                <span className="text-xs font-thin text-blue-700">
+                  (Click to copy)
+                </span>
+              </div>
+            </AlertDescription>
+          </Alert>
+        </>
+      )}
       <div className="flex-1 flex flex-row items-center">
         <div
           className={`rounded-full w-8 h-8 mr-2 flex items-center justify-center font-bold text-white shadow bg-gray-300`}
         >
-          2
+          {process.env.NEXT_PUBLIC_VERCEL_ENV ? 1 : 2}
         </div>
         <span className="text-sm text-center text-gray-700 font-medium">
           Trigger a function
@@ -777,25 +781,22 @@ export default function Home() {
                 </div>
               </Card>
             </CarouselItem>
-            <CarouselItem>
-              <Card className="p-8 space-y-6 border border-gray-200 bg-white">
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">
-                  {steps[3].title}
-                </h2>
-                <p className="text-gray-600 mb-0">{steps[3].description}</p>
-                <Step4 onNext={onNext} />
-              </Card>
-            </CarouselItem>
+            {!process.env.NEXT_PUBLIC_VERCEL_ENV && (
+              <CarouselItem>
+                <Card className="p-8 space-y-6 border border-gray-200 bg-white">
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                    {steps[3].title}
+                  </h2>
+                  <p className="text-gray-600 mb-0">{steps[3].description}</p>
+                  <Step4 onNext={onNext} />
+                </Card>
+              </CarouselItem>
+            )}
             <CarouselItem>
               <Card className="p-8 space-y-6 border border-gray-200 bg-white">
                 <h2 className="text-2xl font-bold text-gray-900 mb-2">
                   {steps[4].title}
                 </h2>
-                <div className="min-h-[120px] flex items-center justify-center text-gray-400 m-5">
-                  <div className="w-40 rounded-full bg-gray-300 h-40 flex items-center justify-center">
-                    <CheckIcon className="w-20 h-20 text-white" />
-                  </div>
-                </div>
                 <p className="text-gray-600 mb-0">
                   {"You've now seen the main features of Inngest. "}
                   <a
