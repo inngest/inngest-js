@@ -731,6 +731,7 @@ export default function Home() {
           <Image
             src="/inngest-logo.svg"
             alt="Inngest Logo"
+            className="invert"
             width={120}
             height={36}
             priority
