@@ -175,6 +175,8 @@ export type ScheduledTimerEventPayload = Simplify<
  * from SDK step functions.
  */
 export enum StepOpCode {
+  WaitForSignal = "WaitForSignal",
+
   WaitForEvent = "WaitForEvent",
 
   /**
@@ -1205,6 +1207,12 @@ export const functionConfigSchema = z.strictObject({
       limit: z.number(),
       period: z.string().transform((x) => x as TimeStr),
       burst: z.number().optional(),
+    })
+    .optional(),
+  singleton: z
+    .strictObject({
+      key: z.string().optional(),
+      mode: z.enum(["skip"]),
     })
     .optional(),
   cancel: z

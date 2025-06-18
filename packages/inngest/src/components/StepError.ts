@@ -31,7 +31,7 @@ export class StepError extends Error {
 
     // Try setting the cause if we have one
     this.cause = parsedErr.cause
-      ? deserializeError(parsedErr.cause)
+      ? deserializeError(parsedErr.cause, true)
       : undefined;
   }
 }
