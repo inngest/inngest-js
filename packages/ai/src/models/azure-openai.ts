@@ -40,6 +40,10 @@ export const azureOpenai: AiAdapter.ModelCreator<
     ...baseModel,
     url: url.href,
     format: "azure-openai" as const,
+    onCall(_, body) {
+      Object.assign(body, options.defaultParameters);
+      body.model ||= options.model;
+    },
     // Override headers to use Azure's API key format
     headers: {
       "api-key": baseModel.authKey,
