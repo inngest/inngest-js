@@ -1,6 +1,7 @@
-import { type AiAdapter } from "../adapter.js"
-import { type AzureOpenAiAiAdapter } from "../adapters/azure-openai.js"
-import { openai, type OpenAi } from "./openai.js"
+import { type AiAdapter } from "../adapter.js";
+import { type AzureOpenAiAiAdapter } from "../adapters/azure-openai.js";
+import { envKeys, processEnv } from "../env.js";
+import { openai, type OpenAi } from "./openai.js";
 
 /**
  * Creates an Azure OpenAI model that uses the OpenAI chat format.
@@ -18,23 +19,25 @@ export const azureOpenai: AiAdapter.ModelCreator<
   AzureOpenAi.AiModel
 > = (options) => {
   if (!options.endpoint) {
-    throw new Error("Azure OpenAI endpoint is required")
+    throw new Error("Azure OpenAI endpoint is required");
   }
+
+  const authKey = options.apiKey || processEnv(envKeys.AzureOpenAiApiKey) || "";
 
   // Create base OpenAI model with Azure endpoint
   const baseModel = openai({
     model: options.model,
-    apiKey: options.apiKey,
+    apiKey: authKey,
     baseUrl: options.endpoint,
     defaultParameters: options.defaultParameters,
-  })
+  });
 
   // Construct Azure-specific URL with deployment and API version
   const url = new URL(
     `openai/deployments/${options.deployment}/chat/completions`,
     options.endpoint
-  )
-  url.searchParams.set("api-version", options.apiVersion)
+  );
+  url.searchParams.set("api-version", options.apiVersion);
 
   return {
     ...baseModel,
@@ -50,12 +53,12 @@ export const azureOpenai: AiAdapter.ModelCreator<
       "Content-Type": "application/json",
     },
     options,
-  }
-}
+  } as AzureOpenAi.AiModel;
+};
 
 export namespace AzureOpenAi {
   /** Reuse OpenAI's model type */
-  export type Model = OpenAi.Model
+  export type Model = OpenAi.Model;
 
   /**
    * Options for creating an Azure OpenAI model.
@@ -63,11 +66,15 @@ export namespace AzureOpenAi {
    * - endpoint: The Azure OpenAI endpoint URL
    * - deployment: The deployment name for the model
    * - apiVersion: The Azure OpenAI API version to use
+   *
+   * The Azure OpenAI API key can be provided via the `apiKey` option or the
+   * `AZURE_OPENAI_API_KEY` environment variable.
    */
-  export interface AiModelOptions extends Omit<OpenAi.AiModelOptions, "baseUrl"> {
-    endpoint: string
-    deployment: string
-    apiVersion: string
+  export interface AiModelOptions
+    extends Omit<OpenAi.AiModelOptions, "baseUrl"> {
+    endpoint: string;
+    deployment: string;
+    apiVersion: string;
   }
 
   /**
@@ -76,6 +83,6 @@ export namespace AzureOpenAi {
    * endpoint structure and authentication.
    */
   export interface AiModel extends AzureOpenAiAiAdapter {
-    options: AiModelOptions
+    options: AiModelOptions;
   }
 }
