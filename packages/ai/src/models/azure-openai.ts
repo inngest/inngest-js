@@ -61,10 +61,16 @@ export namespace AzureOpenAi {
   export type Model = OpenAi.Model;
 
   /**
+   * Common deployment names for Azure OpenAI.
+   * In Azure, deployments usually correspond to model names.
+   */
+  export type Deployment = AzureOpenAiAiAdapter.Deployment;
+
+  /**
    * Options for creating an Azure OpenAI model.
    * Extends OpenAI options but replaces baseUrl with Azure-specific fields:
    * - endpoint: The Azure OpenAI endpoint URL
-   * - deployment: The deployment name for the model
+   * - deployment: The deployment name for the model (usually corresponds to model name)
    * - apiVersion: The Azure OpenAI API version to use
    *
    * The Azure OpenAI API key can be provided via the `apiKey` option or the
@@ -73,7 +79,7 @@ export namespace AzureOpenAi {
   export interface AiModelOptions
     extends Omit<OpenAi.AiModelOptions, "baseUrl"> {
     endpoint: string;
-    deployment: string;
+    deployment: Deployment;
     apiVersion: string;
   }
 
