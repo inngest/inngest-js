@@ -25,6 +25,12 @@ export namespace AnthropicAiAdapter {
   export type Model =
     // eslint-disable-next-line @typescript-eslint/ban-types
     | (string & {})
+    | "claude-opus-4-0"
+    | "claude-opus-4-20250514"
+    | "claude-sonnet-4-0"
+    | "claude-sonnet-4-20250514"
+    | "claude-3-7-sonnet-latest"
+    | "claude-3-7-sonnet-20250219"
     | "claude-3-5-haiku-latest"
     | "claude-3-5-haiku-20241022"
     | "claude-3-5-sonnet-latest"
