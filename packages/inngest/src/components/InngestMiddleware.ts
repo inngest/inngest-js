@@ -165,6 +165,14 @@ export const getHookStack = async <
     }
   >,
 ): Promise<TRet> => {
+  // Get directions of hooks before we start running the middleware.
+  const hookDirs = hookDirections[key as keyof typeof hookDirections];
+  if (!hookDirs) {
+    throw new Error(
+      `No hook directions found for key "${String(key)}". This is likely a bug in the Inngest SDK.`,
+    );
+  }
+
   // Wait for middleware to initialize
   const mwStack = await middleware;
 
@@ -202,7 +210,13 @@ export const getHookStack = async <
 
       const existingWaterfall = ret[key];
       if (existingWaterfall) {
-        fns = [existingWaterfall, hook[key]];
+        if (hookDirs[key as keyof typeof hookDirs] === "forward") {
+          fns = [existingWaterfall, hook[key]];
+        } else {
+          // For backward hooks, put the new hook before the existing waterfall
+          // This creates the proper onion pattern: [foo, bar] -> [bar, foo] for after* hooks
+          fns = [hook[key], existingWaterfall];
+        }
       }
 
       const transform = transforms[key as keyof typeof transforms] as (
@@ -365,6 +379,33 @@ export type MiddlewareRegisterReturn = {
      */
     transformOutput?: MiddlewareSendEventOutput;
   }>;
+};
+
+/**
+ * The direction of each hook that exists in the middleware lifecycle.
+ * This is used to determine whether hooks found in a stack run forwards or
+ * backwards, creating onion-like behaviour.
+ */
+const hookDirections: {
+  [K in keyof MiddlewareRegisterReturn]: Record<
+    keyof Await<NonNullable<MiddlewareRegisterReturn[K]>>,
+    "forward" | "backward"
+  >;
+} = {
+  onFunctionRun: {
+    transformInput: "forward",
+    beforeMemoization: "forward",
+    afterMemoization: "backward",
+    beforeExecution: "forward",
+    afterExecution: "backward",
+    transformOutput: "backward",
+    beforeResponse: "forward",
+    finished: "forward",
+  },
+  onSendEvent: {
+    transformInput: "forward",
+    transformOutput: "backward",
+  },
 };
 
 /**
