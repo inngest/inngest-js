@@ -14,6 +14,92 @@ import { NonRetriableError } from "./NonRetriableError.ts";
 
 describe("stacking and inference", () => {
   describe("onFunctionRun", () => {
+    test("ordered correctly", async () => {
+      const logs: string[] = [];
+
+      const createMw = (name: string) => {
+        return new InngestMiddleware({
+          name,
+          init() {
+            return {
+              onFunctionRun() {
+                return {
+                  transformInput() {
+                    logs.push(`${name} transformInput`);
+                  },
+                  beforeMemoization() {
+                    logs.push(`${name} beforeMemoization`);
+                  },
+                  afterMemoization() {
+                    logs.push(`${name} afterMemoization`);
+                  },
+                  beforeExecution() {
+                    logs.push(`${name} beforeExecution`);
+                  },
+                  afterExecution() {
+                    logs.push(`${name} afterExecution`);
+                  },
+                  transformOutput() {
+                    logs.push(`${name} transformOutput`);
+                  },
+                  beforeResponse() {
+                    logs.push(`${name} beforeResponse`);
+                  },
+                  finished() {
+                    logs.push(`${name} finished`);
+                  },
+                };
+              },
+            };
+          },
+        });
+      };
+
+      const mwFoo = createMw("foo");
+      const mwBar = createMw("bar");
+
+      const client = createClient({
+        id: testClientId,
+        middleware: [mwFoo, mwBar],
+      });
+
+      const fn = client.createFunction(
+        { id: "test-fn" },
+        { event: "test/event" },
+        () => {
+          return "success";
+        },
+      );
+
+      await runFnWithStack(fn, {}, { event: { data: {}, name: "test/event" } });
+
+      // Expected onion pattern:
+      // Forward hooks: foo -> bar
+      // Backward hooks: bar -> foo
+      expect(logs).toEqual([
+        // Forward direction
+        "foo transformInput",
+        "bar transformInput",
+        "foo beforeMemoization",
+        "bar beforeMemoization",
+        // Backward direction (onion pattern)
+        "bar afterMemoization",
+        "foo afterMemoization",
+        "foo beforeExecution",
+        "bar beforeExecution",
+        // Backward direction (onion pattern)
+        "bar afterExecution",
+        "foo afterExecution",
+        "bar transformOutput",
+        "foo transformOutput",
+        // Forward direction - finished comes before beforeResponse
+        "foo finished",
+        "bar finished",
+        "foo beforeResponse",
+        "bar beforeResponse",
+      ]);
+    });
+
     test("has `reqArgs`", () => {
       new InngestMiddleware({
         name: "mw",
@@ -520,7 +606,7 @@ describe("stacking and inference", () => {
 
         expect(res).toMatchObject({
           type: "function-rejected",
-          error: { message: "bar" },
+          error: { message: "foo" },
           retriable: true,
         });
       });
