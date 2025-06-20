@@ -567,7 +567,7 @@ export const throttledFunction = inngest.createFunction(
   async function pollStatus(startAt: string) {
     let done = false;
     while (!done) {
-      await new Promise((r) => setTimeout(r, 1000));
+      await new Promise((r) => setTimeout(r, 300));
       const res = await fetch(
         `/api/multiple-events-status?receivedAfter=${startAt}`
       );
