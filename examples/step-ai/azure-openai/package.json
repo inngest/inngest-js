@@ -1,0 +1,25 @@
+{
+  "name": "azure-openai",
+  "version": "1.0.0",
+  "description": "Azure OpenAI Step AI Example for Inngest",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch index.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "inngest": "latest"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "tsx": "latest",
+    "typescript": "latest"
+  },
+  "keywords": ["azure", "openai", "inngest", "ai", "step"],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.12.1"
+}

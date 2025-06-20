@@ -68,4 +68,5 @@ export enum envKeys {
   AnthropicApiKey = "ANTHROPIC_API_KEY",
   DeepSeekApiKey = "DEEPSEEK_API_KEY",
   GrokApiKey = "XAI_API_KEY",
+  AzureOpenAiApiKey = "AZURE_OPENAI_API_KEY",
 }
