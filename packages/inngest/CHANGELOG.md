@@ -1,5 +1,13 @@
 # inngest
 
+## 3.39.2
+
+### Patch Changes
+
+- [#1001](https://github.com/inngest/inngest-js/pull/1001) [`fbbb498`](https://github.com/inngest/inngest-js/commit/fbbb49854e9599850231c76ad0cc108a6de31696) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add streaming support for `"inngest/express"`
+
+- [#1013](https://github.com/inngest/inngest-js/pull/1013) [`2ac3a71`](https://github.com/inngest/inngest-js/commit/2ac3a718e7eea2662f646627141eecdffece6318) Thanks [@jacobheric](https://github.com/jacobheric)! - Fix errors serialized in the `cause` field not being deserialized correctly
+
 ## 3.39.1
 
 ### Patch Changes
