@@ -17,7 +17,8 @@ async function fetchEvents(receivedAfter: string): Promise<
     `${INNGEST_SERVER_URL}/v1/events?received_after=${receivedAfter}&limit=100`,
     { cache: "no-store" }
   );
-  return (await result.json()).data.map((item: any) => ({
+  const data = (await result.json()).data || [];
+  return data.map((item: any) => ({
     name: item.name,
     id: item.internal_id,
     receivedAt: new Date(item.received_at).getTime(),
