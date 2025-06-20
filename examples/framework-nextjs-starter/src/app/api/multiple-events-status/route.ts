@@ -15,10 +15,15 @@ async function fetchEvents(receivedAfter: string): Promise<
 > {
   const result = await fetch(
     `${INNGEST_SERVER_URL}/v1/events?received_after=${receivedAfter}&limit=100`,
-    { cache: "no-store" }
+    {
+      cache: "no-store",
+      headers: {
+        Authorization: `Bearer ${process.env.INNGEST_SIGNING_KEY}`,
+      },
+    }
   );
-  const data = (await result.json()).data || [];
-  return data.map((item: any) => ({
+  const data = (await result.json()).data;
+  return (data || []).map((item: any) => ({
     name: item.name,
     id: item.internal_id,
     receivedAt: new Date(item.received_at).getTime(),
