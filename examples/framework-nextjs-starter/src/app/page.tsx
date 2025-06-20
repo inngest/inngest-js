@@ -141,7 +141,19 @@ function Step1({ onNext }: { onNext: () => void }) {
       const data = await res.json();
       setStatus(data.status);
       setOutput(data.output);
-      setError(data.error);
+      if (data.error) {
+        if (process.env.NEXT_PUBLIC_VERCEL_ENV) {
+          if (res.status !== 404) {
+            setError(data.error);
+            done = true;
+            setLoading(false);
+          }
+        } else {
+          setError("Failed to trigger function");
+          done = true;
+          setLoading(false);
+        }
+      }
       if (
         data.status === "completed" ||
         data.status === "failed" ||

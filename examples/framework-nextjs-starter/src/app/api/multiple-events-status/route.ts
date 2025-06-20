@@ -1,8 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 
-const INNGEST_SERVER_URL =
-  process.env.INNGEST_DEV_SERVER_URL || "http://127.0.0.1:8288";
+const INNGEST_SERVER_URL = process.env.INNGEST_SIGNING_KEY
+  ? `https://api.inngest.com`
+  : `http://localhost:8288`;
 
 async function fetchEvents(receivedAfter: string): Promise<
   {
