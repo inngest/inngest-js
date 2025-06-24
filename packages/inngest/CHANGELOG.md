@@ -1,5 +1,16 @@
 # inngest
 
+## 3.40.0
+
+### Minor Changes
+
+- [#1011](https://github.com/inngest/inngest-js/pull/1011) [`126a984`](https://github.com/inngest/inngest-js/commit/126a984524968854763eb4ed428dc6ca6127236c) Thanks [@KiKoS0](https://github.com/KiKoS0)! - Add support for cancel mode in function singletons
+
+### Patch Changes
+
+- Updated dependencies [[`bf8ab80`](https://github.com/inngest/inngest-js/commit/bf8ab80fd4601fae6a71188821df1e40e89d541b)]:
+  - @inngest/ai@0.1.5
+
 ## 3.39.2
 
 ### Patch Changes
