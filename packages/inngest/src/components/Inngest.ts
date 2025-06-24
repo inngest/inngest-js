@@ -736,7 +736,10 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   /**
    * Runtime-only validation.
    */
-  private sanitizeOptions<T extends InngestFunction.Options>(options: T): T {
+  private sanitizeOptions<
+    ID extends string,
+    T extends InngestFunction.Options<ID>,
+  >(options: T): T {
     if (Object.prototype.hasOwnProperty.call(options, "fns")) {
       // v2 -> v3 migration warning
       console.warn(
@@ -934,9 +937,11 @@ export namespace Inngest {
         >
       >
     >,
+    ID extends string = string,
   >(
     options: Omit<
       InngestFunction.Options<
+        ID,
         TClient,
         TMiddleware,
         AsArray<TTrigger>,
@@ -947,14 +952,13 @@ export namespace Inngest {
     trigger: TTrigger,
     handler: THandler
   ) => InngestFunction<
-    Omit<
-      InngestFunction.Options<
-        TClient,
-        TMiddleware,
-        AsArray<TTrigger>,
-        TFailureHandler
-      >,
-      "triggers"
+    ID,
+    InngestFunction.Options<
+      ID,
+      TClient,
+      TMiddleware,
+      AsArray<TTrigger>,
+      TFailureHandler
     >,
     THandler,
     TFailureHandler,
@@ -1061,7 +1065,7 @@ export type GetFunctionOutput<
 export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-> = TFunction extends InngestFunction<any, infer IHandler, any, any, any, any>
+> = TFunction extends InngestFunction<any, any, infer IHandler, any, any, any>
   ? IsNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> extends true
     ? null
     : SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>
