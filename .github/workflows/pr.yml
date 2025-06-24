@@ -235,6 +235,8 @@ jobs:
           - example: node
           - example: framework-express
             streaming: force
+        exclude:
+          - example: framework-nextjs-starter
     steps:
       # Checkout the repo
       - name: Checkout SDK
