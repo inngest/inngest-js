@@ -1,18 +1,18 @@
-import { type internalEvents } from "../helpers/consts.js";
-import {
-  type IsEmptyObject,
-  type IsStringLiteral,
-  type Simplify,
-} from "../helpers/types.js";
-import type * as z from "../helpers/validators/zod.js";
-import {
-  type CancelledEventPayload,
-  type EventPayload,
-  type FailureEventPayload,
-  type FinishedEventPayload,
-  type InvokedEventPayload,
-  type ScheduledTimerEventPayload,
-} from "../types.js";
+import type { internalEvents } from "../helpers/consts.ts";
+import type {
+  IsEmptyObject,
+  IsStringLiteral,
+  Simplify,
+} from "../helpers/types.ts";
+import type * as z from "../helpers/validators/zod.ts";
+import type {
+  CancelledEventPayload,
+  EventPayload,
+  FailureEventPayload,
+  FinishedEventPayload,
+  InvokedEventPayload,
+  ScheduledTimerEventPayload,
+} from "../types.ts";
 
 /**
  * Declares the shape of an event schema we expect from the user. This may be
@@ -23,9 +23,9 @@ import {
  */
 export type StandardEventSchema = {
   name?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   data?: Record<string, any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   user?: Record<string, any>;
 };
 
@@ -176,7 +176,7 @@ export type LiteralToRecordZodSchemas<T> = PickLiterals<
 export type ZodToStandardSchema<T extends ZodEventSchemas> = {
   [EventName in keyof T & string]: {
     [Key in keyof T[EventName] & string]: T[EventName][Key] extends z.ZodTypeAny
-      ? z.infer<T[EventName][Key]>
+      ? z.ZodInfer<T[EventName][Key]>
       : T[EventName][Key];
   };
 };
@@ -367,7 +367,7 @@ export class EventSchemas<
    * ```
    */
   public fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(
-    schemas: T
+    schemas: T,
   ): EventSchemas<
     Combine<
       S,

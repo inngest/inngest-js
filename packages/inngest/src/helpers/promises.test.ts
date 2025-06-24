@@ -1,5 +1,5 @@
-import { runAsPromise } from "@local/helpers/promises";
-import { assertType } from "../test/helpers";
+import { assertType } from "../test/helpers.ts";
+import { runAsPromise } from "./promises.ts";
 
 describe("runAsPromise", () => {
   describe("synchronous functions", () => {
@@ -18,7 +18,7 @@ describe("runAsPromise", () => {
         await expect(
           runAsPromise(() => {
             return "test";
-          })
+          }),
         ).resolves.toBe("test");
       });
     });
@@ -34,7 +34,7 @@ describe("runAsPromise", () => {
           runAsPromise(async () => {
             await wait(100);
             throw new Error("test");
-          })
+          }),
         ).rejects.toThrow("test");
       });
     });
@@ -45,7 +45,7 @@ describe("runAsPromise", () => {
           runAsPromise(async () => {
             await wait(100);
             return "test";
-          })
+          }),
         ).resolves.toBe("test");
       });
     });
