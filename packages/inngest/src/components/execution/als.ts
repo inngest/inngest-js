@@ -53,7 +53,16 @@ export const getAsyncLocalStorage = async (): Promise<AsyncLocalStorageIsh> => {
       // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
       async (resolve) => {
         try {
-          const { AsyncLocalStorage } = await import("node:async_hooks");
+          // Obscure this import to keep bundlers from bundling it.
+          const dynamicImport = <T>(path: string): Promise<T> => {
+            const safePath = path.split("/").join("/");
+            return import(safePath) as Promise<T>;
+          };
+          const { AsyncLocalStorage } =
+            // eslint-disable-next-line @typescript-eslint/consistent-type-imports
+            await dynamicImport<typeof import("node:async_hooks")>(
+              "node:async_hooks"
+            );
 
           resolve(new AsyncLocalStorage<AsyncContext>());
         } catch (err) {
