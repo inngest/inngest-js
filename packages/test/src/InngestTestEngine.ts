@@ -60,6 +60,14 @@ export namespace InngestTestEngine {
     disableImmediateExecution?: boolean;
 
     /**
+     * Request arguments that will be passed to the function execution.
+     * 
+     * These can be used by middleware that relies on particular serve handler usage.
+     * If not provided, an empty array will be used.
+     */
+    reqArgs?: unknown[];
+
+    /**
      * A function that can transform the context sent to the function upon
      * execution, useful for mocking steps, events, or tracking property
      * accesses with proxies.
@@ -492,7 +500,7 @@ export class InngestTestEngine {
           event: events[0],
           events,
         },
-        reqArgs: [], // TODO allow passing?
+        reqArgs: options.reqArgs || [],
         headers: {},
         stepCompletionOrder: steps.map((step) => step.id),
         stepState: mockStepState,
