@@ -1,5 +1,14 @@
 # @inngest/test
 
+## 0.1.7
+
+### Patch Changes
+
+- [#1022](https://github.com/inngest/inngest-js/pull/1022) [`a15bb56`](https://github.com/inngest/inngest-js/commit/a15bb56debaca557b969ad17a6770250e1c63dd0) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Allow passing `reqArgs`, which can be used to test middleware that takes `reqArgs` and different `serve()` handlers in to account
+
+- Updated dependencies [[`126a984`](https://github.com/inngest/inngest-js/commit/126a984524968854763eb4ed428dc6ca6127236c), [`bff90cc`](https://github.com/inngest/inngest-js/commit/bff90cc580cb68b3d9959adadfe6cd73cf1da252)]:
+  - inngest@3.40.0
+
 ## 0.1.6
 
 ### Patch Changes

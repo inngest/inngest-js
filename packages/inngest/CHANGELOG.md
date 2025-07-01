@@ -1,5 +1,18 @@
 # inngest
 
+## 3.40.0
+
+### Minor Changes
+
+- [#1011](https://github.com/inngest/inngest-js/pull/1011) [`126a984`](https://github.com/inngest/inngest-js/commit/126a984524968854763eb4ed428dc6ca6127236c) Thanks [@KiKoS0](https://github.com/KiKoS0)! - Add support for cancel mode in function singletons
+
+### Patch Changes
+
+- [#1020](https://github.com/inngest/inngest-js/pull/1020) [`bff90cc`](https://github.com/inngest/inngest-js/commit/bff90cc580cb68b3d9959adadfe6cd73cf1da252) Thanks [@thomasballinger](https://github.com/thomasballinger)! - The optional import of Node.js module "node:async_hooks" is more likely to by dynamic, even after bundling this library. This change makes this feature-detecting dynamic import work correctly when bundled for the Convex JS runtime.
+
+- Updated dependencies [[`bf8ab80`](https://github.com/inngest/inngest-js/commit/bf8ab80fd4601fae6a71188821df1e40e89d541b), [`6f478be`](https://github.com/inngest/inngest-js/commit/6f478bee07bb96eea6e0153f04d4f9060b6b570d)]:
+  - @inngest/ai@0.1.5
+
 ## 3.39.2
 
 ### Patch Changes
