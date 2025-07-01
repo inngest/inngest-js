@@ -1,5 +1,59 @@
 # inngest
 
+## 3.39.2
+
+### Patch Changes
+
+- [#1001](https://github.com/inngest/inngest-js/pull/1001) [`fbbb498`](https://github.com/inngest/inngest-js/commit/fbbb49854e9599850231c76ad0cc108a6de31696) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add streaming support for `"inngest/express"`
+
+- [#1013](https://github.com/inngest/inngest-js/pull/1013) [`2ac3a71`](https://github.com/inngest/inngest-js/commit/2ac3a718e7eea2662f646627141eecdffece6318) Thanks [@jacobheric](https://github.com/jacobheric)! - Fix errors serialized in the `cause` field not being deserialized correctly
+
+## 3.39.1
+
+### Patch Changes
+
+- [#999](https://github.com/inngest/inngest-js/pull/999) [`c5d3b6e`](https://github.com/inngest/inngest-js/commit/c5d3b6ecceee0cde61dc3f920e548ce52895c03a) Thanks [@amh4r](https://github.com/amh4r)! - Allow arbitrary field/method access to underlying logger
+
+## 3.39.0
+
+### Minor Changes
+
+- [#994](https://github.com/inngest/inngest-js/pull/994) [`a1e8adb`](https://github.com/inngest/inngest-js/commit/a1e8adba73eff9df9bf9b067a0115c9089d8e1c6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for function singletons
+
+## 3.38.1
+
+### Patch Changes
+
+- [#989](https://github.com/inngest/inngest-js/pull/989) [`5e3ec3b`](https://github.com/inngest/inngest-js/commit/5e3ec3b59730b83ecccae2569812cd3ced5794d9) Thanks [@jpwilliams](https://github.com/jpwilliams)! - When executing, use the `serve()` call's client instead of the function's
+
+- [#997](https://github.com/inngest/inngest-js/pull/997) [`4120413`](https://github.com/inngest/inngest-js/commit/41204139dab6ce3767cc3692eb3eeee52db8a6bb) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Add connect types for convenience and discoverability
+
+## 3.38.0
+
+### Minor Changes
+
+- [#985](https://github.com/inngest/inngest-js/pull/985) [`4616919`](https://github.com/inngest/inngest-js/commit/46169199801719727da8d5e44f9505a06e21055c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add ability for signal waits to supersede others
+
+  ```ts
+  await step.waitForSignal("step-id", {
+    signal: "my-signal",
+    timeout: "5m",
+    onConflict: "replace",
+  });
+  ```
+
+## 3.37.0
+
+### Minor Changes
+
+- [#979](https://github.com/inngest/inngest-js/pull/979) [`3e6a3e5`](https://github.com/inngest/inngest-js/commit/3e6a3e52c69af47ccc4baf014d5a67f21cd80235) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `step.waitForSignal()`, `step.sendSignal()`, and `inngest.sendSignal()` as experimental new tooling
+
+## 3.36.0
+
+### Minor Changes
+
+- [#909](https://github.com/inngest/inngest-js/pull/909) [`35cf326`](https://github.com/inngest/inngest-js/commit/35cf326fe3877f2688a73322a481df0e2b2fc064) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added experimental otel for capturing userland spans
+
 ## 3.35.1
 
 ### Patch Changes

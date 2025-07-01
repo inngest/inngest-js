@@ -8,6 +8,7 @@ import {
   headerKeys,
   logPrefix,
 } from "../helpers/consts.js";
+import { createEntropy } from "../helpers/crypto.js";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver.js";
 import {
   allProcessEnv,
@@ -58,7 +59,6 @@ import {
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
 } from "./InngestMiddleware.js";
-import { createEntropy } from "../helpers/crypto.js";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -409,6 +409,65 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private eventKeySet(): boolean {
     return Boolean(this.eventKey) && this.eventKey !== dummyEventKey;
+  }
+
+  /**
+   * EXPERIMENTAL: This API is not yet stable and may change in the future
+   * without a major version bump.
+   *
+   * Send a Signal to Inngest.
+   */
+  public async sendSignal({
+    signal,
+    data,
+    env,
+  }: {
+    /**
+     * The signal to send.
+     */
+    signal: string;
+
+    /**
+     * The data to send with the signal.
+     */
+    data?: unknown;
+
+    /**
+     * The Inngest environment to send the signal to. Defaults to whichever
+     * environment this client's key is associated with.
+     *
+     * It's like you never need to change this unless you're trying to sync
+     * multiple systems together using branch names.
+     */
+    env?: string;
+  }): Promise<InngestApi.SendSignalResponse> {
+    const headers: Record<string, string> = {
+      ...(env ? { [headerKeys.Environment]: env } : {}),
+    };
+
+    return this._sendSignal({ signal, data, headers });
+  }
+
+  private async _sendSignal({
+    signal,
+    data,
+    headers,
+  }: {
+    signal: string;
+    data?: unknown;
+    headers?: Record<string, string>;
+  }): Promise<InngestApi.SendSignalResponse> {
+    const res = await this.inngestApi.sendSignal(
+      { signal, data },
+      { ...this.headers, ...headers }
+    );
+    if (res.ok) {
+      return res.value;
+    }
+
+    throw new Error(
+      `Failed to send signal: ${res.error?.error || "Unknown error"}`
+    );
   }
 
   /**
