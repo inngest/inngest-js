@@ -1,5 +1,7 @@
 # Get started with Next.js & Inngest
 
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Finngest%2Finngest-js%2Ftree%2Fmain%2Fexamples%2Fframework-nextjs-starter&integration-ids=oac_H9biZULoTuJYFO32xkUydDmT&products=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22inngest%22%2C%22productSlug%22%3A%22inngest%22%2C%22protocol%22%3A%22workflow%22%2C%22group%22%3A%22%22%7D%5D)
+
 This project is an interactive tour of Inngest useful features for Next.js configured with:
 
 1. **Trigger your first Inngest function** - Learn how to trigger an Inngest function and see its output.
@@ -27,7 +29,7 @@ All functions source code are available in the [`src/lib/demo-functions.ts`](./s
 ## Deploy on Vercel
 
 1. Using the following button to create a new Vercel project using this repository:
-   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Finngest%2Finngest-js%2Ftree%2Fmain%2Fexamples%2Fframework-nextjs-starter&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22inngest%22%2C%22productSlug%22%3A%22inngest%22%2C%22protocol%22%3A%22storage%22%7D%5D)
+   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Finngest%2Finngest-js%2Ftree%2Fmain%2Fexamples%2Fframework-nextjs-starter&integration-ids=oac_H9biZULoTuJYFO32xkUydDmT&products=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22inngest%22%2C%22productSlug%22%3A%22inngest%22%2C%22protocol%22%3A%22workflow%22%2C%22group%22%3A%22%22%7D%5D)
 
 2. Once your Vercel project is deployed, navigate to the [Inngest Vercel Integration](https://vercel.com/integrations/inngest) page and click **Connect Account** (_you can create an Inngest account during this step_).
 
