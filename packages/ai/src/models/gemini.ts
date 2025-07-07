@@ -35,7 +35,31 @@ export const gemini: AiAdapter.ModelCreator<
     authKey,
     format: "gemini",
     onCall(_, body) {
-      Object.assign(body, options.defaultParameters);
+      if (!options.defaultParameters) {
+        return;
+      }
+
+      const { generationConfig: defaultGenerationConfig, ...otherDefaults } =
+        options.defaultParameters;
+
+      // Assign top-level defaults first, user-provided values will override
+      Object.assign(body, {
+        ...otherDefaults,
+        ...body,
+      });
+
+      // Then, deep-merge generationConfig
+      if (defaultGenerationConfig) {
+        body.generationConfig = {
+          ...defaultGenerationConfig,
+          ...(body.generationConfig || {}),
+          // And ensure nested thinkingConfig is also deep-merged
+          thinkingConfig: {
+            ...defaultGenerationConfig.thinkingConfig,
+            ...(body.generationConfig?.thinkingConfig || {}),
+          },
+        };
+      }
     },
     headers,
     options,
