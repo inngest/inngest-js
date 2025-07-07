@@ -82,8 +82,8 @@ export namespace Gemini {
     model: Gemini.Model;
 
     /**
-     * The Anthropic API key to use for authenticating your request. By default
-     * we'll search for and use the `ANTHROPIC_API_KEY` environment variable.
+     * The Gemini API key to use for authenticating your request. By default
+     * we'll search for and use the `GEMINI_API_KEY` environment variable.
      */
     apiKey?: string;
 
