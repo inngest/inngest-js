@@ -25,7 +25,7 @@ export const gemini: AiAdapter.ModelCreator<
 
   const url = new URL(
     `models/${options.model}:generateContent?key=${authKey}`,
-    baseUrl,
+    baseUrl
   );
 
   const headers: Record<string, string> = {};
