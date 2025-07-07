@@ -87,7 +87,6 @@ The smoke tests verify:
 - Smoke tests are designed to use minimal tokens while thoroughly testing functionality
 - Most tests use small `maxOutputTokens` limits (50-400 tokens)
 - Thinking tests may use more tokens due to internal reasoning
-- Set `RUN_PAID_TESTS=false` in your `.env` to skip expensive tests
 
 ### Architecture
 
