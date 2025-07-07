@@ -1,5 +1,11 @@
 # inngest
 
+## 3.40.1
+
+### Patch Changes
+
+- [#1028](https://github.com/inngest/inngest-js/pull/1028) [`abb0e8e`](https://github.com/inngest/inngest-js/commit/abb0e8ec97a9fbe33db9b93d7eb8355be2c72464) Thanks [@charlypoly](https://github.com/charlypoly)! - Revert "obscure "node:async_hooks" import from bundlers"
+
 ## 3.40.0
 
 ### Minor Changes
