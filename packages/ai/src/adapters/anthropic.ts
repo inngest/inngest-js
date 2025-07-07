@@ -23,7 +23,6 @@ export namespace AnthropicAiAdapter {
    * details and options.
    */
   export type Model =
-    // eslint-disable-next-line @typescript-eslint/ban-types
     | (string & {})
     | "claude-opus-4-0"
     | "claude-opus-4-20250514"
@@ -45,7 +44,6 @@ export namespace AnthropicAiAdapter {
     | "claude-instant-1.2";
 
   export type Beta =
-    // eslint-disable-next-line @typescript-eslint/ban-types
     | (string & {})
     | "message-batches-2024-09-24"
     | "prompt-caching-2024-07-31"

@@ -14,7 +14,7 @@ describe("Gemini AI Adapter Smoke Tests", () => {
     if (!apiKey) {
       throw new Error(
         "GEMINI_API_KEY environment variable is required for smoke tests. " +
-          "Copy .env.example to .env and add your API key."
+          "Copy .env.example to .env and add your API key.",
       );
     }
   });

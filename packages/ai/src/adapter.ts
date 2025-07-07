@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-namespace */
 import { type AnthropicAiAdapter } from "./adapters/anthropic.js";
 import { type GeminiAiAdapter } from "./adapters/gemini.js";
 import { type GrokAiAdapter } from "./adapters/grok.js";
@@ -106,7 +105,12 @@ export namespace AiAdapter {
   /**
    * Supported I/O formats for AI models.
    */
-  export type Format = "openai-chat" | "anthropic" | "gemini" | "grok" | "azure-openai";
+  export type Format =
+    | "openai-chat"
+    | "anthropic"
+    | "gemini"
+    | "grok"
+    | "azure-openai";
 
   /**
    * A function that creates a model that adheres to an existng AI adapter

@@ -17,7 +17,6 @@ export namespace AzureOpenAiAiAdapter {
    * You can also use custom deployment names by providing any string.
    */
   export type Deployment =
-    // eslint-disable-next-line @typescript-eslint/ban-types
     | (string & {})
     // Chat models
     | "gpt-4o"

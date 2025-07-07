@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "lint": "eslint",
     "postversion": "pnpm run build",
     "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
     "release:version": "node ../../scripts/release/jsrVersion.js",

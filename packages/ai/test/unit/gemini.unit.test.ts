@@ -66,10 +66,10 @@ describe("Gemini Adapter Unit Tests", () => {
       });
 
       expect(model.url).toContain(
-        "https://generativelanguage.googleapis.com/v1beta/"
+        "https://generativelanguage.googleapis.com/v1beta/",
       );
       expect(model.url).toContain(
-        "models/gemini-2.0-flash-exp:generateContent"
+        "models/gemini-2.0-flash-exp:generateContent",
       );
       expect(model.url).toContain("key=test-key");
     });
@@ -258,7 +258,7 @@ describe("Gemini Adapter Unit Tests", () => {
       });
       expect(body.safetySettings).toBeDefined();
       expect(body.safetySettings![0].category).toBe(
-        GeminiAiAdapter.HarmCategory.HARM_CATEGORY_HARASSMENT
+        GeminiAiAdapter.HarmCategory.HARM_CATEGORY_HARASSMENT,
       );
     });
 

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-namespace */
 import { type AiAdapter } from "../adapter.js";
 import { type GeminiAiAdapter } from "../adapters/gemini.js";
 import { envKeys, processEnv } from "../env";
@@ -25,7 +24,7 @@ export const gemini: AiAdapter.ModelCreator<
 
   const url = new URL(
     `models/${options.model}:generateContent?key=${authKey}`,
-    baseUrl
+    baseUrl,
   );
 
   const headers: Record<string, string> = {};
