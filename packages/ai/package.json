@@ -8,9 +8,14 @@
   },
   "scripts": {
     "build": "tsc",
+    "lint": "eslint",
     "postversion": "pnpm run build",
     "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
-    "release:version": "node ../../scripts/release/jsrVersion.js"
+    "release:version": "node ../../scripts/release/jsrVersion.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:smoke": "vitest run --config vitest.smoke.config.ts",
+    "test:smoke:watch": "vitest --config vitest.smoke.config.ts"
   },
   "files": [
     "dist"
@@ -50,9 +55,11 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.7.0",
+    "dotenv": "^17.0.1",
     "eslint": "^9.18.0",
     "eslint-plugin-prettier": "^5.2.1",
     "globals": "^15.14.0",
-    "typescript-eslint": "^7.16.1"
+    "typescript-eslint": "^7.16.1",
+    "vitest": "^2.1.8"
   }
 }

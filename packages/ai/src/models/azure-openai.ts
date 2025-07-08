@@ -35,7 +35,7 @@ export const azureOpenai: AiAdapter.ModelCreator<
   // Construct Azure-specific URL with deployment and API version
   const url = new URL(
     `openai/deployments/${options.deployment}/chat/completions`,
-    options.endpoint
+    options.endpoint,
   );
   url.searchParams.set("api-version", options.apiVersion);
 
