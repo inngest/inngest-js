@@ -42,6 +42,8 @@ export namespace OpenAi {
    */
   export type Model =
     | (string & {})
+    | "gpt-4.1-mini"
+    | "gpt-4.1"
     | "gpt-4.5-preview"
     | "gpt-4o"
     | "chatgpt-4o-latest"

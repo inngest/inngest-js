@@ -28,6 +28,7 @@ jobs:
           - 18
           - 20
           - 22
+          - 24
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
@@ -240,6 +241,10 @@ jobs:
           - example: framework-nextjs-app-router
             streaming: force
           - example: node
+          - example: framework-express
+            streaming: force
+        exclude:
+          - example: framework-nextjs-starter
     steps:
       # Checkout the repo
       - name: Checkout SDK

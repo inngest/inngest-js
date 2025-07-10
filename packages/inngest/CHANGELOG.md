@@ -1,5 +1,84 @@
 # inngest
 
+## 3.40.1
+
+### Patch Changes
+
+- [#1028](https://github.com/inngest/inngest-js/pull/1028) [`abb0e8e`](https://github.com/inngest/inngest-js/commit/abb0e8ec97a9fbe33db9b93d7eb8355be2c72464) Thanks [@charlypoly](https://github.com/charlypoly)! - Revert "obscure "node:async_hooks" import from bundlers"
+
+## 3.40.0
+
+### Minor Changes
+
+- [#1011](https://github.com/inngest/inngest-js/pull/1011) [`126a984`](https://github.com/inngest/inngest-js/commit/126a984524968854763eb4ed428dc6ca6127236c) Thanks [@KiKoS0](https://github.com/KiKoS0)! - Add support for cancel mode in function singletons
+
+### Patch Changes
+
+- [#1020](https://github.com/inngest/inngest-js/pull/1020) [`bff90cc`](https://github.com/inngest/inngest-js/commit/bff90cc580cb68b3d9959adadfe6cd73cf1da252) Thanks [@thomasballinger](https://github.com/thomasballinger)! - The optional import of Node.js module "node:async_hooks" is more likely to by dynamic, even after bundling this library. This change makes this feature-detecting dynamic import work correctly when bundled for the Convex JS runtime.
+
+- Updated dependencies [[`bf8ab80`](https://github.com/inngest/inngest-js/commit/bf8ab80fd4601fae6a71188821df1e40e89d541b), [`6f478be`](https://github.com/inngest/inngest-js/commit/6f478bee07bb96eea6e0153f04d4f9060b6b570d)]:
+  - @inngest/ai@0.1.5
+
+## 3.39.2
+
+### Patch Changes
+
+- [#1001](https://github.com/inngest/inngest-js/pull/1001) [`fbbb498`](https://github.com/inngest/inngest-js/commit/fbbb49854e9599850231c76ad0cc108a6de31696) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add streaming support for `"inngest/express"`
+
+- [#1013](https://github.com/inngest/inngest-js/pull/1013) [`2ac3a71`](https://github.com/inngest/inngest-js/commit/2ac3a718e7eea2662f646627141eecdffece6318) Thanks [@jacobheric](https://github.com/jacobheric)! - Fix errors serialized in the `cause` field not being deserialized correctly
+
+## 3.39.1
+
+### Patch Changes
+
+- [#999](https://github.com/inngest/inngest-js/pull/999) [`c5d3b6e`](https://github.com/inngest/inngest-js/commit/c5d3b6ecceee0cde61dc3f920e548ce52895c03a) Thanks [@amh4r](https://github.com/amh4r)! - Allow arbitrary field/method access to underlying logger
+
+## 3.39.0
+
+### Minor Changes
+
+- [#994](https://github.com/inngest/inngest-js/pull/994) [`a1e8adb`](https://github.com/inngest/inngest-js/commit/a1e8adba73eff9df9bf9b067a0115c9089d8e1c6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for function singletons
+
+## 3.38.1
+
+### Patch Changes
+
+- [#989](https://github.com/inngest/inngest-js/pull/989) [`5e3ec3b`](https://github.com/inngest/inngest-js/commit/5e3ec3b59730b83ecccae2569812cd3ced5794d9) Thanks [@jpwilliams](https://github.com/jpwilliams)! - When executing, use the `serve()` call's client instead of the function's
+
+- [#997](https://github.com/inngest/inngest-js/pull/997) [`4120413`](https://github.com/inngest/inngest-js/commit/41204139dab6ce3767cc3692eb3eeee52db8a6bb) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Add connect types for convenience and discoverability
+
+## 3.38.0
+
+### Minor Changes
+
+- [#985](https://github.com/inngest/inngest-js/pull/985) [`4616919`](https://github.com/inngest/inngest-js/commit/46169199801719727da8d5e44f9505a06e21055c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add ability for signal waits to supersede others
+
+  ```ts
+  await step.waitForSignal("step-id", {
+    signal: "my-signal",
+    timeout: "5m",
+    onConflict: "replace",
+  });
+  ```
+
+## 3.37.0
+
+### Minor Changes
+
+- [#979](https://github.com/inngest/inngest-js/pull/979) [`3e6a3e5`](https://github.com/inngest/inngest-js/commit/3e6a3e52c69af47ccc4baf014d5a67f21cd80235) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `step.waitForSignal()`, `step.sendSignal()`, and `inngest.sendSignal()` as experimental new tooling
+
+## 3.36.0
+
+### Minor Changes
+
+- [#909](https://github.com/inngest/inngest-js/pull/909) [`35cf326`](https://github.com/inngest/inngest-js/commit/35cf326fe3877f2688a73322a481df0e2b2fc064) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added experimental otel for capturing userland spans
+
+## 3.35.1
+
+### Patch Changes
+
+- [#950](https://github.com/inngest/inngest-js/pull/950) [`0099c56`](https://github.com/inngest/inngest-js/commit/0099c562c54d44d476800af74c7cae775aaa1cdc) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Connect: Reliability improvements
+
 ## 3.35.0
 
 ### Minor Changes

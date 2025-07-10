@@ -1466,6 +1466,7 @@ export class InngestCommHandler<
           return {
             version,
             partialOptions: {
+              client: this.client,
               runId: ctx?.run_id || "",
               data: {
                 event: event as EventPayload,
@@ -1504,6 +1505,7 @@ export class InngestCommHandler<
           return {
             version,
             partialOptions: {
+              client: this.client,
               runId: ctx?.run_id || "",
               data: {
                 event: event as EventPayload,
@@ -1543,6 +1545,7 @@ export class InngestCommHandler<
           return {
             version,
             partialOptions: {
+              client: this.client,
               runId: ctx?.run_id || "",
               data: {
                 event: event as EventPayload,

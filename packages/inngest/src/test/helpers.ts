@@ -96,6 +96,7 @@ export const getStepTools = (
     ["createExecution"]({
       version: PREFERRED_EXECUTION_VERSION,
       partialOptions: {
+        client,
         data: fromPartial({
           event: { name: "foo", data: {} },
         }),
@@ -141,6 +142,7 @@ export const runFnWithStack = async (
   const execution = fn["createExecution"]({
     version: opts?.executionVersion ?? PREFERRED_EXECUTION_VERSION,
     partialOptions: {
+      client: fn['client'],
       data: fromPartial({
         event: opts?.event || { name: "foo", data: {} },
       }),

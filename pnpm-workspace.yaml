@@ -1,2 +1,7 @@
 packages:
-  - 'packages/*'
+  - packages/*
+
+onlyBuiltDependencies:
+  - aws-sdk
+  - core-js
+  - protobufjs

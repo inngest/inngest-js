@@ -14,6 +14,8 @@
     "@actions/github": "^6.0.0",
     "@changesets/changelog-github": "^0.4.8",
     "@changesets/cli": "^2.26.2",
-    "cross-env": "^7.0.3"
-  }
+    "cross-env": "^7.0.3",
+    "vitest": "^3.2.4"
+  },
+  "packageManager": "pnpm@10.12.1+sha512.f0dda8580f0ee9481c5c79a1d927b9164f2c478e90992ad268bbb2465a736984391d6333d2c327913578b2804af33474ca554ba29c04a8b13060a717675ae3ac"
 }
