@@ -15,7 +15,7 @@ This is a [Next.js](https://nextjs.org/) project showcasing how to use [`@innges
 
 ```bash
 git clone https://github.com/inngest/inngest-js.git
-cd inngest-js/examples/realtime-next
+cd inngest-js/examples/realtime/next-realtime-hooks
 ```
 
 ### Install Dependencies
