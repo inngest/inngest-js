@@ -1,0 +1,41 @@
+{
+  "name": "next-js-bg-jobs-realtime",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@inngest/realtime": "^0.3.1",
+    "@neondatabase/serverless": "^1.0.1",
+    "autoprefixer": "^10.4.21",
+    "class-variance-authority": "^0.7.1",
+    "csv-parse": "^5.6.0",
+    "date-fns": "^4.1.0 ",
+    "dotenv": "^17.2.0",
+    "drizzle-orm": "^0.44.2",
+    "inngest": "^3.40.1",
+    "next": "15.3.5",
+    "openai": "^5.8.3 ",
+    "radix-ui": "^1.4.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "resend": "^4.6.0",
+    "swr": "^2.3.4",
+    "tailwind-merge": "^3.0.2",
+    "tailwindcss-animate": "^1.0.7",
+    "zod": "^4.0.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.4",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
