@@ -1,10 +1,11 @@
+import { channel, topic } from "@inngest/realtime";
+import { z } from "zod";
+import { eq } from "drizzle-orm";
+
 import { inngest } from "@/lib/inngest";
 import { db, campaigns, contacts, contactSegments, segments } from "@/lib/db";
 import { segmentContacts } from "@/lib/openai";
-import { eq } from "drizzle-orm";
-// import { sendEmail } from "@/lib/resend";
-import { channel, topic } from "@inngest/realtime";
-import { z } from "zod";
+import { sendEmail } from "@/lib/resend";
 
 export const contactImport = inngest.createFunction(
   { id: "contact-import" },
@@ -59,7 +60,15 @@ export const contactImport = inngest.createFunction(
         .onConflictDoNothing();
     });
 
-    // 4. Return summary
+    // 4. Send notification
+    await step.run("send-notification", async () => {
+      return await sendEmail({
+        to: process.env.ADMIN_EMAIL!,
+        subject: `Contacts import completed!`,
+        html: `${contactList.length} has been imported into the following segments: ${segmentation.segments.map((s) => s.name)}`,
+      });
+    });
+
     return {
       success: true,
       imported: inserted.length,
@@ -69,20 +78,17 @@ export const contactImport = inngest.createFunction(
   }
 );
 
-// create a channel for each user, given a user ID. A channel is a namespace for one or more topics of streams.
+// create a channel for each campaign, given a campaign ID. A channel is a namespace for one or more topics of streams.
 export const campaignSendChannel = channel(
   (campaignId: string) => `campaign-send:${campaignId}`
-)
-  // Add a specific topic, eg. "ai" for all AI data within the user's channel
-  .addTopic(
-    topic("progress").schema(
-      z.object({
-        message: z.string(),
-        // Transforms are supported for realtime data
-        complete: z.boolean(),
-      })
-    )
-  );
+).addTopic(
+  topic("progress").schema(
+    z.object({
+      message: z.string(),
+      complete: z.boolean(),
+    })
+  )
+);
 
 export const campaignSend = inngest.createFunction(
   { id: "campaign-send" },
@@ -93,7 +99,7 @@ export const campaignSend = inngest.createFunction(
       segmentId,
       scheduledAt,
       subject: eventSubject,
-      content: eventContent,
+      // content: eventContent,
     } = event.data;
 
     await publish(
@@ -131,16 +137,14 @@ export const campaignSend = inngest.createFunction(
       })
     );
 
-    // 3. (Placeholder) Generate email content (optionally with OpenAI)
-    // TODO: Use OpenAI to personalize content per contact
     const emailSubject = eventSubject || campaign.subject;
     // const emailContent = eventContent || campaign.content;
 
-    // 4. Send emails using Resend
+    // 3. Send emails using Resend
     // const results = [];
     for (let i = 0; i < segmentContacts.length; i++) {
-      const contact = segmentContacts[i];
-      // try {
+      // const contact = segmentContacts[i];
+      // await step.run('send-email', async () => {
       //   const res = await sendEmail({
       //     to: contact.email,
       //     subject: emailSubject,
@@ -152,14 +156,7 @@ export const campaignSend = inngest.createFunction(
       //     status: "sent",
       //     messageId: res.data?.id,
       //   });
-      // } catch (err) {
-      //   results.push({
-      //     contactId: contact.id,
-      //     email: contact.email,
-      //     status: "error",
-      //     error: String(err),
-      //   });
-      // }
+      // })
       // Every 5 contacts, pause and publish progress
       if ((i + 1) % 5 === 0 || i === segmentContacts.length - 1) {
         await step.sleep("wait-1s", 1000);
@@ -177,7 +174,6 @@ export const campaignSend = inngest.createFunction(
       complete: true,
     });
 
-    // 5. Return summary
     return {
       success: true,
       campaignId,

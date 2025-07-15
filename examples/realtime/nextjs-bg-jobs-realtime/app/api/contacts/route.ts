@@ -1,23 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
-import { db, contacts } from "@/lib/db";
 import { inngest } from "@/lib/inngest";
-
-// GET /api/contacts - list contacts (placeholder)
-export async function GET() {
-  // TODO: Replace with real DB query
-  const allContacts = [
-    {
-      id: 1,
-      firstname: "Alice",
-      lastname: "Smith",
-      position: "CEO",
-      company: "Acme",
-      industry: "Tech",
-      createdAt: new Date(),
-    },
-  ];
-  return NextResponse.json(allContacts);
-}
+import { NextRequest, NextResponse } from "next/server";
 
 // POST /api/contacts - import contacts (triggers Inngest job)
 export async function POST(req: NextRequest) {
