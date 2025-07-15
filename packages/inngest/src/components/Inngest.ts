@@ -16,6 +16,7 @@ import {
   getMode,
   inngestHeaders,
   processEnv,
+  type Env,
   type Mode,
 } from "../helpers/env.js";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.js";
@@ -124,6 +125,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private _apiBaseUrl: string | undefined;
   private _eventBaseUrl: string | undefined;
+  private signingKey: string | undefined;
+  private signingKeyFallback: string | undefined;
 
   private readonly inngestApi: InngestApi;
 
@@ -237,7 +240,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     });
 
     this.schemas = schemas;
-    this.loadModeEnvVars();
+    this.loadModeEnvVars(undefined);
 
     this.logger = logger;
 
@@ -270,30 +273,62 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     return this;
   }
 
-  private loadModeEnvVars(): void {
+  private loadModeEnvVars(lateEnv: Env | undefined): void {
+    const env = {
+      ...this.mode["env"],
+      ...lateEnv,
+    };
+
     this._apiBaseUrl =
       this.options.baseUrl ||
-      this.mode["env"][envKeys.InngestApiBaseUrl] ||
-      this.mode["env"][envKeys.InngestBaseUrl] ||
+      env[envKeys.InngestApiBaseUrl] ||
+      env[envKeys.InngestBaseUrl] ||
       this.mode.getExplicitUrl(defaultInngestApiBaseUrl);
 
     this._eventBaseUrl =
       this.options.baseUrl ||
-      this.mode["env"][envKeys.InngestEventApiBaseUrl] ||
-      this.mode["env"][envKeys.InngestBaseUrl] ||
+      env[envKeys.InngestEventApiBaseUrl] ||
+      env[envKeys.InngestBaseUrl] ||
       this.mode.getExplicitUrl(defaultInngestEventBaseUrl);
 
     this.setEventKey(
-      this.options.eventKey || this.mode["env"][envKeys.InngestEventKey] || ""
+      this.options.eventKey || env[envKeys.InngestEventKey] || ""
     );
 
     this.headers = inngestHeaders({
       inngestEnv: this.options.env,
-      env: this.mode["env"],
+      env: env,
     });
 
     this.inngestApi["mode"] = this.mode;
     this.inngestApi["apiBaseUrl"] = this._apiBaseUrl;
+
+    if (env[envKeys.InngestSigningKey]) {
+      if (!this.signingKey) {
+        this.signingKey = env[envKeys.InngestSigningKey];
+      }
+
+      this.inngestApi.setSigningKey(this.signingKey);
+    }
+
+    if (env[envKeys.InngestSigningKeyFallback]) {
+      if (!this.signingKeyFallback) {
+        this.signingKeyFallback = env[envKeys.InngestSigningKeyFallback];
+      }
+
+      this.inngestApi.setSigningKeyFallback(this.signingKeyFallback);
+    }
+
+    if (!this.eventKeySet() && env[envKeys.InngestEventKey]) {
+      this.setEventKey(env[envKeys.InngestEventKey]);
+    }
+
+    // v2 -> v3 migration warnings
+    if (env[envKeys.InngestDevServerUrl]) {
+      this.logger.warn(
+        `Use of ${envKeys.InngestDevServerUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`
+      );
+    }
   }
 
   /**
@@ -333,7 +368,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private set mode(m) {
     this._mode = m;
-    this.loadModeEnvVars();
+    this.loadModeEnvVars(undefined);
   }
 
   /**
