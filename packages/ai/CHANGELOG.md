@@ -1,5 +1,12 @@
 # @inngest/ai
 
+## 0.1.6
+
+### Patch Changes
+
+- [#1031](https://github.com/inngest/inngest-js/pull/1031) [`3d94247`](https://github.com/inngest/inngest-js/commit/3d94247307b274b36be629dcfcf77dc799a6e9eb) Thanks [@tedjames](https://github.com/tedjames)! - added support for latest thinking and generation config for gemini models
+  created unit and smoke tests for AI models + adapters
+
 ## 0.1.5
 
 ### Patch Changes
