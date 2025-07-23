@@ -23,9 +23,9 @@ export const isInngest = (
   /**
    * The input to check.
    */
-  input: unknown
+  input: unknown,
 ): input is Inngest.Any => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+  // biome-ignore lint/suspicious/noExplicitAny: we're happy that it could be anything here
   return (input as any)[Symbol.toStringTag] === Inngest.Tag;
 };
 
@@ -36,9 +36,9 @@ export const isInngestFunction = (
   /**
    * The input to check.
    */
-  input: unknown
+  input: unknown,
 ): input is InngestFunction.Any => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+  // biome-ignore lint/suspicious/noExplicitAny: we're happy that it could be anything here
   return (input as any)[Symbol.toStringTag] === InngestFunction.Tag;
 };
 
@@ -49,8 +49,8 @@ export const isInngestMiddleware = (
   /**
    * The input to check.
    */
-  input: unknown
+  input: unknown,
 ): input is InngestMiddleware.Any => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+  // biome-ignore lint/suspicious/noExplicitAny: we're happy that it could be anything here
   return (input as any)[Symbol.toStringTag] === InngestMiddleware.Tag;
 };
