@@ -411,6 +411,10 @@ const isError = (err: unknown): err is Error => {
       return true;
     }
 
+    if (typeof err !== "object" || err === null) {
+      return false;
+    }
+
     const hasName = Object.hasOwn(err, "name");
     const hasMessage = Object.hasOwn(err, "message");
 
