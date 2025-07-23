@@ -1,6 +1,6 @@
 import Debug, { type Debugger } from "debug";
+import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
 import type { ServerTiming } from "../../helpers/ServerTiming.ts";
-import { ExecutionVersion, debugPrefix } from "../../helpers/consts.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import type { Context, IncomingOp, OutgoingOp } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";

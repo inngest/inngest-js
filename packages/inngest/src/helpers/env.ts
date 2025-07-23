@@ -140,6 +140,7 @@ export class Mode {
 
   public readonly explicitDevUrl?: URL;
 
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private readonly env: Env;
 
   constructor({

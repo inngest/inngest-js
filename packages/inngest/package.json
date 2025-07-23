@@ -25,6 +25,7 @@
     "test:deps": "tsx scripts/checkDependencies.ts",
     "test:composite": "pnpm run local:pack && (cd test/composite_project && npm i ../../inngest.tgz && npm run test)",
     "lint": "biome check",
+    "lint:fix": "biome check --fix",
     "postversion": "pnpm run build",
     "release": "pnpm run test && pnpm run build && node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
     "release:version": "node ../../scripts/release/jsrVersion.js",

@@ -14,11 +14,6 @@ import type {
   TimeStrBatch,
   TriggersFromClient,
 } from "../types.ts";
-import type { GetEvents, Inngest } from "./Inngest.ts";
-import type {
-  InngestMiddleware,
-  MiddlewareRegisterReturn,
-} from "./InngestMiddleware.ts";
 import type {
   IInngestExecution,
   InngestExecutionOptions,
@@ -26,6 +21,11 @@ import type {
 import { createV0InngestExecution } from "./execution/v0.ts";
 import { createV1InngestExecution } from "./execution/v1.ts";
 import { createV2InngestExecution } from "./execution/v2.ts";
+import type { GetEvents, Inngest } from "./Inngest.ts";
+import type {
+  InngestMiddleware,
+  MiddlewareRegisterReturn,
+} from "./InngestMiddleware.ts";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -56,6 +56,7 @@ export class InngestFunction<
   static failureSuffix = "-failure";
 
   public readonly opts: TFnOpts;
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used internally
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
   protected readonly client: TClient;
@@ -120,6 +121,8 @@ export class InngestFunction<
   /**
    * Retrieve the Inngest config for this function.
    */
+
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used within the SDK
   private getConfig({
     baseUrl,
     appPrefix,
@@ -274,6 +277,7 @@ export class InngestFunction<
     return versionHandlers[opts.version]();
   }
 
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used within the SDK
   private shouldOptimizeParallelism(): boolean {
     // TODO We should check the commhandler's client instead of this one?
     return (

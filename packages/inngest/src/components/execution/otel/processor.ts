@@ -1,10 +1,10 @@
 import type { Span } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import {
-  type IResource,
   detectResourcesSync,
   envDetectorSync,
   hostDetectorSync,
+  type IResource,
   osDetectorSync,
   processDetectorSync,
   serviceInstanceIdDetectorSync,
@@ -18,13 +18,13 @@ import Debug from "debug";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
-} from "../../../helpers/consts.js";
-import { devServerAvailable } from "../../../helpers/devserver.js";
-import { devServerHost } from "../../../helpers/env.js";
-import type { Inngest } from "../../Inngest.js";
-import { getAsyncCtx } from "../als.js";
-import { clientProcessorMap } from "./access.js";
-import { Attribute, TraceStateKey, debugPrefix } from "./consts.js";
+} from "../../../helpers/consts.ts";
+import { devServerAvailable } from "../../../helpers/devserver.ts";
+import { devServerHost } from "../../../helpers/env.ts";
+import type { Inngest } from "../../Inngest.ts";
+import { getAsyncCtx } from "../als.ts";
+import { clientProcessorMap } from "./access.ts";
+import { Attribute, debugPrefix, TraceStateKey } from "./consts.ts";
 
 const processorDebug = Debug(`${debugPrefix}:InngestSpanProcessor`);
 

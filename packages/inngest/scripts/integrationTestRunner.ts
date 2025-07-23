@@ -1,8 +1,8 @@
 import {
   type ChildProcess,
-  type SpawnOptions,
   exec,
   execSync,
+  type SpawnOptions,
   spawn,
 } from "child_process";
 import { promises as fsPromises } from "fs";

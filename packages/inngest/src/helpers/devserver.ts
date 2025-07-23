@@ -1,5 +1,6 @@
-import { defaultDevServerHost } from "./consts.js";
-import { devServerHost as envDevServerHost } from "./env.js";
+import { defaultDevServerHost } from "./consts.ts";
+import { devServerHost as envDevServerHost } from "./env.ts";
+
 // re-export from devserver.ts
 
 /**

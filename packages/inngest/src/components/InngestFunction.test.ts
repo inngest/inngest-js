@@ -37,8 +37,6 @@ import {
   type OutgoingOp,
   StepOpCode,
 } from "../types.ts";
-import { InngestFunction } from "./InngestFunction.ts";
-import { STEP_INDEXING_SUFFIX } from "./InngestStepTools.ts";
 import {
   type ExecutionResult,
   type ExecutionResults,
@@ -47,6 +45,8 @@ import {
 } from "./execution/InngestExecution.ts";
 import { _internals as _v1Internals } from "./execution/v1.ts";
 import { _internals as _v2Internals } from "./execution/v2.ts";
+import { InngestFunction } from "./InngestFunction.ts";
+import { STEP_INDEXING_SUFFIX } from "./InngestStepTools.ts";
 
 type TestEvents = {
   foo: { data: { foo: string } };

@@ -5,6 +5,12 @@ import nock from "nock";
 import httpMocks from "node-mocks-http";
 import { z } from "zod";
 import {
+  type IInngestExecution,
+  type InngestExecution,
+  type InngestExecutionOptions,
+  PREFERRED_EXECUTION_VERSION,
+} from "../components/execution/InngestExecution.ts";
+import {
   type HandlerResponse,
   InngestCommHandler,
   type ServeHandlerOptions,
@@ -13,13 +19,6 @@ import {
   createStepTools,
   getStepOptions,
 } from "../components/InngestStepTools.ts";
-import {
-  type IInngestExecution,
-  type InngestExecution,
-  type InngestExecutionOptions,
-  PREFERRED_EXECUTION_VERSION,
-} from "../components/execution/InngestExecution.ts";
-import { ServerTiming } from "../helpers/ServerTiming.ts";
 import {
   type ExecutionVersion,
   envKeys,
@@ -30,6 +29,7 @@ import {
 } from "../helpers/consts.ts";
 import type { Env } from "../helpers/env.ts";
 import { signDataWithKey } from "../helpers/net.ts";
+import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { slugify } from "../helpers/strings.ts";
 import { Inngest, type InngestFunction } from "../index.ts";
 import type { EventPayload, FunctionConfig } from "../types.ts";

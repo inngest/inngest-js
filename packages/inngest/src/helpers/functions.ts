@@ -2,7 +2,7 @@ import { ZodError, z } from "zod";
 import type { InngestApi } from "../api/api.ts";
 import { stepsSchemas } from "../api/schema.ts";
 import { PREFERRED_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
-import { type Result, err, ok } from "../types.ts";
+import { err, ok, type Result } from "../types.ts";
 import { ExecutionVersion } from "./consts.ts";
 import { prettyError } from "./errors.ts";
 import type { Await } from "./types.ts";

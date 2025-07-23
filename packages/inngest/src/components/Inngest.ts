@@ -11,11 +11,11 @@ import {
 import { createEntropy } from "../helpers/crypto.ts";
 import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
 import {
-  type Mode,
   allProcessEnv,
   getFetch,
   getMode,
   inngestHeaders,
+  type Mode,
   processEnv,
 } from "../helpers/env.ts";
 import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.ts";
@@ -44,20 +44,20 @@ import {
   type InvokeTargetFunctionDefinition,
   type SendEventOutput,
   type SendEventResponse,
-  type TriggersFromClient,
   sendEventResponseSchema,
+  type TriggersFromClient,
 } from "../types.ts";
 import type { EventSchemas } from "./EventSchemas.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
   type ExtendWithMiddleware,
+  getHookStack,
   InngestMiddleware,
   type MiddlewareOptions,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
-  getHookStack,
 } from "./InngestMiddleware.ts";
 
 /**
@@ -139,6 +139,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private readonly fetch: FetchT;
 
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private readonly logger: Logger;
 
   private localFns: InngestFunction.Any[] = [];
@@ -736,7 +737,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * Runtime-only validation.
    */
   private sanitizeOptions<T extends InngestFunction.Options>(options: T): T {
-    if (Object.prototype.hasOwnProperty.call(options, "fns")) {
+    if (Object.hasOwn(options, "fns")) {
       // v2 -> v3 migration warning
       console.warn(
         `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`,

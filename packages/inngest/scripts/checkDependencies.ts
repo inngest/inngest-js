@@ -17,10 +17,10 @@
  * available to the consumer.
  */
 
+import chalk from "chalk";
 import fs from "fs";
 import { builtinModules } from "module";
 import path from "path";
-import chalk from "chalk";
 import ts from "typescript";
 
 // Define paths to package.json and tsconfig.json
