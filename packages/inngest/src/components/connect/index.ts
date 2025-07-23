@@ -14,6 +14,7 @@ import {
   GatewayConnectionReadyData,
   type GatewayExecutorRequestData,
   GatewayMessageType,
+  gatewayMessageTypeToJSON,
   SDKResponse,
   SDKResponseStatus,
   WorkerConnectRequestData,
@@ -21,15 +22,14 @@ import {
   WorkerRequestAckData,
   WorkerRequestExtendLeaseAckData,
   WorkerRequestExtendLeaseData,
-  gatewayMessageTypeToJSON,
   workerDisconnectReasonToJSON,
 } from "../../proto/src/components/connect/protobuf/connect.ts";
 import type { Capabilities, FunctionConfig } from "../../types.ts";
 import { version } from "../../version.ts";
+import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
 import type { Inngest } from "../Inngest.ts";
 import { InngestCommHandler } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
-import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
 import { MessageBuffer } from "./buffer.ts";
 import {
   createStartRequest,
@@ -49,9 +49,9 @@ import {
 import {
   AuthError,
   ConnectionLimitError,
-  ReconnectError,
   expBackoff,
   parseTraceCtx,
+  ReconnectError,
   waitWithCancel,
 } from "./util.ts";
 

@@ -6,7 +6,7 @@ import {
   registerInstrumentations,
 } from "@opentelemetry/instrumentation";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
-import { InngestSpanProcessor } from "./processor.js";
+import { InngestSpanProcessor } from "./processor.ts";
 
 export type Behaviour = "createProvider" | "extendProvider" | "off" | "auto";
 export type Instrumentations = (Instrumentation | Instrumentation[])[];

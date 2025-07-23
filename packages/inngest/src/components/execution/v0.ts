@@ -2,8 +2,8 @@ import canonicalize from "canonicalize";
 import hashjs from "hash.js";
 import { z } from "zod";
 import {
-  ErrCode,
   deserializeError,
+  ErrCode,
   functionStoppedRunningErr,
   prettyError,
   serializeError,
@@ -23,17 +23,17 @@ import {
   type Handler,
   type HashedOp,
   type IncomingOp,
+  jsonErrorSchema,
   type OpStack,
   type OutgoingOp,
   StepOpCode,
-  jsonErrorSchema,
 } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
-import { type RunHookStack, getHookStack } from "../InngestMiddleware.ts";
+import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
-  type StepHandler,
   createStepTools,
   getStepOptions,
+  type StepHandler,
 } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";

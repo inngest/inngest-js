@@ -191,7 +191,7 @@ export const isSerializedError = (
 
     if (typeof value === "object" && value !== null) {
       const objIsSerializedErr =
-        Object.prototype.hasOwnProperty.call(value, SERIALIZED_KEY) &&
+        Object.hasOwn(value, SERIALIZED_KEY) &&
         (value as { [SERIALIZED_KEY]: unknown })[SERIALIZED_KEY] ===
           SERIALIZED_VALUE;
 
@@ -227,7 +227,7 @@ export const deserializeError = <
 
   try {
     const hasRequiredFields = requiredFields.every((field) => {
-      return Object.prototype.hasOwnProperty.call(subject, field);
+      return Object.hasOwn(subject, field);
     });
 
     if (!hasRequiredFields) {
@@ -411,8 +411,8 @@ const isError = (err: unknown): err is Error => {
       return true;
     }
 
-    const hasName = Object.prototype.hasOwnProperty.call(err, "name");
-    const hasMessage = Object.prototype.hasOwnProperty.call(err, "message");
+    const hasName = Object.hasOwn(err, "name");
+    const hasMessage = Object.hasOwn(err, "message");
 
     return hasName && hasMessage;
   } catch (_noopErr) {

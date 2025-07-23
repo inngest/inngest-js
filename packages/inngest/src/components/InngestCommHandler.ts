@@ -1,12 +1,11 @@
 import debug from "debug";
 import { z } from "zod";
-import { ServerTiming } from "../helpers/ServerTiming.ts";
 import {
-  ExecutionVersion,
   debugPrefix,
   defaultInngestApiBaseUrl,
   defaultInngestEventBaseUrl,
   dummyEventKey,
+  ExecutionVersion,
   envKeys,
   headerKeys,
   logPrefix,
@@ -17,14 +16,14 @@ import {
 import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
 import { enumFromValue } from "../helpers/enum.ts";
 import {
-  type Env,
-  Mode,
   allProcessEnv,
   devServerHost,
+  type Env,
   getFetch,
   getMode,
   getPlatformName,
   inngestHeaders,
+  Mode,
   parseAsBoolean,
   platformSupportsStreaming,
 } from "../helpers/env.ts";
@@ -37,6 +36,7 @@ import {
 } from "../helpers/functions.ts";
 import { fetchWithAuthFallback, signDataWithKey } from "../helpers/net.ts";
 import { runAsPromise } from "../helpers/promises.ts";
+import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { createStream } from "../helpers/stream.ts";
 import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
 import type { MaybePromise } from "../helpers/types.ts";
@@ -44,23 +44,18 @@ import {
   type AuthenticatedIntrospection,
   type EventPayload,
   type FunctionConfig,
+  functionConfigSchema,
   type InBandRegisterRequest,
+  inBandSyncRequestBodySchema,
   type LogLevel,
+  logLevels,
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
   type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
-  functionConfigSchema,
-  inBandSyncRequestBodySchema,
-  logLevels,
 } from "../types.ts";
 import { version } from "../version.ts";
-import type { Inngest } from "./Inngest.ts";
-import type {
-  CreateExecutionOptions,
-  InngestFunction,
-} from "./InngestFunction.ts";
 import {
   type ExecutionResult,
   type ExecutionResultHandler,
@@ -68,6 +63,11 @@ import {
   type InngestExecutionOptions,
   PREFERRED_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
+import type { Inngest } from "./Inngest.ts";
+import type {
+  CreateExecutionOptions,
+  InngestFunction,
+} from "./InngestFunction.ts";
 
 /**
  * A set of options that can be passed to a serve handler, intended to be used
@@ -358,7 +358,7 @@ export class InngestCommHandler<
      * spread in to these options. We should be able to detect this by picking
      * up a unique property on the object.
      */
-    if (Object.prototype.hasOwnProperty.call(options, "eventKey")) {
+    if (Object.hasOwn(options, "eventKey")) {
       throw new Error(
         `${logPrefix} You've passed an Inngest client as the first argument to your serve handler. This is no longer supported in v3; please pass the Inngest client as the \`client\` property of an options object instead. See https://www.inngest.com/docs/sdk/migration`,
       );
@@ -381,7 +381,7 @@ export class InngestCommHandler<
      * testing.
      */
     this.allowExpiredSignatures = Boolean(
-      // biome-ignore lint/style/noArguments: <explanation>
+      // biome-ignore lint/complexity/noArguments: <explanation>
       arguments["0"]?.__testingAllowExpiredSignatures,
     );
 
@@ -974,10 +974,12 @@ export class InngestCommHandler<
     return handler;
   }
 
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private get mode(): Mode | undefined {
     return this._mode;
   }
 
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private set mode(m) {
     this._mode = m;
 
@@ -2029,7 +2031,7 @@ export class InngestCommHandler<
     if (currentLevel >= logLevelSetting) {
       let logger = console.log;
 
-      if (Object.prototype.hasOwnProperty.call(console, level)) {
+      if (Object.hasOwn(console, level)) {
         logger = console[level as keyof typeof console] as typeof logger;
       }
 

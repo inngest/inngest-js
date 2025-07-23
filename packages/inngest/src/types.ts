@@ -12,9 +12,9 @@
 import { z } from "zod";
 import type { EventSchemas } from "./components/EventSchemas.ts";
 import type {
+  builtInMiddleware,
   GetEvents,
   Inngest,
-  builtInMiddleware,
 } from "./components/Inngest.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
