@@ -55,6 +55,10 @@ export class InngestFunction<
   static stepId = "step";
   static failureSuffix = "-failure";
 
+  get [Symbol.toStringTag](): typeof InngestFunction.Tag {
+    return InngestFunction.Tag;
+  }
+
   public readonly opts: TFnOpts;
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used internally
   private readonly fn: THandler;
@@ -298,6 +302,8 @@ export class InngestFunction<
  * @public
  */
 export namespace InngestFunction {
+  export const Tag = "Inngest.Function" as const;
+
   /**
    * Represents any `InngestFunction` instance, regardless of generics and
    * inference.
@@ -316,8 +322,7 @@ export namespace InngestFunction {
   >;
 
   export interface Like {
-    name: string;
-    description?: string | undefined;
+    readonly [Symbol.toStringTag]: typeof InngestFunction.Tag;
   }
 
   /**

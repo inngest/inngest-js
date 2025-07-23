@@ -69,6 +69,11 @@ export type {
   MiddlewareRegisterFn,
   MiddlewareRegisterReturn,
 } from "./components/InngestMiddleware";
+export {
+  isInngest,
+  isInngestFunction,
+  isInngestMiddleware,
+} from "./helpers/assertions.ts";
 export { InngestMiddleware } from "./components/InngestMiddleware.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
