@@ -1,10 +1,10 @@
-import { Inngest } from "@local/components/Inngest";
-import { InngestMiddleware } from "@local/components/InngestMiddleware";
+import { Inngest } from "../components/Inngest.ts";
+import { InngestMiddleware } from "../components/InngestMiddleware.ts";
 import {
   isInngest,
   isInngestFunction,
   isInngestMiddleware,
-} from "@local/helpers/assertions";
+} from "./assertions.ts";
 
 describe("isInngest", () => {
   it("should return true for Inngest instance", () => {
@@ -25,7 +25,7 @@ describe("isInngestFunction", () => {
     const fn = inngest.createFunction(
       { id: "test" },
       { event: "user/created" },
-      () => undefined
+      () => undefined,
     );
 
     expect(isInngestFunction(fn)).toBe(true);
