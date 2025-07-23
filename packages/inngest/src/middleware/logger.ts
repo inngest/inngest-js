@@ -57,6 +57,22 @@ export class ProxyLogger implements Logger {
 
   constructor(logger: Logger) {
     this.logger = logger;
+
+    // Return a Proxy to forward arbitrary property access to the underlying
+    // logger. For example, if the user provides a logger that has a `foo`
+    // method, they can call `foo` on the ProxyLogger and it will call the
+    // underlying logger's `foo` method.
+    return new Proxy(this, {
+      get(target, prop, receiver): unknown {
+        // Handle ProxyLogger's own methods/properties.
+        if (prop in target) {
+          return Reflect.get(target, prop, receiver);
+        }
+
+        // Forward property access to the underlying logger.
+        return Reflect.get(target.logger, prop, receiver);
+      },
+    }) as ProxyLogger;
   }
 
   info(...args: LogArg[]) {

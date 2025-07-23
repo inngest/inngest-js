@@ -1,4 +1,4 @@
-import { stringify } from "./strings.js";
+import { stringify } from "./strings.ts";
 
 /**
  * Creates a {@link ReadableStream} that sends a `value` every `interval`
@@ -40,7 +40,6 @@ export const createStream = (opts?: {
   const interval = opts?.interval ?? 3000;
   const value = opts?.value ?? " ";
 
-  // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
   return new Promise(async (resolve, reject) => {
     try {
       const stream = new ReadableStream({

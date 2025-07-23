@@ -1,29 +1,35 @@
-import { type fetch } from "cross-fetch";
+import type { fetch } from "cross-fetch";
 import { z } from "zod";
-import { type ExecutionVersion } from "../components/execution/InngestExecution.js";
 import {
+  type ExecutionVersion,
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
-} from "../helpers/consts.js";
-import { devServerAvailable } from "../helpers/devserver.js";
-import { type Mode } from "../helpers/env.js";
-import { getErrorMessage } from "../helpers/errors.js";
-import { fetchWithAuthFallback } from "../helpers/net.js";
-import { hashSigningKey } from "../helpers/strings.js";
-import { err, ok, type Result } from "../types.js";
+} from "../helpers/consts.ts";
+import { devServerAvailable } from "../helpers/devserver.ts";
+import type { Mode } from "../helpers/env.ts";
+import { getErrorMessage } from "../helpers/errors.ts";
+import { fetchWithAuthFallback } from "../helpers/net.ts";
+import { hashSigningKey } from "../helpers/strings.ts";
+import { type Result, err, ok } from "../types.ts";
 import {
-  batchSchema,
-  errorSchema,
-  stepsSchemas,
   type BatchResponse,
   type ErrorResponse,
   type StepsResponse,
-} from "./schema.js";
+  batchSchema,
+  errorSchema,
+  stepsSchemas,
+} from "./schema.ts";
 
 type FetchT = typeof fetch;
 
 const realtimeSubscriptionTokenSchema = z.object({
   jwt: z.string(),
+});
+
+const sendSignalSuccessResponseSchema = z.object({
+  data: z.object({
+    run_id: z.string().min(1),
+  }),
 });
 
 export namespace InngestApi {
@@ -42,6 +48,20 @@ export namespace InngestApi {
 
   export interface PublishOptions extends Subscription {
     runId?: string;
+  }
+
+  export interface SendSignalOptions {
+    signal: string;
+    data?: unknown;
+  }
+
+  export interface SendSignalResponse {
+    /**
+     * The ID of the run that was signaled.
+     *
+     * If this is undefined, the signal could not be matched to a run.
+     */
+    runId: string | undefined;
   }
 }
 
@@ -101,7 +121,7 @@ export class InngestApi {
     if (this.mode.isDev && this.mode.isInferred && !this.apiBaseUrl) {
       const devAvailable = await devServerAvailable(
         defaultDevServerHost,
-        this.fetch
+        this.fetch,
       );
 
       if (devAvailable) {
@@ -114,7 +134,7 @@ export class InngestApi {
 
   async getRunSteps(
     runId: string,
-    version: ExecutionVersion
+    version: ExecutionVersion,
   ): Promise<Result<StepsResponse, ErrorResponse>> {
     return fetchWithAuthFallback({
       authToken: this.hashedKey,
@@ -140,7 +160,7 @@ export class InngestApi {
   }
 
   async getRunBatch(
-    runId: string
+    runId: string,
   ): Promise<Result<BatchResponse, ErrorResponse>> {
     return fetchWithAuthFallback({
       authToken: this.hashedKey,
@@ -167,8 +187,8 @@ export class InngestApi {
 
   async publish(
     publishOptions: InngestApi.PublishOptions,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    data: any,
   ): Promise<Result<void, ErrorResponse>> {
     // todo it may not be a "text/stream"
     const isStream = data instanceof ReadableStream;
@@ -180,6 +200,7 @@ export class InngestApi {
       url.searchParams.set("run_id", publishOptions.runId);
     }
 
+    // biome-ignore lint/complexity/noForEach: <explanation>
     publishOptions.topics.forEach((topic) => {
       url.searchParams.append("topic", topic);
     });
@@ -205,7 +226,7 @@ export class InngestApi {
       .then((res) => {
         if (!res.ok) {
           throw new Error(
-            `Failed to publish event: ${res.status} ${res.statusText}`
+            `Failed to publish event: ${res.status} ${res.statusText}`,
           );
         }
 
@@ -219,9 +240,101 @@ export class InngestApi {
       });
   }
 
+  async sendSignal(
+    signalOptions: InngestApi.SendSignalOptions,
+    options?: {
+      headers?: Record<string, string>;
+    },
+  ): Promise<Result<InngestApi.SendSignalResponse, ErrorResponse>> {
+    const url = await this.getTargetUrl("/v1/signals");
+
+    const body = {
+      signal: signalOptions.signal,
+      data: signalOptions.data,
+    };
+
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url,
+      options: {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+        },
+      },
+    })
+      .then(async (res) => {
+        // A 404 is valid if the signal was not found.
+        if (res.status === 404) {
+          return ok<InngestApi.SendSignalResponse>({
+            runId: undefined,
+          });
+        }
+
+        // Save a clone of the response we can use to get the text of if we fail
+        // to parse the JSON.
+        const resClone = res.clone();
+
+        // JSON!
+        let json: unknown;
+        try {
+          json = await res.json();
+        } catch {
+          // res.json() failed so not a valid JSON response
+          return err({
+            error: `Failed to send signal: ${res.status} ${
+              res.statusText
+            } - ${await resClone.text()}`,
+            status: res.status,
+          });
+        }
+
+        // If we're not 2xx, something went wrong.
+        if (!res.ok) {
+          try {
+            return err(errorSchema.parse(json));
+          } catch {
+            // schema parse failed
+            return err({
+              error: `Failed to send signal: ${res.status} ${
+                res.statusText
+              } - ${await res.text()}`,
+              status: res.status,
+            });
+          }
+        }
+
+        // If we are 2xx, we should have a run_id.
+        const parseRes = sendSignalSuccessResponseSchema.safeParse(json);
+        if (!parseRes.success) {
+          return err({
+            error: `Successfully sent signal, but response parsing failed: ${
+              res.status
+            } ${res.statusText} - ${await resClone.text()}`,
+            status: res.status,
+          });
+        }
+
+        return ok({
+          runId: parseRes.data.data.run_id,
+        });
+      })
+      .catch((error) => {
+        // Catch-all if various things go wrong
+        return err({
+          error: getErrorMessage(error, "Unknown error sending signal"),
+          status: 500,
+        });
+      });
+  }
+
   async getSubscriptionToken(
     channel: string,
-    topics: string[]
+    topics: string[],
   ): Promise<string> {
     const url = await this.getTargetUrl("/v1/realtime/token");
 
@@ -249,7 +362,7 @@ export class InngestApi {
           throw new Error(
             `Failed to get subscription token: ${res.status} ${
               res.statusText
-            } - ${await res.text()}`
+            } - ${await res.text()}`,
           );
         }
 
@@ -259,7 +372,7 @@ export class InngestApi {
       })
       .catch((error) => {
         throw new Error(
-          getErrorMessage(error, "Unknown error getting subscription token")
+          getErrorMessage(error, "Unknown error getting subscription token"),
         );
       });
   }

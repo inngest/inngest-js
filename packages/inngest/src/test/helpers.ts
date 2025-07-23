@@ -1,43 +1,38 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable @typescript-eslint/no-unsafe-return */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-import { Inngest, InngestFunction } from "@local";
+import { fromPartial } from "@total-typescript/shoehorn";
+import fetch from "cross-fetch";
+import type { Request, Response } from "express";
+import nock from "nock";
+import httpMocks from "node-mocks-http";
+import { z } from "zod";
 import {
-  HandlerResponse,
+  type HandlerResponse,
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "@local/components/InngestCommHandler";
+} from "../components/InngestCommHandler.ts";
 import {
   createStepTools,
   getStepOptions,
-} from "@local/components/InngestStepTools";
+} from "../components/InngestStepTools.ts";
 import {
-  ExecutionVersion,
   type IInngestExecution,
   type InngestExecution,
   type InngestExecutionOptions,
   PREFERRED_EXECUTION_VERSION,
-} from "@local/components/execution/InngestExecution";
-import { ServerTiming } from "@local/helpers/ServerTiming";
+} from "../components/execution/InngestExecution.ts";
+import { ServerTiming } from "../helpers/ServerTiming.ts";
 import {
+  type ExecutionVersion,
   envKeys,
   headerKeys,
   queryKeys,
   serverKind,
   syncKind,
-} from "@local/helpers/consts";
-import { type Env } from "@local/helpers/env";
-import { signDataWithKey } from "@local/helpers/net";
-import { slugify } from "@local/helpers/strings";
-import { type EventPayload, type FunctionConfig } from "@local/types";
-import { fromPartial } from "@total-typescript/shoehorn";
-import fetch from "cross-fetch";
-import { type Request, type Response } from "express";
-import nock from "nock";
-import httpMocks from "node-mocks-http";
-import { z } from "zod";
+} from "../helpers/consts.ts";
+import type { Env } from "../helpers/env.ts";
+import { signDataWithKey } from "../helpers/net.ts";
+import { slugify } from "../helpers/strings.ts";
+import { Inngest, type InngestFunction } from "../index.ts";
+import type { EventPayload, FunctionConfig } from "../types.ts";
 
 interface HandlerStandardReturn {
   status: number;
@@ -81,7 +76,7 @@ export const createClient = <T extends ConstructorParameters<typeof Inngest>>(
   ...args: T
 ): Inngest<T["0"]> => {
   return new Inngest(
-    ...(args as ConstructorParameters<typeof Inngest>)
+    ...(args as ConstructorParameters<typeof Inngest>),
   ) as unknown as Inngest<T["0"]>;
 };
 
@@ -89,13 +84,14 @@ export const testClientId = "__test_client__";
 
 export const getStepTools = (
   client: Inngest.Any = createClient({ id: testClientId }),
-  executionOptions: Partial<InngestExecutionOptions> = {}
+  executionOptions: Partial<InngestExecutionOptions> = {},
 ) => {
   const execution = client
     .createFunction({ id: "test" }, { event: "test" }, () => undefined)
     ["createExecution"]({
       version: PREFERRED_EXECUTION_VERSION,
       partialOptions: {
+        client,
         data: fromPartial({
           event: { name: "foo", data: {} },
         }),
@@ -136,11 +132,12 @@ export const runFnWithStack = async (
     event?: EventPayload;
     stackOrder?: InngestExecutionOptions["stepCompletionOrder"];
     disableImmediateExecution?: boolean;
-  }
+  },
 ) => {
   const execution = fn["createExecution"]({
     version: opts?.executionVersion ?? PREFERRED_EXECUTION_VERSION,
     partialOptions: {
+      client: fn["client"],
       data: fromPartial({
         event: opts?.event || { name: "foo", data: {} },
       }),
@@ -175,7 +172,7 @@ export const testFramework = (
    */
   handler: {
     frameworkName: string;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     serve: (options: ServeHandlerOptions) => any;
   },
 
@@ -219,8 +216,8 @@ export const testFramework = (
       /**
        * The returned value from the handler.
        */
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ret: any
+
+      ret: any,
     ) => Promise<HandlerStandardReturn>;
 
     /**
@@ -235,12 +232,12 @@ export const testFramework = (
      * mocks are being set up correctly.
      */
     envTests?: () => void;
-  }
+  },
 ) => {
   type ServeHandler = string & { __serveHandler: true };
 
   const getServeHandler = (
-    handlerOpts: Parameters<(typeof handler)["serve"]>
+    handlerOpts: Parameters<(typeof handler)["serve"]>,
   ) => {
     const serveHandler = handler.serve({
       ...handlerOpts[0],
@@ -270,7 +267,7 @@ export const testFramework = (
      * This is useful to produce specific scenarios where actions like body
      * parsing may be missing from a framework.
      */
-    actionOverrides?: Partial<HandlerResponse>
+    actionOverrides?: Partial<HandlerResponse>,
   ): Promise<HandlerStandardReturn> => {
     const serveHandler = Array.isArray(handlerOpts)
       ? getServeHandler(handlerOpts)
@@ -316,7 +313,6 @@ export const testFramework = (
       args.push({ actionOverrides });
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const ret = await (serveHandler as (...args: any[]) => any)(...args);
 
     if (prevProcessEnv) {
@@ -410,7 +406,7 @@ export const testFramework = (
               method: "GET",
               headers: { [headerKeys.InngestServerKind]: serverKind.Dev },
             },
-          ]
+          ],
         );
 
         const body = JSON.parse(ret.body);
@@ -421,7 +417,7 @@ export const testFramework = (
             [headerKeys.SdkVersion]: expect.stringContaining("inngest-js:v"),
             [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
             [headerKeys.Framework]: expect.stringMatching(
-              handler.frameworkName
+              handler.frameworkName,
             ),
           }),
         });
@@ -441,7 +437,7 @@ export const testFramework = (
         const ret = await run(
           [{ client: createClient({ id: "test" }), functions: [] }],
           [{ method: "GET" }],
-          { [envKeys.InngestEventKey]: "event-key-123" }
+          { [envKeys.InngestEventKey]: "event-key-123" },
         );
 
         const body = JSON.parse(ret.body);
@@ -455,7 +451,7 @@ export const testFramework = (
         const ret = await run(
           [{ client: createClient({ id: "test" }), functions: [] }],
           [{ method: "GET" }],
-          { [envKeys.InngestSigningKey]: "signing-key-123" }
+          { [envKeys.InngestSigningKey]: "signing-key-123" },
         );
 
         expect(ret.status).toEqual(200);
@@ -476,7 +472,7 @@ export const testFramework = (
             },
           ],
           [{ method: "GET" }],
-          { [envKeys.InngestSigningKey]: "signing-key-123" }
+          { [envKeys.InngestSigningKey]: "signing-key-123" },
         );
 
         expect(ret.status).toEqual(200);
@@ -499,7 +495,6 @@ export const testFramework = (
               .post("/fn/register", (b) => {
                 reqToMock = b;
 
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
                 return b;
               })
               .reply(200, {
@@ -516,7 +511,7 @@ export const testFramework = (
                     [headerKeys.InngestServerKind]: serverKind.Dev,
                   },
                 },
-              ]
+              ],
             );
 
             const retBody = JSON.parse(ret.body);
@@ -528,7 +523,7 @@ export const testFramework = (
                   expect.stringContaining("inngest-js:v"),
                 [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
                 [headerKeys.Framework]: expect.stringMatching(
-                  handler.frameworkName
+                  handler.frameworkName,
                 ),
               }),
             });
@@ -559,7 +554,7 @@ export const testFramework = (
               ],
               {
                 [envKeys.IsNetlify]: "true",
-              }
+              },
             );
 
             expect(ret).toMatchObject({
@@ -578,7 +573,6 @@ export const testFramework = (
               .post("/fn/register", (b) => {
                 reqToMock = b;
 
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
                 return b;
               })
               .reply(200, {
@@ -595,7 +589,7 @@ export const testFramework = (
                     [headerKeys.InngestServerKind]: serverKind.Dev,
                   },
                 },
-              ]
+              ],
             );
 
             const retBody = JSON.parse(ret.body);
@@ -607,7 +601,7 @@ export const testFramework = (
                   expect.stringContaining("inngest-js:v"),
                 [headerKeys.InngestExpectedServerKind]: serverKind.Dev,
                 [headerKeys.Framework]: expect.stringMatching(
-                  handler.frameworkName
+                  handler.frameworkName,
                 ),
               }),
             });
@@ -628,7 +622,6 @@ export const testFramework = (
               .post("/fn/register", (b) => {
                 reqToMock = b;
 
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
                 return b;
               })
               .reply(200, {
@@ -638,14 +631,14 @@ export const testFramework = (
             const fn1 = inngest.createFunction(
               { id: "fn1" },
               { event: "demo/event.sent" },
-              () => "fn1"
+              () => "fn1",
             );
             const serveHost = "https://example.com";
             const stepId = "step";
 
             await run(
               [{ client: inngest, functions: [fn1], serveHost }],
-              [{ method: "PUT" }]
+              [{ method: "PUT" }],
             );
 
             expect(reqToMock).toMatchObject({
@@ -671,7 +664,6 @@ export const testFramework = (
               .post("/fn/register", (b) => {
                 reqToMock = b;
 
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-return
                 return b;
               })
               .reply(200, {
@@ -681,14 +673,14 @@ export const testFramework = (
             const fn1 = inngest.createFunction(
               { id: "fn1" },
               { event: "demo/event.sent" },
-              () => "fn1"
+              () => "fn1",
             );
             const servePath = "/foo/bar/inngest/endpoint";
             const stepId = "step";
 
             await run(
               [{ client: inngest, functions: [fn1], servePath }],
-              [{ method: "PUT" }]
+              [{ method: "PUT" }],
             );
 
             expect(reqToMock).toMatchObject({
@@ -726,7 +718,7 @@ export const testFramework = (
                     [headerKeys.InngestServerKind]: serverKind.Dev,
                   },
                 },
-              ]
+              ],
             );
 
             expect(ret).toMatchObject({
@@ -746,7 +738,6 @@ export const testFramework = (
             .post("/fn/register", (b) => {
               reqToMock = b;
 
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-return
               return b;
             })
             .reply(200, {
@@ -756,7 +747,7 @@ export const testFramework = (
           const fn1 = inngest.createFunction(
             { id: "fn1" },
             { event: "demo/event.sent" },
-            () => "fn1"
+            () => "fn1",
           );
           const serveHost = "https://example.com";
           const servePath = "/foo/bar/inngest/endpoint";
@@ -764,7 +755,7 @@ export const testFramework = (
 
           await run(
             [{ client: inngest, functions: [fn1], serveHost, servePath }],
-            [{ method: "PUT" }]
+            [{ method: "PUT" }],
           );
 
           expect(reqToMock).toMatchObject({
@@ -799,13 +790,12 @@ export const testFramework = (
                 .post("/fn/register", (b) => {
                   reqToMock = b;
 
-                  // eslint-disable-next-line @typescript-eslint/no-unsafe-return
                   return b;
                 })
                 .query((q) =>
                   deployId
                     ? q[queryKeys.DeployId] === deployId
-                    : !(queryKeys.DeployId in q)
+                    : !(queryKeys.DeployId in q),
                 )
                 .reply(200, {
                   status: 200,
@@ -869,7 +859,7 @@ export const testFramework = (
             validSignature: boolean | undefined;
             allowInBandSync: boolean | undefined;
             actionOverrides?: Partial<HandlerResponse>;
-          }
+          },
         ) => {
           const signingKey = "123";
           const body = { url: "https://example.com/api/inngest" };
@@ -881,7 +871,7 @@ export const testFramework = (
               ? "INVALID"
               : undefined;
 
-          let name = `${
+          const name = `${
             serverMode === serverKind.Cloud ? "Cloud" : "Dev"
           } Server -> ${sdkMode === serverKind.Cloud ? "Cloud" : "Dev"} SDK - ${
             requestedSyncKind
@@ -930,7 +920,7 @@ export const testFramework = (
                     }
                   : {}),
               },
-              actionOverrides
+              actionOverrides,
             );
 
             if (typeof expectedResponse === "number") {
@@ -972,7 +962,7 @@ export const testFramework = (
                       allowInBandSync: false,
                     });
                   });
-                }
+                },
               );
             });
           });
@@ -1099,14 +1089,14 @@ export const testFramework = (
           const fn = client.createFunction(
             { name: "Test", id: "test" },
             { event: "demo/event.sent" },
-            () => "fn"
+            () => "fn",
           );
 
           const ret = await run(
             [{ client, functions: [fn] }],
             [{ method: "POST" }],
             {},
-            { body: () => undefined }
+            { body: () => undefined },
           );
 
           expect(ret.status).toEqual(500);
@@ -1119,7 +1109,7 @@ export const testFramework = (
         const fn = client.createFunction(
           { name: "Test", id: "test" },
           { event: "demo/event.sent" },
-          () => "fn"
+          () => "fn",
         );
         const env = {
           DENO_DEPLOYMENT_ID: "1",
@@ -1132,12 +1122,12 @@ export const testFramework = (
             [{ client: inngest, functions: [fn], signingKey: "test" }],
 
             [{ method: "POST", headers: {} }],
-            env
+            env,
           );
           expect(ret.status).toEqual(401);
           expect(JSON.parse(ret.body)).toMatchObject({
             message: expect.stringContaining(
-              `No ${headerKeys.Signature} provided`
+              `No ${headerKeys.Signature} provided`,
             ),
           });
         });
@@ -1145,12 +1135,12 @@ export const testFramework = (
           const ret = await run(
             [{ client: inngest, functions: [fn], signingKey: "test" }],
             [{ method: "POST", headers: { [headerKeys.Signature]: "t=&s=" } }],
-            env
+            env,
           );
           expect(ret.status).toEqual(401);
           expect(JSON.parse(ret.body)).toMatchObject({
             message: expect.stringContaining(
-              `Invalid ${headerKeys.Signature} provided`
+              `Invalid ${headerKeys.Signature} provided`,
             ),
           });
         });
@@ -1164,14 +1154,14 @@ export const testFramework = (
                 method: "POST",
                 headers: {
                   [headerKeys.Signature]: `t=${Math.round(
-                    yesterday.getTime() / 1000
+                    yesterday.getTime() / 1000,
                   )}&s=expired`,
                 },
                 url: "/api/inngest?fnId=test-test",
                 body: { event: {}, events: [{}] },
               },
             ],
-            env
+            env,
           );
           expect(ret).toMatchObject({
             status: 401,
@@ -1212,7 +1202,6 @@ export const testFramework = (
                 signingKey:
                   "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                 __testingAllowExpiredSignatures: true,
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
               } as any,
             ],
             [
@@ -1226,7 +1215,7 @@ export const testFramework = (
                 body,
               },
             ],
-            env
+            env,
           );
           expect(ret).toMatchObject({
             status: 200,
@@ -1265,7 +1254,6 @@ export const testFramework = (
                   signingKeyFallback:
                     "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                   __testingAllowExpiredSignatures: true,
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 } as any,
               ],
               [
@@ -1279,7 +1267,7 @@ export const testFramework = (
                   body,
                 },
               ],
-              env
+              env,
             );
             expect(ret).toMatchObject({
               status: 200,
@@ -1316,7 +1304,6 @@ export const testFramework = (
                   signingKey: "fake",
                   signingKeyFallback: "another-fake",
                   __testingAllowExpiredSignatures: true,
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 } as any,
               ],
               [
@@ -1330,7 +1317,7 @@ export const testFramework = (
                   body,
                 },
               ],
-              env
+              env,
             );
             expect(ret).toMatchObject({
               status: 401,
@@ -1341,18 +1328,16 @@ export const testFramework = (
 
         describe("signed response", () => {
           beforeEach(() => {
-            jest
-              .spyOn(
-                InngestCommHandler.prototype as any,
-                "getResponseSignature"
-              )
-              .mockImplementation(() => {
-                throw new Error("Failed to sign response");
-              });
+            vi.spyOn(
+              InngestCommHandler.prototype as any,
+              "getResponseSignature",
+            ).mockImplementation(() => {
+              throw new Error("Failed to sign response");
+            });
           });
 
           afterEach(() => {
-            jest.restoreAllMocks();
+            vi.restoreAllMocks();
           });
 
           test("should throw if request is signed but we fail to sign the response", async () => {
@@ -1385,7 +1370,6 @@ export const testFramework = (
                   signingKey:
                     "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                   __testingAllowExpiredSignatures: true,
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 } as any,
               ],
               [
@@ -1399,7 +1383,7 @@ export const testFramework = (
                   body,
                 },
               ],
-              env
+              env,
             );
 
             expect(ret).toMatchObject({
@@ -1414,7 +1398,7 @@ export const testFramework = (
         const fn = inngest.createFunction(
           { name: "Test", id: "test" },
           { event: "demo/event.sent" },
-          () => "fn"
+          () => "fn",
         );
         const env = {
           INNGEST_DEV: "1",
@@ -1430,7 +1414,7 @@ export const testFramework = (
                 body: undefined,
               },
             ],
-            env
+            env,
           );
           expect(ret).toMatchObject({
             status: 500,
@@ -1450,7 +1434,7 @@ export const testFramework = (
 export const sendEvent = async (
   name: string,
   data?: Record<string, unknown>,
-  user?: Record<string, unknown>
+  user?: Record<string, unknown>,
 ): Promise<string> => {
   const res = await fetch("http://localhost:8288/e/key", {
     method: "POST",
@@ -1494,7 +1478,7 @@ export const waitUpTo = (upTo: number, from?: Date): Promise<void> => {
  * If found within 5 seconds, returns the event. Otherwise, throws an error.
  */
 export const receivedEventWithName = async (
-  name: string
+  name: string,
 ): Promise<{
   id: string;
   name: string;
@@ -1528,7 +1512,7 @@ export const receivedEventWithName = async (
     }
 
     const data = await res.json();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
     const event = data?.data?.events?.find((e: any) => e.name === name);
 
     if (event) {
@@ -1549,7 +1533,7 @@ export const receivedEventWithName = async (
  */
 export const eventRunWithName = async (
   eventId: string,
-  name: string
+  name: string,
 ): Promise<string> => {
   for (let i = 0; i < 140; i++) {
     const start = new Date();
@@ -1585,7 +1569,6 @@ export const eventRunWithName = async (
 
     const data = await res.json();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let run: any;
 
     for (let i = 0; i < (data?.data?.stream?.length ?? 0); i++) {
@@ -1595,7 +1578,6 @@ export const eventRunWithName = async (
         continue;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       run = item?.runs?.find((run: any) => {
         return run?.function?.name === name;
       });
@@ -1639,7 +1621,7 @@ class TimelineItem {
   public createdAt: string;
 
   // Unsafe, but fine for testing.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   constructor(runId: string, item: any) {
     this.runId = runId;
     this.id = item.id;
@@ -1696,7 +1678,7 @@ export const runHasTimeline = async (
     type: HistoryItemType;
     attempt?: number;
   },
-  attempts = 140
+  attempts = 140,
 ): Promise<TimelineItem | undefined> => {
   for (let i = 0; i < attempts; i++) {
     const start = new Date();
@@ -1731,12 +1713,10 @@ export const runHasTimeline = async (
 
     const data = await res.json();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const timelineItem = data?.data?.functionRun?.history?.find((entry: any) =>
       Object.keys(timeline).every(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (key) => entry[key] === (timeline as any)[key]
-      )
+        (key) => entry[key] === (timeline as any)[key],
+      ),
     );
 
     if (timelineItem) {
@@ -1780,17 +1760,17 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
                 z.object({ event: z.string() }).or(
                   z.object({
                     cron: z.string(),
-                  })
-                )
+                  }),
+                ),
               ),
               steps: z.array(
                 z.object({
                   id: z.string(),
                   name: z.string(),
                   uri: z.string().url(),
-                })
+                }),
               ),
-            })
+            }),
           ),
         })
         .parse(await res.json());
@@ -1804,11 +1784,11 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
               id: "step",
               name: "step",
               uri: expect.stringMatching(
-                new RegExp(`^http.+\\?fnId=.+-${slugify(name)}&stepId=step$`)
+                new RegExp(`^http.+\\?fnId=.+-${slugify(name)}&stepId=step$`),
               ),
             },
           ]),
-        })
+        }),
       );
     });
   });
@@ -1819,3 +1799,16 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
  * @type T the type to check against.
  */
 export function assertType<T>(subject: T): asserts subject is T {}
+
+/**
+ * Get the current Node.js version.
+ */
+export const nodeVersion = process.version
+  ? (() => {
+      const [major, minor, patch] = process.versions.node
+        .split(".")
+        .map(Number);
+
+      return { major, minor, patch };
+    })()
+  : undefined;

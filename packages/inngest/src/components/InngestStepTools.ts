@@ -1,38 +1,40 @@
-import { models, type AiAdapter } from "@inngest/ai";
+import { type AiAdapter, models } from "@inngest/ai";
 import { z } from "zod";
-import { logPrefix } from "../helpers/consts.js";
-import { type Jsonify } from "../helpers/jsonify.js";
-import { timeStr } from "../helpers/strings.js";
-import * as Temporal from "../helpers/temporal.js";
+import { logPrefix } from "../helpers/consts.ts";
+import type { Jsonify } from "../helpers/jsonify.ts";
+import { timeStr } from "../helpers/strings.ts";
+import * as Temporal from "../helpers/temporal.ts";
+import type {
+  ExclusiveKeys,
+  ParametersExceptFirst,
+  SendEventPayload,
+  SimplifyDeep,
+  WithoutInternalStr,
+} from "../helpers/types.ts";
 import {
-  type ExclusiveKeys,
-  type ParametersExceptFirst,
-  type SendEventPayload,
-  type SimplifyDeep,
-  type WithoutInternalStr,
-} from "../helpers/types.js";
-import {
-  StepOpCode,
   type EventPayload,
   type HashedOp,
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
   type MinimalEventPayload,
   type SendEventOutput,
+  StepOpCode,
   type StepOptions,
   type StepOptionsOrId,
   type TriggerEventFromFunction,
   type TriggersFromClient,
-} from "../types.js";
-import { type InngestExecution } from "./execution/InngestExecution.js";
-import {
-  type ClientOptionsFromInngest,
-  type GetEvents,
-  type GetFunctionOutput,
-  type Inngest,
-} from "./Inngest.js";
-import { InngestFunction } from "./InngestFunction.js";
-import { InngestFunctionReference } from "./InngestFunctionReference.js";
+} from "../types.ts";
+import { fetch as stepFetch } from "./Fetch.ts";
+import type {
+  ClientOptionsFromInngest,
+  GetEvents,
+  GetFunctionOutput,
+  GetStepTools,
+  Inngest,
+} from "./Inngest.ts";
+import { InngestFunction } from "./InngestFunction.ts";
+import { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import type { InngestExecution } from "./execution/InngestExecution.ts";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -146,7 +148,7 @@ export const STEP_INDEXING_SUFFIX = ":";
 export const createStepTools = <TClient extends Inngest.Any>(
   client: TClient,
   execution: InngestExecution,
-  stepHandler: StepHandler
+  stepHandler: StepHandler,
 ) => {
   /**
    * A local helper used to create tools that can be used to submit an op.
@@ -154,7 +156,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
    * When using this function, a generic type should be provided which is the
    * function signature exposed to the user.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   const createTool = <T extends (...args: any[]) => Promise<unknown>>(
     /**
      * A function that returns an ID for this op. This is used to ensure that
@@ -166,7 +168,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * Most simple tools will likely only need to define this.
      */
     matchOp: MatchOpFn<T>,
-    opts?: StepToolOptions<T>
+    opts?: StepToolOptions<T>,
   ): T => {
     return (async (...args: Parameters<T>): Promise<unknown> => {
       const parsedArgs = args as unknown as [StepOptionsOrId, ...unknown[]];
@@ -183,10 +185,10 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * The sub-type of this step tool, exposed via `opts.type` when the op is
      * reported.
      */
-    type?: string
+    type?: string,
   ) => {
     return createTool<
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       <TFn extends (...args: any[]) => unknown>(
         idOrOptions: StepOptionsOrId,
 
@@ -237,9 +239,8 @@ export const createStepTools = <TClient extends Inngest.Any>(
         };
       },
       {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         fn: (_, fn, ...input) => fn(...input),
-      }
+      },
     );
   };
 
@@ -276,12 +277,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
      *
      * Returns a promise that will resolve once the event has been sent.
      */
-    sendEvent: createTool<{
+    sendEvent: createTool<
       <Payload extends SendEventPayload<GetEvents<TClient>>>(
         idOrOptions: StepOptionsOrId,
-        payload: Payload
-      ): Promise<SendEventOutput<ClientOptionsFromInngest<TClient>>>;
-    }>(
+        payload: Payload,
+      ) => Promise<SendEventOutput<ClientOptionsFromInngest<TClient>>>
+    >(
       ({ id, name }) => {
         return {
           id,
@@ -291,13 +292,70 @@ export const createStepTools = <TClient extends Inngest.Any>(
         };
       },
       {
-        fn: (idOrOptions, payload) => {
+        fn: (_idOrOptions, payload) => {
           return client["_send"]({
             payload,
             headers: execution["options"]["headers"],
           });
         },
-      }
+      },
+    ),
+
+    /**
+     * EXPERIMENTAL: This API is not yet stable and may change in the future
+     * without a major version bump.
+     *
+     * Wait for a particular signal to be received before continuing. When the
+     * signal is received, its data will be returned.
+     */
+    waitForSignal: createTool<
+      <TData>(
+        idOrOptions: StepOptionsOrId,
+        opts: WaitForSignalOpts,
+      ) => Promise<{ signal: string; data: Jsonify<TData> } | null>
+    >(({ id, name }, opts) => {
+      // TODO Should support Temporal.DurationLike, Temporal.InstantLike,
+      // Temporal.ZonedDateTimeLike
+      return {
+        id,
+        op: StepOpCode.WaitForSignal,
+        name: opts.signal,
+        displayName: name ?? id,
+        opts: {
+          signal: opts.signal,
+          timeout: timeStr(opts.timeout),
+          conflict: opts.onConflict,
+        },
+      };
+    }),
+
+    /**
+     * Send a Signal to Inngest.
+     */
+    sendSignal: createTool<
+      (idOrOptions: StepOptionsOrId, opts: SendSignalOpts) => Promise<null>
+    >(
+      ({ id, name }, opts) => {
+        return {
+          id,
+          op: StepOpCode.StepPlanned,
+          name: "sendSignal",
+          displayName: name ?? id,
+          opts: {
+            type: "step.sendSignal",
+            signal: opts.signal,
+          },
+        };
+      },
+      {
+        fn: (_idOrOptions, opts) => {
+          return client["_sendSignal"]({
+            signal: opts.signal,
+            data: opts.data,
+            headers: execution["options"]["headers"],
+          });
+        },
+      },
     ),
 
     /**
@@ -312,7 +370,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
     waitForEvent: createTool<
       <IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>>(
         idOrOptions: StepOptionsOrId,
-        opts: WaitForEventOpts<GetEvents<TClient, true>, IncomingEvent>
+        opts: WaitForEventOpts<GetEvents<TClient, true>, IncomingEvent>,
       ) => Promise<
         IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>
           ? GetEvents<TClient, false>[IncomingEvent] | null
@@ -325,7 +383,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * Options to control the event we're waiting for.
          */
-        opts
+        opts,
       ) => {
         const matchOpts: { timeout: string; if?: string } = {
           timeout: timeStr(typeof opts === "string" ? opts : opts.timeout),
@@ -346,7 +404,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
           opts: matchOpts,
           displayName: name ?? id,
         };
-      }
+      },
     ),
 
     /**
@@ -376,7 +434,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       infer: createTool<
         <TAdapter extends AiAdapter>(
           idOrOptions: StepOptionsOrId,
-          options: AiInferOpts<TAdapter>
+          options: AiInferOpts<TAdapter>,
         ) => Promise<AiAdapter.Output<TAdapter>>
       >(({ id, name }, options) => {
         const modelCopy = { ...options.model };
@@ -434,7 +492,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The amount of time to wait before continuing.
          */
-        time: number | string | Temporal.DurationLike
+        time: number | string | Temporal.DurationLike,
       ) => Promise<void>
     >(({ id, name }, time) => {
       /**
@@ -444,7 +502,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       const msTimeStr: string = timeStr(
         Temporal.isTemporalDuration(time)
           ? time.total({ unit: "milliseconds" })
-          : (time as number | string)
+          : (time as number | string),
       );
 
       return {
@@ -468,7 +526,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         /**
          * The date to wait until before continuing.
          */
-        time: Date | string | Temporal.InstantLike | Temporal.ZonedDateTimeLike
+        time: Date | string | Temporal.InstantLike | Temporal.ZonedDateTimeLike,
       ) => Promise<void>
     >(({ id, name }, time) => {
       try {
@@ -492,15 +550,14 @@ export const createStepTools = <TClient extends Inngest.Any>(
         // TODO PrettyError
         console.warn(
           "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil;",
-          err
+          err,
         );
 
         // TODO PrettyError
         throw new Error(
           `Invalid \`Date\`, date string, \`Temporal.Instant\`, or \`Temporal.ZonedDateTime\` passed to sleepUntil: ${
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            time as any
-          }`
+            time
+          }`,
         );
       }
     }),
@@ -516,7 +573,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
     invoke: createTool<
       <TFunction extends InvokeTargetFunctionDefinition>(
         idOrOptions: StepOptionsOrId,
-        opts: InvocationOpts<TFunction>
+        opts: InvocationOpts<TFunction>,
       ) => InvocationResult<GetFunctionOutput<TFunction>>
     >(({ id, name }, invokeOpts) => {
       // Create a discriminated union to operate on based on the input types
@@ -534,19 +591,19 @@ export const createStepTools = <TClient extends Inngest.Any>(
           optsSchema.extend({
             _type: z.literal("fnInstance").optional().default("fnInstance"),
             function: z.instanceof(InngestFunction),
-          })
+          }),
         )
         .or(
           optsSchema.extend({
             _type: z.literal("refInstance").optional().default("refInstance"),
             function: z.instanceof(InngestFunctionReference),
-          })
+          }),
         )
         .safeParse(invokeOpts);
 
       if (!parsedFnOpts.success) {
         throw new Error(
-          `Invalid invocation options passed to invoke; must include either a function or functionId.`
+          `Invalid invocation options passed to invoke; must include either a function or functionId.`,
         );
       }
 
@@ -569,7 +626,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         case "fullId":
           console.warn(
-            `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`
+            `${logPrefix} Invoking function with \`function: string\` is deprecated and will be removed in v4.0.0; use an imported function or \`referenceFunction()\` instead. See https://innge.st/ts-referencing-functions`,
           );
           opts.function_id = fn;
           break;
@@ -588,9 +645,62 @@ export const createStepTools = <TClient extends Inngest.Any>(
         opts,
       };
     }),
+
+    /**
+     * `step.fetch` is a Fetch-API-compatible function that can be used to make
+     * any HTTP code durable if it's called within an Inngest function.
+     *
+     * It will gracefully fall back to the global `fetch` if called outside of
+     * this context, and a custom fallback can be set using the `config` method.
+     */
+    fetch: stepFetch,
   };
 
+  // Add an uptyped gateway
+  (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
+    ({ id, name }, input, init) => {
+      const url = input instanceof Request ? input.url : input.toString();
+
+      const headers: Record<string, string> = {};
+      if (input instanceof Request) {
+        input.headers.forEach((value, key) => {
+          headers[key] = value;
+        });
+      } else if (init?.headers) {
+        const h = new Headers(init.headers);
+        h.forEach((value, key) => {
+          headers[key] = value;
+        });
+      }
+
+      return {
+        id,
+        op: StepOpCode.Gateway,
+        displayName: name ?? id,
+        opts: {
+          url,
+          method: init?.method ?? "GET",
+          headers,
+          body: init?.body,
+        },
+      };
+    },
+  );
+
   return tools;
+};
+
+export const gatewaySymbol = Symbol.for("inngest.step.gateway");
+
+export type InternalStepTools = GetStepTools<Inngest.Any> & {
+  [gatewaySymbol]: (
+    idOrOptions: StepOptionsOrId,
+    ...args: Parameters<typeof fetch>
+  ) => Promise<{
+    status: number;
+    headers: Record<string, string>;
+    body: string;
+  }>;
 };
 
 /**
@@ -626,6 +736,57 @@ type InvocationOpts<TFunction extends InvokeTargetFunctionDefinition> =
        */
       timeout?: number | string | Date;
     };
+
+/**
+ * A set of parameters given to a `sendSignal` call.
+ */
+type SendSignalOpts = {
+  /**
+   * The signal to send.
+   */
+  signal: string;
+
+  /**
+   * The data to send with the signal.
+   */
+  data?: unknown;
+};
+
+/**
+ * A set of parameters given to a `waitForSignal` call.
+ */
+type WaitForSignalOpts = {
+  /**
+   * The signal to wait for.
+   */
+  signal: string;
+
+  /**
+   * The step function will wait for the signal for a maximum of this time, at
+   * which point the signal will be returned as `null` instead of any signal
+   * data.
+   *
+   * The time to wait can be specified using a `number` of milliseconds, an
+   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
+   * a `Date` object.
+   *
+   * {@link https://npm.im/ms}
+   */
+  timeout: number | string | Date;
+
+  /**
+   * When this `step.waitForSignal()` call is made, choose whether an existing
+   * wait for the same signal should be replaced, or whether this run should
+   * fail.
+   *
+   * `"replace"` will replace any existing wait with this one, and the existing
+   * wait will remain pending until it reaches its timeout.
+   *
+   * `"fail"` will cause this run to fail if there is already a wait for the
+   * same signal.
+   */
+  onConflict: "replace" | "fail";
+};
 
 /**
  * A set of optional parameters given to a `waitForEvent` call to control how

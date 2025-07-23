@@ -1,28 +1,31 @@
-import { internalEvents, queryKeys } from "../helpers/consts.js";
-import { timeStr } from "../helpers/strings.js";
-import { type RecursiveTuple, type StrictUnion } from "../helpers/types.js";
-import {
-  type Cancellation,
-  type ConcurrencyOption,
-  type FunctionConfig,
-  type Handler,
-  type TimeStr,
-  type TimeStrBatch,
-  type TriggersFromClient,
-} from "../types.js";
-import { type GetEvents, type Inngest } from "./Inngest.js";
-import {
-  type InngestMiddleware,
-  type MiddlewareRegisterReturn,
-} from "./InngestMiddleware.js";
 import {
   ExecutionVersion,
-  type IInngestExecution,
-  type InngestExecutionOptions,
-} from "./execution/InngestExecution.js";
-import { createV0InngestExecution } from "./execution/v0.js";
-import { createV1InngestExecution } from "./execution/v1.js";
-import { createV2InngestExecution } from "./execution/v2.js";
+  internalEvents,
+  queryKeys,
+} from "../helpers/consts.ts";
+import { timeStr } from "../helpers/strings.ts";
+import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
+import type {
+  Cancellation,
+  ConcurrencyOption,
+  FunctionConfig,
+  Handler,
+  TimeStr,
+  TimeStrBatch,
+  TriggersFromClient,
+} from "../types.ts";
+import type { GetEvents, Inngest } from "./Inngest.ts";
+import type {
+  InngestMiddleware,
+  MiddlewareRegisterReturn,
+} from "./InngestMiddleware.ts";
+import type {
+  IInngestExecution,
+  InngestExecutionOptions,
+} from "./execution/InngestExecution.ts";
+import { createV0InngestExecution } from "./execution/v0.ts";
+import { createV1InngestExecution } from "./execution/v1.ts";
+import { createV2InngestExecution } from "./execution/v2.ts";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -76,7 +79,7 @@ export class InngestFunction<
      * Options
      */
     opts: TFnOpts,
-    fn: THandler
+    fn: THandler,
   ) {
     this.client = client;
     this.opts = opts;
@@ -85,7 +88,7 @@ export class InngestFunction<
 
     this.middleware = this.client["initializeMiddleware"](
       this.opts.middleware,
-      { registerInput: { fn: this }, prefixStack: this.client["middleware"] }
+      { registerInput: { fn: this }, prefixStack: this.client["middleware"] },
     );
   }
 
@@ -159,6 +162,7 @@ export class InngestFunction<
       debounce,
       timeouts,
       priority,
+      singleton,
     } = this.opts;
 
     /**
@@ -201,6 +205,7 @@ export class InngestFunction<
       debounce,
       priority,
       timeouts,
+      singleton,
     };
 
     if (cancelOn) {
@@ -260,7 +265,6 @@ export class InngestFunction<
 
   protected createExecution(opts: CreateExecutionOptions): IInngestExecution {
     const options: InngestExecutionOptions = {
-      client: this.client,
       fn: this,
       ...opts.partialOptions,
     };
@@ -301,15 +305,15 @@ export namespace InngestFunction {
    * inference.
    */
   export type Any = InngestFunction<
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any,
     Handler.Any,
     Handler.Any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any
   >;
 
@@ -333,7 +337,7 @@ export namespace InngestFunction {
   >;
 
   export type GetOptions<T extends InngestFunction.Any> =
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     T extends InngestFunction<infer O, any, any, any, any, any> ? O : never;
 
   /**
@@ -570,6 +574,28 @@ export namespace InngestFunction {
       finish?: TimeStr;
     };
 
+    /**
+     * Ensures that only one run of the function is active at a time for a given key.
+     * If a new run is triggered while another is still in progress with the same key,
+     * the new run will be skipped.
+     *
+     * This is useful for deduplication or enforcing exclusive execution.
+     */
+    singleton?: {
+      /**
+       * An optional key expression used to scope singleton execution.
+       * Each unique key has its own singleton lock. Event data can be referenced,
+       * e.g. "event.data.user_id".
+       */
+      key?: string;
+
+      /**
+       * Determines how to handle new runs when one is already active for the same key.
+       * - `"skip"` skips the new run.
+       */
+      mode: "skip";
+    };
+
     cancelOn?: Cancellation<GetEvents<TClient, true>>[];
 
     /**
@@ -654,5 +680,5 @@ export namespace InngestFunction {
 
 export type CreateExecutionOptions = {
   version: ExecutionVersion;
-  partialOptions: Omit<InngestExecutionOptions, "client" | "fn">;
+  partialOptions: Omit<InngestExecutionOptions, "fn">;
 };

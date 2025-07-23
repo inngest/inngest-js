@@ -1,17 +1,16 @@
 import debug from "debug";
-import { type Inngest } from "inngest";
-import { devServerAvailable, devServerUrl } from "inngest/helpers/devserver";
+import { api } from "../api";
+import { getEnvVar } from "../env";
 import { topic } from "../topic";
 import { Realtime } from "../types";
-import { createDeferredPromise } from "../util";
-import { getSubscriptionToken } from "./helpers";
+import { createDeferredPromise, parseAsBoolean } from "../util";
 import { StreamFanout } from "./StreamFanout";
 
 /**
  * TODO
  */
 export class TokenSubscription {
-  #app: Inngest.Any;
+  #apiBaseUrl?: string;
   #channelId: string;
   #debug = debug("inngest:realtime");
   #encoder = new TextEncoder();
@@ -19,6 +18,8 @@ export class TokenSubscription {
   #running = false;
   #topics: Map<string, Realtime.Topic.Definition>;
   #ws: WebSocket | null = null;
+  #signingKey: string | undefined;
+  #signingKeyFallback: string | undefined;
 
   /**
    * This is a map that tracks stream IDs to their corresponding streams and
@@ -33,14 +34,14 @@ export class TokenSubscription {
     /**
      * TODO
      */
-    app: Inngest.Like,
-
-    /**
-     * TODO
-     */
     public token: Realtime.Subscribe.Token,
+    apiBaseUrl: string | undefined,
+    signingKey: string | undefined,
+    signingKeyFallback: string | undefined,
   ) {
-    this.#app = app as Inngest.Any;
+    this.#apiBaseUrl = apiBaseUrl;
+    this.#signingKey = signingKey;
+    this.#signingKeyFallback = signingKeyFallback;
 
     if (typeof token.channel === "string") {
       this.#channelId = token.channel;
@@ -68,27 +69,28 @@ export class TokenSubscription {
   private async getWsUrl(token: string): Promise<URL> {
     let url: URL;
     const path = "/v1/realtime/connect";
+    const devEnvVar = getEnvVar("INNGEST_DEV");
 
-    if (this.#app.apiBaseUrl) {
-      url = new URL(path, this.#app.apiBaseUrl);
-    } else {
-      url = new URL(path, "https://api.inngest.com/");
-
-      if (
-        this.#app["mode"].isDev &&
-        this.#app["mode"].isInferred &&
-        !this.#app.apiBaseUrl
-      ) {
-        const dsUrl = devServerUrl().toString();
-        const devAvailable = await devServerAvailable(
-          dsUrl,
-          this.#app["fetch"],
-        );
-
-        if (devAvailable) {
-          url = new URL(path, dsUrl);
+    if (this.#apiBaseUrl) {
+      url = new URL(path, this.#apiBaseUrl);
+    } else if (devEnvVar) {
+      try {
+        const devUrl = new URL(devEnvVar);
+        url = new URL(path, devUrl);
+      } catch {
+        if (parseAsBoolean(devEnvVar)) {
+          url = new URL(path, "http://localhost:8288/");
+        } else {
+          url = new URL(path, "https://api.inngest.com/");
         }
       }
+    } else {
+      url = new URL(
+        path,
+        getEnvVar("NODE_ENV") === "production"
+          ? "https://api.inngest.com/"
+          : "http://localhost:8288/",
+      );
     }
 
     url.protocol = url.protocol === "http:" ? "ws:" : "wss:";
@@ -104,19 +106,32 @@ export class TokenSubscription {
     this.#debug(
       `Establishing connection to channel "${
         this.#channelId
-      }" with topics ${JSON.stringify(this.#topics)}...`,
+      }" with topics ${JSON.stringify([...this.#topics.keys()])}...`,
     );
 
     if (typeof WebSocket === "undefined") {
       throw new Error("WebSockets not supported in current environment");
     }
 
-    const key =
-      this.token.key || (await getSubscriptionToken(this.#app, this.token)).key;
+    let key = this.token.key;
     if (!key) {
-      throw new Error(
-        "No subscription token key passed and failed to retrieve one automatically",
+      this.#debug(
+        "No subscription token key passed; attempting to retrieve one automatically...",
       );
+
+      key = (
+        await this.lazilyGetSubscriptionToken({
+          ...this.token,
+          signingKey: this.#signingKey,
+          signingKeyFallback: this.#signingKeyFallback,
+        })
+      ).key;
+
+      if (!key) {
+        throw new Error(
+          "No subscription token key passed and failed to retrieve one automatically",
+        );
+      }
     }
 
     const ret = createDeferredPromise<void>();
@@ -387,11 +402,74 @@ export class TokenSubscription {
   /**
    * TODO
    */
+  private async lazilyGetSubscriptionToken<
+    const InputChannel extends Realtime.Channel | string,
+    const InputTopics extends (keyof Realtime.Channel.InferTopics<
+      Realtime.Channel.AsChannel<InputChannel>
+    > &
+      string)[],
+    const TToken extends Realtime.Subscribe.Token<
+      Realtime.Channel.AsChannel<InputChannel>,
+      InputTopics
+    >,
+  >(
+    /**
+     * TODO
+     */
+    args: {
+      /**
+       * TODO
+       */
+      channel: Realtime.Subscribe.InferChannelInput<InputChannel>;
+
+      /**
+       * TODO
+       */
+      topics: InputTopics;
+
+      /**
+       * TODO
+       */
+      signingKey: string | undefined;
+
+      /**
+       * TODO
+       */
+      signingKeyFallback: string | undefined;
+    },
+  ): Promise<TToken> {
+    const channelId =
+      typeof args.channel === "string" ? args.channel : args.channel.name;
+
+    if (!channelId) {
+      throw new Error("Channel ID is required to create a subscription token");
+    }
+
+    const key = await api.getSubscriptionToken({
+      channel: channelId,
+      topics: args.topics,
+      signingKey: args.signingKey,
+      signingKeyFallback: args.signingKeyFallback,
+      apiBaseUrl: this.#apiBaseUrl,
+    });
+
+    const token = {
+      channel: channelId,
+      topics: args.topics,
+      key,
+    } as TToken;
+
+    return token;
+  }
+
+  /**
+   * TODO
+   */
   public close(
     /**
      * TODO
      */
-    reason: string = "Userland closed connection",
+    reason = "Userland closed connection",
   ) {
     if (!this.#running) {
       return;
@@ -429,10 +507,18 @@ export class TokenSubscription {
     stream: ReadableStream<Realtime.Message> = this.getJsonStream(),
   ) {
     void (async () => {
-      for await (const chunk of stream) {
-        if (!this.#running) return;
+      // Explicitly get and manage the reader so that we can manually release
+      // the lock if anything goes wrong or we're done with it.
+      const reader = stream.getReader();
+      try {
+        while (this.#running) {
+          const { done, value } = await reader.read();
+          if (done || !this.#running) break;
 
-        callback(chunk);
+          callback(value);
+        }
+      } finally {
+        reader.releaseLock();
       }
     })();
   }

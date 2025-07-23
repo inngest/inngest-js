@@ -1,5 +1,128 @@
 # inngest
 
+## 3.39.2
+
+### Patch Changes
+
+- [#1001](https://github.com/inngest/inngest-js/pull/1001) [`fbbb498`](https://github.com/inngest/inngest-js/commit/fbbb49854e9599850231c76ad0cc108a6de31696) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add streaming support for `"inngest/express"`
+
+- [#1013](https://github.com/inngest/inngest-js/pull/1013) [`2ac3a71`](https://github.com/inngest/inngest-js/commit/2ac3a718e7eea2662f646627141eecdffece6318) Thanks [@jacobheric](https://github.com/jacobheric)! - Fix errors serialized in the `cause` field not being deserialized correctly
+
+## 3.39.1
+
+### Patch Changes
+
+- [#999](https://github.com/inngest/inngest-js/pull/999) [`c5d3b6e`](https://github.com/inngest/inngest-js/commit/c5d3b6ecceee0cde61dc3f920e548ce52895c03a) Thanks [@amh4r](https://github.com/amh4r)! - Allow arbitrary field/method access to underlying logger
+
+## 3.39.0
+
+### Minor Changes
+
+- [#994](https://github.com/inngest/inngest-js/pull/994) [`a1e8adb`](https://github.com/inngest/inngest-js/commit/a1e8adba73eff9df9bf9b067a0115c9089d8e1c6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for function singletons
+
+## 3.38.1
+
+### Patch Changes
+
+- [#989](https://github.com/inngest/inngest-js/pull/989) [`5e3ec3b`](https://github.com/inngest/inngest-js/commit/5e3ec3b59730b83ecccae2569812cd3ced5794d9) Thanks [@jpwilliams](https://github.com/jpwilliams)! - When executing, use the `serve()` call's client instead of the function's
+
+- [#997](https://github.com/inngest/inngest-js/pull/997) [`4120413`](https://github.com/inngest/inngest-js/commit/41204139dab6ce3767cc3692eb3eeee52db8a6bb) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Add connect types for convenience and discoverability
+
+## 3.38.0
+
+### Minor Changes
+
+- [#985](https://github.com/inngest/inngest-js/pull/985) [`4616919`](https://github.com/inngest/inngest-js/commit/46169199801719727da8d5e44f9505a06e21055c) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add ability for signal waits to supersede others
+
+  ```ts
+  await step.waitForSignal("step-id", {
+    signal: "my-signal",
+    timeout: "5m",
+    onConflict: "replace",
+  });
+  ```
+
+## 3.37.0
+
+### Minor Changes
+
+- [#979](https://github.com/inngest/inngest-js/pull/979) [`3e6a3e5`](https://github.com/inngest/inngest-js/commit/3e6a3e52c69af47ccc4baf014d5a67f21cd80235) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `step.waitForSignal()`, `step.sendSignal()`, and `inngest.sendSignal()` as experimental new tooling
+
+## 3.36.0
+
+### Minor Changes
+
+- [#909](https://github.com/inngest/inngest-js/pull/909) [`35cf326`](https://github.com/inngest/inngest-js/commit/35cf326fe3877f2688a73322a481df0e2b2fc064) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added experimental otel for capturing userland spans
+
+## 3.35.1
+
+### Patch Changes
+
+- [#950](https://github.com/inngest/inngest-js/pull/950) [`0099c56`](https://github.com/inngest/inngest-js/commit/0099c562c54d44d476800af74c7cae775aaa1cdc) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Connect: Reliability improvements
+
+## 3.35.0
+
+### Minor Changes
+
+- [#912](https://github.com/inngest/inngest-js/pull/912) [`a641cc2`](https://github.com/inngest/inngest-js/commit/a641cc219846a2c6ef66ad62fb371725555e7caa) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Adds a `fetch` export from `"inngest"` to allow any library that accepts a Fetch API-compatible function to automatically turn any call into a durable step if used within the context of an Inngest Function.
+
+  By default, if called outside of the context of an Inngest Function (or within an existing step), it will fall back to using the global `fetch`, or a fallback of the user's choice.
+
+  ```ts
+  // Basic use
+  import { fetch } from "inngest";
+
+  const api = new MyProductApi({ fetch });
+  ```
+
+  ```ts
+  // With a fallback
+  import { fetch } from "inngest";
+
+  const api = new MyProductApi({
+    fetch: fetch.config({
+      fallback: myCustomFetchFallback,
+    }),
+  });
+  ```
+
+  ```ts
+  // Remove the default fallback and error if called outside an Inngest Function
+  import { fetch } from "inngest";
+
+  const api = new MyProductApi({
+    fetch: fetch.config({
+      fallback: undefined,
+    }),
+  });
+  ```
+
+  It's also available within a function as `step.fetch`.
+
+  ```ts
+  inngest.createFunction(
+    {
+      id: "my-fn",
+    },
+    {
+      event: "my-event",
+    },
+    async ({ step }) => {
+      const api = new MyProductApi({ fetch: step.fetch });
+    },
+  );
+  ```
+
+## 3.34.5
+
+### Patch Changes
+
+- [#944](https://github.com/inngest/inngest-js/pull/944) [`54b860a`](https://github.com/inngest/inngest-js/commit/54b860a88dc84511390e73993d77511b9b323635) Thanks [@amh4r](https://github.com/amh4r)! - Use x-inngest-event-id-seed header instead of event idempotency ID
+
+- [#937](https://github.com/inngest/inngest-js/pull/937) [`c6e9131`](https://github.com/inngest/inngest-js/commit/c6e9131900fcea3184661dd9573e0e2669224fd4) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Normalize headers in `"inngest/lambda"` - mocked requests with non-lowercase headers are now handled
+
+- [#945](https://github.com/inngest/inngest-js/pull/945) [`4506581`](https://github.com/inngest/inngest-js/commit/4506581520fe55270b78a23ade2f61b7b7107ce8) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Bump `resolveAfterPending()` microtask shim count to `100`, reducing parallel index warnings
+
 ## 3.34.4
 
 ### Patch Changes

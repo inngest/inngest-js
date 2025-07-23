@@ -1,10 +1,9 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import {
   checkIntrospection,
   eventRunWithName,
   runHasTimeline,
   sendEvent,
-} from "@local/test/helpers";
+} from "../../helpers";
 
 checkIntrospection({
   name: "unhandled-step-errors",
@@ -52,7 +51,7 @@ describe("run", () => {
         type: "StepCompleted",
         stepName: "b never runs",
       },
-      1
+      1,
     );
     expect(item).toBeUndefined();
   }, 10000);

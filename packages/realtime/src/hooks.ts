@@ -1,4 +1,3 @@
-import { Inngest } from "inngest";
 import { useEffect, useRef, useState } from "react";
 import { subscribe } from "./subscribe";
 import { type Realtime } from "./types";
@@ -48,18 +47,12 @@ export interface InngestSubscription<TToken extends Realtime.Subscribe.Token> {
 export function useInngestSubscription<
   const TToken extends Realtime.Subscribe.Token | null | undefined,
 >({
-  app = new Inngest({ id: "useInngestSubscription" }),
   token: tokenInput,
   refreshToken,
   key,
   enabled = true,
   bufferInterval = 0,
 }: {
-  /**
-   * TODO
-   */
-  app?: Inngest.Any;
-
   /**
    * TODO
    */
@@ -131,21 +124,31 @@ export function useInngestSubscription<
     const start = async () => {
       try {
         setState(InngestSubscriptionState.Connecting);
-        const stream = await subscribe(app, { ...token });
+        const stream = await subscribe({ ...token });
         if (cancelled) return;
 
         subscriptionRef.current = stream;
         setState(InngestSubscriptionState.Active);
 
-        for await (const message of stream) {
-          if (cancelled) break;
+        // Explicitly get and manage the reader so that we can manually release
+        // the lock if anything goes wrong or we're done with it.
+        //
+        // Especially when this is unmounted.
+        const reader = stream.getReader();
+        try {
+          while (!cancelled) {
+            const { done, value } = await reader.read();
+            if (done || cancelled) break;
 
-          if (bufferIntervalRef.current === 0) {
-            setFreshData([message]);
-            setData((prev) => [...prev, message]);
-          } else {
-            messageBuffer.current.push(message);
+            if (bufferIntervalRef.current === 0) {
+              setFreshData([value]);
+              setData((prev) => [...prev, value]);
+            } else {
+              messageBuffer.current.push(value);
+            }
           }
+        } finally {
+          reader.releaseLock();
         }
 
         // Stream has closed cleanly

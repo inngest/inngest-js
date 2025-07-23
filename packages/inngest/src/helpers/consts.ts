@@ -139,6 +139,7 @@ export enum headerKeys {
   InngestServerKind = "x-inngest-server-kind",
   InngestExpectedServerKind = "x-inngest-expected-server-kind",
   InngestSyncKind = "x-inngest-sync-kind",
+  EventIdSeed = "x-inngest-event-id-seed",
   TraceParent = "traceparent",
   TraceState = "tracestate",
 }
@@ -179,4 +180,35 @@ export enum serverKind {
 export enum syncKind {
   InBand = "in_band",
   OutOfBand = "out_of_band",
+}
+
+/**
+ * The execution models the SDK is aware of.
+ *
+ * This is used in a number of places to ensure all execution versions are
+ * accounted for for a given operation.
+ */
+export enum ExecutionVersion {
+  /**
+   * Very legacy, initial version of the executor. Uses hashed op objects and
+   * `pos` to determine the order of execution and which ops to run.
+   *
+   * Very stubborn about determinism.
+   */
+  V0 = 0,
+
+  /**
+   * Uses a more flexible approach to execution and is more lenient about
+   * determinism, allowing non-step async actions and non-determinism.
+   *
+   * Nowhere near as stubborn about determinism and so can silently migrate
+   * between versions after bug fixes.
+   */
+  V1 = 1,
+
+  /**
+   * Identical to V1, but allows the Executor to optimize parallel calls, hugely
+   * reducing traffic going to/from the SDK.
+   */
+  V2 = 2,
 }

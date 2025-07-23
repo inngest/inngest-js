@@ -1,8 +1,8 @@
+import { Buffer } from "node:buffer";
 import http from "node:http";
 import { Socket } from "node:net";
-import { Buffer } from "node:buffer";
-import * as NodeHandler from "@local/node";
-import { testFramework } from "./test/helpers";
+import * as NodeHandler from "./node.ts";
+import { testFramework } from "./test/helpers.ts";
 
 testFramework("Node", NodeHandler, {
   transformReq: (req, res) => {

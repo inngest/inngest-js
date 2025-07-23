@@ -1,54 +1,59 @@
-import { sha1 } from "hash.js";
+import { trace } from "@opentelemetry/api";
+import hashjs from "hash.js";
 import { z } from "zod";
-import { internalEvents } from "../../helpers/consts.js";
+import { headerKeys, internalEvents } from "../../helpers/consts.ts";
 import {
   ErrCode,
   deserializeError,
   minifyPrettyError,
   prettyError,
   serializeError,
-} from "../../helpers/errors.js";
-import { undefinedToNull } from "../../helpers/functions.js";
+} from "../../helpers/errors.ts";
+import { undefinedToNull } from "../../helpers/functions.ts";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
   createTimeoutPromise,
   resolveAfterPending,
   runAsPromise,
-} from "../../helpers/promises.js";
-import { type MaybePromise, type Simplify } from "../../helpers/types.js";
+} from "../../helpers/promises.ts";
+import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
-  StepOpCode,
-  jsonErrorSchema,
   type BaseContext,
   type Context,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
   type OutgoingOp,
-} from "../../types.js";
-import { type Inngest } from "../Inngest.js";
-import { getHookStack, type RunHookStack } from "../InngestMiddleware.js";
+  StepOpCode,
+  jsonErrorSchema,
+} from "../../types.ts";
+import { version } from "../../version.ts";
+import type { Inngest } from "../Inngest.ts";
+import { type RunHookStack, getHookStack } from "../InngestMiddleware.ts";
 import {
+  type FoundStep,
   STEP_INDEXING_SUFFIX,
+  type StepHandler,
   createStepTools,
   getStepOptions,
   invokePayloadSchema,
-  type FoundStep,
-  type StepHandler,
-} from "../InngestStepTools.js";
-import { NonRetriableError } from "../NonRetriableError.js";
-import { RetryAfterError } from "../RetryAfterError.js";
-import { StepError } from "../StepError.js";
+} from "../InngestStepTools.ts";
+import { NonRetriableError } from "../NonRetriableError.ts";
+import { RetryAfterError } from "../RetryAfterError.ts";
+import { StepError } from "../StepError.ts";
 import {
-  InngestExecution,
   type ExecutionResult,
   type IInngestExecution,
+  InngestExecution,
   type InngestExecutionFactory,
   type InngestExecutionOptions,
   type MemoizedOp,
 } from "./InngestExecution.js";
-import { getAsyncCtx, getAsyncLocalStorage } from "./als.js";
+import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
+import { clientProcessorMap } from "./otel/access.ts";
+
+const { sha1 } = hashjs;
 
 export const createV1InngestExecution: InngestExecutionFactory = (options) => {
   return new V1InngestExecution(options);
@@ -84,7 +89,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       "created new V1 execution for run;",
       this.options.requestedRunStep
         ? `wanting to run step "${this.options.requestedRunStep}"`
-        : "discovering steps"
+        : "discovering steps",
     );
 
     this.debug("existing state keys:", Object.keys(this.state.stepState));
@@ -97,13 +102,31 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     if (!this.execution) {
       this.debug("starting V1 execution");
 
+      const tracer = trace.getTracer("inngest", version);
+
       this.execution = getAsyncLocalStorage().then((als) => {
-        return als.run({ ctx: this.fnArg }, async () => {
-          return this._start().then((result) => {
-            this.debug("result:", result);
-            return result;
-          });
-        });
+        return als.run(
+          { app: this.options.client, ctx: this.fnArg },
+          async () => {
+            return tracer.startActiveSpan("inngest.execution", (span) => {
+              clientProcessorMap.get(this.options.client)?.declareStartingSpan({
+                span,
+                runId: this.options.runId,
+                traceparent: this.options.headers[headerKeys.TraceParent],
+                tracestate: this.options.headers[headerKeys.TraceState],
+              });
+
+              return this._start()
+                .then((result) => {
+                  this.debug("result:", result);
+                  return result;
+                })
+                .finally(() => {
+                  span.end();
+                });
+            });
+          },
+        );
       });
     }
 
@@ -212,7 +235,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         }
 
         const newSteps = await this.filterNewSteps(
-          Array.from(this.state.steps.values())
+          Array.from(this.state.steps.values()),
         );
         if (newSteps) {
           return {
@@ -222,6 +245,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             steps: newSteps,
           };
         }
+
+        return;
       },
 
       /**
@@ -236,11 +261,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
   private getCheckpointHandler(type: keyof CheckpointHandlers) {
     return this.checkpointHandlers[type] as (
-      checkpoint: Checkpoint
-    ) => MaybePromise<ExecutionResult | void>;
+      checkpoint: Checkpoint,
+    ) => MaybePromise<ExecutionResult | undefined>;
   }
 
-  private async tryExecuteStep(steps: FoundStep[]): Promise<OutgoingOp | void> {
+  private async tryExecuteStep(
+    steps: FoundStep[],
+  ): Promise<OutgoingOp | undefined> {
     const hashedStepIdToRun =
       this.options.requestedRunStep || this.getEarlyExecRunStep(steps);
     if (!hashedStepIdToRun) {
@@ -248,7 +275,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     const step = steps.find(
-      (step) => step.hashedId === hashedStepIdToRun && step.fn
+      (step) => step.hashedId === hashedStepIdToRun && step.fn,
     );
 
     if (step) {
@@ -259,14 +286,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * Ensure we reset the timeout if we have a requested run step but couldn't
      * find it, but also that we don't reset if we found and executed it.
      */
-    void this.timeout?.reset();
+    return void this.timeout?.reset();
   }
 
   /**
    * Given a list of outgoing ops, decide if we can execute an op early and
    * return the ID of the step to execute if we can.
    */
-  private getEarlyExecRunStep(steps: FoundStep[]): string | void {
+  private getEarlyExecRunStep(steps: FoundStep[]): string | undefined {
     /**
      * We may have been disabled due to parallelism, in which case we can't
      * immediately execute unless explicitly requested.
@@ -288,11 +315,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     ) {
       return op.hashedId;
     }
+
+    return;
   }
 
   private async filterNewSteps(
-    foundSteps: FoundStep[]
-  ): Promise<[OutgoingOp, ...OutgoingOp[]] | void> {
+    foundSteps: FoundStep[],
+  ): Promise<[OutgoingOp, ...OutgoingOp[]] | undefined> {
     if (this.options.requestedRunStep) {
       return;
     }
@@ -329,7 +358,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             "This may cause unexpected behaviour as Inngest executes your function.",
           reassurance:
             "This is expected if a function is updated in the middle of a run, but may indicate a bug if not.",
-        })
+        }),
       );
     }
 
@@ -360,7 +389,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * an Inngest Server.
    */
   private async transformNewSteps<T extends [OutgoingOp, ...OutgoingOp[]]>(
-    steps: T
+    steps: T,
   ): Promise<T> {
     return Promise.all(
       steps.map(async (step) => {
@@ -381,7 +410,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 result: { ...prev.result, ...output?.result },
               };
             },
-          }
+          },
         );
 
         /**
@@ -405,7 +434,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         });
 
         const newPayload = invokePayloadSchema.parse(
-          transformedPayload?.payloads?.[0] ?? {}
+          transformedPayload?.payloads?.[0] ?? {},
         );
 
         return {
@@ -418,7 +447,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             },
           },
         };
-      })
+      }),
     ) as Promise<T>;
   }
 
@@ -453,31 +482,28 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     this.debug(`executing step "${id}"`);
 
-    return (
-      runAsPromise(fn)
-        // eslint-disable-next-line @typescript-eslint/no-misused-promises
-        .finally(async () => {
-          if (store) {
-            delete store.executingStep;
-          }
+    return runAsPromise(fn)
+      .finally(async () => {
+        if (store) {
+          delete store.executingStep;
+        }
 
-          await this.state.hooks?.afterExecution?.();
-        })
-        .then<OutgoingOp>((data) => {
-          return {
-            ...outgoingOp,
-            data,
-          };
-        })
-        .catch<OutgoingOp>((error) => {
-          return {
-            ...outgoingOp,
-            op: StepOpCode.StepError,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
-          };
-        })
-    );
+        await this.state.hooks?.afterExecution?.();
+      })
+      .then<OutgoingOp>((data) => {
+        return {
+          ...outgoingOp,
+          data,
+        };
+      })
+      .catch<OutgoingOp>((error) => {
+        return {
+          ...outgoingOp,
+          op: StepOpCode.StepError,
+
+          error,
+        };
+      });
   }
 
   /**
@@ -509,18 +535,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * Trigger the user's function.
      */
     runAsPromise(() => this.userFnToRun(this.fnArg))
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises
       .finally(async () => {
         await this.state.hooks?.afterMemoization?.();
         await this.state.hooks?.beforeExecution?.();
         await this.state.hooks?.afterExecution?.();
       })
       .then((data) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.state.setCheckpoint({ type: "function-resolved", data });
       })
       .catch((error) => {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         this.state.setCheckpoint({ type: "function-rejected", error });
       });
   }
@@ -542,7 +565,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     if (inputMutations?.steps) {
       this.state.stepState = Object.fromEntries(
-        inputMutations.steps.map((step) => [step.id, step])
+        inputMutations.steps.map((step) => [step.id, step]),
       );
     }
   }
@@ -553,7 +576,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   private async transformOutput(
     dataOrError: Parameters<
       NonNullable<RunHookStack["transformOutput"]>
-    >[0]["result"]
+    >[0]["result"],
   ): Promise<ExecutionResult> {
     const output = { ...dataOrError };
 
@@ -617,7 +640,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     const checkpointResults = d.results;
 
     const loop: V1ExecutionState["loop"] = (async function* (
-      cleanUp?: () => void
+      cleanUp?: () => void,
     ) {
       try {
         while (true) {
@@ -765,7 +788,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 "Using the same IDs across parallel chains of work can cause unexpected behaviour.",
               toFixNow:
                 "We recommend using a unique ID for each step, especially those happening in parallel.",
-            })
+            }),
           );
         }
       }
@@ -885,7 +908,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             toFixNow:
               "Make sure you're not using `step.*` tooling inside of other `step.*` tooling. If you need to compose steps together, you can create a new async function and call it from within your step function, or use promise chaining.",
             code: ErrCode.NESTING_STEPS,
-          })
+          }),
         );
       }
 
@@ -928,9 +951,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         switch (opId.op) {
           // `step.run()` has its function input affected
           case StepOpCode.StepPlanned: {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             fnArgs = [...args.slice(0, 2), ...stepState.input];
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
             extraOpts = { input: [...stepState.input] };
             break;
           }
@@ -956,7 +978,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         rawArgs: fnArgs, // TODO What is the right value here? Should this be raw args without affected input?
         hashedId,
         input: stepState?.input,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+
         fn: opts?.fn ? () => opts.fn?.(...fnArgs) : undefined,
         promise,
         fulfilled: isFulfilled,
@@ -987,7 +1009,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               } else {
                 this.state.recentlyRejectedStepError = new StepError(
                   opId.id,
-                  stepState.error
+                  stepState.error,
                 );
 
                 reject(this.state.recentlyRejectedStepError);
@@ -1008,6 +1030,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * memoizing.
        */
       if (!beforeExecHooksPromise && this.state.allStateUsed()) {
+        // biome-ignore lint/suspicious/noAssignInExpressions: <explanation>
         await (beforeExecHooksPromise = (async () => {
           await this.state.hooks?.afterMemoization?.();
           await this.state.hooks?.beforeExecution?.();
@@ -1091,7 +1114,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             step: prev.step,
           };
         },
-      }
+      },
     );
 
     return hooks;
@@ -1114,8 +1137,8 @@ type Checkpoint = {
 
 type CheckpointHandlers = {
   [C in Checkpoint as C["type"]]: (
-    checkpoint: C
-  ) => MaybePromise<ExecutionResult | void>;
+    checkpoint: C,
+  ) => MaybePromise<ExecutionResult | undefined>;
 } & {
   "": (checkpoint: Checkpoint) => MaybePromise<void>;
 };

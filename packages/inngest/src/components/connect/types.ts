@@ -1,6 +1,6 @@
-import { type RegisterOptions } from "../../types.js";
-import { type Inngest } from "../Inngest.js";
-import { type InngestFunction } from "../InngestFunction.js";
+import type { RegisterOptions } from "../../types.ts";
+import type { Inngest } from "../Inngest.ts";
+import type { InngestFunction } from "../InngestFunction.ts";
 
 export const DEFAULT_SHUTDOWN_SIGNALS = ["SIGINT", "SIGTERM"];
 

@@ -1,5 +1,45 @@
 # @inngest/realtime
 
+## 0.3.1
+
+### Patch Changes
+
+- [#960](https://github.com/inngest/inngest-js/pull/960) [`fc966ca`](https://github.com/inngest/inngest-js/commit/fc966ca94f699d6534f2fc5c85bbcf5be3c6795a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix requiring signing key for dev in `@inngest/realtime`
+
+- [#965](https://github.com/inngest/inngest-js/pull/965) [`e55d93e`](https://github.com/inngest/inngest-js/commit/e55d93ef481010e677623978ec89e918fcdd606e) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix throw of `TypeError: Failed to execute 'cancel' on 'ReadableStream': Cannot cancel a locked stream` when unmounting or cancelling a stream utilizing the callback feature
+
+- [#964](https://github.com/inngest/inngest-js/pull/964) [`e674884`](https://github.com/inngest/inngest-js/commit/e67488412e4d052ce161f6d5ea719db6786880de) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix fanout writers throwing during some closures
+
+- [#959](https://github.com/inngest/inngest-js/pull/959) [`50d627e`](https://github.com/inngest/inngest-js/commit/50d627ecdc2fc28ebca046e3a4ab9980f1714132) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix being unable to access environment variables in some bundled environments
+
+- [#960](https://github.com/inngest/inngest-js/pull/960) [`fc966ca`](https://github.com/inngest/inngest-js/commit/fc966ca94f699d6534f2fc5c85bbcf5be3c6795a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix debug log incorrectly displaying topics we're subscribing to
+
+## 0.3.0
+
+### Minor Changes
+
+- [#949](https://github.com/inngest/inngest-js/pull/949) [`d18006d`](https://github.com/inngest/inngest-js/commit/d18006dbffe7501b145f914992951439a9859261) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `useInngestSubscription()` no longer accepts an `app`; always use a `token` when subscribing on the client
+
+- [#949](https://github.com/inngest/inngest-js/pull/949) [`d18006d`](https://github.com/inngest/inngest-js/commit/d18006dbffe7501b145f914992951439a9859261) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `subscribe()` call no longer accepts an `app` as the first parameter
+
+  One can be passed alongside other arguments, e.g.
+
+  ```ts
+  subscribe({
+    app,
+    channel: "hello-world",
+    topics: ["messages"],
+  });
+  ```
+
+  An app is still required if you are not using a token retrieved from `getSubscriptionToken()`.
+
+### Patch Changes
+
+- [#949](https://github.com/inngest/inngest-js/pull/949) [`d18006d`](https://github.com/inngest/inngest-js/commit/d18006dbffe7501b145f914992951439a9859261) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Public environment variables (such as `NEXT_PUBLIC_*`) are now also accessed when looking for Inngest during subscriptions
+
+- [#949](https://github.com/inngest/inngest-js/pull/949) [`d18006d`](https://github.com/inngest/inngest-js/commit/d18006dbffe7501b145f914992951439a9859261) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Environment variables are also now captured in Deno and Netlify
+
 ## 0.2.0
 
 ### Minor Changes

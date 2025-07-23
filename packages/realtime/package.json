@@ -1,6 +1,6 @@
 {
   "name": "@inngest/realtime",
-  "version": "0.2.0",
+  "version": "0.3.1",
   "description": "",
   "main": "dist/index.js",
   "publishConfig": {
@@ -12,7 +12,7 @@
     "postversion": "pnpm run build",
     "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
     "release:version": "node ../../scripts/release/jsrVersion.js",
-    "pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest-realtime.tgz"
+    "pack": "pnpm run build && pnpm pack --out inngest-realtime.tgz"
   },
   "files": [
     "dist"

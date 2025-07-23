@@ -1,5 +1,4 @@
-import { ulid } from "ulidx";
-import { InngestApi } from "../api/api.js";
+import { InngestApi } from "../api/api.ts";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
@@ -8,35 +7,35 @@ import {
   envKeys,
   headerKeys,
   logPrefix,
-} from "../helpers/consts.js";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver.js";
+} from "../helpers/consts.ts";
+import { createEntropy } from "../helpers/crypto.ts";
+import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
 import {
   allProcessEnv,
   getFetch,
   getMode,
   inngestHeaders,
-  processEnv,
   type Mode,
-} from "../helpers/env.js";
-import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.js";
-import { type Jsonify } from "../helpers/jsonify.js";
-import { retryWithBackoff } from "../helpers/promises.js";
-import { stringify } from "../helpers/strings.js";
-import {
-  type AsArray,
-  type IsNever,
-  type SendEventPayload,
-  type SimplifyDeep,
-  type SingleOrArray,
-  type WithoutInternal,
-} from "../helpers/types.js";
+  processEnv,
+} from "../helpers/env.ts";
+import { fixEventKeyMissingSteps, prettyError } from "../helpers/errors.ts";
+import type { Jsonify } from "../helpers/jsonify.ts";
+import { retryWithBackoff } from "../helpers/promises.ts";
+import { stringify } from "../helpers/strings.ts";
+import type {
+  AsArray,
+  IsNever,
+  SendEventPayload,
+  SimplifyDeep,
+  SingleOrArray,
+  WithoutInternal,
+} from "../helpers/types.ts";
 import {
   DefaultLogger,
-  ProxyLogger,
   type Logger,
-} from "../middleware/logger.js";
+  ProxyLogger,
+} from "../middleware/logger.ts";
 import {
-  sendEventResponseSchema,
   type ClientOptions,
   type EventNameFromTrigger,
   type EventPayload,
@@ -45,19 +44,20 @@ import {
   type InvokeTargetFunctionDefinition,
   type SendEventOutput,
   type SendEventResponse,
+  sendEventResponseSchema,
   type TriggersFromClient,
-} from "../types.js";
-import { type EventSchemas } from "./EventSchemas.js";
-import { InngestFunction } from "./InngestFunction.js";
-import { type InngestFunctionReference } from "./InngestFunctionReference.js";
+} from "../types.ts";
+import type { EventSchemas } from "./EventSchemas.ts";
+import { InngestFunction } from "./InngestFunction.ts";
+import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
-  InngestMiddleware,
-  getHookStack,
   type ExtendWithMiddleware,
+  getHookStack,
+  InngestMiddleware,
   type MiddlewareRegisterFn,
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
-} from "./InngestMiddleware.js";
+} from "./InngestMiddleware.ts";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -135,7 +135,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    */
   private sendEventUrl: URL = new URL(
     `e/${this.eventKey}`,
-    defaultInngestEventBaseUrl
+    defaultInngestEventBaseUrl,
   );
 
   private headers!: Record<string, string>;
@@ -253,12 +253,20 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   }
 
   /**
+   * Returns a `Promise` that resolves when the app is ready and all middleware
+   * has been initialized.
+   */
+  public get ready(): Promise<void> {
+    return this.middleware.then(() => {});
+  }
+
+  /**
    * Set the environment variables for this client. This is useful if you are
    * passed environment variables at runtime instead of as globals and need to
    * update the client with those values as requests come in.
    */
   public setEnvVars(
-    env: Record<string, string | undefined> = allProcessEnv()
+    env: Record<string, string | undefined> = allProcessEnv(),
   ): this {
     this.mode = getMode({ env, client: this });
 
@@ -279,7 +287,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       this.mode.getExplicitUrl(defaultInngestEventBaseUrl);
 
     this.setEventKey(
-      this.options.eventKey || this.mode["env"][envKeys.InngestEventKey] || ""
+      this.options.eventKey || this.mode["env"][envKeys.InngestEventKey] || "",
     );
 
     this.headers = inngestHeaders({
@@ -300,7 +308,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     opts?: {
       registerInput?: Omit<Parameters<MiddlewareRegisterFn>[0], "client">;
       prefixStack?: Promise<MiddlewareRegisterReturn[]>;
-    }
+    },
   ): Promise<MiddlewareRegisterReturn[]> {
     /**
      * Wait for the prefix stack to run first; do not trigger ours before this
@@ -319,7 +327,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
         return [...prev, next];
       },
-      Promise.resolve([])
+      Promise.resolve([]),
     );
 
     return [...prefix, ...(await stack)];
@@ -340,7 +348,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   private async getResponseError(
     response: globalThis.Response,
     rawBody: unknown,
-    foundErr = "Unknown error"
+    foundErr = "Unknown error",
   ): Promise<Error> {
     let errorMessage = foundErr;
 
@@ -374,7 +382,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         default:
           try {
             errorMessage = await response.text();
-          } catch (err) {
+          } catch (_err) {
             errorMessage = `${JSON.stringify(await rawBody)}`;
           }
           break;
@@ -395,18 +403,77 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
      * key is for some reason not available at time of instantiation or present
      * in the `INNGEST_EVENT_KEY` environment variable.
      */
-    eventKey: string
+    eventKey: string,
   ): void {
     this.eventKey = eventKey || dummyEventKey;
 
     this.sendEventUrl = new URL(
       `e/${this.eventKey}`,
-      this.eventBaseUrl || defaultInngestEventBaseUrl
+      this.eventBaseUrl || defaultInngestEventBaseUrl,
     );
   }
 
   private eventKeySet(): boolean {
     return Boolean(this.eventKey) && this.eventKey !== dummyEventKey;
+  }
+
+  /**
+   * EXPERIMENTAL: This API is not yet stable and may change in the future
+   * without a major version bump.
+   *
+   * Send a Signal to Inngest.
+   */
+  public async sendSignal({
+    signal,
+    data,
+    env,
+  }: {
+    /**
+     * The signal to send.
+     */
+    signal: string;
+
+    /**
+     * The data to send with the signal.
+     */
+    data?: unknown;
+
+    /**
+     * The Inngest environment to send the signal to. Defaults to whichever
+     * environment this client's key is associated with.
+     *
+     * It's like you never need to change this unless you're trying to sync
+     * multiple systems together using branch names.
+     */
+    env?: string;
+  }): Promise<InngestApi.SendSignalResponse> {
+    const headers: Record<string, string> = {
+      ...(env ? { [headerKeys.Environment]: env } : {}),
+    };
+
+    return this._sendSignal({ signal, data, headers });
+  }
+
+  private async _sendSignal({
+    signal,
+    data,
+    headers,
+  }: {
+    signal: string;
+    data?: unknown;
+    headers?: Record<string, string>;
+  }): Promise<InngestApi.SendSignalResponse> {
+    const res = await this.inngestApi.sendSignal(
+      { signal, data },
+      { ...this.headers, ...headers },
+    );
+    if (res.ok) {
+      return res.value;
+    }
+
+    throw new Error(
+      `Failed to send signal: ${res.error?.error || "Unknown error"}`,
+    );
   }
 
   /**
@@ -447,7 +514,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
        * multiple systems together using branch names.
        */
       env?: string;
-    }
+    },
   ): Promise<SendEventOutput<TClientOpts>> {
     const headers: Record<string, string> = {
       ...(options?.env ? { [headerKeys.Environment]: options.env } : {}),
@@ -467,6 +534,31 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     payload: Payload;
     headers?: Record<string, string>;
   }): Promise<SendEventOutput<TClientOpts>> {
+    const nowMillis = new Date().getTime();
+
+    let maxAttempts = 5;
+
+    // Attempt to set the event ID seed header. If it fails then disable retries
+    // (but we still want to send the event).
+    try {
+      const entropy = createEntropy(10);
+      const entropyBase64 = Buffer.from(entropy).toString("base64");
+      headers = {
+        ...headers,
+        [headerKeys.EventIdSeed]: `${nowMillis},${entropyBase64}`,
+      };
+    } catch (err) {
+      let message = "Event-sending retries disabled";
+      if (err instanceof Error) {
+        message += `: ${err.message}`;
+      }
+
+      console.debug(message);
+
+      // Disable retries.
+      maxAttempts = 1;
+    }
+
     const hooks = await getHookStack(
       this.middleware,
       "onSendEvent",
@@ -480,7 +572,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
             result: { ...prev.result, ...output?.result },
           };
         },
-      }
+      },
     );
 
     let payloads: EventPayload[] = Array.isArray(payload)
@@ -503,15 +595,14 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       return {
         ...p,
         // Always generate an idempotency ID for an event for retries
-        id: p.id || ulid(),
-        ts: p.ts || new Date().getTime(),
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        id: p.id,
+        ts: p.ts || nowMillis,
         data: p.data || {},
       };
     });
 
     const applyHookToOutput = async (
-      arg: Parameters<NonNullable<SendEventHookStack["transformOutput"]>>[0]
+      arg: Parameters<NonNullable<SendEventHookStack["transformOutput"]>>[0],
     ): Promise<SendEventOutput<TClientOpts>> => {
       const hookOutput = await hooks.transformOutput?.(arg);
       return {
@@ -535,7 +626,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
           consequences:
             "The returned promise will resolve, but no events have been sent to Inngest.",
           stack: true,
-        })
+        }),
       );
 
       return await applyHookToOutput({ result: { ids: [] } });
@@ -555,7 +646,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
           consequences: "Your event or events were not sent to Inngest.",
           why: "We couldn't find an event key to use to send events to Inngest.",
           toFixNow: fixEventKeyMissingSteps,
-        })
+        }),
       );
     }
 
@@ -570,7 +661,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     if (this.mode.isDev && this.mode.isInferred && !this.eventBaseUrl) {
       const devAvailable = await devServerAvailable(
         defaultDevServerHost,
-        this.fetch
+        this.fetch,
       );
 
       if (devAvailable) {
@@ -594,7 +685,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         try {
           rawBody = await response.json();
           body = await sendEventResponseSchema.parseAsync(rawBody);
-        } catch (err) {
+        } catch (_err) {
           throw await this.getResponseError(response, rawBody);
         }
 
@@ -605,9 +696,9 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         return body;
       },
       {
-        maxAttempts: 5,
+        maxAttempts,
         baseDelay: 100,
-      }
+      },
     );
 
     return await applyHookToOutput({ result: { ids: body.ids } });
@@ -616,7 +707,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   public createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
     rawTrigger,
-    handler
+    handler,
   ) => {
     const fn = this._createFunction(rawOptions, rawTrigger, handler);
 
@@ -632,7 +723,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   private _createFunction: Inngest.CreateFunction<this> = (
     rawOptions,
     rawTrigger,
-    handler
+    handler,
   ) => {
     const options = this.sanitizeOptions(rawOptions);
     const triggers = this.sanitizeTriggers(rawTrigger);
@@ -643,7 +734,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
         ...options,
         triggers,
       },
-      handler
+      handler,
     );
   };
 
@@ -651,17 +742,17 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * Runtime-only validation.
    */
   private sanitizeOptions<T extends InngestFunction.Options>(options: T): T {
-    if (Object.prototype.hasOwnProperty.call(options, "fns")) {
+    if (Object.hasOwn(options, "fns")) {
       // v2 -> v3 migration warning
       console.warn(
-        `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`
+        `${logPrefix} InngestFunction: \`fns\` option has been deprecated in v3; use \`middleware\` instead. See https://www.inngest.com/docs/sdk/migration`,
       );
     }
 
     if (typeof options === "string") {
       // v2 -> v3 runtime migraton warning
       console.warn(
-        `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
+        `${logPrefix} InngestFunction: Creating a function with a string as the first argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`,
       );
 
       return { id: options as string } as T;
@@ -679,7 +770,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     if (typeof triggers === "string") {
       // v2 -> v3 migration warning
       console.warn(
-        `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`
+        `${logPrefix} InngestFunction: Creating a function with a string as the second argument has been deprecated in v3; pass an object instead. See https://www.inngest.com/docs/sdk/migration`,
       );
 
       return [{ event: triggers as string }] as AsArray<T>;
@@ -708,7 +799,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
  * we support versions of TypeScript prior to the introduction of `satisfies`.
  */
 export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
-  m: T
+  m: T,
 ): T => m)([
   new InngestMiddleware({
     name: "Inngest: Logger",
@@ -728,10 +819,10 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
           try {
             if ("child" in providedLogger) {
               type ChildLoggerFn = (
-                metadata: Record<string, unknown>
+                metadata: Record<string, unknown>,
               ) => Logger;
               providedLogger = (providedLogger.child as ChildLoggerFn)(
-                metadata
+                metadata,
               );
             }
           } catch (err) {
@@ -857,7 +948,7 @@ export namespace Inngest {
       "triggers"
     >,
     trigger: TTrigger,
-    handler: THandler
+    handler: THandler,
   ) => InngestFunction<
     Omit<
       InngestFunction.Options<
@@ -893,7 +984,6 @@ export namespace Inngest {
  * @public
  */
 export type GetStepTools<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   TInngest extends Inngest.Any,
   TTrigger extends keyof GetEvents<TInngest> &
     string = keyof GetEvents<TInngest> & string,
@@ -972,7 +1062,7 @@ export type GetFunctionOutput<
  */
 export type GetFunctionOutputFromInngestFunction<
   TFunction extends InngestFunction.Any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
 > = TFunction extends InngestFunction<any, infer IHandler, any, any, any, any>
   ? IsNever<SimplifyDeep<Jsonify<Awaited<ReturnType<IHandler>>>>> extends true
     ? null
@@ -990,7 +1080,7 @@ export type GetFunctionOutputFromInngestFunction<
  */
 export type GetFunctionOutputFromReferenceInngestFunction<
   TFunction extends InngestFunctionReference.Any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
 > = TFunction extends InngestFunctionReference<any, infer IOutput>
   ? IsNever<SimplifyDeep<Jsonify<IOutput>>> extends true
     ? null
@@ -1039,6 +1129,6 @@ export type GetEvents<
  *
  * @public
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+
 export type ClientOptionsFromInngest<TInngest extends Inngest.Any> =
   TInngest extends Inngest<infer U> ? U : ClientOptions;

@@ -1,4 +1,4 @@
-import { runAsPromise } from "./promises.js";
+import { runAsPromise } from "./promises.ts";
 
 interface Timing {
   description: string;
@@ -41,7 +41,7 @@ export class ServerTiming {
       const timer = target.timers[index];
       if (!timer) {
         return console.warn(
-          `Timer ${index} for timing "${name}" does not exist`
+          `Timer ${index} for timing "${name}" does not exist`,
         );
       }
 
@@ -74,7 +74,7 @@ export class ServerTiming {
   public async wrap<T extends (...args: unknown[]) => unknown>(
     name: string,
     fn: T,
-    description?: string
+    description?: string,
   ): Promise<Awaited<ReturnType<T>>> {
     const stop = this.start(name, description);
 
@@ -114,7 +114,7 @@ export class ServerTiming {
 
         return [...acc, entry];
       },
-      []
+      [],
     );
 
     return entries.join(", ");
