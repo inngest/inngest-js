@@ -272,6 +272,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       (step) => step.hashedId === hashedStepIdToRun && step.fn
     );
 
+    if (step?.fulfilled) {
+      // Theoretically unreachable, but we've seen it happen. We saw a bug where
+      // the Executor requested the same parallel step twice, and on the second
+      // request there was already cached step data (i.e. already fulfilled). So
+      // this is merely a defensive measure
+      return;
+    }
+
     if (step) {
       return await this.executeStep(step);
     }
