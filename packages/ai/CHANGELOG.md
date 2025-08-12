@@ -1,5 +1,14 @@
 # @inngest/ai
 
+## 0.1.6
+
+### Patch Changes
+
+- [#1031](https://github.com/inngest/inngest-js/pull/1031) [`3d94247`](https://github.com/inngest/inngest-js/commit/3d94247307b274b36be629dcfcf77dc799a6e9eb) Thanks [@tedjames](https://github.com/tedjames)! - added support for latest thinking and generation config for gemini models
+  created unit and smoke tests for AI models + adapters
+
+- [#1049](https://github.com/inngest/inngest-js/pull/1049) [`8c84b8f`](https://github.com/inngest/inngest-js/commit/8c84b8f0981bb066ab4051e2aee3facac67dbb02) Thanks [@Anuj-K15](https://github.com/Anuj-K15)! - Add GPT-5 model variants (`gpt-5`, `gpt-5-mini`, `gpt-5-nano`) to OpenAi type for improved type safety.
+
 ## 0.1.5
 
 ### Patch Changes
