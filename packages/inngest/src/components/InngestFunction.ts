@@ -407,6 +407,14 @@ export namespace InngestFunction {
        * information on how to use `key` expressions.
        */
       key?: string;
+
+      /**
+       * An optional boolean expression to determine an event's eligibility for batching
+       *
+       * See [batch documentation](https://innge.st/batching) for more
+       * information on how to use `if` expressions.
+       */
+      if?: string;
     };
 
     /**
