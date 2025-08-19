@@ -263,6 +263,32 @@ and their guidance for mocking imports:
 - [`bun:test` (Bun)](https://bun.sh/docs/test/mocks#module-mocks-with-mock-module)
 - [`@std/testing` (Deno)](https://jsr.io/@std/testing/doc/mock/~)
 
+### Request arguments (reqArgs)
+
+Request arguments can be passed to the function execution to support middleware
+that relies on particular serve handler usage. These can be specified either when
+creating an `InngestTestEngine` instance or for individual executions:
+
+```ts
+// Set reqArgs for every execution
+const t = new InngestTestEngine({
+  function: helloWorld,
+  reqArgs: [request, response], // Express req/res objects for example
+});
+
+// Or for just one execution
+t.execute({
+  reqArgs: [request, response],
+});
+
+t.executeStep("my-step", {
+  reqArgs: [request, response],
+});
+```
+
+This is particularly useful when testing functions that use middleware requiring
+specific serve handler context.
+
 ### Custom
 
 While the package performs some basic mocks of the input object to a function in
@@ -309,7 +335,5 @@ const t = new InngestTestEngine({
 - `onFailure` handlers are not run automatically
 - Mocked step outputs do not model the JSON (de)serialization process yet, so
   some typing may be off (e.g. `Date`)
-- You cannot specify any `reqArgs` yet, which could affect some middleware usage
-  that relies on a particular serve handler being used
 - Calling `inngest.send()` within a function is not yet automatically mocked, likely
   resulting in an error

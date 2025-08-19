@@ -3,8 +3,8 @@ import hashjs from "hash.js";
 import { z } from "zod";
 import { headerKeys, internalEvents } from "../../helpers/consts.ts";
 import {
-  ErrCode,
   deserializeError,
+  ErrCode,
   minifyPrettyError,
   prettyError,
   serializeError,
@@ -24,24 +24,25 @@ import {
   type EventPayload,
   type FailureEventArgs,
   type Handler,
+  jsonErrorSchema,
   type OutgoingOp,
   StepOpCode,
-  jsonErrorSchema,
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import type { Inngest } from "../Inngest.ts";
-import { type RunHookStack, getHookStack } from "../InngestMiddleware.ts";
+import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
-  type FoundStep,
-  STEP_INDEXING_SUFFIX,
-  type StepHandler,
   createStepTools,
+  type FoundStep,
   getStepOptions,
   invokePayloadSchema,
+  STEP_INDEXING_SUFFIX,
+  type StepHandler,
 } from "../InngestStepTools.ts";
 import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import { StepError } from "../StepError.ts";
+import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
 import {
   type ExecutionResult,
   type IInngestExecution,
@@ -49,8 +50,7 @@ import {
   type InngestExecutionFactory,
   type InngestExecutionOptions,
   type MemoizedOp,
-} from "./InngestExecution.js";
-import { getAsyncCtx, getAsyncLocalStorage } from "./als.ts";
+} from "./InngestExecution.ts";
 import { clientProcessorMap } from "./otel/access.ts";
 
 const { sha1 } = hashjs;

@@ -12,9 +12,9 @@
 import { z } from "zod";
 import type { EventSchemas } from "./components/EventSchemas.ts";
 import type {
+  builtInMiddleware,
   GetEvents,
   Inngest,
-  builtInMiddleware,
 } from "./components/Inngest.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
@@ -1192,6 +1192,7 @@ export const functionConfigSchema = z.strictObject({
       maxSize: z.number(),
       timeout: z.string(),
       key: z.string().optional(),
+      if: z.string().optional(),
     })
     .optional(),
   rateLimit: z
@@ -1212,7 +1213,7 @@ export const functionConfigSchema = z.strictObject({
   singleton: z
     .strictObject({
       key: z.string().optional(),
-      mode: z.enum(["skip"]),
+      mode: z.enum(["skip", "cancel"]),
     })
     .optional(),
   cancel: z

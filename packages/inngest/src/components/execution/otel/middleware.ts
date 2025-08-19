@@ -1,16 +1,16 @@
-import { DiagLogLevel, type DiagLogger, diag, trace } from "@opentelemetry/api";
+import { type DiagLogger, DiagLogLevel, diag, trace } from "@opentelemetry/api";
 import Debug from "debug";
-import { version } from "../../../version.js";
-import { InngestMiddleware } from "../../InngestMiddleware.js";
-import { clientProcessorMap } from "./access.js";
-import { debugPrefix } from "./consts.js";
-import type { InngestSpanProcessor } from "./processor.js";
+import { version } from "../../../version.ts";
+import { InngestMiddleware } from "../../InngestMiddleware.ts";
+import { clientProcessorMap } from "./access.ts";
+import { debugPrefix } from "./consts.ts";
+import type { InngestSpanProcessor } from "./processor.ts";
 import {
   type Behaviour,
-  type Instrumentations,
   createProvider,
   extendProvider,
-} from "./util.js";
+  type Instrumentations,
+} from "./util.ts";
 
 const debug = Debug(`${debugPrefix}:middleware`);
 

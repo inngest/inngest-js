@@ -29,9 +29,9 @@
 
 import {
   type EventHandlerRequest,
-  type H3Event,
   getHeader,
   getQuery,
+  type H3Event,
   readBody,
   send,
   setHeaders,

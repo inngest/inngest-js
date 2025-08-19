@@ -142,6 +142,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private readonly fetch: FetchT;
 
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private readonly logger: Logger;
 
   private localFns: InngestFunction.Any[] = [];

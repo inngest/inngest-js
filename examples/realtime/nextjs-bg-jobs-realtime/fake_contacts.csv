@@ -1,0 +1,51 @@
+firstname,lastname,email,seniority,role,company,industry
+Amanda,Brown,amanda.brown@example.com,VP,Data Scientist,AutoCorp,Real Estate
+Sarah,Johnson,sarah.johnson@example.com,Junior,CEO,BioGen,Education
+Michael,Jackson,michael.jackson@example.com,Junior,CEO,AutoCorp,Healthcare
+Emily,Brown,emily.brown@example.com,Mid,Data Scientist,FinSys,Education
+Alex,White,alex.white@example.com,Manager,Data Scientist,RetailHub,Education
+Alex,Smith,alex.smith@example.com,Senior,UX Designer,EcoLabs,Finance
+Amanda,Johnson,amanda.johnson@example.com,Lead,Software Engineer,Urban Solutions,Healthcare
+Michael,Thomas,michael.thomas@example.com,Intern,UX Designer,AutoCorp,Real Estate
+Chris,Johnson,chris.johnson@example.com,Manager,UX Designer,TechNova,Technology
+Michael,Brown,michael.brown@example.com,Senior,Product Manager,VisionTech,Healthcare
+Jessica,Harris,jessica.harris@example.com,Intern,Data Scientist,VisionTech,Transportation
+Michael,Taylor,michael.taylor@example.com,Intern,HR Manager,AutoCorp,Transportation
+Chris,Jackson,chris.jackson@example.com,Manager,Product Manager,AutoCorp,Technology
+Jane,Martin,jane.martin@example.com,Director,Software Engineer,EcoLabs,Marketing
+Alex,Smith,alex.smith@example.com,Senior,HR Manager,BioGen,Real Estate
+Emily,Johnson,emily.johnson@example.com,VP,CEO,RetailHub,Retail
+Sarah,Taylor,sarah.taylor@example.com,Lead,Product Manager,EcoLabs,Finance
+John,Martin,john.martin@example.com,Lead,HR Manager,TechNova,Marketing
+Emily,Brown,emily.brown@example.com,Director,Software Engineer,AutoCorp,Transportation
+Michael,Smith,michael.smith@example.com,Lead,HR Manager,EcoLabs,Technology
+Chris,White,chris.white@example.com,Junior,Sales Executive,Urban Solutions,Transportation
+Chris,Jackson,chris.jackson@example.com,Mid,Product Manager,RetailHub,Marketing
+Emily,Johnson,emily.johnson@example.com,Mid,Software Engineer,TechNova,Marketing
+Chris,Taylor,chris.taylor@example.com,Senior,Data Scientist,FinSys,Healthcare
+Chris,Brown,chris.brown@example.com,Mid,Sales Executive,BioGen,Finance
+Jessica,Johnson,jessica.johnson@example.com,Lead,Software Engineer,Urban Solutions,Technology
+Jessica,White,jessica.white@example.com,Intern,COO,Urban Solutions,Marketing
+Jessica,Johnson,jessica.johnson@example.com,Intern,Data Scientist,RetailHub,Finance
+Emily,Brown,emily.brown@example.com,Director,COO,TechNova,Real Estate
+Emily,Brown,emily.brown@example.com,Mid,Data Scientist,EcoLabs,Finance
+Chris,Jackson,chris.jackson@example.com,Lead,COO,Urban Solutions,Finance
+David,Johnson,david.johnson@example.com,Lead,CTO,AutoCorp,Real Estate
+David,Johnson,david.johnson@example.com,Intern,CEO,EcoLabs,Healthcare
+John,Harris,john.harris@example.com,Director,Sales Executive,EcoLabs,Real Estate
+David,Smith,david.smith@example.com,Lead,Software Engineer,AutoCorp,Healthcare
+Jessica,Johnson,jessica.johnson@example.com,Director,Product Manager,FinSys,Real Estate
+Emily,Jackson,emily.jackson@example.com,Director,Product Manager,VisionTech,Marketing
+Amanda,White,amanda.white@example.com,Intern,CEO,AutoCorp,Finance
+Amanda,Smith,amanda.smith@example.com,Manager,Sales Executive,RetailHub,Finance
+Jane,Thomas,jane.thomas@example.com,Senior,Product Manager,Urban Solutions,Healthcare
+David,Harris,david.harris@example.com,Director,Sales Executive,FinSys,Transportation
+Sarah,Harris,sarah.harris@example.com,Director,CEO,FinSys,Real Estate
+Jane,Smith,jane.smith@example.com,Lead,Product Manager,BioGen,Transportation
+Chris,Thomas,chris.thomas@example.com,Junior,Data Scientist,AutoCorp,Education
+Michael,Martin,michael.martin@example.com,Director,HR Manager,EcoLabs,Education
+John,Smith,john.smith@example.com,Director,UX Designer,EcoLabs,Marketing
+Sarah,Brown,sarah.brown@example.com,Director,HR Manager,VisionTech,Finance
+Alex,Smith,alex.smith@example.com,Lead,HR Manager,FinSys,Real Estate
+Jane,Harris,jane.harris@example.com,Intern,CEO,FinSys,Technology
+Jane,Martin,jane.martin@example.com,Lead,HR Manager,BioGen,Retail

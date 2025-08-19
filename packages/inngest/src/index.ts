@@ -40,10 +40,10 @@
 
 export * from "@inngest/ai";
 export {
-  EventSchemas,
   type AddName,
   type AssertInternalEventPayloads,
   type Combine,
+  EventSchemas,
   type LiteralZodEventSchema,
   type StandardEventSchemas,
   type StandardEventSchemaToPayload,
@@ -87,7 +87,7 @@ export type {
   UnionKeys,
   WithoutInternal,
 } from "./helpers/types";
-export { dependencyInjectionMiddleware } from "./middleware/dependencyInjection.js";
+export { dependencyInjectionMiddleware } from "./middleware/dependencyInjection.ts";
 export type { LogArg } from "./middleware/logger";
 export { ProxyLogger } from "./middleware/logger.ts";
 export type {
@@ -110,4 +110,4 @@ export type {
   StepOptionsOrId,
   TimeStr,
 } from "./types";
-export { version } from "./version.js";
+export { version } from "./version.ts";

@@ -24,6 +24,7 @@ import {
   type TriggerEventFromFunction,
   type TriggersFromClient,
 } from "../types.ts";
+import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import type {
   ClientOptionsFromInngest,
@@ -34,7 +35,6 @@ import type {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
-import type { InngestExecution } from "./execution/InngestExecution.ts";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;

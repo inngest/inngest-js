@@ -1,7 +1,7 @@
 import Debug from "debug";
-import type { Simplify } from "../helpers/types.js";
-import { type InternalStepTools, gatewaySymbol } from "./InngestStepTools.js";
-import { getAsyncCtx } from "./execution/als.js";
+import type { Simplify } from "../helpers/types.ts";
+import { getAsyncCtx } from "./execution/als.ts";
+import { gatewaySymbol, type InternalStepTools } from "./InngestStepTools.ts";
 
 const globalFetch = globalThis.fetch;
 type Fetch = typeof globalFetch;

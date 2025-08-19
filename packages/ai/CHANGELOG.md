@@ -1,5 +1,29 @@
 # @inngest/ai
 
+## 0.1.6
+
+### Patch Changes
+
+- [#1031](https://github.com/inngest/inngest-js/pull/1031) [`3d94247`](https://github.com/inngest/inngest-js/commit/3d94247307b274b36be629dcfcf77dc799a6e9eb) Thanks [@tedjames](https://github.com/tedjames)! - added support for latest thinking and generation config for gemini models
+  created unit and smoke tests for AI models + adapters
+
+- [#1049](https://github.com/inngest/inngest-js/pull/1049) [`8c84b8f`](https://github.com/inngest/inngest-js/commit/8c84b8f0981bb066ab4051e2aee3facac67dbb02) Thanks [@Anuj-K15](https://github.com/Anuj-K15)! - Add GPT-5 model variants (`gpt-5`, `gpt-5-mini`, `gpt-5-nano`) to OpenAi type for improved type safety.
+
+## 0.1.5
+
+### Patch Changes
+
+- [#961](https://github.com/inngest/inngest-js/pull/961) [`bf8ab80`](https://github.com/inngest/inngest-js/commit/bf8ab80fd4601fae6a71188821df1e40e89d541b) Thanks [@jonmagic](https://github.com/jonmagic)! - Add Azure OpenAI adapter and model support
+
+  - Introduced a new `AzureOpenAiAiAdapter` type definition, following the OpenAI I/O format.
+  - Registered `"azure-openai"` as a supported AI adapter format.
+  - Implemented a `azureOpenai` model creator for Azure OpenAI, handling endpoint, deployment, and version configuration.
+  - Added strongly typed input/output for Azure OpenAI, mirroring OpenAI’s message/completion shape.
+  - Updated `adapters/index.ts` and `models/index.ts` to export new Azure OpenAI adapter/model.
+  - Ensured Azure-specific request construction and parameterization in the model creator.
+
+- [#1015](https://github.com/inngest/inngest-js/pull/1015) [`6f478be`](https://github.com/inngest/inngest-js/commit/6f478bee07bb96eea6e0153f04d4f9060b6b570d) Thanks [@tedjames](https://github.com/tedjames)! - added latest models to gemini & anthropic adapters
+
 ## 0.1.4
 
 ### Patch Changes
