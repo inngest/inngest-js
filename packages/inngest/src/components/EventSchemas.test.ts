@@ -1,4 +1,5 @@
-import { z } from "zod/v3";
+import { z } from "zod";
+import { z as z_v3 } from "zod/v3";
 import type { internalEvents } from "../helpers/consts.ts";
 import type { IsAny, IsEqual } from "../helpers/types.ts";
 import { assertType } from "../test/helpers.ts";
@@ -420,7 +421,384 @@ describe("EventSchemas", () => {
     });
   });
 
-  describe("fromZod", () => {
+  describe("fromZod (v3)", () => {
+    describe("record", () => {
+      test("sets types based on input", () => {
+        const schemas = new EventSchemas().fromZod({
+          "test.event": {
+            data: z_v3.object({ a: z_v3.string() }),
+            user: z_v3.object({ b: z_v3.number() }),
+          },
+        });
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({ a: "" });
+        assertType<Schemas<typeof schemas>["test.event"]["user"]>({ b: 0 });
+      });
+
+      test("can concatenate types with multiple calls", () => {
+        const schemas = new EventSchemas()
+          .fromZod({
+            "test.event": {
+              data: z_v3.object({ a: z_v3.string() }),
+              user: z_v3.object({ b: z_v3.number() }),
+            },
+          })
+          .fromZod({
+            "test.event2": {
+              data: z_v3.object({ c: z_v3.string() }),
+              user: z_v3.object({ d: z_v3.number() }),
+            },
+          });
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({ a: "" });
+        assertType<Schemas<typeof schemas>["test.event"]["user"]>({ b: 0 });
+
+        assertType<Schemas<typeof schemas>["test.event2"]["name"]>(
+          "test.event2",
+        );
+        assertType<Schemas<typeof schemas>["test.event2"]["data"]>({ c: "" });
+        assertType<Schemas<typeof schemas>["test.event2"]["user"]>({ d: 0 });
+      });
+
+      test("can overwrite types with multiple calls", () => {
+        const schemas = new EventSchemas()
+          .fromZod({
+            "test.event": {
+              data: z_v3.object({ a: z_v3.string() }),
+              user: z_v3.object({ b: z_v3.number() }),
+            },
+          })
+          .fromZod({
+            "test.event": {
+              data: z_v3.object({ c: z_v3.string() }),
+              user: z_v3.object({ d: z_v3.number() }),
+            },
+          });
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({ c: "" });
+        assertType<Schemas<typeof schemas>["test.event"]["user"]>({ d: 0 });
+      });
+
+      test.todo("cannot set extra properties");
+
+      test("can set 'any' type for data", () => {
+        const schemas = new EventSchemas().fromZod({
+          "test.event": {
+            data: z_v3.any(),
+          },
+        });
+
+        assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
+      });
+
+      test("can set 'any' type for user", () => {
+        const schemas = new EventSchemas().fromZod({
+          "test.event": {
+            data: z_v3.any(),
+            user: z_v3.any(),
+          },
+        });
+
+        assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+      });
+
+      test("cannot set non-object type for data", () => {
+        new EventSchemas().fromZod({
+          // @ts-expect-error - data must be object|any|unknown
+          "test.event": { data: z_v3.string() },
+        });
+      });
+
+      test("cannot set non-object type for user", () => {
+        new EventSchemas().fromZod({
+          // @ts-expect-error - user must be object|any|unknown
+          "test.event": { data: z_v3.any(), user: z_v3.string() },
+        });
+      });
+
+      test("fills in missing properties with default values", () => {
+        const schemas = new EventSchemas().fromZod({
+          "test.event": {
+            data: z_v3.object({ a: z_v3.string() }),
+          },
+        });
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({ a: "" });
+        assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+        assertType<
+          IsEqual<
+            Schemas<typeof schemas>["test.event"]["ts"],
+            number | undefined
+          >
+        >(true);
+        assertType<
+          IsEqual<
+            Schemas<typeof schemas>["test.event"]["v"],
+            string | undefined
+          >
+        >(true);
+      });
+
+      test("can use a discriminated union", () => {
+        const schemas = new EventSchemas().fromZod({
+          "test.event": {
+            data: z_v3.discriminatedUnion("shared", [
+              z_v3.object({
+                shared: z_v3.literal("foo"),
+                foo: z_v3.string(),
+              }),
+              z_v3.object({
+                shared: z_v3.literal("bar"),
+                bar: z_v3.number(),
+              }),
+            ]),
+          },
+        });
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "foo" as const,
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "bar" as const,
+          bar: 0,
+        });
+      });
+
+      test("can use a union with valid values", () => {
+        const schemas = new EventSchemas().fromZod({
+          "test.event": {
+            data: z_v3.union([
+              z_v3.object({
+                foo: z_v3.string(),
+              }),
+              z_v3.object({
+                bar: z_v3.number(),
+              }),
+            ]),
+          },
+        });
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          bar: 0,
+        });
+      });
+
+      test("cannot use a union with invalid values", () => {
+        new EventSchemas().fromZod({
+          // @ts-expect-error - data must be object|any
+          "test.event": { data: z_v3.union([z_v3.string(), z_v3.number()]) },
+        });
+      });
+    });
+
+    describe("literal array", () => {
+      test("sets types based on input", () => {
+        const schemas = new EventSchemas().fromZod([
+          z_v3.object({
+            name: z_v3.literal("test.event"),
+            data: z_v3.object({ a: z_v3.string() }),
+            user: z_v3.object({ b: z_v3.number() }),
+          }),
+        ]);
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({ a: "" });
+        assertType<Schemas<typeof schemas>["test.event"]["user"]>({ b: 0 });
+      });
+
+      test("can concatenate types with multiple calls", () => {
+        const schemas = new EventSchemas().fromZod([
+          z_v3.object({
+            name: z_v3.literal("test.event"),
+            data: z_v3.object({ a: z_v3.string() }),
+            user: z_v3.object({ b: z_v3.number() }),
+          }),
+          z_v3.object({
+            name: z_v3.literal("test.event2"),
+            data: z_v3.object({ c: z_v3.string() }),
+            user: z_v3.object({ d: z_v3.number() }),
+          }),
+        ]);
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({ a: "" });
+        assertType<Schemas<typeof schemas>["test.event"]["user"]>({ b: 0 });
+
+        assertType<Schemas<typeof schemas>["test.event2"]["name"]>(
+          "test.event2",
+        );
+        assertType<Schemas<typeof schemas>["test.event2"]["data"]>({ c: "" });
+        assertType<Schemas<typeof schemas>["test.event2"]["user"]>({ d: 0 });
+      });
+
+      test("can overwrite types with multiple calls", () => {
+        const schemas = new EventSchemas()
+          .fromZod([
+            z_v3.object({
+              name: z_v3.literal("test.event"),
+              data: z_v3.object({ a: z_v3.string() }),
+              user: z_v3.object({ b: z_v3.number() }),
+            }),
+          ])
+          .fromZod([
+            z_v3.object({
+              name: z_v3.literal("test.event"),
+              data: z_v3.object({ c: z_v3.string() }),
+              user: z_v3.object({ d: z_v3.number() }),
+            }),
+          ]);
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({ c: "" });
+        assertType<Schemas<typeof schemas>["test.event"]["user"]>({ d: 0 });
+      });
+
+      test.todo("cannot set extra properties");
+
+      test("can set 'any' type for data", () => {
+        const schemas = new EventSchemas().fromZod([
+          z_v3.object({
+            name: z_v3.literal("test.event"),
+            data: z_v3.any(),
+          }),
+        ]);
+
+        assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(true);
+      });
+
+      test("can set 'any' type for user", () => {
+        const schemas = new EventSchemas().fromZod([
+          z_v3.object({
+            name: z_v3.literal("test.event"),
+            data: z_v3.any(),
+            user: z_v3.any(),
+          }),
+        ]);
+
+        assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+      });
+
+      test("cannot set non-object type for data", () => {
+        new EventSchemas().fromZod([
+          // @ts-expect-error - data must be object|any|unknown
+          z_v3.object({
+            name: z_v3.literal("test.event"),
+            data: z_v3.string(),
+          }),
+        ]);
+      });
+
+      test("cannot set non-object type for user", () => {
+        new EventSchemas().fromZod([
+          // @ts-expect-error - user must be object|any|unknown
+          z_v3.object({
+            name: z_v3.literal("test.event"),
+            data: z_v3.any(),
+            user: z_v3.string(),
+          }),
+        ]);
+      });
+
+      test("fills in missing properties with default values", () => {
+        const schemas = new EventSchemas().fromZod([
+          z_v3.object({
+            name: z_v3.literal("test.event"),
+            data: z_v3.object({ a: z_v3.string() }),
+          }),
+        ]);
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({ a: "" });
+        assertType<IsAny<Schemas<typeof schemas>["test.event"]["user"]>>(true);
+        assertType<
+          IsEqual<
+            Schemas<typeof schemas>["test.event"]["ts"],
+            number | undefined
+          >
+        >(true);
+        assertType<
+          IsEqual<
+            Schemas<typeof schemas>["test.event"]["v"],
+            string | undefined
+          >
+        >(true);
+      });
+
+      test("can use a discriminated union", () => {
+        const schemas = new EventSchemas().fromZod([
+          z_v3.object({
+            name: z_v3.literal("test.event"),
+            data: z_v3.discriminatedUnion("shared", [
+              z_v3.object({
+                shared: z_v3.literal("foo"),
+                foo: z_v3.string(),
+              }),
+              z_v3.object({
+                shared: z_v3.literal("bar"),
+                bar: z_v3.number(),
+              }),
+            ]),
+          }),
+        ]);
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "foo" as const,
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          shared: "bar" as const,
+          bar: 0,
+        });
+      });
+
+      test("can use a union with valid values", () => {
+        const schemas = new EventSchemas().fromZod([
+          z_v3.object({
+            name: z_v3.literal("test.event"),
+            data: z_v3.union([
+              z_v3.object({
+                foo: z_v3.string(),
+              }),
+              z_v3.object({
+                bar: z_v3.number(),
+              }),
+            ]),
+          }),
+        ]);
+
+        assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          foo: "",
+        });
+        assertType<Schemas<typeof schemas>["test.event"]["data"]>({
+          bar: 0,
+        });
+      });
+
+      test("cannot use a union with invalid values", () => {
+        new EventSchemas().fromZod([
+          // @ts-expect-error - data must be object|any
+          z_v3.object({
+            name: z_v3.literal("test.event"),
+            data: z_v3.union([z_v3.string(), z_v3.number()]),
+          }),
+        ]);
+      });
+    });
+  });
+
+  describe("fromZod (v4)", () => {
     describe("record", () => {
       test("sets types based on input", () => {
         const schemas = new EventSchemas().fromZod({

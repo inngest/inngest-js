@@ -346,7 +346,8 @@
     "hono": ">=4.2.7",
     "koa": ">=2.14.2",
     "next": ">=12.0.0",
-    "typescript": ">=5.8.0"
+    "typescript": ">=5.8.0",
+    "zod": ">=3.24.0"
   },
   "peerDependenciesMeta": {
     "@sveltejs/kit": {
