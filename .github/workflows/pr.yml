@@ -48,6 +48,7 @@ jobs:
       matrix:
         tsVersion:
           - "latest"
+          - "~5.9.0"
           - "~5.8.0"
     steps:
       - uses: actions/checkout@v3
