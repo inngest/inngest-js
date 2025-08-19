@@ -397,9 +397,7 @@ describe("runFn", () => {
                   t.expectedErrors?.forEach((error, i) => {
                     test(`error log #${i + 1} includes "${error}"`, () => {
                       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-                      const call = (globalThis.console.error as any).mock.calls[
-                        i
-                      ];
+                      const call = (mockLogger.error as any).mock.calls[i];
                       const stringifiedArgs =
                         call?.map((arg: unknown) => {
                           return arg instanceof Error
@@ -413,7 +411,7 @@ describe("runFn", () => {
                 });
               } else {
                 test("no error logs", () => {
-                  expect(globalThis.console.error).not.toHaveBeenCalled();
+                  expect(mockLogger.error).not.toHaveBeenCalled();
                 });
               }
 
