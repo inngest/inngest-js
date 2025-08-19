@@ -59,7 +59,7 @@ export interface MemoizedOp extends IncomingOp {
  * new runs, not existing ones.
  */
 export const PREFERRED_EXECUTION_VERSION =
-  ExecutionVersion.V2 satisfies ExecutionVersion;
+  ExecutionVersion.V1 satisfies ExecutionVersion;
 
 /**
  * Options for creating a new {@link InngestExecution} instance.
