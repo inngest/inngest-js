@@ -3,7 +3,7 @@ import fetch from "cross-fetch";
 import type { Request, Response } from "express";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
-import { z } from "zod";
+import { z } from "zod/v3";
 import {
   type IInngestExecution,
   type InngestExecution,

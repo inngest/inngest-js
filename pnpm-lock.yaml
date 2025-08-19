@@ -161,8 +161,8 @@ importers:
         specifier: ^0.2.5
         version: 0.2.5
       zod:
-        specifier: ~3.22.3
-        version: 3.22.3
+        specifier: ^4.0.17
+        version: 4.0.17
     devDependencies:
       '@actions/core':
         specifier: ^1.10.0
@@ -6785,6 +6785,9 @@ packages:
 
   zod@3.24.2:
     resolution: {integrity: sha512-lY7CDW43ECgW9u1TcT3IoXHflywfVqDYze4waEz812jR/bZ8FHDsl7pFQoSZTz5N+2NqRXs8GBwnAwo3ZNxqhQ==}
+
+  zod@4.0.17:
+    resolution: {integrity: sha512-1PHjlYRevNxxdy2JZ8JcNAw7rX8V9P1AKkP+x/xZfxB0K5FYfuV+Ug6P/6NVSR2jHQ+FzDDoDHS04nYUsOIyLQ==}
 
 snapshots:
 
@@ -13617,7 +13620,7 @@ snapshots:
     dependencies:
       '@ampproject/remapping': 2.3.0
       '@jridgewell/sourcemap-codec': 1.5.0
-      '@jridgewell/trace-mapping': 0.3.25
+      '@jridgewell/trace-mapping': 0.3.30
       acorn: 8.14.0
       aria-query: 5.3.0
       axobject-query: 3.2.4
@@ -14534,3 +14537,5 @@ snapshots:
   zod@3.22.3: {}
 
   zod@3.24.2: {}
+
+  zod@4.0.17: {}

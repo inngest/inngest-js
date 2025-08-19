@@ -1,4 +1,4 @@
-import { ZodError, z } from "zod";
+import { ZodError, z } from "zod/v3";
 import type { InngestApi } from "../api/api.ts";
 import { stepsSchemas } from "../api/schema.ts";
 import { PREFERRED_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";

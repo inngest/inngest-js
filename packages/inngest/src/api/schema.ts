@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 import { ExecutionVersion } from "../helpers/consts.ts";
 import { type EventPayload, jsonErrorSchema } from "../types.ts";
 

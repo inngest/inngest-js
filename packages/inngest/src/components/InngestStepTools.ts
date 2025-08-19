@@ -1,5 +1,5 @@
 import { type AiAdapter, models } from "@inngest/ai";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { logPrefix } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { timeStr } from "../helpers/strings.ts";

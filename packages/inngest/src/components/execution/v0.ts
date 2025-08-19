@@ -1,6 +1,6 @@
 import canonicalize from "canonicalize";
 import hashjs from "hash.js";
-import { z } from "zod";
+import { z } from "zod/v3";
 import {
   deserializeError,
   ErrCode,

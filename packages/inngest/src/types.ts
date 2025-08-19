@@ -9,7 +9,7 @@
  * @module
  */
 
-import { z } from "zod";
+import { z } from "zod/v3";
 import type { EventSchemas } from "./components/EventSchemas.ts";
 import type {
   builtInMiddleware,

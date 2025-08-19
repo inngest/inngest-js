@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 import type { internalEvents } from "../helpers/consts.ts";
 import type { IsAny, IsEqual } from "../helpers/types.ts";
 import { assertType } from "../test/helpers.ts";

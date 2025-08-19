@@ -1,5 +1,5 @@
 import debug from "debug";
-import { z } from "zod";
+import { z } from "zod/v3";
 import {
   debugPrefix,
   defaultInngestApiBaseUrl,

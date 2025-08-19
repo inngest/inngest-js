@@ -7,7 +7,7 @@ import {
   errorConstructors,
 } from "serialize-error-cjs";
 import stripAnsi from "strip-ansi";
-import { z } from "zod";
+import { z } from "zod/v3";
 import type { Inngest } from "../components/Inngest.ts";
 import { NonRetriableError } from "../components/NonRetriableError.ts";
 import type { ClientOptions, OutgoingOp } from "../types.ts";

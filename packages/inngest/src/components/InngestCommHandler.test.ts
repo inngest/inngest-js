@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v3";
 import { EventSchemas, InngestCommHandler } from "../index.ts";
 import { serve } from "../next.ts";
 import { createClient } from "../test/helpers.ts";

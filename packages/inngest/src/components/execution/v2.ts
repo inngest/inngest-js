@@ -1,6 +1,6 @@
 import { trace } from "@opentelemetry/api";
 import hashjs from "hash.js";
-import { z } from "zod";
+import { z } from "zod/v3";
 import { headerKeys, internalEvents } from "../../helpers/consts.ts";
 import {
   deserializeError,

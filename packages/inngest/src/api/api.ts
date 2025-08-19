@@ -1,5 +1,5 @@
 import type { fetch } from "cross-fetch";
-import { z } from "zod";
+import { z } from "zod/v3";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,

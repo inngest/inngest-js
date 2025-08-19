@@ -1,7 +1,7 @@
 import { openai } from "@inngest/ai";
 import ms from "ms";
 import { Temporal } from "temporal-polyfill";
-import { z } from "zod";
+import { z } from "zod/v3";
 import type { IsEqual } from "../helpers/types.ts";
 import {
   assertType,

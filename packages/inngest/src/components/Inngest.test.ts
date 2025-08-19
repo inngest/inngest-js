@@ -1,5 +1,5 @@
 import type { Mock } from "vitest";
-import { literal } from "zod";
+import { literal } from "zod/v3";
 import {
   dummyEventKey,
   envKeys,
