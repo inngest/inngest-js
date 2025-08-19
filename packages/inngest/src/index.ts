@@ -73,6 +73,11 @@ export { InngestMiddleware } from "./components/InngestMiddleware.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
 export { StepError } from "./components/StepError.ts";
+export {
+  isInngest,
+  isInngestFunction,
+  isInngestMiddleware,
+} from "./helpers/assertions.ts";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts.ts";
 export { slugify } from "./helpers/strings.ts";
 export type {

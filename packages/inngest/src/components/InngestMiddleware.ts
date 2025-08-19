@@ -40,7 +40,13 @@ import type { InngestFunction } from "./InngestFunction.ts";
  *
  * @public
  */
-export class InngestMiddleware<TOpts extends MiddlewareOptions> {
+export class InngestMiddleware<TOpts extends MiddlewareOptions>
+  implements InngestMiddleware.Like
+{
+  get [Symbol.toStringTag](): typeof InngestMiddleware.Tag {
+    return InngestMiddleware.Tag;
+  }
+
   /**
    * The name of this middleware. Used primarily for debugging and logging
    * purposes.
@@ -71,8 +77,13 @@ export class InngestMiddleware<TOpts extends MiddlewareOptions> {
 }
 
 export namespace InngestMiddleware {
+  export const Tag = "Inngest.Middleware" as const;
+
   export type Any = InngestMiddleware<MiddlewareOptions>;
-  export type Stack = [InngestMiddleware.Any, ...InngestMiddleware.Any[]];
+  export interface Like {
+    readonly [Symbol.toStringTag]: typeof InngestMiddleware.Tag;
+  }
+  export type Stack = [InngestMiddleware.Like, ...InngestMiddleware.Like[]];
 }
 
 type FnsWithSameInputAsOutput<
@@ -569,27 +580,26 @@ type MiddlewareRunFinished = (ctx: {
 /**
  * @internal
  */
-type GetMiddlewareRunInputMutation<
-  TMiddleware extends InngestMiddleware<MiddlewareOptions>,
-> = TMiddleware extends InngestMiddleware<infer TOpts>
-  ? TOpts["init"] extends MiddlewareRegisterFn
-    ? Await<
-        Await<Await<TOpts["init"]>["onFunctionRun"]>["transformInput"]
-      > extends {
-        ctx: infer TCtx;
-      }
-      ? {
-          [K in keyof TCtx]: TCtx[K];
+type GetMiddlewareRunInputMutation<TMiddleware extends InngestMiddleware.Like> =
+  TMiddleware extends InngestMiddleware<infer TOpts>
+    ? TOpts["init"] extends MiddlewareRegisterFn
+      ? Await<
+          Await<Await<TOpts["init"]>["onFunctionRun"]>["transformInput"]
+        > extends {
+          ctx: infer TCtx;
         }
+        ? {
+            [K in keyof TCtx]: TCtx[K];
+          }
+        : {}
       : {}
-    : {}
-  : {};
+    : {};
 
 /**
  * @internal
  */
 type GetMiddlewareSendEventOutputMutation<
-  TMiddleware extends InngestMiddleware<MiddlewareOptions>,
+  TMiddleware extends InngestMiddleware.Like,
 > = TMiddleware extends InngestMiddleware<infer TOpts>
   ? TOpts["init"] extends MiddlewareRegisterFn
     ? Await<
