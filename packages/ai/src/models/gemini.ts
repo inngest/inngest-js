@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-namespace */
 import { type AiAdapter } from "../adapter.js";
 import { type GeminiAiAdapter } from "../adapters/gemini.js";
 import { envKeys, processEnv } from "../env";
@@ -35,7 +34,31 @@ export const gemini: AiAdapter.ModelCreator<
     authKey,
     format: "gemini",
     onCall(_, body) {
-      Object.assign(body, options.defaultParameters);
+      if (!options.defaultParameters) {
+        return;
+      }
+
+      const { generationConfig: defaultGenerationConfig, ...otherDefaults } =
+        options.defaultParameters;
+
+      // Assign top-level defaults first, user-provided values will override
+      Object.assign(body, {
+        ...otherDefaults,
+        ...body,
+      });
+
+      // Then, deep-merge generationConfig
+      if (defaultGenerationConfig) {
+        body.generationConfig = {
+          ...defaultGenerationConfig,
+          ...(body.generationConfig || {}),
+          // And ensure nested thinkingConfig is also deep-merged
+          thinkingConfig: {
+            ...defaultGenerationConfig.thinkingConfig,
+            ...(body.generationConfig?.thinkingConfig || {}),
+          },
+        };
+      }
     },
     headers,
     options,
@@ -58,8 +81,8 @@ export namespace Gemini {
     model: Gemini.Model;
 
     /**
-     * The Anthropic API key to use for authenticating your request. By default
-     * we'll search for and use the `ANTHROPIC_API_KEY` environment variable.
+     * The Gemini API key to use for authenticating your request. By default
+     * we'll search for and use the `GEMINI_API_KEY` environment variable.
      */
     apiKey?: string;
 

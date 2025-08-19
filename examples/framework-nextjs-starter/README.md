@@ -18,19 +18,20 @@ All functions source code are available in the [`src/lib/demo-functions.ts`](./s
    ```bash
    npm install
    ```
-2. Run the development server:
+2. Run the Next.js development server:
    ```bash
    npm run dev
    ```
-3. Visit [http://localhost:3000](http://localhost:3000)
+3. Run the Inngest dev server:
+   ```bash
+   npx inngest-cli@latest dev -u http://localhost:3000/api/inngest
+   ```
+4. Visit [http://localhost:3000](http://localhost:3000)
 
 ## Deploy on Vercel
 
-1. Using the following button to create a new Vercel project using this repository:
-   [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Finngest%2Finngest-js%2Ftree%2Fmain%2Fexamples%2Fframework-nextjs-starter&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22inngest%22%2C%22productSlug%22%3A%22inngest%22%2C%22protocol%22%3A%22storage%22%7D%5D)
+You can deploy this project to Vercel with a few clicks:
 
-2. Once your Vercel project is deployed, navigate to the [Inngest Vercel Integration](https://vercel.com/integrations/inngest) page and click **Connect Account** (_you can create an Inngest account during this step_).
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?demo-description=Develop%20AI%20products%20at%20the%20speed%20of%20thought%20with%20Inngest%20and%20Next.js.%20Demo%20features%20like%20background%20jobs%2C%20real-time%20updates%2C%20and%20throttling.&demo-image=%2F%2Fimages.ctfassets.net%2Fe5382hct74si%2F7gjXqVzphYzQuTsU2GqS0W%2F5aced5f656ca71e21421e14d1d6e27ca%2Fvercel-template-thumbnail.png&demo-title=Inngest%20on%20Next.js%20Starter&demo-url=https%3A%2F%2Finngest-nextjs-starter.vercel.app&from=templates&products=%255B%257B%2522type%2522%253A%2522integration%2522%252C%2522protocol%2522%253A%2522workflow%2522%252C%2522productSlug%2522%253A%2522account%2522%252C%2522integrationSlug%2522%253A%2522inngest%2522%257D%255D&project-name=Inngest%20on%20Next.js%20Starter&repository-name=inngest-starter&repository-url=https%3A%2F%2Fgithub.com%2Finngest%2Finngest-js%2Ftree%2Fmain%2Fexamples%2Fframework-nextjs-starter&skippable-integrations=1)
 
-3. You application is now deployed on Vercel and linked to your Inngest application!
-
-You can find a complete step-by-step [deploy to Vercel guide in our documentation](https://www.inngest.com/docs/deploy/vercel?ref=nextjs-starter-template).
+You can also find a complete step-by-step [deploy to Vercel guide in our documentation](https://www.inngest.com/docs/deploy/vercel?ref=nextjs-starter-template).
