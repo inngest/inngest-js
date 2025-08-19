@@ -57,7 +57,7 @@ export class MessageBuffer {
       await this.inngest["inngestApi"]["getTargetUrl"]("/v0/connect/flush"),
       {
         method: "POST",
-        body: SDKResponse.encode(msg).finish(),
+        body: new Uint8Array(SDKResponse.encode(msg).finish()),
         headers: headers,
       },
     );

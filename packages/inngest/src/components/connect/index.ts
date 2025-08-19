@@ -576,7 +576,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     try {
       resp = await fetch(targetUrl, {
         method: "POST",
-        body: msg,
+        body: new Uint8Array(msg),
         headers: headers,
       });
     } catch (err) {
