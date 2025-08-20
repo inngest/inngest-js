@@ -150,7 +150,7 @@ export namespace InngestFunctionReference {
    */
   export type HelperReturn<TArgs> = TArgs extends InngestFunction.Any
     ? InngestFunctionReference<
-        PayloadForAnyInngestFunction<TArgs>,
+        PayloadForAnyInngestFunction<TArgs["opts"]["id"], TArgs>,
         GetFunctionOutput<TArgs>
       >
     : TArgs extends HelperArgs<infer TFnInput, infer TFnOutput>
