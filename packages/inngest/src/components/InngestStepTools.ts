@@ -289,6 +289,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
           op: StepOpCode.StepPlanned,
           name: "sendEvent",
           displayName: name ?? id,
+          opts: {
+            type: "step.sendEvent",
+          },
         };
       },
       {
