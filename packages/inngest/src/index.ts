@@ -45,8 +45,8 @@ export {
   type Combine,
   EventSchemas,
   type LiteralZodEventSchema,
-  type StandardEventSchemas,
-  type StandardEventSchemaToPayload,
+  type NormalizedEventSchemas as StandardEventSchemas,
+  type NormalizedEventSchemaToPayload as StandardEventSchemaToPayload,
   type ZodEventSchemas,
 } from "./components/EventSchemas.ts";
 export { fetch } from "./components/Fetch.ts";
