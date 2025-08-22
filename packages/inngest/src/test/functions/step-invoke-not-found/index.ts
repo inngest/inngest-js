@@ -7,5 +7,5 @@ export default inngest.createFunction(
     await step.invoke("invoke-non-existent-fn", {
       function: "non-existant-fn",
     });
-  }
+  },
 );

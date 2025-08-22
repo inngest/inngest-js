@@ -1,5 +1,5 @@
-import { type Context, type StepOptions } from "../../types.js";
-import { type Inngest } from "../Inngest.js";
+import type { Context, StepOptions } from "../../types.ts";
+import type { Inngest } from "../Inngest.ts";
 
 export interface AsyncContext {
   /**
@@ -49,25 +49,22 @@ export const getAsyncCtx = async (): Promise<AsyncContext | undefined> => {
  */
 export const getAsyncLocalStorage = async (): Promise<AsyncLocalStorageIsh> => {
   (globalThis as Record<string | symbol | number, unknown>)[alsSymbol] ??=
-    new Promise<AsyncLocalStorageIsh>(
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
-      async (resolve) => {
-        try {
-          const { AsyncLocalStorage } = await import("node:async_hooks");
+    new Promise<AsyncLocalStorageIsh>(async (resolve) => {
+      try {
+        const { AsyncLocalStorage } = await import("node:async_hooks");
 
-          resolve(new AsyncLocalStorage<AsyncContext>());
-        } catch (err) {
-          console.warn(
-            "node:async_hooks is not supported in this runtime. Experimental async context is disabled."
-          );
+        resolve(new AsyncLocalStorage<AsyncContext>());
+      } catch (_err) {
+        console.warn(
+          "node:async_hooks is not supported in this runtime. Experimental async context is disabled.",
+        );
 
-          resolve({
-            getStore: () => undefined,
-            run: (_, fn) => fn(),
-          });
-        }
+        resolve({
+          getStore: () => undefined,
+          run: (_, fn) => fn(),
+        });
       }
-    );
+    });
 
   return (globalThis as Record<string | symbol | number, unknown>)[
     alsSymbol

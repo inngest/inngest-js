@@ -1,6 +1,6 @@
-import * as LambdaHandler from "@local/lambda";
-import { type APIGatewayProxyResult } from "aws-lambda";
-import { testFramework } from "./test/helpers";
+import type { APIGatewayProxyResult } from "aws-lambda";
+import * as LambdaHandler from "./lambda.ts";
+import { testFramework } from "./test/helpers.ts";
 
 testFramework("AWS Lambda", LambdaHandler, {
   transformReq: (req, _res, _env) => {
@@ -14,7 +14,7 @@ testFramework("AWS Lambda", LambdaHandler, {
           Object.entries(req.headers).map(([key, value]) => [
             key.toUpperCase(),
             value,
-          ])
+          ]),
         ),
         httpMethod: req.method,
         queryStringParameters: req.query,

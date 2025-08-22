@@ -21,13 +21,13 @@
  * @module
  */
 
-import { type RequestEvent } from "@sveltejs/kit";
+import type { RequestEvent } from "@sveltejs/kit";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { processEnv } from "./helpers/env.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import { processEnv } from "./helpers/env.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -59,7 +59,7 @@ export const frameworkName: SupportedFrameworkName = "sveltekit";
  */
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
-  options: ServeHandlerOptions
+  options: ServeHandlerOptions,
 ): ((event: RequestEvent) => Promise<Response>) & {
   GET: (event: RequestEvent) => Promise<Response>;
   POST: (event: RequestEvent) => Promise<Response>;
@@ -70,7 +70,7 @@ export const serve = (
     ...options,
     handler: (
       reqMethod: "GET" | "POST" | "PUT" | undefined,
-      event: RequestEvent
+      event: RequestEvent,
     ) => {
       return {
         method: () => reqMethod || event.request.method || "",
@@ -84,7 +84,7 @@ export const serve = (
             event.request.url,
             `${protocol}://${
               event.request.headers.get("host") || options.serveHost || ""
-            }`
+            }`,
           );
         },
         transformResponse: ({ body, headers, status }) => {
@@ -96,10 +96,8 @@ export const serve = (
           let Res: typeof Response;
 
           if (typeof Response === "undefined") {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
             Res = require("cross-fetch").Response;
           } else {
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             Res = Response;
           }
 
