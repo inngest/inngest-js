@@ -17,11 +17,11 @@ import type {
 /**
  * Declares the shape of an event schema we expect from the user. This may be
  * different to what a user is sending us depending on the supported library,
- * but this standard format is what we require as the end result.
+ * but this normalized format is what we require as the end result.
  *
  * @internal
  */
-export type StandardEventSchema = {
+export type NormalizedEventSchema = {
   name?: string;
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   data?: Record<string, any>;
@@ -30,11 +30,11 @@ export type StandardEventSchema = {
 };
 
 /**
- * A helper type that declares a standardised custom part of the event schema.
+ * A helper type that declares a normalized custom part of the event schema.
  *
  * @public
  */
-export type StandardEventSchemas = Record<string, StandardEventSchema>;
+export type NormalizedEventSchemas = Record<string, NormalizedEventSchema>;
 
 /**
  * Asserts that the given type `T` contains a mapping for all internal events.
@@ -168,12 +168,12 @@ export type LiteralToRecordZodSchemas<T> = PickLiterals<
 >;
 
 /**
- * Given a set of Zod schemas in a record format, convert them into a standard
+ * Given a set of Zod schemas in a record format, convert them into a normalized
  * event schema format.
  *
  * @public
  */
-export type ZodToStandardSchema<T extends ZodEventSchemas> = {
+export type ZodToNormalizedSchema<T extends ZodEventSchemas> = {
   [EventName in keyof T & string]: {
     [Key in keyof T[EventName] & string]: T[EventName][Key] extends z.ZodTypeAny
       ? z.ZodInfer<T[EventName][Key]>
@@ -191,7 +191,7 @@ export type ZodToStandardSchema<T extends ZodEventSchemas> = {
  *
  * @public
  */
-export type StandardEventSchemaToPayload<T> = {
+export type NormalizedEventSchemaToPayload<T> = {
   [K in keyof T & string]: AddName<
     Simplify<Omit<EventPayload, keyof T[K]> & T[K]>,
     K
@@ -221,13 +221,13 @@ export type AddName<TObj, TDefaultName extends string> = TObj extends {
  */
 export type Combine<
   TCurr extends Record<string, EventPayload>,
-  TInc extends StandardEventSchemas,
+  TInc extends NormalizedEventSchemas,
 > = IsStringLiteral<keyof TCurr & string> extends true
   ? Simplify<
-      Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> &
-        StandardEventSchemaToPayload<TInc>
+      Omit<TCurr, keyof NormalizedEventSchemaToPayload<TInc>> &
+        NormalizedEventSchemaToPayload<TInc>
     >
-  : StandardEventSchemaToPayload<TInc>;
+  : NormalizedEventSchemaToPayload<TInc>;
 
 /**
  * Provide an `EventSchemas` class to type events, providing type safety when
@@ -275,7 +275,7 @@ export class EventSchemas<
   /**
    * Use generated Inngest types to type events.
    */
-  public fromGenerated<T extends StandardEventSchemas>(): EventSchemas<
+  public fromGenerated<T extends NormalizedEventSchemas>(): EventSchemas<
     Combine<S, T>
   > {
     return this;
@@ -300,7 +300,7 @@ export class EventSchemas<
    * });
    * ```
    */
-  public fromRecord<T extends StandardEventSchemas>(
+  public fromRecord<T extends NormalizedEventSchemas>(
     ..._args: PreventClashingNames<T> extends ClashingNameError
       ? [ClashingNameError]
       : []
@@ -335,7 +335,7 @@ export class EventSchemas<
    * ```
    */
   public fromUnion<
-    T extends { name: string } & StandardEventSchema,
+    T extends { name: string } & NormalizedEventSchema,
   >(): EventSchemas<
     Combine<
       S,
@@ -371,7 +371,7 @@ export class EventSchemas<
   ): EventSchemas<
     Combine<
       S,
-      ZodToStandardSchema<
+      ZodToNormalizedSchema<
         T extends ZodEventSchemas ? T : LiteralToRecordZodSchemas<T>
       >
     >
