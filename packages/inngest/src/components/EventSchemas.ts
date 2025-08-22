@@ -1,3 +1,4 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { internalEvents } from "../helpers/consts.ts";
 import type {
   IsEmptyObject,
@@ -230,6 +231,19 @@ export type Combine<
   : NormalizedEventSchemaToPayload<TInc>;
 
 /**
+ * A record of event names to a schema for their data.
+ */
+export type StandardSchemas = Record<string, StandardSchemaV1>;
+
+/**
+ * Conversion of Standard Schemas to the normalized type, including a literal of
+ * the event name.
+ */
+export type StandardToNormalizedSchema<T extends StandardSchemas> = {
+  [K in keyof T & string]: AddName<StandardSchemaV1.InferOutput<T[K]>, K>;
+};
+
+/**
  * Provide an `EventSchemas` class to type events, providing type safety when
  * sending events and running functions via Inngest.
  *
@@ -350,6 +364,8 @@ export class EventSchemas<
   /**
    * Use Zod to type events.
    *
+   * @deprecated Use {@link fromSchema}.
+   *
    * @example
    *
    * ```ts
@@ -395,6 +411,35 @@ export class EventSchemas<
     }
 
     this.addRuntimeSchemas(runtimeSchemas);
+
+    return this;
+  }
+
+  /**
+   * Use anything compliant with Standard Schema to type events.
+   *
+   * @example
+   *
+   * ```ts
+   * export const inngest = new Inngest({
+   *   id: "my-app",
+   *   schemas: new EventSchemas().fromSchema({
+   *     "app/user.created": z.object({
+   *       id: z.string(),
+   *       name: z.string(),
+   *     }),
+   *   }),
+   * });
+   * ```
+   */
+  public fromSchema<T extends StandardSchemas>(
+    schemas: T,
+  ): EventSchemas<Combine<S, StandardToNormalizedSchema<T>>> {
+    this.addRuntimeSchemas(
+      Object.entries(schemas).reduce((acc, [name, schema]) => {
+        return { ...acc, [name]: schema };
+      }, {}),
+    );
 
     return this;
   }
