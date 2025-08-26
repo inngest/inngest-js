@@ -99,7 +99,7 @@ export function useInngestSubscription<
 
   // Token fetch fallback on mount
   useEffect(() => {
-    if (!token) {
+    if (!token && enabled) {
       if (refreshToken) {
         setState(InngestSubscriptionState.RefreshingToken);
         refreshToken()
