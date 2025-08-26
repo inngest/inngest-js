@@ -9,5 +9,5 @@ export default inngest.createFunction(
     });
 
     await step.run("b never runs", () => "b");
-  }
+  },
 );

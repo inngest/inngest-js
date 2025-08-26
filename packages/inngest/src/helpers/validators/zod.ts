@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Shim for Zod types to ensure hopeful compatibility between minor versions;
  * let developers the latest version of Zod without having to have Inngest match
@@ -8,6 +7,7 @@
  * minors anyway, so at least with this we rely on fewer fields staying the
  * same.
  */
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export type ZodLiteral<TValue = any> = {
   get value(): TValue;
   _def: {
@@ -16,9 +16,13 @@ export type ZodLiteral<TValue = any> = {
 };
 
 export type ZodTypeAny = {
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   _type: any;
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   _output: any;
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   _input: any;
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   _def: any;
 };
 
@@ -48,6 +52,7 @@ export type ZodUnion<
   };
 };
 
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export type AnyZodObject = ZodObject<any>;
 
 export type ZodAny = {
@@ -64,4 +69,4 @@ export type ValidZodValue =
   // Allow `z.union()`, only in cases where it's a union of other valid zod values
   | ZodUnion;
 
-export type infer<T extends ZodTypeAny> = T["_output"];
+export type ZodInfer<T extends ZodTypeAny> = T["_output"];
