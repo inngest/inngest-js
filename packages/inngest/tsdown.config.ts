@@ -35,4 +35,7 @@ export default defineConfig({
   tsconfig: "tsconfig.build.json",
   target: "node20",
   sourcemap: true,
+  failOnWarn: true, // keep the build as good we can
+  minify: false, // let bundlers handle minification if they want it
+  report: true,
 });
