@@ -40,10 +40,10 @@
 
 export * from "@inngest/ai";
 export {
+  EventSchemas,
   type AddName,
   type AssertInternalEventPayloads,
   type Combine,
-  EventSchemas,
   type LiteralZodEventSchema,
   type NormalizedEventSchemas as StandardEventSchemas,
   type NormalizedEventSchemaToPayload as StandardEventSchemaToPayload,
@@ -88,7 +88,7 @@ export type {
   WithoutInternal,
 } from "./helpers/types";
 export { dependencyInjectionMiddleware } from "./middleware/dependencyInjection.ts";
-export type { LogArg } from "./middleware/logger";
+export type { LogArg, Logger } from "./middleware/logger";
 export { ProxyLogger } from "./middleware/logger.ts";
 export type {
   BaseContext,
