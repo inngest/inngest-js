@@ -1,16 +1,16 @@
 import chalk from "chalk";
 import stringify from "json-stringify-safe";
 import {
+  type SerializedError as CjsSerializedError,
   deserializeError as cjsDeserializeError,
   serializeError as cjsSerializeError,
   errorConstructors,
-  type SerializedError as CjsSerializedError,
 } from "serialize-error-cjs";
 import stripAnsi from "strip-ansi";
-import { z } from "zod";
-import { type Inngest } from "../components/Inngest.js";
-import { NonRetriableError } from "../components/NonRetriableError.js";
-import { type ClientOptions, type OutgoingOp } from "../types.js";
+import { z } from "zod/v3";
+import type { Inngest } from "../components/Inngest.ts";
+import { NonRetriableError } from "../components/NonRetriableError.ts";
+import type { ClientOptions, OutgoingOp } from "../types.ts";
 
 const SERIALIZED_KEY = "__serialized";
 const SERIALIZED_VALUE = true;
@@ -28,7 +28,7 @@ const SERIALIZED_VALUE = true;
  */
 errorConstructors.set(
   "NonRetriableError",
-  NonRetriableError as ErrorConstructor
+  NonRetriableError as ErrorConstructor,
 );
 
 export interface SerializedError extends Readonly<CjsSerializedError> {
@@ -65,7 +65,7 @@ export const serializeError = <
    * If `true` and the error is not serializable, will return the original value
    * as `unknown` instead of coercing it to a serialized error.
    */
-  allowUnknown: TAllowUnknown = false as TAllowUnknown
+  allowUnknown: TAllowUnknown = false as TAllowUnknown,
 ): TOutput => {
   try {
     // Try to understand if this is already done.
@@ -128,7 +128,7 @@ export const serializeError = <
     // If it's not an object, it's hard to parse this as an Error. In this case,
     // we'll throw an error to start attempting backup strategies.
     throw new Error("Error is not an object; strange throw value.");
-  } catch (err) {
+  } catch {
     if (allowUnknown) {
       // If we are allowed to return unknown, we'll just return the original
       // value.
@@ -142,13 +142,13 @@ export const serializeError = <
       return {
         ...serializeError(
           new Error(typeof subject === "string" ? subject : stringify(subject)),
-          false
+          false,
         ),
         // Remove the stack; it's not relevant here
         stack: "",
         [SERIALIZED_KEY]: SERIALIZED_VALUE,
       } as TOutput;
-    } catch (err) {
+    } catch {
       // If this failed, then stringifying the object also failed, so we'll just
       // return a completely generic error.
       // Failing to stringify the object is very unlikely.
@@ -167,7 +167,7 @@ export const serializeError = <
  * {@link serializeError}.
  */
 export const isSerializedError = (
-  value: unknown
+  value: unknown,
 ): SerializedError | undefined => {
   try {
     if (typeof value === "string") {
@@ -191,8 +191,7 @@ export const isSerializedError = (
 
     if (typeof value === "object" && value !== null) {
       const objIsSerializedErr =
-        Object.prototype.hasOwnProperty.call(value, SERIALIZED_KEY) &&
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        Object.hasOwn(value, SERIALIZED_KEY) &&
         (value as { [SERIALIZED_KEY]: unknown })[SERIALIZED_KEY] ===
           SERIALIZED_VALUE;
 
@@ -204,6 +203,8 @@ export const isSerializedError = (
     // no-op; we'll return undefined if parsing failed, as it isn't a serialized
     // error
   }
+
+  return;
 };
 
 /**
@@ -220,13 +221,13 @@ export const deserializeError = <
     : Error = TAllowUnknown extends true ? unknown : Error,
 >(
   subject: Partial<SerializedError>,
-  allowUnknown: TAllowUnknown = false as TAllowUnknown
+  allowUnknown: TAllowUnknown = false as TAllowUnknown,
 ): TOutput => {
   const requiredFields: (keyof SerializedError)[] = ["name", "message"];
 
   try {
     const hasRequiredFields = requiredFields.every((field) => {
-      return Object.prototype.hasOwnProperty.call(subject, field);
+      return Object.hasOwn(subject, field);
     });
 
     if (!hasRequiredFields) {
@@ -238,7 +239,7 @@ export const deserializeError = <
     if ("cause" in deserializedErr) {
       deserializedErr.cause = deserializeError(
         deserializedErr.cause as Partial<SerializedError>,
-        true
+        true,
       );
     }
 
@@ -395,7 +396,7 @@ export const minifyPrettyError = <T>(err: T): T => {
     }
 
     return err;
-  } catch (noopErr) {
+  } catch (_noopErr) {
     return err;
   }
 };
@@ -410,11 +411,15 @@ const isError = (err: unknown): err is Error => {
       return true;
     }
 
-    const hasName = Object.prototype.hasOwnProperty.call(err, "name");
-    const hasMessage = Object.prototype.hasOwnProperty.call(err, "message");
+    if (typeof err !== "object" || err === null) {
+      return false;
+    }
+
+    const hasName = Object.hasOwn(err, "name");
+    const hasMessage = Object.hasOwn(err, "message");
 
     return hasName && hasMessage;
-  } catch (noopErr) {
+  } catch (_noopErr) {
     return false;
   }
 };
@@ -465,7 +470,7 @@ export const prettyError = ({
     header +=
       "\n" +
       [...(new Error().stack?.split("\n").slice(1).filter(Boolean) || [])].join(
-        "\n"
+        "\n",
       );
   }
 
@@ -540,16 +545,15 @@ export class OutgoingResultError extends Error {
  * await doSomeAction().catch(rethrowError("Failed to do some action"));
  * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export const rethrowError = (prefix: string): ((err: any) => never) => {
   return (err) => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/restrict-template-expressions
       err.message &&= `${prefix}; ${err.message}`;
-    } catch (noopErr) {
+    } catch (_noopErr) {
       // no-op
     } finally {
-      // eslint-disable-next-line no-unsafe-finally
+      // biome-ignore lint/correctness/noUnsafeFinally: <explanation>
       throw err;
     }
   };

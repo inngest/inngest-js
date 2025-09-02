@@ -28,20 +28,20 @@
  */
 
 import {
+  type EventHandlerRequest,
   getHeader,
   getQuery,
+  type H3Event,
   readBody,
   send,
   setHeaders,
-  type EventHandlerRequest,
-  type H3Event,
 } from "h3";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { processEnv } from "./helpers/env.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import { processEnv } from "./helpers/env.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -79,7 +79,7 @@ export const frameworkName: SupportedFrameworkName = "h3";
  */
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
-  options: ServeHandlerOptions
+  options: ServeHandlerOptions,
 ): ((event: H3Event<EventHandlerRequest>) => Promise<void>) => {
   const handler = new InngestCommHandler({
     frameworkName,
@@ -97,7 +97,7 @@ export const serve = (
 
           return new URL(
             String(event.path),
-            `${scheme}://${String(getHeader(event, "host"))}`
+            `${scheme}://${String(getHeader(event, "host"))}`,
           );
         },
         queryString: (key) => {
@@ -105,6 +105,8 @@ export const serve = (
           if (param) {
             return String(param);
           }
+
+          return;
         },
         transformResponse: (actionRes) => {
           const { res } = event.node;

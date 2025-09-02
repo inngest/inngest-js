@@ -5,7 +5,7 @@ import {
   minifyPrettyError,
   prettyError,
   serializeError,
-} from "@local/helpers/errors";
+} from "./errors.ts";
 
 interface ErrorTests {
   name: string;
@@ -120,8 +120,8 @@ describe("minifyPrettyError", () => {
           consequences: "Your event or events were not sent to Inngest.",
           why: "We couldn't find an event key to use to send events to Inngest.",
           toFixNow: fixEventKeyMissingSteps,
-        })
-      )
+        }),
+      ),
     );
 
     const err = minifyPrettyError(originalErr);
@@ -147,8 +147,8 @@ describe("minifyPrettyError", () => {
           why: "We couldn't find an event key to use to send events to Inngest.",
           toFixNow: fixEventKeyMissingSteps,
           code: ErrCode.NESTING_STEPS,
-        })
-      )
+        }),
+      ),
     );
 
     const err = minifyPrettyError(originalErr);

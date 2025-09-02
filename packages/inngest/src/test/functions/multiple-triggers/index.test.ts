@@ -3,7 +3,7 @@ import {
   eventRunWithName,
   runHasTimeline,
   sendEvent,
-} from "@local/test/helpers";
+} from "../../helpers";
 import { events } from ".";
 
 checkIntrospection({

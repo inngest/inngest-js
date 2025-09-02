@@ -1,28 +1,31 @@
-import { internalEvents, queryKeys } from "../helpers/consts.js";
-import { timeStr } from "../helpers/strings.js";
-import { type RecursiveTuple, type StrictUnion } from "../helpers/types.js";
-import {
-  type Cancellation,
-  type ConcurrencyOption,
-  type FunctionConfig,
-  type Handler,
-  type TimeStr,
-  type TimeStrBatch,
-  type TriggersFromClient,
-} from "../types.js";
-import { type GetEvents, type Inngest } from "./Inngest.js";
-import {
-  type InngestMiddleware,
-  type MiddlewareRegisterReturn,
-} from "./InngestMiddleware.js";
 import {
   ExecutionVersion,
-  type IInngestExecution,
-  type InngestExecutionOptions,
-} from "./execution/InngestExecution.js";
-import { createV0InngestExecution } from "./execution/v0.js";
-import { createV1InngestExecution } from "./execution/v1.js";
-import { createV2InngestExecution } from "./execution/v2.js";
+  internalEvents,
+  queryKeys,
+} from "../helpers/consts.ts";
+import { timeStr } from "../helpers/strings.ts";
+import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
+import type {
+  Cancellation,
+  ConcurrencyOption,
+  FunctionConfig,
+  Handler,
+  TimeStr,
+  TimeStrBatch,
+  TriggersFromClient,
+} from "../types.ts";
+import type {
+  IInngestExecution,
+  InngestExecutionOptions,
+} from "./execution/InngestExecution.ts";
+import { createV0InngestExecution } from "./execution/v0.ts";
+import { createV1InngestExecution } from "./execution/v1.ts";
+import { createV2InngestExecution } from "./execution/v2.ts";
+import type { GetEvents, Inngest } from "./Inngest.ts";
+import type {
+  InngestMiddleware,
+  MiddlewareRegisterReturn,
+} from "./InngestMiddleware.ts";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -52,7 +55,12 @@ export class InngestFunction<
   static stepId = "step";
   static failureSuffix = "-failure";
 
+  get [Symbol.toStringTag](): typeof InngestFunction.Tag {
+    return InngestFunction.Tag;
+  }
+
   public readonly opts: TFnOpts;
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used internally
   private readonly fn: THandler;
   private readonly onFailureFn?: TFailureHandler;
   protected readonly client: TClient;
@@ -72,7 +80,7 @@ export class InngestFunction<
      * Options
      */
     opts: TFnOpts,
-    fn: THandler
+    fn: THandler,
   ) {
     this.client = client;
     this.opts = opts;
@@ -81,7 +89,7 @@ export class InngestFunction<
 
     this.middleware = this.client["initializeMiddleware"](
       this.opts.middleware,
-      { registerInput: { fn: this }, prefixStack: this.client["middleware"] }
+      { registerInput: { fn: this }, prefixStack: this.client["middleware"] },
     );
   }
 
@@ -117,6 +125,8 @@ export class InngestFunction<
   /**
    * Retrieve the Inngest config for this function.
    */
+
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used within the SDK
   private getConfig({
     baseUrl,
     appPrefix,
@@ -271,6 +281,7 @@ export class InngestFunction<
     return versionHandlers[opts.version]();
   }
 
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used within the SDK
   private shouldOptimizeParallelism(): boolean {
     // TODO We should check the commhandler's client instead of this one?
     return (
@@ -291,26 +302,27 @@ export class InngestFunction<
  * @public
  */
 export namespace InngestFunction {
+  export const Tag = "Inngest.Function" as const;
+
   /**
    * Represents any `InngestFunction` instance, regardless of generics and
    * inference.
    */
   export type Any = InngestFunction<
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any,
     Handler.Any,
     Handler.Any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any
   >;
 
   export interface Like {
-    name: string;
-    description?: string | undefined;
+    readonly [Symbol.toStringTag]: typeof InngestFunction.Tag;
   }
 
   /**
@@ -329,7 +341,7 @@ export namespace InngestFunction {
   >;
 
   export type GetOptions<T extends InngestFunction.Any> =
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     T extends InngestFunction<infer O, any, any, any, any, any> ? O : never;
 
   /**
