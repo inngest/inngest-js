@@ -1,5 +1,13 @@
 # inngest
 
+## 3.40.2
+
+### Patch Changes
+
+- [#1045](https://github.com/inngest/inngest-js/pull/1045) [`ec2320a`](https://github.com/inngest/inngest-js/commit/ec2320a2dbbfacf22d2399c0eb28f3280507b49f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `type` to `step.sendEvent()` to differentiate it from other `step.run()`-based steps
+
+- [#1050](https://github.com/inngest/inngest-js/pull/1050) [`ac9748f`](https://github.com/inngest/inngest-js/commit/ac9748f506f34f3f9329c73d55d39aeecd76499b) Thanks [@lkasinathan](https://github.com/lkasinathan)! - Introduces support for the `if` expression on the batchEvents configuration. This can be used to determine which events are eligible for batching. For more details, check out the [batching documentation](https://innge.st/batching)!
+
 ## 3.40.1
 
 ### Patch Changes
