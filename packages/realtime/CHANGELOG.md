@@ -1,5 +1,14 @@
 # @inngest/realtime
 
+## 0.3.2
+
+### Patch Changes
+
+- [#1058](https://github.com/inngest/inngest-js/pull/1058) [`b683116`](https://github.com/inngest/inngest-js/commit/b683116bcf4a4771599b4f953a99b47d98fb015b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix errors being thrown on reader close
+
+- Updated dependencies [[`ec2320a`](https://github.com/inngest/inngest-js/commit/ec2320a2dbbfacf22d2399c0eb28f3280507b49f), [`ac9748f`](https://github.com/inngest/inngest-js/commit/ac9748f506f34f3f9329c73d55d39aeecd76499b)]:
+  - inngest@3.40.2
+
 ## 0.3.1
 
 ### Patch Changes
