@@ -45,6 +45,7 @@ export type ParentState = {
   runId: string;
   appId: string | undefined;
   functionId: string | undefined;
+  traceRef: string | undefined;
 };
 
 /**
@@ -166,6 +167,7 @@ export class InngestSpanProcessor implements SpanProcessor {
     // them back in later versions.
     let appId: string | undefined;
     let functionId: string | undefined;
+    let traceRef: string | undefined;
 
     if (tracestate) {
       try {
@@ -175,6 +177,7 @@ export class InngestSpanProcessor implements SpanProcessor {
 
         appId = entries[TraceStateKey.AppId];
         functionId = entries[TraceStateKey.FunctionId];
+        traceRef = entries[TraceStateKey.TraceRef];
       } catch (err) {
         processorDebug(
           "failed to parse tracestate",
@@ -204,6 +207,7 @@ export class InngestSpanProcessor implements SpanProcessor {
         functionId,
         runId,
         traceparent,
+        traceRef,
       },
       span
     );
@@ -325,6 +329,10 @@ export class InngestSpanProcessor implements SpanProcessor {
     // Executor that we don't need to parrot this back.
     if (parentState.functionId) {
       span.setAttribute(Attribute.InngestFunctionId, parentState.functionId);
+    }
+
+    if (parentState.traceRef) {
+      span.setAttribute(Attribute.InngestTraceRef, parentState.traceRef);
     }
   }
 
