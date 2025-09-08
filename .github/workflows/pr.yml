@@ -145,7 +145,7 @@ jobs:
         with:
           install-dependencies: false
           build: false
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
   "middleware-encryption_test":
@@ -160,7 +160,7 @@ jobs:
         with:
           install-dependencies: false
           build: false
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
   "middleware-validation_test":
@@ -175,7 +175,7 @@ jobs:
         with:
           install-dependencies: false
           build: false
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
   "realtime_test":
@@ -190,7 +190,7 @@ jobs:
         with:
           install-dependencies: false
           build: false
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
   package_inngest:
