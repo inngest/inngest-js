@@ -240,7 +240,15 @@ export type StandardSchemas = Record<string, StandardSchemaV1>;
  * the event name.
  */
 export type StandardToNormalizedSchema<T extends StandardSchemas> = {
-  [K in keyof T & string]: AddName<StandardSchemaV1.InferOutput<T[K]>, K>;
+  [K in keyof T & string]: AddName<
+    {
+      // biome-ignore lint/suspicious/noExplicitAny: Only this type is allowed for data and we need `any` for elsewhere
+      data: StandardSchemaV1.InferOutput<T[K]> extends Record<string, any>
+        ? StandardSchemaV1.InferOutput<T[K]>
+        : never;
+    },
+    K
+  >;
 };
 
 /**
