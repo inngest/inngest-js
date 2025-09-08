@@ -47,6 +47,7 @@ On _any_ serverless platform ([Next.js](https://www.inngest.com/docs/sdk/serve#f
 <p align="center">
 <a href="#getting-started">Getting started</a> ·
 <a href="#features">Features</a> ·
+<a href="#version-support">Version support</a> ·
 <a href="#contributing">Contributing</a> ·
 <a href="https://www.inngest.com/docs?ref=github-inngest-js-readme">Documentation</a>
 </p>
@@ -143,6 +144,15 @@ inngest.send("app/user.signup", {
 - **Observable**: A full UI for managing and inspecting your functions
 
 <br />
+
+## Version support
+
+The library works across browsers, Bun, Deno, Node, and Cloudflare Workers.
+
+We support the LTS versions of these runtimes and the last 3 minor versions of
+TypeScript; once a runtime version drops out of LTS, any major, minor, or patch
+update to the `inngest` library may drop support for it, which will be mentioned
+in the patch notes.
 
 ## Contributing
 
