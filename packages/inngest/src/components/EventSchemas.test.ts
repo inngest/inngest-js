@@ -798,13 +798,14 @@ describe("EventSchemas", () => {
     });
   });
 
-  describe("fromSchema (Zodv4)", () => {
+  describe("fromSchema (including Zod v4)", () => {
     test("sets types based on input", () => {
       const schemas = new EventSchemas().fromSchema({
         "test.event": z.object({ a: z.string() }),
       });
 
       assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(false);
       assertType<Schemas<typeof schemas>["test.event"]["data"]>({ a: "" });
     });
 
@@ -818,9 +819,11 @@ describe("EventSchemas", () => {
         });
 
       assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(false);
       assertType<Schemas<typeof schemas>["test.event"]["data"]>({ a: "" });
 
       assertType<Schemas<typeof schemas>["test.event2"]["name"]>("test.event2");
+      assertType<IsAny<Schemas<typeof schemas>["test.event2"]["data"]>>(false);
       assertType<Schemas<typeof schemas>["test.event2"]["data"]>({ c: "" });
     });
 
@@ -834,6 +837,7 @@ describe("EventSchemas", () => {
         });
 
       assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(false);
       assertType<Schemas<typeof schemas>["test.event"]["data"]>({ c: "" });
     });
 
@@ -860,6 +864,7 @@ describe("EventSchemas", () => {
       });
 
       assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(false);
       assertType<Schemas<typeof schemas>["test.event"]["data"]>({ a: "" });
       assertType<
         IsEqual<Schemas<typeof schemas>["test.event"]["ts"], number | undefined>
@@ -884,6 +889,7 @@ describe("EventSchemas", () => {
       });
 
       assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(false);
       assertType<Schemas<typeof schemas>["test.event"]["data"]>({
         shared: "foo" as const,
         foo: "",
@@ -907,6 +913,7 @@ describe("EventSchemas", () => {
       });
 
       assertType<Schemas<typeof schemas>["test.event"]["name"]>("test.event");
+      assertType<IsAny<Schemas<typeof schemas>["test.event"]["data"]>>(false);
       assertType<Schemas<typeof schemas>["test.event"]["data"]>({
         foo: "",
       });
