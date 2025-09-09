@@ -1,0 +1,21 @@
+{
+  "name": "inngest-hypermedia",
+  "version": "1.0.50",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "bun run --watch src/index.ts",
+    "inngest:dev": "inngest-cli dev"
+  },
+  "dependencies": {
+    "elysia": "latest",
+    "inngest": "^3.40.2"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "inngest-cli": "^1.11.10"
+  },
+  "module": "src/index.js",
+  "trustedDependencies": [
+    "inngest-cli"
+  ]
+}
