@@ -1,6 +1,6 @@
 
 import { serve } from "inngest/bun";
-import { inngest } from "./index";
+import { inngest } from "./client";
 import { helloWorld } from "./helloWorld";
 import { Elysia } from "elysia";
 
