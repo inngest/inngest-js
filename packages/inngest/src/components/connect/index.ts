@@ -54,7 +54,7 @@ import {
   ReconnectError,
   waitWithCancel,
 } from "./util.js";
-import { Logger } from "../../middleware/logger.js";
+import { type Logger } from "../../middleware/logger.js";
 
 const ResponseAcknowlegeDeadline = 5_000;
 

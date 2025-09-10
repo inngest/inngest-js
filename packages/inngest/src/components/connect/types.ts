@@ -1,4 +1,4 @@
-import { Logger } from "../../middleware/logger.js";
+import { type Logger } from "../../middleware/logger.js";
 import { type RegisterOptions } from "../../types.js";
 import { type Inngest } from "../Inngest.js";
 import { type InngestFunction } from "../InngestFunction.js";
