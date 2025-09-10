@@ -2,13 +2,7 @@
 
 ## Getting Started
 
-To get started with this template, simply paste this command into your terminal:
-
-```bash
-bun create github.com/inngest/inngest-js/tree/main/examples/framework-elysiajs inngest-elysiajs
-```
-
-Then run
+To install dependencies:
 
 ```bash
 bun install
