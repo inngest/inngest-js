@@ -54,6 +54,7 @@ import {
   ReconnectError,
   waitWithCancel,
 } from "./util.js";
+import { Logger } from "../../middleware/logger.js";
 
 const ResponseAcknowlegeDeadline = 5_000;
 
@@ -141,6 +142,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
     | ((value: void | PromiseLike<void>) => void)
     | undefined;
 
+  private logger: Logger | undefined;
+
   constructor(options: ConnectHandlerOptions) {
     if (
       !Array.isArray(options.apps) ||
@@ -164,6 +167,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     this._inngestEnv = this.inngest.env ?? getEnvironmentName();
 
     this.debug = debug("inngest:connect");
+    this.logger = options.logger;
 
     this.messageBuffer = new MessageBuffer(this.inngest);
 
@@ -516,6 +520,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           const switchToFallback = useSigningKey === this._hashedSigningKey;
           if (switchToFallback) {
             this.debug("Switching to fallback signing key");
+            this.logger?.info("Switching to fallback signing key");
           }
           useSigningKey = switchToFallback
             ? this._hashedFallbackKey
@@ -530,6 +535,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
         }
 
         const delay = expBackoff(attempt);
+
+        this.logger?.error("Failed to connect, retrying", {
+          error: err,
+          retryAfter: delay,
+        });
+
         this.debug("Reconnecting in", delay, "ms");
 
         const cancelled = await waitWithCancel(
@@ -874,6 +885,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
     this.currentConnection = conn;
 
     this.debug(`Connection ready (${connectionId})`);
+    this.logger?.info("Worker connected", { connectionId });
 
     // Flag to prevent connecting twice in draining scenario:
     // 1. We're already draining and repeatedly trying to connect while keeping the old connection open
@@ -913,6 +925,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
           );
           return;
         }
+        this.logger?.info(
+          "Gateway sent draining request, reconnecting in background",
+          { connectionId }
+        );
 
         this.debug(`Connection error (${connectionId})`, error);
         // eslint-disable-next-line @typescript-eslint/no-floating-promises
@@ -934,6 +950,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
       if (connectMessage.kind === GatewayMessageType.GATEWAY_CLOSING) {
         isDraining = true;
+        this.logger?.info("Received gateway draining message");
         this.debug("Received draining message", { connectionId });
         try {
           this.debug(
@@ -984,6 +1001,10 @@ class WebSocketWorkerConnection implements WorkerConnection {
           connectMessage.payload
         );
 
+        this.logger?.debug("Received request", {
+          connectionId: connectionId,
+          requestId: gatewayExecutorRequest.requestId,
+        });
         this.debug("Received gateway executor request", {
           requestId: gatewayExecutorRequest.requestId,
           appId: gatewayExecutorRequest.appId,

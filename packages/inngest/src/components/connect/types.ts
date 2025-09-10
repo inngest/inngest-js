@@ -1,3 +1,4 @@
+import { Logger } from "../../middleware/logger.js";
 import { type RegisterOptions } from "../../types.js";
 import { type Inngest } from "../Inngest.js";
 import { type InngestFunction } from "../InngestFunction.js";
@@ -29,6 +30,11 @@ export interface ConnectHandlerOptions extends RegisterOptions {
   handleShutdownSignals?: string[];
 
   rewriteGatewayEndpoint?: (endpoint: string) => string;
+
+  /**
+   * Supply a logger to use for connection state updates and other internal events.
+   */
+  logger?: Logger;
 }
 
 export interface WorkerConnection {
