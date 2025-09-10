@@ -59,6 +59,7 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
   public connectionId: string = "";
   private reconnectAttempt: number = 0;
   private reconnectCancelled: boolean = false;
+  private connectionPath: string[] = []; // Track connection attempts for debugging
   private heartbeatInterval?: NodeJS.Timeout;
   private inProgressRequests: {
     wg: { add: (n: number) => void; done: () => void; wait: () => Promise<void> };
@@ -342,12 +343,25 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
   private async attemptConnection(): Promise<void> {
     this.debug(`Attempting connection (attempt ${this.reconnectAttempt + 1})`);
     
+    // Add to connection path for debugging
+    this.connectionPath.push(`attempt-${this.reconnectAttempt + 1}`);
+    
     // Transition to connecting state
     this.stateMachine.transition('CONNECT_REQUESTED');
     
     // Prepare connection data
     const connectionData = await this.prepareConnectionData();
-    const wsUrl = connectionData.gatewayEndpoint;
+    let wsUrl = connectionData.gatewayEndpoint;
+
+    // Apply gateway endpoint rewriting if configured
+    if (this.options.rewriteGatewayEndpoint) {
+      const rewrittenUrl = this.options.rewriteGatewayEndpoint(wsUrl);
+      this.debug("Rewriting gateway endpoint", {
+        original: wsUrl,
+        rewritten: rewrittenUrl,
+      });
+      wsUrl = rewrittenUrl;
+    }
     
     // Create WebSocket manager
     this.wsManager = new WebSocketManager({
@@ -529,6 +543,12 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
           // This will trigger reconnection in the main connection loop
           this.handleActivePhaseError(error);
         }
+      },
+      () => {
+        // Reset heartbeat when gateway heartbeat is received
+        if (this.wsManager) {
+          this.wsManager.resetHeartbeat();
+        }
       }
     );
     
@@ -615,9 +635,33 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
       timestamp: Date.now(),
     });
     
-    // TODO: Set up new connection while keeping current one active
-    // For now, just transition back to active
-    this.stateMachine.transition('NEW_CONNECTION_READY');
+    try {
+      this.debug("Setting up new connection while keeping current connection active", {
+        currentConnectionId: this.connectionId,
+      });
+
+      // Attempt to establish a new connection while keeping the current one active
+      // This matches the original implementation's draining behavior
+      await this.attemptConnection();
+
+      this.debug("New connection established during draining, cleaning up old connection", {
+        oldConnectionId: this.connectionId,
+      });
+
+      // If we get here, the new connection was successful
+      // The attemptConnection will have updated this.wsManager and this.connectionId
+      this.stateMachine.transition('NEW_CONNECTION_READY');
+      
+    } catch (error) {
+      this.debug("Failed to establish new connection during draining", {
+        connectionId: this.connectionId,
+        error,
+      });
+
+      // If new connection fails, treat it as a connection error
+      // This will trigger normal reconnection logic
+      this.handleActivePhaseError(error);
+    }
   }
 
   /**
@@ -703,6 +747,9 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
     }
 
     this.connectionId = startResponse.connectionId;
+    
+    // Add connection ID to path for debugging
+    this.connectionPath.push(this.connectionId);
     
     return {
       connectionId: this.connectionId,
@@ -977,3 +1024,21 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
     });
   }
 }
+
+/**
+ * Create and establish a connection to the Inngest gateway.
+ * This is the main entry point for the connect functionality.
+ */
+export const connect = async (
+  options: ConnectHandlerOptions
+): Promise<WorkerConnection> => {
+  if (options.apps.length === 0) {
+    throw new Error("No apps provided");
+  }
+
+  const conn = new ComposedWebSocketWorkerConnection(options);
+
+  await conn.connect();
+
+  return conn;
+};

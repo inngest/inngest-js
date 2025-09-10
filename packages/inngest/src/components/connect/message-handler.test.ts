@@ -404,6 +404,8 @@ describe("MessageHandler", () => {
     });
 
     test("should handle GATEWAY_HEARTBEAT message", async () => {
+      const onHeartbeatReceived = jest.fn();
+      
       const handler = messageHandler.createActiveMessageHandler(
         wsManager,
         "test-conn-id",
@@ -412,7 +414,8 @@ describe("MessageHandler", () => {
         mockMessageBuffer,
         5000,
         jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
-        jest.fn<(error: unknown) => void>()
+        jest.fn<(error: unknown) => void>(),
+        onHeartbeatReceived
       );
 
       const heartbeatMessage = ConnectMessage.encode({
@@ -422,8 +425,9 @@ describe("MessageHandler", () => {
 
       await handler({ data: heartbeatMessage } as MessageEvent);
 
-      // Should handle gracefully without errors
+      // Should handle gracefully without errors and call heartbeat callback
       expect(wsManager.sendMessageCalls).toHaveLength(0);
+      expect(onHeartbeatReceived).toHaveBeenCalled();
     });
 
     test("should handle GATEWAY_EXECUTOR_REQUEST with valid app", async () => {
@@ -492,6 +496,12 @@ describe("MessageHandler", () => {
       // Should track the request
       expect(mockInProgressRequests.wg.add).toHaveBeenCalledWith(1);
       expect(mockInProgressRequests.wg.done).toHaveBeenCalled();
+
+      // Should integrate with message buffering
+      expect(mockMessageBuffer.addPending).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: "req-123" }),
+        5000 // RESPONSE_ACKNOWLEDGE_DEADLINE
+      );
     });
 
     test("should skip executor request with missing app handler", async () => {
@@ -731,6 +741,133 @@ describe("MessageHandler", () => {
       await handlerPromise;
 
       jest.useRealTimers();
+    });
+  });
+
+  describe("Message Buffering Integration", () => {
+    test("should buffer messages when WebSocket send fails", async () => {
+      // Mock WebSocket send to throw error on second call (the reply, not the ACK)
+      let sendCallCount = 0;
+      mockWebSocket.send.mockImplementation(() => {
+        sendCallCount++;
+        if (sendCallCount === 2) { // Fail on reply send
+          throw new Error("WebSocket send failed");
+        }
+      });
+
+      const mockRequestHandler = jest.fn<(data: GatewayExecutorRequestData) => Promise<any>>().mockResolvedValue({
+        requestId: "req-123",
+        status: 200,
+        body: new Uint8Array(),
+        noRetry: false,
+        retryAfter: "",
+        requestVersion: 0,
+        systemTraceCtx: new Uint8Array(),
+        userTraceCtx: new Uint8Array(),
+      });
+
+      const requestHandlers = {
+        "test-app": mockRequestHandler,
+      };
+
+      const handler = messageHandler.createActiveMessageHandler(
+        wsManager,
+        "test-conn-id",
+        requestHandlers,
+        mockInProgressRequests,
+        mockMessageBuffer,
+        5000,
+        jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        jest.fn<(error: unknown) => void>()
+      );
+
+      const executorRequest = GatewayExecutorRequestData.encode({
+        requestId: "req-123",
+        accountId: "acc-123",
+        envId: "env-123",
+        appId: "app-123",
+        appName: "test-app",
+        functionSlug: "test-function",
+        functionId: "func-123",
+        stepId: "step-123",
+        leaseId: "lease-123",
+        runId: "run-123",
+        requestPayload: new Uint8Array(),
+        systemTraceCtx: new Uint8Array(),
+        userTraceCtx: new Uint8Array(),
+      } as GatewayExecutorRequestData).finish();
+
+      const requestMessage = ConnectMessage.encode({
+        kind: GatewayMessageType.GATEWAY_EXECUTOR_REQUEST,
+        payload: executorRequest,
+      }).finish();
+
+      await handler({ data: requestMessage } as MessageEvent);
+
+      // Should still call addPending
+      expect(mockMessageBuffer.addPending).toHaveBeenCalled();
+
+      // Should also call append when WebSocket send fails
+      expect(mockMessageBuffer.append).toHaveBeenCalledWith(
+        expect.objectContaining({ requestId: "req-123" })
+      );
+    });
+
+    test("should use RESPONSE_ACKNOWLEDGE_DEADLINE constant", async () => {
+      const mockRequestHandler = jest.fn<(data: GatewayExecutorRequestData) => Promise<any>>().mockResolvedValue({
+        requestId: "req-123",
+        status: 200,
+        body: new Uint8Array(),
+        noRetry: false,
+        retryAfter: "",
+        requestVersion: 0,
+        systemTraceCtx: new Uint8Array(),
+        userTraceCtx: new Uint8Array(),
+      });
+
+      const requestHandlers = {
+        "test-app": mockRequestHandler,
+      };
+
+      const handler = messageHandler.createActiveMessageHandler(
+        wsManager,
+        "test-conn-id",
+        requestHandlers,
+        mockInProgressRequests,
+        mockMessageBuffer,
+        5000,
+        jest.fn<() => Promise<void>>().mockResolvedValue(undefined),
+        jest.fn<(error: unknown) => void>()
+      );
+
+      const executorRequest = GatewayExecutorRequestData.encode({
+        requestId: "req-123",
+        accountId: "acc-123",
+        envId: "env-123",
+        appId: "app-123",
+        appName: "test-app",
+        functionSlug: "test-function",
+        functionId: "func-123",
+        stepId: "step-123",
+        leaseId: "lease-123",
+        runId: "run-123",
+        requestPayload: new Uint8Array(),
+        systemTraceCtx: new Uint8Array(),
+        userTraceCtx: new Uint8Array(),
+      } as GatewayExecutorRequestData).finish();
+
+      const requestMessage = ConnectMessage.encode({
+        kind: GatewayMessageType.GATEWAY_EXECUTOR_REQUEST,
+        payload: executorRequest,
+      }).finish();
+
+      await handler({ data: requestMessage } as MessageEvent);
+
+      // Should use the 5000ms deadline constant
+      expect(mockMessageBuffer.addPending).toHaveBeenCalledWith(
+        expect.any(Object),
+        5000
+      );
     });
   });
 });

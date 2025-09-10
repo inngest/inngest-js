@@ -26,6 +26,12 @@ import { type MessageBuffer } from "./buffer.js";
 import { type WebSocketManager } from "./websocket-manager.js";
 
 /**
+ * Deadline for worker reply acknowledgment from gateway (in milliseconds)
+ * Matches original implementation constant
+ */
+const RESPONSE_ACKNOWLEDGE_DEADLINE = 5_000;
+
+/**
  * Setup state tracking for the connection establishment phase
  */
 interface SetupState {
@@ -201,7 +207,8 @@ export class MessageHandler {
     messageBuffer: MessageBuffer,
     extendLeaseIntervalMs: number | undefined,
     onDraining: () => Promise<void>,
-    onConnectionError: (error: unknown) => void
+    onConnectionError: (error: unknown) => void,
+    onHeartbeatReceived?: () => void
   ): (event: MessageEvent) => Promise<void> {
     return async (event: MessageEvent): Promise<void> => {
       const messageBytes = new Uint8Array(event.data as ArrayBuffer);
@@ -221,7 +228,10 @@ export class MessageHandler {
 
       // Handle heartbeat
       if (connectMessage.kind === GatewayMessageType.GATEWAY_HEARTBEAT) {
-        // Reset pending heartbeats - this should be handled by connection manager
+        // Reset pending heartbeats via callback
+        if (onHeartbeatReceived) {
+          onHeartbeatReceived();
+        }
         this.debug("Handled gateway heartbeat", { connectionId });
         return;
       }
@@ -383,8 +393,8 @@ export class MessageHandler {
       // Execute the request
       const res = await requestHandler(gatewayExecutorRequest);
 
-      // Send reply back to gateway
-      await this.sendWorkerReply(wsManager, res);
+      // Send reply back to gateway with message buffering
+      await this.sendWorkerReply(wsManager, res, messageBuffer);
 
     } finally {
       // Clean up
@@ -424,15 +434,32 @@ export class MessageHandler {
   }
 
   /**
-   * Send worker reply
+   * Send worker reply with message buffering integration
    */
-  private async sendWorkerReply(wsManager: WebSocketManager, response: SDKResponse): Promise<void> {
-    wsManager.sendMessage(
-      ConnectMessage.create({
-        kind: GatewayMessageType.WORKER_REPLY,
-        payload: SDKResponse.encode(response).finish(),
-      })
-    );
+  private async sendWorkerReply(wsManager: WebSocketManager, response: SDKResponse, messageBuffer: MessageBuffer): Promise<void> {
+    this.debug("Sending worker reply", {
+      requestId: response.requestId,
+    });
+
+    // Add to pending with acknowledgment deadline
+    messageBuffer.addPending(response, RESPONSE_ACKNOWLEDGE_DEADLINE);
+
+    try {
+      // Try to send immediately via WebSocket
+      wsManager.sendMessage(
+        ConnectMessage.create({
+          kind: GatewayMessageType.WORKER_REPLY,
+          payload: SDKResponse.encode(response).finish(),
+        })
+      );
+    } catch (error) {
+      // If WebSocket send fails, buffer the message for later flushing
+      this.debug("Failed to send worker reply via WebSocket, buffering", {
+        requestId: response.requestId,
+        error,
+      });
+      messageBuffer.append(response);
+    }
   }
 
   /**
