@@ -55,7 +55,7 @@ async function setupExample(examplePath: string): Promise<void> {
 
   // If Bun is seen, use it. Otherwise, use npm. Hacky, but this doesn't need to
   // be fancy.
-  if (exampleName.startsWith("bun")) {
+  if (exampleName.startsWith("bun") || exampleName.includes("elysiajs")) {
     await execAsync(
       "bun add --no-save inngest@../../packages/inngest/inngest.tgz",
       {
