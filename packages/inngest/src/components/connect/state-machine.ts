@@ -80,6 +80,9 @@ export class ConnectionStateMachine {
     { from: ConnectionState.CONNECTING, event: 'CONNECTION_LOST', to: ConnectionState.RECONNECTING },
     // ↳ WebSocket connection dropped during setup phase
     
+    { from: ConnectionState.CONNECTING, event: 'SHUTDOWN_REQUESTED', to: ConnectionState.CLOSING },
+    // ↳ User requested shutdown during connection setup - cancel connection attempt and shut down gracefully
+    
     // === NORMAL OPERATION (ACTIVE STATE) ===
     
     { from: ConnectionState.ACTIVE, event: 'DRAINING_REQUESTED', to: ConnectionState.DRAINING_RECONNECTING },

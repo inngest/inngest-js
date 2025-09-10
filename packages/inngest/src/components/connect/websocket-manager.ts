@@ -260,6 +260,7 @@ export class WebSocketManager {
     return this.closed || this.readyState === WebSocketState.CLOSED;
   }
 
+
   /**
    * Start heartbeat mechanism
    */

@@ -75,7 +75,7 @@ export class ConnectEventManager {
     }
 
     // Call hook if configured (now type-safe!)
-    const hook = this.hooks[event];
+    const hook = this.hooks[event] as ConnectEventListener<T> | undefined;
     if (hook) {
       try {
         hook(data);

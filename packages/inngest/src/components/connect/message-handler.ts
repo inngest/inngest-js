@@ -23,6 +23,7 @@ import {
 import { ReconnectError } from "./util.js";
 import { type ConnectHandlerOptions } from "./types.js";
 import { type MessageBuffer } from "./buffer.js";
+import { type WebSocketManager } from "./websocket-manager.js";
 
 /**
  * Setup state tracking for the connection establishment phase
@@ -87,7 +88,7 @@ export class MessageHandler {
    * Create setup phase message handler
    */
   createSetupMessageHandler(
-    ws: WebSocket,
+    wsManager: WebSocketManager,
     startResp: StartResponse,
     data: ConnectionEstablishData,
     setupState: SetupState,
@@ -130,7 +131,7 @@ export class MessageHandler {
 
       // Send worker connect after receiving hello
       if (!setupState.sentWorkerConnect) {
-        await this.sendWorkerConnect(ws, startResp, data);
+        await this.sendWorkerConnect(wsManager, startResp, data);
         setupState.sentWorkerConnect = true;
         return;
       }
@@ -193,7 +194,7 @@ export class MessageHandler {
    * Create active phase message handler
    */
   createActiveMessageHandler(
-    ws: WebSocket,
+    wsManager: WebSocketManager,
     connectionId: string,
     requestHandlers: RequestHandlers,
     inProgressRequests: InProgressRequests,
@@ -229,7 +230,7 @@ export class MessageHandler {
       if (connectMessage.kind === GatewayMessageType.GATEWAY_EXECUTOR_REQUEST) {
         await this.handleExecutorRequest(
           connectMessage,
-          ws,
+          wsManager,
           connectionId,
           requestHandlers,
           inProgressRequests,
@@ -269,7 +270,7 @@ export class MessageHandler {
    * Send worker connect message during setup phase
    */
   private async sendWorkerConnect(
-    ws: WebSocket,
+    wsManager: WebSocketManager,
     startResp: StartResponse,
     data: ConnectionEstablishData
   ): Promise<void> {
@@ -298,13 +299,11 @@ export class MessageHandler {
       workerConnectRequestMsg
     ).finish();
 
-    ws.send(
-      ConnectMessage.encode(
-        ConnectMessage.create({
-          kind: GatewayMessageType.WORKER_CONNECT,
-          payload: workerConnectRequestMsgBytes,
-        })
-      ).finish()
+    wsManager.sendMessage(
+      ConnectMessage.create({
+        kind: GatewayMessageType.WORKER_CONNECT,
+        payload: workerConnectRequestMsgBytes,
+      })
     );
 
     this.debug("Sent worker connect message", {
@@ -317,7 +316,7 @@ export class MessageHandler {
    */
   private async handleExecutorRequest(
     connectMessage: ConnectMessage,
-    ws: WebSocket,
+    wsManager: WebSocketManager,
     connectionId: string,
     requestHandlers: RequestHandlers,
     inProgressRequests: InProgressRequests,
@@ -365,7 +364,7 @@ export class MessageHandler {
     }
 
     // Send acknowledgment
-    await this.sendRequestAck(ws, gatewayExecutorRequest);
+    await this.sendRequestAck(wsManager, gatewayExecutorRequest);
 
     // Track request and set up lease extension
     inProgressRequests.wg.add(1);
@@ -377,7 +376,7 @@ export class MessageHandler {
       // Start lease extension interval
       if (extendLeaseIntervalMs !== undefined) {
         extendLeaseInterval = setInterval(() => {
-          this.extendLease(ws, gatewayExecutorRequest, inProgressRequests, connectionId);
+          this.extendLease(wsManager, gatewayExecutorRequest, inProgressRequests, connectionId);
         }, extendLeaseIntervalMs);
       }
 
@@ -385,7 +384,7 @@ export class MessageHandler {
       const res = await requestHandler(gatewayExecutorRequest);
 
       // Send reply back to gateway
-      await this.sendWorkerReply(ws, res);
+      await this.sendWorkerReply(wsManager, res);
 
     } finally {
       // Clean up
@@ -401,42 +400,38 @@ export class MessageHandler {
    * Send request acknowledgment
    */
   private async sendRequestAck(
-    ws: WebSocket,
+    wsManager: WebSocketManager,
     gatewayExecutorRequest: GatewayExecutorRequestData
   ): Promise<void> {
-    ws.send(
-      ConnectMessage.encode(
-        ConnectMessage.create({
-          kind: GatewayMessageType.WORKER_REQUEST_ACK,
-          payload: WorkerRequestAckData.encode(
-            WorkerRequestAckData.create({
-              accountId: gatewayExecutorRequest.accountId,
-              envId: gatewayExecutorRequest.envId,
-              appId: gatewayExecutorRequest.appId,
-              functionSlug: gatewayExecutorRequest.functionSlug,
-              requestId: gatewayExecutorRequest.requestId,
-              stepId: gatewayExecutorRequest.stepId,
-              userTraceCtx: gatewayExecutorRequest.userTraceCtx,
-              systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
-              runId: gatewayExecutorRequest.runId,
-            })
-          ).finish(),
-        })
-      ).finish()
+    wsManager.sendMessage(
+      ConnectMessage.create({
+        kind: GatewayMessageType.WORKER_REQUEST_ACK,
+        payload: WorkerRequestAckData.encode(
+          WorkerRequestAckData.create({
+            accountId: gatewayExecutorRequest.accountId,
+            envId: gatewayExecutorRequest.envId,
+            appId: gatewayExecutorRequest.appId,
+            functionSlug: gatewayExecutorRequest.functionSlug,
+            requestId: gatewayExecutorRequest.requestId,
+            stepId: gatewayExecutorRequest.stepId,
+            userTraceCtx: gatewayExecutorRequest.userTraceCtx,
+            systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
+            runId: gatewayExecutorRequest.runId,
+          })
+        ).finish(),
+      })
     );
   }
 
   /**
    * Send worker reply
    */
-  private async sendWorkerReply(ws: WebSocket, response: SDKResponse): Promise<void> {
-    ws.send(
-      ConnectMessage.encode(
-        ConnectMessage.create({
-          kind: GatewayMessageType.WORKER_REPLY,
-          payload: SDKResponse.encode(response).finish(),
-        })
-      ).finish()
+  private async sendWorkerReply(wsManager: WebSocketManager, response: SDKResponse): Promise<void> {
+    wsManager.sendMessage(
+      ConnectMessage.create({
+        kind: GatewayMessageType.WORKER_REPLY,
+        payload: SDKResponse.encode(response).finish(),
+      })
     );
   }
 
@@ -444,7 +439,7 @@ export class MessageHandler {
    * Extend lease for ongoing request
    */
   private extendLease(
-    ws: WebSocket,
+    wsManager: WebSocketManager,
     gatewayExecutorRequest: GatewayExecutorRequestData,
     inProgressRequests: InProgressRequests,
     connectionId: string
@@ -463,26 +458,24 @@ export class MessageHandler {
     });
 
     // Send extend lease request
-    ws.send(
-      ConnectMessage.encode(
-        ConnectMessage.create({
-          kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
-          payload: WorkerRequestExtendLeaseData.encode(
-            WorkerRequestExtendLeaseData.create({
-              accountId: gatewayExecutorRequest.accountId,
-              envId: gatewayExecutorRequest.envId,
-              appId: gatewayExecutorRequest.appId,
-              functionSlug: gatewayExecutorRequest.functionSlug,
-              requestId: gatewayExecutorRequest.requestId,
-              stepId: gatewayExecutorRequest.stepId,
-              userTraceCtx: gatewayExecutorRequest.userTraceCtx,
-              systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
-              leaseId: currentLeaseId,
-              runId: gatewayExecutorRequest.runId,
-            })
-          ).finish(),
-        })
-      ).finish()
+    wsManager.sendMessage(
+      ConnectMessage.create({
+        kind: GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE,
+        payload: WorkerRequestExtendLeaseData.encode(
+          WorkerRequestExtendLeaseData.create({
+            accountId: gatewayExecutorRequest.accountId,
+            envId: gatewayExecutorRequest.envId,
+            appId: gatewayExecutorRequest.appId,
+            functionSlug: gatewayExecutorRequest.functionSlug,
+            requestId: gatewayExecutorRequest.requestId,
+            stepId: gatewayExecutorRequest.stepId,
+            userTraceCtx: gatewayExecutorRequest.userTraceCtx,
+            systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
+            leaseId: currentLeaseId,
+            runId: gatewayExecutorRequest.runId,
+          })
+        ).finish(),
+      })
     );
   }
 
