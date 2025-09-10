@@ -2,14 +2,17 @@ import debug, { type Debugger } from "debug";
 import { type Logger, DefaultLogger } from "../../middleware/logger.js";
 import { hashSigningKey } from "../../helpers/strings.js";
 import { getPlatformName, allProcessEnv } from "../../helpers/env.js";
-import { expBackoff, ReconnectError, ConnectionLimitError } from "./util.js";
+import { expBackoff, ReconnectError, ConnectionLimitError, AuthError } from "./util.js";
 import { ConnectionStateMachine, type ConnectionEvent } from "./state-machine.js";
 import { MessageHandler } from "./message-handler.js";
 import { WebSocketManager, WebSocketState } from "./websocket-manager.js";
 import { ConnectEventManager } from "./event-manager.js";
 import { MessageBuffer } from "./buffer.js";
 import { createStartRequest, parseStartResponse } from "./messages.js";
-import { headerKeys } from "../../helpers/consts.js";
+import { headerKeys, queryKeys } from "../../helpers/consts.js";
+import { parseFnData } from "../../helpers/functions.js";
+import { version } from "../../version.js";
+import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.js";
 import {
   ConnectionState,
   type ConnectHandlerOptions,
@@ -19,7 +22,14 @@ import {
 } from "./types.js";
 import { type Inngest } from "../Inngest.js";
 import { type InngestFunction } from "../InngestFunction.js";
+import { InngestCommHandler } from "../InngestCommHandler.js";
 import { onShutdown } from "./os.js";
+import {
+  SDKResponse,
+  SDKResponseStatus,
+  type GatewayExecutorRequestData,
+} from "../../proto/src/components/connect/protobuf/connect.js";
+import { parseTraceCtx } from "./util.js";
 
 /**
  * Clean, composable implementation of WebSocketWorkerConnection
@@ -39,10 +49,11 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
   // Configuration
   private options: ConnectHandlerOptions;
   private inngestEnv: string;
-  private requestHandlers: Record<string, (data: any) => Promise<any>> = {};
+  private requestHandlers: Record<string, (data: GatewayExecutorRequestData) => Promise<SDKResponse>> = {};
   private hashedSigningKey: string | undefined;
   private hashedFallbackKey: string | undefined;
   private excludeGateways: Set<string> = new Set();
+  private currentHashedSigningKey: string | undefined; // Track which key is currently being used
   
   // Connection state
   public connectionId: string = "";
@@ -72,13 +83,22 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
     
     this.inngestEnv = firstApp.client.env || "prod";
     
-    // Initialize signing keys
-    this.hashedSigningKey = options.signingKey
-      ? hashSigningKey(options.signingKey)
-      : undefined;
-    this.hashedFallbackKey = options.signingKeyFallback
-      ? hashSigningKey(options.signingKeyFallback)
-      : undefined;
+    // Initialize signing keys - hash them properly
+    if (options.signingKey) {
+      this.hashedSigningKey = hashSigningKey(options.signingKey);
+      this.currentHashedSigningKey = this.hashedSigningKey; // Start with primary key
+    }
+    if (options.signingKeyFallback) {
+      this.hashedFallbackKey = hashSigningKey(options.signingKeyFallback);
+    }
+    
+    
+    // Check branch environment signing key requirements
+    if (options.signingKey?.startsWith("signkey-branch-") && !this.inngestEnv) {
+      throw new Error(
+        "Environment is required when using branch environment signing keys"
+      );
+    }
     
     // Initialize components
     this.stateMachine = new ConnectionStateMachine(ConnectionState.CONNECTING);
@@ -156,7 +176,18 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
         
         // If we get here, connection was successful
         this.debug("Connection established successfully");
-        return;
+        this.reconnectAttempt = 0; // Reset reconnect attempts on successful connection
+        
+        // Wait for connection to be lost or closed
+        await this.waitForConnectionEnd();
+        
+        // If we reach here and are not closing, we need to reconnect
+        if (!this.stateMachine.isClosing) {
+          this.debug("Connection ended, will attempt to reconnect");
+          continue; // Loop back to attempt reconnection
+        }
+        
+        return; // Normal shutdown
         
       } catch (error) {
         this.debug("Connection attempt failed", error);
@@ -165,12 +196,27 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
           this.logger.error(
             "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue."
           );
-          throw error;
+          // Continue reconnecting for connection limit errors, don't throw
+          // This matches the original implementation behavior
+        } else if (error instanceof AuthError) {
+          // Try fallback signing key if available
+          if (this.canSwitchToFallbackKey()) {
+            this.debug("Switching to fallback signing key");
+            this.switchToFallbackKey();
+            // Don't increment attempt counter for key switching
+            this.reconnectAttempt--; // Counteract the increment below
+          } else {
+            // No fallback available or already tried fallback
+            this.debug("No fallback signing key available or already tried");
+          }
+        } else {
+          // Other errors - normal reconnect logic
         }
         
         this.reconnectAttempt++;
         const delay = expBackoff(this.reconnectAttempt);
         
+        this.stateMachine.transition('RECONNECT_STARTED');
         this.eventManager.emit('reconnecting', {
           connectionId: this.connectionId,
           attempt: this.reconnectAttempt,
@@ -196,6 +242,24 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
   }
 
   /**
+   * Wait for connection to end (either through error or graceful shutdown)
+   */
+  private async waitForConnectionEnd(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const checkState = () => {
+        if (this.stateMachine.isClosing || 
+            this.stateMachine.state === ConnectionState.RECONNECTING ||
+            this.reconnectCancelled) {
+          resolve();
+        } else {
+          setTimeout(checkState, 100);
+        }
+      };
+      checkState();
+    });
+  }
+
+  /**
    * Gracefully close the connection
    */
   public async close(): Promise<void> {
@@ -216,7 +280,7 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
     // Flush any buffered messages
     try {
       this.debug("Flushing buffered messages");
-      await this.messageBuffer.flush(this.hashedSigningKey);
+      await this.messageBuffer.flush(this.currentHashedSigningKey);
     } catch (error) {
       this.debug("Failed to flush messages, using fallback key", error);
       try {
@@ -288,51 +352,10 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
     // Create WebSocket manager
     this.wsManager = new WebSocketManager({
       url: wsUrl,
-      protocol: "connect-v1",
+      protocol: "v0.connect.inngest.com", // Use correct protocol from original
       binaryType: "arraybuffer",
       connectTimeout: 10000,
     });
-    
-    // Set up WebSocket event handlers
-    this.wsManager.setEventHandlers({
-      onOpen: () => {
-        this.eventManager.emit('websocketOpen', {
-          connectionId: this.connectionId,
-          timestamp: Date.now(),
-        });
-      },
-      
-      onClose: (event) => {
-        this.eventManager.emit('websocketClose', {
-          connectionId: this.connectionId,
-          code: event.code,
-          reason: event.reason,
-          timestamp: Date.now(),
-        });
-        
-        if (!this.stateMachine.isClosing) {
-          this.handleConnectionError(new ReconnectError(
-            `Connection closed: ${event.reason}`,
-            this.reconnectAttempt
-          ));
-        }
-      },
-      
-      onError: (error) => {
-        this.eventManager.emit('websocketError', {
-          connectionId: this.connectionId,
-          error,
-          timestamp: Date.now(),
-        });
-        
-        if (!this.stateMachine.isClosing) {
-          this.handleConnectionError(error);
-        }
-      },
-    });
-    
-    // Connect WebSocket
-    await this.wsManager.connect();
     
     // Prepare connection establish data
     const apps = this.options.apps.map(app => {
@@ -356,7 +379,7 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
     });
 
     const establishData = {
-      marshaledCapabilities: JSON.stringify({}), // TODO: Get real capabilities
+      marshaledCapabilities: JSON.stringify({ trust_probe: "v1", connect: "v1" }),
       manualReadinessAck: false,
       apps: apps,
     };
@@ -376,15 +399,66 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
       () => this.onConnectionReady()
     );
     
+    // Set up proper connection state management
+    let isSetupComplete = false;
+    let setupHeartbeatInterval: number | undefined;
+    let setupExtendLeaseInterval: number | undefined;
+
+    // Set up WebSocket event handlers with proper coordination
     this.wsManager.setEventHandlers({
-      ...this.wsManager["events"], // Preserve existing handlers
+      onOpen: () => {
+        this.debug("WebSocket opened, transitioning state");
+        this.stateMachine.transition('WEBSOCKET_OPEN');
+        this.eventManager.emit('websocketOpen', {
+          connectionId: this.connectionId,
+          timestamp: Date.now(),
+        });
+      },
+      
+      onClose: (event) => {
+        this.eventManager.emit('websocketClose', {
+          connectionId: this.connectionId,
+          code: event.code,
+          reason: event.reason,
+          timestamp: Date.now(),
+        });
+        
+        if (!this.stateMachine.isClosing && !isSetupComplete) {
+          this.handleConnectionError(new ReconnectError(
+            `Connection closed during setup: ${event.reason}`,
+            this.reconnectAttempt
+          ));
+        }
+      },
+      
+      onError: (error) => {
+        this.eventManager.emit('websocketError', {
+          connectionId: this.connectionId,
+          error,
+          timestamp: Date.now(),
+        });
+        
+        if (!this.stateMachine.isClosing && !isSetupComplete) {
+          this.handleConnectionError(error);
+        }
+      },
+      
       onMessage: setupHandler.handler,
     });
+    
+    // Connect WebSocket
+    await this.wsManager.connect();
     
     // Wait for connection to be ready
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error("Connection setup timeout"));
+        if (!isSetupComplete) {
+          this.excludeGateways.add(connectionData.gatewayGroup);
+          reject(new ReconnectError(
+            `Connection ${this.connectionId} setup timed out`,
+            this.reconnectAttempt
+          ));
+        }
       }, 30000);
       
       const cleanup = () => {
@@ -392,13 +466,32 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
       };
       
       this.onConnectionReady = () => {
+        if (isSetupComplete) return; // Prevent double completion
+        
+        isSetupComplete = true;
         cleanup();
-        this.setupActivePhase();
+        
+        // Get intervals from setup handler
+        setupHeartbeatInterval = setupHandler.getHeartbeatInterval();
+        setupExtendLeaseInterval = setupHandler.getExtendLeaseInterval();
+        
+        // Transition to active state
+        this.stateMachine.transition('GATEWAY_READY');
+        this.setupActivePhase(setupHeartbeatInterval, setupExtendLeaseInterval);
         resolve();
       };
       
       this.handleConnectionError = (error: unknown) => {
+        if (isSetupComplete) return; // Prevent error handling after completion
+        
+        isSetupComplete = true;
         cleanup();
+        
+        // Add gateway to exclusion list if it failed
+        if (connectionData.gatewayGroup) {
+          this.excludeGateways.add(connectionData.gatewayGroup);
+        }
+        
         reject(error);
       };
     });
@@ -410,11 +503,10 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
   /**
    * Set up active phase message handling
    */
-  private setupActivePhase(): void {
+  private setupActivePhase(heartbeatIntervalMs?: number, extendLeaseIntervalMs?: number): void {
     if (!this.wsManager) return;
     
-    this.debug("Setting up active phase");
-    this.stateMachine.transition('GATEWAY_READY');
+    this.debug("Setting up active phase", { heartbeatIntervalMs, extendLeaseIntervalMs });
     
     this.eventManager.emit('connected', {
       connectionId: this.connectionId,
@@ -428,28 +520,86 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
       this.requestHandlers,
       this.inProgressRequests,
       this.messageBuffer,
-      5000, // TODO: Get from gateway
+      extendLeaseIntervalMs || 5000, // Use interval from gateway or fallback
       () => this.handleDraining(),
       (error) => {
+        this.debug("Active phase error", error);
         if (!this.stateMachine.isClosing) {
           this.stateMachine.transition('ERROR_OCCURRED');
-          // Will trigger reconnection
+          // This will trigger reconnection in the main connection loop
+          this.handleActivePhaseError(error);
         }
       }
     );
     
-    this.wsManager.setEventHandlers({
-      ...this.wsManager["events"],
+    // Update WebSocket handlers to use active handler while preserving other handlers
+    const currentHandlers = {
+      onOpen: () => {
+        this.eventManager.emit('websocketOpen', {
+          connectionId: this.connectionId,
+          timestamp: Date.now(),
+        });
+      },
+      onClose: (event: CloseEvent) => {
+        this.eventManager.emit('websocketClose', {
+          connectionId: this.connectionId,
+          code: event.code,
+          reason: event.reason,
+          timestamp: Date.now(),
+        });
+        
+        if (!this.stateMachine.isClosing) {
+          this.handleActivePhaseError(new ReconnectError(
+            `Connection closed: ${event.reason}`,
+            this.reconnectAttempt
+          ));
+        }
+      },
+      onError: (error: Event) => {
+        this.eventManager.emit('websocketError', {
+          connectionId: this.connectionId,
+          error,
+          timestamp: Date.now(),
+        });
+        
+        if (!this.stateMachine.isClosing) {
+          this.handleActivePhaseError(error);
+        }
+      },
       onMessage: activeHandler,
-    });
+    };
     
-    // Start heartbeat
-    this.wsManager.startHeartbeat(10000, () => {
-      this.debug("Heartbeat timeout");
+    this.wsManager.setEventHandlers(currentHandlers);
+    
+    // Start heartbeat with interval from gateway
+    this.wsManager.startHeartbeat(heartbeatIntervalMs || 10000, () => {
+      this.debug("Heartbeat timeout - connection lost");
       if (!this.stateMachine.isClosing) {
         this.stateMachine.transition('CONNECTION_LOST');
+        this.handleActivePhaseError(new ReconnectError(
+          `Heartbeat timeout after ${heartbeatIntervalMs || 10000}ms`,
+          this.reconnectAttempt
+        ));
       }
     });
+  }
+
+  /**
+   * Handle errors during active phase that should trigger reconnection
+   */
+  private handleActivePhaseError(error: unknown): void {
+    this.debug("Handling active phase error", error);
+    
+    // Clean up current connection
+    if (this.wsManager) {
+      this.wsManager.forceClose();
+    }
+    
+    // Set state to reconnecting - this will be handled by the main connect() loop
+    this.stateMachine.transition('CONNECTION_LOST');
+    
+    // The main connect() loop will detect the state change and attempt reconnection
+    // We don't directly call connect() here to avoid infinite recursion
   }
 
   /**
@@ -486,28 +636,60 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
     }
 
     const client = firstApp.client as Inngest.Any;
-    const apiBaseUrl = client.apiBaseUrl || "https://inn.gs";
     
     // Prepare the start request
     const excludeGatewaysArray = Array.from(this.excludeGateways);
     const startRequestData = createStartRequest(excludeGatewaysArray);
     
-    // Make HTTP request to start connection
-    const response = await fetch(`${apiBaseUrl}/v1/connect/start`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/protobuf",
-        "Authorization": `Bearer ${this.options.signingKey}`,
-        "User-Agent": `inngest-js/${client.appVersion || "unknown"}`,
-        [headerKeys.Framework]: "inngest-js",
-        [headerKeys.Platform]: getPlatformName({ ...allProcessEnv() }) || "unknown",
-        [headerKeys.Environment]: this.inngestEnv,
-      },
-      body: startRequestData,
-    });
+    // Use client's API integration to get proper target URL
+    const targetUrl = await client["inngestApi"]["getTargetUrl"]("/v0/connect/start");
+    
+    // Prepare headers with proper signing key
+    const headers: Record<string, string> = {
+      "Content-Type": "application/protobuf",
+    };
+
+    if (this.currentHashedSigningKey) {
+      headers["Authorization"] = `Bearer ${this.currentHashedSigningKey}`;
+    }
+
+    if (this.inngestEnv) {
+      headers[headerKeys.Environment] = this.inngestEnv;
+    }
+    
+    let response: Response;
+    try {
+      response = await fetch(targetUrl, {
+        method: "POST",
+        headers,
+        body: startRequestData,
+      });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : "Unknown error";
+      throw new ReconnectError(
+        `Failed initial API handshake request to ${targetUrl.toString()}, ${errMsg}`,
+        this.reconnectAttempt
+      );
+    }
 
     if (!response.ok) {
-      throw new Error(`Failed to start connection: ${response.status} ${response.statusText}`);
+      if (response.status === 401) {
+        throw new AuthError(
+          `Failed initial API handshake request to ${targetUrl.toString()}${
+            this.inngestEnv ? ` (env: ${this.inngestEnv})` : ""
+          }, ${await response.text()}`,
+          this.reconnectAttempt
+        );
+      }
+
+      if (response.status === 429) {
+        throw new ConnectionLimitError(this.reconnectAttempt);
+      }
+
+      throw new ReconnectError(
+        `Failed initial API handshake request to ${targetUrl.toString()}, ${await response.text()}`,
+        this.reconnectAttempt
+      );
     }
 
     const startResponse = await parseStartResponse(response);
@@ -532,16 +714,113 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
   }
 
   /**
-   * Set up request handlers for each app
+   * Set up request handlers for each app using InngestCommHandler
    */
   private setupRequestHandlers(): void {
     for (const app of this.options.apps) {
       if (!app.client) continue;
       
-      const appName = app.client.id;
-      const appFunctions = app.functions || [];
+      const client = app.client as Inngest.Any;
+      const appName = client.id;
+      const appFunctions = app.functions || client.funcs || [];
       
-      this.requestHandlers[appName] = async (request) => {
+      // Create InngestCommHandler for this app
+      const inngestCommHandler = new InngestCommHandler({
+        client: client,
+        functions: appFunctions,
+        frameworkName: "connect",
+        signingKey: this.options.signingKey,
+        signingKeyFallback: this.options.signingKeyFallback,
+        skipSignatureValidation: true,
+        handler: (msg: GatewayExecutorRequestData) => {
+          // Parse the request payload
+          const asString = new TextDecoder().decode(msg.requestPayload);
+          const parsed = parseFnData(JSON.parse(asString));
+          
+          // Parse trace context
+          const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
+          
+          // Return the HTTP-like request object that InngestCommHandler expects
+          return {
+            body() {
+              return parsed;
+            },
+            method() {
+              return "POST";
+            },
+            headers(key: string) {
+              switch (key) {
+                case headerKeys.ContentLength.toString():
+                  return asString.length.toString();
+                case headerKeys.InngestExpectedServerKind.toString():
+                  return "connect";
+                case headerKeys.RequestVersion.toString():
+                  return parsed.version.toString();
+                case headerKeys.Signature.toString():
+                  // Signature validation is disabled for connect
+                  return null;
+                case headerKeys.TraceParent.toString():
+                  return userTraceCtx?.traceParent ?? null;
+                case headerKeys.TraceState.toString():
+                  return userTraceCtx?.traceState ?? null;
+                default:
+                  return null;
+              }
+            },
+            transformResponse({ body, headers, status }: { body: string; headers: Record<string, string>; status: number }) {
+              // Map HTTP status codes to SDKResponseStatus
+              let sdkResponseStatus: SDKResponseStatus = SDKResponseStatus.DONE;
+              switch (status) {
+                case 200:
+                  sdkResponseStatus = SDKResponseStatus.DONE;
+                  break;
+                case 206:
+                  sdkResponseStatus = SDKResponseStatus.NOT_COMPLETED;
+                  break;
+                case 500:
+                  sdkResponseStatus = SDKResponseStatus.ERROR;
+                  break;
+              }
+              
+              return SDKResponse.create({
+                requestId: msg.requestId,
+                accountId: msg.accountId,
+                envId: msg.envId,
+                appId: msg.appId,
+                status: sdkResponseStatus,
+                body: new TextEncoder().encode(body),
+                noRetry: headers[headerKeys.NoRetry] === "true",
+                retryAfter: headers[headerKeys.RetryAfter] || "",
+                sdkVersion: `inngest-js:v${version}`,
+                requestVersion: parseInt(
+                  headers[headerKeys.RequestVersion] ?? 
+                    PREFERRED_EXECUTION_VERSION.toString(),
+                  10
+                ),
+                systemTraceCtx: msg.systemTraceCtx,
+                userTraceCtx: msg.userTraceCtx,
+                runId: msg.runId,
+              });
+            },
+            url() {
+              const baseUrl = new URL("http://connect.inngest.com");
+              baseUrl.searchParams.set(queryKeys.FnId, msg.functionSlug);
+              
+              if (msg.stepId) {
+                baseUrl.searchParams.set(queryKeys.StepId, msg.stepId);
+              }
+              
+              return baseUrl;
+            },
+          };
+        },
+      });
+      
+      // Create the actual request handler
+      const requestHandler = inngestCommHandler.createHandler();
+      
+      // Wrap the handler to add our event emissions and error handling
+      this.requestHandlers[appName] = async (request: GatewayExecutorRequestData): Promise<SDKResponse> => {
         this.eventManager.emit('requestReceived', {
           connectionId: this.connectionId,
           requestId: request.requestId || "",
@@ -553,52 +832,15 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
         const startTime = Date.now();
         
         try {
-          // Find the function to execute
-          const targetFunction = appFunctions.find(
-            (fn) => (fn as InngestFunction.Any).id === request.functionSlug
-          );
-          
-          if (!targetFunction) {
-            const errorMsg = `Function not found: ${request.functionSlug}`;
-            this.eventManager.emit('requestCompleted', {
-              connectionId: this.connectionId,
-              requestId: request.requestId || "",
-              status: 404,
-              durationMs: Date.now() - startTime,
-              timestamp: Date.now(),
-            });
-            
-            return {
-              requestId: request.requestId || "",
-              status: 404,
-              body: new TextEncoder().encode(JSON.stringify({ error: errorMsg })),
-              noRetry: true,
-              retryAfter: "",
-              requestVersion: 0,
-              systemTraceCtx: new Uint8Array(),
-              userTraceCtx: new Uint8Array(),
-            };
-          }
-
-          // Execute the function using the existing execution handler
-          // This would integrate with InngestCommHandler for proper function execution
-          const result = {
-            requestId: request.requestId || "",
-            status: 200,
-            body: new TextEncoder().encode(JSON.stringify({ message: "Function executed successfully" })),
-            noRetry: false,
-            retryAfter: "",
-            requestVersion: 0,
-            systemTraceCtx: new Uint8Array(),
-            userTraceCtx: new Uint8Array(),
-          };
+          // Use the InngestCommHandler to execute the request
+          const result = await requestHandler(request);
           
           const duration = Date.now() - startTime;
           
           this.eventManager.emit('requestCompleted', {
             connectionId: this.connectionId,
             requestId: request.requestId || "",
-            status: result.status,
+            status: this.getHttpStatusFromSDKStatus(result.status),
             durationMs: duration,
             timestamp: Date.now(),
           });
@@ -616,21 +858,43 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
             timestamp: Date.now(),
           });
           
-          return {
-            requestId: request.requestId || "",
-            status: 500,
-            body: new TextEncoder().encode(JSON.stringify({ 
+          // Return error response in SDKResponse format
+          return SDKResponse.create({
+            requestId: request.requestId,
+            accountId: request.accountId,
+            envId: request.envId,
+            appId: request.appId,
+            status: SDKResponseStatus.ERROR,
+            body: new TextEncoder().encode(JSON.stringify({
               error: "Internal server error",
               message: error instanceof Error ? error.message : String(error)
             })),
             noRetry: false,
             retryAfter: "",
-            requestVersion: 0,
-            systemTraceCtx: new Uint8Array(),
-            userTraceCtx: new Uint8Array(),
-          };
+            sdkVersion: `inngest-js:v${version}`,
+            requestVersion: PREFERRED_EXECUTION_VERSION,
+            systemTraceCtx: request.systemTraceCtx,
+            userTraceCtx: request.userTraceCtx,
+            runId: request.runId,
+          });
         }
       };
+    }
+  }
+  
+  /**
+   * Convert SDKResponseStatus to HTTP status code for event emission
+   */
+  private getHttpStatusFromSDKStatus(status: SDKResponseStatus): number {
+    switch (status) {
+      case SDKResponseStatus.DONE:
+        return 200;
+      case SDKResponseStatus.NOT_COMPLETED:
+        return 206;
+      case SDKResponseStatus.ERROR:
+        return 500;
+      default:
+        return 200;
     }
   }
 
@@ -674,6 +938,31 @@ export class ComposedWebSocketWorkerConnection implements WorkerConnection {
     }
     
     this.eventManager.removeAllListeners();
+  }
+
+  /**
+   * Check if we can switch to fallback signing key
+   */
+  private canSwitchToFallbackKey(): boolean {
+    return this.hashedFallbackKey !== undefined && 
+           this.currentHashedSigningKey === this.hashedSigningKey;
+  }
+
+  /**
+   * Switch to fallback signing key
+   */
+  private switchToFallbackKey(): void {
+    if (this.hashedFallbackKey) {
+      this.currentHashedSigningKey = this.hashedFallbackKey;
+      this.debug("Switched to fallback signing key");
+    }
+  }
+
+  /**
+   * Get current signing key for comparison
+   */
+  private getCurrentSigningKey(): string | undefined {
+    return this.currentHashedSigningKey;
   }
 
   /**

@@ -4,6 +4,8 @@
 
 import { jest } from "@jest/globals";
 import { MessageHandler } from "./message-handler.js";
+import { MessageBuffer } from "./buffer.js";
+import { WebSocketManager, WebSocketState } from "./websocket-manager.js";
 import {
   ConnectMessage,
   GatewayMessageType,
@@ -12,6 +14,7 @@ import {
   WorkerReplyAckData,
   WorkerRequestExtendLeaseAckData,
   GatewayExecutorRequestData,
+  SDKResponse,
 } from "../../proto/src/components/connect/protobuf/connect.js";
 import { ReconnectError } from "./util.js";
 
@@ -37,11 +40,86 @@ jest.mock("ms", () => jest.fn((val: string) => {
   return 10000; // Default
 }));
 
+// Mock WebSocket interface
+interface MockWebSocket {
+  send: jest.MockedFunction<(data: string | ArrayBuffer | Uint8Array) => void>;
+  readyState: WebSocketState;
+  close: jest.MockedFunction<() => void>;
+  onopen: ((event: Event) => void) | null;
+  onmessage: ((event: MessageEvent) => void) | null;
+  onerror: ((event: Event) => void) | null;
+  onclose: ((event: CloseEvent) => void) | null;
+  binaryType: BinaryType;
+}
+
+// Test-friendly WebSocketManager that tracks calls and uses mock WebSocket
+class TestWebSocketManager extends WebSocketManager {
+  public sendCalls: Array<{ data: string | ArrayBuffer | Uint8Array }> = [];
+  public sendMessageCalls: Array<{ message: ConnectMessage }> = [];
+  private mockWebSocket: MockWebSocket;
+
+  constructor(mockWebSocket: MockWebSocket) {
+    super({
+      url: "ws://test.com",
+      protocol: "test", 
+      binaryType: "arraybuffer",
+    });
+    this.mockWebSocket = mockWebSocket;
+    // Inject the mock WebSocket
+    (this as any).ws = mockWebSocket;
+  }
+
+  public override send(data: string | ArrayBuffer | Uint8Array): void {
+    this.sendCalls.push({ data });
+    super.send(data);
+  }
+
+  public override sendMessage(message: ConnectMessage): void {
+    this.sendMessageCalls.push({ message });
+    super.sendMessage(message);
+  }
+
+  public override get isOpen(): boolean {
+    return this.mockWebSocket.readyState === WebSocketState.OPEN;
+  }
+
+  public override get readyState(): WebSocketState {
+    return this.mockWebSocket.readyState;
+  }
+}
+
+// Mock MessageBuffer - extends the real class with jest spies  
+class MockMessageBuffer extends MessageBuffer {
+  public override append = jest.fn<(response: SDKResponse) => void>();
+  public override addPending = jest.fn<(response: SDKResponse, deadline: number) => void>();
+  public override acknowledgePending = jest.fn<(requestId: string) => void>();
+  public override flush = jest.fn<(hashedSigningKey: string | undefined) => Promise<void>>().mockResolvedValue(undefined);
+
+  constructor() {
+    // Create a mock Inngest instance for the parent constructor
+    const mockInngest = {
+      env: 'test',
+      inngestApi: { getTargetUrl: jest.fn() },
+    } as any;
+    super(mockInngest);
+  }
+}
+
+// Mock InProgressRequests interface
+interface MockInProgressRequests {
+  wg: {
+    add: jest.MockedFunction<(n: number) => void>;
+    done: jest.MockedFunction<() => void>;
+  };
+  requestLeases: Record<string, string>;
+}
+
 describe("MessageHandler", () => {
   let messageHandler: MessageHandler;
-  let mockWs: any;
-  let mockMessageBuffer: any;
-  let mockInProgressRequests: any;
+  let wsManager: TestWebSocketManager;
+  let mockWebSocket: MockWebSocket;
+  let mockMessageBuffer: MockMessageBuffer;
+  let mockInProgressRequests: MockInProgressRequests;
 
   beforeEach(() => {
     messageHandler = new MessageHandler("test-env", {
@@ -49,15 +127,22 @@ describe("MessageHandler", () => {
       instanceId: "test-instance",
     } as any);
 
-    mockWs = {
+    // Create mock WebSocket
+    mockWebSocket = {
       send: jest.fn(),
-      readyState: 1,
+      readyState: WebSocketState.OPEN,
+      close: jest.fn(),
+      onopen: null,
+      onmessage: null,
+      onerror: null,
+      onclose: null,
+      binaryType: "arraybuffer",
     };
 
-    mockMessageBuffer = {
-      append: jest.fn(),
-      acknowledgePending: jest.fn(),
-    };
+    // Create TestWebSocketManager with mock WebSocket
+    wsManager = new TestWebSocketManager(mockWebSocket);
+
+    mockMessageBuffer = new MockMessageBuffer();
 
     mockInProgressRequests = {
       wg: {
@@ -80,7 +165,7 @@ describe("MessageHandler", () => {
       const resolveWebsocketConnected = jest.fn();
 
       const { handler } = messageHandler.createSetupMessageHandler(
-        mockWs,
+        wsManager,
         {
           connectionId: "test-conn-id",
           sessionToken: "test-session",
@@ -121,7 +206,7 @@ describe("MessageHandler", () => {
       const onConnectionError = jest.fn();
 
       const { handler } = messageHandler.createSetupMessageHandler(
-        mockWs,
+        wsManager,
         {
           connectionId: "test-conn-id",
           sessionToken: "test-session",
@@ -161,7 +246,7 @@ describe("MessageHandler", () => {
       };
 
       const { handler } = messageHandler.createSetupMessageHandler(
-        mockWs,
+        wsManager,
         {
           connectionId: "test-conn-id",
           sessionToken: "test-session",
@@ -193,12 +278,12 @@ describe("MessageHandler", () => {
       await handler({ data: helloMessage } as MessageEvent);
 
       expect(setupState.sentWorkerConnect).toBe(true);
-      expect(mockWs.send).toHaveBeenCalled();
+      expect(wsManager.sendMessageCalls).toHaveLength(1);
       
       // Verify the message sent was WORKER_CONNECT
-      const sentBytes = mockWs.send.mock.calls[0][0];
-      const sentMessage = ConnectMessage.decode(sentBytes);
-      expect(sentMessage.kind).toBe(GatewayMessageType.WORKER_CONNECT);
+      const sentMessage = wsManager.sendMessageCalls[0]?.message;
+      expect(sentMessage).toBeDefined();
+      expect(sentMessage!.kind).toBe(GatewayMessageType.WORKER_CONNECT);
     });
 
     test("should handle GATEWAY_CONNECTION_READY and extract intervals", async () => {
@@ -212,7 +297,7 @@ describe("MessageHandler", () => {
 
       const { handler, getHeartbeatInterval, getExtendLeaseInterval } = 
         messageHandler.createSetupMessageHandler(
-          mockWs,
+          wsManager,
           {
             connectionId: "test-conn-id",
             sessionToken: "test-session",
@@ -258,7 +343,7 @@ describe("MessageHandler", () => {
 
       const { handler, getHeartbeatInterval, getExtendLeaseInterval } = 
         messageHandler.createSetupMessageHandler(
-          mockWs,
+          wsManager,
           {
             connectionId: "test-conn-id",
             sessionToken: "test-session",
@@ -298,7 +383,7 @@ describe("MessageHandler", () => {
       const onDraining = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
       const handler = messageHandler.createActiveMessageHandler(
-        mockWs,
+        wsManager,
         "test-conn-id",
         {},
         mockInProgressRequests,
@@ -320,7 +405,7 @@ describe("MessageHandler", () => {
 
     test("should handle GATEWAY_HEARTBEAT message", async () => {
       const handler = messageHandler.createActiveMessageHandler(
-        mockWs,
+        wsManager,
         "test-conn-id",
         {},
         mockInProgressRequests,
@@ -338,7 +423,7 @@ describe("MessageHandler", () => {
       await handler({ data: heartbeatMessage } as MessageEvent);
 
       // Should handle gracefully without errors
-      expect(mockWs.send).not.toHaveBeenCalled();
+      expect(wsManager.sendMessageCalls).toHaveLength(0);
     });
 
     test("should handle GATEWAY_EXECUTOR_REQUEST with valid app", async () => {
@@ -358,7 +443,7 @@ describe("MessageHandler", () => {
       };
 
       const handler = messageHandler.createActiveMessageHandler(
-        mockWs,
+        wsManager,
         "test-conn-id",
         requestHandlers,
         mockInProgressRequests,
@@ -392,14 +477,14 @@ describe("MessageHandler", () => {
       await handler({ data: requestMessage } as MessageEvent);
 
       // Should acknowledge the request and send reply
-      expect(mockWs.send).toHaveBeenCalledTimes(2); // ACK + Reply
-      const ackBytes = mockWs.send.mock.calls[0][0];
-      const ackMessage = ConnectMessage.decode(ackBytes);
-      expect(ackMessage.kind).toBe(GatewayMessageType.WORKER_REQUEST_ACK);
+      expect(wsManager.sendMessageCalls).toHaveLength(2); // ACK + Reply
+      const ackMessage = wsManager.sendMessageCalls[0]?.message;
+      expect(ackMessage).toBeDefined();
+      expect(ackMessage!.kind).toBe(GatewayMessageType.WORKER_REQUEST_ACK);
       
-      const replyBytes = mockWs.send.mock.calls[1][0];
-      const replyMessage = ConnectMessage.decode(replyBytes);
-      expect(replyMessage.kind).toBe(GatewayMessageType.WORKER_REPLY);
+      const replyMessage = wsManager.sendMessageCalls[1]?.message;
+      expect(replyMessage).toBeDefined();
+      expect(replyMessage!.kind).toBe(GatewayMessageType.WORKER_REPLY);
 
       // Should call request handler
       expect(mockRequestHandler).toHaveBeenCalled();
@@ -411,7 +496,7 @@ describe("MessageHandler", () => {
 
     test("should skip executor request with missing app handler", async () => {
       const handler = messageHandler.createActiveMessageHandler(
-        mockWs,
+        wsManager,
         "test-conn-id",
         {}, // No handlers
         mockInProgressRequests,
@@ -445,13 +530,13 @@ describe("MessageHandler", () => {
       await handler({ data: requestMessage } as MessageEvent);
 
       // Should not send any response
-      expect(mockWs.send).not.toHaveBeenCalled();
+      expect(wsManager.sendMessageCalls).toHaveLength(0);
       expect(mockInProgressRequests.wg.add).not.toHaveBeenCalled();
     });
 
     test("should handle WORKER_REPLY_ACK message", async () => {
       const handler = messageHandler.createActiveMessageHandler(
-        mockWs,
+        wsManager,
         "test-conn-id",
         {},
         mockInProgressRequests,
@@ -479,7 +564,7 @@ describe("MessageHandler", () => {
       mockInProgressRequests.requestLeases["req-123"] = "old-lease";
 
       const handler = messageHandler.createActiveMessageHandler(
-        mockWs,
+        wsManager,
         "test-conn-id",
         {},
         mockInProgressRequests,
@@ -512,7 +597,7 @@ describe("MessageHandler", () => {
       mockInProgressRequests.requestLeases["req-123"] = "old-lease";
 
       const handler = messageHandler.createActiveMessageHandler(
-        mockWs,
+        wsManager,
         "test-conn-id",
         {},
         mockInProgressRequests,
@@ -543,7 +628,7 @@ describe("MessageHandler", () => {
 
     test("should handle unexpected message types gracefully", async () => {
       const handler = messageHandler.createActiveMessageHandler(
-        mockWs,
+        wsManager,
         "test-conn-id",
         {},
         mockInProgressRequests,
@@ -562,7 +647,7 @@ describe("MessageHandler", () => {
       await handler({ data: unexpectedMessage } as MessageEvent);
 
       // Should handle gracefully without throwing
-      expect(mockWs.send).not.toHaveBeenCalled();
+      expect(wsManager.sendMessageCalls).toHaveLength(0);
     });
   });
 
@@ -593,7 +678,7 @@ describe("MessageHandler", () => {
       };
 
       const handler = messageHandler.createActiveMessageHandler(
-        mockWs,
+        wsManager,
         "test-conn-id",
         requestHandlers,
         mockInProgressRequests,
@@ -636,9 +721,8 @@ describe("MessageHandler", () => {
       jest.advanceTimersByTime(3000);
 
       // Should have sent lease extension
-      const leaseExtensionCalls = mockWs.send.mock.calls.filter((call: any) => {
-        const message = ConnectMessage.decode(call[0]);
-        return message.kind === GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE;
+      const leaseExtensionCalls = wsManager.sendMessageCalls.filter(call => {
+        return call.message.kind === GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE;
       });
       expect(leaseExtensionCalls.length).toBeGreaterThan(0);
 
