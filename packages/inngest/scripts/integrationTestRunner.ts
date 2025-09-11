@@ -23,7 +23,9 @@ async function checkServerReady(
         console.log(`Server is ready at ${apiUrl}`);
         return;
       }
-      throw new Error(`Server not ready: ${response.status}`);
+      throw new Error(
+        `Server not ready at ${apiUrl}: ${response.status}, ${await response.text()}`,
+      );
     } catch (e) {
       error = e;
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
