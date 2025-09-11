@@ -254,6 +254,7 @@ jobs:
             streaming: force
         exclude:
           - example: framework-nextjs-starter
+          - example: framework-hono
     steps:
       # Checkout the repo
       - name: Checkout SDK
