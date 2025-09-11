@@ -8,6 +8,7 @@
   ],
   "exports": {
     ".": "./src/index.ts",
-    "./hooks": "./src/hooks.ts"
+    "./hooks": "./src/hooks.ts",
+    "./browser": "./src/browser.ts"
   }
 }
