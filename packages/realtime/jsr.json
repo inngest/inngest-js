@@ -9,6 +9,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./hooks": "./src/hooks.ts",
-    "./browser": "./src/browser.ts"
+    "./middleware": "./src/middleware.ts"
   }
 }
