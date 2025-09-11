@@ -1,6 +1,6 @@
 {
   "name": "@inngest/realtime",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "",
   "main": "dist/index.js",
   "publishConfig": {
@@ -27,6 +27,11 @@
       "require": "./dist/hooks.js",
       "import": "./dist/hooks.js",
       "types": "./dist/hooks.d.ts"
+    },
+    "./browser": {
+      "require": "./dist/browser.js",
+      "import": "./dist/browser.js",
+      "types": "./dist/browser.d.ts"
     }
   },
   "keywords": [
