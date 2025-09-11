@@ -28,10 +28,10 @@
       "import": "./dist/hooks.js",
       "types": "./dist/hooks.d.ts"
     },
-    "./browser": {
-      "require": "./dist/browser.js",
-      "import": "./dist/browser.js",
-      "types": "./dist/browser.d.ts"
+    "./middleware": {
+      "require": "./dist/realtimeMiddleware.js",
+      "import": "./dist/realtimeMiddleware.js",
+      "types": "./dist/realtimeMiddleware.d.ts"
     }
   },
   "keywords": [
