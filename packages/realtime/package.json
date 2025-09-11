@@ -29,9 +29,9 @@
       "types": "./dist/hooks.d.ts"
     },
     "./middleware": {
-      "require": "./dist/realtimeMiddleware.js",
-      "import": "./dist/realtimeMiddleware.js",
-      "types": "./dist/realtimeMiddleware.d.ts"
+      "require": "./dist/middleware.js",
+      "import": "./dist/middleware.js",
+      "types": "./dist/middleware.d.ts"
     }
   },
   "keywords": [
