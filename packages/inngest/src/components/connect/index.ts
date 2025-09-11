@@ -1276,6 +1276,32 @@ class WebSocketWorkerConnection implements WorkerConnection {
       cleanupShutdownHandlers();
     };
   }
+
+  // TODO: These are stub implementations for WorkerConnection interface
+  // They will be properly implemented when we refactor to use composition
+  public addEventListener<T extends keyof import("./types.js").ConnectionEvents>(
+    event: T,
+    listener: import("./types.js").ConnectEventListener<T>
+  ): () => void {
+    // Stub implementation
+    return () => {};
+  }
+
+  public removeEventListener<T extends keyof import("./types.js").ConnectionEvents>(
+    event: T,
+    listener: import("./types.js").ConnectEventListener<T>
+  ): void {
+    // Stub implementation
+  }
+
+  public getStateHistory(): ReadonlyArray<{
+    state: ConnectionState;
+    event: import("./state-machine.js").ConnectionEvent;
+    timestamp: number;
+  }> {
+    // Stub implementation
+    return [];
+  }
 }
 
 // Export types for convenience
