@@ -1,5 +1,11 @@
 # @inngest/realtime
 
+## 0.4.0
+
+### Minor Changes
+
+- [#1071](https://github.com/inngest/inngest-js/pull/1071) [`719b9dc`](https://github.com/inngest/inngest-js/commit/719b9dcbdb16ab8710a4273a289ec833cfd3242f) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Move server-side only middleware to separate import
+
 ## 0.3.3
 
 ### Patch Changes
