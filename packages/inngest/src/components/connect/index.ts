@@ -537,7 +537,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
         const delay = expBackoff(attempt);
 
         this.logger?.error("Failed to connect, retrying", {
-          error: err,
+          error: err instanceof Error ? err.message : err,
           retryAfter: delay,
         });
 
@@ -678,6 +678,11 @@ class WebSocketWorkerConnection implements WorkerConnection {
     this.debug(`Connecting to gateway`, {
       endpoint: finalEndpoint,
       gatewayGroup: startResp.gatewayGroup,
+      connectionId,
+    });
+
+    this.logger?.debug("Connecting to gateway", {
+      endpoint: finalEndpoint,
       connectionId,
     });
 
