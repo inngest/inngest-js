@@ -10,9 +10,9 @@ bun install
 
 ## Development
 
-### Bun setup for inngest dev server
+### Inngest dev server
 
-Now you can run either `bun run inngest:dev` or `npx inngest-cli@latest`.
+To start the inngest dev server run `npx inngest-cli@latest dev`.
 
 This will start your inngest dev server at `localhost:8288`
 
