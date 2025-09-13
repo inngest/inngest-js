@@ -1,9 +1,5 @@
-import { jest } from "@jest/globals";
-import {
-  DefaultLogger,
-  ProxyLogger,
-  type Logger,
-} from "@local/middleware/logger";
+import type { Mock, MockInstance } from "vitest";
+import { DefaultLogger, type Logger, ProxyLogger } from "./logger.ts";
 
 describe("ProxyLogger", () => {
   const buffer = [
@@ -21,18 +17,19 @@ describe("ProxyLogger", () => {
   });
 
   const populateBuf = () => {
+    // biome-ignore lint/complexity/noForEach: <explanation>
     buffer.forEach(({ level, args }) => {
       const method = level as keyof ProxyLogger;
-      // eslint-disable-next-line @typescript-eslint/no-floating-promises
+
       logger[method](...args);
     });
   };
 
   describe("flush", () => {
-    let timeout: jest.SpiedFunction<typeof setTimeout>;
+    let timeout: MockInstance<typeof setTimeout>;
 
     beforeEach(() => {
-      timeout = jest.spyOn(global, "setTimeout");
+      timeout = vi.spyOn(global, "setTimeout");
     });
 
     afterEach(() => {
@@ -46,14 +43,13 @@ describe("ProxyLogger", () => {
     });
 
     test("should attempt to wait for flushing with non DefaultLogger", async () => {
-      /* eslint-disable @typescript-eslint/no-empty-function, prettier/prettier */
       _internal = new (class DummyLogger implements Logger {
         info(..._args: unknown[]) {}
         warn(..._args: unknown[]) {}
         error(..._args: unknown[]) {}
         debug(..._args: unknown[]) {}
       })();
-      /* eslint-enable */
+
       logger = new ProxyLogger(_internal);
 
       populateBuf();
@@ -64,22 +60,22 @@ describe("ProxyLogger", () => {
 
   describe("arbitrary property/method access", () => {
     let internalLogger: Logger & {
-      foo: jest.MockedFunction<() => string>;
+      foo: Mock<() => string>;
       bar: string;
-      customLog: jest.MockedFunction<(msg: string) => void>;
-      anotherLogMethod: jest.MockedFunction<(msg: string) => void>;
+      customLog: Mock<(msg: string) => void>;
+      anotherLogMethod: Mock<(msg: string) => void>;
     };
 
     beforeEach(() => {
       internalLogger = {
-        info: jest.fn(),
-        warn: jest.fn(),
-        error: jest.fn(),
-        debug: jest.fn(),
-        foo: jest.fn(() => "custom result"),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        foo: vi.fn(() => "custom result"),
         bar: "custom property",
-        customLog: jest.fn(),
-        anotherLogMethod: jest.fn(),
+        customLog: vi.fn(),
+        anotherLogMethod: vi.fn(),
       };
 
       logger = new ProxyLogger(internalLogger);
@@ -87,14 +83,14 @@ describe("ProxyLogger", () => {
 
     test("should access custom methods on underlying logger", () => {
       expect((logger as unknown as Logger & { foo: () => string }).foo()).toBe(
-        "custom result"
+        "custom result",
       );
       expect(internalLogger.foo).toHaveBeenCalledTimes(1);
     });
 
     test("should access custom properties on underlying logger", () => {
       expect((logger as unknown as Logger & { bar: string }).bar).toBe(
-        "custom property"
+        "custom property",
       );
       expect(internalLogger.bar).toBe("custom property");
     });
@@ -111,18 +107,16 @@ describe("ProxyLogger", () => {
       logger.disable();
 
       (logger as unknown as Logger & { info: (msg: string) => void }).info(
-        "disabled message"
+        "disabled message",
       );
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(internalLogger.info).not.toHaveBeenCalled();
 
       logger.enable();
       (logger as unknown as Logger & { info: (msg: string) => void }).info(
-        "enabled message"
+        "enabled message",
       );
 
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(internalLogger.info).toHaveBeenCalledWith("enabled message");
     });
 
@@ -136,7 +130,7 @@ describe("ProxyLogger", () => {
       ).anotherLogMethod("custom log message");
 
       expect(internalLogger.anotherLogMethod).toHaveBeenCalledWith(
-        "custom log message"
+        "custom log message",
       );
     });
 

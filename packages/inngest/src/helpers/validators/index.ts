@@ -1,4 +1,4 @@
-import { type IsUnknown } from "../types.js";
+import type { IsUnknown } from "../types.ts";
 import type * as z from "./zod";
 
 /**
@@ -17,7 +17,7 @@ export type ResolveSchema<
 > = IsUnknown<TInput> extends true
   ? TUnknownFallback
   : TInput extends z.ZodTypeAny
-    ? z.infer<TInput>
+    ? z.ZodInfer<TInput>
     : TFallback;
 
 /**
