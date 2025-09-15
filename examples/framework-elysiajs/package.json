@@ -2,19 +2,14 @@
   "name": "inngest-elysiajs",
   "version": "1.0.50",
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
-    "inngest:dev": "inngest-cli dev"
+    "dev": "bun run --watch src/index.ts"
   },
   "dependencies": {
     "elysia": "latest",
     "inngest": "^3.40.2"
   },
   "devDependencies": {
-    "bun-types": "latest",
-    "inngest-cli": "^1.11.10"
+    "bun-types": "latest"
   },
-  "module": "src/index.js",
-  "trustedDependencies": [
-    "inngest-cli"
-  ]
+  "module": "src/index.js"
 }

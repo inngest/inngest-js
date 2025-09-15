@@ -1,5 +1,20 @@
 # @inngest/realtime
 
+## 0.4.0
+
+### Minor Changes
+
+- [#1071](https://github.com/inngest/inngest-js/pull/1071) [`719b9dc`](https://github.com/inngest/inngest-js/commit/719b9dcbdb16ab8710a4273a289ec833cfd3242f) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Move server-side only middleware to separate import
+
+## 0.3.3
+
+### Patch Changes
+
+- [#1068](https://github.com/inngest/inngest-js/pull/1068) [`b43bc02`](https://github.com/inngest/inngest-js/commit/b43bc0273d16b5f0fd3ab69d31bcd373245bb27f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `@inngest/realtime/browser` entrypoint to bypass some import issues
+
+- Updated dependencies [[`8ba5486`](https://github.com/inngest/inngest-js/commit/8ba548647ab17b91b750eea997c016dedee9f1c2)]:
+  - inngest@3.40.3
+
 ## 0.3.2
 
 ### Patch Changes

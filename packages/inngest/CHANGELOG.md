@@ -1,5 +1,11 @@
 # inngest
 
+## 3.40.3
+
+### Patch Changes
+
+- [#1040](https://github.com/inngest/inngest-js/pull/1040) [`8ba5486`](https://github.com/inngest/inngest-js/commit/8ba548647ab17b91b750eea997c016dedee9f1c2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - SDK appropriately sets `"inngest.traceref"` for userland otel spans
+
 ## 3.40.2
 
 ### Patch Changes

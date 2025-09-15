@@ -13,7 +13,7 @@ const inngestHandler = new Elysia().all("/api/inngest", ({ request }) =>
 
 const app = new Elysia()
   .use(inngestHandler)
-  .get("/", async function ({ status }) {
+  .get("/", async function () {
     await inngest.send({
       name: "test/hello.world",
       data: {

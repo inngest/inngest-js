@@ -2,13 +2,13 @@
   "$schema": "https://jsr.io/schema/config-file.v1.json",
   "name": "@inngest/realtime",
   "description": "",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "include": [
     "./src/**/*.ts"
   ],
   "exports": {
     ".": "./src/index.ts",
     "./hooks": "./src/hooks.ts",
-    "./browser": "./src/browser.ts"
+    "./middleware": "./src/middleware.ts"
   }
 }
