@@ -8,6 +8,7 @@ import {
   minifyPrettyError,
   prettyError,
   serializeError,
+  isSerializedError,
 } from "../../helpers/errors.js";
 import { undefinedToNull } from "../../helpers/functions.js";
 import {
@@ -216,15 +217,26 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               }),
             };
           } else if (transformResult.type === "function-rejected") {
+            const stepForResponse = _internals.hashOp({
+              ...stepResult,
+              error: transformResult.error,
+            });
+
+            if (stepResult.op === StepOpCode.StepFailed) {
+              const ser = serializeError(transformResult.error);
+              stepForResponse.data = {
+                __serialized: true,
+                name: ser.name,
+                message: ser.message,
+                stack: "",
+              };
+            }
+
             return {
               type: "step-ran",
               ctx: transformResult.ctx,
               ops: transformResult.ops,
-              step: _internals.hashOp({
-                ...stepResult,
-                error: transformResult.error,
-              }),
-              retriable: transformResult.retriable,
+              step: stepForResponse,
             };
           }
 
@@ -490,12 +502,32 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           };
         })
         .catch<OutgoingOp>((error) => {
-          return {
-            ...outgoingOp,
-            op: StepOpCode.StepError,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
-          };
+          let errorIsRetriable = true
+
+          if (error instanceof NonRetriableError) {
+            errorIsRetriable = false
+          } else if (
+            this.fnArg.maxAttempts &&
+            this.fnArg?.maxAttempts - 1 === this.fnArg.attempt
+          ) {
+            errorIsRetriable = false
+          }
+
+          if (errorIsRetriable) {
+            return {
+              ...outgoingOp,
+              op: StepOpCode.StepError,
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+              error,
+            };
+          } else {
+            return {
+              ...outgoingOp,
+              op: StepOpCode.StepFailed,
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+              error,
+            };
+          }
         })
     );
   }
@@ -575,7 +607,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       NonNullable<RunHookStack["transformOutput"]>
     >[0]["result"]
   ): Promise<ExecutionResult> {
-    const output = { ...dataOrError };
+    const output = { ...dataOrError } as Partial<OutgoingOp>;
 
     /**
      * If we've been given an error and it's one that we just threw from a step,
@@ -586,6 +618,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     const isStepExecution = Boolean(this.state.executingStep);
+    const incomingOp = (dataOrError as Partial<OutgoingOp>)?.op;
 
     const transformedOutput = await this.state.hooks?.transformOutput?.({
       result: { ...output },
@@ -606,12 +639,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
        * by looking at the error returned from output transformation.
        */
       let retriable: boolean | string = !(
-        error instanceof NonRetriableError || error instanceof StepError
+        error instanceof NonRetriableError ||
+        (error instanceof StepError && error === this.state.recentlyRejectedStepError)
       );
       if (retriable && error instanceof RetryAfterError) {
         retriable = error.retryAfter;
       }
-
       const serializedError = minifyPrettyError(serializeError(error));
 
       return {
@@ -933,14 +966,32 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               stepState.error,
               stepState.input,
             ]).then(() => {
+              if (typeof stepState.error !== "undefined") {
+                this.state.recentlyRejectedStepError = new StepError(
+                  opId.id,
+                  stepState.error
+                );
+                reject(this.state.recentlyRejectedStepError);
+                return;
+              }
+
+              const serializedError = isSerializedError(stepState.data);
+              if (serializedError) {
+                this.state.recentlyRejectedStepError = new StepError(
+                  opId.id,
+                  serializedError
+                );
+                reject(this.state.recentlyRejectedStepError);
+                return;
+              }
+
               if (typeof stepState.data !== "undefined") {
                 resolve(stepState.data);
               } else {
                 this.state.recentlyRejectedStepError = new StepError(
                   opId.id,
-                  stepState.error
+                  new Error("Step completed with neither data nor error")
                 );
-
                 reject(this.state.recentlyRejectedStepError);
               }
             });
