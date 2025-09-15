@@ -147,6 +147,7 @@ export const parseFnData = (data: unknown) => {
                 .object({
                   run_id: z.string(),
                   attempt: z.number().default(0),
+                  max_attempts: z.number().optional(),
                   disable_immediate_execution: z.boolean().default(false),
                   use_api: z.boolean().default(false),
                   stack: z
@@ -179,6 +180,7 @@ export const parseFnData = (data: unknown) => {
                 .object({
                   run_id: z.string(),
                   attempt: z.number().default(0),
+                  max_attempts: z.number().optional(),
                   disable_immediate_execution: z.boolean().default(false),
                   use_api: z.boolean().default(false),
                   stack: z

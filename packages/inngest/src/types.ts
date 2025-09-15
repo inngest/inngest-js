@@ -191,6 +191,7 @@ export enum StepOpCode {
   Step = "Step",
   StepRun = "StepRun",
   StepError = "StepError",
+  StepFailed = "StepFailed",
   StepPlanned = "StepPlanned",
   Sleep = "Sleep",
 
@@ -408,6 +409,11 @@ export type BaseContext<
    * is incremented every time the function throws an error and is retried.
    */
   attempt: number;
+
+  /**
+   * The maximum number of attempts allowed for this function.
+   */
+  maxAttempts?: number;
 };
 
 /**
