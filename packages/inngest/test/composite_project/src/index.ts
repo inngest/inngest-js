@@ -81,7 +81,7 @@ const fn2 = inngest.createFunction(
 );
 
 inngest.createFunction(
-  { id: "my-fn-3", cancelOn: [{ event: "foo", match: "data.foo" }] },
+  { id: "my-fn-3", cancelOn: [{ event: "foo" }] },
   [{ event: "foo" }, { cron: "* * * * *" }],
   async (ctx) => {
     console.log(ctx);
@@ -90,7 +90,6 @@ inngest.createFunction(
 
     ctx.step.waitForEvent("id", {
       event: "foo",
-      match: "data.foo",
       timeout: 1000,
     });
 

@@ -103,16 +103,6 @@ describe("waitForEvent", () => {
     });
   });
 
-  test("return simple field match if `match` string given", async () => {
-    await expect(
-      step.waitForEvent("id", { event: "event", match: "name", timeout: "2h" }),
-    ).resolves.toMatchObject({
-      opts: {
-        if: "event.name == async.name",
-      },
-    });
-  });
-
   test("return custom match statement if `if` given", async () => {
     await expect(
       step.waitForEvent("id", {
@@ -124,18 +114,6 @@ describe("waitForEvent", () => {
       opts: {
         if: "name == 123",
       },
-    });
-  });
-
-  describe("type errors", () => {
-    test("does not allow both `match` and `if`", () => {
-      // @ts-expect-error `match` and `if` cannot be defined together
-      void step.waitForEvent("id", {
-        event: "event",
-        match: "name",
-        if: "name",
-        timeout: "2h",
-      });
     });
   });
 });
