@@ -1,5 +1,11 @@
 # inngest
 
+## 3.41.0
+
+### Minor Changes
+
+- [#1078](https://github.com/inngest/inngest-js/pull/1078) [`3e5bf652`](https://github.com/inngest/inngest-js/commit/3e5bf652a7a769cc27202fd241da5bc6b9bcc331) Thanks [@tonyhb](https://github.com/tonyhb)! - Allow passing `publish` options to `step.ai.infer()`, automatically publishing to realtime channel/topics
+
 ## 3.40.3
 
 ### Patch Changes
