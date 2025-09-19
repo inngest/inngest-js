@@ -1,5 +1,5 @@
 ---
-"inngest": patch
+"inngest": minor
 ---
 
-Pass options into ai.infer
+Allow passing `publish` options to `step.ai.infer()`, automatically publishing to realtime channel/topics
