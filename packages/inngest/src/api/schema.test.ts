@@ -1,5 +1,5 @@
-import { stepsSchemas } from "@local/api/schema";
-import { ExecutionVersion } from "@local/components/execution/InngestExecution";
+import { ExecutionVersion } from "../helpers/consts.ts";
+import { stepsSchemas } from "./schema.ts";
 
 describe("stepsSchemas", () => {
   describe("v0", () => {

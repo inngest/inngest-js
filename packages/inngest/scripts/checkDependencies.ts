@@ -16,7 +16,7 @@
  * `.d.ts` files to ensure that we are not exporting types that are not
  * available to the consumer.
  */
-/* eslint-disable @inngest/internal/process-warn */
+
 import chalk from "chalk";
 import fs from "fs";
 import { builtinModules } from "module";
@@ -24,7 +24,7 @@ import path from "path";
 import ts from "typescript";
 
 // Define paths to package.json and tsconfig.json
-const packagePath = path.join(__dirname, "..");
+const packagePath = path.join(import.meta.dirname, "..");
 const packageJsonPath = path.join(packagePath, "package.json");
 
 // Read and parse package.json
@@ -49,7 +49,7 @@ function isNodeBuiltin(moduleName: string): boolean {
 // Check if a module is a local file or an aliased path
 function isLocalOrAliasedImport(
   moduleName: string,
-  tsConfigPaths: Record<string, string[]>
+  tsConfigPaths: Record<string, string[]>,
 ): boolean {
   return (
     moduleName.startsWith(".") ||
@@ -60,7 +60,7 @@ function isLocalOrAliasedImport(
 
 // Check if an import is type-only (either entirely or each individual import)
 function isTypeOnlyImport(
-  node: ts.ImportDeclaration | ts.ImportSpecifier
+  node: ts.ImportDeclaration | ts.ImportSpecifier,
 ): boolean {
   // Check if the entire import is type-only
   if (
@@ -99,14 +99,14 @@ function parseTsConfig(configFileName: string): {
     getCurrentDirectory: ts.sys.getCurrentDirectory.bind(ts.sys),
     onUnRecoverableConfigFileDiagnostic: (diagnostic) =>
       console.error(
-        ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")
+        ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"),
       ),
   };
 
   const parsedCommandLine = ts.getParsedCommandLineOfConfigFile(
     configFileName,
     {},
-    parseConfigHost
+    parseConfigHost,
   );
 
   if (!parsedCommandLine) {
@@ -130,7 +130,7 @@ function getBasePackageName(moduleName: string): string {
 // Main function to check dependencies
 function checkDependencies(
   tsConfigPath: string,
-  ignoreFiles: string[] = []
+  ignoreFiles: string[] = [],
 ): void {
   const { fileNames, paths } = parseTsConfig(tsConfigPath);
   const issues: Record<string, { files: string[]; type: string }> = {};
@@ -139,15 +139,16 @@ function checkDependencies(
 
   // Convert ignoreFiles to absolute paths for easy comparison
   const ignoreAbsolutePaths = ignoreFiles.map((file) =>
-    path.resolve(packagePath, file)
+    path.resolve(packagePath, file),
   );
 
+  // biome-ignore lint/complexity/noForEach: <explanation>
   fileNames.forEach((file) => {
     const content = fs.readFileSync(file, "utf8");
     const sourceFile = ts.createSourceFile(
       file,
       content,
-      ts.ScriptTarget.Latest
+      ts.ScriptTarget.Latest,
     );
 
     // Check each import in source files
@@ -213,10 +214,10 @@ function checkDependencies(
             }
             const line =
               sourceFile.getLineAndCharacterOfPosition(
-                node.getStart(sourceFile)
+                node.getStart(sourceFile),
               ).line + 1;
             issues[importedModule]?.files.push(
-              `${fullImportName} in ${path.relative(packagePath, file)}:${line}`
+              `${fullImportName} in ${path.relative(packagePath, file)}:${line}`,
             );
           }
         }
@@ -225,6 +226,7 @@ function checkDependencies(
   });
 
   // Check for unused packages in dependencies
+  // biome-ignore lint/complexity/noForEach: <explanation>
   Object.keys(dependencies).forEach((dependency) => {
     if (!importedModules.has(dependency) && !dependency.startsWith("@types/")) {
       const typesPackage = `@types/${dependency}`;
@@ -238,6 +240,7 @@ function checkDependencies(
   });
 
   // Check for @types packages that should be moved to dependencies
+  // biome-ignore lint/complexity/noForEach: <explanation>
   importedTypeModules.forEach((typeModule) => {
     if (
       importedModules.has(typeModule) &&
@@ -247,7 +250,7 @@ function checkDependencies(
         issues[typeModule] = { files: [], type: "MoveToDependencies" };
       }
       issues[typeModule]?.files.push(
-        `@types/${typeModule} should be in dependencies.`
+        `@types/${typeModule} should be in dependencies.`,
       );
     }
   });
@@ -257,6 +260,7 @@ function checkDependencies(
     console.log(chalk.red("Dependency Issues Found:"));
     Object.entries(issues).forEach(([module, data], index, array) => {
       console.log(chalk.blue(`${module} (${data.type}):`));
+      // biome-ignore lint/complexity/noForEach: <explanation>
       data.files.forEach((file) => console.log(chalk.yellow(`  - ${file}`)));
       if (index < array.length - 1) {
         console.log(""); // Add a line break between modules
@@ -285,4 +289,6 @@ checkDependencies("tsconfig.build.json", [
   "src/remix.ts",
   "src/sveltekit.ts",
   "src/nitro.ts",
+  "tsdown.config.ts",
+  "vitest.config.ts",
 ]);
