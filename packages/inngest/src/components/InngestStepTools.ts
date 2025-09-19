@@ -441,6 +441,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
           options: AiInferOpts<TAdapter>
         ) => Promise<AiAdapter.Output<TAdapter>>
       >(({ id, name }, options) => {
+        // eslint-disable-next-line
         const { model, body, ...rest } = options;
 
         const modelCopy = { ...model };
@@ -458,7 +459,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
             headers: modelCopy.headers,
             auth_key: modelCopy.authKey,
             format: modelCopy.format,
+            // eslint-disable-next-line
             body,
+            // eslint-disable-next-line
             ...rest,
           },
         };
