@@ -1511,6 +1511,7 @@ export class InngestCommHandler<
                 events: events as [EventPayload, ...EventPayload[]],
                 runId: ctx?.run_id || "",
                 attempt: ctx?.attempt ?? 0,
+                maxAttempts: ctx?.max_attempts ?? 4
               },
               stepState,
               requestedRunStep:
@@ -1551,6 +1552,7 @@ export class InngestCommHandler<
                 events: events as [EventPayload, ...EventPayload[]],
                 runId: ctx?.run_id || "",
                 attempt: ctx?.attempt ?? 0,
+                maxAttempts: ctx?.max_attempts ?? 4
               },
               stepState,
               requestedRunStep:
