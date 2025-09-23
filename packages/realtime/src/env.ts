@@ -30,7 +30,7 @@ const env: ExpectedEnv | undefined = (() => {
     // Vite
     try {
       // @ts-expect-error - import.meta.env is not available in CommonJS output
-      if (typeof import.meta !== 'undefined' && import.meta.env) {
+      if (typeof import.meta !== "undefined" && import.meta.env) {
         // @ts-expect-error - import.meta.env is not available in CommonJS output
         const env = import.meta.env;
         return {
@@ -47,7 +47,7 @@ const env: ExpectedEnv | undefined = (() => {
       // noop - import.meta not available in this environment
     }
 
-    // Node-like environments
+    // Node-like environments (sometimes Vite)
     if (process.env) {
       return {
         INNGEST_DEV:
