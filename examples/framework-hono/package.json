@@ -1,14 +1,21 @@
 {
+  "name": "framework-hono-2",
+  "type": "module",
   "scripts": {
-    "dev": "wrangler dev --port 3000 src/index.ts",
-    "deploy": "wrangler deploy --minify src/index.ts"
+    "dev": "vite --port 3000",
+    "build": "vite build",
+    "preview": "$npm_execpath run build && vite preview",
+    "deploy": "$npm_execpath run build && wrangler deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
   },
   "dependencies": {
-    "hono": "^4.3.6",
-    "inngest": "^3.31.1"
+    "hono": "^4.9.6",
+    "inngest": "^3.40.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250129.0",
-    "wrangler": "^3.107.0"
+    "@cloudflare/vite-plugin": "^1.2.3",
+    "vite": "^6.3.5",
+    "vite-ssr-components": "^0.5.1",
+    "wrangler": "^4.17.0"
   }
 }

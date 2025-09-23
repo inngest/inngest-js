@@ -16,7 +16,7 @@
     "postversion": "pnpm run build",
     "release:version": "node ../../scripts/release/jsrVersion.js",
     "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty",
-    "pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest-middleware-validation.tgz --cwd dist"
+    "pack": "pnpm run build && cd dist && pnpm pack --out ../inngest-middleware-validation.tgz"
   },
   "exports": {
     ".": {

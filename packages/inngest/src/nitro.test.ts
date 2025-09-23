@@ -1,6 +1,6 @@
-import * as NitroHandler from "@local/nitro";
 import { createEvent } from "h3";
-import { testFramework } from "./test/helpers";
+import * as NitroHandler from "./nitro.ts";
+import { testFramework } from "./test/helpers.ts";
 
 testFramework("Nitro", NitroHandler, {
   transformReq(req, res) {

@@ -22,7 +22,7 @@ jobs:
           MATRIX=$(jq -n --arg labels "$LABELS" '
             ($labels | fromjson) as $labelList |
             [
-              {package: "inngest", dist_dir: "dist"},
+              {package: "inngest"},
               {package: "eslint-plugin"},
               {package: "middleware-sentry"},
               {package: "middleware-encryption", dist_dir: "dist"},

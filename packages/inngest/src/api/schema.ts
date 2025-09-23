@@ -1,6 +1,6 @@
-import { z } from "zod";
-import { ExecutionVersion } from "../components/execution/InngestExecution.js";
-import { jsonErrorSchema, type EventPayload } from "../types.js";
+import { z } from "zod/v3";
+import { ExecutionVersion } from "../helpers/consts.ts";
+import { type EventPayload, jsonErrorSchema } from "../types.ts";
 
 export const errorSchema = z.object({
   error: z.string(),
@@ -12,7 +12,7 @@ const v0StepSchema = z
   .record(
     z.any().refine((v) => typeof v !== "undefined", {
       message: "Values in steps must be defined",
-    })
+    }),
   )
   .optional()
   .nullable();
@@ -33,7 +33,7 @@ const v1StepSchema = z
             type: z.literal("error").optional().default("error"),
             error: jsonErrorSchema,
           })
-          .strict()
+          .strict(),
       )
       .or(
         z
@@ -43,7 +43,7 @@ const v1StepSchema = z
               message: "If input is present it must not be `undefined`",
             }),
           })
-          .strict()
+          .strict(),
       )
 
       /**
@@ -53,8 +53,8 @@ const v1StepSchema = z
        *
        * In this case, pull the entire value through as data.
        */
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      .or(z.any().transform((v) => ({ type: "data" as const, data: v })))
+
+      .or(z.any().transform((v) => ({ type: "data" as const, data: v }))),
   )
   .default({});
 
@@ -71,6 +71,6 @@ export type StepsResponse = {
 }[ExecutionVersion];
 
 export const batchSchema = z.array(
-  z.record(z.any()).transform((v) => v as EventPayload)
+  z.record(z.any()).transform((v) => v as EventPayload),
 );
 export type BatchResponse = z.infer<typeof batchSchema>;

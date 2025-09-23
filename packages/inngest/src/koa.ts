@@ -23,8 +23,8 @@ import type Koa from "koa";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -54,9 +54,9 @@ export const frameworkName: SupportedFrameworkName = "koa";
  */
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
-  options: ServeHandlerOptions
+  options: ServeHandlerOptions,
 ): ((
-  ctx: Koa.ParameterizedContext<Koa.DefaultState, Koa.DefaultContext, unknown>
+  ctx: Koa.ParameterizedContext<Koa.DefaultState, Koa.DefaultContext, unknown>,
 ) => Promise<void>) => {
   const handler = new InngestCommHandler({
     frameworkName,
@@ -66,7 +66,7 @@ export const serve = (
         Koa.DefaultState,
         Koa.DefaultContext,
         unknown
-      >
+      >,
     ) => {
       return {
         method: () => ctx.method,

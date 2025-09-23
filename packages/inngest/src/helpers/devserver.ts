@@ -1,5 +1,6 @@
-import { defaultDevServerHost } from "./consts.js";
-import { devServerHost as envDevServerHost } from "./env.js";
+import { defaultDevServerHost } from "./consts.ts";
+import { devServerHost as envDevServerHost } from "./env.ts";
+
 // re-export from devserver.ts
 
 /**
@@ -25,14 +26,14 @@ export const devServerAvailable = async (
   /**
    * The fetch implementation to use to communicate with the dev server.
    */
-  fetch: FetchT
+  fetch: FetchT,
 ): Promise<boolean> => {
   try {
     const url = devServerUrl(host, "/dev");
     const result = await fetch(url.toString());
     await result.json();
     return true;
-  } catch (e) {
+  } catch (_e) {
     return false;
   }
 };
@@ -48,7 +49,7 @@ export const devServerAvailable = async (
  */
 export const devServerUrl = (
   host: string = devServerHost(),
-  pathname = ""
+  pathname = "",
 ): URL => {
   return new URL(pathname, host.includes("://") ? host : `http://${host}`);
 };
