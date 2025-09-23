@@ -1,12 +1,7 @@
 import { OutgoingOp } from "inngest";
-import type {
-  ExecutionResult,
-  ExecutionResults,
-} from "inngest/components/execution/InngestExecution";
-import { _internals } from "inngest/components/execution/v1";
-import { createDeferredPromise } from "inngest/helpers/promises";
 import type { InngestTestEngine } from "./InngestTestEngine.js";
-import { isDeeplyEqual, type DeepPartial } from "./util";
+import { createDeferredPromise, isDeeplyEqual, type DeepPartial } from "./util";
+import { InngestExecution, InngestExecutionV1 } from "inngest/dist/internals";
 
 /**
  * A test run that allows you to wait for specific checkpoints in a run that
@@ -28,13 +23,13 @@ export namespace InngestTestRun {
   /**
    * The possible checkpoints that can be reached during a test run.
    */
-  export type CheckpointKey = ExecutionResult["type"];
+  export type CheckpointKey = InngestExecution.ExecutionResult["type"];
 
   /**
    * A checkpoint that can be reached during a test run.
    */
   export type Checkpoint<T extends CheckpointKey> = Omit<
-    Extract<ExecutionResult, { type: T }>,
+    Extract<InngestExecution.ExecutionResult, { type: T }>,
     "ctx" | "ops"
   >;
 
@@ -115,7 +110,7 @@ export class InngestTestRun {
         subset.step !== null &&
         "id" in subset.step &&
         typeof subset.step.id === "string" && {
-          step: { ...subset.step, id: _internals.hashId(subset.step.id) },
+          step: { ...subset.step, id: InngestExecutionV1._internals.hashId(subset.step.id) },
         }),
 
       // "steps" for "steps-found"
@@ -123,7 +118,7 @@ export class InngestTestRun {
         Array.isArray(subset.steps) && {
           steps: subset.steps.map((step) => ({
             ...step,
-            id: _internals.hashId(step.id),
+            id: InngestExecutionV1._internals.hashId(step.id),
           })),
         }),
     };
@@ -147,7 +142,7 @@ export class InngestTestRun {
 
       InngestTestRun.updateState(runningState, exec.result);
 
-      const resultHandlers: Record<keyof ExecutionResults, () => void> = {
+      const resultHandlers: Record<keyof InngestExecution.ExecutionResults, () => void> = {
         "function-resolved": () => finish(exec),
         "function-rejected": () => finish(exec),
         "step-not-found": () => processChain(),

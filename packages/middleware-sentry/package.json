@@ -39,13 +39,13 @@
     "eslint": "^9.18.0",
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^15.14.0",
-    "inngest": "^3.42.0",
+    "inngest": "^3.42.1",
     "typescript": "~5.4.0",
     "typescript-eslint": "^7.16.1"
   },
   "peerDependencies": {
     "@sentry/core": ">=8.0.0",
     "@sentry/types": ">=8.0.0",
-    "inngest": ">=3.42.0"
+    "inngest": ">=3.42.1"
   }
 }

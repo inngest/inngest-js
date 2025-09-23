@@ -1,17 +1,11 @@
-import {
-  ExecutionVersion,
-  type MemoizedOp,
-} from "inngest/components/execution/InngestExecution";
-import { _internals } from "inngest/components/execution/v1";
-import type { InngestFunction } from "inngest/components/InngestFunction";
-import { serializeError } from "inngest/helpers/errors";
-import { createDeferredPromise } from "inngest/helpers/promises";
-import { ServerTiming } from "inngest/helpers/ServerTiming";
-import { Context, EventPayload, StepOpCode } from "inngest/types";
 import { ulid } from "ulid";
 import { InngestTestRun } from "./InngestTestRun.js";
 import type { Mock } from "./spy.js";
-import { createMockEvent, mockCtx, type DeepPartial } from "./util.js";
+import { createDeferredPromise, createMockEvent, mockCtx, type DeepPartial } from "./util.js";
+import { Context, EventPayload, InngestFunction } from "inngest";
+import { InngestExecution, InngestExecutionV1, errors } from "inngest/dist/internals";
+import { StepOpCode } from "inngest/dist/types";
+import { ServerTiming } from "inngest/dist/helpers/ServerTiming";
 
 /**
  * A test engine for running Inngest functions in a test environment, providing
@@ -61,7 +55,7 @@ export namespace InngestTestEngine {
 
     /**
      * Request arguments that will be passed to the function execution.
-     * 
+     *
      * These can be used by middleware that relies on particular serve handler usage.
      * If not provided, an empty array will be used.
      */
@@ -183,7 +177,7 @@ export namespace InngestTestEngine {
   }
 }
 
-interface InternalMemoizedOp extends MemoizedOp {
+interface InternalMemoizedOp extends InngestExecution.MemoizedOp {
   __lazyMockHandler?: (state: { data?: any; error?: any }) => Promise<void>;
   __mockResult?: Promise<any>;
 }
@@ -322,7 +316,7 @@ export class InngestTestEngine {
       steps: [{ id: stepId }],
     });
 
-    const hashedStepId = _internals.hashId(stepId);
+    const hashedStepId = InngestExecutionV1._internals.hashId(stepId);
 
     const step = foundSteps.result.steps.find(
       (step) => step.id === hashedStepId
@@ -360,8 +354,10 @@ export class InngestTestEngine {
       [StepOpCode.StepNotFound]: () => baseRet,
       [StepOpCode.StepRun]: () => ({ ...baseRet, result: step.data }),
       [StepOpCode.WaitForEvent]: () => baseRet,
+      [StepOpCode.WaitForSignal]: () => baseRet,
       [StepOpCode.Step]: () => ({ ...baseRet, result: step.data }),
       [StepOpCode.AiGateway]: () => baseRet,
+      [StepOpCode.Gateway]: () => baseRet,
     };
 
     const result = opHandlers[step.op]();
@@ -430,18 +426,18 @@ export class InngestTestEngine {
     const steps = (options.steps || []).map((step) => {
       return {
         ...step,
-        id: step.idIsHashed ? step.id : _internals.hashId(step.id),
+        id: step.idIsHashed ? step.id : InngestExecutionV1._internals.hashId(step.id),
       };
     });
 
-    const stepState: Record<string, MemoizedOp> = {};
+    const stepState: Record<string, InngestExecution.MemoizedOp> = {};
 
     steps.forEach((step) => {
       const { promise: data, resolve: resolveData } = createDeferredPromise();
       const { promise: error, resolve: resolveError } = createDeferredPromise();
 
       const mockHandler = {
-        ...(step as MemoizedOp),
+        ...(step as InngestExecution.MemoizedOp),
         data,
         error,
         __lazyMockHandler: async (state) => {
@@ -476,7 +472,7 @@ export class InngestTestEngine {
               data: await (mockStep as InngestTestEngine.MockedStep).handler(),
             });
           } catch (err) {
-            mockStep.__lazyMockHandler?.({ error: serializeError(err) });
+            mockStep.__lazyMockHandler?.({ error: errors.serializeError(err) });
           } finally {
             resolve();
           }
@@ -491,9 +487,10 @@ export class InngestTestEngine {
     const execution = (options.function as InngestFunction.Any)[
       "createExecution"
     ]({
-      version: ExecutionVersion.V1,
+      version: InngestExecution.ExecutionVersion.V1,
       partialOptions: {
         runId,
+        client: (options.function as InngestFunction.Any)['client'],
         data: {
           runId,
           attempt: 0, // TODO retries?
@@ -545,7 +542,7 @@ export class InngestTestEngine {
 
     return {
       result,
-      ctx: ctx as InngestTestEngine.MockContext,
+      ctx: ctx as unknown as InngestTestEngine.MockContext,
       state: mockState,
       run,
     };
