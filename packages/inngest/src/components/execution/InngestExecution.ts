@@ -7,6 +7,11 @@ import type { Inngest } from "../Inngest.ts";
 import type { ActionResponse } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 
+// Re-export ExecutionVersion so it's correctly recognized as an enum and not
+// just a type. This can be lost when bundling if we don't re-export it here.
+// See `pnpm run test:dist`.
+export { ExecutionVersion };
+
 /**
  * The possible results of an execution.
  */

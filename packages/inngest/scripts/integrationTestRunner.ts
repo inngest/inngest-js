@@ -66,7 +66,7 @@ async function setupExample(examplePath: string): Promise<void> {
     );
   } else {
     await execAsync(
-      "npm install --no-save --no-package-lock ../../packages/inngest/inngest.tgz",
+      "npm install --no-save --legacy-peer-deps --no-package-lock ../../packages/inngest/inngest.tgz",
       {
         cwd: examplePath,
       },
