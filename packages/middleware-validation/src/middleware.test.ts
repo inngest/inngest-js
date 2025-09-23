@@ -1,7 +1,6 @@
 import { InngestTestEngine } from "@inngest/test";
 import FetchMock from "fetch-mock-jest";
-import { EventSchemas, Inngest } from "inngest";
-import { Logger } from "inngest/middleware/logger";
+import { EventSchemas, Inngest, Logger } from "inngest";
 import { z } from "zod";
 import { validationMiddleware } from "./middleware";
 
