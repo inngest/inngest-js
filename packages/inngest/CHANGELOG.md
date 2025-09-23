@@ -1,5 +1,13 @@
 # inngest
 
+## 3.42.1
+
+### Patch Changes
+
+- [#1083](https://github.com/inngest/inngest-js/pull/1083) [`2f24a09`](https://github.com/inngest/inngest-js/commit/2f24a09ec17e99422688b175bc80d43e06f42c36) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `"inngest/connect"` not being exported in JSR package
+
+- [#1083](https://github.com/inngest/inngest-js/pull/1083) [`2f24a09`](https://github.com/inngest/inngest-js/commit/2f24a09ec17e99422688b175bc80d43e06f42c36) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export some internal packages under `"inngest/internals"` for `@inngest/test` use
+
 ## 3.42.0
 
 ### Minor Changes
