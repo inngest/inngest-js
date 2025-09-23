@@ -27,7 +27,27 @@ export type ExpectedEnv = {
  */
 const env: ExpectedEnv | undefined = (() => {
   try {
-    // Nodeish, including Vite
+    // Vite
+    try {
+      // @ts-expect-error - import.meta.env is not available in CommonJS output
+      if (typeof import.meta !== 'undefined' && import.meta.env) {
+        // @ts-expect-error - import.meta.env is not available in CommonJS output
+        const env = import.meta.env;
+        return {
+          INNGEST_DEV: env.INNGEST_DEV ?? env.VITE_INNGEST_DEV,
+          NODE_ENV: env.NODE_ENV,
+          INNGEST_BASE_URL: env.INNGEST_BASE_URL ?? env.VITE_INNGEST_BASE_URL,
+          INNGEST_API_BASE_URL:
+            env.INNGEST_API_BASE_URL ?? env.VITE_INNGEST_API_BASE_URL,
+          INNGEST_SIGNING_KEY: env.INNGEST_SIGNING_KEY,
+          INNGEST_SIGNING_KEY_FALLBACK: env.INNGEST_SIGNING_KEY_FALLBACK,
+        };
+      }
+    } catch {
+      // noop - import.meta not available in this environment
+    }
+
+    // Node-like environments
     if (process.env) {
       return {
         INNGEST_DEV:
