@@ -6,14 +6,9 @@ import {
   Inngest,
   InngestMiddleware,
 } from "inngest";
-import {
-  type ExecutionResult,
-  ExecutionVersion,
-  type InngestExecutionOptions,
-} from "inngest/components/execution/InngestExecution";
-import { _internals } from "inngest/components/execution/v1";
-import { type SendEventPayload } from "inngest/helpers/types";
 import { encryptionMiddleware, EncryptionService } from "./middleware";
+import { InngestExecution, InngestExecutionV1 } from "inngest/dist/internals";
+import { SendEventPayload } from "inngest/dist/helpers/types";
 
 const id = "test-client";
 const key = "123";
@@ -137,8 +132,8 @@ describe("encryptionMiddleware", () => {
       };
 
       const stepIds = {
-        foo: _internals.hashId("foo"),
-        bar: _internals.hashId("bar"),
+        foo: InngestExecutionV1._internals.hashId("foo"),
+        bar: InngestExecutionV1._internals.hashId("bar"),
       };
 
       runSpecs([
@@ -211,14 +206,14 @@ describe("encryptionMiddleware", () => {
 type Specification = {
   name: string;
   todo?: boolean;
-  steps?: InngestExecutionOptions["stepState"];
+  steps?: InngestExecution.InngestExecutionOptions["stepState"];
   events?: [EventPayload, ...EventPayload[]];
   fn: (ctx: Context) => unknown;
 
   /**
    * The result of the execution as it will be sent back to Inngest.
    */
-  result?: ExecutionResult;
+  result?: Partial<InngestExecution.ExecutionResult>;
 
   /**
    * The raw output from the user's function, before any potential encryption.
@@ -234,7 +229,7 @@ const runFn = async ({
   },
 }: {
   spec: Specification;
-}): Promise<{ execResult: ExecutionResult; rawOutput: unknown }> => {
+}): Promise<{ execResult: InngestExecution.ExecutionResult; rawOutput: unknown }> => {
   const inngest = new Inngest({
     id: "test-client",
     middleware: [encryptionMiddleware({ key })],
@@ -258,8 +253,9 @@ const runFn = async ({
   const runId = "test-run";
 
   const execution = fn["createExecution"]({
-    version: ExecutionVersion.V1,
+    version: InngestExecution.ExecutionVersion.V1,
     partialOptions: {
+      client: fn['client'],
       data: {
         attempt: 0,
         event: events[0],
