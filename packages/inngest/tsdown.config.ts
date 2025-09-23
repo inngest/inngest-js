@@ -17,6 +17,7 @@ export default defineConfig({
     "src/h3.ts",
     "src/hono.ts",
     "src/index.ts",
+    "src/internals.ts",
     "src/koa.ts",
     "src/lambda.ts",
     "src/next.ts",

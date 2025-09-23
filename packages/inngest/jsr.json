@@ -37,6 +37,8 @@
     "./hono": "./src/hono.ts",
     "./nitro": "./src/nitro.ts",
     "./node": "./src/node.ts",
-    "./types": "./src/types.ts"
+    "./types": "./src/types.ts",
+    "./connect": "./src/connect.ts",
+    "./internals": "./src/internals.ts"
   }
 }

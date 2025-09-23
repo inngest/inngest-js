@@ -220,6 +220,14 @@
       },
       "import": "./dist/connect.js",
       "require": "./dist/connect.cjs"
+    },
+    "./internals": {
+      "types": {
+        "import": "./dist/internals.d.ts",
+        "require": "./dist/internals.d.cts"
+      },
+      "import": "./dist/internals.js",
+      "require": "./dist/internals.cjs"
     }
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
