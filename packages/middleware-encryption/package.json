@@ -1,6 +1,6 @@
 {
   "name": "@inngest/middleware-encryption",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "E2E encryption middleware for Inngest.",
   "main": "./index.js",
   "types": "./index.d.ts",
