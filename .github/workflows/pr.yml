@@ -87,7 +87,7 @@ jobs:
       - name: Lint package publishing config
         id: publint
         continue-on-error: true
-        run: pnpm dlx publint
+        run: pnpm dlx publint ./dist
 
       - name: Check publishing types health
         id: typescheck
