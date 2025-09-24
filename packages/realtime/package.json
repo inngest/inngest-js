@@ -68,7 +68,7 @@
   "dependencies": {
     "@standard-schema/spec": "^1.0.0",
     "debug": "^4.3.4",
-    "inngest": "^3.42.0",
+    "inngest": "^3.42.3",
     "zod": "^3.25.76"
   }
 }
