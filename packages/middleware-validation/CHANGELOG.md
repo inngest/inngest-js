@@ -1,5 +1,14 @@
 # @inngest/middleware-validation
 
+## 0.0.3
+
+### Patch Changes
+
+- [#1082](https://github.com/inngest/inngest-js/pull/1082) [`8e5ee6a`](https://github.com/inngest/inngest-js/commit/8e5ee6a7f543a30f4271c3eea98efc24e7ed7d23) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Bump `inngest` dependency to `^3.42.0`
+
+  This version changed a lot of `Inngest*.Like` types to future-proof them against updates.
+  Before this, all updates caused typing issues when we upgraded, but following this patch we shouldn't see that issue again.
+
 ## 0.0.2
 
 ### Patch Changes
