@@ -1,17 +1,20 @@
+import { Context, EventPayload, InngestFunction } from "inngest";
 import {
-  ExecutionVersion,
-  type MemoizedOp,
-} from "inngest/components/execution/InngestExecution";
-import { _internals } from "inngest/components/execution/v1";
-import type { InngestFunction } from "inngest/components/InngestFunction";
-import { serializeError } from "inngest/helpers/errors";
-import { createDeferredPromise } from "inngest/helpers/promises";
-import { ServerTiming } from "inngest/helpers/ServerTiming";
-import { Context, EventPayload, StepOpCode } from "inngest/types";
+  errors,
+  InngestExecution,
+  InngestExecutionV1,
+  ServerTiming,
+} from "inngest/internals";
+import { StepOpCode } from "inngest/types";
 import { ulid } from "ulid";
 import { InngestTestRun } from "./InngestTestRun.js";
 import type { Mock } from "./spy.js";
-import { createMockEvent, mockCtx, type DeepPartial } from "./util.js";
+import {
+  createDeferredPromise,
+  createMockEvent,
+  type DeepPartial,
+  mockCtx,
+} from "./util.js";
 
 /**
  * A test engine for running Inngest functions in a test environment, providing
@@ -61,7 +64,7 @@ export namespace InngestTestEngine {
 
     /**
      * Request arguments that will be passed to the function execution.
-     * 
+     *
      * These can be used by middleware that relies on particular serve handler usage.
      * If not provided, an empty array will be used.
      */
@@ -183,7 +186,7 @@ export namespace InngestTestEngine {
   }
 }
 
-interface InternalMemoizedOp extends MemoizedOp {
+interface InternalMemoizedOp extends InngestExecution.MemoizedOp {
   __lazyMockHandler?: (state: { data?: any; error?: any }) => Promise<void>;
   __mockResult?: Promise<any>;
 }
@@ -205,7 +208,7 @@ export class InngestTestEngine {
    * existing options.
    */
   public clone(
-    inlineOpts?: InngestTestEngine.InlineOptions
+    inlineOpts?: InngestTestEngine.InlineOptions,
   ): InngestTestEngine {
     return new InngestTestEngine({ ...this.options, ...inlineOpts });
   }
@@ -220,12 +223,12 @@ export class InngestTestEngine {
     /**
      * Options and state to start the run with.
      */
-    inlineOpts?: InngestTestEngine.ExecuteOptions<T>
+    inlineOpts?: InngestTestEngine.ExecuteOptions<T>,
   ): Promise<InngestTestRun.RunOutput> {
     const output = await this.individualExecution(inlineOpts);
 
     const resolutionHandler = (
-      output: InngestTestEngine.ExecutionOutput<"function-resolved">
+      output: InngestTestEngine.ExecutionOutput<"function-resolved">,
     ) => {
       return {
         ctx: output.ctx,
@@ -235,7 +238,7 @@ export class InngestTestEngine {
     };
 
     const rejectionHandler = (
-      output: InngestTestEngine.ExecutionOutput<"function-rejected">
+      output: InngestTestEngine.ExecutionOutput<"function-rejected">,
     ) => {
       if (
         typeof output === "object" &&
@@ -255,7 +258,7 @@ export class InngestTestEngine {
             error = output.result.step.error;
           } else {
             error = new Error(
-              "Function rejected without a visible error; this is a bug"
+              "Function rejected without a visible error; this is a bug",
             );
           }
         }
@@ -272,11 +275,11 @@ export class InngestTestEngine {
 
     if (output.result.type === "function-resolved") {
       return resolutionHandler(
-        output as InngestTestEngine.ExecutionOutput<"function-resolved">
+        output as InngestTestEngine.ExecutionOutput<"function-resolved">,
       );
     } else if (output.result.type === "function-rejected") {
       return rejectionHandler(
-        output as InngestTestEngine.ExecutionOutput<"function-rejected">
+        output as InngestTestEngine.ExecutionOutput<"function-rejected">,
       );
     } else if (output.result.type === "step-ran") {
       // Any error halts execution until retries are modelled
@@ -285,7 +288,7 @@ export class InngestTestEngine {
           .error
       ) {
         return rejectionHandler(
-          output as InngestTestEngine.ExecutionOutput<"function-rejected">
+          output as InngestTestEngine.ExecutionOutput<"function-rejected">,
         );
       }
     }
@@ -309,7 +312,7 @@ export class InngestTestEngine {
     /**
      * Options and state to start the run with.
      */
-    inlineOpts?: InngestTestEngine.ExecuteOptions
+    inlineOpts?: InngestTestEngine.ExecuteOptions,
   ): Promise<InngestTestRun.RunStepOutput> {
     const { run, result: resultaaa } = await this.individualExecution({
       ...inlineOpts,
@@ -322,16 +325,16 @@ export class InngestTestEngine {
       steps: [{ id: stepId }],
     });
 
-    const hashedStepId = _internals.hashId(stepId);
+    const hashedStepId = InngestExecutionV1._internals.hashId(stepId);
 
     const step = foundSteps.result.steps.find(
-      (step) => step.id === hashedStepId
+      (step) => step.id === hashedStepId,
     );
 
     // never found the step? Unexpected.
     if (!step) {
       throw new Error(
-        `Step "${stepId}" not found, but execution was still paused. This is a bug.`
+        `Step "${stepId}" not found, but execution was still paused. This is a bug.`,
       );
     }
 
@@ -360,8 +363,10 @@ export class InngestTestEngine {
       [StepOpCode.StepNotFound]: () => baseRet,
       [StepOpCode.StepRun]: () => ({ ...baseRet, result: step.data }),
       [StepOpCode.WaitForEvent]: () => baseRet,
+      [StepOpCode.WaitForSignal]: () => baseRet,
       [StepOpCode.Step]: () => ({ ...baseRet, result: step.data }),
       [StepOpCode.AiGateway]: () => baseRet,
+      [StepOpCode.Gateway]: () => baseRet,
     };
 
     const result = opHandlers[step.op]();
@@ -401,7 +406,7 @@ export class InngestTestEngine {
     /**
      * Options and state to start the run with.
      */
-    inlineOpts?: InngestTestEngine.ExecuteOptions<T>
+    inlineOpts?: InngestTestEngine.ExecuteOptions<T>,
   ): Promise<InngestTestEngine.ExecutionOutput<T>> {
     const { run } = await this.individualExecution(inlineOpts);
 
@@ -412,7 +417,7 @@ export class InngestTestEngine {
    * Execute the function with the given inline options.
    */
   protected async individualExecution(
-    inlineOpts?: InngestTestEngine.InlineOptions
+    inlineOpts?: InngestTestEngine.InlineOptions,
   ): Promise<InngestTestEngine.ExecutionOutput> {
     const options = {
       ...this.options,
@@ -430,18 +435,20 @@ export class InngestTestEngine {
     const steps = (options.steps || []).map((step) => {
       return {
         ...step,
-        id: step.idIsHashed ? step.id : _internals.hashId(step.id),
+        id: step.idIsHashed
+          ? step.id
+          : InngestExecutionV1._internals.hashId(step.id),
       };
     });
 
-    const stepState: Record<string, MemoizedOp> = {};
+    const stepState: Record<string, InngestExecution.MemoizedOp> = {};
 
     steps.forEach((step) => {
       const { promise: data, resolve: resolveData } = createDeferredPromise();
       const { promise: error, resolve: resolveError } = createDeferredPromise();
 
       const mockHandler = {
-        ...(step as MemoizedOp),
+        ...(step as InngestExecution.MemoizedOp),
         data,
         error,
         __lazyMockHandler: async (state) => {
@@ -476,7 +483,7 @@ export class InngestTestEngine {
               data: await (mockStep as InngestTestEngine.MockedStep).handler(),
             });
           } catch (err) {
-            mockStep.__lazyMockHandler?.({ error: serializeError(err) });
+            mockStep.__lazyMockHandler?.({ error: errors.serializeError(err) });
           } finally {
             resolve();
           }
@@ -491,9 +498,10 @@ export class InngestTestEngine {
     const execution = (options.function as InngestFunction.Any)[
       "createExecution"
     ]({
-      version: ExecutionVersion.V1,
+      version: InngestExecution.ExecutionVersion.V1,
       partialOptions: {
         runId,
+        client: (options.function as InngestFunction.Any)["client"],
         data: {
           runId,
           attempt: 0, // TODO retries?
@@ -506,7 +514,7 @@ export class InngestTestEngine {
         stepState: mockStepState,
         disableImmediateExecution: Boolean(options.disableImmediateExecution),
         isFailureHandler: false, // TODO need to allow hitting an `onFailure` handler - not dynamically, but choosing it
-        timer: new ServerTiming(),
+        timer: new ServerTiming.ServerTiming(),
         requestedRunStep: options.targetStepId,
         transformCtx: this.options.transformCtx ?? mockCtx,
       },
@@ -515,7 +523,7 @@ export class InngestTestEngine {
     const { ctx, ops, ...result } = await execution.start();
 
     const mockState: InngestTestEngine.MockState = await Object.keys(
-      ops
+      ops,
     ).reduce(
       async (acc, stepId) => {
         const op = ops[stepId];
@@ -534,7 +542,7 @@ export class InngestTestEngine {
           [stepId]: op.promise,
         };
       },
-      Promise.resolve({}) as Promise<InngestTestEngine.MockState>
+      Promise.resolve({}) as Promise<InngestTestEngine.MockState>,
     );
 
     InngestTestRun["updateState"](options, result);
@@ -545,7 +553,7 @@ export class InngestTestEngine {
 
     return {
       result,
-      ctx: ctx as InngestTestEngine.MockContext,
+      ctx: ctx as unknown as InngestTestEngine.MockContext,
       state: mockState,
       run,
     };
