@@ -1,5 +1,11 @@
 # inngest
 
+## 3.42.3
+
+### Patch Changes
+
+- [#1087](https://github.com/inngest/inngest-js/pull/1087) [`6557014`](https://github.com/inngest/inngest-js/commit/655701448c80a86b4039ca570bacaf9ba1f16399) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix bad release command
+
 ## 3.42.2
 
 ### Patch Changes
