@@ -4,7 +4,8 @@ import {
   runHasTimeline,
   sendEvent,
 } from "../../helpers";
-import { events } from ".";
+
+const events = ["demo/multiple-triggers.1", "demo/multiple-triggers.2"];
 
 checkIntrospection({
   name: "multiple-triggers",
