@@ -514,7 +514,7 @@ export class InngestTestEngine {
         stepState: mockStepState,
         disableImmediateExecution: Boolean(options.disableImmediateExecution),
         isFailureHandler: false, // TODO need to allow hitting an `onFailure` handler - not dynamically, but choosing it
-        timer: new ServerTiming(),
+        timer: new ServerTiming.ServerTiming(),
         requestedRunStep: options.targetStepId,
         transformCtx: this.options.transformCtx ?? mockCtx,
       },
