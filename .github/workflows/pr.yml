@@ -182,7 +182,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
         with:
-          install-dependencies: false
+          install-dependencies: true
           build: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
