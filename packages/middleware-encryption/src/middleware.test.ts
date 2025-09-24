@@ -5,10 +5,10 @@ import {
   type EventPayload,
   Inngest,
   InngestMiddleware,
+  type SendEventPayload,
 } from "inngest";
-import { encryptionMiddleware, EncryptionService } from "./middleware";
-import { InngestExecution, InngestExecutionV1 } from "inngest/dist/internals";
-import { SendEventPayload } from "inngest/dist/helpers/types";
+import { InngestExecution, InngestExecutionV1 } from "inngest/internals";
+import { EncryptionService, encryptionMiddleware } from "./middleware";
 
 const id = "test-client";
 const key = "123";
@@ -44,7 +44,7 @@ describe("encryptionMiddleware", () => {
 
     const mockSend = (
       inngest: Inngest.Any,
-      payload: SendEventPayload<Record<string, EventPayload>>
+      payload: SendEventPayload<Record<string, EventPayload>>,
     ): Promise<EventPayload> => {
       return new Promise(async (resolve, reject) => {
         fetchMock.post(`${baseUrl}/e/${eventKey}`, (url, req) => {
@@ -229,7 +229,10 @@ const runFn = async ({
   },
 }: {
   spec: Specification;
-}): Promise<{ execResult: InngestExecution.ExecutionResult; rawOutput: unknown }> => {
+}): Promise<{
+  execResult: InngestExecution.ExecutionResult;
+  rawOutput: unknown;
+}> => {
   const inngest = new Inngest({
     id: "test-client",
     middleware: [encryptionMiddleware({ key })],
@@ -247,7 +250,7 @@ const runFn = async ({
   const fn = inngest.createFunction(
     { id: "my-fn" },
     { event: "my-event" },
-    testFn
+    testFn,
   );
 
   const runId = "test-run";
@@ -255,7 +258,7 @@ const runFn = async ({
   const execution = fn["createExecution"]({
     version: InngestExecution.ExecutionVersion.V1,
     partialOptions: {
-      client: fn['client'],
+      client: fn["client"],
       data: {
         attempt: 0,
         event: events[0],

@@ -1,7 +1,7 @@
 import { OutgoingOp } from "inngest";
+import { InngestExecution, InngestExecutionV1 } from "inngest/internals";
 import type { InngestTestEngine } from "./InngestTestEngine.js";
-import { createDeferredPromise, isDeeplyEqual, type DeepPartial } from "./util";
-import { InngestExecution, InngestExecutionV1 } from "inngest/dist/internals";
+import { createDeferredPromise, type DeepPartial, isDeeplyEqual } from "./util";
 
 /**
  * A test run that allows you to wait for specific checkpoints in a run that
@@ -75,7 +75,7 @@ export class InngestTestRun {
      * When providing a `subset`, use `expect` tooling such as
      * `expect.stringContaining` to match partial values.
      */
-    subset?: DeepPartial<InngestTestRun.Checkpoint<T>>
+    subset?: DeepPartial<InngestTestRun.Checkpoint<T>>,
   ): Promise<InngestTestEngine.ExecutionOutput<T>> {
     let finished = false;
     const runningState: InngestTestEngine.InlineOptions = {
@@ -110,7 +110,10 @@ export class InngestTestRun {
         subset.step !== null &&
         "id" in subset.step &&
         typeof subset.step.id === "string" && {
-          step: { ...subset.step, id: InngestExecutionV1._internals.hashId(subset.step.id) },
+          step: {
+            ...subset.step,
+            id: InngestExecutionV1._internals.hashId(subset.step.id),
+          },
         }),
 
       // "steps" for "steps-found"
@@ -142,7 +145,10 @@ export class InngestTestRun {
 
       InngestTestRun.updateState(runningState, exec.result);
 
-      const resultHandlers: Record<keyof InngestExecution.ExecutionResults, () => void> = {
+      const resultHandlers: Record<
+        keyof InngestExecution.ExecutionResults,
+        () => void
+      > = {
         "function-resolved": () => finish(exec),
         "function-rejected": () => finish(exec),
         "step-not-found": () => processChain(),
@@ -181,7 +187,7 @@ export class InngestTestRun {
    */
   protected static updateState(
     options: InngestTestEngine.InlineOptions,
-    checkpoint: InngestTestRun.Checkpoint<InngestTestRun.CheckpointKey>
+    checkpoint: InngestTestRun.Checkpoint<InngestTestRun.CheckpointKey>,
   ): void {
     if (checkpoint.type === "steps-found") {
       const steps = (checkpoint as InngestTestRun.Checkpoint<"steps-found">)

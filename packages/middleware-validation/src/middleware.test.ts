@@ -1,6 +1,6 @@
 import { InngestTestEngine } from "@inngest/test";
 import FetchMock from "fetch-mock-jest";
-import { EventSchemas, Inngest, Logger } from "inngest";
+import { EventSchemas, Inngest, type Logger } from "inngest";
 import { z } from "zod";
 import { validationMiddleware } from "./middleware";
 
@@ -19,7 +19,7 @@ describe("validationMiddleware", () => {
       function: inngest.createFunction(
         { id: "test" },
         { event: "test" },
-        () => "success"
+        () => "success",
       ),
       events: [{ name: "test" }],
     });
@@ -47,7 +47,7 @@ describe("validationMiddleware", () => {
       function: inngest.createFunction(
         { id: "test" },
         { event: "test" },
-        () => "success"
+        () => "success",
       ),
       events: [{ name: "test" }],
     });
@@ -75,7 +75,7 @@ describe("validationMiddleware", () => {
       function: inngest.createFunction(
         { id: "test" },
         { event: "test" },
-        () => "success"
+        () => "success",
       ),
       events: [{ name: "test", data: { message: "hello" } }],
     });
@@ -103,7 +103,7 @@ describe("validationMiddleware", () => {
       function: inngest.createFunction(
         { id: "test" },
         { event: "test" },
-        () => "success"
+        () => "success",
       ),
       events: [{ name: "test", data: { message: 123 } }],
     });
@@ -137,7 +137,7 @@ describe("validationMiddleware", () => {
         function: inngest.createFunction(
           { id: "test" },
           { event: "b" },
-          () => "success"
+          () => "success",
         ),
         events: [{ name: "inngest/function.invoked", data: { b: true } }],
       });
@@ -160,7 +160,7 @@ describe("validationMiddleware", () => {
         function: inngest.createFunction(
           { id: "test" },
           { event: "test" },
-          () => "success"
+          () => "success",
         ),
         events: [{ name: "test" }],
       });
@@ -188,7 +188,7 @@ describe("validationMiddleware", () => {
         function: inngest.createFunction(
           { id: "test" },
           { event: "test" },
-          () => "success"
+          () => "success",
         ),
         events: [{ name: "test" }],
       });
@@ -216,7 +216,7 @@ describe("validationMiddleware", () => {
         function: inngest.createFunction(
           { id: "test" },
           { event: "test" },
-          () => "success"
+          () => "success",
         ),
         events: [{ name: "test", data: { message: "hello" } }],
       });
@@ -244,7 +244,7 @@ describe("validationMiddleware", () => {
         function: inngest.createFunction(
           { id: "test" },
           { event: "test" },
-          () => "success"
+          () => "success",
         ),
         events: [
           { name: "inngest/function.invoked", data: { message: "hello" } },
@@ -276,7 +276,7 @@ describe("validationMiddleware", () => {
       function: inngest.createFunction(
         { id: "test" },
         { event: "test" },
-        () => "success"
+        () => "success",
       ),
       events: [{ name: "test", data: { message: "hello" } }],
     });
@@ -306,7 +306,7 @@ describe("validationMiddleware", () => {
       function: inngest.createFunction(
         { id: "test" },
         { event: "test" },
-        () => "success"
+        () => "success",
       ),
       events: [{ name: "test", data: { message: { content: "hello" } } }],
     });
@@ -334,7 +334,7 @@ describe("validationMiddleware", () => {
       function: inngest.createFunction(
         { id: "test" },
         { event: "test" },
-        () => "success"
+        () => "success",
       ),
       events: [
         { name: "test", data: { message: "hello" } },
@@ -375,7 +375,7 @@ describe("validationMiddleware", () => {
               inngest.send({
                 name: "test",
                 data: { message: 123 as unknown as string },
-              })
+              }),
           ),
           events: [{ name: "test", data: { message: "hello" } }],
         });
@@ -413,7 +413,7 @@ describe("validationMiddleware", () => {
           inngest.send({
             name: "test",
             data: { message: 123 as unknown as string },
-          })
+          }),
         ).resolves.not.toThrow();
       });
     });
@@ -445,7 +445,7 @@ describe("validationMiddleware", () => {
               name: "test",
               data: { message: 123 as unknown as string },
             });
-          }
+          },
         );
 
         const t = new InngestTestEngine({
@@ -490,7 +490,7 @@ describe("validationMiddleware", () => {
               name: "test",
               data: { message: 123 as unknown as string },
             });
-          }
+          },
         );
 
         const t = new InngestTestEngine({

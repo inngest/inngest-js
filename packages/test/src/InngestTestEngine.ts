@@ -1,11 +1,20 @@
+import { Context, EventPayload, InngestFunction } from "inngest";
+import {
+  errors,
+  InngestExecution,
+  InngestExecutionV1,
+  ServerTiming,
+} from "inngest/internals";
+import { StepOpCode } from "inngest/types";
 import { ulid } from "ulid";
 import { InngestTestRun } from "./InngestTestRun.js";
 import type { Mock } from "./spy.js";
-import { createDeferredPromise, createMockEvent, mockCtx, type DeepPartial } from "./util.js";
-import { Context, EventPayload, InngestFunction } from "inngest";
-import { InngestExecution, InngestExecutionV1, errors } from "inngest/dist/internals";
-import { StepOpCode } from "inngest/dist/types";
-import { ServerTiming } from "inngest/dist/helpers/ServerTiming";
+import {
+  createDeferredPromise,
+  createMockEvent,
+  type DeepPartial,
+  mockCtx,
+} from "./util.js";
 
 /**
  * A test engine for running Inngest functions in a test environment, providing
@@ -199,7 +208,7 @@ export class InngestTestEngine {
    * existing options.
    */
   public clone(
-    inlineOpts?: InngestTestEngine.InlineOptions
+    inlineOpts?: InngestTestEngine.InlineOptions,
   ): InngestTestEngine {
     return new InngestTestEngine({ ...this.options, ...inlineOpts });
   }
@@ -214,12 +223,12 @@ export class InngestTestEngine {
     /**
      * Options and state to start the run with.
      */
-    inlineOpts?: InngestTestEngine.ExecuteOptions<T>
+    inlineOpts?: InngestTestEngine.ExecuteOptions<T>,
   ): Promise<InngestTestRun.RunOutput> {
     const output = await this.individualExecution(inlineOpts);
 
     const resolutionHandler = (
-      output: InngestTestEngine.ExecutionOutput<"function-resolved">
+      output: InngestTestEngine.ExecutionOutput<"function-resolved">,
     ) => {
       return {
         ctx: output.ctx,
@@ -229,7 +238,7 @@ export class InngestTestEngine {
     };
 
     const rejectionHandler = (
-      output: InngestTestEngine.ExecutionOutput<"function-rejected">
+      output: InngestTestEngine.ExecutionOutput<"function-rejected">,
     ) => {
       if (
         typeof output === "object" &&
@@ -249,7 +258,7 @@ export class InngestTestEngine {
             error = output.result.step.error;
           } else {
             error = new Error(
-              "Function rejected without a visible error; this is a bug"
+              "Function rejected without a visible error; this is a bug",
             );
           }
         }
@@ -266,11 +275,11 @@ export class InngestTestEngine {
 
     if (output.result.type === "function-resolved") {
       return resolutionHandler(
-        output as InngestTestEngine.ExecutionOutput<"function-resolved">
+        output as InngestTestEngine.ExecutionOutput<"function-resolved">,
       );
     } else if (output.result.type === "function-rejected") {
       return rejectionHandler(
-        output as InngestTestEngine.ExecutionOutput<"function-rejected">
+        output as InngestTestEngine.ExecutionOutput<"function-rejected">,
       );
     } else if (output.result.type === "step-ran") {
       // Any error halts execution until retries are modelled
@@ -279,7 +288,7 @@ export class InngestTestEngine {
           .error
       ) {
         return rejectionHandler(
-          output as InngestTestEngine.ExecutionOutput<"function-rejected">
+          output as InngestTestEngine.ExecutionOutput<"function-rejected">,
         );
       }
     }
@@ -303,7 +312,7 @@ export class InngestTestEngine {
     /**
      * Options and state to start the run with.
      */
-    inlineOpts?: InngestTestEngine.ExecuteOptions
+    inlineOpts?: InngestTestEngine.ExecuteOptions,
   ): Promise<InngestTestRun.RunStepOutput> {
     const { run, result: resultaaa } = await this.individualExecution({
       ...inlineOpts,
@@ -319,13 +328,13 @@ export class InngestTestEngine {
     const hashedStepId = InngestExecutionV1._internals.hashId(stepId);
 
     const step = foundSteps.result.steps.find(
-      (step) => step.id === hashedStepId
+      (step) => step.id === hashedStepId,
     );
 
     // never found the step? Unexpected.
     if (!step) {
       throw new Error(
-        `Step "${stepId}" not found, but execution was still paused. This is a bug.`
+        `Step "${stepId}" not found, but execution was still paused. This is a bug.`,
       );
     }
 
@@ -397,7 +406,7 @@ export class InngestTestEngine {
     /**
      * Options and state to start the run with.
      */
-    inlineOpts?: InngestTestEngine.ExecuteOptions<T>
+    inlineOpts?: InngestTestEngine.ExecuteOptions<T>,
   ): Promise<InngestTestEngine.ExecutionOutput<T>> {
     const { run } = await this.individualExecution(inlineOpts);
 
@@ -408,7 +417,7 @@ export class InngestTestEngine {
    * Execute the function with the given inline options.
    */
   protected async individualExecution(
-    inlineOpts?: InngestTestEngine.InlineOptions
+    inlineOpts?: InngestTestEngine.InlineOptions,
   ): Promise<InngestTestEngine.ExecutionOutput> {
     const options = {
       ...this.options,
@@ -426,7 +435,9 @@ export class InngestTestEngine {
     const steps = (options.steps || []).map((step) => {
       return {
         ...step,
-        id: step.idIsHashed ? step.id : InngestExecutionV1._internals.hashId(step.id),
+        id: step.idIsHashed
+          ? step.id
+          : InngestExecutionV1._internals.hashId(step.id),
       };
     });
 
@@ -490,7 +501,7 @@ export class InngestTestEngine {
       version: InngestExecution.ExecutionVersion.V1,
       partialOptions: {
         runId,
-        client: (options.function as InngestFunction.Any)['client'],
+        client: (options.function as InngestFunction.Any)["client"],
         data: {
           runId,
           attempt: 0, // TODO retries?
@@ -512,7 +523,7 @@ export class InngestTestEngine {
     const { ctx, ops, ...result } = await execution.start();
 
     const mockState: InngestTestEngine.MockState = await Object.keys(
-      ops
+      ops,
     ).reduce(
       async (acc, stepId) => {
         const op = ops[stepId];
@@ -531,7 +542,7 @@ export class InngestTestEngine {
           [stepId]: op.promise,
         };
       },
-      Promise.resolve({}) as Promise<InngestTestEngine.MockState>
+      Promise.resolve({}) as Promise<InngestTestEngine.MockState>,
     );
 
     InngestTestRun["updateState"](options, result);
