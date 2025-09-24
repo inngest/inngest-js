@@ -1,5 +1,11 @@
 # inngest
 
+## 3.42.2
+
+### Patch Changes
+
+- [#1085](https://github.com/inngest/inngest-js/pull/1085) [`d081d36`](https://github.com/inngest/inngest-js/commit/d081d36169aa476f3058f3d626ce4efdd4fcf6aa) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix legacy exports when using older module resolution
+
 ## 3.42.1
 
 ### Patch Changes
