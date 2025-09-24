@@ -102,6 +102,29 @@ export const serve = (options: ServeHandlerOptions): http.RequestListener => {
           res.writeHead(status, headers);
           res.end(body);
         },
+
+        transformStreamingResponse: async ({ body, headers, status }) => {
+          res.writeHead(status, headers);
+
+          const reader = body.getReader();
+          try {
+            let done = false;
+            while (!done) {
+              const result = await reader.read();
+              done = result.done;
+              if (!done) {
+                res.write(result.value);
+              }
+            }
+            res.end();
+          } catch (error) {
+            if (error instanceof Error) {
+              res.destroy(error);
+            } else {
+              res.destroy(new Error(String(error)));
+            }
+          }
+        },
       };
     },
   });
