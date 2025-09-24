@@ -40,4 +40,5 @@ export default defineConfig({
   minify: false, // let bundlers handle minification if they want it
   report: true,
   unbundle: true, // let bundlers handle bundling
+  copy: ["package.json", "LICENSE.md", "README.md", "CHANGELOG.md"],
 });
