@@ -41,4 +41,5 @@ export default defineConfig({
   report: true,
   unbundle: true, // let bundlers handle bundling
   copy: ["package.json", "LICENSE.md", "README.md", "CHANGELOG.md"],
+  skipNodeModulesBundle: true,
 });
