@@ -39,9 +39,6 @@ jobs:
       fail-fast: false
       matrix:
         nodeVersion:
-          - 14
-          - 16
-          - 18
           - 20
           - 22
           - 24
@@ -51,19 +48,10 @@ jobs:
       - uses: actions/setup-node@v3
         with:
           node-version: ${{ matrix.nodeVersion }}
-      # Uses npm as pnpm doesn't support Node < 16
-      # If we're on Node <18, restrict some framework tests that do not support
-      # Node on this version.
-      - run: |
-          node --version
-          npm --version
-          npm run test -- --testPathIgnorePatterns "<rootDir>/src/hono.test.ts"
-        if: ${{ matrix.nodeVersion < 18 }}
       - run: |
           node --version
           npm --version
           npm run test
-        if: ${{ matrix.nodeVersion >= 18 }}
 
   inngest_types:
     name: "inngest: Type tests"
@@ -76,18 +64,8 @@ jobs:
       matrix:
         tsVersion:
           - "latest"
+          - "~5.9.0"
           - "~5.8.0"
-          - "~5.7.0"
-          - "~5.6.0"
-          - "~5.5.0"
-          - "~5.4.0"
-          - "~5.3.0"
-          - "~5.2.0"
-          - "~5.1.0"
-          - "~5.0.0"
-          - "~4.9.0"
-          - "~4.8.0"
-          - "~4.7.0"
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
@@ -95,8 +73,8 @@ jobs:
       - run: pnpm run test:types
       - run: pnpm run test:dist
 
-  inngest_api_diff:
-    name: "inngest: Local API diff"
+  inngest_package_health:
+    name: "inngest: Package health"
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -104,6 +82,21 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
+      - run: pnpm run local:pack
+
+      - name: Lint package publishing config
+        id: publint
+        continue-on-error: true
+        run: pnpm dlx publint --pack npm ./dist
+
+      - name: Check publishing types health
+        id: typescheck
+        continue-on-error: true
+        run: pnpm dlx @arethetypeswrong/cli inngest.tgz
+
+      - name: Fail if any checks failed
+        if: steps.publint.outcome != 'success' || steps.typescheck.outcome != 'success'
+        run: exit 1
 
   inngest_lint:
     name: "inngest: Lint"
@@ -189,7 +182,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-and-build
         with:
-          install-dependencies: false
+          install-dependencies: true
           build: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
@@ -261,6 +254,7 @@ jobs:
             streaming: force
         exclude:
           - example: framework-nextjs-starter
+          - example: framework-hono
     steps:
       # Checkout the repo
       - name: Checkout SDK

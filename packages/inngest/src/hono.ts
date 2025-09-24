@@ -17,14 +17,14 @@
  * @module
  */
 
-import { type Context } from "hono";
+import type { Context } from "hono";
 import { env } from "hono/adapter";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type Env } from "./helpers/env.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import type { Env } from "./helpers/env.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -52,7 +52,7 @@ export const frameworkName: SupportedFrameworkName = "hono";
  */
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
-  options: ServeHandlerOptions
+  options: ServeHandlerOptions,
 ): ((c: Context) => Promise<Response>) => {
   const handler = new InngestCommHandler({
     fetch: fetch.bind(globalThis),
@@ -76,7 +76,7 @@ export const serve = (
           const host = options.serveHost || c.req.header("host");
           if (!host) {
             throw new Error(
-              "No host header found in request and no `serveHost` given either."
+              "No host header found in request and no `serveHost` given either.",
             );
           }
 
@@ -91,11 +91,10 @@ export const serve = (
               // access the environment instead of using any helpers here to
               // ensure compatibility with tools with Webpack which will replace
               // this with a literal.
-              // eslint-disable-next-line @inngest/internal/process-warn
               if (process.env.NODE_ENV !== "production") {
                 scheme = "http";
               }
-            } catch (err) {
+            } catch (_err) {
               // no-op
             }
 

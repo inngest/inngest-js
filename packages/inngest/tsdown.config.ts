@@ -1,0 +1,45 @@
+import { defineConfig } from "tsdown";
+
+export default defineConfig({
+  clean: true,
+  dts: true,
+  entry: [
+    "src/astro.ts",
+    "src/bun.ts",
+    "src/cloudflare.ts",
+    "src/connect.ts",
+    "src/deno/fresh.ts",
+    "src/digitalocean.ts",
+    "src/edge.ts",
+    "src/experimental.ts",
+    "src/express.ts",
+    "src/fastify.ts",
+    "src/h3.ts",
+    "src/hono.ts",
+    "src/index.ts",
+    "src/internals.ts",
+    "src/koa.ts",
+    "src/lambda.ts",
+    "src/next.ts",
+    "src/nitro.ts",
+    "src/node.ts",
+    "src/nuxt.ts",
+    "src/redwood.ts",
+    "src/remix.ts",
+    "src/sveltekit.ts",
+    "src/types.ts",
+    "!src/test/**/*",
+    "!src/**/*.test.*",
+  ],
+  format: ["cjs", "esm"],
+  outDir: "dist",
+  tsconfig: "tsconfig.build.json",
+  target: "node20",
+  sourcemap: true,
+  failOnWarn: true, // keep the build as good we can
+  minify: false, // let bundlers handle minification if they want it
+  report: true,
+  unbundle: true, // let bundlers handle bundling
+  copy: ["package.json", "LICENSE.md", "README.md", "CHANGELOG.md"],
+  skipNodeModulesBundle: true,
+});

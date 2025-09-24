@@ -1,7 +1,7 @@
 import Debug from "debug";
-import { type Simplify } from "../helpers/types.js";
-import { getAsyncCtx } from "./execution/als.js";
-import { gatewaySymbol, type InternalStepTools } from "./InngestStepTools.js";
+import type { Simplify } from "../helpers/types.ts";
+import { getAsyncCtx } from "./execution/als.ts";
+import { gatewaySymbol, type InternalStepTools } from "./InngestStepTools.ts";
 
 const globalFetch = globalThis.fetch;
 type Fetch = typeof globalFetch;
@@ -26,7 +26,7 @@ export namespace StepFetch {
 const debug = Debug("inngest:fetch");
 
 const createFetchShim = (): StepFetch => {
-  // eslint-disable-next-line prefer-const
+  // biome-ignore lint/style/useConst: need this to allow fns to be defined
   let stepFetch: StepFetch;
 
   const fetch: Fetch = async (input, init) => {
@@ -36,12 +36,12 @@ const createFetchShim = (): StepFetch => {
       if (!stepFetch.fallback) {
         // TODO Tell the user how to solve
         throw new Error(
-          "step.fetch() called outside of a function and had no fallback set"
+          "step.fetch() called outside of a function and had no fallback set",
         );
       }
 
       debug(
-        "step.fetch() called outside of a function; falling back to global fetch"
+        "step.fetch() called outside of a function; falling back to global fetch",
       );
 
       return stepFetch.fallback(input, init);
@@ -53,19 +53,19 @@ const createFetchShim = (): StepFetch => {
       if (!stepFetch.fallback) {
         // TODO Tell the user how to solve
         throw new Error(
-          `step.fetch() called inside step "${ctx.executingStep.id}" and had no fallback set`
+          `step.fetch() called inside step "${ctx.executingStep.id}" and had no fallback set`,
         );
       }
 
       debug(
-        `step.fetch() called inside step "${ctx.executingStep.id}"; falling back to global fetch`
+        `step.fetch() called inside step "${ctx.executingStep.id}"; falling back to global fetch`,
       );
 
       return stepFetch.fallback(input, init);
     }
 
     const targetUrl = new URL(
-      input instanceof Request ? input.url : input.toString()
+      input instanceof Request ? input.url : input.toString(),
     );
 
     debug("step.fetch() shimming request to", targetUrl.hostname);
@@ -75,7 +75,7 @@ const createFetchShim = (): StepFetch => {
     const jsonRes = await (ctx.ctx.step as InternalStepTools)[gatewaySymbol](
       `step.fetch: ${targetUrl.hostname}`,
       input,
-      init
+      init,
     );
 
     return new Response(jsonRes.body, {

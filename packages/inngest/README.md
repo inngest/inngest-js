@@ -5,15 +5,21 @@
   <br/>
   <p>
     Inngest is the reliability layer for modern applications. It combines durable execution, events, and queues into a zero-infra platform with built-in observability.
-
-    Inngest enables serverless event-driven queues, background jobs, and scheduled jobs for TypeScript. Works with any framework and platform.
-
   </p>
-  Read the <a href="https://www.inngest.com/docs?ref=github-inngest-js-readme">documentation</a> and get started in minutes.
-  <br/>
+
+**Works with:**
+<br/>
+<img src="https://jsr.io/logos/browsers.svg" height="20" />
+<img src="https://jsr.io/logos/bun.svg" height="20" />
+<img src="https://jsr.io/logos/deno.svg" height="20" />
+<img src="https://jsr.io/logos/node.svg" height="20" />
+<img src="https://jsr.io/logos/cloudflare-workers.svg" height="20" />
+
+Read the <a href="https://www.inngest.com/docs?ref=github-inngest-js-readme">documentation</a> and get started in minutes.
+<br/>
+
   <p>
 
-<a href="http://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TS-%3E%3D4.7-blue" /></a>
 <a href="https://www.npmjs.com/package/inngest"><img src="https://img.shields.io/npm/v/inngest" /></a>
 <a href="https://jsr.io/@inngest/sdk"><img src="https://jsr.io/badges/@inngest/sdk" /></a>
 <br/>
@@ -41,6 +47,7 @@ On _any_ serverless platform ([Next.js](https://www.inngest.com/docs/sdk/serve#f
 <p align="center">
 <a href="#getting-started">Getting started</a> ·
 <a href="#features">Features</a> ·
+<a href="#version-support">Version support</a> ·
 <a href="#contributing">Contributing</a> ·
 <a href="https://www.inngest.com/docs?ref=github-inngest-js-readme">Documentation</a>
 </p>
@@ -54,7 +61,13 @@ On _any_ serverless platform ([Next.js](https://www.inngest.com/docs/sdk/serve#f
 Install Inngest:
 
 ```bash
-npm install inngest  # or yarn add inngest
+npm install inngest
+```
+
+Or get it from [JSR](https://jsr.io/@inngest/sdk):
+
+```bash
+deno add jsr:@inngest/sdk
 ```
 
 ### Writing functions
@@ -131,6 +144,15 @@ inngest.send("app/user.signup", {
 - **Observable**: A full UI for managing and inspecting your functions
 
 <br />
+
+## Version support
+
+The library works across browsers, Bun, Deno, Node, and Cloudflare Workers.
+
+We support the LTS versions of these runtimes and the last 3 minor versions of
+TypeScript; once a runtime version drops out of LTS, any major, minor, or patch
+update to the `inngest` library may drop support for it, which will be mentioned
+in the patch notes.
 
 ## Contributing
 

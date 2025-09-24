@@ -12,7 +12,7 @@
     "postversion": "pnpm run build",
     "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
     "release:version": "node ../../scripts/release/jsrVersion.js",
-    "pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest-realtime.tgz"
+    "pack": "pnpm run build && pnpm pack --out inngest-realtime.tgz"
   },
   "files": [
     "dist"
@@ -68,7 +68,7 @@
   "dependencies": {
     "@standard-schema/spec": "^1.0.0",
     "debug": "^4.3.4",
-    "inngest": "^3.34.2",
-    "zod": "^3.24.2"
+    "inngest": "^3.42.3",
+    "zod": "^3.25.76"
   }
 }

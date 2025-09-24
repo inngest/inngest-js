@@ -19,6 +19,6 @@
     "@types/koa": "^2.13.11",
     "@types/koa-bodyparser": "^4.3.12",
     "tsx": "^4.0.0",
-    "typescript": "^5.2.2"
+    "typescript": "^5.8.2"
   }
 }

@@ -27,5 +27,5 @@ export default inngest.createFunction(
       getScore(),
       getFruits().then((fruits) => fruits.join(", ")),
     ]);
-  }
+  },
 );

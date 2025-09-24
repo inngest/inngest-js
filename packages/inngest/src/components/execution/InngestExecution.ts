@@ -1,11 +1,16 @@
 import Debug, { type Debugger } from "debug";
-import { type ServerTiming } from "../../helpers/ServerTiming.js";
-import { debugPrefix } from "../../helpers/consts.js";
-import { type MaybePromise, type Simplify } from "../../helpers/types.js";
-import { type Context, type IncomingOp, type OutgoingOp } from "../../types.js";
-import { type Inngest } from "../Inngest.js";
-import { type ActionResponse } from "../InngestCommHandler.js";
-import { type InngestFunction } from "../InngestFunction.js";
+import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
+import type { ServerTiming } from "../../helpers/ServerTiming.ts";
+import type { MaybePromise, Simplify } from "../../helpers/types.ts";
+import type { Context, IncomingOp, OutgoingOp } from "../../types.ts";
+import type { Inngest } from "../Inngest.ts";
+import type { ActionResponse } from "../InngestCommHandler.ts";
+import type { InngestFunction } from "../InngestFunction.ts";
+
+// Re-export ExecutionVersion so it's correctly recognized as an enum and not
+// just a type. This can be lost when bundling if we don't re-export it here.
+// See `pnpm run test:dist`.
+export { ExecutionVersion };
 
 /**
  * The possible results of an execution.
@@ -29,7 +34,7 @@ export type ExecutionResult = {
 }[keyof ExecutionResults];
 
 export type ExecutionResultHandler<T = ActionResponse> = (
-  result: ExecutionResult
+  result: ExecutionResult,
 ) => MaybePromise<T>;
 
 export type ExecutionResultHandlers<T = ActionResponse> = {
@@ -49,18 +54,6 @@ export interface MemoizedOp extends IncomingOp {
    */
   promise?: Promise<unknown>;
   seen?: boolean;
-}
-
-/**
- * The execution models the SDK is aware of.
- *
- * This is used in a number of places to ensure all execution versions are
- * accounted for for a given operation.
- */
-export enum ExecutionVersion {
-  V0 = 0,
-  V1 = 1,
-  V2 = 2,
 }
 
 /**
@@ -102,7 +95,7 @@ export interface InngestExecutionOptions {
 }
 
 export type InngestExecutionFactory = (
-  options: InngestExecutionOptions
+  options: InngestExecutionOptions,
 ) => IInngestExecution;
 
 export class InngestExecution {

@@ -1,40 +1,41 @@
-import { type internalEvents } from "../helpers/consts.js";
-import {
-  type IsEmptyObject,
-  type IsStringLiteral,
-  type Simplify,
-} from "../helpers/types.js";
-import type * as z from "../helpers/validators/zod.js";
-import {
-  type CancelledEventPayload,
-  type EventPayload,
-  type FailureEventPayload,
-  type FinishedEventPayload,
-  type InvokedEventPayload,
-  type ScheduledTimerEventPayload,
-} from "../types.js";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
+import type { internalEvents } from "../helpers/consts.ts";
+import type {
+  IsEmptyObject,
+  IsStringLiteral,
+  Simplify,
+} from "../helpers/types.ts";
+import type * as z from "../helpers/validators/zod.ts";
+import type {
+  CancelledEventPayload,
+  EventPayload,
+  FailureEventPayload,
+  FinishedEventPayload,
+  InvokedEventPayload,
+  ScheduledTimerEventPayload,
+} from "../types.ts";
 
 /**
  * Declares the shape of an event schema we expect from the user. This may be
  * different to what a user is sending us depending on the supported library,
- * but this standard format is what we require as the end result.
+ * but this normalized format is what we require as the end result.
  *
  * @internal
  */
-export type StandardEventSchema = {
+export type NormalizedEventSchema = {
   name?: string;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   data?: Record<string, any>;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   user?: Record<string, any>;
 };
 
 /**
- * A helper type that declares a standardised custom part of the event schema.
+ * A helper type that declares a normalized custom part of the event schema.
  *
  * @public
  */
-export type StandardEventSchemas = Record<string, StandardEventSchema>;
+export type NormalizedEventSchemas = Record<string, NormalizedEventSchema>;
 
 /**
  * Asserts that the given type `T` contains a mapping for all internal events.
@@ -168,15 +169,15 @@ export type LiteralToRecordZodSchemas<T> = PickLiterals<
 >;
 
 /**
- * Given a set of Zod schemas in a record format, convert them into a standard
+ * Given a set of Zod schemas in a record format, convert them into a normalized
  * event schema format.
  *
  * @public
  */
-export type ZodToStandardSchema<T extends ZodEventSchemas> = {
+export type ZodToNormalizedSchema<T extends ZodEventSchemas> = {
   [EventName in keyof T & string]: {
     [Key in keyof T[EventName] & string]: T[EventName][Key] extends z.ZodTypeAny
-      ? z.infer<T[EventName][Key]>
+      ? z.ZodInfer<T[EventName][Key]>
       : T[EventName][Key];
   };
 };
@@ -191,7 +192,7 @@ export type ZodToStandardSchema<T extends ZodEventSchemas> = {
  *
  * @public
  */
-export type StandardEventSchemaToPayload<T> = {
+export type NormalizedEventSchemaToPayload<T> = {
   [K in keyof T & string]: AddName<
     Simplify<Omit<EventPayload, keyof T[K]> & T[K]>,
     K
@@ -221,13 +222,34 @@ export type AddName<TObj, TDefaultName extends string> = TObj extends {
  */
 export type Combine<
   TCurr extends Record<string, EventPayload>,
-  TInc extends StandardEventSchemas,
+  TInc extends NormalizedEventSchemas,
 > = IsStringLiteral<keyof TCurr & string> extends true
   ? Simplify<
-      Omit<TCurr, keyof StandardEventSchemaToPayload<TInc>> &
-        StandardEventSchemaToPayload<TInc>
+      Omit<TCurr, keyof NormalizedEventSchemaToPayload<TInc>> &
+        NormalizedEventSchemaToPayload<TInc>
     >
-  : StandardEventSchemaToPayload<TInc>;
+  : NormalizedEventSchemaToPayload<TInc>;
+
+/**
+ * A record of event names to a schema for their data.
+ */
+export type StandardSchemas = Record<string, StandardSchemaV1>;
+
+/**
+ * Conversion of Standard Schemas to the normalized type, including a literal of
+ * the event name.
+ */
+export type StandardToNormalizedSchema<T extends StandardSchemas> = {
+  [K in keyof T & string]: AddName<
+    {
+      // biome-ignore lint/suspicious/noExplicitAny: Only this type is allowed for data and we need `any` for elsewhere
+      data: StandardSchemaV1.InferOutput<T[K]> extends Record<string, any>
+        ? StandardSchemaV1.InferOutput<T[K]>
+        : never;
+    },
+    K
+  >;
+};
 
 /**
  * Provide an `EventSchemas` class to type events, providing type safety when
@@ -275,7 +297,7 @@ export class EventSchemas<
   /**
    * Use generated Inngest types to type events.
    */
-  public fromGenerated<T extends StandardEventSchemas>(): EventSchemas<
+  public fromGenerated<T extends NormalizedEventSchemas>(): EventSchemas<
     Combine<S, T>
   > {
     return this;
@@ -300,7 +322,7 @@ export class EventSchemas<
    * });
    * ```
    */
-  public fromRecord<T extends StandardEventSchemas>(
+  public fromRecord<T extends NormalizedEventSchemas>(
     ..._args: PreventClashingNames<T> extends ClashingNameError
       ? [ClashingNameError]
       : []
@@ -335,7 +357,7 @@ export class EventSchemas<
    * ```
    */
   public fromUnion<
-    T extends { name: string } & StandardEventSchema,
+    T extends { name: string } & NormalizedEventSchema,
   >(): EventSchemas<
     Combine<
       S,
@@ -349,6 +371,8 @@ export class EventSchemas<
 
   /**
    * Use Zod to type events.
+   *
+   * @deprecated Use {@link fromSchema}.
    *
    * @example
    *
@@ -367,11 +391,11 @@ export class EventSchemas<
    * ```
    */
   public fromZod<T extends ZodEventSchemas | LiteralZodEventSchemas>(
-    schemas: T
+    schemas: T,
   ): EventSchemas<
     Combine<
       S,
-      ZodToStandardSchema<
+      ZodToNormalizedSchema<
         T extends ZodEventSchemas ? T : LiteralToRecordZodSchemas<T>
       >
     >
@@ -395,6 +419,35 @@ export class EventSchemas<
     }
 
     this.addRuntimeSchemas(runtimeSchemas);
+
+    return this;
+  }
+
+  /**
+   * Use anything compliant with Standard Schema to type events.
+   *
+   * @example
+   *
+   * ```ts
+   * export const inngest = new Inngest({
+   *   id: "my-app",
+   *   schemas: new EventSchemas().fromSchema({
+   *     "app/user.created": z.object({
+   *       id: z.string(),
+   *       name: z.string(),
+   *     }),
+   *   }),
+   * });
+   * ```
+   */
+  public fromSchema<T extends StandardSchemas>(
+    schemas: T,
+  ): EventSchemas<Combine<S, StandardToNormalizedSchema<T>>> {
+    this.addRuntimeSchemas(
+      Object.entries(schemas).reduce((acc, [name, schema]) => {
+        return { ...acc, [name]: schema };
+      }, {}),
+    );
 
     return this;
   }

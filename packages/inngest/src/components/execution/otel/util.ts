@@ -6,14 +6,14 @@ import {
   registerInstrumentations,
 } from "@opentelemetry/instrumentation";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
-import { InngestSpanProcessor } from "./processor.js";
+import { InngestSpanProcessor } from "./processor.ts";
 
 export type Behaviour = "createProvider" | "extendProvider" | "off" | "auto";
 export type Instrumentations = (Instrumentation | Instrumentation[])[];
 
 export const createProvider = (
-  behaviour: Behaviour,
-  instrumentations: Instrumentations | undefined = []
+  _behaviour: Behaviour,
+  instrumentations: Instrumentations | undefined = [],
 ): { success: true; processor: InngestSpanProcessor } | { success: false } => {
   // TODO Check if there's an existing provider
   const processor = new InngestSpanProcessor();
@@ -43,14 +43,14 @@ export const createProvider = (
  * if the provider was extended, false if it was not.
  */
 export const extendProvider = (
-  behaviour: Behaviour
+  behaviour: Behaviour,
 ): { success: true; processor: InngestSpanProcessor } | { success: false } => {
   // Attempt to add our processor and export to the existing provider
   const existingProvider = trace.getTracerProvider();
   if (!existingProvider) {
     if (behaviour !== "auto") {
       console.warn(
-        'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.'
+        'No existing OTel provider found and behaviour is "extendProvider". Inngest\'s OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
       );
     }
 
@@ -66,7 +66,7 @@ export const extendProvider = (
     // providers.
     if (behaviour !== "auto") {
       console.warn(
-        "Existing OTel provider is not a BasicTracerProvider. Inngest's OTel middleware will not work, as it can only extend an existing processor if it's a BasicTracerProvider."
+        "Existing OTel provider is not a BasicTracerProvider. Inngest's OTel middleware will not work, as it can only extend an existing processor if it's a BasicTracerProvider.",
       );
     }
 

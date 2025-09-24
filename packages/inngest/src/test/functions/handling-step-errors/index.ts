@@ -12,7 +12,9 @@ export default inngest.createFunction(
       });
     } catch (err) {
       await step.run("b", () => {
-        return `err was: "${err.message}" and the cause was: "${err.cause.message}"`;
+        return `err was: "${(err as Error).message}" and the cause was: "${
+          ((err as Error).cause as Error).message
+        }"`;
       });
     }
 
@@ -30,5 +32,5 @@ export default inngest.createFunction(
           });
         }),
     ]);
-  }
+  },
 );
