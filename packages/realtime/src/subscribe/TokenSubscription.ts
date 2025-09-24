@@ -43,6 +43,12 @@ export class TokenSubscription {
     this.#signingKey = signingKey;
     this.#signingKeyFallback = signingKeyFallback;
 
+    if (this.#apiBaseUrl === undefined) {
+        this.#apiBaseURL =
+      getEnvVar("INNGEST_BASE_URL") ||
+      getEnvVar("INNGEST_API_BASE_URL");
+    }
+
     if (typeof token.channel === "string") {
       this.#channelId = token.channel;
 
