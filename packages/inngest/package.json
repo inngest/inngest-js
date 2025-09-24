@@ -2,21 +2,19 @@
   "name": "inngest",
   "version": "3.42.1",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
-  "main": "./dist/index.cjs",
-  "module": "./dist/index.js",
+  "main": "./index.cjs",
+  "module": "./index.js",
   "type": "module",
-  "types": "./dist/index.d.ts",
+  "types": "./index.d.ts",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "prebuild": "pnpm run pb:version",
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
     "proto": "protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/proto ./src/components/connect/protobuf/connect.proto",
     "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
+    "build:copy": "cp package.json LICENSE.md README.md CHANGELOG.md dist",
     "test": "vitest run",
     "itest": "tsx scripts/integrationTestRunner.ts",
     "test:examples": "vitest run --dir src/test/functions",
@@ -26,8 +24,8 @@
     "test:composite": "pnpm run local:pack && (cd test/composite_project && npm i ../../inngest.tgz && npm run test)",
     "lint": "biome check",
     "lint:fix": "biome check --fix",
-    "postversion": "pnpm run build",
-    "release": "pnpm run test && pnpm run build && node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
+    "postversion": "pnpm run build && pnpm run build:copy",
+    "release": "pnpm run test && pnpm run build && pnpm run build:copy && cross-env DIST_DIR=dist && node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
     "release:version": "node ../../scripts/release/jsrVersion.js",
     "dev": "pnpm install && concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"pnpm run dev:build\" \"pnpm run dev:lint\"",
     "dev:build": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run build'",
@@ -39,195 +37,195 @@
   "exports": {
     ".": {
       "types": {
-        "import": "./dist/index.d.ts",
-        "require": "./dist/index.d.cts"
+        "import": "./index.d.ts",
+        "require": "./index.d.cts"
       },
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": "./index.js",
+      "require": "./index.cjs"
     },
     "./experimental": {
       "types": {
-        "import": "./dist/experimental.d.ts",
-        "require": "./dist/experimental.d.cts"
+        "import": "./experimental.d.ts",
+        "require": "./experimental.d.cts"
       },
-      "import": "./dist/experimental.js",
-      "require": "./dist/experimental.cjs"
+      "import": "./experimental.js",
+      "require": "./experimental.cjs"
     },
     "./astro": {
       "types": {
-        "import": "./dist/astro.d.ts",
-        "require": "./dist/astro.d.cts"
+        "import": "./astro.d.ts",
+        "require": "./astro.d.cts"
       },
-      "import": "./dist/astro.js",
-      "require": "./dist/astro.cjs"
+      "import": "./astro.js",
+      "require": "./astro.cjs"
     },
     "./bun": {
       "types": {
-        "import": "./dist/bun.d.ts",
-        "require": "./dist/bun.d.cts"
+        "import": "./bun.d.ts",
+        "require": "./bun.d.cts"
       },
-      "import": "./dist/bun.js",
-      "require": "./dist/bun.cjs"
+      "import": "./bun.js",
+      "require": "./bun.cjs"
     },
     "./cloudflare": {
       "types": {
-        "import": "./dist/cloudflare.d.ts",
-        "require": "./dist/cloudflare.d.cts"
+        "import": "./cloudflare.d.ts",
+        "require": "./cloudflare.d.cts"
       },
-      "import": "./dist/cloudflare.js",
-      "require": "./dist/cloudflare.cjs"
+      "import": "./cloudflare.js",
+      "require": "./cloudflare.cjs"
     },
     "./digitalocean": {
       "types": {
-        "import": "./dist/digitalocean.d.ts",
-        "require": "./dist/digitalocean.d.cts"
+        "import": "./digitalocean.d.ts",
+        "require": "./digitalocean.d.cts"
       },
-      "import": "./dist/digitalocean.js",
-      "require": "./dist/digitalocean.cjs"
+      "import": "./digitalocean.js",
+      "require": "./digitalocean.cjs"
     },
     "./edge": {
       "types": {
-        "import": "./dist/edge.d.ts",
-        "require": "./dist/edge.d.cts"
+        "import": "./edge.d.ts",
+        "require": "./edge.d.cts"
       },
-      "import": "./dist/edge.js",
-      "require": "./dist/edge.cjs"
+      "import": "./edge.js",
+      "require": "./edge.cjs"
     },
     "./express": {
       "types": {
-        "import": "./dist/express.d.ts",
-        "require": "./dist/express.d.cts"
+        "import": "./express.d.ts",
+        "require": "./express.d.cts"
       },
-      "import": "./dist/express.js",
-      "require": "./dist/express.cjs"
+      "import": "./express.js",
+      "require": "./express.cjs"
     },
     "./fastify": {
       "types": {
-        "import": "./dist/fastify.d.ts",
-        "require": "./dist/fastify.d.cts"
+        "import": "./fastify.d.ts",
+        "require": "./fastify.d.cts"
       },
-      "import": "./dist/fastify.js",
-      "require": "./dist/fastify.cjs"
+      "import": "./fastify.js",
+      "require": "./fastify.cjs"
     },
     "./h3": {
       "types": {
-        "import": "./dist/h3.d.ts",
-        "require": "./dist/h3.d.cts"
+        "import": "./h3.d.ts",
+        "require": "./h3.d.cts"
       },
-      "import": "./dist/h3.js",
-      "require": "./dist/h3.cjs"
+      "import": "./h3.js",
+      "require": "./h3.cjs"
     },
     "./koa": {
       "types": {
-        "import": "./dist/koa.d.ts",
-        "require": "./dist/koa.d.cts"
+        "import": "./koa.d.ts",
+        "require": "./koa.d.cts"
       },
-      "import": "./dist/koa.js",
-      "require": "./dist/koa.cjs"
+      "import": "./koa.js",
+      "require": "./koa.cjs"
     },
     "./lambda": {
       "types": {
-        "import": "./dist/lambda.d.ts",
-        "require": "./dist/lambda.d.cts"
+        "import": "./lambda.d.ts",
+        "require": "./lambda.d.cts"
       },
-      "import": "./dist/lambda.js",
-      "require": "./dist/lambda.cjs"
+      "import": "./lambda.js",
+      "require": "./lambda.cjs"
     },
     "./next": {
       "types": {
-        "import": "./dist/next.d.ts",
-        "require": "./dist/next.d.cts"
+        "import": "./next.d.ts",
+        "require": "./next.d.cts"
       },
-      "import": "./dist/next.js",
-      "require": "./dist/next.cjs"
+      "import": "./next.js",
+      "require": "./next.cjs"
     },
     "./nuxt": {
       "types": {
-        "import": "./dist/nuxt.d.ts",
-        "require": "./dist/nuxt.d.cts"
+        "import": "./nuxt.d.ts",
+        "require": "./nuxt.d.cts"
       },
-      "import": "./dist/nuxt.js",
-      "require": "./dist/nuxt.cjs"
+      "import": "./nuxt.js",
+      "require": "./nuxt.cjs"
     },
     "./redwood": {
       "types": {
-        "import": "./dist/redwood.d.ts",
-        "require": "./dist/redwood.d.cts"
+        "import": "./redwood.d.ts",
+        "require": "./redwood.d.cts"
       },
-      "import": "./dist/redwood.js",
-      "require": "./dist/redwood.cjs"
+      "import": "./redwood.js",
+      "require": "./redwood.cjs"
     },
     "./remix": {
       "types": {
-        "import": "./dist/remix.d.ts",
-        "require": "./dist/remix.d.cts"
+        "import": "./remix.d.ts",
+        "require": "./remix.d.cts"
       },
-      "import": "./dist/remix.js",
-      "require": "./dist/remix.cjs"
+      "import": "./remix.js",
+      "require": "./remix.cjs"
     },
     "./sveltekit": {
       "types": {
-        "import": "./dist/sveltekit.d.ts",
-        "require": "./dist/sveltekit.d.cts"
+        "import": "./sveltekit.d.ts",
+        "require": "./sveltekit.d.cts"
       },
-      "import": "./dist/sveltekit.js",
-      "require": "./dist/sveltekit.cjs"
+      "import": "./sveltekit.js",
+      "require": "./sveltekit.cjs"
     },
     "./deno/fresh": {
       "types": {
-        "import": "./dist/deno/fresh.d.ts",
-        "require": "./dist/deno/fresh.d.cts"
+        "import": "./deno/fresh.d.ts",
+        "require": "./deno/fresh.d.cts"
       },
-      "import": "./dist/deno/fresh.js",
-      "require": "./dist/deno/fresh.cjs"
+      "import": "./deno/fresh.js",
+      "require": "./deno/fresh.cjs"
     },
     "./hono": {
       "types": {
-        "import": "./dist/hono.d.ts",
-        "require": "./dist/hono.d.cts"
+        "import": "./hono.d.ts",
+        "require": "./hono.d.cts"
       },
-      "import": "./dist/hono.js",
-      "require": "./dist/hono.cjs"
+      "import": "./hono.js",
+      "require": "./hono.cjs"
     },
     "./nitro": {
       "types": {
-        "import": "./dist/nitro.d.ts",
-        "require": "./dist/nitro.d.cts"
+        "import": "./nitro.d.ts",
+        "require": "./nitro.d.cts"
       },
-      "import": "./dist/nitro.js",
-      "require": "./dist/nitro.cjs"
+      "import": "./nitro.js",
+      "require": "./nitro.cjs"
     },
     "./node": {
       "types": {
-        "import": "./dist/node.d.ts",
-        "require": "./dist/node.d.cts"
+        "import": "./node.d.ts",
+        "require": "./node.d.cts"
       },
-      "import": "./dist/node.js",
-      "require": "./dist/node.cjs"
+      "import": "./node.js",
+      "require": "./node.cjs"
     },
     "./types": {
       "types": {
-        "import": "./dist/types.d.ts",
-        "require": "./dist/types.d.cts"
+        "import": "./types.d.ts",
+        "require": "./types.d.cts"
       },
-      "import": "./dist/types.js",
-      "require": "./dist/types.cjs"
+      "import": "./types.js",
+      "require": "./types.cjs"
     },
     "./connect": {
       "types": {
-        "import": "./dist/connect.d.ts",
-        "require": "./dist/connect.d.cts"
+        "import": "./connect.d.ts",
+        "require": "./connect.d.cts"
       },
-      "import": "./dist/connect.js",
-      "require": "./dist/connect.cjs"
+      "import": "./connect.js",
+      "require": "./connect.cjs"
     },
     "./internals": {
       "types": {
-        "import": "./dist/internals.d.ts",
-        "require": "./dist/internals.d.cts"
+        "import": "./internals.d.ts",
+        "require": "./internals.d.cts"
       },
-      "import": "./dist/internals.js",
-      "require": "./dist/internals.cjs"
+      "import": "./internals.js",
+      "require": "./internals.cjs"
     }
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
