@@ -82,6 +82,7 @@ export { headerKeys, internalEvents, queryKeys } from "./helpers/consts.ts";
 export { slugify } from "./helpers/strings.ts";
 export type {
   IsStringLiteral,
+  SendEventPayload,
   StrictUnion,
   StrictUnionHelper,
   UnionKeys,
