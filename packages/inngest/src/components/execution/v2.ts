@@ -611,7 +611,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
   ): Promise<ExecutionResult> {
     const output = { ...dataOrError } as Partial<OutgoingOp>;
 
-
     const isStepExecution = Boolean(this.state.executingStep);
 
     const transformedOutput = await this.state.hooks?.transformOutput?.({

@@ -179,5 +179,4 @@ describe("StepFailed OpCode with try/catch", () => {
       throw new Error(`Unexpected result type: ${result.type}`);
     }
   });
-
 });

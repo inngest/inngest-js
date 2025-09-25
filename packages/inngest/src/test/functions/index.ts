@@ -10,7 +10,6 @@ import sendEvent from "./send-event";
 import sequentialReduce from "./sequential-reduce";
 import stepInvokeFunctions from "./step-invoke";
 import stepInvokeNotFound from "./step-invoke-not-found";
-import tryCatchBroken from "./try-catch-broken";
 import undefinedData from "./undefined-data";
 import unhandledStepErrors from "./unhandled-step-errors";
 
@@ -27,7 +26,6 @@ export const functions = [
   ...stepInvokeFunctions,
   stepInvokeNotFound,
   handlingStepErrors,
-  tryCatchBroken,
   unhandledStepErrors,
   multipleTriggers,
 ];
