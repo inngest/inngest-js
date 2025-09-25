@@ -36,6 +36,7 @@ import type {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import type { Realtime } from "./realtime/types.ts";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -332,6 +333,45 @@ export const createStepTools = <TClient extends Inngest.Any>(
         },
       };
     }),
+
+    /**
+     * TODO
+     */
+    realtime: {
+      /**
+       * TODO
+       */
+      publish: createTool<
+        <TMessage extends Realtime.Message.Input>(
+          idOrOptions: StepOptionsOrId,
+          opts: TMessage,
+        ) => Promise<Awaited<TMessage>["data"]>
+      >(
+        ({ id, name }) => {
+          return {
+            id,
+            op: StepOpCode.StepPlanned,
+            name: "realtime.publish",
+            displayName: name ?? id,
+            opts: {
+              type: "step.realtime.publish",
+            },
+          };
+        },
+        {
+          fn: (ctx, _idOrOptions, opts) => {
+            return client["inngestApi"].publish(
+              {
+                topics: [opts.topic],
+                channel: opts.channel,
+                runId: ctx.runId,
+              },
+              opts.data,
+            );
+          },
+        },
+      ),
+    },
 
     /**
      * Send a Signal to Inngest.
