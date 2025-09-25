@@ -26,28 +26,29 @@ export type ExpectedEnv = {
  * dynamically building it.
  */
 const env: ExpectedEnv | undefined = (() => {
+  // Pure vite
   try {
-    // Vite
-    try {
-      // @ts-expect-error - import.meta.env is not available in CommonJS output
-      if (typeof import.meta !== "undefined" && import.meta.env) {
-        // @ts-expect-error - import.meta.env is not available in CommonJS output
-        const env = import.meta.env;
-        return {
-          INNGEST_DEV: env.INNGEST_DEV ?? env.VITE_INNGEST_DEV,
-          NODE_ENV: env.NODE_ENV,
-          INNGEST_BASE_URL: env.INNGEST_BASE_URL ?? env.VITE_INNGEST_BASE_URL,
-          INNGEST_API_BASE_URL:
-            env.INNGEST_API_BASE_URL ?? env.VITE_INNGEST_API_BASE_URL,
-          INNGEST_SIGNING_KEY: env.INNGEST_SIGNING_KEY,
-          INNGEST_SIGNING_KEY_FALLBACK: env.INNGEST_SIGNING_KEY_FALLBACK,
-        };
-      }
-    } catch {
-      // noop - import.meta not available in this environment
-    }
+    // @ts-expect-error - import.meta only available in some environments
+    const viteEnv = import.meta.env;
 
-    // Node-like environments (sometimes Vite)
+    if (viteEnv) {
+      return {
+        INNGEST_DEV: viteEnv.INNGEST_DEV ?? viteEnv.VITE_INNGEST_DEV,
+        NODE_ENV: viteEnv.NODE_ENV,
+        INNGEST_BASE_URL:
+          viteEnv.INNGEST_BASE_URL ?? viteEnv.VITE_INNGEST_BASE_URL,
+        INNGEST_API_BASE_URL:
+          viteEnv.INNGEST_API_BASE_URL ?? viteEnv.VITE_INNGEST_API_BASE_URL,
+        INNGEST_SIGNING_KEY: viteEnv.INNGEST_SIGNING_KEY,
+        INNGEST_SIGNING_KEY_FALLBACK: viteEnv.INNGEST_SIGNING_KEY_FALLBACK,
+      };
+    }
+  } catch {
+    // noop
+  }
+
+  try {
+    // Node-like environments (sometimes polyfilled Vite)
     if (process.env) {
       return {
         INNGEST_DEV:
