@@ -20,7 +20,11 @@ class BenchmarkRefs {
 export const loadBenchmarks = async (
   benchmarkNames: string[],
 ): Promise<BenchmarkRefs> => {
-  const caller = getCallerDir();
+  let caller = getCallerDir();
+  if (caller.startsWith("file://")) {
+    caller = caller.replace("file://", "");
+  }
+
   const rawBenchmarkPromises: Promise<BenchmarkRef | BenchmarkRef[]>[] = [];
 
   for (const benchmark of benchmarkNames) {
