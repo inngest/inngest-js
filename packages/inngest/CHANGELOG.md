@@ -1,5 +1,11 @@
 # inngest
 
+## 3.43.0
+
+### Minor Changes
+
+- [#1091](https://github.com/inngest/inngest-js/pull/1091) [`47493291`](https://github.com/inngest/inngest-js/commit/47493291cd1609717421c1c4a63200243f9f101d) Thanks [@amh4r](https://github.com/amh4r)! - Add streaming support to inngest/node
+
 ## 3.42.3
 
 ### Patch Changes
