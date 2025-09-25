@@ -1,5 +1,11 @@
 # @inngest/realtime
 
+## 0.4.2
+
+### Patch Changes
+
+- [#1080](https://github.com/inngest/inngest-js/pull/1080) [`fde816ab`](https://github.com/inngest/inngest-js/commit/fde816ab79a1c256b125445fe927e1e648b74db6) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Fix Vite environment variable support for subscribe
+
 ## 0.4.1
 
 ### Patch Changes
