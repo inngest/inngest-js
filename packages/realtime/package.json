@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "vitest run",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "postversion": "pnpm run build",
     "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
     "release:version": "node ../../scripts/release/jsrVersion.js",
