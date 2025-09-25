@@ -250,6 +250,7 @@ jobs:
           - example: framework-nextjs-app-router
             streaming: force
           - example: node
+            streaming: force
           - example: framework-express
             streaming: force
         exclude:
