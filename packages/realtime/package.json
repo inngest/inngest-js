@@ -19,19 +19,19 @@
   ],
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "require": "./dist/index.js",
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": "./dist/index.js"
     },
     "./hooks": {
+      "types": "./dist/hooks.d.ts",
       "require": "./dist/hooks.js",
-      "import": "./dist/hooks.js",
-      "types": "./dist/hooks.d.ts"
+      "import": "./dist/hooks.js"
     },
     "./middleware": {
+      "types": "./dist/middleware.d.ts",
       "require": "./dist/middleware.js",
-      "import": "./dist/middleware.js",
-      "types": "./dist/middleware.d.ts"
+      "import": "./dist/middleware.js"
     }
   },
   "keywords": [
