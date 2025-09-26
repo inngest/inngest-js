@@ -1,5 +1,11 @@
 # inngest
 
+## 3.43.1
+
+### Patch Changes
+
+- [#1097](https://github.com/inngest/inngest-js/pull/1097) [`568cb0d2`](https://github.com/inngest/inngest-js/commit/568cb0d2358b52dc41ac1f2652190183f642f7e9) Thanks [@tedjames](https://github.com/tedjames)! - exporting serializeError for use in agentkit
+
 ## 3.43.0
 
 ### Minor Changes
