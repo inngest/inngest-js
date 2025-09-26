@@ -1,5 +1,5 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import { z } from "zod";
+import { z } from "zod/v3";
 
 export namespace Realtime {
   export type PublishFn = <
@@ -129,12 +129,11 @@ export namespace Realtime {
       data: z.any(),
       run_id: z.string().optional(),
       fn_id: z.string().optional(),
-      created_at: z.optional(
-        z
-          .string()
-          .optional()
-          .transform((v) => (v ? new Date(v) : undefined)),
-      ),
+      created_at: z
+        .string()
+        .optional()
+        .transform((v) => (v ? new Date(v) : undefined)),
+
       env_id: z.string().optional(),
       stream_id: z.string().optional(),
       kind: z.enum([
