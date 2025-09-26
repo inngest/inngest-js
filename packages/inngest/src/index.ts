@@ -79,6 +79,7 @@ export {
   isInngestMiddleware,
 } from "./helpers/assertions.ts";
 export { headerKeys, internalEvents, queryKeys } from "./helpers/consts.ts";
+export { serializeError } from "./helpers/errors.ts";
 export { slugify } from "./helpers/strings.ts";
 export type {
   IsStringLiteral,
