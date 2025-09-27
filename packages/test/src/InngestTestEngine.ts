@@ -27,12 +27,14 @@ export namespace InngestTestEngine {
    */
   export interface Options {
     /**
-     * The function to test.
-     *
-     * TODO Potentially later allow many functions such that we can invoke and
-     * send events.
+     * The function to test. Use either this OR functions array.
      */
-    function: InngestFunction.Like;
+    function?: InngestFunction.Like;
+
+    /**
+     * Multiple functions to test. The engine will auto-select based on events.
+     */
+    functions?: InngestFunction.Like[];
 
     /**
      * The event payloads to send to the function. If none is given, an
@@ -124,7 +126,7 @@ export namespace InngestTestEngine {
    * Options that can be passed to an existing execution or run to continue
    * execution.
    */
-  export type InlineOptions = Omit<Options, "function">;
+  export type InlineOptions = Omit<Options, "function" | "functions">;
 
   /**
    * Options that can be passed to an initial execution that then waits for a
@@ -200,7 +202,70 @@ export class InngestTestEngine {
   protected options: InngestTestEngine.Options;
 
   constructor(options: InngestTestEngine.Options) {
-    this.options = options;
+    this.options = this.resolveOptions(options);
+  }
+
+  /**
+   * Resolve options to ensure we have a single function to work with.
+   */
+  private resolveOptions(options: InngestTestEngine.Options): InngestTestEngine.Options {
+    if (options.function && options.functions) {
+      throw new Error("Specify either 'function' or 'functions', not both");
+    }
+    
+    if (options.functions) {
+      if (options.functions.length === 0) {
+        throw new Error("Functions array cannot be empty");
+      }
+      // Store functions array without auto-selection at construction time
+      // Auto-selection will happen at execution time with real events
+      return options;
+    }
+    
+    if (!options.function) {
+      throw new Error("Must specify either 'function' or 'functions'");
+    }
+    
+    return options;
+  }
+
+  /**
+   * Auto-select a function based on events.
+   */
+  private selectFunction(functions: InngestFunction.Like[], events: [EventPayload, ...EventPayload[]]): InngestFunction.Like {
+    const firstFunction = functions[0];
+    if (!firstFunction) {
+      throw new Error("Functions array is empty");
+    }
+    
+    if (functions.length === 1) {
+      return firstFunction; // Only one function, use it
+    }
+
+    // Pre-compute function list for error messages to avoid repeated expensive operations
+    const functionList = functions.map(fn => (fn as InngestFunction.Any).opts?.id || "unknown").join(", ");
+    
+    const eventName = events[0]?.name;
+    if (!eventName) {
+      throw new Error(
+        `Event name is required when multiple functions are provided for auto-selection. Available functions: ${functionList}`
+      );
+    }
+    
+    // Find first function that can handle this event
+    for (const fn of functions) {
+      const triggers = (fn as InngestFunction.Any).opts?.triggers || [];
+      for (const trigger of triggers) {
+        if ('event' in trigger && trigger.event === eventName) {
+          return fn;
+        }
+      }
+    }
+    
+    // No match found, throw error
+    throw new Error(
+      `No function found that can handle event "${eventName}". Available functions: ${functionList}`
+    );
   }
 
   /**
@@ -210,7 +275,9 @@ export class InngestTestEngine {
   public clone(
     inlineOpts?: InngestTestEngine.InlineOptions,
   ): InngestTestEngine {
-    return new InngestTestEngine({ ...this.options, ...inlineOpts });
+    // Keep the functions property from current options for auto-selection
+    const mergedOptions = { ...this.options, ...inlineOpts };
+    return new InngestTestEngine(mergedOptions);
   }
 
   /**
@@ -314,7 +381,7 @@ export class InngestTestEngine {
      */
     inlineOpts?: InngestTestEngine.ExecuteOptions,
   ): Promise<InngestTestRun.RunStepOutput> {
-    const { run, result: resultaaa } = await this.individualExecution({
+    const { run } = await this.individualExecution({
       ...inlineOpts,
       // always overwrite this so it's easier to capture non-runnable steps in
       // the same flow.
@@ -495,7 +562,13 @@ export class InngestTestEngine {
 
     const runId = ulid();
 
-    const execution = (options.function as InngestFunction.Any)[
+    // Auto-select function at execution time with real events if functions array was provided
+    const selectedFunction: InngestFunction.Like = 
+      options.functions && !options.function
+        ? this.selectFunction(options.functions, events)
+        : options.function as InngestFunction.Like; // Safe due to resolveOptions validation
+
+    const execution = (selectedFunction as InngestFunction.Any)[
       "createExecution"
     ]({
       version: InngestExecution.ExecutionVersion.V1,
@@ -547,8 +620,11 @@ export class InngestTestEngine {
 
     InngestTestRun["updateState"](options, result);
 
+    // Create clean inline options without function/functions to avoid conflicts
+    const { function: _, functions: __, ...cleanInlineOptions } = options;
+
     const run = new InngestTestRun({
-      testEngine: this.clone(options),
+      testEngine: this.clone(cleanInlineOptions),
     });
 
     return {
