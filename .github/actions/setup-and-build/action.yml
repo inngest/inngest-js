@@ -16,17 +16,10 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: pnpm/action-setup@v4
-      with:
-        run_install: false
+    - uses: DeterminateSystems/nix-installer-action
 
-    - uses: actions/setup-node@v4
-      with:
-        node-version: lts/*
-        cache: pnpm
-        registry-url: "https://registry.npmjs.org"
-
-    - uses: oven-sh/setup-bun@v2
+    - run: nix develop --command "$@"
+      shell: bash
 
     - name: Install dependencies
       if: ${{ inputs.install-dependencies == 'true' }}
