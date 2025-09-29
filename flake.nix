@@ -41,7 +41,7 @@
 
           shellHook = ''
             export COREPACK_ENABLE_AUTO_PIN=0
-            corepack enable
+            corepack prepare --activate
           '';
         };
       }
