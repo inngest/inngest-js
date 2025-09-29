@@ -41,7 +41,7 @@ runs:
 
     - name: Prepare for build (Nix cache)
       if: steps.pull.outcome == 'failure'
-    - uses: DeterminateSystems/magic-nix-cache-action@main
+      uses: DeterminateSystems/magic-nix-cache-action@main
 
     - name: Build + push image if missing
       if: steps.pull.outcome == 'failure'
