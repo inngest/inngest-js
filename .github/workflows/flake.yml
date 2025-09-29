@@ -1,0 +1,28 @@
+name: Update flake
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # weekly
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: nix flake update
+      - uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "chore: update flake inputs"
+          title: "Automated "
+          body: |
+            ## Automated flake update
+
+            This PR was created automatically by a scheduled GitHub Action which
+            ran:
+
+            ```
+            nix flake update
+            ```
+          branch: "automated/update-flake"
+          token: ${{ secrets.CHANGESET_GITHUB_TOKEN }} # inngest-release-bot

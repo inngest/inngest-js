@@ -37,6 +37,9 @@
             typescript
             nodejs_24
 
+            # bun
+            bun
+
             # LSPs
             nodePackages.typescript-language-server
             nodePackages.vscode-json-languageserver
