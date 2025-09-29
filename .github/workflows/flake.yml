@@ -1,0 +1,42 @@
+name: Update flake
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # weekly
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@v20
+      - run: nix flake update
+      - uses: peter-evans/create-pull-request@v7
+        id: cpr
+        with:
+          commit-message: "Bump `flake.lock` versions"
+          title: "Automated `flake.nix` update"
+          body: |
+            ## Automated flake update
+
+            This PR was created automatically by a scheduled GitHub Action which ran:
+
+            ```
+            nix flake update
+            ```
+
+            This bumps the `flake.lock` file to ensure we have the latest compatible versions of the tooling we use.
+          branch: "automated/update-flake"
+          base: "main"
+          token: ${{ secrets.CHANGESET_GITHUB_TOKEN }} # inngest-release-bot
+          delete-branch: true # close PR if no changes
+          labels: |
+            💡 KTLO
+      - name: Enable Pull Request Automerge
+        if: steps.cpr.outputs.pull-request-operation == 'created'
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          token: ${{ secrets.CHANGESET_GITHUB_TOKEN }} # inngest-release-bot
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          merge-method: squash
