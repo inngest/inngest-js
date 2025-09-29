@@ -35,6 +35,14 @@ runs:
       continue-on-error: true
       run: docker pull ${{ steps.meta.outputs.image }}
 
+    - name: Prepare for build (Nix)
+      if: steps.pull.outcome == 'failure'
+      uses: DeterminateSystems/nix-installer-action@main
+
+    - name: Prepare for build (Nix cache)
+      if: steps.pull.outcome == 'failure'
+    - uses: DeterminateSystems/magic-nix-cache-action@main
+
     - name: Build + push image if missing
       if: steps.pull.outcome == 'failure'
       shell: bash
