@@ -21,6 +21,8 @@ jobs:
       - uses: actions/checkout@v4
       - id: ensure
         uses: ./.github/actions/ensure-ci-image
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   # A flag we can use to warn us of critical known issues in the chain. This
   # should be caught in a number of places (including GitHub as CVEs), but we
