@@ -1,5 +1,17 @@
 # inngest
 
+## 3.44.0
+
+### Minor Changes
+
+- [#1102](https://github.com/inngest/inngest-js/pull/1102) [`6507c0cd`](https://github.com/inngest/inngest-js/commit/6507c0cdc792ef905b06481f69b4e7fe8ad75fe7) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `InngestFunctionReference.Like` for comparing referenced functions across versions
+
+- [#1102](https://github.com/inngest/inngest-js/pull/1102) [`6507c0cd`](https://github.com/inngest/inngest-js/commit/6507c0cdc792ef905b06481f69b4e7fe8ad75fe7) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add Standard Schema to `referenceFunction()`
+
+### Patch Changes
+
+- [#1075](https://github.com/inngest/inngest-js/pull/1075) [`1cf1e525`](https://github.com/inngest/inngest-js/commit/1cf1e525a90186af0bbb6024198259d0e9006adc) Thanks [@Linell](https://github.com/Linell)! - Add support for the `StepFailed` opcode, which is used to signify that a function has failed in a permanent way and should not be retried.
+
 ## 3.43.1
 
 ### Patch Changes
