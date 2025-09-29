@@ -20,14 +20,14 @@ runs:
     - uses: DeterminateSystems/magic-nix-cache-action@main
     - uses: nicknovitski/nix-develop@v1
 
-    - name: Install dependencies
-      if: ${{ inputs.install-dependencies == 'true' }}
-      run: pnpm install --frozen-lockfile
+    - name: List packages
+      run: pwd && ls -la && pnpm list -r
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
-    - name: List packages
-      run: pwd && ls -la && pnpm list -r
+    - name: Install dependencies
+      if: ${{ inputs.install-dependencies == 'true' }}
+      run: pnpm install --frozen-lockfile
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 
