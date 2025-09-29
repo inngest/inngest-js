@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "ts-node src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },
@@ -18,7 +18,7 @@
   "devDependencies": {
     "@types/koa": "^2.13.11",
     "@types/koa-bodyparser": "^4.3.12",
-    "tsx": "^4.0.0",
+    "ts-node": "^10.9.0",
     "typescript": "^5.8.2"
   }
 }
