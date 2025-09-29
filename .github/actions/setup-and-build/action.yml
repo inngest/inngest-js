@@ -26,6 +26,11 @@ runs:
       shell: nix develop --command bash -e {0}
       working-directory: ${{ inputs.working-directory }}
 
+    - name: List packages
+      run: pnpm list -r
+      shell: nix develop --command bash -e {0}
+      working-directory: ${{ inputs.working-directory }}
+
     - name: Build test dependencies
       if: ${{ inputs.install-dependencies == 'true' }}
       run: pnpm run build
