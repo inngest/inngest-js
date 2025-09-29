@@ -15,7 +15,7 @@ jobs:
       - run: nix flake update
       - uses: peter-evans/create-pull-request@v7
         with:
-          commit-message: "chore: update flake inputs"
+          commit-message: "Bump `flake.lock` versions"
           title: "Automated `flake.nix` update"
           body: |
             ## Automated flake update
