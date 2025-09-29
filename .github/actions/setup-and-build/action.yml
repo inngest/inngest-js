@@ -18,7 +18,7 @@ runs:
   steps:
     - uses: DeterminateSystems/nix-installer-action@v20
 
-    - run: nix develop --command "$@"
+    - run: . "$(nix print-dev-env)"
       shell: bash
 
     - name: Install dependencies
