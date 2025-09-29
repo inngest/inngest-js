@@ -17,14 +17,25 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+        corepack = pkgs.stdenv.mkDerivation {
+          name = "corepack";
+          buildInputs = [ pkgs.nodejs_24 ];
+          phases = [ "installPhase" ];
+          installPhase = ''
+            mkdir -p $out/bin
+            corepack enable --install-directory=$out/bin
+          '';
+        };
+
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
+          packages = [ corepack ];
+
+          nativeBuildInputs = with pkgs; [
             # Node
-            nodejs_24
-            pnpm
             typescript
+            nodejs_24
 
             # bun
             bun
@@ -40,7 +51,6 @@
 
           shellHook = ''
             export COREPACK_ENABLE_AUTO_PIN=0
-            corepack prepare --activate --prefer-offline
           '';
         };
       }
