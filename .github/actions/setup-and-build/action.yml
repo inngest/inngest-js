@@ -16,14 +16,8 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: nixbuild/nix-quick-install-action@v34
-
-    - name: Restore and save Nix store
-      uses: nix-community/cache-nix-action@v6
-      with:
-        # restore and save a cache using this key
-        primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
-
+    - uses: DeterminateSystems/nix-installer-action@main
+    - uses: DeterminateSystems/magic-nix-cache-action@main
     - uses: nicknovitski/nix-develop@v1
 
     - name: Install dependencies
