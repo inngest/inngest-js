@@ -16,16 +16,17 @@ jobs:
       - uses: peter-evans/create-pull-request@v7
         with:
           commit-message: "chore: update flake inputs"
-          title: "Automated "
+          title: "Automated `flake.nix` update"
           body: |
             ## Automated flake update
 
-            This PR was created automatically by a scheduled GitHub Action which
-            ran:
+            This PR was created automatically by a scheduled GitHub Action which ran:
 
             ```
             nix flake update
             ```
+
+            This bumps the `flake.lock` file to ensure we have the latest compatible versions of the tooling we use.
           branch: "automated/update-flake"
           base: "main"
           token: ${{ secrets.CHANGESET_GITHUB_TOKEN }} # inngest-release-bot
