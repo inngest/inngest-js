@@ -10,5 +10,5 @@ export default inngest.createFunction(
     ]);
 
     return step.run("Step 3", () => one + two);
-  }
+  },
 );

@@ -1,24 +1,24 @@
-import { type fetch } from "cross-fetch";
-import { z } from "zod";
-import { type ExecutionVersion } from "../components/execution/InngestExecution.js";
+import type { fetch } from "cross-fetch";
+import { z } from "zod/v3";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
-} from "../helpers/consts.js";
-import { devServerAvailable } from "../helpers/devserver.js";
-import { type Mode } from "../helpers/env.js";
-import { getErrorMessage } from "../helpers/errors.js";
-import { fetchWithAuthFallback } from "../helpers/net.js";
-import { hashSigningKey } from "../helpers/strings.js";
-import { err, ok, type Result } from "../types.js";
+  type ExecutionVersion,
+} from "../helpers/consts.ts";
+import { devServerAvailable } from "../helpers/devserver.ts";
+import type { Mode } from "../helpers/env.ts";
+import { getErrorMessage } from "../helpers/errors.ts";
+import { fetchWithAuthFallback } from "../helpers/net.ts";
+import { hashSigningKey } from "../helpers/strings.ts";
+import { err, ok, type Result } from "../types.ts";
 import {
-  batchSchema,
-  errorSchema,
-  stepsSchemas,
   type BatchResponse,
+  batchSchema,
   type ErrorResponse,
+  errorSchema,
   type StepsResponse,
-} from "./schema.js";
+  stepsSchemas,
+} from "./schema.ts";
 
 type FetchT = typeof fetch;
 
@@ -121,7 +121,7 @@ export class InngestApi {
     if (this.mode.isDev && this.mode.isInferred && !this.apiBaseUrl) {
       const devAvailable = await devServerAvailable(
         defaultDevServerHost,
-        this.fetch
+        this.fetch,
       );
 
       if (devAvailable) {
@@ -134,7 +134,7 @@ export class InngestApi {
 
   async getRunSteps(
     runId: string,
-    version: ExecutionVersion
+    version: ExecutionVersion,
   ): Promise<Result<StepsResponse, ErrorResponse>> {
     return fetchWithAuthFallback({
       authToken: this.hashedKey,
@@ -160,7 +160,7 @@ export class InngestApi {
   }
 
   async getRunBatch(
-    runId: string
+    runId: string,
   ): Promise<Result<BatchResponse, ErrorResponse>> {
     return fetchWithAuthFallback({
       authToken: this.hashedKey,
@@ -187,8 +187,8 @@ export class InngestApi {
 
   async publish(
     publishOptions: InngestApi.PublishOptions,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    data: any,
   ): Promise<Result<void, ErrorResponse>> {
     // todo it may not be a "text/stream"
     const isStream = data instanceof ReadableStream;
@@ -200,6 +200,7 @@ export class InngestApi {
       url.searchParams.set("run_id", publishOptions.runId);
     }
 
+    // biome-ignore lint/complexity/noForEach: <explanation>
     publishOptions.topics.forEach((topic) => {
       url.searchParams.append("topic", topic);
     });
@@ -225,7 +226,7 @@ export class InngestApi {
       .then((res) => {
         if (!res.ok) {
           throw new Error(
-            `Failed to publish event: ${res.status} ${res.statusText}`
+            `Failed to publish event: ${res.status} ${res.statusText}`,
           );
         }
 
@@ -243,7 +244,7 @@ export class InngestApi {
     signalOptions: InngestApi.SendSignalOptions,
     options?: {
       headers?: Record<string, string>;
-    }
+    },
   ): Promise<Result<InngestApi.SendSignalResponse, ErrorResponse>> {
     const url = await this.getTargetUrl("/v1/signals");
 
@@ -282,7 +283,7 @@ export class InngestApi {
         let json: unknown;
         try {
           json = await res.json();
-        } catch (error) {
+        } catch {
           // res.json() failed so not a valid JSON response
           return err({
             error: `Failed to send signal: ${res.status} ${
@@ -333,7 +334,7 @@ export class InngestApi {
 
   async getSubscriptionToken(
     channel: string,
-    topics: string[]
+    topics: string[],
   ): Promise<string> {
     const url = await this.getTargetUrl("/v1/realtime/token");
 
@@ -361,7 +362,7 @@ export class InngestApi {
           throw new Error(
             `Failed to get subscription token: ${res.status} ${
               res.statusText
-            } - ${await res.text()}`
+            } - ${await res.text()}`,
           );
         }
 
@@ -371,7 +372,7 @@ export class InngestApi {
       })
       .catch((error) => {
         throw new Error(
-          getErrorMessage(error, "Unknown error getting subscription token")
+          getErrorMessage(error, "Unknown error getting subscription token"),
         );
       });
   }

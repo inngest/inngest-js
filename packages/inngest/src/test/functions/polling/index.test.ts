@@ -1,5 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { checkIntrospection } from "@local/test/helpers";
+import { checkIntrospection } from "../../helpers";
 
 checkIntrospection({
   name: "polling",

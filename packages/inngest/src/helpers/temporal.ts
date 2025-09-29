@@ -1,4 +1,4 @@
-import { type Temporal } from "temporal-polyfill";
+import type { Temporal } from "temporal-polyfill";
 
 /**
  * A type that represents a `Temporal.Instant` object.
@@ -46,10 +46,10 @@ export const isTemporalDuration = (
   /**
    * The input to check.
    */
-  input: unknown
+  input: unknown,
 ): input is Temporal.Duration => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+    // biome-ignore lint/suspicious/noExplicitAny: Safe access as we're catching
     return (input as any)[Symbol.toStringTag] === "Temporal.Duration";
   } catch {
     return false;
@@ -63,10 +63,10 @@ export const isTemporalInstant = (
   /**
    * The input to check.
    */
-  input: unknown
+  input: unknown,
 ): input is Temporal.Instant => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+    // biome-ignore lint/suspicious/noExplicitAny: Safe access as we're catching
     return (input as any)[Symbol.toStringTag] === "Temporal.Instant";
   } catch {
     return false;
@@ -80,10 +80,10 @@ export const isTemporalZonedDateTime = (
   /**
    * The input to check.
    */
-  input: unknown
+  input: unknown,
 ): input is Temporal.ZonedDateTime => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+    // biome-ignore lint/suspicious/noExplicitAny: Safe access as we're catching
     return (input as any)[Symbol.toStringTag] === "Temporal.ZonedDateTime";
   } catch {
     return false;
@@ -95,7 +95,7 @@ export const isTemporalZonedDateTime = (
  * `Temporal.ZonedDateTime` to an ISO 8601 string.
  */
 export const getISOString = (
-  time: Date | string | InstantLike | ZonedDateTimeLike
+  time: Date | string | InstantLike | ZonedDateTimeLike,
 ): string => {
   if (typeof time === "string") {
     return new Date(time).toISOString();

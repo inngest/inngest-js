@@ -26,11 +26,11 @@
  */
 
 import {
-  InngestCommHandler,
   type ActionResponse,
+  InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 type HTTP = {
   headers: Record<string, string>;
@@ -81,7 +81,7 @@ export const frameworkName: SupportedFrameworkName = "digitalocean";
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
   options: ServeHandlerOptions &
-    Required<Pick<NonNullable<ServeHandlerOptions>, "serveHost">>
+    Required<Pick<NonNullable<ServeHandlerOptions>, "serveHost">>,
 ): ((main?: Main) => Promise<ActionResponse<string>>) => {
   const handler = new InngestCommHandler({
     frameworkName,

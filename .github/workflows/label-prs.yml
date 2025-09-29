@@ -8,17 +8,17 @@ jobs:
   label:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout
-      uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v2
 
-    - uses: ./.github/actions/setup-and-build
-      with:
-        install-dependencies: false
-        build: false
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: false
+          build: false
 
-    - run: pnpm install
+      - run: pnpm install --frozen-lockfile
 
-    - name: Label PR
-      run: node scripts/labelPrs.js
-      env:
-        GITHUB_TOKEN: ${{ secrets.CHANGESET_GITHUB_TOKEN }} # inngest-release-bot
+      - name: Label PR
+        run: node scripts/labelPrs.js
+        env:
+          GITHUB_TOKEN: ${{ secrets.CHANGESET_GITHUB_TOKEN }} # inngest-release-bot

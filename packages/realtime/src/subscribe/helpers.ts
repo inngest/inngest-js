@@ -1,5 +1,4 @@
 import type { Inngest } from "inngest";
-import type { InngestApi } from "inngest/api/api";
 import { getEnvVar } from "../env";
 import type { Realtime } from "../types";
 import { TokenSubscription } from "./TokenSubscription";
@@ -45,7 +44,8 @@ export const subscribe = async <
   callback?: Realtime.Subscribe.Callback<TToken>,
 ): Promise<TOutput> => {
   const app: Inngest.Any | undefined = token.app as Inngest.Any | undefined;
-  const api: InngestApi | undefined = app?.["inngestApi"];
+  const api: { signingKey?: string; signingKeyFallback?: string } | undefined =
+    app?.["inngestApi"];
 
   // Allow users to specify public env vars for the target URLs, but do not
   // allow this for signing keys, as they should never be on a client.

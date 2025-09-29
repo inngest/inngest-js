@@ -1,11 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "include": ["./**/*.test.ts"],
-  "exclude": ["src/test/functions/**/*"],
-  "compilerOptions": {
-    "paths": {
-      "@local": ["./dist"],
-      "@local/*": ["./dist/*"]
-    }
-  }
+  "exclude": ["src/test/functions/**/*"]
 }

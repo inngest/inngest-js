@@ -41,6 +41,9 @@
             nodePackages.typescript-language-server
             nodePackages.vscode-json-languageserver
             nodePackages.yaml-language-server
+
+            # Tools
+            protobuf_29
           ];
 
           shellHook = ''

@@ -1,26 +1,23 @@
-import { ZodError, z } from "zod";
-import { type InngestApi } from "../api/api.js";
-import { stepsSchemas } from "../api/schema.js";
-import {
-  ExecutionVersion,
-  PREFERRED_EXECUTION_VERSION,
-} from "../components/execution/InngestExecution.js";
-import { err, ok, type Result } from "../types.js";
-import { prettyError } from "./errors.js";
-import { type Await } from "./types.js";
+import { ZodError, z } from "zod/v3";
+import type { InngestApi } from "../api/api.ts";
+import { stepsSchemas } from "../api/schema.ts";
+import { PREFERRED_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
+import { err, ok, type Result } from "../types.ts";
+import { ExecutionVersion } from "./consts.ts";
+import { prettyError } from "./errors.ts";
+import type { Await } from "./types.ts";
 
 /**
  * Wraps a function with a cache. When the returned function is run, it will
  * cache the result and return it on subsequent calls.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export const cacheFn = <T extends (...args: any[]) => any>(fn: T): T => {
   const key = "value";
   const cache = new Map<typeof key, unknown>();
 
   return ((...args) => {
     if (!cache.has(key)) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       cache.set(key, fn(...args));
     }
 
@@ -39,7 +36,7 @@ export const cacheFn = <T extends (...args: any[]) => any>(fn: T): T => {
  * Because this needs to support both sync and async functions, it only allows
  * functions that accept a single argument.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export const waterfall = <TFns extends ((arg?: any) => any)[]>(
   fns: TFns,
 
@@ -49,22 +46,19 @@ export const waterfall = <TFns extends ((arg?: any) => any)[]>(
    *
    * Will not be called on the final function.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  transform?: (prev: any, output: any) => any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  transform?: (prev: any, output: any) => any,
 ): ((...args: Parameters<TFns[number]>) => Promise<Await<TFns[number]>>) => {
   return (...args) => {
     const chain = fns.reduce(async (acc, fn) => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const prev = await acc;
       const output = (await fn(prev)) as Promise<Await<TFns[number]>>;
 
       if (transform) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return await transform(prev, output);
       }
 
       if (typeof output === "undefined") {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         return prev;
       }
 
@@ -93,7 +87,7 @@ const fnDataVersionSchema = z.object({
     .transform<ExecutionVersion>((v) => {
       if (typeof v === "undefined") {
         console.debug(
-          `No request version specified by executor; defaulting to v${PREFERRED_EXECUTION_VERSION}`
+          `No request version specified by executor; defaulting to v${PREFERRED_EXECUTION_VERSION}`,
         );
 
         return PREFERRED_EXECUTION_VERSION;
@@ -153,6 +147,7 @@ export const parseFnData = (data: unknown) => {
                 .object({
                   run_id: z.string(),
                   attempt: z.number().default(0),
+                  max_attempts: z.number().optional(),
                   disable_immediate_execution: z.boolean().default(false),
                   use_api: z.boolean().default(false),
                   stack: z
@@ -185,6 +180,7 @@ export const parseFnData = (data: unknown) => {
                 .object({
                   run_id: z.string(),
                   attempt: z.number().default(0),
+                  max_attempts: z.number().optional(),
                   disable_immediate_execution: z.boolean().default(false),
                   use_api: z.boolean().default(false),
                   stack: z
@@ -237,7 +233,7 @@ export const fetchAllFnData = async ({
             consequences: "function execution can't continue",
             why: "run_id is missing from context",
             stack: true,
-          })
+          }),
         );
       }
 
@@ -255,7 +251,7 @@ export const fetchAllFnData = async ({
             consequences: "function execution can't continue",
             why: evtResp.error?.error,
             stack: true,
-          })
+          }),
         );
       }
 
@@ -268,7 +264,7 @@ export const fetchAllFnData = async ({
             consequences: "function execution can't continue",
             why: stepResp.error?.error,
             stack: true,
-          })
+          }),
         );
       }
     }

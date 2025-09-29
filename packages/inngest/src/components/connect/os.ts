@@ -23,7 +23,7 @@ async function retrieveCpuCores() {
   try {
     const os = await import("node:os");
     return os.cpus().length;
-  } catch (err) {
+  } catch (_err) {
     // no-op
   }
 
@@ -32,7 +32,7 @@ async function retrieveCpuCores() {
     if (navigator && navigator.hardwareConcurrency) {
       return navigator.hardwareConcurrency;
     }
-  } catch (err) {
+  } catch (_err) {
     // no-op
   }
 
@@ -45,7 +45,7 @@ async function retrieveMemBytes() {
     if (Deno) {
       return Deno.systemMemoryInfo().total;
     }
-  } catch (err) {
+  } catch (_err) {
     // no-op
   }
 
@@ -53,7 +53,7 @@ async function retrieveMemBytes() {
   try {
     const os = await import("node:os");
     return os.totalmem();
-  } catch (err) {
+  } catch (_err) {
     // no-op
   }
 
@@ -65,7 +65,7 @@ async function retrieveOs() {
   try {
     const os = await import("node:os");
     return os.platform();
-  } catch (err) {
+  } catch (_err) {
     // no-op
   }
 
@@ -74,7 +74,7 @@ async function retrieveOs() {
     if (navigator && navigator.platform) {
       return navigator.platform;
     }
-  } catch (err) {
+  } catch (_err) {
     // no-op
   }
 
@@ -85,34 +85,36 @@ export function onShutdown(signals: string[], fn: () => void) {
   // Deno
   try {
     if (Deno) {
+      // biome-ignore lint/complexity/noForEach: <explanation>
       signals.forEach((signal) => {
         Deno.addSignalListener(signal, fn);
       });
       return () => {
+        // biome-ignore lint/complexity/noForEach: <explanation>
         signals.forEach((signal) => {
           Deno.removeSignalListener(signal, fn);
         });
       };
     }
-  } catch (err) {
+  } catch (_err) {
     // no-op
   }
 
   // Node, Bun
   try {
     if (process) {
+      // biome-ignore lint/complexity/noForEach: <explanation>
       signals.forEach((signal) => {
-        // eslint-disable-next-line @inngest/internal/process-warn
         process.on(signal, fn);
       });
       return () => {
+        // biome-ignore lint/complexity/noForEach: <explanation>
         signals.forEach((signal) => {
-          // eslint-disable-next-line @inngest/internal/process-warn
           process.removeListener(signal, fn);
         });
       };
     }
-  } catch (err) {
+  } catch (_err) {
     // no-op
   }
 
@@ -125,7 +127,7 @@ export async function getHostname() {
     if (Deno) {
       return Deno.hostname();
     }
-  } catch (err) {
+  } catch (_err) {
     // no-op
   }
 
@@ -133,7 +135,7 @@ export async function getHostname() {
   try {
     const os = await import("node:os");
     return os.hostname();
-  } catch (err) {
+  } catch (_err) {
     // no-op
   }
 

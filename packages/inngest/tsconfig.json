@@ -1,41 +1,36 @@
 {
   "compilerOptions": {
-    "target": "es2017",
-    "lib": ["ES2021", "DOM"],
-    "module": "commonjs",
+    "allowImportingTsExtensions": true,
     "declaration": true,
     "declarationMap": true,
-    "sourceMap": true,
-    "outDir": "./dist",
-    "types": ["node", "jest"],
-    "moduleResolution": "node",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "strict": true,
-    "skipLibCheck": true,
+    "isolatedModules": true,
+    "lib": ["ES2022", "DOM"],
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
-    "resolveJsonModule": true,
+    "noImplicitReturns": true,
     "noUncheckedIndexedAccess": true,
+    "outDir": "./dist",
+    "resolveJsonModule": true,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "./",
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "strict": true,
     "strictNullChecks": true,
-
-    // In TS 5.7+ we can use these to ensure we can import `.ts` extensions and
-    // have them compile to `.js` imports. This also then means we're compatible
-    // with Node/Deno/Bun's TS running instead of leaking compilation
-    // requirements into the source code.
-    //
-    // Importing `.ts` extensions fails miserably when using compiled output
-    // with TS<5.0 though, so we must keep this commented out and unactioned
-    // until we can safely assume at least TS>=5.0.
-    //
-    // "rewriteRelativeImportExtensions": true,
-    // "allowImportingTsExtensions": true,
-
-    "paths": {
-      "inngest": ["./src"],
-      "inngest/*": ["./src/*"],
-      "@local": ["./src"],
-      "@local/*": ["./src/*"]
-    }
+    "target": "ES2022",
+    "types": ["node", "vitest/globals"],
+    "verbatimModuleSyntax": true
   },
-  "include": ["./src/**/*", "./scripts/**/*"]
+  "include": [
+    "./src/**/*",
+    "./scripts/**/*",
+    "./tsdown.config.ts",
+    "./vitest.config.ts"
+  ]
 }

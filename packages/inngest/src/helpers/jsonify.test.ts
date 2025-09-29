@@ -1,11 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import { type Jsonify } from "@local/helpers/jsonify";
-import { type IsAny, type IsEqual, type IsUnknown } from "@local/helpers/types";
-import { assertType } from "../test/helpers";
+import type { IsAny, IsEqual, IsUnknown } from "../helpers/types.ts";
+import type { Jsonify } from "./jsonify.ts";
 
 describe("Jsonify", () => {
   describe("unnested", () => {
     test("allows `any`", () => {
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       type Actual = Jsonify<any>;
       assertType<IsAny<Actual>>(true);
     });
@@ -30,7 +29,9 @@ describe("Jsonify", () => {
 
   describe("nested", () => {
     test("allows `any`", () => {
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       type Actual = Jsonify<{ foo: any }>;
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       type Expected = { foo: any };
       assertType<IsEqual<Actual, Expected>>(true);
     });
@@ -73,12 +74,14 @@ describe("Jsonify", () => {
   describe("#98", () => {
     test("allows mapped types with overrides when unnested", () => {
       interface Foo {
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         [x: string]: any;
         foo: boolean;
       }
 
       type Actual = Jsonify<Foo>;
       type Expected = {
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         [x: string]: any;
         foo: boolean;
       };
@@ -90,11 +93,13 @@ describe("Jsonify", () => {
 
     test("allows mapped types with overrides when nested", () => {
       interface Foo {
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         [x: string]: any;
         foo: boolean;
       }
 
       type Actual = Jsonify<{ foo: Foo }>;
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       type Expected = { foo: { [x: string]: any; foo: boolean } };
 
       assertType<IsEqual<Actual, Expected>>(true);

@@ -89,6 +89,8 @@ export function useInngestSubscription<
   const subscriptionRef = useRef<Realtime.Subscribe.StreamSubscription | null>(
     null,
   );
+  const readerRef =
+    useRef<ReadableStreamDefaultReader<Realtime.Message> | null>(null);
   const messageBuffer = useRef<Realtime.Message[]>([]);
   const bufferIntervalRef = useRef<number>(bufferInterval);
 
@@ -135,6 +137,7 @@ export function useInngestSubscription<
         //
         // Especially when this is unmounted.
         const reader = stream.getReader();
+        readerRef.current = reader;
         try {
           while (!cancelled) {
             const { done, value } = await reader.read();
@@ -148,7 +151,13 @@ export function useInngestSubscription<
             }
           }
         } finally {
-          reader.releaseLock();
+          try {
+            reader.releaseLock();
+          } catch {
+            // Reader might already be released
+          }
+
+          readerRef.current = null;
         }
 
         // Stream has closed cleanly
@@ -177,14 +186,41 @@ export function useInngestSubscription<
 
     return () => {
       cancelled = true;
-      if (subscriptionRef.current) {
-        setState(InngestSubscriptionState.Closing);
-        subscriptionRef.current.cancel().finally(() => {
+
+      const cleanup = async () => {
+        const readerToRemove = readerRef.current;
+        const subToRemove = subscriptionRef.current;
+
+        readerRef.current = null;
+        subscriptionRef.current = null;
+
+        try {
+          await readerToRemove?.cancel();
+        } catch {
+          // Reader might already be cancelled
+        }
+
+        try {
+          readerToRemove?.releaseLock();
+        } catch {
+          // Reader might already be released
+        }
+
+        try {
+          await subToRemove?.cancel();
+        } catch {
+          // Subscription might already be cancelled
+        }
+      };
+
+      cleanup()
+        .catch((err) => {
+          console.error("Error cleaning up Inngest subscription", err);
+        })
+        .finally(() => {
+          // Ensure state is always updated even if cleanup fails
           setState(InngestSubscriptionState.Closed);
         });
-      } else {
-        setState(InngestSubscriptionState.Closed);
-      }
     };
   }, [token, enabled, key]);
 

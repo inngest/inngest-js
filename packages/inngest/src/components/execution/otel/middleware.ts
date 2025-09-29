@@ -1,16 +1,16 @@
-import { diag, DiagLogLevel, trace, type DiagLogger } from "@opentelemetry/api";
+import { type DiagLogger, DiagLogLevel, diag, trace } from "@opentelemetry/api";
 import Debug from "debug";
-import { version } from "../../../version.js";
-import { InngestMiddleware } from "../../InngestMiddleware.js";
-import { clientProcessorMap } from "./access.js";
-import { debugPrefix } from "./consts.js";
-import { type InngestSpanProcessor } from "./processor.js";
+import { version } from "../../../version.ts";
+import { InngestMiddleware } from "../../InngestMiddleware.ts";
+import { clientProcessorMap } from "./access.ts";
+import { debugPrefix } from "./consts.ts";
+import type { InngestSpanProcessor } from "./processor.ts";
 import {
+  type Behaviour,
   createProvider,
   extendProvider,
-  type Behaviour,
   type Instrumentations,
-} from "./util.js";
+} from "./util.ts";
 
 const debug = Debug(`${debugPrefix}:middleware`);
 
@@ -117,7 +117,7 @@ export const otelMiddleware = ({
       }
 
       console.warn(
-        'unable to extend provider, OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.'
+        'unable to extend provider, OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
       );
 
       break;
@@ -128,7 +128,7 @@ export const otelMiddleware = ({
     default: {
       // unknown
       console.warn(
-        `unknown behaviour ${JSON.stringify(behaviour)}, defaulting to "off"`
+        `unknown behaviour ${JSON.stringify(behaviour)}, defaulting to "off"`,
       );
     }
   }
@@ -143,7 +143,7 @@ export const otelMiddleware = ({
       //
       debug(
         "set otel diagLogger:",
-        diag.setLogger(new InngestOtelDiagLogger(), logLevel)
+        diag.setLogger(new InngestOtelDiagLogger(), logLevel),
       );
 
       if (processor) {

@@ -4,8 +4,8 @@
  * tree-shaken if they're not used directly by the user.
  */
 
-import { type Inngest } from "../../Inngest.js";
-import { type InngestSpanProcessor } from "./processor.js";
+import type { Inngest } from "../../Inngest.ts";
+import type { InngestSpanProcessor } from "./processor.ts";
 
 /**
  * A map of Inngest clients to their OTel span processors. This is used to

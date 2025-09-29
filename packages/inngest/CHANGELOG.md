@@ -1,5 +1,133 @@
 # inngest
 
+## 3.43.1
+
+### Patch Changes
+
+- [#1097](https://github.com/inngest/inngest-js/pull/1097) [`568cb0d2`](https://github.com/inngest/inngest-js/commit/568cb0d2358b52dc41ac1f2652190183f642f7e9) Thanks [@tedjames](https://github.com/tedjames)! - exporting serializeError for use in agentkit
+
+## 3.43.0
+
+### Minor Changes
+
+- [#1091](https://github.com/inngest/inngest-js/pull/1091) [`47493291`](https://github.com/inngest/inngest-js/commit/47493291cd1609717421c1c4a63200243f9f101d) Thanks [@amh4r](https://github.com/amh4r)! - Add streaming support to inngest/node
+
+## 3.42.3
+
+### Patch Changes
+
+- [#1087](https://github.com/inngest/inngest-js/pull/1087) [`6557014`](https://github.com/inngest/inngest-js/commit/655701448c80a86b4039ca570bacaf9ba1f16399) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix bad release command
+
+## 3.42.2
+
+### Patch Changes
+
+- [#1085](https://github.com/inngest/inngest-js/pull/1085) [`d081d36`](https://github.com/inngest/inngest-js/commit/d081d36169aa476f3058f3d626ce4efdd4fcf6aa) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix legacy exports when using older module resolution
+
+## 3.42.1
+
+### Patch Changes
+
+- [#1083](https://github.com/inngest/inngest-js/pull/1083) [`2f24a09`](https://github.com/inngest/inngest-js/commit/2f24a09ec17e99422688b175bc80d43e06f42c36) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `"inngest/connect"` not being exported in JSR package
+
+- [#1083](https://github.com/inngest/inngest-js/pull/1083) [`2f24a09`](https://github.com/inngest/inngest-js/commit/2f24a09ec17e99422688b175bc80d43e06f42c36) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export some internal packages under `"inngest/internals"` for `@inngest/test` use
+
+## 3.42.0
+
+### Minor Changes
+
+- [#920](https://github.com/inngest/inngest-js/pull/920) [`0da1995`](https://github.com/inngest/inngest-js/commit/0da1995f9a194b6dd9708a6d8b451efba17c60fc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Added `isInngest`, `isInngestFunction`, and `isInngestMiddleware`, runtime helpers to check if a given object is the expected type.
+
+  ```ts
+  import { isInngest, isInngestFunction, isInngestMiddleware } from "inngest";
+
+  const objIsInngest = isInngest(someObj);
+  const objIsInngestFunction = isInngestFunction(someObj);
+  const objIsInngestMiddleware = isInngestMiddleware(someObj);
+  ```
+
+- [#920](https://github.com/inngest/inngest-js/pull/920) [`0da1995`](https://github.com/inngest/inngest-js/commit/0da1995f9a194b6dd9708a6d8b451efba17c60fc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add support for [Standard Schema](https://github.com/standard-schema/standard-schema) when specifying event types.
+
+  ```ts
+  import { EventSchemas } from "inngest";
+  import { z } from "zod";
+
+  const schemas = new EventSchemas().fromSchema({
+    "demo/event.sent": z.object({
+      username: z.string(),
+    }),
+  });
+  ```
+
+  This entrypoint can be used for both Zod v3 and v4 schemas, as well as a multitude of others.
+
+  `.fromZod()` is still available, which provides some more nuanced use cases but will is deprecated in favor of `.fromSchema()`.
+
+### Patch Changes
+
+- [#920](https://github.com/inngest/inngest-js/pull/920) [`0da1995`](https://github.com/inngest/inngest-js/commit/0da1995f9a194b6dd9708a6d8b451efba17c60fc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Dropped support for Node 14, 16, and 18, as they are out of LTS
+
+- [#920](https://github.com/inngest/inngest-js/pull/920) [`0da1995`](https://github.com/inngest/inngest-js/commit/0da1995f9a194b6dd9708a6d8b451efba17c60fc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - `inngest` no longer requires an earlier version of `zod@3.22.0` as a peer dependency
+
+- [#920](https://github.com/inngest/inngest-js/pull/920) [`0da1995`](https://github.com/inngest/inngest-js/commit/0da1995f9a194b6dd9708a6d8b451efba17c60fc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Now builds separate EJS and CSM packages, which should alleviate some issues attempting to get the current single build to satisfy all conditions.
+
+  Most notably, pure ESM consumers should now have a significantly easier time using the library.
+
+- [#920](https://github.com/inngest/inngest-js/pull/920) [`0da1995`](https://github.com/inngest/inngest-js/commit/0da1995f9a194b6dd9708a6d8b451efba17c60fc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Use `Symbol.toStringTag` for `*.Like` types, making them much more reliable across versions.
+
+  This means you can check for the type of value against Inngset values much more easily:
+
+  ```ts
+  type IsInngest<T> = T extends Inngest.Like ? true : false;
+  type IsInngestFunction = T extends InngestFunction.Like ? true : false;
+  type IsInngestMiddleware = T extends InngestMiddleware.Like ? true : false;
+  ```
+
+  In addition, logged objects that are these types now show the type instead of just `[object Object]`, e.g. `[object Inngest.App]`.
+
+- [#920](https://github.com/inngest/inngest-js/pull/920) [`0da1995`](https://github.com/inngest/inngest-js/commit/0da1995f9a194b6dd9708a6d8b451efba17c60fc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Middleware now runs like onion layers. For example `{ middleware: [foo, bar] }` now runs:
+
+  - `foo.transformInput`
+  - `bar.transformInput`
+  - `foo.beforeMemoization`
+  - `bar.beforeMemoization`
+  - `bar.afterMemoization`
+  - `foo.afterMemoization`
+  - `foo.beforeExecution`
+  - `bar.beforeExecution`
+  - `bar.afterExecution`
+  - `foo.afterExecution`
+  - `bar.transformOutput`
+  - `foo.transformOutput`
+  - `foo finished`
+  - `bar finished`
+  - `foo beforeResponse`
+  - `bar beforeResponse`
+
+  This should enable middleware to behave correctly when it has to wrap other middleware.
+
+- [#920](https://github.com/inngest/inngest-js/pull/920) [`0da1995`](https://github.com/inngest/inngest-js/commit/0da1995f9a194b6dd9708a6d8b451efba17c60fc) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Drop support for TypeScript 4.7, 4.8, 4.9, 5.0, 5.1, 5.2, 5.3, 5.4, 5.5, 5.6 and 5.7
+
+## 3.41.0
+
+### Minor Changes
+
+- [#1078](https://github.com/inngest/inngest-js/pull/1078) [`3e5bf652`](https://github.com/inngest/inngest-js/commit/3e5bf652a7a769cc27202fd241da5bc6b9bcc331) Thanks [@tonyhb](https://github.com/tonyhb)! - Allow passing `publish` options to `step.ai.infer()`, automatically publishing to realtime channel/topics
+
+## 3.40.3
+
+### Patch Changes
+
+- [#1040](https://github.com/inngest/inngest-js/pull/1040) [`8ba5486`](https://github.com/inngest/inngest-js/commit/8ba548647ab17b91b750eea997c016dedee9f1c2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - SDK appropriately sets `"inngest.traceref"` for userland otel spans
+
+## 3.40.2
+
+### Patch Changes
+
+- [#1045](https://github.com/inngest/inngest-js/pull/1045) [`ec2320a`](https://github.com/inngest/inngest-js/commit/ec2320a2dbbfacf22d2399c0eb28f3280507b49f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `type` to `step.sendEvent()` to differentiate it from other `step.run()`-based steps
+
+- [#1050](https://github.com/inngest/inngest-js/pull/1050) [`ac9748f`](https://github.com/inngest/inngest-js/commit/ac9748f506f34f3f9329c73d55d39aeecd76499b) Thanks [@lkasinathan](https://github.com/lkasinathan)! - Introduces support for the `if` expression on the batchEvents configuration. This can be used to determine which events are eligible for batching. For more details, check out the [batching documentation](https://innge.st/batching)!
+
 ## 3.40.1
 
 ### Patch Changes

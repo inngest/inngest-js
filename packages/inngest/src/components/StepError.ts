@@ -1,5 +1,5 @@
-import { deserializeError } from "../helpers/errors.js";
-import { jsonErrorSchema } from "../types.js";
+import { deserializeError } from "../helpers/errors.ts";
+import { jsonErrorSchema } from "../types.ts";
 
 /**
  * An error that represents a step exhausting all retries and failing. This is
@@ -11,14 +11,14 @@ import { jsonErrorSchema } from "../types.js";
  * @public
  */
 export class StepError extends Error {
-  public cause?: unknown;
+  public override cause?: unknown;
 
   constructor(
     /**
      * The ID of the step that failed.
      */
     public readonly stepId: string,
-    err: unknown
+    err: unknown,
   ) {
     const parsedErr = jsonErrorSchema.parse(err);
 

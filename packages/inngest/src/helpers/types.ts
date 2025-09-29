@@ -1,4 +1,4 @@
-import { type EventPayload } from "../types.js";
+import type { EventPayload } from "../types.ts";
 
 /**
  * Returns the given generic as either itself or an array of itself.
@@ -8,7 +8,7 @@ export type SingleOrArray<T> = T | T[];
 /**
  * Given type `T`, return it as an array if it is not already an array.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export type AsArray<T> = T extends any[] ? T : [T];
 
 /**
@@ -44,7 +44,7 @@ export type AsTuple<T> = Simplify<[T, ...T[]]>;
  * type T1 = AsDistributedTuple<"foo" | "bar">;
  * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export type AsDistributedTuple<T> = T extends any ? [T, ...T[]] : never;
 
 /**
@@ -114,7 +114,7 @@ export type UnionKeys<T> = T extends T ? keyof T : never;
  *
  * @public
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export type StrictUnionHelper<T, TAll> = T extends any
   ? T & Partial<Record<Exclude<UnionKeys<TAll>, keyof T>, never>>
   : never;
@@ -155,7 +155,7 @@ export type IsAny<T> = 0 extends 1 & T ? true : false;
  * Given a function T, return the awaited return type of that function,
  * ignoring the fact that T may be undefined.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export type Await<T extends ((...args: any[]) => any) | undefined> = Awaited<
   ReturnType<NonNullable<T>>
 >;
@@ -164,7 +164,6 @@ export type Await<T extends ((...args: any[]) => any) | undefined> = Awaited<
  * Given an object TAcc and an array of objects TArr, return a new object that
  * is the result of merging all of the objects in TArr into TAcc.
  */
-// eslint-disable-next-line @typescript-eslint/ban-types
 export type ObjectAssign<TArr, TAcc = {}> = TArr extends [
   infer TFirst,
   ...infer TRest,
@@ -214,11 +213,11 @@ export type Either<A, B> = Partial<A> & Partial<B> & (A | B);
  * first one.
  */
 export type ParametersExceptFirst<T> = T extends (
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   arg0: any,
   ...rest: infer U
-) => // eslint-disable-next-line @typescript-eslint/no-explicit-any
-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+) => any
   ? U
   : never;
 
@@ -228,10 +227,8 @@ any
  *
  * Useful for detecting the passing of a `{}` (any non-nullish) type.
  */
-// eslint-disable-next-line @typescript-eslint/ban-types
 export type IsEmptyObject<T> = {} extends T
-  ? // eslint-disable-next-line @typescript-eslint/ban-types
-    T extends {}
+  ? T extends {}
     ? true
     : false
   : false;
@@ -250,7 +247,6 @@ export type RecursiveTuple<
       | RecursiveTuple<TElement, TLength, [TElement, ...TAccumulator]>
       | TAccumulator;
 
-// eslint-disable-next-line @typescript-eslint/ban-types
 export type Simplify<T> = { [KeyType in keyof T]: T[KeyType] } & {};
 
 export type ConditionalSimplifyDeep<
@@ -271,7 +267,6 @@ export type ConditionalSimplifyDeep<
 
 export type SimplifyDeep<Type> = ConditionalSimplifyDeep<
   Type,
-  // eslint-disable-next-line @typescript-eslint/ban-types
   Function | Iterable<unknown>,
   object
 >;

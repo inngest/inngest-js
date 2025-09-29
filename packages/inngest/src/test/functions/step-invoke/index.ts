@@ -9,7 +9,7 @@ const cronInvokeFn = inngest.createFunction(
     return {
       cronInvokeDone: true,
     };
-  }
+  },
 );
 
 const eventInvokeFn = inngest.createFunction(
@@ -21,7 +21,7 @@ const eventInvokeFn = inngest.createFunction(
     return {
       eventInvokeDone: true,
     };
-  }
+  },
 );
 
 const mainFn = inngest.createFunction(
@@ -32,7 +32,7 @@ const mainFn = inngest.createFunction(
       step.invoke("event-fn", { function: eventInvokeFn }),
       step.invoke("cron-fn", { function: cronInvokeFn }),
     ]);
-  }
+  },
 );
 
 export default [mainFn, eventInvokeFn, cronInvokeFn];

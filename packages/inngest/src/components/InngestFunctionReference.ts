@@ -1,15 +1,15 @@
-import { type IsAny, type Simplify } from "../helpers/types.js";
-import {
-  type ResolveSchema,
-  type ValidSchemaInput,
-  type ValidSchemaOutput,
-} from "../helpers/validators/index.js";
-import {
-  type MinimalEventPayload,
-  type PayloadForAnyInngestFunction,
-} from "../types.js";
-import { type GetFunctionOutput } from "./Inngest.js";
-import { type InngestFunction } from "./InngestFunction.js";
+import type { IsAny, Simplify } from "../helpers/types.ts";
+import type {
+  ResolveSchema,
+  ValidSchemaInput,
+  ValidSchemaOutput,
+} from "../helpers/validators/index.ts";
+import type {
+  MinimalEventPayload,
+  PayloadForAnyInngestFunction,
+} from "../types.ts";
+import type { GetFunctionOutput } from "./Inngest.ts";
+import type { InngestFunction } from "./InngestFunction.ts";
 
 /**
  * A reference to an `InngestFunction` that can be used to represent both local
@@ -35,6 +35,10 @@ export class InngestFunctionReference<
    */
   _TOutput,
 > {
+  get [Symbol.toStringTag](): typeof InngestFunctionReference.Tag {
+    return InngestFunctionReference.Tag;
+  }
+
   constructor(public readonly opts: { functionId: string; appId?: string }) {}
 }
 
@@ -56,7 +60,7 @@ export const referenceFunction = <
   functionId,
   appId,
 }: TArgs extends InngestFunction.Any
-  ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  ? // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     Omit<InngestFunctionReference.HelperArgs<any, any>, "schemas">
   : TArgs): InngestFunctionReference.HelperReturn<TArgs> => {
   return new InngestFunctionReference({
@@ -78,6 +82,8 @@ export const referenceFunction = <
  * @public
  */
 export namespace InngestFunctionReference {
+  export const Tag = "Inngest.FunctionReference" as const;
+
   /**
    * Represents any `InngestFunctionReference`.
    *
@@ -85,9 +91,13 @@ export namespace InngestFunctionReference {
    */
   export type Any = InngestFunctionReference<
     MinimalEventPayload,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any
   >;
+
+  export interface Like {
+    readonly [Symbol.toStringTag]: typeof InngestFunctionReference.Tag;
+  }
 
   /**
    * Arguments used by {@link referenceFunction} to create a reference to an
@@ -155,16 +165,16 @@ export namespace InngestFunctionReference {
       >
     : TArgs extends HelperArgs<infer TFnInput, infer TFnOutput>
       ? InngestFunctionReference<
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          // biome-ignore lint/suspicious/noExplicitAny: <explanation>
           IsAny<ResolveSchema<TFnInput, TFnInput, any>> extends true
             ? MinimalEventPayload
             : Simplify<
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                // biome-ignore lint/suspicious/noExplicitAny: <explanation>
                 MinimalEventPayload<ResolveSchema<TFnInput, TFnInput, any>> &
                   Required<
                     Pick<
                       MinimalEventPayload<
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
                         ResolveSchema<TFnInput, TFnInput, any>
                       >,
                       "data"

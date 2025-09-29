@@ -25,5 +25,5 @@ export default inngest.createFunction(
     await step.run("step3", async () => {
       // no-op
     });
-  }
+  },
 );

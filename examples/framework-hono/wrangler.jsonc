@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "framework-hono-2",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "compatibility_date": "2025-08-03",
+  "main": "./src/index.tsx",
+  "vars": {
+    // If using "cloud" mode with wrangler you'll have to use ngrok or similar
+    // as your cloud worker cannot reach the Inngest Dev Server running on
+    // localhost
+    // "INNGEST_DEV": "https://<replace-this>.ngrok-free.app",
+    //
+    // Also when using "cloud" mode during dev, you may need to also configure
+    // your serve URL to tell the Inngest Dev Server to use the localhost URL
+    // instead of wrangler's public URL
+    // "INNGEST_SERVE_HOST": "http://localhost:3000"
+  }
+}

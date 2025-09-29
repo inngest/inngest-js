@@ -1,6 +1,6 @@
 {
   "name": "@inngest/middleware-validation",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Schema validation middleware for Inngest.",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -16,7 +16,7 @@
     "postversion": "pnpm run build",
     "release:version": "node ../../scripts/release/jsrVersion.js",
     "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty",
-    "pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest-middleware-validation.tgz --cwd dist"
+    "pack": "pnpm run build && cd dist && pnpm pack --out ../inngest-middleware-validation.tgz"
   },
   "exports": {
     ".": {
@@ -40,12 +40,12 @@
   "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "dependencies": {
-    "inngest": "^3.23.1",
-    "zod": "^3.0.0"
+    "inngest": "^3.42.3",
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@eslint/js": "^9.7.0",
-    "@inngest/test": "^0.1.6",
+    "@inngest/test": "workspace:^",
     "@types/eslint__js": "^8.42.3",
     "@types/jest": "^29.5.14",
     "eslint": "^8.30.0",

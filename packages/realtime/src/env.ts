@@ -26,8 +26,29 @@ export type ExpectedEnv = {
  * dynamically building it.
  */
 const env: ExpectedEnv | undefined = (() => {
+  // Pure vite
   try {
-    // Nodeish, including Vite
+    // @ts-expect-error - import.meta only available in some environments
+    const viteEnv = import.meta.env;
+
+    if (viteEnv) {
+      return {
+        INNGEST_DEV: viteEnv.INNGEST_DEV ?? viteEnv.VITE_INNGEST_DEV,
+        NODE_ENV: viteEnv.NODE_ENV,
+        INNGEST_BASE_URL:
+          viteEnv.INNGEST_BASE_URL ?? viteEnv.VITE_INNGEST_BASE_URL,
+        INNGEST_API_BASE_URL:
+          viteEnv.INNGEST_API_BASE_URL ?? viteEnv.VITE_INNGEST_API_BASE_URL,
+        INNGEST_SIGNING_KEY: viteEnv.INNGEST_SIGNING_KEY,
+        INNGEST_SIGNING_KEY_FALLBACK: viteEnv.INNGEST_SIGNING_KEY_FALLBACK,
+      };
+    }
+  } catch {
+    // noop
+  }
+
+  try {
+    // Node-like environments (sometimes polyfilled Vite)
     if (process.env) {
       return {
         INNGEST_DEV:

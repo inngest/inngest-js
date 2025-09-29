@@ -1,5 +1,44 @@
 # @inngest/realtime
 
+## 0.4.2
+
+### Patch Changes
+
+- [#1080](https://github.com/inngest/inngest-js/pull/1080) [`fde816ab`](https://github.com/inngest/inngest-js/commit/fde816ab79a1c256b125445fe927e1e648b74db6) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Fix Vite environment variable support for subscribe
+
+## 0.4.1
+
+### Patch Changes
+
+- [#1082](https://github.com/inngest/inngest-js/pull/1082) [`8e5ee6a`](https://github.com/inngest/inngest-js/commit/8e5ee6a7f543a30f4271c3eea98efc24e7ed7d23) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Bump `inngest` dependency to `^3.42.0`
+
+  This version changed a lot of `Inngest*.Like` types to future-proof them against updates.
+  Before this, all updates caused typing issues when we upgraded, but following this patch we shouldn't see that issue again.
+
+## 0.4.0
+
+### Minor Changes
+
+- [#1071](https://github.com/inngest/inngest-js/pull/1071) [`719b9dc`](https://github.com/inngest/inngest-js/commit/719b9dcbdb16ab8710a4273a289ec833cfd3242f) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Move server-side only middleware to separate import
+
+## 0.3.3
+
+### Patch Changes
+
+- [#1068](https://github.com/inngest/inngest-js/pull/1068) [`b43bc02`](https://github.com/inngest/inngest-js/commit/b43bc0273d16b5f0fd3ab69d31bcd373245bb27f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `@inngest/realtime/browser` entrypoint to bypass some import issues
+
+- Updated dependencies [[`8ba5486`](https://github.com/inngest/inngest-js/commit/8ba548647ab17b91b750eea997c016dedee9f1c2)]:
+  - inngest@3.40.3
+
+## 0.3.2
+
+### Patch Changes
+
+- [#1058](https://github.com/inngest/inngest-js/pull/1058) [`b683116`](https://github.com/inngest/inngest-js/commit/b683116bcf4a4771599b4f953a99b47d98fb015b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix errors being thrown on reader close
+
+- Updated dependencies [[`ec2320a`](https://github.com/inngest/inngest-js/commit/ec2320a2dbbfacf22d2399c0eb28f3280507b49f), [`ac9748f`](https://github.com/inngest/inngest-js/commit/ac9748f506f34f3f9329c73d55d39aeecd76499b)]:
+  - inngest@3.40.2
+
 ## 0.3.1
 
 ### Patch Changes

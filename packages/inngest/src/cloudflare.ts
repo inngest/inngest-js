@@ -35,9 +35,9 @@
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type Either } from "./helpers/types.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import type { Either } from "./helpers/types.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -62,7 +62,7 @@ export type WorkersHandlerArgs = [Request, Record<string, string | undefined>];
  * asserting the shape of the input arguments at runtime.
  */
 const deriveHandlerArgs = (
-  args: Either<PagesHandlerArgs, WorkersHandlerArgs>
+  args: Either<PagesHandlerArgs, WorkersHandlerArgs>,
 ): { req: Request; env: Record<string, string | undefined> } => {
   if (!Array.isArray(args) || args.length < 1) {
     throw new Error("No arguments passed to serve handler");
@@ -83,7 +83,7 @@ const deriveHandlerArgs = (
   }
 
   throw new Error(
-    "Could not derive handler arguments from input; are you sure you're using serve() correctly?"
+    "Could not derive handler arguments from input; are you sure you're using serve() correctly?",
   );
 };
 
@@ -121,7 +121,7 @@ const deriveHandlerArgs = (
  */
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
-  options: ServeHandlerOptions
+  options: ServeHandlerOptions,
 ): ((
   ...args: Either<PagesHandlerArgs, WorkersHandlerArgs>
 ) => Promise<Response>) => {

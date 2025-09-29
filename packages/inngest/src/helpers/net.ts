@@ -1,5 +1,7 @@
 import canonicalize from "canonicalize";
-import { hmac, sha256 } from "hash.js";
+import hashjs from "hash.js";
+
+const { hmac, sha256 } = hashjs;
 
 /**
  * Send an HTTP request with the given signing key. If the response is a 401 or
@@ -42,7 +44,7 @@ export async function fetchWithAuthFallback<TFetch extends typeof fetch>({
 export function signDataWithKey(
   data: unknown,
   signingKey: string,
-  ts: string
+  ts: string,
 ): string {
   // Calculate the HMAC of the request body ourselves.
   // We make the assumption here that a stringified body is the same as the
@@ -51,7 +53,7 @@ export function signDataWithKey(
   const encoded = typeof data === "string" ? data : canonicalize(data);
   // Remove the `/signkey-[test|prod]-/` prefix from our signing key to calculate the HMAC.
   const key = signingKey.replace(/signkey-\w+-/, "");
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   const mac = hmac(sha256 as any, key)
     .update(encoded)
     .update(ts)

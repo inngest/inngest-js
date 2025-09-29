@@ -1,6 +1,6 @@
-import * as DenoFreshHandler from "@local/deno/fresh";
 import fetch, { Headers, Response } from "cross-fetch";
-import { testFramework } from "../test/helpers";
+import { testFramework } from "../test/helpers.ts";
+import * as DenoFreshHandler from "./fresh.ts";
 
 const originalProcess = process;
 const originalFetch = globalThis.fetch;
@@ -10,7 +10,7 @@ const originalHeaders = globalThis.Headers;
 testFramework("Deno Fresh", DenoFreshHandler, {
   lifecycleChanges: () => {
     beforeEach(() => {
-      jest.resetModules();
+      vi.resetModules();
 
       /**
        * Fake lack of any `process` global var; Deno allows access to env vars
@@ -21,7 +21,7 @@ testFramework("Deno Fresh", DenoFreshHandler, {
        * `process.stderr`, we do need to provide some pieces of this, but we can
        * still remove any env vars.
        */
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       process.env = undefined as any;
 
       Object.defineProperties(globalThis, {
@@ -33,7 +33,7 @@ testFramework("Deno Fresh", DenoFreshHandler, {
       /**
        * Fake a global Deno object, which is primarily used to access env vars.
        */
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       (globalThis as any).Deno = {
         env: { toObject: () => originalProcess.env },
       };
@@ -49,20 +49,21 @@ testFramework("Deno Fresh", DenoFreshHandler, {
         Response: { value: originalResponse, configurable: true },
         Headers: { value: originalHeaders, configurable: true },
       });
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       delete (globalThis as any).Deno;
     });
   },
 
-  transformReq: (req, res, env) => {
+  transformReq: (req, _res, env) => {
     const headers = new Headers();
+    // biome-ignore lint/complexity/noForEach: <explanation>
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     (req as any).headers = headers;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     (req as any).json = () => Promise.resolve(req.body);
 
     return [req, env];
@@ -88,7 +89,7 @@ testFramework("Deno Fresh", DenoFreshHandler, {
     });
 
     test("Deno.env.toObject should be defined", () => {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       expect((globalThis as any).Deno.env.toObject).toBeDefined();
     });
   },

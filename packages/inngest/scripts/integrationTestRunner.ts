@@ -1,10 +1,9 @@
-/* eslint-disable @inngest/internal/process-warn */
 import {
+  type ChildProcess,
   exec,
   execSync,
-  spawn,
-  type ChildProcess,
   type SpawnOptions,
+  spawn,
 } from "child_process";
 import { promises as fsPromises } from "fs";
 import * as path from "path";
@@ -13,7 +12,7 @@ const pollInterval = 1000; // 1 second
 
 async function checkServerReady(
   apiUrl: string,
-  timeout: number
+  timeout: number,
 ): Promise<void> {
   let error;
   const startTime = Date.now();
@@ -24,7 +23,9 @@ async function checkServerReady(
         console.log(`Server is ready at ${apiUrl}`);
         return;
       }
-      throw new Error(`Server not ready: ${response.status}`);
+      throw new Error(
+        `Server not ready at ${apiUrl}: ${response.status}, ${await response.text()}`,
+      );
     } catch (e) {
       error = e;
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
@@ -56,19 +57,19 @@ async function setupExample(examplePath: string): Promise<void> {
 
   // If Bun is seen, use it. Otherwise, use npm. Hacky, but this doesn't need to
   // be fancy.
-  if (exampleName.startsWith("bun")) {
+  if (exampleName.startsWith("bun") || exampleName.includes("elysiajs")) {
     await execAsync(
       "bun add --no-save inngest@../../packages/inngest/inngest.tgz",
       {
         cwd: examplePath,
-      }
+      },
     );
   } else {
     await execAsync(
-      "npm install --no-save --no-package-lock ../../packages/inngest/inngest.tgz",
+      "npm install --no-save --legacy-peer-deps --no-package-lock ../../packages/inngest/inngest.tgz",
       {
         cwd: examplePath,
-      }
+      },
     );
   }
 
@@ -83,14 +84,14 @@ async function setupExample(examplePath: string): Promise<void> {
           } else {
             resolve(stdout.toString().trim());
           }
-        }
+        },
       );
-    }
+    },
   );
 
   const exampleFunctionsPath = path.join(
     examplePath,
-    path.dirname(exampleFunctionsTarget)
+    path.dirname(exampleFunctionsTarget),
   );
 
   //   const sdkFunctionsPath = path.join(examplePath, "inngest");
@@ -103,7 +104,7 @@ async function setupExample(examplePath: string): Promise<void> {
 
   await execAsync(
     `cp -r ../../packages/inngest/src/test/functions/* ${exampleFunctionsPath}/`,
-    { cwd: examplePath }
+    { cwd: examplePath },
   );
 
   const eslintIgnorePath = path.join(examplePath, ".eslintignore");
@@ -118,7 +119,7 @@ async function setupExample(examplePath: string): Promise<void> {
         } else {
           resolve(stdout.toString().trim().split("\n"));
         }
-      }
+      },
     );
   });
 
@@ -127,7 +128,7 @@ async function setupExample(examplePath: string): Promise<void> {
       const fileContents = await fsPromises.readFile(file);
       await fsPromises.writeFile(
         file,
-        "// @ts-nocheck\n" + fileContents.toString()
+        "// @ts-nocheck\n" + fileContents.toString(),
       );
     }
   }
@@ -136,7 +137,7 @@ async function setupExample(examplePath: string): Promise<void> {
 function startProcess(
   command: string,
   args: string[],
-  options: SpawnOptions
+  options: SpawnOptions,
 ): ChildProcess {
   const proc = spawn(command, args, options);
 
@@ -168,7 +169,7 @@ function startProcess(
 async function startDevServer(
   devServerPort: number,
   exampleServerPort: number,
-  examplePath: string
+  examplePath: string,
 ): Promise<void> {
   const serverProcess = startProcess(
     "npx",
@@ -192,7 +193,7 @@ async function startDevServer(
       cwd: examplePath,
       detached: true,
       stdio: "inherit",
-    }
+    },
   );
 
   serverProcess.unref();
@@ -203,7 +204,7 @@ async function startDevServer(
 async function startExampleServer(
   examplePath: string,
   exampleServerPort: number,
-  devServerPort: number
+  devServerPort: number,
 ): Promise<void> {
   const exampleName = path.basename(examplePath);
   const env = {
@@ -225,7 +226,7 @@ async function startExampleServer(
 
   return checkServerReady(
     `http://localhost:${exampleServerPort}/api/inngest`,
-    60000
+    60000,
   );
 }
 
@@ -236,13 +237,13 @@ async function registerExample(exampleServerPort: number): Promise<void> {
       `http://localhost:${exampleServerPort}/api/inngest`,
       {
         method: "PUT",
-      }
+      },
     );
 
     console.log(
       "Register response:",
       registerRes.status,
-      registerRes.statusText
+      registerRes.statusText,
     );
   } catch (err) {
     console.error("Failed to register example", err);
@@ -264,7 +265,7 @@ function runTests(sdkPath: string): void {
 // to that state after integration tests have run. If it has changes, return
 // undefined.
 async function getExampleResetter(
-  examplePath: string
+  examplePath: string,
 ): Promise<(() => Promise<void>) | undefined> {
   const exampleGitStatus = await new Promise<string>((resolve, reject) => {
     exec("git status --porcelain .", { cwd: examplePath }, (error, stdout) => {
@@ -300,7 +301,7 @@ async function getExampleResetter(
 async function runIntegrationTest(
   example: string,
   devServerPort: number,
-  exampleServerPort: number
+  exampleServerPort: number,
 ): Promise<void> {
   // Start a 10 minute timeout. If we don't finish within 10 minutes, something
   // is wrong.
@@ -309,10 +310,10 @@ async function runIntegrationTest(
       console.error("Integration test timed out");
       process.exit(1);
     },
-    10 * 60 * 1000
+    10 * 60 * 1000,
   );
 
-  const rootPath = path.join(__dirname, "..", "..", "..");
+  const rootPath = path.join(import.meta.dirname, "..", "..", "..");
   const sdkPath = path.join(rootPath, "packages", "inngest");
   const examplePath = path.join(rootPath, "examples", example);
 
@@ -326,7 +327,7 @@ async function runIntegrationTest(
   const startDevServerPromise = startDevServer(
     devServerPort,
     exampleServerPort,
-    examplePath
+    examplePath,
   );
 
   await Promise.all([startExamplePromise, startDevServerPromise]);
@@ -346,13 +347,13 @@ const exampleServerPort = parseInt(process.argv[4] ?? "3000", 10);
 // Validate input arguments.
 if (!example || isNaN(devServerPort) || isNaN(exampleServerPort)) {
   console.error(
-    "Usage: tsx integrationTestRunner.ts <example> <devServerPort> <exampleServerPort>"
+    "Usage: tsx integrationTestRunner.ts <example> <devServerPort> <exampleServerPort>",
   );
   process.exit(1);
 }
 
 console.log(
-  `Running integration test for ${example} using port ${exampleServerPort} and dev server port ${devServerPort}`
+  `Running integration test for ${example} using port ${exampleServerPort} and dev server port ${devServerPort}`,
 );
 
 runIntegrationTest(example, devServerPort, exampleServerPort)

@@ -11,19 +11,17 @@
  *   use is `type-fest@3`
  * - `type-fest@3` is not compatible with `typescript@5.4`
  */
-/* eslint-disable @typescript-eslint/no-loss-of-precision */
-/* eslint-disable @typescript-eslint/ban-types */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import {
-  type IsAny,
-  type IsLiteral,
-  type IsNever,
-  type IsUnknown,
-  type KnownKeys,
-  type Simplify,
-} from "./types.js";
+import type {
+  IsAny,
+  IsLiteral,
+  IsNever,
+  IsUnknown,
+  KnownKeys,
+  Simplify,
+} from "./types.ts";
 
 // Note: The return value has to be `any` and not `unknown` so it can match `void`.
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 type NotJsonable = ((...arguments_: any[]) => any) | undefined | symbol;
 
 type NeverToNull<T> = IsNever<T> extends true ? null : T;
@@ -58,7 +56,7 @@ Please upvote [this issue](https://github.com/microsoft/TypeScript/issues/32277)
 @see NegativeInfinity
 */
 // See https://github.com/microsoft/TypeScript/issues/31752
-// eslint-disable-next-line @typescript-eslint/no-loss-of-precision
+
 export type PositiveInfinity = 1e999;
 
 /**
@@ -69,7 +67,7 @@ Please upvote [this issue](https://github.com/microsoft/TypeScript/issues/32277)
 @see PositiveInfinity
 */
 // See https://github.com/microsoft/TypeScript/issues/31752
-// eslint-disable-next-line @typescript-eslint/no-loss-of-precision
+
 export type NegativeInfinity = -1e999;
 
 /**
@@ -156,7 +154,8 @@ type BaseKeyFilter<Type, Key extends keyof Type> = Key extends symbol
   */
       { name: string } extends Type[Key]
       ? Key
-      : [(...arguments_: any[]) => any] extends [Type[Key]]
+      : // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        [(...arguments_: any[]) => any] extends [Type[Key]]
         ? never
         : Key;
 
@@ -277,7 +276,8 @@ const timeJson = JSON.parse(JSON.stringify(time)) as Jsonify<typeof time>;
 {@link https://github.com/Microsoft/TypeScript/issues/1897#issuecomment-710744173}
 */
 export type Jsonify<T> = IsAny<T> extends true
-  ? any
+  ? // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    any
   : IsUnknown<T> extends true
     ? unknown
     : T extends PositiveInfinity | NegativeInfinity
@@ -290,13 +290,14 @@ export type Jsonify<T> = IsAny<T> extends true
             ? J // Then T is Jsonable and its Jsonable value is J
             : Jsonify<J> // Maybe if we look a level deeper we'll find a JsonValue
           : // Instanced primitives are objects
-            T extends Number
+            T extends number
             ? number
-            : T extends String
+            : T extends string
               ? string
-              : T extends Boolean
+              : T extends boolean
                 ? boolean
-                : T extends Map<any, any> | Set<any>
+                : // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                  T extends Map<any, any> | Set<any>
                   ? EmptyObject
                   : T extends TypedArray
                     ? Record<string, number>

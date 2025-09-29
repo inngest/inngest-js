@@ -1,6 +1,6 @@
 {
   "name": "@inngest/test",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Tooling for testing Inngest functions.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -12,7 +12,7 @@
     "build": "pnpm run build:clean && pnpm run build:tsc",
     "build:clean": "rm -rf ./dist",
     "build:tsc": "tsc --project tsconfig.build.json",
-    "pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest-test.tgz",
+    "pack": "pnpm run build && pnpm pack --out ../inngest-test.tgz",
     "postversion": "pnpm run build",
     "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
     "release:version": "node ../../scripts/release/jsrVersion.js"
@@ -41,7 +41,7 @@
   "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "dependencies": {
-    "inngest": "^3.31.1",
+    "inngest": "^3.42.3",
     "tinyspy": "^3.0.2",
     "ulid": "^2.3.0"
   },

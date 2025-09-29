@@ -1,13 +1,13 @@
 import { fromPartial } from "@total-typescript/shoehorn";
 import { Inngest } from "../../../src";
-import { STEP_INDEXING_SUFFIX } from "../../../src/components/InngestStepTools";
 import {
-  IInngestExecution,
-  InngestExecution,
-  MemoizedOp,
+  type IInngestExecution,
+  type InngestExecution,
+  type MemoizedOp,
   PREFERRED_EXECUTION_VERSION,
 } from "../../../src/components/execution/InngestExecution";
 import { _internals } from "../../../src/components/execution/v1";
+import { STEP_INDEXING_SUFFIX } from "../../../src/components/InngestStepTools";
 import { ServerTiming } from "../../../src/helpers/ServerTiming";
 
 interface CreateExecutionWithMemoizedStepsOptions {
@@ -49,7 +49,10 @@ export const createExecutionWithMemoizedSteps = ({
     const execution = client
       .createFunction({ id: "test" }, { event: "test" }, async ({ step }) => {
         for (let i = 0; i < stepCount; i++) {
-          await step.run(i === 0 ? userStepId : `${userStepId}${STEP_INDEXING_SUFFIX}${i}`, () => userStepOutput);
+          await step.run(
+            i === 0 ? userStepId : `${userStepId}${STEP_INDEXING_SUFFIX}${i}`,
+            () => userStepOutput,
+          );
         }
       })
       ["createExecution"]({

@@ -1,7 +1,6 @@
 import { InngestMiddleware } from "inngest";
-import { type InngestApi } from "inngest/api/api";
 import { getAsyncCtx } from "inngest/experimental";
-import { type Realtime } from "./types";
+import type { Realtime } from "./types";
 
 export const realtimeMiddleware = () => {
   return new InngestMiddleware({
@@ -21,7 +20,7 @@ export const realtimeMiddleware = () => {
                   );
                 }
 
-                const publishOpts: InngestApi.PublishOptions = {
+                const publishOpts = {
                   topics: [topic],
                   channel,
                   runId,

@@ -1,6 +1,6 @@
-import * as CloudflareHandler from "@local/cloudflare";
 import fetch, { Headers, Response } from "cross-fetch";
-import { testFramework } from "./test/helpers";
+import * as CloudflareHandler from "./cloudflare.ts";
+import { testFramework } from "./test/helpers.ts";
 
 const originalProcess = process;
 const originalFetch = globalThis.fetch;
@@ -10,7 +10,7 @@ const originalHeaders = globalThis.Headers;
 testFramework("Cloudflare", CloudflareHandler, {
   lifecycleChanges: () => {
     beforeEach(() => {
-      jest.resetModules();
+      vi.resetModules();
 
       /**
        * Fake lack of any `process` global var; Cloudflare allows access to env
@@ -20,7 +20,7 @@ testFramework("Cloudflare", CloudflareHandler, {
        * `process.stderr`, we do need to provide some pieces of this, but we can
        * still remove any env vars.
        */
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       process.env = undefined as any;
 
       Object.defineProperties(globalThis, {
@@ -42,15 +42,16 @@ testFramework("Cloudflare", CloudflareHandler, {
       });
     });
   },
-  transformReq: (req, res, env) => {
+  transformReq: (req, _res, env) => {
     const headers = new Headers();
+    // biome-ignore lint/complexity/noForEach: <explanation>
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     (req as any).headers = headers;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     (req as any).json = () => Promise.resolve(req.body);
 
     return [

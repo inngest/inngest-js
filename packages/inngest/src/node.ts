@@ -1,11 +1,11 @@
 import http from "node:http";
-import { type TLSSocket } from "node:tls";
+import type { TLSSocket } from "node:tls";
 import { URL } from "node:url";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -92,7 +92,7 @@ export const serve = (options: ServeHandlerOptions): http.RequestListener => {
         method: () => {
           if (!req.method) {
             throw new Error(
-              "Request method not defined. Potential use outside of context of Server."
+              "Request method not defined. Potential use outside of context of Server.",
             );
           }
           return req.method;
@@ -101,6 +101,29 @@ export const serve = (options: ServeHandlerOptions): http.RequestListener => {
         transformResponse: ({ body, status, headers }) => {
           res.writeHead(status, headers);
           res.end(body);
+        },
+
+        transformStreamingResponse: async ({ body, headers, status }) => {
+          res.writeHead(status, headers);
+
+          const reader = body.getReader();
+          try {
+            let done = false;
+            while (!done) {
+              const result = await reader.read();
+              done = result.done;
+              if (!done) {
+                res.write(result.value);
+              }
+            }
+            res.end();
+          } catch (error) {
+            if (error instanceof Error) {
+              res.destroy(error);
+            } else {
+              res.destroy(new Error(String(error)));
+            }
+          }
         },
       };
     },
@@ -135,7 +158,7 @@ export const createServer = (options: ServeHandlerOptions) => {
     res.writeHead(404);
     res.end();
   });
-  server.on("clientError", (err, socket) => {
+  server.on("clientError", (_err, socket) => {
     socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
   });
   return server;

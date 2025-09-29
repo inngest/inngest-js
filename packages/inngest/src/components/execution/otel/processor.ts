@@ -1,13 +1,13 @@
-import { type Span } from "@opentelemetry/api";
+import type { Span } from "@opentelemetry/api";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import {
   detectResourcesSync,
   envDetectorSync,
   hostDetectorSync,
+  type IResource,
   osDetectorSync,
   processDetectorSync,
   serviceInstanceIdDetectorSync,
-  type IResource,
 } from "@opentelemetry/resources";
 import {
   BatchSpanProcessor,
@@ -18,13 +18,13 @@ import Debug from "debug";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
-} from "../../../helpers/consts.js";
-import { devServerAvailable } from "../../../helpers/devserver.js";
-import { devServerHost } from "../../../helpers/env.js";
-import { type Inngest } from "../../Inngest.js";
-import { getAsyncCtx } from "../als.js";
-import { clientProcessorMap } from "./access.js";
-import { Attribute, debugPrefix, TraceStateKey } from "./consts.js";
+} from "../../../helpers/consts.ts";
+import { devServerAvailable } from "../../../helpers/devserver.ts";
+import { devServerHost } from "../../../helpers/env.ts";
+import type { Inngest } from "../../Inngest.ts";
+import { getAsyncCtx } from "../als.ts";
+import { clientProcessorMap } from "./access.ts";
+import { Attribute, debugPrefix, TraceStateKey } from "./consts.ts";
 
 const processorDebug = Debug(`${debugPrefix}:InngestSpanProcessor`);
 
@@ -45,6 +45,7 @@ export type ParentState = {
   runId: string;
   appId: string | undefined;
   functionId: string | undefined;
+  traceRef: string | undefined;
 };
 
 /**
@@ -80,7 +81,7 @@ export class InngestSpanProcessor implements SpanProcessor {
      *
      * So, internally we can delay setting ths until later.
      */
-    app?: Inngest.Like
+    app?: Inngest.Like,
   ) {
     if (app) {
       clientProcessorMap.set(app as Inngest.Any, this);
@@ -157,7 +158,7 @@ export class InngestSpanProcessor implements SpanProcessor {
       return processorDebug(
         "no traceparent found for span",
         span.spanContext().spanId,
-        "so skipping it"
+        "so skipping it",
       );
     }
 
@@ -166,21 +167,23 @@ export class InngestSpanProcessor implements SpanProcessor {
     // them back in later versions.
     let appId: string | undefined;
     let functionId: string | undefined;
+    let traceRef: string | undefined;
 
     if (tracestate) {
       try {
         const entries = Object.fromEntries(
-          tracestate.split(",").map((kv) => kv.split("=") as [string, string])
+          tracestate.split(",").map((kv) => kv.split("=") as [string, string]),
         );
 
         appId = entries[TraceStateKey.AppId];
         functionId = entries[TraceStateKey.FunctionId];
+        traceRef = entries[TraceStateKey.TraceRef];
       } catch (err) {
         processorDebug(
           "failed to parse tracestate",
           tracestate,
           "so skipping it;",
-          err
+          err,
         );
       }
     }
@@ -191,7 +194,7 @@ export class InngestSpanProcessor implements SpanProcessor {
       "declaring:",
       span.spanContext().spanId,
       "for traceparent",
-      traceparent
+      traceparent,
     );
 
     // Set a load of attributes on this span so that we can nicely identify
@@ -204,8 +207,9 @@ export class InngestSpanProcessor implements SpanProcessor {
         functionId,
         runId,
         traceparent,
+        traceRef,
       },
-      span
+      span,
     );
   }
 
@@ -241,7 +245,6 @@ export class InngestSpanProcessor implements SpanProcessor {
    */
   private ensureBatcherInitialized(): Promise<BatchSpanProcessor> {
     if (!this.#batcher) {
-      // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
       this.#batcher = new Promise(async (resolve, reject) => {
         try {
           // We retrieve the app from the async context, so we must make sure
@@ -249,7 +252,7 @@ export class InngestSpanProcessor implements SpanProcessor {
           const store = await getAsyncCtx();
           if (!store) {
             throw new Error(
-              "No async context found; cannot create batcher to export traces"
+              "No async context found; cannot create batcher to export traces",
             );
           }
 
@@ -267,7 +270,7 @@ export class InngestSpanProcessor implements SpanProcessor {
               const devHost = devServerHost() || defaultDevServerHost;
               const hasDevServer = await devServerAvailable(
                 devHost,
-                app["fetch"]
+                app["fetch"],
               );
               if (hasDevServer) {
                 url = new URL(path, devHost);
@@ -279,7 +282,7 @@ export class InngestSpanProcessor implements SpanProcessor {
 
           processorDebug(
             "batcher lazily accessed; creating new batcher with URL",
-            url
+            url,
           );
 
           const exporter = new OTLPTraceExporter({
@@ -325,6 +328,10 @@ export class InngestSpanProcessor implements SpanProcessor {
     // Executor that we don't need to parrot this back.
     if (parentState.functionId) {
       span.setAttribute(Attribute.InngestFunctionId, parentState.functionId);
+    }
+
+    if (parentState.traceRef) {
+      span.setAttribute(Attribute.InngestTraceRef, parentState.traceRef);
     }
   }
 
@@ -374,7 +381,7 @@ export class InngestSpanProcessor implements SpanProcessor {
         "in span ID",
         parentSpanId,
         "so adding",
-        spanId
+        spanId,
       );
 
       this.trackSpan(parentState, span);
@@ -395,7 +402,7 @@ export class InngestSpanProcessor implements SpanProcessor {
         if (!this.#batcher) {
           return debug(
             "batcher not initialized, so failed exporting span",
-            spanId
+            spanId,
           );
         }
 
@@ -451,7 +458,7 @@ export class PublicInngestSpanProcessor extends InngestSpanProcessor {
      * The app that this span processor is associated with. This is used to
      * determine the Inngest endpoint to export spans to.
      */
-    app: Inngest.Like
+    app: Inngest.Like,
   ) {
     super(app);
   }

@@ -1,7 +1,7 @@
-import { EventSchemas, InngestCommHandler } from "@local";
-import { serve } from "@local/next";
-import { z } from "zod";
-import { createClient } from "../test/helpers";
+import { z } from "zod/v3";
+import { EventSchemas, InngestCommHandler } from "../index.ts";
+import { serve } from "../next.ts";
+import { createClient } from "../test/helpers.ts";
 
 describe("#153", () => {
   test('does not throw "type instantiation is excessively deep and possibly infinite" for looping type', () => {
@@ -43,7 +43,7 @@ describe("ServeHandler", () => {
         inngest.createFunction(
           { id: "test" },
           { event: "demo/event.sent" },
-          () => "test"
+          () => "test",
         ),
       ];
 
@@ -57,7 +57,7 @@ describe("ServeHandler", () => {
         inngest.createFunction(
           { id: "test" },
           { event: "demo/event.sent" },
-          () => "test"
+          () => "test",
         ),
       ] as const;
 

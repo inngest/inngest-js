@@ -1,26 +1,24 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { openai } from "@local";
-import { EventSchemas } from "@local/components/EventSchemas";
-import { type Inngest } from "@local/components/Inngest";
-import { InngestFunction } from "@local/components/InngestFunction";
-import { referenceFunction } from "@local/components/InngestFunctionReference";
-import { type createStepTools } from "@local/components/InngestStepTools";
-import { type IsEqual } from "@local/helpers/types";
-import {
-  StepOpCode,
-  type ClientOptions,
-  type InvocationResult,
-} from "@local/types";
+import { openai } from "@inngest/ai";
 import ms from "ms";
 import { Temporal } from "temporal-polyfill";
-import { z } from "zod";
+import { z } from "zod/v3";
+import type { IsEqual } from "../helpers/types.ts";
 import {
-  assertType,
   createClient,
   getStepTools,
-  testClientId,
   type StepTools,
-} from "../test/helpers";
+  testClientId,
+} from "../test/helpers.ts";
+import {
+  type ClientOptions,
+  type InvocationResult,
+  StepOpCode,
+} from "../types.ts";
+import { EventSchemas } from "./EventSchemas.ts";
+import type { Inngest } from "./Inngest.ts";
+import { InngestFunction } from "./InngestFunction.ts";
+import { referenceFunction } from "./InngestFunctionReference.ts";
+import type { createStepTools } from "./InngestStepTools.ts";
 
 describe("waitForEvent", () => {
   let step: StepTools;
@@ -31,7 +29,7 @@ describe("waitForEvent", () => {
 
   test("return WaitForEvent step op code", async () => {
     await expect(
-      step.waitForEvent("id", { event: "event", timeout: "2h" })
+      step.waitForEvent("id", { event: "event", timeout: "2h" }),
     ).resolves.toMatchObject({
       op: StepOpCode.WaitForEvent,
     });
@@ -39,7 +37,7 @@ describe("waitForEvent", () => {
 
   test("returns `id` as ID", async () => {
     await expect(
-      step.waitForEvent("id", { event: "event", timeout: "2h" })
+      step.waitForEvent("id", { event: "event", timeout: "2h" }),
     ).resolves.toMatchObject({
       id: "id",
     });
@@ -47,7 +45,7 @@ describe("waitForEvent", () => {
 
   test("returns ID by default", async () => {
     await expect(
-      step.waitForEvent("id", { event: "event", timeout: "2h" })
+      step.waitForEvent("id", { event: "event", timeout: "2h" }),
     ).resolves.toMatchObject({
       displayName: "id",
     });
@@ -57,8 +55,8 @@ describe("waitForEvent", () => {
     await expect(
       step.waitForEvent(
         { id: "id", name: "name" },
-        { event: "event", timeout: "2h" }
-      )
+        { event: "event", timeout: "2h" },
+      ),
     ).resolves.toMatchObject({
       displayName: "name",
     });
@@ -66,7 +64,7 @@ describe("waitForEvent", () => {
 
   test("return event name as name", async () => {
     await expect(
-      step.waitForEvent("id", { event: "event", timeout: "2h" })
+      step.waitForEvent("id", { event: "event", timeout: "2h" }),
     ).resolves.toMatchObject({
       name: "event",
     });
@@ -74,7 +72,7 @@ describe("waitForEvent", () => {
 
   test("return blank opts if none given", async () => {
     await expect(
-      step.waitForEvent("id", { event: "event", timeout: "2h" })
+      step.waitForEvent("id", { event: "event", timeout: "2h" }),
     ).resolves.toMatchObject({
       opts: {},
     });
@@ -82,7 +80,7 @@ describe("waitForEvent", () => {
 
   test("return TTL if string `timeout` given", async () => {
     await expect(
-      step.waitForEvent("id", { event: "event", timeout: "1m" })
+      step.waitForEvent("id", { event: "event", timeout: "1m" }),
     ).resolves.toMatchObject({
       opts: {
         timeout: "1m",
@@ -96,7 +94,7 @@ describe("waitForEvent", () => {
     upcoming.setHours(upcoming.getHours() + 1);
 
     await expect(
-      step.waitForEvent("id", { event: "event", timeout: upcoming })
+      step.waitForEvent("id", { event: "event", timeout: upcoming }),
     ).resolves.toMatchObject({
       opts: {
         timeout: expect.stringMatching(upcoming.toISOString()),
@@ -106,7 +104,7 @@ describe("waitForEvent", () => {
 
   test("return simple field match if `match` string given", async () => {
     await expect(
-      step.waitForEvent("id", { event: "event", match: "name", timeout: "2h" })
+      step.waitForEvent("id", { event: "event", match: "name", timeout: "2h" }),
     ).resolves.toMatchObject({
       opts: {
         if: "event.name == async.name",
@@ -120,7 +118,7 @@ describe("waitForEvent", () => {
         event: "event",
         if: "name == 123",
         timeout: "2h",
-      })
+      }),
     ).resolves.toMatchObject({
       opts: {
         if: "name == 123",
@@ -168,7 +166,7 @@ describe("run", () => {
 
   test("return specific name if given", async () => {
     await expect(
-      step.run({ id: "id", name: "name" }, () => undefined)
+      step.run({ id: "id", name: "name" }, () => undefined),
     ).resolves.toMatchObject({
       displayName: "name",
     });
@@ -190,8 +188,8 @@ describe("run", () => {
         num: 0,
       },
       arr: [0, 1, 2, () => undefined, true],
-      infinity: Infinity,
-      nan: NaN,
+      infinity: Number.POSITIVE_INFINITY,
+      nan: Number.NaN,
       undef: undefined,
       null: null,
       symbol: Symbol("foo"),
@@ -223,11 +221,8 @@ describe("run", () => {
       set: Record<string, never>;
       bigint: never;
       typedArray: Record<string, number>;
-      // eslint-disable-next-line @typescript-eslint/ban-types
       promise: {};
-      // eslint-disable-next-line @typescript-eslint/ban-types
       weakMap: {};
-      // eslint-disable-next-line @typescript-eslint/ban-types
       weakSet: {};
     };
 
@@ -261,7 +256,7 @@ describe("ai", () => {
           body: {
             messages: [],
           },
-        })
+        }),
       ).resolves.toMatchObject({
         op: StepOpCode.AiGateway,
       });
@@ -274,7 +269,7 @@ describe("ai", () => {
           body: {
             messages: [],
           },
-        })
+        }),
       ).resolves.toMatchObject({
         id: "id",
       });
@@ -287,7 +282,7 @@ describe("ai", () => {
           body: {
             messages: [],
           },
-        })
+        }),
       ).resolves.toMatchObject({
         displayName: "id",
       });
@@ -302,8 +297,8 @@ describe("ai", () => {
             body: {
               messages: [],
             },
-          }
-        )
+          },
+        ),
       ).resolves.toMatchObject({
         displayName: "name",
       });
@@ -348,7 +343,7 @@ describe("ai", () => {
           body: {
             messages: [],
           },
-        })
+        }),
       ).resolves.toMatchObject({
         opts: {
           body: {
@@ -366,7 +361,7 @@ describe("ai", () => {
             model: "gpt-3.5-something-else",
             messages: [],
           },
-        })
+        }),
       ).resolves.toMatchObject({
         opts: {
           body: {
@@ -386,7 +381,7 @@ describe("ai", () => {
 
     test("return Step step op code", async () => {
       await expect(
-        step.ai.wrap("step", () => undefined)
+        step.ai.wrap("step", () => undefined),
       ).resolves.toMatchObject({
         op: StepOpCode.StepPlanned,
       });
@@ -406,7 +401,7 @@ describe("ai", () => {
 
     test("return specific name if given", async () => {
       await expect(
-        step.ai.wrap({ id: "id", name: "name" }, () => undefined)
+        step.ai.wrap({ id: "id", name: "name" }, () => undefined),
       ).resolves.toMatchObject({
         displayName: "name",
       });
@@ -418,26 +413,22 @@ describe("ai", () => {
 
     test("single input", async () => {
       await expect(
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        step.ai.wrap("", (flag: boolean) => {}, true)
+        step.ai.wrap("", (_flag: boolean) => {}, true),
       ).resolves.toMatchObject({});
     });
 
     test("multiple input", async () => {
       await expect(
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        step.ai.wrap("", (flag: boolean, value: number) => {}, true, 10)
+        step.ai.wrap("", (_flag: boolean, _value: number) => {}, true, 10),
       ).resolves.toMatchObject({});
     });
 
     test("disallow missing step inputs when function expects them", () => {
       // @ts-expect-error Invalid data
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      void step.ai.wrap("", (flag: boolean, value: number) => {});
+      void step.ai.wrap("", (_flag: boolean, _value: number) => {});
 
       // @ts-expect-error Invalid data
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      void step.ai.wrap("", function (flag: boolean, value: number) {});
+      void step.ai.wrap("", (_flag: boolean, _value: number) => {});
     });
 
     test("disallow step inputs when function does not expect them", () => {
@@ -445,21 +436,19 @@ describe("ai", () => {
       void step.ai.wrap("", () => {}, true);
 
       // @ts-expect-error Invalid data
-      void step.ai.wrap("", function () {}, true);
+      void step.ai.wrap("", () => {}, true);
     });
 
     test("disallow step inputs that don't match what function expects", () => {
       // @ts-expect-error Invalid data
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      void step.ai.wrap("", (flag: boolean, value: number) => {}, 10, true);
+      void step.ai.wrap("", (_flag: boolean, _value: number) => {}, 10, true);
 
       void step.ai.wrap(
         "",
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        function (flag: boolean, value: number) {},
+        (_flag: boolean, _value: number) => {},
         // @ts-expect-error Invalid data
         10,
-        true
+        true,
       );
     });
 
@@ -467,23 +456,21 @@ describe("ai", () => {
       await expect(
         step.run(
           "",
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          (flag: boolean, value?: number) => {
+          (_flag: boolean, _value?: number) => {
             // valid - enough arguments given - missing arg is optional
           },
-          true
-        )
+          true,
+        ),
       ).resolves.toMatchObject({});
 
       await expect(
         step.run(
           "",
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          function (flag: boolean, value?: number) {
+          (_flag: boolean, _value?: number) => {
             // valid - enough arguments given - missing arg is optional
           },
-          true
-        )
+          true,
+        ),
       ).resolves.toMatchObject({});
     });
 
@@ -499,8 +486,8 @@ describe("ai", () => {
           num: 0,
         },
         arr: [0, 1, 2, () => undefined, true],
-        infinity: Infinity,
-        nan: NaN,
+        infinity: Number.POSITIVE_INFINITY,
+        nan: Number.NaN,
         undef: undefined,
         null: null,
         symbol: Symbol("foo"),
@@ -532,11 +519,8 @@ describe("ai", () => {
         set: Record<string, never>;
         bigint: never;
         typedArray: Record<string, number>;
-        // eslint-disable-next-line @typescript-eslint/ban-types
         promise: {};
-        // eslint-disable-next-line @typescript-eslint/ban-types
         weakMap: {};
-        // eslint-disable-next-line @typescript-eslint/ban-types
         weakSet: {};
       };
 
@@ -583,7 +567,7 @@ describe("sleep", () => {
 
   test("return specific name if given", async () => {
     await expect(
-      step.sleep({ id: "id", name: "name" }, "1m")
+      step.sleep({ id: "id", name: "name" }, "1m"),
     ).resolves.toMatchObject({
       displayName: "name",
     });
@@ -640,7 +624,7 @@ describe("sleepUntil", () => {
     future.setDate(future.getDate() + 1);
 
     await expect(
-      step.sleepUntil({ id: "id", name: "name" }, future)
+      step.sleepUntil({ id: "id", name: "name" }, future),
     ).resolves.toMatchObject({
       displayName: "name",
     });
@@ -699,7 +683,7 @@ describe("sleepUntil", () => {
     const next = new Date("bad");
 
     await expect(() => step.sleepUntil("id", next)).rejects.toThrow(
-      "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil"
+      "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil",
     );
   });
 
@@ -707,7 +691,7 @@ describe("sleepUntil", () => {
     const next = "bad";
 
     await expect(() => step.sleepUntil("id", next)).rejects.toThrow(
-      "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil"
+      "Invalid `Date`, date string, `Temporal.Instant`, or `Temporal.ZonedDateTime` passed to sleepUntil",
     );
   });
 });
@@ -721,7 +705,7 @@ describe("sendEvent", () => {
 
     test("return id", async () => {
       await expect(
-        step.sendEvent("id", { name: "step", data: "foo" })
+        step.sendEvent("id", { name: "step", data: "foo" }),
       ).resolves.toMatchObject({
         id: "id",
       });
@@ -729,7 +713,7 @@ describe("sendEvent", () => {
 
     test("return Step step op code", async () => {
       await expect(
-        step.sendEvent("id", { name: "step", data: "foo" })
+        step.sendEvent("id", { name: "step", data: "foo" }),
       ).resolves.toMatchObject({
         op: StepOpCode.StepPlanned,
       });
@@ -737,7 +721,7 @@ describe("sendEvent", () => {
 
     test("return ID by default", async () => {
       await expect(
-        step.sendEvent("id", { name: "step", data: "foo" })
+        step.sendEvent("id", { name: "step", data: "foo" }),
       ).resolves.toMatchObject({ displayName: "id" });
     });
 
@@ -745,8 +729,8 @@ describe("sendEvent", () => {
       await expect(
         step.sendEvent(
           { id: "id", name: "name" },
-          { name: "step", data: "foo" }
-        )
+          { name: "step", data: "foo" },
+        ),
       ).resolves.toMatchObject({ displayName: "name" });
     });
 
@@ -754,8 +738,8 @@ describe("sendEvent", () => {
       await expect(
         step.sendEvent(
           { id: "id", name: "name" },
-          { name: "step", data: "foo" }
-        )
+          { name: "step", data: "foo" },
+        ),
       ).resolves.toMatchObject({ name: "sendEvent" });
     });
   });
@@ -763,7 +747,7 @@ describe("sendEvent", () => {
   describe("types", () => {
     describe("no custom types", () => {
       const sendEvent: ReturnType<typeof createStepTools>["sendEvent"] =
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         (() => undefined) as any;
 
       test("allows sending a single event with a string", () => {
@@ -791,7 +775,6 @@ describe("sendEvent", () => {
         bar: {
           data: { bar: string };
         };
-        // eslint-disable-next-line @typescript-eslint/ban-types
         baz: {};
       }>();
 
@@ -804,7 +787,7 @@ describe("sendEvent", () => {
 
       const sendEvent: ReturnType<
         typeof createStepTools<Client>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       >["sendEvent"] = (() => undefined) as any;
 
       test("disallows sending a single unknown event with a string", () => {
@@ -881,12 +864,12 @@ describe("invoke", () => {
     const fn = new InngestFunction(
       createClient({ id: testClientId }),
       { id: "test-fn", triggers: [{ event: "test-event" }] },
-      () => "test-return"
+      () => "test-return",
     );
 
     test("return id", async () => {
       await expect(
-        step.invoke("id", { function: fn, data: { foo: "foo" } })
+        step.invoke("id", { function: fn, data: { foo: "foo" } }),
       ).resolves.toMatchObject({
         id: "id",
       });
@@ -894,7 +877,7 @@ describe("invoke", () => {
 
     test("return Invoke step op code", async () => {
       await expect(
-        step.invoke("id", { function: fn, data: { foo: "foo" } })
+        step.invoke("id", { function: fn, data: { foo: "foo" } }),
       ).resolves.toMatchObject({
         op: StepOpCode.InvokeFunction,
       });
@@ -902,7 +885,7 @@ describe("invoke", () => {
 
     test("return ID by default", async () => {
       await expect(
-        step.invoke("id", { function: fn, data: { foo: "foo" } })
+        step.invoke("id", { function: fn, data: { foo: "foo" } }),
       ).resolves.toMatchObject({ displayName: "id" });
     });
 
@@ -910,15 +893,15 @@ describe("invoke", () => {
       await expect(
         step.invoke(
           { id: "id", name: "name" },
-          { function: fn, data: { foo: "foo" } }
-        )
+          { function: fn, data: { foo: "foo" } },
+        ),
       ).resolves.toMatchObject({ displayName: "name" });
     });
 
     describe("return function ID to run", () => {
       test("with `function` instance", async () => {
         await expect(
-          step.invoke("id", { function: fn, data: { foo: "foo" } })
+          step.invoke("id", { function: fn, data: { foo: "foo" } }),
         ).resolves.toMatchObject({
           opts: {
             function_id: fn.id(testClientId),
@@ -931,7 +914,7 @@ describe("invoke", () => {
           step.invoke("id", {
             function: "some-client-some-fn",
             data: { foo: "foo" },
-          })
+          }),
         ).resolves.toMatchObject({
           opts: {
             function_id: "some-client-some-fn",
@@ -943,7 +926,7 @@ describe("invoke", () => {
         await expect(
           step.invoke("id", {
             function: referenceFunction<typeof fn>({ functionId: "test-fn" }),
-          })
+          }),
         ).resolves.toMatchObject({
           opts: {
             function_id: `${testClientId}-test-fn`,
@@ -959,7 +942,7 @@ describe("invoke", () => {
               appId: "some-client",
             }),
             data: { foo: "foo" },
-          })
+          }),
         ).resolves.toMatchObject({
           opts: {
             function_id: "some-client-some-fn",
@@ -975,7 +958,7 @@ describe("invoke", () => {
             function: fn,
             data: { foo: "foo" },
             timeout: "1m",
-          })
+          }),
         ).resolves.toMatchObject({
           opts: {
             timeout: "1m",
@@ -993,7 +976,7 @@ describe("invoke", () => {
             function: fn,
             data: { foo: "foo" },
             timeout: upcoming,
-          })
+          }),
         ).resolves.toMatchObject({
           opts: {
             timeout: expect.stringMatching(upcoming.toISOString()),
@@ -1007,7 +990,7 @@ describe("invoke", () => {
             function: fn,
             data: { foo: "foo" },
             timeout: 60000,
-          })
+          }),
         ).resolves.toMatchObject({
           opts: {
             timeout: "1m",
@@ -1026,7 +1009,6 @@ describe("invoke", () => {
       bar: {
         data: { bar: string };
       };
-      // eslint-disable-next-line @typescript-eslint/ban-types
       baz: {};
     }>();
 
@@ -1041,7 +1023,7 @@ describe("invoke", () => {
       typeof createStepTools<typeof client>
     >["invoke"];
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     type GetTestReturn<T extends () => InvocationResult<any>> = Awaited<
       ReturnType<T>
     >;
@@ -1054,7 +1036,7 @@ describe("invoke", () => {
       const fn = client.createFunction(
         { id: "fn" },
         { event: "foo" },
-        () => "return"
+        () => "return",
       );
 
       const _test = () => invoke("id", { function: fn, data: { foo: "" } });
@@ -1076,7 +1058,7 @@ describe("invoke", () => {
       const fn = client.createFunction(
         { id: "fn" },
         { cron: "* * * * *" },
-        () => "return"
+        () => "return",
       );
 
       // Allowed
@@ -1096,7 +1078,7 @@ describe("invoke", () => {
       const fn = client.createFunction(
         { id: "fn" },
         { event: "foo" },
-        () => "return"
+        () => "return",
       );
 
       // @ts-expect-error No payload provided
@@ -1107,7 +1089,7 @@ describe("invoke", () => {
       const fn = client.createFunction(
         { id: "fn" },
         { event: "foo" },
-        () => "return"
+        () => "return",
       );
 
       // @ts-expect-error Invalid payload provided
@@ -1118,7 +1100,7 @@ describe("invoke", () => {
       const fn = client.createFunction(
         { id: "fn" },
         { event: "foo" },
-        () => "return"
+        () => "return",
       );
 
       const _test = () =>
@@ -1168,7 +1150,7 @@ describe("invoke", () => {
       const fn = client.createFunction(
         { id: "fn" },
         [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
-        () => "return"
+        () => "return",
       );
 
       const _test = () =>
@@ -1189,7 +1171,7 @@ describe("invoke", () => {
       const fn = client.createFunction(
         { id: "fn" },
         { event: "foo" },
-        () => "return"
+        () => "return",
       );
 
       const _test = () => invoke("id", { function: fn, data: { foo: "" } });
@@ -1202,7 +1184,7 @@ describe("invoke", () => {
       const fn = client.createFunction(
         { id: "fn" },
         { event: "foo" },
-        () => "return"
+        () => "return",
       );
 
       const _test = () =>
@@ -1248,7 +1230,7 @@ describe("invoke", () => {
       const fn = client.createFunction(
         { id: "fn" },
         { event: "foo" },
-        () => "return" as const
+        () => "return" as const,
       );
 
       const _test = () => invoke("id", { function: fn, data: { foo: "" } });
@@ -1261,7 +1243,7 @@ describe("invoke", () => {
       const fn = client.createFunction(
         { id: "fn" },
         { event: "foo" },
-        () => "return" as const
+        () => "return" as const,
       );
 
       const _test = () =>

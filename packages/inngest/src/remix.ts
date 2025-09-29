@@ -15,14 +15,14 @@
  * @module
  */
 
-import { z } from "zod";
+import { z } from "zod/v3";
 import {
-  InngestCommHandler,
   type ActionResponse,
+  InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type Env } from "./helpers/env.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import type { Env } from "./helpers/env.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -43,10 +43,8 @@ const createNewResponse = ({
   let Res: typeof Response;
 
   if (typeof Response === "undefined") {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
     Res = require("cross-fetch").Response;
   } else {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     Res = Response;
   }
 
@@ -80,7 +78,7 @@ const createNewResponse = ({
  */
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (
-  options: ServeHandlerOptions
+  options: ServeHandlerOptions,
 ): ((ctx: { request: Request; context?: unknown }) => Promise<Response>) => {
   const contextSchema = z.object({
     env: z.record(z.string(), z.any()),
@@ -103,6 +101,8 @@ export const serve = (
           if (ctxParse.success && Object.keys(ctxParse.data.env).length) {
             return ctxParse.data.env as Env;
           }
+
+          return;
         },
         body: () => req.json(),
         headers: (key) => req.headers.get(key),

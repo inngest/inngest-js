@@ -1,7 +1,7 @@
-import * as RedwoodHandler from "@local/redwood";
-import { testFramework } from "./test/helpers";
+import * as RedwoodHandler from "./redwood.ts";
+import { testFramework } from "./test/helpers.ts";
 
-testFramework("Redwood.js", RedwoodHandler, {
+testFramework("Redwood.ts", RedwoodHandler, {
   transformReq: (req, _res, _env) => {
     return [
       {
@@ -16,7 +16,6 @@ testFramework("Redwood.js", RedwoodHandler, {
     ];
   },
 
-  // eslint-disable-next-line @typescript-eslint/require-await
   transformRes: async (_args, ret: RedwoodHandler.RedwoodResponse) => {
     return {
       status: ret.statusCode,

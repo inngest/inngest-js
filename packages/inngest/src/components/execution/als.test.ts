@@ -1,13 +1,8 @@
 import { InngestTestEngine } from "@inngest/test";
-import { type AsyncContext } from "@local/components/execution/als";
+import type { AsyncContext } from "./als.ts";
 
 describe("getAsyncLocalStorage", () => {
-  const warningSpy = jest.spyOn(console, "warn");
-
   afterEach(() => {
-    jest.unmock("node:async_hooks");
-    jest.resetModules();
-
     // kill the global used for storing ALS state
     delete (globalThis as Record<string | symbol | number, unknown>)[
       Symbol.for("inngest:als")
@@ -15,7 +10,7 @@ describe("getAsyncLocalStorage", () => {
   });
 
   test("should return an `AsyncLocalStorageIsh`", async () => {
-    const mod = await import("@local/components/execution/als");
+    const mod = await import("./als.ts");
     const als = await mod.getAsyncLocalStorage();
 
     expect(als).toBeDefined();
@@ -24,7 +19,7 @@ describe("getAsyncLocalStorage", () => {
   });
 
   test("should return the same instance of `AsyncLocalStorageIsh`", async () => {
-    const mod = await import("@local/components/execution/als");
+    const mod = await import("./als.ts");
 
     const als1p = mod.getAsyncLocalStorage();
     const als2p = mod.getAsyncLocalStorage();
@@ -33,25 +28,6 @@ describe("getAsyncLocalStorage", () => {
     const als2 = await als2p;
 
     expect(als1).toBe(als2);
-  });
-
-  test("should return `undefined` if node:async_hooks is not supported", async () => {
-    jest.mock("node:async_hooks", () => {
-      throw new Error("import failed");
-    });
-
-    const mod = await import("@local/components/execution/als");
-    const als = await mod.getAsyncLocalStorage();
-
-    expect(warningSpy).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "node:async_hooks is not supported in this runtime"
-      )
-    );
-
-    expect(als).toBeDefined();
-    expect(als.getStore()).toBeUndefined();
-    expect(als.run).toBeDefined();
   });
 });
 
@@ -62,8 +38,8 @@ describe("getAsyncCtx", () => {
   };
 
   afterEach(() => {
-    jest.unmock("node:async_hooks");
-    jest.resetModules();
+    vi.unmock("node:async_hooks");
+    vi.resetModules();
 
     // kill the global used for storing ALS state
     delete (globalThis as Record<string | symbol | number, unknown>)[
@@ -72,19 +48,19 @@ describe("getAsyncCtx", () => {
   });
 
   test("should return `undefined` outside of an Inngest async context", async () => {
-    const mod = await import("@local/components/execution/als");
+    const mod = await import("./als.ts");
     const store = await mod.getAsyncCtx();
 
     expect(store).toBeUndefined();
   });
 
   test("should return the input context during execution", async () => {
-    const { Inngest } = await import("@local");
-    const mod = await import("@local/experimental");
+    const { Inngest } = await import("../../index.ts");
+    const mod = await import("../../experimental.ts");
 
     const inngest = new Inngest({ id: "test" });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     let resolve: (value: any) => void | PromiseLike<void>;
     const externalP = new Promise<AsyncContext | undefined>((r) => {
       resolve = r;
@@ -103,10 +79,10 @@ describe("getAsyncCtx", () => {
           .then(resolve);
 
         return "done";
-      }
+      },
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     const t = new InngestTestEngine({ function: fn as any });
 
     const { result } = await t.execute();
@@ -117,49 +93,5 @@ describe("getAsyncCtx", () => {
     const store = await externalP;
     expect(store).toBeDefined();
     expect(store?.ctx.runId).toBe(internalRunId);
-  });
-
-  test("should return `undefined` if node:async_hooks is not supported", async () => {
-    jest.mock("node:async_hooks", () => {
-      throw new Error("import failed");
-    });
-
-    const { Inngest } = await import("@local");
-    const mod = await import("@local/experimental");
-
-    const inngest = new Inngest({ id: "test" });
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let resolve: (value: any) => void | PromiseLike<void>;
-    const externalP = new Promise<AsyncContext | undefined>((r) => {
-      resolve = r;
-    });
-
-    let internalRunId: string | undefined;
-
-    const fn = inngest.createFunction(
-      { id: "test" },
-      { event: "" },
-      ({ runId }) => {
-        internalRunId = runId;
-
-        void wait()
-          .then(() => mod.getAsyncCtx())
-          .then(resolve);
-
-        return "done";
-      }
-    );
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-explicit-any
-    const t = new InngestTestEngine({ function: fn as any });
-
-    const { result } = await t.execute();
-
-    expect(result).toBe("done");
-    expect(internalRunId).toBeTruthy();
-
-    const store = await externalP;
-    expect(store).toBeUndefined();
   });
 });

@@ -49,19 +49,19 @@
  * @module
  */
 
-import {
-  type FastifyInstance,
-  type FastifyPluginCallback,
-  type FastifyReply,
-  type FastifyRequest,
+import type {
+  FastifyInstance,
+  FastifyPluginCallback,
+  FastifyReply,
+  FastifyRequest,
 } from "fastify";
-import { type Inngest } from "./components/Inngest.js";
+import type { Inngest } from "./components/Inngest.ts";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type InngestFunction } from "./components/InngestFunction.js";
-import { type RegisterOptions, type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import type { InngestFunction } from "./components/InngestFunction.ts";
+import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -71,7 +71,7 @@ export const frameworkName: SupportedFrameworkName = "fastify";
 
 type InngestPluginOptions = {
   client: Inngest.Like;
-  functions: InngestFunction.Any[];
+  functions: InngestFunction.Like[];
   options?: RegisterOptions;
 };
 
@@ -107,17 +107,17 @@ type InngestPluginOptions = {
  * @public
  */
 export const serve = (
-  options: ServeHandlerOptions
+  options: ServeHandlerOptions,
 ): ((
   req: FastifyRequest<{ Querystring: Record<string, string | undefined> }>,
-  reply: FastifyReply
+  reply: FastifyReply,
 ) => Promise<unknown>) => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
     handler: (
       req: FastifyRequest<{ Querystring: Record<string, string | undefined> }>,
-      reply: FastifyReply
+      reply: FastifyReply,
     ) => {
       return {
         body: () => req.body,
@@ -182,17 +182,17 @@ export const serve = (
 export const fastifyPlugin: (
   fastify: FastifyInstance,
   options: InngestPluginOptions,
-  done: (err?: Error | undefined) => void
+  done: (err?: Error | undefined) => void,
 ) => void = ((fastify, options, done): void => {
   if (!options?.client) {
     throw new Error(
-      "Inngest `client` is required when serving with Fastify plugin"
+      "Inngest `client` is required when serving with Fastify plugin",
     );
   }
 
   if (!options?.functions) {
     throw new Error(
-      "Inngest `functions` are required when serving with Fastify plugin"
+      "Inngest `functions` are required when serving with Fastify plugin",
     );
   }
 

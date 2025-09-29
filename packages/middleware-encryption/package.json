@@ -1,6 +1,6 @@
 {
   "name": "@inngest/middleware-encryption",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "E2E encryption middleware for Inngest.",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -16,7 +16,7 @@
     "postversion": "pnpm run build",
     "release:version": "node ../../scripts/release/jsrVersion.js",
     "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty",
-    "pack": "pnpm run build && yarn pack --verbose --frozen-lockfile --filename inngest-middleware-encryption.tgz --cwd dist"
+    "pack": "pnpm run build && cd dist && pnpm pack --out ../inngest-middleware-encryption.tgz"
   },
   "exports": {
     ".": {
@@ -64,7 +64,7 @@
     "cross-fetch": "^4.0.0",
     "eslint": "^8.30.0",
     "fetch-mock-jest": "^1.5.1",
-    "inngest": "3.21.0",
+    "inngest": "^3.42.3",
     "jest": "^29.3.1",
     "ts-jest": "^29.1.0",
     "typescript": "~5.5.2",
@@ -75,6 +75,6 @@
     "libsodium-wrappers": "^0.7.13"
   },
   "peerDependencies": {
-    "inngest": ">=3.0.0"
+    "inngest": ">=3.42.3"
   }
 }

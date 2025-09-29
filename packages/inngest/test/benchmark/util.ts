@@ -1,6 +1,6 @@
+import path from "node:path";
 import callsites from "callsites";
 import { bench } from "mitata";
-import path from "node:path";
 
 interface BenchmarkRef {
   name: string;
@@ -18,9 +18,13 @@ class BenchmarkRefs {
 }
 
 export const loadBenchmarks = async (
-  benchmarkNames: string[]
+  benchmarkNames: string[],
 ): Promise<BenchmarkRefs> => {
-  const caller = getCallerDir();
+  let caller = getCallerDir();
+  if (caller.startsWith("file://")) {
+    caller = caller.replace("file://", "");
+  }
+
   const rawBenchmarkPromises: Promise<BenchmarkRef | BenchmarkRef[]>[] = [];
 
   for (const benchmark of benchmarkNames) {
@@ -39,9 +43,9 @@ export const loadBenchmarks = async (
         return Object.entries(benchmarkObj).map<BenchmarkRef>(
           ([key, value]) => {
             return { name: `${benchmark}/${key}`, fn: value };
-          }
+          },
         );
-      })()
+      })(),
     );
   }
 

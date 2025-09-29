@@ -1,16 +1,16 @@
 name: "Setup and build inngest"
 description: "Sets up Node, installs dependencies, and builds the inngest package."
 inputs:
-  working-directory:  # id of input
-    description: 'The directory to run the action in.'
+  working-directory: # id of input
+    description: "The directory to run the action in."
     required: false
-    default: '.'
+    default: "."
   install-dependencies:
-    description: 'Whether dependencies should be installed.'
+    description: "Whether dependencies should be installed."
     required: false
     default: true
   build:
-    description: 'Whether the build step should be run.'
+    description: "Whether the build step should be run."
     required: false
     default: true
 runs:
@@ -20,20 +20,17 @@ runs:
       with:
         run_install: false
 
-    - uses: actions/setup-node@v3
+    - uses: actions/setup-node@v4
       with:
         node-version: lts/*
         cache: pnpm
-        registry-url: 'https://registry.npmjs.org'
+        registry-url: "https://registry.npmjs.org"
 
-    - run: npm i -g @antfu/ni
-      shell: bash
-
-    - uses: oven-sh/setup-bun@v1
+    - uses: oven-sh/setup-bun@v2
 
     - name: Install dependencies
       if: ${{ inputs.install-dependencies == 'true' }}
-      run: pnpm install
+      run: pnpm install --frozen-lockfile
       shell: bash
       working-directory: ${{ inputs.working-directory }}
 

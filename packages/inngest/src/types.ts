@@ -9,30 +9,30 @@
  * @module
  */
 
-import { z } from "zod";
-import { type EventSchemas } from "./components/EventSchemas.js";
-import {
-  type builtInMiddleware,
-  type GetEvents,
-  type Inngest,
-} from "./components/Inngest.js";
-import { type InngestFunction } from "./components/InngestFunction.js";
-import { type InngestFunctionReference } from "./components/InngestFunctionReference.js";
-import {
-  type ExtendSendEventWithMiddleware,
-  type InngestMiddleware,
-} from "./components/InngestMiddleware.js";
-import { type createStepTools } from "./components/InngestStepTools.js";
-import { type internalEvents } from "./helpers/consts.js";
-import {
-  type AsTuple,
-  type IsEqual,
-  type IsNever,
-  type Public,
-  type Simplify,
-  type WithoutInternal,
-} from "./helpers/types.js";
-import { type Logger } from "./middleware/logger.js";
+import { z } from "zod/v3";
+import type { EventSchemas } from "./components/EventSchemas.ts";
+import type {
+  builtInMiddleware,
+  GetEvents,
+  Inngest,
+} from "./components/Inngest.ts";
+import type { InngestFunction } from "./components/InngestFunction.ts";
+import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
+import type {
+  ExtendSendEventWithMiddleware,
+  InngestMiddleware,
+} from "./components/InngestMiddleware.ts";
+import type { createStepTools } from "./components/InngestStepTools.ts";
+import type { internalEvents } from "./helpers/consts.ts";
+import type {
+  AsTuple,
+  IsEqual,
+  IsNever,
+  Public,
+  Simplify,
+  WithoutInternal,
+} from "./helpers/types.ts";
+import type { Logger } from "./middleware/logger.ts";
 
 const baseJsonErrorSchema = z.object({
   name: z.string().trim().optional(),
@@ -52,7 +52,7 @@ const maybeJsonErrorSchema: z.ZodType<{
     message: z.string().trim(),
     stack: z.string().trim().optional(),
     cause: z.union([maybeJsonErrorSchema, z.unknown()]).optional(),
-  })
+  }),
 );
 
 export type JsonError = z.infer<typeof baseJsonErrorSchema> & {
@@ -191,6 +191,7 @@ export enum StepOpCode {
   Step = "Step",
   StepRun = "StepRun",
   StepError = "StepError",
+  StepFailed = "StepFailed",
   StepPlanned = "StepPlanned",
   Sleep = "Sleep",
 
@@ -408,6 +409,11 @@ export type BaseContext<
    * is incremented every time the function throws an error and is retried.
    */
   attempt: number;
+
+  /**
+   * The maximum number of attempts allowed for this function.
+   */
+  maxAttempts?: number;
 };
 
 /**
@@ -450,7 +456,7 @@ export type Handler<
    * The context argument provides access to all data and tooling available to
    * the function.
    */
-  ctx: Context<TClient, TTriggers, TOverrides>
+  ctx: Context<TClient, TTriggers, TOverrides>,
 ) => unknown;
 
 export type TriggersFromClient<TClient extends Inngest.Any = Inngest.Any> =
@@ -466,7 +472,7 @@ export namespace Handler {
   /**
    * Represents any `Handler`, regardless of generics and inference.
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   export type Any = Handler<Inngest.Any, any, any>;
 }
 
@@ -485,7 +491,7 @@ type AssertKeysAreFrom<T, K extends keyof T> = K;
  * This is used to represent an event payload when invoking a function, as the
  * event name is not known or needed.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export interface MinimalEventPayload<TData = any> {
   /**
    * A unique id used to idempotently process a given event payload.
@@ -505,7 +511,7 @@ export interface MinimalEventPayload<TData = any> {
    * Any user data associated with the event
    * All fields ending in "_id" will be used to attribute the event to a particular user
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   user?: any;
 
   /**
@@ -522,7 +528,7 @@ export interface MinimalEventPayload<TData = any> {
  *
  * @public
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export interface EventPayload<TData = any> extends MinimalEventPayload<TData> {
   /**
    * A unique identifier for the type of event. We recommend using lowercase dot
@@ -629,7 +635,7 @@ export type Step<TContext = unknown> = (
    * The context for this step, including the triggering event and any previous
    * step output.
    */
-  context: TContext
+  context: TContext,
 ) => Promise<Response> | Response;
 
 /**
@@ -1169,7 +1175,7 @@ export const functionConfigSchema = z.strictObject({
       z.strictObject({
         cron: z.string(),
       }),
-    ])
+    ]),
   ),
   steps: z.record(
     z.strictObject({
@@ -1184,7 +1190,7 @@ export const functionConfigSchema = z.strictObject({
           attempts: z.number().optional(),
         })
         .optional(),
-    })
+    }),
   ),
   idempotency: z.string().optional(),
   batchEvents: z
@@ -1222,7 +1228,7 @@ export const functionConfigSchema = z.strictObject({
         event: z.string(),
         if: z.string().optional(),
         timeout: z.string().optional(),
-      })
+      }),
     )
     .optional(),
   debounce: z
@@ -1358,7 +1364,7 @@ export interface StepOptions {
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
 export type EventsFromFunction<T extends InngestFunction.Any> =
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   T extends InngestFunction<any, any, any, infer IClient, any, any>
     ? GetEvents<IClient, true>
     : never;
@@ -1385,7 +1391,7 @@ export type TriggerEventFromFunction<
   ? PayloadForAnyInngestFunction<TFunction>
   : TFunction extends InngestFunctionReference<
         infer IInput extends MinimalEventPayload,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
         any
       >
     ? IInput
@@ -1414,15 +1420,15 @@ export type PayloadForAnyInngestFunction<
     ? EventsFromFunction<TFunction>
     : never,
 > = TFunction extends InngestFunction<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   any,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   any,
   infer ITriggers extends InngestFunction.Trigger<keyof TEvents & string>[]
 >

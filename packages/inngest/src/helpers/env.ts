@@ -3,11 +3,11 @@
 // along with prefixes, meaning we have to explicitly use the full `process.env.FOO`
 // string in order to read variables.
 
-import { type Inngest } from "../components/Inngest.js";
-import { type SupportedFrameworkName } from "../types.js";
-import { version } from "../version.js";
-import { defaultDevServerHost, envKeys, headerKeys } from "./consts.js";
-import { stringifyUnknown } from "./strings.js";
+import type { Inngest } from "../components/Inngest.ts";
+import type { SupportedFrameworkName } from "../types.ts";
+import { version } from "../version.ts";
+import { defaultDevServerHost, envKeys, headerKeys } from "./consts.ts";
+import { stringifyUnknown } from "./strings.ts";
 
 /**
  * @public
@@ -55,17 +55,19 @@ export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
     } catch {
       // no-op
     }
+
+    return;
   });
 };
 
 const checkFns = (<
   T extends Record<string, (actual: EnvValue, expected: EnvValue) => boolean>,
 >(
-  checks: T
+  checks: T,
 ): T => checks)({
   equals: (actual, expected) => actual === expected,
   "starts with": (actual, expected) =>
-    expected ? actual?.startsWith(expected) ?? false : false,
+    expected ? (actual?.startsWith(expected) ?? false) : false,
   "is truthy": (actual) => Boolean(actual),
   "is truthy but not": (actual, expected) =>
     Boolean(actual) && actual !== expected,
@@ -138,6 +140,7 @@ export class Mode {
 
   public readonly explicitDevUrl?: URL;
 
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private readonly env: Env;
 
   constructor({
@@ -286,9 +289,7 @@ declare const Netlify: {
 export const allProcessEnv = (): Env => {
   // Node, or Node-like environments
   try {
-    // eslint-disable-next-line @inngest/internal/process-warn
     if (process.env) {
-      // eslint-disable-next-line @inngest/internal/process-warn
       return process.env;
     }
   } catch (_err) {
@@ -456,7 +457,7 @@ export const getPlatformName = (env: Env) => {
   return (Object.keys(platformChecks) as (keyof typeof platformChecks)[]).find(
     (key) => {
       return platformChecks[key](env);
-    }
+    },
   );
 };
 
@@ -469,12 +470,12 @@ export const getPlatformName = (env: Env) => {
  */
 export const platformSupportsStreaming = (
   framework: SupportedFrameworkName,
-  env: Env = allProcessEnv()
+  env: Env = allProcessEnv(),
 ): boolean => {
   return (
     streamingChecks[getPlatformName(env) as keyof typeof streamingChecks]?.(
       framework,
-      env
+      env,
     ) ?? false
   );
 };
@@ -518,7 +519,7 @@ export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
           !err.message?.startsWith("fetch failed")
         ) {
           console.warn(
-            "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope."
+            "A request failed when using a custom fetch implementation; this may be a misconfiguration. Make sure that your fetch client is correctly bound to the global scope.",
           );
           console.error(err);
         }
@@ -548,7 +549,7 @@ export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
     if (typeof globalThis !== "undefined" && "fetch" in globalThis) {
       return fetch.bind(globalThis);
     }
-  } catch (err) {
+  } catch (_err) {
     // no-op
   }
 
@@ -562,7 +563,6 @@ export const getFetch = (givenFetch?: typeof fetch): typeof fetch => {
   /**
    * Environments where fetch cannot be found and must be polyfilled
    */
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
   return require("cross-fetch") as typeof fetch;
 };
 
@@ -576,7 +576,6 @@ export const getResponse = (): typeof Response => {
     return Response;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-var-requires
   return require("cross-fetch").Response;
 };
 

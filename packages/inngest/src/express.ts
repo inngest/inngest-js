@@ -20,14 +20,14 @@
  * @module
  */
 
-import { type VercelRequest, type VercelResponse } from "@vercel/node";
-import { type Request, type Response } from "express";
+import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { Request, Response } from "express";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
-} from "./components/InngestCommHandler.js";
-import { type Either } from "./helpers/types.js";
-import { type SupportedFrameworkName } from "./types.js";
+} from "./components/InngestCommHandler.ts";
+import type { Either } from "./helpers/types.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -61,17 +61,16 @@ export const frameworkName: SupportedFrameworkName = "express";
  * @public
  */
 // Has explicit return type to avoid JSR-defined "slow types"
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// biome-ignore lint/suspicious/noExplicitAny: <explanation>
 export const serve = (options: ServeHandlerOptions): any => {
   const handler = new InngestCommHandler({
     frameworkName,
     ...options,
     handler: (
       req: Either<VercelRequest, Request>,
-      res: Either<Response, VercelResponse>
+      res: Either<Response, VercelResponse>,
     ) => {
       return {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-return
         body: () => req.body,
         headers: (key) => {
           const header = req.headers[key];
@@ -88,7 +87,7 @@ export const serve = (options: ServeHandlerOptions): any => {
 
           const url = new URL(
             req.originalUrl || req.url || "",
-            `${protocol}${hostname || ""}`
+            `${protocol}${hostname || ""}`,
           );
 
           return url;

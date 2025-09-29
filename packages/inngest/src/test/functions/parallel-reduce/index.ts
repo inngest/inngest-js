@@ -16,12 +16,12 @@ export default inngest.createFunction(
     const totalScores = await teams.reduce(async (score, team) => {
       const teamScore = await step.run(
         `Get ${team} team score`,
-        () => scoresDb[team]
+        () => scoresDb[team],
       );
 
       return (await score) + teamScore;
     }, Promise.resolve(0));
 
     return totalScores;
-  }
+  },
 );

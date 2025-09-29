@@ -1,16 +1,21 @@
-import { serve } from "inngest/edge";
+import { serve } from "inngest/bun";
 import { functions, inngest } from "./inngest";
 
 const server = Bun.serve({
   port: 3000,
-  fetch(request: Request) {
-    const url = new URL(request.url);
-
-    if (url.pathname === "/api/inngest") {
+  routes: {
+    "/": async _ => {
+      await inngest.send({
+        name: "demo/event.sent",
+        data: {
+          message: "Message from Bun Server",
+        },
+      });
+      return new Response("Hello world!");
+    },
+    "/api/inngest": (request: Request) => {
       return serve({ client: inngest, functions })(request);
-    }
-
-    return new Response("Server");
+    },
   },
 });
 
