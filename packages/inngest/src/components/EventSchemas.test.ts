@@ -2,7 +2,6 @@ import { z } from "zod";
 import { z as z_v3 } from "zod/v3";
 import type { internalEvents } from "../helpers/consts.ts";
 import type { IsAny, IsEqual } from "../helpers/types.ts";
-import { assertType } from "../test/helpers.ts";
 import type { FailureEventPayload } from "../types.ts";
 import { EventSchemas } from "./EventSchemas.ts";
 import { type GetEvents, Inngest } from "./Inngest.ts";

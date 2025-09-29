@@ -1,11 +1,6 @@
 import { ExecutionVersion } from "../helpers/consts.ts";
 import type { IsEqual, IsUnknown } from "../helpers/types.ts";
-import {
-  assertType,
-  createClient,
-  runFnWithStack,
-  testClientId,
-} from "../test/helpers.ts";
+import { createClient, runFnWithStack, testClientId } from "../test/helpers.ts";
 import { StepOpCode } from "../types.ts";
 import { Inngest } from "./Inngest.ts";
 import { referenceFunction } from "./InngestFunctionReference.ts";

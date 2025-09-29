@@ -1,5 +1,4 @@
 import type { IsAny, IsEqual, IsUnknown } from "../helpers/types.ts";
-import { assertType } from "../test/helpers.ts";
 import type { Jsonify } from "./jsonify.ts";
 
 describe("Jsonify", () => {

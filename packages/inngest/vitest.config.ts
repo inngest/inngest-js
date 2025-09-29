@@ -17,6 +17,8 @@ export default defineConfig({
     hideSkippedTests: true,
     typecheck: {
       tsconfig: "./tsconfig.types.json",
+      enabled: true,
+      include: ["**\/*.{test,spec}.?(c|m)[jt]s?(x)"],
     },
   },
 });
