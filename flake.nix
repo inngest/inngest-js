@@ -17,6 +17,7 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+
         corepack = pkgs.stdenv.mkDerivation {
           name = "corepack";
           buildInputs = [ pkgs.nodejs_24 ];
@@ -27,31 +28,33 @@
           '';
         };
 
-      in
-      {
-        devShells.default = pkgs.mkShell {
-          packages = [ corepack ];
-
-          nativeBuildInputs = with pkgs; [
-            # Node
-            typescript
-            nodejs_24
-
-            # bun
-            bun
-
-            # LSPs
-            nodePackages.typescript-language-server
-            nodePackages.vscode-json-languageserver
-            nodePackages.yaml-language-server
-
-            # Tools
-            protobuf_29
+        # Shell used in CI
+        ciShell = pkgs.mkShell {
+          packages = [
+            corepack
+            pkgs.nodejs_24
+            pkgs.typescript
+            pkgs.bun
           ];
-
+          nativeBuildInputs = [ pkgs.pnpm ];
           shellHook = ''
             export COREPACK_ENABLE_AUTO_PIN=0
           '';
+        };
+      in
+      {
+        devShells.ci = ciShell;
+
+        # Local dev shell, which is the CI shell plus extras exclusive to local
+        # dev
+        devShells.default = pkgs.mkShell {
+          inputsFrom = [ ciShell ];
+          nativeBuildInputs = with pkgs; [
+            nodePackages.typescript-language-server
+            nodePackages.vscode-json-languageserver
+            nodePackages.yaml-language-server
+            protobuf_29
+          ];
         };
       }
     );

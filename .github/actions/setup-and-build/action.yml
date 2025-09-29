@@ -19,6 +19,8 @@ runs:
     - uses: DeterminateSystems/nix-installer-action@main
     - uses: DeterminateSystems/magic-nix-cache-action@main
     - uses: nicknovitski/nix-develop@v1
+      with:
+        arguments: .#ci
 
     # We have Nix set up, but use this and the Node action for the cache
     - uses: pnpm/action-setup@v4
