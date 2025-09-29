@@ -2,11 +2,9 @@ name: "Ensure CI image"
 description: "Ensure the CI Docker image exists for this deps hash"
 inputs:
   github-token:
-    description: "Token for pushing to GHCR"
     required: true
 outputs:
   image:
-    description: "The container image URL"
     value: ${{ steps.meta.outputs.image }}
 runs:
   using: "composite"
@@ -35,19 +33,9 @@ runs:
       continue-on-error: true
       run: docker pull ${{ steps.meta.outputs.image }}
 
-    - name: Prepare for build (Nix)
-      if: steps.pull.outcome == 'failure'
-      uses: DeterminateSystems/nix-installer-action@main
-
-    - name: Prepare for build (Nix cache)
-      if: steps.pull.outcome == 'failure'
-      uses: DeterminateSystems/magic-nix-cache-action@main
-
     - name: Build + push image if missing
       if: steps.pull.outcome == 'failure'
       shell: bash
       run: |
-        nix build .#ciImage
-        docker load < result
-        docker tag inngest-ci:latest ${{ steps.meta.outputs.image }}
+        docker build -f .github/Dockerfile -t ${{ steps.meta.outputs.image }} .
         docker push ${{ steps.meta.outputs.image }}
