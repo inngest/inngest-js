@@ -81,10 +81,7 @@ jobs:
         working-directory: packages/inngest
     steps:
       - uses: actions/checkout@v3
-      - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
-      - uses: nicknovitski/nix-develop@v1
-      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/setup-and-build
       - run: pnpm run local:pack
 
       - name: Lint package publishing config
