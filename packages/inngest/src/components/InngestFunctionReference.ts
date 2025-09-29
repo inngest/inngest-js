@@ -35,6 +35,10 @@ export class InngestFunctionReference<
    */
   _TOutput,
 > {
+  get [Symbol.toStringTag](): typeof InngestFunctionReference.Tag {
+    return InngestFunctionReference.Tag;
+  }
+
   constructor(public readonly opts: { functionId: string; appId?: string }) {}
 }
 
@@ -78,6 +82,8 @@ export const referenceFunction = <
  * @public
  */
 export namespace InngestFunctionReference {
+  export const Tag = "Inngest.FunctionReference" as const;
+
   /**
    * Represents any `InngestFunctionReference`.
    *
@@ -88,6 +94,10 @@ export namespace InngestFunctionReference {
     // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     any
   >;
+
+  export interface Like {
+    readonly [Symbol.toStringTag]: typeof InngestFunctionReference.Tag;
+  }
 
   /**
    * Arguments used by {@link referenceFunction} to create a reference to an
