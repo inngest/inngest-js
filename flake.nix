@@ -21,7 +21,7 @@
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
-            pnpm
+            corepack_24
 
             # Node
             typescript
