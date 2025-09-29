@@ -30,5 +30,6 @@ jobs:
           branch: "automated/update-flake"
           base: "main"
           token: ${{ secrets.CHANGESET_GITHUB_TOKEN }} # inngest-release-bot
+          delete-branch: true # close PR if no changes
           labels: |
             💡 KTLO
