@@ -19,7 +19,7 @@ import {
   referenceFunction,
 } from "../index.ts";
 import type { Logger } from "../middleware/logger.ts";
-import { assertType, createClient, nodeVersion } from "../test/helpers.ts";
+import { createClient, nodeVersion } from "../test/helpers.ts";
 import type { SendEventResponse } from "../types.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 

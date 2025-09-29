@@ -1,4 +1,3 @@
-import { assertType } from "../test/helpers.ts";
 import { runAsPromise } from "./promises.ts";
 
 describe("runAsPromise", () => {

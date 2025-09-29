@@ -30,7 +30,7 @@ import {
   NonRetriableError,
 } from "../index.ts";
 import { type Logger, ProxyLogger } from "../middleware/logger.ts";
-import { assertType, createClient, runFnWithStack } from "../test/helpers.ts";
+import { createClient, runFnWithStack } from "../test/helpers.ts";
 import {
   type ClientOptions,
   type FailureEventPayload,
@@ -2574,7 +2574,7 @@ describe("runFn", () => {
                   id: A,
                   name: "A",
                   displayName: "A",
-                  op: StepOpCode.StepError,
+                  op: StepOpCode.StepFailed,
                   error: matchError(new NonRetriableError("A error message")),
                 }),
               },
@@ -2596,7 +2596,7 @@ describe("runFn", () => {
                   id: A,
                   name: "A",
                   displayName: "A",
-                  op: StepOpCode.StepError,
+                  op: StepOpCode.StepFailed,
                   error: matchError(new NonRetriableError("A error message")),
                 }),
               },
@@ -2663,6 +2663,110 @@ describe("runFn", () => {
               expectedErrors: ["Error message"],
               expectedStepsRun: [],
             },
+          }),
+        },
+      },
+    );
+
+    testFn(
+      "NonRetriableError in step should use StepFailed opcode (not StepError) even on early attempts",
+      () => {
+        const A = vi.fn(() => {
+          throw new NonRetriableError("Should not retry this step");
+        });
+
+        const fn = inngest.createFunction(
+          { id: "Foo" },
+          { event: "foo" },
+          async ({ step: { run } }) => {
+            await run("A", A);
+          },
+        );
+
+        return { fn, steps: { A } };
+      },
+      {
+        [ExecutionVersion.V0]: {
+          hashes: {
+            A: "c0a4028e0b48a2eeff383fa7186fd2d3763f5412",
+          },
+          tests: ({ A }) => ({
+            "V0 doesn't use StepFailed opcode, uses Step with error": {
+              expectedReturn: {
+                type: "step-ran",
+                step: expect.objectContaining({
+                  id: A,
+                  name: "A",
+                  op: StepOpCode.Step,
+                  error: matchError(
+                    new NonRetriableError("Should not retry this step"),
+                  ),
+                }),
+              },
+              expectedErrors: ["Should not retry this step"],
+              expectedStepsRun: ["A"],
+            },
+          }),
+        },
+        [ExecutionVersion.V1]: {
+          hashes: {
+            A: "A",
+          },
+          tests: ({ A }) => ({
+            "first run executes A, which throws NonRetriableError -> should use StepFailed":
+              {
+                // Set attempt to 0 and maxAttempts to 4 to ensure we're not at max attempts
+                // This tests that NonRetriableError triggers StepFailed regardless of attempt count
+                fnArg: {
+                  attempt: 0,
+                  maxAttempts: 4,
+                },
+                expectedReturn: {
+                  type: "step-ran",
+                  retriable: false,
+                  step: expect.objectContaining({
+                    id: A,
+                    name: "A",
+                    displayName: "A",
+                    op: StepOpCode.StepFailed, // This should be StepFailed, not StepError
+                    error: matchError(
+                      new NonRetriableError("Should not retry this step"),
+                    ),
+                  }),
+                },
+                expectedStepsRun: ["A"],
+                expectedErrors: ["Should not retry this step"],
+              },
+          }),
+        },
+        [ExecutionVersion.V2]: {
+          hashes: {
+            A: "A",
+          },
+          tests: ({ A }) => ({
+            "first run executes A, which throws NonRetriableError -> should use StepFailed":
+              {
+                // Set attempt to 0 and maxAttempts to 4 to ensure we're not at max attempts
+                fnArg: {
+                  attempt: 0,
+                  maxAttempts: 4,
+                },
+                expectedReturn: {
+                  type: "step-ran",
+                  retriable: false,
+                  step: expect.objectContaining({
+                    id: A,
+                    name: "A",
+                    displayName: "A",
+                    op: StepOpCode.StepFailed, // This should be StepFailed, not StepError
+                    error: matchError(
+                      new NonRetriableError("Should not retry this step"),
+                    ),
+                  }),
+                },
+                expectedStepsRun: ["A"],
+                expectedErrors: ["Should not retry this step"],
+              },
           }),
         },
       },

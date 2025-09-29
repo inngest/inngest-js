@@ -8,8 +8,8 @@ import {
   minifyPrettyError,
   prettyError,
   serializeError,
-} from "../../helpers/errors.ts";
-import { undefinedToNull } from "../../helpers/functions.ts";
+} from "../../helpers/errors.js";
+import { undefinedToNull } from "../../helpers/functions.js";
 import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
@@ -218,15 +218,27 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               }),
             };
           } else if (transformResult.type === "function-rejected") {
+            const stepForResponse = _internals.hashOp({
+              ...stepResult,
+              error: transformResult.error,
+            });
+
+            if (stepResult.op === StepOpCode.StepFailed) {
+              const ser = serializeError(transformResult.error);
+              stepForResponse.data = {
+                __serialized: true,
+                name: ser.name,
+                message: ser.message,
+                stack: "",
+              };
+            }
+
             return {
               type: "step-ran",
               ctx: transformResult.ctx,
               ops: transformResult.ops,
-              step: _internals.hashOp({
-                ...stepResult,
-                error: transformResult.error,
-              }),
               retriable: transformResult.retriable,
+              step: stepForResponse,
             };
           }
 
@@ -496,12 +508,32 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         };
       })
       .catch<OutgoingOp>((error) => {
-        return {
-          ...outgoingOp,
-          op: StepOpCode.StepError,
+        let errorIsRetriable = true;
 
-          error,
-        };
+        if (error instanceof NonRetriableError) {
+          errorIsRetriable = false;
+        } else if (
+          this.fnArg.maxAttempts &&
+          this.fnArg?.maxAttempts - 1 === this.fnArg.attempt
+        ) {
+          errorIsRetriable = false;
+        }
+
+        if (errorIsRetriable) {
+          return {
+            ...outgoingOp,
+            op: StepOpCode.StepError,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            error,
+          };
+        } else {
+          return {
+            ...outgoingOp,
+            op: StepOpCode.StepFailed,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            error,
+          };
+        }
       });
   }
 
@@ -577,15 +609,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       NonNullable<RunHookStack["transformOutput"]>
     >[0]["result"],
   ): Promise<ExecutionResult> {
-    const output = { ...dataOrError };
-
-    /**
-     * If we've been given an error and it's one that we just threw from a step,
-     * we should return a `NonRetriableError` to stop execution.
-     */
-    if (typeof output.error !== "undefined") {
-      output.data = serializeError(output.error);
-    }
+    const output = { ...dataOrError } as Partial<OutgoingOp>;
 
     const isStepExecution = Boolean(this.state.executingStep);
 
@@ -608,12 +632,13 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
        * by looking at the error returned from output transformation.
        */
       let retriable: boolean | string = !(
-        error instanceof NonRetriableError || error instanceof StepError
+        error instanceof NonRetriableError ||
+        (error instanceof StepError &&
+          error === this.state.recentlyRejectedStepError)
       );
       if (retriable && error instanceof RetryAfterError) {
         retriable = error.retryAfter;
       }
-
       const serializedError = minifyPrettyError(serializeError(error));
 
       return {
@@ -941,7 +966,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
                   opId.id,
                   stepState.error,
                 );
-
                 reject(this.state.recentlyRejectedStepError);
               }
             });

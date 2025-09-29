@@ -1,5 +1,4 @@
 import { Inngest } from "../components/Inngest.ts";
-import { assertType } from "../test/helpers.ts";
 import { dependencyInjectionMiddleware } from "./dependencyInjection.ts";
 
 describe("Mutates ctx", () => {
