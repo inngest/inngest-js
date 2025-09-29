@@ -17,22 +17,12 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
-        corepack = pkgs.stdenv.mkDerivation {
-          name = "corepack";
-          buildInputs = [ pkgs.nodejs_24 ];
-          phases = [ "installPhase" ];
-          installPhase = ''
-            mkdir -p $out/bin
-            corepack enable --install-directory=$out/bin
-          '';
-        };
-
       in
       {
         devShells.default = pkgs.mkShell {
-          packages = [ corepack ];
+          packages = with pkgs; [
+            corepack_24
 
-          nativeBuildInputs = with pkgs; [
             # Node
             typescript
             nodejs_24
