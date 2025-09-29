@@ -16,7 +16,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: DeterminateSystems/nix-installer-action
+    - uses: DeterminateSystems/nix-installer-action@v20
 
     - run: nix develop --command "$@"
       shell: bash
