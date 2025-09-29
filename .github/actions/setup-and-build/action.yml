@@ -23,18 +23,22 @@ runs:
     - name: Install dependencies
       if: ${{ inputs.install-dependencies == 'true' }}
       run: pnpm install --frozen-lockfile
+      shell: bash
       working-directory: ${{ inputs.working-directory }}
 
     - name: List packages
       run: pwd && ls -la && pnpm list -r
+      shell: bash
       working-directory: ${{ inputs.working-directory }}
 
     - name: Build test dependencies
       if: ${{ inputs.install-dependencies == 'true' }}
       run: pnpm run build
+      shell: bash
       working-directory: ${{ inputs.working-directory }}/packages/test
 
     - name: Build
       if: ${{ inputs.build == 'true' }}
       run: pnpm run build
+      shell: bash
       working-directory: ${{ inputs.working-directory }}/packages/inngest
