@@ -351,7 +351,6 @@ export const createStepTools = <TClient extends Inngest.Any>(
           return {
             id,
             op: StepOpCode.StepPlanned,
-            name: "realtime.publish",
             displayName: name ?? id,
             opts: {
               type: "step.realtime.publish",
