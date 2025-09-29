@@ -1,5 +1,9 @@
 name: "Ensure CI image"
 description: "Ensure the CI Docker image exists for this deps hash"
+inputs:
+  github-token:
+    description: "Token for pushing to GHCR"
+    required: true
 outputs:
   image:
     description: "The container image URL"
@@ -7,8 +11,6 @@ outputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/checkout@v4
-
     - id: hash
       shell: bash
       run: |
@@ -31,6 +33,6 @@ runs:
       run: |
         nix build .#ciImage
         docker load < result
-        echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        echo "${{ inputs.github-token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
         docker tag inngest-ci:latest ${{ steps.meta.outputs.image }}
         docker push ${{ steps.meta.outputs.image }}
