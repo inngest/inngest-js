@@ -1,4 +1,3 @@
-import { assertType } from "../test/helpers.ts";
 import type { IsEqual, RecursiveTuple } from "./types.ts";
 
 describe("RecursiveTuple", () => {

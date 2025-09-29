@@ -4,7 +4,6 @@ import { Temporal } from "temporal-polyfill";
 import { z } from "zod/v3";
 import type { IsEqual } from "../helpers/types.ts";
 import {
-  assertType,
   createClient,
   getStepTools,
   type StepTools,

@@ -1,5 +1,5 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { IsUnknown } from "../types.ts";
-import type * as z from "./zod";
 
 /**
  * Given an input value, infer the output type.
@@ -16,8 +16,8 @@ export type ResolveSchema<
   TUnknownFallback = TFallback,
 > = IsUnknown<TInput> extends true
   ? TUnknownFallback
-  : TInput extends z.ZodTypeAny
-    ? z.ZodInfer<TInput>
+  : TInput extends StandardSchemaV1
+    ? StandardSchemaV1.InferOutput<TInput>
     : TFallback;
 
 /**
@@ -25,11 +25,11 @@ export type ResolveSchema<
  *
  * @public
  */
-export type ValidSchemaInput = z.ValidZodValue;
+export type ValidSchemaInput = StandardSchemaV1;
 
 /**
  * A valid output schema.
  *
  * @public
  */
-export type ValidSchemaOutput = z.ZodTypeAny;
+export type ValidSchemaOutput = StandardSchemaV1;

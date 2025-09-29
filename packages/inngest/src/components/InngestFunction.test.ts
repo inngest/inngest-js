@@ -30,7 +30,7 @@ import {
   NonRetriableError,
 } from "../index.ts";
 import { type Logger, ProxyLogger } from "../middleware/logger.ts";
-import { assertType, createClient, runFnWithStack } from "../test/helpers.ts";
+import { createClient, runFnWithStack } from "../test/helpers.ts";
 import {
   type ClientOptions,
   type FailureEventPayload,
