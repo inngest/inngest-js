@@ -20,6 +20,13 @@ runs:
     - uses: DeterminateSystems/magic-nix-cache-action@main
     - uses: nicknovitski/nix-develop@v1
 
+    # We have Nix set up, but use this and the Node action for the cache
+    - uses: pnpm/action-setup@v4
+      name: Install pnpm
+      with:
+        run_install: false
+    - uses: actions/setup-node@v5
+
     - name: List packages
       run: pwd && ls -la && pnpm list -r
       shell: bash
