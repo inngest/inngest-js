@@ -21,11 +21,10 @@
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
-            corepack_24
-
             # Node
-            typescript
             nodejs_24
+            pnpm
+            typescript
 
             # bun
             bun
@@ -41,7 +40,7 @@
 
           shellHook = ''
             export COREPACK_ENABLE_AUTO_PIN=0
-            corepack prepare --activate
+            corepack prepare --activate --prefer-offline
           '';
         };
       }
