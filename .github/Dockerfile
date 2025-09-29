@@ -4,7 +4,7 @@ FROM nixos/nix:latest as build
 COPY flake.nix flake.lock pnpm-lock.yaml
 
 # Build a derivation that includes the CI devShell + node_modules
-RUN nix build .#ciImage -o /image
+RUN nix --extra-experimental-features 'nix-command flakes' build .#ciImage -o /image
 
 # Final runtime image
 FROM debian:bookworm-slim
