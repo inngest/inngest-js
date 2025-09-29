@@ -31,4 +31,4 @@ jobs:
           base: "main"
           token: ${{ secrets.CHANGESET_GITHUB_TOKEN }} # inngest-release-bot
           labels: |
-            "💡 KTLO"
+            💡 KTLO
