@@ -567,12 +567,10 @@ describe("referenceFunction", () => {
 
       // Test that actual references DO extend Like
       // (now that the class has the Symbol.toStringTag getter)
-      type BasicExtendsLike = typeof basicRef extends InngestFunctionReference.Like
-        ? true
-        : false;
-      type TypedExtendsLike = typeof typedRef extends InngestFunctionReference.Like
-        ? true
-        : false;
+      type BasicExtendsLike =
+        typeof basicRef extends InngestFunctionReference.Like ? true : false;
+      type TypedExtendsLike =
+        typeof typedRef extends InngestFunctionReference.Like ? true : false;
 
       // These should be true because InngestFunctionReference class
       // now has Symbol.toStringTag property via getter
@@ -580,9 +578,8 @@ describe("referenceFunction", () => {
       assertType<TypedExtendsLike>(true);
 
       // Test that the mock object satisfies Like
-      type MockSatisfiesLike = typeof mockLikeRef extends InngestFunctionReference.Like
-        ? true
-        : false;
+      type MockSatisfiesLike =
+        typeof mockLikeRef extends InngestFunctionReference.Like ? true : false;
       assertType<MockSatisfiesLike>(true);
 
       // Test that Like can be used as a type guard pattern
