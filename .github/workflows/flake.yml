@@ -27,6 +27,7 @@ jobs:
             nix flake update
             ```
           branch: "automated/update-flake"
+          base: "main"
           token: ${{ secrets.CHANGESET_GITHUB_TOKEN }} # inngest-release-bot
           labels: |
             "💡 KTLO"
