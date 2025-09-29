@@ -14,6 +14,7 @@ jobs:
       - uses: DeterminateSystems/nix-installer-action@v20
       - run: nix flake update
       - uses: peter-evans/create-pull-request@v7
+        id: cpr
         with:
           commit-message: "Bump `flake.lock` versions"
           title: "Automated `flake.nix` update"
@@ -33,3 +34,10 @@ jobs:
           delete-branch: true # close PR if no changes
           labels: |
             💡 KTLO
+      - name: Enable Pull Request Automerge
+        if: steps.cpr.outputs.pull-request-operation == 'created'
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          token: ${{ secrets.CHANGESET_GITHUB_TOKEN }} # inngest-release-bot
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          merge-method: squash
