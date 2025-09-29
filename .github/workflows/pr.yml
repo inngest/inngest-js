@@ -18,6 +18,7 @@ jobs:
     outputs:
       image: ${{ steps.ensure.outputs.image }}
     steps:
+      - uses: actions/checkout@v4
       - id: ensure
         uses: ./.github/actions/ensure-ci-image
 
