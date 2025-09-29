@@ -28,7 +28,7 @@
           '';
         };
 
-        # Shell used in CI
+        # CI shell is used in GitHub Actions
         ciShell = pkgs.mkShell {
           packages = [
             corepack
@@ -45,8 +45,7 @@
       {
         devShells.ci = ciShell;
 
-        # Local dev shell, which is the CI shell plus extras exclusive to local
-        # dev
+        # Local dev shell is the CI shell, plus some extra tools
         devShells.default = pkgs.mkShell {
           inputsFrom = [ ciShell ];
           nativeBuildInputs = with pkgs; [
@@ -55,6 +54,17 @@
             nodePackages.yaml-language-server
             protobuf_29
           ];
+        };
+
+        # The CI image is created as a cached env for CI to run in
+        packages.ciImage = pkgs.dockerTools.buildImage {
+          name = "inngest-ci";
+          tag = "latest";
+          # put the whole CI shell into the image
+          contents = [ ciShell ];
+          config = {
+            Cmd = [ "bash" ];
+          };
         };
       }
     );

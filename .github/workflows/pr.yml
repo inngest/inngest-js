@@ -13,6 +13,14 @@ env:
   NODE_AUTH_TOKEN: nothing
 
 jobs:
+  ensure-image:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.ensure.outputs.image }}
+    steps:
+      - id: ensure
+        uses: ./.github/actions/ensure-ci-image
+
   # A flag we can use to warn us of critical known issues in the chain. This
   # should be caught in a number of places (including GitHub as CVEs), but we
   # also perform a check here.
@@ -32,6 +40,9 @@ jobs:
   inngest_test:
     name: "inngest: Runtime tests"
     runs-on: ubuntu-latest
+    needs: ensure-image
+    container:
+      image: ${{ needs.ensure-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/inngest
