@@ -4,6 +4,11 @@ runs:
   using: "composite"
   steps:
     - uses: actions/setup-node@v5
+      with:
+        check-latest: false
+        cache: "pnpm"
     - uses: pnpm/action-setup@v4
       with:
-        run_install: '[{ "args": ["--frozen-lockfile"] }]'
+        run_install: false
+    - run: pnpm install --frozen-lockfile
+      shell: bash
