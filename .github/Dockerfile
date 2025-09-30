@@ -1,7 +1,7 @@
 FROM debian:bookworm-slim AS build
 
 # install nix
-RUN apt-get update && apt-get install -y curl xz-utils ca-certificates sudo && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl xz-utils ca-certificates sudo && rm -rf /var/lib/apt/lists/*
 RUN useradd -m nix && echo "nix ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 USER nix
 WORKDIR /home/nix
