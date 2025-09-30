@@ -1,30 +1,29 @@
-FROM debian:bookworm-slim AS base
-
-# minimal deps to install nix
-RUN apt-get update && \
-    apt-get install -y curl xz-utils ca-certificates sudo && \
-    rm -rf /var/lib/apt/lists/*
-
-# create a non-root user for nix
-RUN useradd -m nix && echo "nix ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-USER nix
-ENV USER=nix
-WORKDIR /home/nix
+FROM debian:bookworm-slim AS build
 
 # install nix
+RUN apt-get update && apt-get install -y curl xz-utils ca-certificates sudo && rm -rf /var/lib/apt/lists/*
+RUN useradd -m nix && echo "nix ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+USER nix
+WORKDIR /home/nix
 RUN curl -L https://nixos.org/nix/install | sh -s -- --no-daemon
-
 ENV PATH="/home/nix/.nix-profile/bin:$PATH"
 
 WORKDIR /ci-src
 COPY flake.nix flake.lock ./
 
-RUN nix --extra-experimental-features 'nix-command flakes' \
-    build .#ci -o /nix/ci
+# build ci package
+RUN nix --extra-experimental-features 'nix-command flakes' build .#ci -o /nix/ci
 
-# final image
+RUN nix --extra-experimental-features 'nix-command flakes' \
+    path-info --recursive $(readlink -f /nix/ci) \
+  | xargs tar -C / -cf /tmp/closure.tar
+
+# -------- final --------
 FROM debian:bookworm-slim
-COPY --from=base /nix/ci /nix/ci
+COPY --from=build /tmp/closure.tar /tmp/closure.tar
+RUN tar -C / -xf /tmp/closure.tar
+COPY --from=build /nix/ci /nix/ci
 ENV PATH="/nix/ci/bin:$PATH"
 WORKDIR /workspace
 CMD ["bash"]
+

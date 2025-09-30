@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    nix2container.url = "github:nlewo/nix2container";
   };
 
   outputs =
@@ -11,13 +12,16 @@
       self,
       nixpkgs,
       flake-utils,
+      nix2container,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs { inherit system; };
+        n2c = nix2container.packages.${system};
 
+        # Corepack wrapper (links to system node)
         corepack = pkgs.stdenv.mkDerivation {
           name = "corepack";
           buildInputs = [ pkgs.nodejs_24 ];
@@ -28,26 +32,21 @@
           '';
         };
 
+        # CI packages
         ciPkgs = [
           corepack
           pkgs.nodejs_24
-          pkgs.typescript
           pkgs.bun
         ];
 
-        # CI shell is used in GitHub Actions
         ciShell = pkgs.mkShell {
           packages = ciPkgs;
           shellHook = ''
             export COREPACK_ENABLE_AUTO_PIN=0
           '';
         };
-      in
-      {
-        devShells.ci = ciShell;
 
-        # Local dev shell is the CI shell, plus some extra tools
-        devShells.default = pkgs.mkShell {
+        devShell = pkgs.mkShell {
           inputsFrom = [ ciShell ];
           nativeBuildInputs = with pkgs; [
             nodePackages.typescript-language-server
@@ -57,10 +56,60 @@
           ];
         };
 
-        # Buildable package for Docker, same as ciShell
-        packages.ci = pkgs.buildEnv {
+        ciEnv = pkgs.buildEnv {
           name = "ci-env";
           paths = ciPkgs;
+        };
+      in
+      {
+        devShells.ci = ciShell;
+        devShells.default = devShell;
+
+        packages.ci = ciEnv;
+
+        packages.ci-image = n2c.nix2container.buildImage {
+          name = "ci";
+          tag = "latest";
+
+          # only link /bin from deps into /
+          copyToRoot = pkgs.buildEnv {
+            name = "root";
+            paths = ciPkgs;
+            pathsToLink = [ "/bin" ];
+          };
+
+          config = {
+            Env = [
+              "PATH=/bin"
+              "COREPACK_ENABLE_AUTO_PIN=0"
+            ];
+            WorkingDir = "/workspace";
+            Cmd = [ "bash" ];
+          };
+
+          # prune: if anything non-bin sneaks in, strip it
+          perms = [
+            {
+              path = "${pkgs.nodejs_24}";
+              regex = ".*share.*";
+              mode = "0000";
+            }
+            {
+              path = "${pkgs.nodejs_24}";
+              regex = ".*include.*";
+              mode = "0000";
+            }
+            {
+              path = "${pkgs.bun}";
+              regex = ".*share.*";
+              mode = "0000";
+            }
+            {
+              path = "${pkgs.bun}";
+              regex = ".*include.*";
+              mode = "0000";
+            }
+          ];
         };
       }
     );
