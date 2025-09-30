@@ -1,14 +1,15 @@
-FROM nixos/nix:latest as build
+FROM nixos/nix:latest
 
-# Copy in just the files that determine the dependency hash
 WORKDIR /ci-src
 COPY . .
 
-# Build a derivation that includes the CI devShell + node_modules
-RUN nix --extra-experimental-features 'nix-command flakes' build -o /image
+# Materialize default devShell into a profile
+RUN nix --extra-experimental-features 'nix-command flakes' develop . --profile /nix/ci-profile
 
-# Final runtime image
-FROM debian:bookworm-slim
-COPY --from=build /image/ /
+ENV PATH="/nix/ci-profile/bin:$PATH"
+
+# Install dependencies inside the image
+RUN pnpm install --frozen-lockfile
+
 WORKDIR /workspace
 CMD ["bash"]
