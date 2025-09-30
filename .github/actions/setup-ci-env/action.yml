@@ -1,20 +1,11 @@
 name: "Setup CI env"
-description: "Fetch pnpm deps and install offline"
+description: "Fetch pnpm deps and perform any prerequisites"
 runs:
   using: "composite"
   steps:
-    - name: Restore pnpm fetch cache
-      uses: actions/cache@v4
-      with:
-        path: .pnpm-store
-        key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-        restore-keys: |
-          ${{ runner.os }}-pnpm-
-
-    - name: Fetch deps
+    # This is actually faster without a cache in almost all cases, since
+    # untarring a cache's many many node_modules files is slower than just
+    # downloading deps directly from the registry.
+    - name: Install dependencies
       shell: bash
-      run: pnpm fetch --store-dir .pnpm-store
-
-    - name: Install offline
-      shell: bash
-      run: pnpm install --frozen-lockfile --offline --store-dir .pnpm-store
+      run: pnpm install --frozen-lockfile
