@@ -1,0 +1,10 @@
+name: "Setup CI env"
+description: "Install Node, restore pnpm cache, install deps"
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-node@v5
+    - uses: pnpm/action-setup@v2
+      with:
+        run-install:
+          args: [--frozen-lockfile]

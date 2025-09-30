@@ -58,10 +58,10 @@ jobs:
           - 24
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-ci-env
       - run: |
           node --version
           npm --version
-          pnpm install --frozen-lockfile
           npm run test
 
   inngest_types:
