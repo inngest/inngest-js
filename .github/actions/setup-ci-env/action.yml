@@ -1,0 +1,11 @@
+name: "Setup CI env"
+description: "Fetch pnpm deps and perform any prerequisites"
+runs:
+  using: "composite"
+  steps:
+    # This is actually faster without a cache in almost all cases, since
+    # untarring a cache's many many node_modules files is slower than just
+    # downloading deps directly from the registry.
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile

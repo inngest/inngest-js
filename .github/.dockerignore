@@ -1,0 +1,13 @@
+# Node packages
+node_modules
+
+# Nix
+/.direnv/
+
+.idea
+
+# Build output
+dist
+*.tgz
+examples/**/*/.env
+examples/**/*/dist

@@ -16,17 +16,23 @@ inputs:
 runs:
   using: composite
   steps:
+    - uses: DeterminateSystems/nix-installer-action@main
+    - uses: DeterminateSystems/magic-nix-cache-action@main
+    - uses: nicknovitski/nix-develop@v1
+      with:
+        arguments: .#ci
+
+    # We have Nix set up, but use this and the Node action for the cache
     - uses: pnpm/action-setup@v4
+      name: Install pnpm
       with:
         run_install: false
+    - uses: actions/setup-node@v5
 
-    - uses: actions/setup-node@v4
-      with:
-        node-version: lts/*
-        cache: pnpm
-        registry-url: "https://registry.npmjs.org"
-
-    - uses: oven-sh/setup-bun@v2
+    - name: List packages
+      run: pwd && ls -la && pnpm list -r
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
 
     - name: Install dependencies
       if: ${{ inputs.install-dependencies == 'true' }}

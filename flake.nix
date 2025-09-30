@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    nix2container.url = "github:nlewo/nix2container";
   };
 
   outputs =
@@ -11,47 +12,109 @@
       self,
       nixpkgs,
       flake-utils,
+      nix2container,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs { inherit system; };
-        corepack = pkgs.stdenv.mkDerivation {
-          name = "corepack";
-          buildInputs = [ pkgs.nodejs_24 ];
-          phases = [ "installPhase" ];
-          installPhase = ''
-            mkdir -p $out/bin
-            corepack enable --install-directory=$out/bin
-          '';
-        };
+        n2c = nix2container.packages.${system};
 
-      in
-      {
-        devShells.default = pkgs.mkShell {
-          packages = [ corepack ];
+        # Packages shared between CI and local dev.
+        # Ideally most actual dependencies go in here.
+        commonPkgs = with pkgs; [
+          pnpm
+          nodejs_24
+        ];
 
-          nativeBuildInputs = with pkgs; [
-            # Node
-            typescript
-            nodejs_24
+        # Packages only needed for local development.
+        # This could be LSPs, formatters, tools to generate code, etc.
+        localDevPkgs = with pkgs; [
+          nodePackages.typescript-language-server
+          nodePackages.vscode-json-languageserver
+          nodePackages.yaml-language-server
+          protobuf_29
+          bun
+        ];
 
-            # bun
-            bun
-
-            # LSPs
-            nodePackages.typescript-language-server
-            nodePackages.vscode-json-languageserver
-            nodePackages.yaml-language-server
-
-            # Tools
-            protobuf_29
-          ];
-
+        ciShell = pkgs.mkShell {
+          packages = commonPkgs;
           shellHook = ''
             export COREPACK_ENABLE_AUTO_PIN=0
           '';
+        };
+
+        devShell = pkgs.mkShell {
+          inputsFrom = [ ciShell ];
+          nativeBuildInputs = localDevPkgs;
+        };
+
+        ciEnv = pkgs.buildEnv {
+          name = "ci-env";
+          paths = commonPkgs;
+        };
+      in
+      {
+        devShells.ci = ciShell;
+        devShells.default = devShell;
+
+        packages.ci = ciEnv;
+
+        packages.ci-image = n2c.nix2container.buildImage {
+          name = "ci";
+          tag = "latest";
+
+          # only link /bin from deps into /
+          copyToRoot = pkgs.buildEnv {
+            name = "root";
+            paths = commonPkgs;
+            pathsToLink = [ "/bin" ];
+          };
+
+          config = {
+            User = "1001:1001"; # match GitHub Actions runner
+            Env = [
+              "PATH=/bin"
+              "COREPACK_ENABLE_AUTO_PIN=0"
+            ];
+            WorkingDir = "/workspace";
+            Cmd = [ "bash" ];
+          };
+
+          # ensure /tmp exists and is usable
+          layers = [
+            (n2c.nix2container.buildLayer {
+              copyToRoot = pkgs.runCommand "tmpdir" { } ''
+                mkdir -p $out/tmp
+                chmod 1777 $out/tmp
+              '';
+            })
+          ];
+
+          # prune: if anything non-bin sneaks in, strip it
+          perms = [
+            {
+              path = "${pkgs.nodejs_24}";
+              regex = ".*share.*";
+              mode = "0000";
+            }
+            {
+              path = "${pkgs.nodejs_24}";
+              regex = ".*include.*";
+              mode = "0000";
+            }
+            {
+              path = "${pkgs.bun}";
+              regex = ".*share.*";
+              mode = "0000";
+            }
+            {
+              path = "${pkgs.bun}";
+              regex = ".*include.*";
+              mode = "0000";
+            }
+          ];
         };
       }
     );

@@ -1,0 +1,41 @@
+name: "Ensure CI image"
+description: "Ensure the CI Docker image exists for this deps hash"
+inputs:
+  github-token:
+    required: true
+outputs:
+  image:
+    value: ${{ steps.meta.outputs.image }}
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v4
+
+    - id: hash
+      shell: bash
+      run: |
+        HASH=$(sha256sum .github/Dockerfile flake.nix flake.lock | sha256sum | cut -d' ' -f1)
+        echo "hash=1_$HASH" >> "$GITHUB_OUTPUT"
+
+    - id: meta
+      shell: bash
+      run: |
+        IMAGE="ghcr.io/${{ github.repository }}/ci:${{ steps.hash.outputs.hash }}"
+        echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+    - name: Log in to GHCR
+      shell: bash
+      run: echo "${{ inputs.github-token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+    - name: Check if image exists
+      id: manifest
+      shell: bash
+      continue-on-error: true
+      run: docker manifest inspect ${{ steps.meta.outputs.image }} > /dev/null
+
+    - name: Build + push image if missing
+      if: steps.manifest.outcome == 'failure'
+      run: |
+        docker build -f .github/Dockerfile -t ${{ steps.meta.outputs.image }} .
+        docker push ${{ steps.meta.outputs.image }}
+      shell: bash
