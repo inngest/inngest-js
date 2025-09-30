@@ -89,6 +89,8 @@ jobs:
       - uses: actions/checkout@v4
       - run: pnpm install --frozen-lockfile
       - run: pnpm run prebuild
+      - run: pnpm run build
+        working-directory: packages/test
       - run: pnpm add -D typescript@${{ matrix.tsVersion }}
       - run: pnpm run test:types
       - run: pnpm run test:dist
