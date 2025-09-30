@@ -13,3 +13,7 @@ runs:
 
     - run: pnpm install --frozen-lockfile
       shell: bash
+
+    - run: pnpm run build
+      shell: bash
+      working-directory: packages/test
