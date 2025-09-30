@@ -21,20 +21,9 @@
         pkgs = import nixpkgs { inherit system; };
         n2c = nix2container.packages.${system};
 
-        # Corepack wrapper (links to system node)
-        corepack = pkgs.stdenv.mkDerivation {
-          name = "corepack";
-          buildInputs = [ pkgs.nodejs_24 ];
-          phases = [ "installPhase" ];
-          installPhase = ''
-            mkdir -p $out/bin
-            corepack enable --install-directory=$out/bin
-          '';
-        };
-
         # CI packages
         ciPkgs = [
-          corepack
+          pkgs.pnpm
           pkgs.nodejs_24
           pkgs.bun
         ];
