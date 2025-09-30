@@ -1,5 +1,14 @@
 # @inngest/realtime
 
+## 0.4.3
+
+### Patch Changes
+
+- [#1057](https://github.com/inngest/inngest-js/pull/1057) [`7401e276`](https://github.com/inngest/inngest-js/commit/7401e276ab7356a2564bbbd8973a49b5066875bf) Thanks [@MonsterDeveloper](https://github.com/MonsterDeveloper)! - Fixed automatic token fetching on mount if the hook is disabled
+
+- Updated dependencies [[`6507c0cd`](https://github.com/inngest/inngest-js/commit/6507c0cdc792ef905b06481f69b4e7fe8ad75fe7), [`6507c0cd`](https://github.com/inngest/inngest-js/commit/6507c0cdc792ef905b06481f69b4e7fe8ad75fe7), [`1cf1e525`](https://github.com/inngest/inngest-js/commit/1cf1e525a90186af0bbb6024198259d0e9006adc)]:
+  - inngest@3.44.0
+
 ## 0.4.2
 
 ### Patch Changes
