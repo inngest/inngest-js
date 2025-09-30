@@ -4,9 +4,9 @@ WORKDIR /ci-src
 COPY . .
 
 # Materialize default devShell into a profile
-RUN nix --extra-experimental-features 'nix-command flakes' develop . --profile /nix/ci-profile
+RUN nix --extra-experimental-features 'nix-command flakes' profile install .#default
 
-ENV PATH="/nix/ci-profile/bin:$PATH"
+ENV PATH="/nix/profile/bin:$PATH"
 
 # Install dependencies inside the image
 RUN pnpm install --frozen-lockfile
