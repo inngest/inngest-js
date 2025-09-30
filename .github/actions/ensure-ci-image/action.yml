@@ -27,15 +27,15 @@ runs:
       shell: bash
       run: echo "${{ inputs.github-token }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-    - name: Try pull existing image
-      id: pull
+    - name: Check if image exists
+      id: manifest
       shell: bash
       continue-on-error: true
-      run: docker pull ${{ steps.meta.outputs.image }}
+      run: docker manifest inspect ${{ steps.meta.outputs.image }} > /dev/null
 
     - name: Build + push image if missing
-      if: steps.pull.outcome == 'failure'
-      shell: bash
+      if: steps.manifest.outcome == 'failure'
       run: |
         docker build -f .github/Dockerfile -t ${{ steps.meta.outputs.image }} .
         docker push ${{ steps.meta.outputs.image }}
+      shell: bash
