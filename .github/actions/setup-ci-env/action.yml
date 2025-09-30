@@ -1,21 +1,20 @@
 name: "Setup CI env"
-description: "Restore pnpm cache and install deps"
+description: "Fetch pnpm deps and install offline"
 runs:
   using: "composite"
   steps:
-    - id: store-path
-      shell: bash
-      run: |
-        STORE_PATH=$(pnpm store path)
-        echo "store-path=$STORE_PATH" >> "$GITHUB_OUTPUT"
-
-    - name: Restore pnpm store
+    - name: Restore pnpm fetch cache
       uses: actions/cache@v4
       with:
-        path: ${{ steps.store-path.outputs.store-path }}
+        path: .pnpm-store
         key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
         restore-keys: |
           ${{ runner.os }}-pnpm-
 
-    - run: pnpm install --frozen-lockfile
+    - name: Fetch deps
       shell: bash
+      run: pnpm fetch --store-dir .pnpm-store
+
+    - name: Install offline
+      shell: bash
+      run: pnpm install --frozen-lockfile --offline --store-dir .pnpm-store
