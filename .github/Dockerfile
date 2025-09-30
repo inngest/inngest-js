@@ -25,6 +25,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       git \
+      unzip \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /tmp/closure.tar /tmp/closure.tar
