@@ -28,15 +28,17 @@
           '';
         };
 
+        ciPkgs = [
+          corepack
+          pkgs.nodejs_24
+          pkgs.typescript
+          pkgs.bun
+          pkgs.pnpm
+        ];
+
         # CI shell is used in GitHub Actions
         ciShell = pkgs.mkShell {
-          packages = [
-            corepack
-            pkgs.nodejs_24
-            pkgs.typescript
-            pkgs.bun
-          ];
-          nativeBuildInputs = [ pkgs.pnpm ];
+          packages = ciPkgs;
           shellHook = ''
             export COREPACK_ENABLE_AUTO_PIN=0
           '';
@@ -56,15 +58,10 @@
           ];
         };
 
-        # The CI image is created as a cached env for CI to run in
-        packages.ciImage = pkgs.dockerTools.buildImage {
-          name = "inngest-ci";
-          tag = "latest";
-          # put the whole CI shell into the image
-          contents = [ ciShell ];
-          config = {
-            Cmd = [ "bash" ];
-          };
+        # Buildable package for Docker, same as ciShell
+        packages.ci = pkgs.buildEnv {
+          name = "ci-env";
+          paths = ciPkgs;
         };
       }
     );

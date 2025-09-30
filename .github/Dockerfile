@@ -3,12 +3,12 @@ FROM nixos/nix:latest
 WORKDIR /ci-src
 COPY . .
 
-# Materialize default devShell into a profile
-RUN nix --extra-experimental-features 'nix-command flakes' profile install .#default
+# Build the ci package into /nix/ci
+RUN nix --extra-experimental-features 'nix-command flakes' \
+        build .#ci -o /nix/ci
 
-ENV PATH="/nix/profile/bin:$PATH"
+ENV PATH="/nix/ci/bin:$PATH"
 
-# Install dependencies inside the image
 RUN pnpm install --frozen-lockfile
 
 WORKDIR /workspace
