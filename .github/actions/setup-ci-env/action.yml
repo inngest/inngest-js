@@ -1,10 +1,15 @@
 name: "Setup CI env"
-description: "Install Node, restore pnpm cache, install deps"
+description: "Restore pnpm cache and install deps"
 runs:
   using: "composite"
   steps:
-    - uses: pnpm/action-setup@v4
+    - name: Restore pnpm store
+      uses: actions/cache@v4
       with:
-        run_install: false
+        path: ~/.pnpm-store
+        key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+        restore-keys: |
+          ${{ runner.os }}-pnpm-
+
     - run: pnpm install --frozen-lockfile
       shell: bash
