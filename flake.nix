@@ -25,7 +25,6 @@
         ciPkgs = [
           pkgs.pnpm
           pkgs.nodejs_24
-          pkgs.bun
         ];
 
         ciShell = pkgs.mkShell {
@@ -42,6 +41,7 @@
             nodePackages.vscode-json-languageserver
             nodePackages.yaml-language-server
             protobuf_29
+            bun
           ];
         };
 
