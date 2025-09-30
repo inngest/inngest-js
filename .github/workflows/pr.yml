@@ -60,6 +60,10 @@ jobs:
           - 24
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.nodeVersion }}
+          cache: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
         working-directory: packages/test
