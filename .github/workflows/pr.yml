@@ -13,7 +13,8 @@ env:
   NODE_AUTH_TOKEN: nothing
 
 jobs:
-  ensure-image:
+  ci-image:
+    name: Upsert CI image
     runs-on: ubuntu-latest
     outputs:
       image: ${{ steps.ensure.outputs.image }}
@@ -30,22 +31,23 @@ jobs:
   audit:
     name: pnpm security audit
     runs-on: ubuntu-latest
+    needs: ci-image
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
-        with:
-          build: false
+      - uses: actions/checkout@v4
       # Optional dependencies are packages like frameworks, which are actually
       # peer dependencies and are not installed in every usage, so we omit them
       # here and only check what's shipped directly by us.
       - run: pnpm audit --audit-level=critical --prod --no-optional
 
+  # TODO node switching
   inngest_test:
     name: "inngest: Runtime tests"
     runs-on: ubuntu-latest
-    needs: ensure-image
+    needs: ci-image
     container:
-      image: ${{ needs.ensure-image.outputs.image }}
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/inngest
@@ -58,7 +60,7 @@ jobs:
           - 24
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-ci-env
+      - run: pnpm install --frozen-lockfile
       - run: pnpm build
         working-directory: packages/test
       - run: |
@@ -70,6 +72,9 @@ jobs:
   inngest_types:
     name: "inngest: Type tests"
     runs-on: ubuntu-latest
+    needs: ci-image
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/inngest
@@ -81,8 +86,8 @@ jobs:
           - "~5.9.0"
           - "~5.8.0"
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
+      - uses: actions/checkout@v4
+      - run: pnpm install --frozen-lockfile
       - run: pnpm add -D typescript@${{ matrix.tsVersion }}
       - run: pnpm run test:types
       - run: pnpm run test:dist
@@ -90,12 +95,15 @@ jobs:
   inngest_package_health:
     name: "inngest: Package health"
     runs-on: ubuntu-latest
+    needs: ci-image
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/inngest
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
+      - uses: actions/checkout@v4
+      - run: pnpm install --frozen-lockfile
       - run: pnpm run local:pack
 
       - name: Lint package publishing config
@@ -115,116 +123,125 @@ jobs:
   inngest_lint:
     name: "inngest: Lint"
     runs-on: ubuntu-latest
+    needs: ci-image
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/inngest
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
+      - uses: actions/checkout@v4
+      - run: pnpm install --frozen-lockfile
       - run: pnpm run lint
 
   inngest_test_dist:
     name: "inngest: Dist tests"
     runs-on: ubuntu-latest
+    needs: ci-image
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/inngest
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
+      - uses: actions/checkout@v4
+      - run: pnpm install --frozen-lockfile
       - run: pnpm run test:dist
 
   inngest_test_deps:
     name: "inngest: Dependency tests"
     runs-on: ubuntu-latest
+    needs: ci-image
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/inngest
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
+      - uses: actions/checkout@v4
       - run: pnpm run test:deps
 
   inngest_test_composite:
     name: "inngest: Composite tests"
     runs-on: ubuntu-latest
+    needs: ci-image
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/inngest
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
+      - uses: actions/checkout@v4
+      - run: pnpm install --frozen-lockfile
       - run: pnpm run test:composite
 
   "eslint-plugin_test":
     name: "eslint-plugin: Test"
     runs-on: ubuntu-latest
+    needs: ci-image
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/eslint-plugin
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
-        with:
-          install-dependencies: false
-          build: false
+      - uses: actions/checkout@v4
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
   "middleware-encryption_test":
     name: "middleware-encryption: Test"
     runs-on: ubuntu-latest
+    needs: ci-image
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/middleware-encryption
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
-        with:
-          install-dependencies: false
-          build: false
+      - uses: actions/checkout@v4
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
   "middleware-validation_test":
     name: "middleware-validation: Test"
     runs-on: ubuntu-latest
+    needs: ci-image
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/middleware-validation
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
-        with:
-          install-dependencies: true
-          build: false
+      - uses: actions/checkout@v4
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
   "realtime_test":
     name: "realtime: Test"
     runs-on: ubuntu-latest
+    needs: ci-image
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/realtime
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
-        with:
-          install-dependencies: false
-          build: false
+      - uses: actions/checkout@v4
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
   package_inngest:
     name: "inngest: Package"
     runs-on: ubuntu-latest
+    needs: ci-image
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/inngest
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
+      - uses: actions/checkout@v4
       - name: Package as tarball
         run: pnpm run local:pack
       - name: Archive package tarball
@@ -249,10 +266,12 @@ jobs:
   examples:
     name: Test examples
     runs-on: ubuntu-latest
+    needs: [ci-image, examples-matrix, package_inngest]
+    container:
+      image: ${{ needs.ci-image.outputs.image }}
     defaults:
       run:
         working-directory: packages/inngest
-    needs: [examples-matrix, package_inngest]
     strategy:
       fail-fast: false
       matrix:
@@ -273,9 +292,7 @@ jobs:
     steps:
       # Checkout the repo
       - name: Checkout SDK
-        uses: actions/checkout@v3
-
-      - uses: ./.github/actions/setup-and-build
+        uses: actions/checkout@v4
 
       - name: Download pre-built SDK
         uses: actions/download-artifact@v4
