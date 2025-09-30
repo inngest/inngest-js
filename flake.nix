@@ -33,7 +33,6 @@
           pkgs.nodejs_24
           pkgs.typescript
           pkgs.bun
-          pkgs.pnpm
         ];
 
         # CI shell is used in GitHub Actions
