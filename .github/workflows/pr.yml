@@ -59,9 +59,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-ci-env
+      - run: pnpm build
+        working-directory: packages/test
       - run: |
           node --version
           npm --version
+          pnpm run prebuild
           npm run test
 
   inngest_types:
