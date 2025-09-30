@@ -7,4 +7,4 @@ runs:
     - uses: pnpm/action-setup@v2
       with:
         run-install:
-          args: [--frozen-lockfile]
+          - args: [--frozen-lockfile]
