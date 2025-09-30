@@ -21,14 +21,25 @@
         pkgs = import nixpkgs { inherit system; };
         n2c = nix2container.packages.${system};
 
-        # CI packages
-        ciPkgs = [
-          pkgs.pnpm
-          pkgs.nodejs_24
+        # Packages shared between CI and local dev.
+        # Ideally most actual dependencies go in here.
+        commonPkgs = with pkgs; [
+          pnpm
+          nodejs_24
+        ];
+
+        # Packages only needed for local development.
+        # This could be LSPs, formatters, tools to generate code, etc.
+        localDevPkgs = with pkgs; [
+          nodePackages.typescript-language-server
+          nodePackages.vscode-json-languageserver
+          nodePackages.yaml-language-server
+          protobuf_29
+          bun
         ];
 
         ciShell = pkgs.mkShell {
-          packages = ciPkgs;
+          packages = commonPkgs;
           shellHook = ''
             export COREPACK_ENABLE_AUTO_PIN=0
           '';
@@ -36,18 +47,12 @@
 
         devShell = pkgs.mkShell {
           inputsFrom = [ ciShell ];
-          nativeBuildInputs = with pkgs; [
-            nodePackages.typescript-language-server
-            nodePackages.vscode-json-languageserver
-            nodePackages.yaml-language-server
-            protobuf_29
-            bun
-          ];
+          nativeBuildInputs = localDevPkgs;
         };
 
         ciEnv = pkgs.buildEnv {
           name = "ci-env";
-          paths = ciPkgs;
+          paths = commonPkgs;
         };
       in
       {
@@ -63,7 +68,8 @@
           # only link /bin from deps into /
           copyToRoot = pkgs.buildEnv {
             name = "root";
-            paths = ciPkgs;
+            # The CI image includes a minimal git too
+            paths = commonPkgs ++ [ pkgs.gitMinimal ];
             pathsToLink = [ "/bin" ];
           };
 
