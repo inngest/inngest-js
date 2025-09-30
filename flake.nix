@@ -68,8 +68,7 @@
           # only link /bin from deps into /
           copyToRoot = pkgs.buildEnv {
             name = "root";
-            # The CI image includes a minimal git too
-            paths = commonPkgs ++ [ pkgs.gitMinimal ];
+            paths = commonPkgs;
             pathsToLink = [ "/bin" ];
           };
 
