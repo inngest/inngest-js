@@ -3,10 +3,6 @@ description: "Install Node, restore pnpm cache, install deps"
 runs:
   using: "composite"
   steps:
-    - uses: actions/setup-node@v5
-      with:
-        check-latest: false
-        cache: "pnpm"
     - uses: pnpm/action-setup@v4
       with:
         run_install: false
