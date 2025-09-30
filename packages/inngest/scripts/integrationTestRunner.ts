@@ -317,8 +317,6 @@ async function runIntegrationTest(
   const sdkPath = path.join(rootPath, "packages", "inngest");
   const examplePath = path.join(rootPath, "examples", example);
 
-  execSync(`git config --global --add safe.directory ${process.cwd()}`);
-
   const reset = await getExampleResetter(examplePath);
 
   const startExamplePromise = (async () => {

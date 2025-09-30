@@ -73,6 +73,7 @@
           };
 
           config = {
+            User = "1001:1001"; # match GitHub Actions runner
             Env = [
               "PATH=/bin"
               "COREPACK_ENABLE_AUTO_PIN=0"
@@ -80,6 +81,16 @@
             WorkingDir = "/workspace";
             Cmd = [ "bash" ];
           };
+
+          # ensure /tmp exists and is usable
+          layers = [
+            (n2c.nix2container.buildLayer {
+              copyToRoot = pkgs.runCommand "tmpdir" { } ''
+                mkdir -p $out/tmp
+                chmod 1777 $out/tmp
+              '';
+            })
+          ];
 
           # prune: if anything non-bin sneaks in, strip it
           perms = [
