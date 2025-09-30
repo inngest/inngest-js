@@ -28,7 +28,7 @@ jobs:
               {package: "middleware-encryption", dist_dir: "dist"},
               {package: "test"},
               {package: "ai"},
-              {package: "realtime"},
+              {package: "realtime", dist_dir: "dist"},
               {package: "middleware-validation", dist_dir: "dist"}
             ] | map(. as $pkg | select($labelList | index("prerelease/" + $pkg.package)))
           ')
