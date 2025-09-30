@@ -57,14 +57,11 @@ jobs:
           - 22
           - 24
     steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
-      - uses: actions/setup-node@v3
-        with:
-          node-version: ${{ matrix.nodeVersion }}
+      - uses: actions/checkout@v4
       - run: |
           node --version
           npm --version
+          pnpm install --frozen-lockfile
           npm run test
 
   inngest_types:
