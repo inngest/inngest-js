@@ -146,6 +146,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
       - run: pnpm run test:dist
 
   inngest_test_deps:
@@ -159,6 +160,7 @@ jobs:
         working-directory: packages/inngest
     steps:
       - uses: actions/checkout@v4
+      - run: pnpm install --frozen-lockfile
       - run: pnpm run test:deps
 
   inngest_test_composite:
@@ -215,6 +217,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+        working-directory: packages/test
       - run: pnpm test
 
   "realtime_test":
@@ -242,6 +246,7 @@ jobs:
         working-directory: packages/inngest
     steps:
       - uses: actions/checkout@v4
+      - run: pnpm install --frozen-lockfile
       - name: Package as tarball
         run: pnpm run local:pack
       - name: Archive package tarball
@@ -256,7 +261,7 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - id: matrix
         run: |
