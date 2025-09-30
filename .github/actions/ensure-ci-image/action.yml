@@ -15,7 +15,7 @@ runs:
       shell: bash
       run: |
         HASH=$(sha256sum flake.nix flake.lock pnpm-lock.yaml | sha256sum | cut -d' ' -f1)
-        echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+        echo "hash=1_$HASH" >> "$GITHUB_OUTPUT"
 
     - id: meta
       shell: bash
