@@ -148,41 +148,88 @@ jobs:
           TYPE_TEST: ${{ steps.type_test.outputs.result }}
           DIST_TEST: ${{ steps.dist_test.outputs.result }}
           NODE_TEST: ${{ steps.node_test.outputs.result }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
         with:
           script: |
             const { CHECK_NAME, PACKAGE_TYPE, PACKAGE_NAME, NODE_VERSION,
-                    INSTALL_RESULT, TYPE_TEST, DIST_TEST, NODE_TEST } = process.env;
+                    INSTALL_RESULT, TYPE_TEST, DIST_TEST, NODE_TEST, RUN_ID, REPO } = process.env;
 
+            const runUrl = `https://github.com/${REPO}/actions/runs/${RUN_ID}`;
             let conclusion = 'neutral';
             let summary = `## ${CHECK_NAME}\n\n`;
+            let text = '';
 
             if (PACKAGE_TYPE === 'typescript') {
+              // Configuration section
+              text += '### Configuration\n';
+              text += `- Working Directory: \`${{ inputs.working_directory }}\`\n`;
               if (PACKAGE_NAME) {
-                summary += `Testing with package: **${PACKAGE_NAME}**\n\n`;
+                text += `- Package: \`${PACKAGE_NAME}\`\n`;
+                text += `- TypeScript Binary: \`${{ inputs.tsc_binary }}\`\n`;
               }
+              text += '\n';
 
               if (INSTALL_RESULT === 'failed') {
                 summary += '⚠️ **Could not install package** - may not be available\n';
-              } else if (TYPE_TEST === 'pass' && DIST_TEST === 'pass') {
-                conclusion = 'success';
-                summary += '✅ **All tests passed!**\n';
+                text += '### Installation Failed\n';
+                text += 'The specified package could not be installed. It may not be available yet.\n';
               } else {
-                summary += '⚠️ **Some tests did not pass** (expected, does not block PR)\n\n';
-                if (TYPE_TEST) summary += `- Type tests: ${TYPE_TEST === 'pass' ? '✅' : '❌'}\n`;
-                if (DIST_TEST) summary += `- Dist tests: ${DIST_TEST === 'pass' ? '✅' : '❌'}\n`;
+                // Determine overall status
+                const allPassed = TYPE_TEST === 'pass' && DIST_TEST === 'pass';
+
+                if (allPassed) {
+                  conclusion = 'success';
+                  summary += '✅ **All forward compatibility tests passed**\n';
+                } else {
+                  summary += '⚠️ **Some forward compatibility tests failed** (non-blocking)\n';
+                }
+
+                // Test Results section - always show all tests with links
+                text += '### Test Results\n\n';
+
+                // test:types - step 9 in the workflow
+                const typeIcon = TYPE_TEST === 'pass' ? '✅' : TYPE_TEST === 'fail' ? '❌' : '⏭️';
+                text += `${typeIcon} [\`npm run test:types\`](${runUrl}#step:9:1)\n`;
+
+                // test:dist - step 10 in the workflow
+                const distIcon = DIST_TEST === 'pass' ? '✅' : DIST_TEST === 'fail' ? '❌' : '⏭️';
+                text += `${distIcon} [\`npm run test:dist\`](${runUrl}#step:10:1)\n`;
+
+                // If there were failures, add a section for that
+                if (!allPassed) {
+                  text += '\n### Failed Tests\n\n';
+                  if (TYPE_TEST === 'fail') {
+                    text += `- [\`test:types\`](${runUrl}#step:9:1) - Type checking failed\n`;
+                  }
+                  if (DIST_TEST === 'fail') {
+                    text += `- [\`test:dist\`](${runUrl}#step:10:1) - Distribution type checking failed\n`;
+                  }
+                }
               }
             } else if (PACKAGE_TYPE === 'nodejs') {
-              summary += `Testing with Node.js: **${NODE_VERSION}**\n\n`;
+              // Configuration section
+              text += '### Configuration\n';
+              text += `- Working Directory: \`${{ inputs.working_directory }}\`\n`;
+              text += `- Node.js Version: \`${NODE_VERSION}\`\n\n`;
 
-              if (NODE_TEST === 'pass') {
+              const passed = NODE_TEST === 'pass';
+
+              if (passed) {
                 conclusion = 'success';
-                summary += '✅ **All tests passed!**\n';
+                summary += '✅ **All forward compatibility tests passed**\n';
               } else {
-                summary += '⚠️ **Tests did not pass** (expected, does not block PR)\n';
+                summary += '⚠️ **Tests failed** (non-blocking)\n';
               }
+
+              // Test Results section - always show with link
+              text += '### Test Results\n\n';
+              const icon = passed ? '✅' : '❌';
+              // Node test is step 11 in the workflow
+              text += `${icon} [\`npm run test\`](${runUrl}#step:11:1)\n`;
             }
 
-            summary += '\n_Forward compatibility check - informational only._';
+            text += '\n---\n_Forward compatibility indicator - informational only, does not block PR._';
 
             await github.rest.checks.update({
               owner: context.repo.owner,
@@ -191,6 +238,7 @@ jobs:
               conclusion: conclusion,
               output: {
                 title: 'Forward compatibility check complete',
-                summary: summary
+                summary: summary,
+                text: text
               }
             });
