@@ -84,7 +84,10 @@ jobs:
 
           if pnpm add -D ${{ inputs.package_to_test }}; then
             echo "result=success" >> $GITHUB_OUTPUT
-            npx tsc --version || true
+
+            echo "Installed package: ${{ inputs.package_to_test }}"
+            echo "Using TypeScript binary: ${{ inputs.tsc_binary }}"
+            npx ${{ inputs.tsc_binary }} --version
           else
             echo "result=failed" >> $GITHUB_OUTPUT
           fi
