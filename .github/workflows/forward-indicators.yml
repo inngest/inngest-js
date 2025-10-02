@@ -1,10 +1,4 @@
-name: Forward Compatibility Indicators
-
-# GitHub Checks API Documentation:
-# - https://docs.github.com/en/rest/checks/runs
-# - Conclusion values: action_required, cancelled, failure, neutral, success, skipped, stale, timed_out
-# - Status values: queued, in_progress, completed
-# - The 'neutral' conclusion is specifically for "informational checks that don't affect the status"
+name: Run Forward Compatibility Indicators
 
 on:
   pull_request:
