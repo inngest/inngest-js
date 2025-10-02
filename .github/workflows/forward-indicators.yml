@@ -44,8 +44,8 @@ jobs:
     name: "Node.js Nightly"
     uses: ./.github/workflows/forward-indicator-job.yml
     with:
-      check_name: "Forward Compatibility: Node.js Nightly"
-      node_version: "nightly"
+      check_name: "Forward Compatibility: Node.js Canary"
+      node_version: "canary"
       package_type: "nodejs"
       working_directory: "packages/inngest"
     permissions:
