@@ -35,6 +35,7 @@ jobs:
       package_to_test: "@typescript/native-preview"
       package_type: "typescript"
       working_directory: "packages/inngest"
+      tsc_binary: "tsgo"
     permissions:
       checks: write
       contents: read

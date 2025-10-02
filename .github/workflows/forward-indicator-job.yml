@@ -23,10 +23,17 @@ on:
         required: true
         type: string
         description: "Working directory for the tests"
+      tsc_binary:
+        required: false
+        type: string
+        description: "TypeScript compiler binary to use (default: tsc)"
+        default: "tsc"
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      TSC_BIN: ${{ inputs.tsc_binary }}
     steps:
       - uses: actions/checkout@v4
 
