@@ -41,11 +41,11 @@ jobs:
       contents: read
 
   nodejs_nightly:
-    name: "Node.js Nightly"
+    name: "Node.js Current"
     uses: ./.github/workflows/forward-indicator-job.yml
     with:
-      check_name: "Forward Compatibility: Node.js Canary"
-      node_version: "canary"
+      check_name: "Forward Compatibility: Node.js Current"
+      node_version: "current"
       package_type: "nodejs"
       working_directory: "packages/inngest"
     permissions:
