@@ -1,0 +1,52 @@
+name: Forward Compatibility Indicators
+
+# GitHub Checks API Documentation:
+# - https://docs.github.com/en/rest/checks/runs
+# - Conclusion values: action_required, cancelled, failure, neutral, success, skipped, stale, timed_out
+# - Status values: queued, in_progress, completed
+# - The 'neutral' conclusion is specifically for "informational checks that don't affect the status"
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  checks: write
+  contents: read
+
+jobs:
+  typescript_next:
+    name: "TypeScript @next"
+    uses: ./.github/workflows/forward-indicator-job.yml
+    with:
+      check_name: "Forward Compatibility: TypeScript @next"
+      package_to_test: "typescript@next"
+      package_type: "typescript"
+      working_directory: "packages/inngest"
+    permissions:
+      checks: write
+      contents: read
+
+  typescript_preview:
+    name: "TypeScript Native Preview"
+    uses: ./.github/workflows/forward-indicator-job.yml
+    with:
+      check_name: "Forward Compatibility: TypeScript Native Preview"
+      package_to_test: "@typescript/native-preview"
+      package_type: "typescript"
+      working_directory: "packages/inngest"
+    permissions:
+      checks: write
+      contents: read
+
+  nodejs_nightly:
+    name: "Node.js Nightly"
+    uses: ./.github/workflows/forward-indicator-job.yml
+    with:
+      check_name: "Forward Compatibility: Node.js Nightly"
+      node_version: "nightly"
+      package_type: "nodejs"
+      working_directory: "packages/inngest"
+    permissions:
+      checks: write
+      contents: read

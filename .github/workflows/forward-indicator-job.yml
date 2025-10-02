@@ -1,0 +1,186 @@
+name: Forward Indicator Job (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      check_name:
+        required: true
+        type: string
+        description: "Name for the GitHub check"
+      package_to_test:
+        required: false
+        type: string
+        description: "Package to install for testing (e.g., typescript@next)"
+      node_version:
+        required: false
+        type: string
+        description: "Node version to test (e.g., nightly, latest)"
+      package_type:
+        required: true
+        type: string
+        description: "Type of package: typescript or nodejs"
+      working_directory:
+        required: true
+        type: string
+        description: "Working directory for the tests"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Create the check run
+      - name: Create check run
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const check = await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: '${{ inputs.check_name }}',
+              head_sha: context.payload.pull_request?.head.sha || context.sha,
+              status: 'in_progress',
+              output: {
+                title: 'Testing forward compatibility',
+                summary: 'Running tests...'
+              }
+            });
+            return check.data.id;
+
+      # Standard setup and build
+      - uses: ./.github/actions/setup-and-build
+
+      # Node.js setup (custom version if needed)
+      - name: Setup Node.js
+        if: inputs.node_version
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Get Node version
+        id: node_info
+        run: |
+          NODE_VERSION=$(node --version)
+          echo "version=$NODE_VERSION" >> $GITHUB_OUTPUT
+          echo "Node.js: $NODE_VERSION"
+
+      # Install TypeScript package if specified
+      - name: Install package
+        if: inputs.package_to_test && inputs.package_type == 'typescript'
+        id: install_package
+        working-directory: ${{ inputs.working_directory }}
+        continue-on-error: true
+        run: |
+          pnpm remove typescript
+
+          if pnpm add -D ${{ inputs.package_to_test }}; then
+            echo "result=success" >> $GITHUB_OUTPUT
+            npx tsc --version || true
+          else
+            echo "result=failed" >> $GITHUB_OUTPUT
+          fi
+
+      # Run type tests for TypeScript
+      - name: Run type tests
+        if: inputs.package_type == 'typescript'
+        id: type_test
+        working-directory: ${{ inputs.working_directory }}
+        continue-on-error: true
+        run: |
+          if [[ "${{ steps.install_package.outputs.result }}" == "failed" ]]; then
+            echo "result=skipped" >> $GITHUB_OUTPUT
+          elif pnpm run test:types; then
+            echo "result=pass" >> $GITHUB_OUTPUT
+          else
+            echo "result=fail" >> $GITHUB_OUTPUT
+          fi
+
+      # Run dist tests for TypeScript
+      - name: Run dist tests
+        if: inputs.package_type == 'typescript'
+        id: dist_test
+        working-directory: ${{ inputs.working_directory }}
+        continue-on-error: true
+        run: |
+          if [[ "${{ steps.install_package.outputs.result }}" == "failed" ]]; then
+            echo "result=skipped" >> $GITHUB_OUTPUT
+          elif pnpm run test:dist; then
+            echo "result=pass" >> $GITHUB_OUTPUT
+          else
+            echo "result=fail" >> $GITHUB_OUTPUT
+          fi
+
+      # Run standard tests for Node.js
+      - name: Run tests
+        if: inputs.package_type == 'nodejs'
+        id: node_test
+        working-directory: ${{ inputs.working_directory }}
+        continue-on-error: true
+        run: |
+          if npm run test; then
+            echo "result=pass" >> $GITHUB_OUTPUT
+          else
+            echo "result=fail" >> $GITHUB_OUTPUT
+          fi
+
+      # Update check run with results
+      - name: Update check run
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          CHECK_NAME: ${{ inputs.check_name }}
+          PACKAGE_TYPE: ${{ inputs.package_type }}
+          PACKAGE_NAME: ${{ inputs.package_to_test }}
+          NODE_VERSION: ${{ steps.node_info.outputs.version }}
+          INSTALL_RESULT: ${{ steps.install_package.outputs.result }}
+          TYPE_TEST: ${{ steps.type_test.outputs.result }}
+          DIST_TEST: ${{ steps.dist_test.outputs.result }}
+          NODE_TEST: ${{ steps.node_test.outputs.result }}
+        with:
+          script: |
+            const { CHECK_NAME, PACKAGE_TYPE, PACKAGE_NAME, NODE_VERSION,
+                    INSTALL_RESULT, TYPE_TEST, DIST_TEST, NODE_TEST } = process.env;
+
+            let conclusion = 'neutral';
+            let summary = `## ${CHECK_NAME}\n\n`;
+
+            if (PACKAGE_TYPE === 'typescript') {
+              if (PACKAGE_NAME) {
+                summary += `Testing with package: **${PACKAGE_NAME}**\n\n`;
+              }
+
+              if (INSTALL_RESULT === 'failed') {
+                summary += '⚠️ **Could not install package** - may not be available\n';
+              } else if (TYPE_TEST === 'pass' && DIST_TEST === 'pass') {
+                conclusion = 'success';
+                summary += '✅ **All tests passed!**\n';
+              } else {
+                summary += '⚠️ **Some tests did not pass** (expected, does not block PR)\n\n';
+                if (TYPE_TEST) summary += `- Type tests: ${TYPE_TEST === 'pass' ? '✅' : '❌'}\n`;
+                if (DIST_TEST) summary += `- Dist tests: ${DIST_TEST === 'pass' ? '✅' : '❌'}\n`;
+              }
+            } else if (PACKAGE_TYPE === 'nodejs') {
+              summary += `Testing with Node.js: **${NODE_VERSION}**\n\n`;
+
+              if (NODE_TEST === 'pass') {
+                conclusion = 'success';
+                summary += '✅ **All tests passed!**\n';
+              } else {
+                summary += '⚠️ **Tests did not pass** (expected, does not block PR)\n';
+              }
+            }
+
+            summary += '\n_Forward compatibility check - informational only._';
+
+            await github.rest.checks.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              check_run_id: ${{ steps.check.outputs.result }},
+              conclusion: conclusion,
+              output: {
+                title: 'Forward compatibility check complete',
+                summary: summary
+              }
+            });
