@@ -408,7 +408,7 @@ export namespace InngestFunction {
        * If timeout is reached, the function will be invoked with a batch
        * even if it's not filled up to `maxSize`.
        *
-       * Expects a time string such as 1s, 60s or 1h30m15s.
+       * Expects a time string such as 1s, 60s or 15m15s.
        */
       timeout: TimeStrBatch;
 
