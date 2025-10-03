@@ -1611,23 +1611,25 @@ type HistoryItemType =
   | "StepFailed"
   | "StepWaiting"
   | "StepSleeping"
-  | "StepInvoking";
+  | "StepInvoking"
+  | "FINALIZATION"
+  | "RUN"
+  | "INVOKE"
+  | "";
 
 class TimelineItem {
   public runId: string;
-  public id: string;
-  public type: string;
-  public stepName: string | null;
-  public createdAt: string;
+  public stepType: string;
+  public name: string | null;
+  public outputID: string | null;
 
   // Unsafe, but fine for testing.
 
   constructor(runId: string, item: any) {
     this.runId = runId;
-    this.id = item.id;
-    this.type = item.type;
-    this.stepName = item.stepName;
-    this.createdAt = item.createdAt;
+    this.stepType = item.stepType;
+    this.name = item.stepName;
+    this.outputID = item.outputID || null;
   }
 
   public async getOutput() {
@@ -1637,14 +1639,19 @@ class TimelineItem {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        query: `query GetRunTimelineOutput($runId: ID!, $historyItemId: ULID!) {
-            functionRun(query: {functionRunId: $runId}) {
-              historyItemOutput(id: $historyItemId)
+        query: `query GetRunTimelineOutput($outputId: String!) {
+          runTraceSpanOutputByID(outputID: $outputId) {
+            data
+            error {
+              name
+              message
+              stack
+              cause
             }
-          }`,
+          }
+        }`,
         variables: {
-          runId: this.runId,
-          historyItemId: this.id,
+          outputId: this.outputID,
         },
         operationName: "GetRunTimelineOutput",
       }),
@@ -1656,12 +1663,13 @@ class TimelineItem {
 
     const data = await res.json();
 
-    const payload = data?.data?.functionRun?.historyItemOutput || "null";
-    if (typeof payload !== "string") {
-      throw new Error("Invalid payload");
+    const payload = data?.data?.runTraceSpanOutputByID;
+
+    if (payload.error) {
+      return { error: payload.error };
     }
 
-    return JSON.parse(payload);
+    return { data: JSON.parse(payload.data) };
   }
 }
 
@@ -1674,9 +1682,10 @@ class TimelineItem {
 export const runHasTimeline = async (
   runId: string,
   timeline: {
-    stepName?: string;
-    type: HistoryItemType;
-    attempt?: number;
+    name?: string;
+    stepType: HistoryItemType;
+    attempts?: number;
+    status?: "COMPLETED" | "FAILED";
   },
   attempts = 140,
 ): Promise<TimelineItem | undefined> => {
@@ -1689,14 +1698,28 @@ export const runHasTimeline = async (
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        query: `query GetRunTimeline($runId: ID!) {
-          functionRun(query: {functionRunId: $runId}) {
-            history {
-              id
-              type
-              stepName
-              createdAt
-              attempt
+        query: `query GetRunTimeline($runId: String!) {
+          run(runID: $runId) {
+            trace(preview: true) {
+              name
+              stepType
+              attempts
+              outputID
+              status
+              childrenSpans {
+                name
+                stepType
+                attempts
+                outputID
+                status
+                childrenSpans {
+                  name
+                  stepType
+                  attempts
+                  outputID
+                  status
+                }
+              }
             }
           }
         }`,
@@ -1713,12 +1736,30 @@ export const runHasTimeline = async (
 
     const data = await res.json();
 
-    const timelineItem = data?.data?.functionRun?.history?.find((entry: any) =>
-      Object.keys(timeline).every(
-        (key) => entry[key] === (timeline as any)[key],
-      ),
-    );
+    console.log(JSON.stringify(data, null, 2));
 
+    const getMatchingTimeline = (span: any): any => {
+      if (!span) return;
+
+      const fieldsMatch = Object.keys(timeline).every(
+        (key) => span[key] === (timeline as any)[key],
+      );
+
+      if (fieldsMatch) {
+        return span;
+      }
+
+      if (Array.isArray(span.childrenSpans)) {
+        for (const child of span.childrenSpans) {
+          const match = getMatchingTimeline(child);
+          if (match) {
+            return match;
+          }
+        }
+      }
+    };
+
+    const timelineItem = getMatchingTimeline(data?.data?.run?.trace);
     if (timelineItem) {
       return new TimelineItem(runId, timelineItem);
     }
