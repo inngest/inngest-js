@@ -1736,7 +1736,6 @@ export const runHasTimeline = async (
 
     const data = await res.json();
 
-    console.log(JSON.stringify(data, null, 2));
 
     const getMatchingTimeline = (span: any): any => {
       if (!span) return;
