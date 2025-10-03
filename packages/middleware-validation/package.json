@@ -41,10 +41,8 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@standard-schema/spec": "^1.0.0",
+    "inngest": "^3.42.3",
     "zod": "^3.25.76"
-  },
-  "peerDependencies": {
-    "inngest": "^3.42.3"
   },
   "devDependencies": {
     "@eslint/js": "^9.7.0",
