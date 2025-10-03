@@ -1,4 +1,5 @@
 import { isSerializedError } from "../helpers/errors";
+import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { StepOpCode } from "../types";
 import { createV1InngestExecution } from "./execution/v1";
 import { Inngest } from "./Inngest";
@@ -29,6 +30,7 @@ describe("StepFailed response contains minimal serialized error and retriable fa
         attempt: 0,
         maxAttempts: 1,
       },
+      timer: new ServerTiming(),
       stepState: {},
       stepCompletionOrder: [],
       reqArgs: [],
