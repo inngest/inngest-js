@@ -1,7 +1,8 @@
 import { InngestTestEngine } from "@inngest/test";
 import FetchMock from "fetch-mock-jest";
 import { EventSchemas, Inngest, type Logger } from "inngest";
-import { z } from "zod";
+import { z } from "zod/v3";
+import { z as z4 } from "zod/v4";
 import { validationMiddleware } from "./middleware";
 
 const baseUrl = "https://unreachable.com";
@@ -90,8 +91,8 @@ describe("validationMiddleware", () => {
     const inngest = new Inngest({
       id: "test",
       schemas: new EventSchemas().fromSchema({
-        test: z.object({
-          message: z.string(),
+        test: z4.object({
+          message: z4.string(),
         }),
       }),
       middleware: [validationMiddleware()],
@@ -144,8 +145,8 @@ describe("validationMiddleware", () => {
     const inngest = new Inngest({
       id: "test",
       schemas: new EventSchemas().fromSchema({
-        test: z.object({
-          message: z.string(),
+        test: z4.object({
+          message: z4.string(),
         }),
       }),
       middleware: [validationMiddleware()],
@@ -204,11 +205,11 @@ describe("validationMiddleware", () => {
       const inngest = new Inngest({
         id: "test",
         schemas: new EventSchemas().fromSchema({
-          a: z.object({
-            a: z.boolean(),
+          a: z4.object({
+            a: z4.boolean(),
           }),
-          b: z.object({
-            b: z.boolean(),
+          b: z4.object({
+            b: z4.boolean(),
           }),
         }),
         middleware: [validationMiddleware()],
@@ -312,8 +313,8 @@ describe("validationMiddleware", () => {
       const inngest = new Inngest({
         id: "test",
         schemas: new EventSchemas().fromSchema({
-          test: z.object({
-            message: z.string(),
+          test: z4.object({
+            message: z4.string(),
           }),
         }),
         middleware: [validationMiddleware({ disallowSchemalessEvents: true })],
@@ -368,8 +369,8 @@ describe("validationMiddleware", () => {
       const inngest = new Inngest({
         id: "test",
         schemas: new EventSchemas().fromSchema({
-          test: z.object({
-            message: z.string(),
+          test: z4.object({
+            message: z4.string(),
           }),
         }),
         middleware: [validationMiddleware({ disallowSchemalessEvents: true })],
@@ -456,9 +457,9 @@ describe("validationMiddleware", () => {
     const inngest = new Inngest({
       id: "test",
       schemas: new EventSchemas().fromSchema({
-        test: z.object({
-          message: z.object({
-            content: z.string(),
+        test: z4.strictObject({
+          message: z4.object({
+            content: z4.string(),
           }),
         }),
       }),
@@ -515,8 +516,8 @@ describe("validationMiddleware", () => {
     const inngest = new Inngest({
       id: "test",
       schemas: new EventSchemas().fromSchema({
-        test: z.object({
-          message: z.string(),
+        test: z4.object({
+          message: z4.string(),
         }),
       }),
       middleware: [validationMiddleware()],
@@ -582,8 +583,8 @@ describe("validationMiddleware", () => {
         const inngest = new Inngest({
           id: "test",
           schemas: new EventSchemas().fromSchema({
-            test: z.object({
-              message: z.string(),
+            test: z4.object({
+              message: z4.string(),
             }),
           }),
           middleware: [validationMiddleware()],
@@ -651,8 +652,8 @@ describe("validationMiddleware", () => {
           baseUrl,
           eventKey,
           schemas: new EventSchemas().fromSchema({
-            test: z.object({
-              message: z.string(),
+            test: z4.object({
+              message: z4.string(),
             }),
           }),
           middleware: [
@@ -714,8 +715,8 @@ describe("validationMiddleware", () => {
         const inngest = new Inngest({
           id: "test",
           schemas: new EventSchemas().fromSchema({
-            test: z.object({
-              message: z.string(),
+            test: z4.object({
+              message: z4.string(),
             }),
           }),
           middleware: [validationMiddleware()],
@@ -798,8 +799,8 @@ describe("validationMiddleware", () => {
           baseUrl,
           eventKey,
           schemas: new EventSchemas().fromSchema({
-            test: z.object({
-              message: z.string(),
+            test: z4.object({
+              message: z4.string(),
             }),
           }),
           middleware: [
