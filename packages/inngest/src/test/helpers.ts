@@ -1611,7 +1611,11 @@ type HistoryItemType =
   | "StepFailed"
   | "StepWaiting"
   | "StepSleeping"
-  | "StepInvoking";
+  | "StepInvoking"
+  | "FINALIZATION"
+  | "RUN"
+  | "INVOKE"
+  | "";
 
 class TimelineItem {
   public runId: string;
@@ -1647,7 +1651,7 @@ class TimelineItem {
           }
         }`,
         variables: {
-          outputID: this.outputID,
+          outputId: this.outputID,
         },
         operationName: "GetRunTimelineOutput",
       }),
@@ -1660,18 +1664,12 @@ class TimelineItem {
     const data = await res.json();
 
     const payload = data?.data?.runTraceSpanOutputByID;
-    if (typeof payload !== "string") {
-      throw new Error("Invalid payload");
+
+    if (payload.error) {
+      return { error: payload.error };
     }
 
-    const parsedPayload = JSON.parse(payload);
-    if (parsedPayload.data) {
-      delete parsedPayload.error;
-    } else if (parsedPayload.error) {
-      delete parsedPayload.data;
-    }
-
-    return JSON.parse(payload);
+    return { data: JSON.parse(payload.data) };
   }
 }
 
@@ -1687,6 +1685,7 @@ export const runHasTimeline = async (
     name?: string;
     stepType: HistoryItemType;
     attempts?: number;
+    status?: "COMPLETED" | "FAILED";
   },
   attempts = 140,
 ): Promise<TimelineItem | undefined> => {
@@ -1701,21 +1700,24 @@ export const runHasTimeline = async (
       body: JSON.stringify({
         query: `query GetRunTimeline($runId: String!) {
           run(runID: $runId) {
-            trace {
+            trace(preview: true) {
               name
               stepType
               attempts
               outputID
+              status
               childrenSpans {
                 name
                 stepType
                 attempts
                 outputID
+                status
                 childrenSpans {
                   name
                   stepType
                   attempts
                   outputID
+                  status
                 }
               }
             }

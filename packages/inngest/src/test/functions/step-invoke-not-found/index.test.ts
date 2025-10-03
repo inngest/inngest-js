@@ -25,13 +25,14 @@ describe("run", () => {
 
   test("ran 'invoke-non-existent-fn' step", async () => {
     const item = await runHasTimeline(runId, {
-      stepType: "StepFailed",
-      name: "step",
+      stepType: "INVOKE",
+      status: "FAILED",
+      name: "invoke-non-existent-fn",
     });
     expect(item).toBeDefined();
 
     const output = await item?.getOutput();
-    expect(output?.name).toEqual("Error");
-    expect(output?.message).toContain("could not find function");
+    expect(output?.error?.name).toEqual("Error");
+    expect(output?.error?.message).toContain("could not find function");
   }, 20000);
 });

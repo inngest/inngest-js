@@ -26,20 +26,27 @@ describe("run", () => {
   test(`ran "a fails" step and it failed, twice`, async () => {
     const item = await runHasTimeline(runId, {
       attempts: 1,
-      stepType: "StepFailed",
+      stepType: "RUN",
+      status: "FAILED",
       name: "a fails",
     });
     expect(item).toBeDefined();
 
     const output = await item?.getOutput();
     expect(output).toEqual({
-      error: { name: "Error", message: "A failed!", stack: expect.any(String) },
+      error: {
+        name: "Error",
+        message: "A failed!",
+        stack: expect.any(String),
+        cause: null,
+      },
     });
   }, 10000);
 
   test("function failed", async () => {
     const item = await runHasTimeline(runId, {
-      stepType: "FunctionFailed",
+      stepType: "FINALIZATION",
+      status: "FAILED",
     });
     expect(item).toBeDefined();
   }, 10000);
@@ -48,7 +55,7 @@ describe("run", () => {
     const item = await runHasTimeline(
       runId,
       {
-        stepType: "StepCompleted",
+        stepType: "RUN",
         name: "b never runs",
       },
       1,

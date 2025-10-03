@@ -26,7 +26,8 @@ describe("run", () => {
   ["blue", "red", "green"].forEach((team) => {
     test(`ran "Get ${team} team score" step`, async () => {
       const item = await runHasTimeline(runId, {
-        stepType: "StepCompleted",
+        stepType: "RUN",
+        status: "COMPLETED",
         name: `Get ${team} team score`,
       });
       expect(item).toBeDefined();
@@ -38,11 +39,11 @@ describe("run", () => {
 
   test("Returned total score", async () => {
     const item = await runHasTimeline(runId, {
-      stepType: "FunctionCompleted",
+      stepType: "FINALIZATION",
     });
     expect(item).toBeDefined();
 
     const output = await item?.getOutput();
-    expect(output).toEqual(150);
+    expect(output).toEqual({ data: 150 });
   }, 60000);
 });
