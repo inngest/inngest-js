@@ -833,6 +833,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       let extensionPromise: Promise<void>;
       if (++tickExtensionCount >= 10) {
+        this.options.timer.append("debug.tick_extension_break", ">=10");
         tickExtensionCount = 0;
         extensionPromise = new Promise((resolve) => setTimeout(resolve));
       } else {
@@ -909,6 +910,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       const opId = matchOp(stepOptions, ...args.slice(1));
 
       if (this.state.executingStep) {
+        this.options.timer.append("debug.nested_step_found", "warn");
+
         /**
          * If a step is found after asynchronous actions during another step's
          * execution, everything is fine. The problem here is if we've found
