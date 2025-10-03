@@ -1,0 +1,47 @@
+name: Run Forward Compatibility Indicators
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  checks: write
+  contents: read
+
+jobs:
+  typescript_next:
+    name: "TypeScript @next"
+    uses: ./.github/workflows/forward-indicator-job.yml
+    with:
+      check_name: "Forward Compatibility: TypeScript @next"
+      package_to_test: "typescript@next"
+      package_type: "typescript"
+      working_directory: "packages/inngest"
+    permissions:
+      checks: write
+      contents: read
+
+  typescript_preview:
+    name: "TypeScript Native Preview"
+    uses: ./.github/workflows/forward-indicator-job.yml
+    with:
+      check_name: "Forward Compatibility: TypeScript Native Preview"
+      package_to_test: "@typescript/native-preview"
+      package_type: "typescript"
+      working_directory: "packages/inngest"
+      tsc_binary: "tsgo"
+    permissions:
+      checks: write
+      contents: read
+
+  nodejs_nightly:
+    name: "Node.js Current"
+    uses: ./.github/workflows/forward-indicator-job.yml
+    with:
+      check_name: "Forward Compatibility: Node.js Current"
+      node_version: "current"
+      package_type: "nodejs"
+      working_directory: "packages/inngest"
+    permissions:
+      checks: write
+      contents: read
