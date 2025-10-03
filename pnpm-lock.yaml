@@ -388,7 +388,7 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       inngest:
-        specifier: '*'
+        specifier: ^3.42.3
         version: 3.42.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@24.3.0)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.6.3)(zod@3.25.76)
       zod:
         specifier: ^3.25.76
