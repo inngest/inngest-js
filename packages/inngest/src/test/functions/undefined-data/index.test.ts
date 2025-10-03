@@ -25,8 +25,9 @@ describe("run", () => {
 
   test("ran step1", async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "step1",
+      stepType: "RUN",
+      status: "COMPLETED",
+      name: "step1",
     });
     expect(item).toBeDefined();
 
@@ -36,8 +37,9 @@ describe("run", () => {
 
   test("ran step2res", async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "step2res",
+      stepType: "RUN",
+      status: "COMPLETED",
+      name: "step2res",
     });
     expect(item).toBeDefined();
 
@@ -47,8 +49,9 @@ describe("run", () => {
 
   test("ran step2nores", async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "step2nores",
+      stepType: "RUN",
+      status: "COMPLETED",
+      name: "step2nores",
     });
     expect(item).toBeDefined();
 
@@ -58,8 +61,9 @@ describe("run", () => {
 
   test("ran step2res2", async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "step2res2",
+      stepType: "RUN",
+      status: "COMPLETED",
+      name: "step2res2",
     });
     expect(item).toBeDefined();
 
@@ -69,8 +73,9 @@ describe("run", () => {
 
   test("ran step2", async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "step2",
+      stepType: "RUN",
+      status: "COMPLETED",
+      name: "step2",
     });
     expect(item).toBeDefined();
 
@@ -80,8 +85,9 @@ describe("run", () => {
 
   test("ran step3", async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "step3",
+      stepType: "RUN",
+      status: "COMPLETED",
+      name: "step3",
     });
     expect(item).toBeDefined();
 
