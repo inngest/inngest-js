@@ -222,25 +222,33 @@ export const getHookStack = async <
   for (const hook of hooksRegistered) {
     const hookKeys = Object.keys(hook) as (keyof TRet)[];
 
-    for (const key of hookKeys) {
-      let fns = [hook[key]];
+    for (const hookKey of hookKeys) {
+      let fns = [hook[hookKey]];
 
-      const existingWaterfall = ret[key];
+      const existingWaterfall = ret[hookKey];
       if (existingWaterfall) {
-        if (hookDirs[key as keyof typeof hookDirs] === "forward") {
-          fns = [existingWaterfall, hook[key]];
+        if (hookDirs[hookKey as keyof typeof hookDirs] === "forward") {
+          fns = [existingWaterfall, hook[hookKey]];
         } else {
           // For backward hooks, put the new hook before the existing waterfall
           // This creates the proper onion pattern: [foo, bar] -> [bar, foo] for after* hooks
-          fns = [hook[key], existingWaterfall];
+          fns = [hook[hookKey], existingWaterfall];
         }
       }
 
-      const transform = transforms[key as keyof typeof transforms] as (
+      const transform = transforms[hookKey as keyof typeof transforms] as (
         arg: Await<(typeof fns)[number]>,
       ) => Parameters<(typeof fns)[number]>;
 
-      ret[key] = waterfall(fns, transform) as TRet[keyof TRet];
+      const chain = waterfall(fns, transform);
+
+      ret[hookKey] = ((
+        ...args: Parameters<Await<TMiddleware[TKey]>[keyof TRet]>
+      ) => {
+        return timer.wrap(`mw.${key.toString()}.${hookKey.toString()}`, () =>
+          chain(...args),
+        );
+      }) as TRet[keyof TRet];
     }
   }
 
