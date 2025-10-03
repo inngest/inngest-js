@@ -25,8 +25,8 @@ describe("run", () => {
 
   test("ran 'invoke-non-existent-fn' step", async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepFailed",
-      stepName: "step",
+      stepType: "StepFailed",
+      name: "step",
     });
     expect(item).toBeDefined();
 

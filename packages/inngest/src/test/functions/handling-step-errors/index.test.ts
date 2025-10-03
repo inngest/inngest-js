@@ -25,9 +25,9 @@ describe("run", () => {
 
   test(`ran "a" step and it failed, twice`, async () => {
     const item = await runHasTimeline(runId, {
-      attempt: 1,
-      type: "StepFailed",
-      stepName: "a",
+      attempts: 1,
+      stepType: "StepFailed",
+      name: "a",
     });
     expect(item).toBeDefined();
 
@@ -47,8 +47,8 @@ describe("run", () => {
 
   test(`ran "b" step`, async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "b",
+      stepType: "StepCompleted",
+      name: "b",
     });
     expect(item).toBeDefined();
 
@@ -60,8 +60,8 @@ describe("run", () => {
 
   test(`ran "c succeeds" step`, async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "c succeeds",
+      stepType: "StepCompleted",
+      name: "c succeeds",
     });
     expect(item).toBeDefined();
 
@@ -71,9 +71,9 @@ describe("run", () => {
 
   test(`ran "d fails" step and it failed, twice`, async () => {
     const item = await runHasTimeline(runId, {
-      attempt: 1,
-      type: "StepFailed",
-      stepName: "d fails",
+      attempts: 1,
+      stepType: "StepFailed",
+      name: "d fails",
     });
     expect(item).toBeDefined();
 
@@ -85,8 +85,8 @@ describe("run", () => {
 
   test(`ran "e succeeds" step`, async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "e succeeds",
+      stepType: "StepCompleted",
+      name: "e succeeds",
     });
     expect(item).toBeDefined();
 

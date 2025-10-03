@@ -25,9 +25,9 @@ describe("run", () => {
 
   test(`ran "a fails" step and it failed, twice`, async () => {
     const item = await runHasTimeline(runId, {
-      attempt: 1,
-      type: "StepFailed",
-      stepName: "a fails",
+      attempts: 1,
+      stepType: "StepFailed",
+      name: "a fails",
     });
     expect(item).toBeDefined();
 
@@ -39,7 +39,7 @@ describe("run", () => {
 
   test("function failed", async () => {
     const item = await runHasTimeline(runId, {
-      type: "FunctionFailed",
+      stepType: "FunctionFailed",
     });
     expect(item).toBeDefined();
   }, 10000);
@@ -48,8 +48,8 @@ describe("run", () => {
     const item = await runHasTimeline(
       runId,
       {
-        type: "StepCompleted",
-        stepName: "b never runs",
+        stepType: "StepCompleted",
+        name: "b never runs",
       },
       1,
     );

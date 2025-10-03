@@ -25,8 +25,8 @@ describe("run", () => {
 
   test("returns 'Hello, Inngest!'", async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "step",
+      stepType: "StepCompleted",
+      name: "step",
     });
 
     expect(item).toBeDefined();
