@@ -86,6 +86,20 @@ export class ServerTiming {
   }
 
   /**
+   * Wrap the given scope in a timing. This returns `stop()` function similar to
+   * `start()`, but it does not need to be explicitly called. It will start the
+   * timer and then stop the timer automatically as soon as the stop functon
+   * falls out of scope.
+   */
+  public wrapScope(name: string, description?: string): () => void {
+    const scopedTimer = new ScopedServerTimer(this.start(name, description));
+
+    return () => {
+      scopedTimer[Symbol.dispose]();
+    };
+  }
+
+  /**
    * Generate the `Server-Timing` header.
    */
   public getHeader(): string {
@@ -118,5 +132,13 @@ export class ServerTiming {
     );
 
     return entries.join(", ");
+  }
+}
+
+export class ScopedServerTimer implements Disposable {
+  constructor(private stopFn: () => void) {}
+
+  [Symbol.dispose]() {
+    this.stopFn();
   }
 }
