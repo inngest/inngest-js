@@ -262,6 +262,7 @@ export class V0InngestExecution
     >;
 
     const hooks = await getHookStack(
+      this.options.timer,
       this.options.fn["middleware"],
       "onFunctionRun",
       {

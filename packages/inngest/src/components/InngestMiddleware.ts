@@ -1,4 +1,5 @@
 import { cacheFn, waterfall } from "../helpers/functions.ts";
+import type { ServerTiming } from "../helpers/ServerTiming.ts";
 import type {
   Await,
   MaybePromise,
@@ -144,6 +145,11 @@ export const getHookStack = async <
   TRet extends
     PromisifiedFunctionRecord<TResult> = PromisifiedFunctionRecord<TResult>,
 >(
+  /**
+   * The timer used to time each middleware hook.
+   */
+  timer: ServerTiming,
+
   /**
    * The stack of middleware that will be used to run hooks.
    */

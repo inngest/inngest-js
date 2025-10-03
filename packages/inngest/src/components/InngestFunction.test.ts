@@ -22,6 +22,7 @@ import {
   OutgoingResultError,
   serializeError,
 } from "../helpers/errors.ts";
+import { ServerTiming } from "../helpers/ServerTiming.ts";
 import type { IsEqual } from "../helpers/types.ts";
 import {
   type EventPayload,
@@ -176,6 +177,7 @@ describe("runFn", () => {
                 data: fromPartial({
                   event: { name: "foo", data: { foo: "foo" } },
                 }),
+                timer: new ServerTiming(),
                 runId: "run",
                 stepState: {},
                 stepCompletionOrder: [],
@@ -222,6 +224,7 @@ describe("runFn", () => {
                 data: fromPartial({
                   event: { name: "foo", data: { foo: "foo" } },
                 }),
+                timer: new ServerTiming(),
                 stepState: {},
                 runId: "run",
                 stepCompletionOrder: [],
