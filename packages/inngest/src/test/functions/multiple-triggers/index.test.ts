@@ -28,14 +28,13 @@ describe("run", () => {
 
     test(`returns 'Hello, ${eventName}!'`, async () => {
       const item = await runHasTimeline(runId, {
-        type: "StepCompleted",
-        stepName: "step",
+        stepType: "FINALIZATION",
       });
 
       expect(item).toBeDefined();
 
       const output = await item?.getOutput();
-      expect(output).toEqual(`Hello, ${eventName}!`);
+      expect(output).toEqual({ data: `Hello, ${eventName}!` });
     }, 60000);
   });
 });

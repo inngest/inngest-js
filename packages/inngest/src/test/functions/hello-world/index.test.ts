@@ -25,13 +25,12 @@ describe("run", () => {
 
   test("returns 'Hello, Inngest!'", async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "step",
+      stepType: "FINALIZATION",
     });
 
     expect(item).toBeDefined();
 
     const output = await item?.getOutput();
-    expect(output).toEqual("Hello, Inngest!");
+    expect(output).toEqual({ data: "Hello, Inngest!" });
   }, 60000);
 });

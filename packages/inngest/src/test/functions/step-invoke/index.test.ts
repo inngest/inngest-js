@@ -25,8 +25,9 @@ describe("run", () => {
 
   test("ran 'event-fn' step", async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "event-fn",
+      stepType: "INVOKE",
+      status: "COMPLETED",
+      name: "event-fn",
     });
     expect(item).toBeDefined();
 
@@ -37,8 +38,9 @@ describe("run", () => {
 
   test("ran 'cron-fn' step", async () => {
     const item = await runHasTimeline(runId, {
-      type: "StepCompleted",
-      stepName: "cron-fn",
+      stepType: "INVOKE",
+      status: "COMPLETED",
+      name: "cron-fn",
     });
     expect(item).toBeDefined();
 
@@ -49,14 +51,13 @@ describe("run", () => {
 
   test("returns array of both results", async () => {
     const item = await runHasTimeline(runId, {
-      type: "FunctionCompleted",
+      stepType: "FINALIZATION",
     });
     expect(item).toBeDefined();
 
     const output = await item?.getOutput();
-    expect(output).toEqual([
-      { eventInvokeDone: true },
-      { cronInvokeDone: true },
-    ]);
+    expect(output).toEqual({
+      data: [{ eventInvokeDone: true }, { cronInvokeDone: true }],
+    });
   }, 60000);
 });
