@@ -1,5 +1,11 @@
 # @inngest/middleware-validation
 
+## 0.0.4
+
+### Patch Changes
+
+- [#1114](https://github.com/inngest/inngest-js/pull/1114) [`c191c93a`](https://github.com/inngest/inngest-js/commit/c191c93a58f86a7354155e38b1e5316f167337f3) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `.fromSchema()`-defined schemas not being compatible with `@inngest/middleware-validation`
+
 ## 0.0.3
 
 ### Patch Changes
