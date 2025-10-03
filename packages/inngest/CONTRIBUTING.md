@@ -53,6 +53,9 @@ pnpm run itest framework-nextjs-app-router
 
 You can also use this method to ship a snapshot of the library with an application. This is a nice way to generate and ship snapshot versions without requiring a release to npm.
 
+> [!TIP]
+> Please note that when you run `pnpm test`, you should **not** have a dev server running locally or you are likely to encounter failures that are unrelated to your changes.
+
 ## Releasing
 
 To release to production, we use [Changesets](https://github.com/changesets/changesets). This means that releasing and changelog generation is all managed through PRs, where a bot will guide you through the process of adding release notes to PRs.
