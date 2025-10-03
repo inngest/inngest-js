@@ -83,7 +83,7 @@ export interface InngestExecutionOptions {
    */
   headers: Record<string, string>;
   requestedRunStep?: string;
-  timer?: ServerTiming;
+  timer: ServerTiming;
   isFailureHandler?: boolean;
   disableImmediateExecution?: boolean;
 
