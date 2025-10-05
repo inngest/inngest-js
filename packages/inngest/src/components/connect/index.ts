@@ -21,7 +21,17 @@ export const connect = async (
 ): Promise<WorkerConnection> => {
   const conn = new MessageHandler(options);
 
-  await conn.start();
+  // Set up function configs, etc.
+  await conn.setup();
+
+  // Start reconciler
+  await conn.startReconciler();
+
+  const attempts = 10;
+  const res = await conn.waitForConnection(attempts);
+  if (!res.connected) {
+    throw new Error(`Initial connection failed after ${attempts} attempts`);
+  }
 
   return conn;
 };

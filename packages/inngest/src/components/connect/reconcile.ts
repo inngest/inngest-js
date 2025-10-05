@@ -4,7 +4,6 @@ import {
   ConnectionLimitError,
   expBackoff,
   ReconnectError,
-  waitWithCancel,
 } from "./util.ts";
 import { ConnectionManager } from "./connection.ts";
 import { MessageBuffer } from "./buffer.ts";
@@ -73,10 +72,7 @@ export class Reconciler extends ConnectionManager {
     });
   }
 
-  public async start() {
-    // Set up function configs, etc.
-    await this.init();
-
+  public async startReconciler() {
     // Create reconcile loop
     const scheduleReconcile = (waitFor: number) => {
       const reconcileTimeout = setTimeout(async () => {
@@ -97,23 +93,6 @@ export class Reconciler extends ConnectionManager {
     };
 
     scheduleReconcile(this.reconcileTick);
-
-    // Wait for connection to be established
-    for (let attempt = 0; attempt < 10; attempt++) {
-      const delay = expBackoff(attempt);
-      const cancelled = await waitWithCancel(
-        delay,
-        () => this.activeConnection !== undefined
-      );
-
-      if (cancelled) {
-        throw new Error("Connection canceled while establishing");
-      }
-
-      if (this.activeConnection) {
-        break;
-      }
-    }
   }
 
   public get state(): ConnectionState {

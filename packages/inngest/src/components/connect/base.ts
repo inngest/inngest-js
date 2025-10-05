@@ -130,7 +130,7 @@ export class Base {
     | Record<string, (msg: GatewayExecutorRequestData) => Promise<SDKResponse>>
     | undefined;
 
-  public async init() {
+  public async setup() {
     if (typeof WebSocket === "undefined") {
       throw new Error("WebSockets not supported in current environment");
     }
