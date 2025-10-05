@@ -1,4 +1,4 @@
-import { ConnectionState } from "./types.ts";
+import { ConnectionState, type ConnectHandlerOptions } from "./types.ts";
 import {
   AuthError,
   ConnectionLimitError,
@@ -7,8 +7,8 @@ import {
   waitWithCancel,
 } from "./util.ts";
 import { ConnectionManager } from "./connection.ts";
-
-const ConnectWebSocketProtocol = "v0.connect.inngest.com";
+import { MessageBuffer } from "./buffer.ts";
+import { WaitGroup } from "@jpwilliams/waitgroup";
 
 interface ReconcileResult {
   deduped?: boolean;
@@ -19,6 +19,59 @@ interface ReconcileResult {
 export class Reconciler extends ConnectionManager {
   private reconcileTick = 250; // attempt to reconcile every 250ms
   private reconciling = false;
+
+  protected inProgressRequests: {
+    /**
+     * A wait group to track in-flight requests.
+     */
+    wg: WaitGroup;
+
+    requestLeases: Record<string, string>;
+  } = {
+    wg: new WaitGroup(),
+    requestLeases: {},
+  };
+
+  /**
+   * The buffer of messages to be sent to the gateway.
+   */
+  protected messageBuffer: MessageBuffer;
+
+  /**
+   * A promise that resolves when the connection is closed on behalf of the
+   * user by calling `close()` or when a shutdown signal is received.
+   */
+  private closingPromise: Promise<void> | undefined;
+  protected resolveClosingPromise:
+    | ((value: void | PromiseLike<void>) => void)
+    | undefined;
+
+  protected closeRequested: boolean = false;
+  public override async close(): Promise<void> {
+    this.closeRequested = true;
+
+    return this.closed;
+  }
+
+  /**
+   * A promise that resolves when the connection is closed on behalf of the
+   * user by calling `close()` or when a shutdown signal is received.
+   */
+  get closed(): Promise<void> {
+    if (!this.closingPromise) {
+      throw new Error("No connection established");
+    }
+    return this.closingPromise;
+  }
+
+  constructor(options: ConnectHandlerOptions) {
+    super(options);
+    this.messageBuffer = new MessageBuffer(this.inngest);
+
+    this.closingPromise = new Promise((resolve) => {
+      this.resolveClosingPromise = resolve;
+    });
+  }
 
   public async start() {
     // Set up function configs, etc.

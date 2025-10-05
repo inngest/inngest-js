@@ -1,4 +1,3 @@
-import { WaitGroup } from "@jpwilliams/waitgroup";
 import ms from "ms";
 import { allProcessEnv, getPlatformName } from "../../helpers/env.ts";
 import {
@@ -12,10 +11,8 @@ import {
   StartResponse,
 } from "../../proto/src/components/connect/protobuf/connect.ts";
 import { version } from "../../version.ts";
-import { MessageBuffer } from "./buffer.ts";
 import { parseConnectMessage } from "./messages.ts";
 import { getHostname, onShutdown, retrieveSystemAttributes } from "./os.ts";
-import { type ConnectHandlerOptions } from "./types.ts";
 import { getPromiseHandle, ReconnectError } from "./util.ts";
 import { sendStartRequest } from "./api.ts";
 import { Base } from "./base.ts";
@@ -38,23 +35,6 @@ export class ConnectionManager extends Base {
   protected activeConnection: Connection | undefined;
   protected drainingConnection: Connection | undefined;
 
-  protected inProgressRequests: {
-    /**
-     * A wait group to track in-flight requests.
-     */
-    wg: WaitGroup;
-
-    requestLeases: Record<string, string>;
-  } = {
-    wg: new WaitGroup(),
-    requestLeases: {},
-  };
-
-  /**
-   * The buffer of messages to be sent to the gateway.
-   */
-  protected messageBuffer: MessageBuffer;
-
   /**
    * A set of gateways to exclude from the connection.
    */
@@ -64,44 +44,6 @@ export class ConnectionManager extends Base {
    * Function to remove the shutdown signal handler.
    */
   protected cleanupShutdownSignal: (() => void) | undefined;
-
-  /**
-   * A promise that resolves when the connection is closed on behalf of the
-   * user by calling `close()` or when a shutdown signal is received.
-   */
-  private closingPromise: Promise<void> | undefined;
-  protected resolveClosingPromise:
-    | ((value: void | PromiseLike<void>) => void)
-    | undefined;
-
-  protected closeRequested: boolean = false;
-
-  constructor(options: ConnectHandlerOptions) {
-    super(options);
-
-    this.messageBuffer = new MessageBuffer(this.inngest);
-
-    this.closingPromise = new Promise((resolve) => {
-      this.resolveClosingPromise = resolve;
-    });
-  }
-
-  async close(): Promise<void> {
-    this.closeRequested = true;
-
-    return this.closed;
-  }
-
-  /**
-   * A promise that resolves when the connection is closed on behalf of the
-   * user by calling `close()` or when a shutdown signal is received.
-   */
-  get closed(): Promise<void> {
-    if (!this.closingPromise) {
-      throw new Error("No connection established");
-    }
-    return this.closingPromise;
-  }
 
   /**
    * The current connection ID of the worker.
@@ -536,6 +478,11 @@ export class ConnectionManager extends Base {
         this.activeConnection = undefined;
       }
     };
+  }
+
+  public async close(): Promise<void> {
+    // This should be implemented in superclass
+    throw new Error("Not implemented");
   }
 
   private setupShutdownSignal(signals: string[]) {
