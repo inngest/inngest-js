@@ -13,7 +13,12 @@ import {
 import { version } from "../../version.ts";
 import { parseConnectMessage } from "./messages.ts";
 import { getHostname, onShutdown, retrieveSystemAttributes } from "./os.ts";
-import { getPromiseHandle, ReconnectError } from "./util.ts";
+import {
+  expBackoff,
+  getPromiseHandle,
+  ReconnectError,
+  waitWithCancel,
+} from "./util.ts";
 import { sendStartRequest } from "./api.ts";
 import { Base } from "./base.ts";
 
@@ -55,8 +60,8 @@ export class ConnectionManager extends Base {
     return this.activeConnection.id;
   }
 
-  public override async init() {
-    await super.init();
+  public override async setup() {
+    await super.setup();
 
     if (
       this.options.handleShutdownSignals &&
@@ -365,6 +370,30 @@ export class ConnectionManager extends Base {
 
   protected async handleMessage(_: Connection, __: ConnectMessage) {
     throw new Error("This is expected to be implemented in a superclass");
+  }
+
+  public async waitForConnection(attempts = 10): Promise<{
+    canceled?: boolean;
+    connected?: boolean;
+  }> {
+    // Wait for connection to be established
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const delay = expBackoff(attempt);
+      const cancelled = await waitWithCancel(
+        delay,
+        () => this.activeConnection !== undefined
+      );
+
+      if (cancelled) {
+        return { canceled: true };
+      }
+
+      if (this.activeConnection) {
+        return { connected: true };
+      }
+    }
+
+    return {};
   }
 
   private handleWebSocketSteadyState(conn: Connection, ws: WebSocket) {
