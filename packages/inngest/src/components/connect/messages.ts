@@ -11,11 +11,12 @@ import {
   WorkerRequestExtendLeaseAckData,
   WorkerRequestExtendLeaseData,
 } from "../../proto/src/components/connect/protobuf/connect.ts";
-import { ConnectionManager, type Connection } from "./connection.ts";
+import { type Connection } from "./connection.ts";
+import { Reconciler } from "./reconcile.ts";
 
 export const ResponseAcknowlegeDeadline = 5_000;
 
-export class MessageHandler extends ConnectionManager {
+export class MessageHandler extends Reconciler {
   override async handleMessage(conn: Connection, message: ConnectMessage) {
     switch (message.kind) {
       case GatewayMessageType.GATEWAY_CLOSING:
