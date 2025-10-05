@@ -33,10 +33,8 @@ import { InngestCommHandler } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
 import { MessageBuffer } from "./buffer.ts";
 import {
-  createStartRequest,
   parseConnectMessage,
   parseGatewayExecutorRequest,
-  parseStartResponse,
   parseWorkerReplyAck,
 } from "./messages.ts";
 import { getHostname, onShutdown, retrieveSystemAttributes } from "./os.ts";
@@ -56,6 +54,7 @@ import {
   ReconnectError,
   waitWithCancel,
 } from "./util.ts";
+import { sendStartRequest } from "./api.ts";
 
 const ResponseAcknowlegeDeadline = 5_000;
 
@@ -632,61 +631,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
   }
 
-  private async sendStartRequest() {
-    const msg = createStartRequest(Array.from(this.excludeGateways));
-
-    const signingKey = this.hashedSigningKey;
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/protobuf",
-      ...(signingKey ? { Authorization: `Bearer ${signingKey}` } : {}),
-    };
-
-    if (this._inngestEnv) {
-      headers[headerKeys.Environment] = this._inngestEnv;
-    }
-
-    // refactor this to a more universal spot
-    const targetUrl =
-      await this.inngest["inngestApi"]["getTargetUrl"]("/v0/connect/start");
-
-    let resp;
-    try {
-      resp = await fetch(targetUrl, {
-        method: "POST",
-        body: new Uint8Array(msg),
-        headers: headers,
-      });
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : "Unknown error";
-      throw new ReconnectError(
-        `Failed initial API handshake request to ${targetUrl.toString()}, ${errMsg}`
-      );
-    }
-
-    if (!resp.ok) {
-      if (resp.status === 401) {
-        throw new AuthError(
-          `Failed initial API handshake request to ${targetUrl.toString()}${
-            this._inngestEnv ? ` (env: ${this._inngestEnv})` : ""
-          }, ${await resp.text()}`
-        );
-      }
-
-      if (resp.status === 429) {
-        throw new ConnectionLimitError();
-      }
-
-      throw new ReconnectError(
-        `Failed initial API handshake request to ${targetUrl.toString()}, ${await resp.text()}`
-      );
-    }
-
-    const startResp = await parseStartResponse(resp);
-
-    return startResp;
-  }
-
   // openWebSocket establishes a WebSocket connection and performs the WebSocket handshake
   private async openWebSocket(
     connectionId: string,
@@ -913,7 +857,12 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     const startedAt = new Date();
 
-    const startResp = await this.sendStartRequest();
+    const startResp = await sendStartRequest({
+      inngest: this.inngest,
+      excludeGateways: Array.from(this.excludeGateways),
+      env: this._inngestEnv,
+      signingKey: signingKey,
+    });
 
     const connectionId = startResp.connectionId;
 
