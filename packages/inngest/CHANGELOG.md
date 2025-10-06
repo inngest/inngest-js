@@ -1,5 +1,11 @@
 # inngest
 
+## 3.44.2
+
+### Patch Changes
+
+- [#1120](https://github.com/inngest/inngest-js/pull/1120) [`c2b249aa`](https://github.com/inngest/inngest-js/commit/c2b249aa5947e30984e57b3baa578e33c7f527b2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Build targets no specific platform, solving some issues with edge runtimes where the library would internally attempt to `require()` some `node:*` dependencies
+
 ## 3.44.1
 
 ### Patch Changes
