@@ -119,11 +119,13 @@ export class Reconciler extends ConnectionManager {
 
   public async reconcile(): Promise<ReconcileResult> {
     try {
+      // Only run one reconcile at a time
       if (this.reconciling) {
         return { deduped: true };
       }
       this.reconciling = true;
 
+      // If user requested to close connection, perform closing procedure
       if (this.closeRequested) {
         // Remove the shutdown signal handler
         if (this.cleanupShutdownSignal) {
@@ -150,10 +152,7 @@ export class Reconciler extends ConnectionManager {
         return { done: true };
       }
 
-      // Clean up any previous connection state
-      // Note: Never reset the message buffer, as there may be pending/unsent messages
-      // Flush any pending messages
-      await this.messageBuffer.flush(this.hashedSigningKey);
+      // User did not request close, so we need to ensure healthy connection
 
       if (!this.activeConnection) {
         try {
@@ -189,14 +188,21 @@ export class Reconciler extends ConnectionManager {
         }
       }
 
+      // We got here so a healthy connection exists
+
+      // If there's a draining connection, clean it up
+
       const drainingConnection = this.drainingConnection;
       if (drainingConnection) {
+        drainingConnection.ws.close();
+
         await drainingConnection.cleanup();
         this.drainingConnection = undefined;
       }
 
-      // In case there's only an active connection, close all leftover connections
+      // We got here which means there's only one active connection
 
+      // Close all leftover connections
       for (const conn of this.connections) {
         // Discard non-active connections
         if (this.activeConnection.id === conn.id) {
@@ -204,6 +210,9 @@ export class Reconciler extends ConnectionManager {
         }
         await conn.cleanup();
       }
+
+      // Flush any pending messages
+      await this.messageBuffer.flush(this.hashedSigningKey);
 
       return {};
     } catch (err) {
