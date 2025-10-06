@@ -139,8 +139,16 @@ export class Reconciler extends ConnectionManager {
         }
 
         // Wait for remaining requests to finish
-        this.logger.info("Waiting for in-flight requests to complete");
-        await this.inProgressRequests.wg.wait();
+        const waitingFor = Object.keys(
+          this.inProgressRequests.requestLeases
+        ).length;
+        if (waitingFor > 0) {
+          this.logger.debug("Still waiting for requests to finish", {
+            num_requests: waitingFor,
+          });
+          // Requeue and wait until request completes
+          return { waitFor: 1000 };
+        }
 
         // Flush messages and retry until buffer is empty
         this.logger.debug("Flushing messages before closing");

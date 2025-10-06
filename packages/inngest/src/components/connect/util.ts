@@ -7,6 +7,13 @@ export class ReconnectError extends Error {
   }
 }
 
+export class PermanentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PermanentError";
+  }
+}
+
 export class AuthError extends ReconnectError {
   constructor(message: string) {
     super(message);
