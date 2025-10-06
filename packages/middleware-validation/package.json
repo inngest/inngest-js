@@ -41,7 +41,7 @@
   "license": "Apache-2.0",
   "dependencies": {
     "@standard-schema/spec": "^1.0.0",
-    "inngest": "^3.42.3",
+    "inngest": "^3.44.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
