@@ -71,33 +71,40 @@ export class Base {
     this.debug = debug("inngest:connect");
   }
 
-  private get functions(): Record<
-    string,
-    {
-      client: Inngest.Like;
-      functions: InngestFunction.Any[];
-    }
-  > {
-    const functions: Record<
-      string,
-      {
-        client: Inngest.Like;
-        functions: InngestFunction.Any[];
-      }
-    > = {};
-    for (const app of this.options.apps) {
+  private get functions() {
+    const knownApps = new Set<string>();
+    return this.options.apps.map((app) => {
       const client = app.client as Inngest.Any;
+      const appId = client.id;
 
-      if (functions[client.id]) {
-        throw new Error(`Duplicate app id: ${client.id}`);
+      if (knownApps.has(appId)) {
+        throw new Error(`Duplicate app id: ${appId}`);
       }
 
-      functions[client.id] = {
+      knownApps.add(client.id);
+
+      return {
+        appId: appId,
         client: app.client,
         functions: (app.functions as InngestFunction.Any[]) ?? client.funcs,
       };
-    }
-    return functions;
+    });
+  }
+
+  private get functionConfigs() {
+    return this.functions.map(({ appId, functions, client }) => {
+      return {
+        appId: appId,
+        client: client,
+        functions: functions.flatMap((f) =>
+          f["getConfig"]({
+            baseUrl: new URL("wss://connect"),
+            appPrefix: (client as Inngest.Any).id,
+            isConnect: true,
+          })
+        ),
+      };
+    });
   }
 
   private applyDefaults(opts: ConnectHandlerOptions): ConnectHandlerOptions {
@@ -159,153 +166,129 @@ export class Base {
       this._hashedFallbackKey = hashSigningKey(this.options.signingKeyFallback);
     }
 
+    this._initData = this.createInitData();
+
+    this._requestHandlers = {};
+    for (const { appId, client, functions } of this.functions) {
+      this._requestHandlers[appId] = this.createRequestHandler(
+        client,
+        functions
+      );
+    }
+  }
+
+  private createInitData() {
     const capabilities: Capabilities = {
       trust_probe: "v1",
       connect: "v1",
     };
 
-    const functionConfigs: Record<
-      string,
-      {
-        client: Inngest.Like;
-        functions: FunctionConfig[];
-      }
-    > = {};
-    for (const [appId, { client, functions }] of Object.entries(
-      this.functions
-    )) {
-      functionConfigs[appId] = {
-        client: client,
-        functions: functions.flatMap((f) =>
-          f["getConfig"]({
-            baseUrl: new URL("wss://connect"),
-            appPrefix: (client as Inngest.Any).id,
-            isConnect: true,
-          })
-        ),
-      };
-    }
-
-    this.debug("Prepared sync data", {
-      functionSlugs: Object.entries(functionConfigs).map(
-        ([appId, { functions }]) => {
-          return JSON.stringify({
-            appId,
-            functions: functions.map((f) => ({
-              id: f.id,
-              stepUrls: Object.values(f.steps).map((s) => s.runtime["url"]),
-            })),
-          });
-        }
-      ),
-    });
-
-    this._initData = {
+    const data: connectionEstablishData = {
       manualReadinessAck: false,
 
       marshaledCapabilities: JSON.stringify(capabilities),
-      apps: Object.entries(functionConfigs).map(
-        ([appId, { client, functions }]) => ({
-          appName: appId,
-          appVersion: (client as Inngest.Any).appVersion,
-          functions: new TextEncoder().encode(JSON.stringify(functions)),
-        })
-      ),
+      apps: this.functionConfigs.map(({ appId, client, functions }) => ({
+        appName: appId,
+        appVersion: (client as Inngest.Any).appVersion,
+        functions: new TextEncoder().encode(JSON.stringify(functions)),
+      })),
     };
 
-    this._requestHandlers = {};
-    for (const [appId, { client, functions }] of Object.entries(
-      this.functions
-    )) {
-      const inngestCommHandler: ConnectCommHandler = new InngestCommHandler({
-        client: client,
-        functions: functions,
-        frameworkName: "connect",
-        signingKey: this.options.signingKey,
-        signingKeyFallback: this.options.signingKeyFallback,
-        skipSignatureValidation: true,
-        handler: (msg: GatewayExecutorRequestData) => {
-          const asString = new TextDecoder().decode(msg.requestPayload);
-          const parsed = parseFnData(JSON.parse(asString));
+    return data;
+  }
 
-          const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
+  private createRequestHandler(
+    client: Inngest.Like,
+    functions: InngestFunction.Any[]
+  ) {
+    const inngestCommHandler: ConnectCommHandler = new InngestCommHandler({
+      client: client,
+      functions: functions,
+      frameworkName: "connect",
+      signingKey: this.options.signingKey,
+      signingKeyFallback: this.options.signingKeyFallback,
+      skipSignatureValidation: true,
+      handler: (msg: GatewayExecutorRequestData) => {
+        const asString = new TextDecoder().decode(msg.requestPayload);
+        const parsed = parseFnData(JSON.parse(asString));
 
-          return {
-            body() {
-              return parsed;
-            },
-            method() {
-              return "POST";
-            },
-            headers(key) {
-              switch (key) {
-                case headerKeys.ContentLength.toString():
-                  return asString.length.toString();
-                case headerKeys.InngestExpectedServerKind.toString():
-                  return "connect";
-                case headerKeys.RequestVersion.toString():
-                  return parsed.version.toString();
-                case headerKeys.Signature.toString():
-                  // Note: Signature is disabled for connect
-                  return null;
-                case headerKeys.TraceParent.toString():
-                  return userTraceCtx?.traceParent ?? null;
-                case headerKeys.TraceState.toString():
-                  return userTraceCtx?.traceState ?? null;
-                default:
-                  return null;
-              }
-            },
-            transformResponse({ body, headers, status }) {
-              let sdkResponseStatus: SDKResponseStatus = SDKResponseStatus.DONE;
-              switch (status) {
-                case 200:
-                  sdkResponseStatus = SDKResponseStatus.DONE;
-                  break;
-                case 206:
-                  sdkResponseStatus = SDKResponseStatus.NOT_COMPLETED;
-                  break;
-                case 500:
-                  sdkResponseStatus = SDKResponseStatus.ERROR;
-                  break;
-              }
+        const userTraceCtx = parseTraceCtx(msg.userTraceCtx);
 
-              return SDKResponse.create({
-                requestId: msg.requestId,
-                accountId: msg.accountId,
-                envId: msg.envId,
-                appId: msg.appId,
-                status: sdkResponseStatus,
-                body: new TextEncoder().encode(body),
-                noRetry: headers[headerKeys.NoRetry] === "true",
-                retryAfter: headers[headerKeys.RetryAfter],
-                sdkVersion: `inngest-js:v${version}`,
-                requestVersion: parseInt(
-                  headers[headerKeys.RequestVersion] ??
-                    PREFERRED_EXECUTION_VERSION.toString(),
-                  10
-                ),
-                systemTraceCtx: msg.systemTraceCtx,
-                userTraceCtx: msg.userTraceCtx,
-                runId: msg.runId,
-              });
-            },
-            url() {
-              const baseUrl = new URL("http://connect.inngest.com");
+        return {
+          body() {
+            return parsed;
+          },
+          method() {
+            return "POST";
+          },
+          headers(key) {
+            switch (key) {
+              case headerKeys.ContentLength.toString():
+                return asString.length.toString();
+              case headerKeys.InngestExpectedServerKind.toString():
+                return "connect";
+              case headerKeys.RequestVersion.toString():
+                return parsed.version.toString();
+              case headerKeys.Signature.toString():
+                // Note: Signature is disabled for connect
+                return null;
+              case headerKeys.TraceParent.toString():
+                return userTraceCtx?.traceParent ?? null;
+              case headerKeys.TraceState.toString():
+                return userTraceCtx?.traceState ?? null;
+              default:
+                return null;
+            }
+          },
+          transformResponse({ body, headers, status }) {
+            let sdkResponseStatus: SDKResponseStatus = SDKResponseStatus.DONE;
+            switch (status) {
+              case 200:
+                sdkResponseStatus = SDKResponseStatus.DONE;
+                break;
+              case 206:
+                sdkResponseStatus = SDKResponseStatus.NOT_COMPLETED;
+                break;
+              case 500:
+                sdkResponseStatus = SDKResponseStatus.ERROR;
+                break;
+            }
 
-              baseUrl.searchParams.set(queryKeys.FnId, msg.functionSlug);
+            return SDKResponse.create({
+              requestId: msg.requestId,
+              accountId: msg.accountId,
+              envId: msg.envId,
+              appId: msg.appId,
+              status: sdkResponseStatus,
+              body: new TextEncoder().encode(body),
+              noRetry: headers[headerKeys.NoRetry] === "true",
+              retryAfter: headers[headerKeys.RetryAfter],
+              sdkVersion: `inngest-js:v${version}`,
+              requestVersion: parseInt(
+                headers[headerKeys.RequestVersion] ??
+                  PREFERRED_EXECUTION_VERSION.toString(),
+                10
+              ),
+              systemTraceCtx: msg.systemTraceCtx,
+              userTraceCtx: msg.userTraceCtx,
+              runId: msg.runId,
+            });
+          },
+          url() {
+            const baseUrl = new URL("http://connect.inngest.com");
 
-              if (msg.stepId) {
-                baseUrl.searchParams.set(queryKeys.StepId, msg.stepId);
-              }
+            baseUrl.searchParams.set(queryKeys.FnId, msg.functionSlug);
 
-              return baseUrl;
-            },
-          };
-        },
-      });
-      const requestHandler = inngestCommHandler.createHandler();
-      this._requestHandlers[appId] = requestHandler;
-    }
+            if (msg.stepId) {
+              baseUrl.searchParams.set(queryKeys.StepId, msg.stepId);
+            }
+
+            return baseUrl;
+          },
+        };
+      },
+    });
+    const requestHandler = inngestCommHandler.createHandler();
+    return requestHandler;
   }
 }
