@@ -1,4 +1,3 @@
-import debug, { type Debugger } from "debug";
 import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.ts";
 import { allProcessEnv, getEnvironmentName } from "../../helpers/env.ts";
 import { parseFnData } from "../../helpers/functions.ts";
@@ -8,7 +7,7 @@ import {
   SDKResponse,
   SDKResponseStatus,
 } from "../../proto/src/components/connect/protobuf/connect.ts";
-import type { Capabilities, FunctionConfig } from "../../types.ts";
+import type { Capabilities } from "../../types.ts";
 import { version } from "../../version.ts";
 import { PREFERRED_EXECUTION_VERSION } from "../execution/InngestExecution.ts";
 import type { Inngest } from "../Inngest.ts";
@@ -19,6 +18,7 @@ import {
   DEFAULT_SHUTDOWN_SIGNALS,
 } from "./types.ts";
 import { parseTraceCtx } from "./util.ts";
+import { DefaultLogger, type Logger } from "../../middleware/logger.ts";
 
 const InngestBranchEnvironmentSigningKeyPrefix = "signkey-branch-";
 
@@ -42,7 +42,7 @@ type ConnectCommHandler = InngestCommHandler<
 export class Base {
   protected inngest: Inngest.Any;
   protected options: ConnectHandlerOptions;
-  protected debug: Debugger;
+  protected logger: Logger;
 
   constructor(options: ConnectHandlerOptions) {
     if (
@@ -68,7 +68,7 @@ export class Base {
 
     this._inngestEnv = this.inngest.env ?? getEnvironmentName();
 
-    this.debug = debug("inngest:connect");
+    this.logger = options.logger || new DefaultLogger();
   }
 
   private get functions() {
