@@ -78,6 +78,12 @@ export class Reconciler extends ConnectionManager {
       const reconcileTimeout = setTimeout(async () => {
         try {
           const res = await this.reconcile();
+
+          if (res.done) {
+            this.logger.debug("Stopping reconcile loop");
+            return;
+          }
+
           if (res.waitFor) {
             scheduleReconcile(res.waitFor);
             return;
