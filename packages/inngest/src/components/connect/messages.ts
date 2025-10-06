@@ -29,13 +29,13 @@ export class MessageHandler extends Reconciler {
         return;
       case GatewayMessageType.GATEWAY_HEARTBEAT:
         conn.pendingHeartbeats = 0;
-        this.debug("Handled gateway heartbeat", {
+        this.logger.debug("Handled gateway heartbeat", {
           connectionId: conn.id,
         });
         return;
       case GatewayMessageType.GATEWAY_EXECUTOR_REQUEST:
         if (this.activeConnection?.id !== conn.id) {
-          this.debug("Received request while not active, skipping", {
+          this.logger.warn("Received request while not active, skipping", {
             connectionId: conn.id,
           });
           return;
@@ -45,7 +45,7 @@ export class MessageHandler extends Reconciler {
           message.payload
         );
 
-        this.debug("Received gateway executor request", {
+        this.logger.debug("Received gateway executor request", {
           requestId: gatewayExecutorRequest.requestId,
           appId: gatewayExecutorRequest.appId,
           appName: gatewayExecutorRequest.appName,
@@ -58,7 +58,7 @@ export class MessageHandler extends Reconciler {
           typeof gatewayExecutorRequest.appName !== "string" ||
           gatewayExecutorRequest.appName.length === 0
         ) {
-          this.debug("No app name in request, skipping", {
+          this.logger.warn("No app name in request, skipping", {
             requestId: gatewayExecutorRequest.requestId,
             appId: gatewayExecutorRequest.appId,
             functionSlug: gatewayExecutorRequest.functionSlug,
@@ -71,7 +71,7 @@ export class MessageHandler extends Reconciler {
           this._requestHandlers?.[gatewayExecutorRequest.appName];
 
         if (!requestHandler) {
-          this.debug("No request handler found for app, skipping", {
+          this.logger.warn("No request handler found for app, skipping", {
             requestId: gatewayExecutorRequest.requestId,
             appId: gatewayExecutorRequest.appId,
             appName: gatewayExecutorRequest.appName,
@@ -126,7 +126,7 @@ export class MessageHandler extends Reconciler {
               return;
             }
 
-            this.debug("extending lease", {
+            this.logger.debug("extending lease", {
               connectionId: conn.id,
               leaseId: currentLeaseId,
             });
@@ -158,7 +158,7 @@ export class MessageHandler extends Reconciler {
 
           const res = await requestHandler(gatewayExecutorRequest);
 
-          this.debug("Sending worker reply", {
+          this.logger.debug("Sending worker reply", {
             connectionId: conn.id,
             requestId: gatewayExecutorRequest.requestId,
           });
@@ -166,7 +166,7 @@ export class MessageHandler extends Reconciler {
           this.messageBuffer.addPending(res, ResponseAcknowlegeDeadline);
 
           if (!this.activeConnection) {
-            this.debug("No current WebSocket, buffering response", {
+            this.logger.warn("No current WebSocket, buffering response", {
               connectionId: conn.id,
               requestId: gatewayExecutorRequest.requestId,
             });
@@ -195,7 +195,7 @@ export class MessageHandler extends Reconciler {
       case GatewayMessageType.WORKER_REPLY_ACK:
         const replyAck = parseWorkerReplyAck(message.payload);
 
-        this.debug("Acknowledging reply ack", {
+        this.logger.debug("Acknowledging reply ack", {
           connectionId: conn.id,
           requestId: replyAck.requestId,
         });
@@ -208,7 +208,7 @@ export class MessageHandler extends Reconciler {
           message.payload
         );
 
-        this.debug("received extend lease ack", {
+        this.logger.debug("received extend lease ack", {
           connectionId: conn.id,
           newLeaseId: extendLeaseAck.newLeaseId,
         });
@@ -217,7 +217,7 @@ export class MessageHandler extends Reconciler {
           this.inProgressRequests.requestLeases[extendLeaseAck.requestId] =
             extendLeaseAck.newLeaseId;
         } else {
-          this.debug("unable to extend lease", {
+          this.logger.error("unable to extend lease", {
             connectionId: conn.id,
             requestId: extendLeaseAck.requestId,
           });
@@ -228,7 +228,7 @@ export class MessageHandler extends Reconciler {
 
         return;
       default:
-        this.debug("Unexpected message type", {
+        this.logger.error("Unexpected message type", {
           kind: gatewayMessageTypeToJSON(message.kind),
           rawKind: message.kind,
           connectionId: conn.id,
