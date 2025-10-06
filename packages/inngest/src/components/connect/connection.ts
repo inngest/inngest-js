@@ -119,7 +119,7 @@ export class ConnectionManager extends Base {
     const onConnectionError = (error: unknown) => {
       // Only process the first error per connection
       if (closed) {
-        this.debug(
+        this.logger.warn(
           `Connection error while initializing but already in closed state, skipping`,
           {
             connectionId,
@@ -129,9 +129,12 @@ export class ConnectionManager extends Base {
       }
       closed = true;
 
-      this.debug(`Connection error in connecting state, rejecting promise`, {
-        connectionId,
-      });
+      this.logger.debug(
+        `Connection error in connecting state, rejecting promise`,
+        {
+          connectionId,
+        }
+      );
 
       this.excludeGateways.add(startResp.gatewayGroup);
 
@@ -165,7 +168,7 @@ export class ConnectionManager extends Base {
 
       const connectMessage = parseConnectMessage(messageBytes);
 
-      this.debug(
+      this.logger.debug(
         `Received message: ${gatewayMessageTypeToJSON(connectMessage.kind)}`,
         {
           connectionId,
@@ -259,7 +262,7 @@ export class ConnectionManager extends Base {
         return;
       }
 
-      this.debug("Unexpected message type during setup", {
+      this.logger.error("Unexpected message type during setup", {
         kind: gatewayMessageTypeToJSON(connectMessage.kind),
         rawKind: connectMessage.kind,
         setupState: setupState,
@@ -292,7 +295,7 @@ export class ConnectionManager extends Base {
       throw new Error("Missing signing key");
     }
 
-    this.debug("Preparing connection");
+    this.logger.debug("Preparing connection");
 
     const startedAt = new Date();
 
@@ -310,14 +313,14 @@ export class ConnectionManager extends Base {
       const rewritten = this.options.rewriteGatewayEndpoint(
         startResp.gatewayEndpoint
       );
-      this.debug("Rewriting gateway endpoint", {
+      this.logger.debug("Rewriting gateway endpoint", {
         original: startResp.gatewayEndpoint,
         rewritten,
       });
       finalEndpoint = rewritten;
     }
 
-    this.debug(`Connecting to gateway`, {
+    this.logger.debug(`Connecting to gateway`, {
       endpoint: finalEndpoint,
       gatewayGroup: startResp.gatewayGroup,
       connectionId,
@@ -349,7 +352,7 @@ export class ConnectionManager extends Base {
         try {
           ws.close();
         } catch (err) {
-          this.debug("Closing WebSocket failed", { err });
+          this.logger.warn("Closing WebSocket failed", { err });
         }
 
         // Remove from list of connections
@@ -363,7 +366,7 @@ export class ConnectionManager extends Base {
 
     this.handleWebSocketSteadyState(conn, ws);
 
-    this.debug(`Connection ready (${connectionId})`);
+    this.logger.info(`Connection ready (${connectionId})`);
 
     return conn;
   }
@@ -405,9 +408,12 @@ export class ConnectionManager extends Base {
     const onConnectionError = async (error: unknown) => {
       // Only process the first error per connection
       if (closed) {
-        this.debug(`Connection error but already in closed state, skipping`, {
-          connectionId: conn.id,
-        });
+        this.logger.warn(
+          `Connection error but already in closed state, skipping`,
+          {
+            connectionId: conn.id,
+          }
+        );
         return;
       }
       closed = true;
@@ -417,7 +423,7 @@ export class ConnectionManager extends Base {
         this.activeConnection = undefined;
       }
 
-      this.debug(`Connection error (${conn.id})`, error);
+      this.logger.error(`Connection error (${conn.id})`, error);
     };
 
     ws.onerror = (err) => onConnectionError(err);
@@ -446,7 +452,7 @@ export class ConnectionManager extends Base {
 
         // Check if we've missed 2 consecutive heartbeats
         if (conn.pendingHeartbeats >= 2) {
-          this.debug("Gateway heartbeat missed");
+          this.logger.warn("Gateway heartbeat missed");
           void onConnectionError(
             new ReconnectError(
               `Consecutive gateway heartbeats missed (${conn.id})`
@@ -455,7 +461,7 @@ export class ConnectionManager extends Base {
           return;
         }
 
-        this.debug("Sending worker heartbeat", {
+        this.logger.debug("Sending worker heartbeat", {
           connectionId: conn.id,
         });
 
@@ -472,7 +478,7 @@ export class ConnectionManager extends Base {
     }
 
     conn.cleanup = () => {
-      this.debug("Cleaning up worker heartbeat", {
+      this.logger.debug("Cleaning up worker heartbeat", {
         connectionId: conn.id,
       });
 
@@ -483,9 +489,9 @@ export class ConnectionManager extends Base {
       }
       closed = true;
 
-      this.debug("Cleaning up connection", { connectionId: conn.id });
+      this.logger.debug("Cleaning up connection", { connectionId: conn.id });
       if (ws.readyState === WebSocket.OPEN) {
-        this.debug("Sending pause message", { connectionId: conn.id });
+        this.logger.debug("Sending pause message", { connectionId: conn.id });
         ws.send(
           ConnectMessage.encode(
             ConnectMessage.create({
@@ -495,7 +501,7 @@ export class ConnectionManager extends Base {
         );
       }
 
-      this.debug("Closing connection", { connectionId: conn.id });
+      this.logger.debug("Closing connection", { connectionId: conn.id });
       ws.onerror = () => {};
       ws.onclose = () => {};
       ws.close(
@@ -519,15 +525,17 @@ export class ConnectionManager extends Base {
       return;
     }
 
-    this.debug(`Setting up shutdown signal handler for ${signals.join(", ")}`);
+    this.logger.debug(
+      `Setting up shutdown signal handler for ${signals.join(", ")}`
+    );
 
     const cleanupShutdownHandlers = onShutdown(signals, () => {
-      this.debug("Received shutdown signal, closing connection");
+      this.logger.info("Received shutdown signal, closing connection");
       void this.close();
     });
 
     this.cleanupShutdownSignal = () => {
-      this.debug("Cleaning up shutdown signal handler");
+      this.logger.debug("Cleaning up shutdown signal handler");
       cleanupShutdownHandlers();
     };
   }
