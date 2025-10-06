@@ -388,7 +388,7 @@ export class ConnectionManager extends Base {
       );
 
       if (cancelled) {
-        return { canceled: true };
+        return { connected: true };
       }
 
       if (this.activeConnection) {
