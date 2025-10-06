@@ -139,11 +139,11 @@ export class Reconciler extends ConnectionManager {
         }
 
         // Wait for remaining requests to finish
-        this.debug("Waiting for in-flight requests to complete");
+        this.logger.info("Waiting for in-flight requests to complete");
         await this.inProgressRequests.wg.wait();
 
         // Flush messages and retry until buffer is empty
-        this.debug("Flushing messages before closing");
+        this.logger.debug("Flushing messages before closing");
         await this.messageBuffer.flush(this.hashedSigningKey);
 
         // Resolve closing promise
@@ -159,7 +159,7 @@ export class Reconciler extends ConnectionManager {
           const conn = await this.connect();
           this.activeConnection = conn;
         } catch (err) {
-          this.debug("Failed to connect", err);
+          this.logger.error("Failed to connect", err);
 
           if (!(err instanceof ReconnectError)) {
             throw err;
@@ -168,7 +168,7 @@ export class Reconciler extends ConnectionManager {
           if (err instanceof AuthError) {
             const switchToFallback = !this.useFallbackKey;
             if (switchToFallback) {
-              this.debug("Switching to fallback signing key");
+              this.logger.warn("Switching to fallback signing key");
               this.useFallbackKey = true;
             }
           }
@@ -181,7 +181,7 @@ export class Reconciler extends ConnectionManager {
           }
 
           const delay = expBackoff(this._reconcileAttempt);
-          this.debug("Reconnecting in", delay, "ms");
+          this.logger.info("Reconnecting in", delay, "ms");
 
           this._reconcileAttempt++;
           return { waitFor: delay };
@@ -216,7 +216,7 @@ export class Reconciler extends ConnectionManager {
 
       return {};
     } catch (err) {
-      this.debug("Reconcile error", err);
+      this.logger.error("Reconcile error", err);
       return { waitFor: this.reconcileTick };
     } finally {
       this.reconciling = false;
