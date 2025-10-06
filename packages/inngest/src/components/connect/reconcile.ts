@@ -65,7 +65,7 @@ export class Reconciler extends ConnectionManager {
 
   constructor(options: ConnectHandlerOptions) {
     super(options);
-    this.messageBuffer = new MessageBuffer(this.inngest);
+    this.messageBuffer = new MessageBuffer(this.inngest, this.logger);
 
     this.closingPromise = new Promise((resolve) => {
       this.resolveClosingPromise = resolve;
