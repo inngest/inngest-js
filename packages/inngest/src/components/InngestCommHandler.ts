@@ -70,6 +70,13 @@ import type {
 } from "./InngestFunction.ts";
 
 /**
+ * TODO
+ */
+export interface DeferredServeHandlerOptions extends RegisterOptions {
+  client: Inngest.Like;
+}
+
+/**
  * A set of options that can be passed to a serve handler, intended to be used
  * by internal and custom serve handlers to provide a consistent interface.
  *
@@ -87,7 +94,14 @@ export interface ServeHandlerOptions extends RegisterOptions {
   functions: readonly InngestFunction.Like[];
 }
 
-export interface InternalServeHandlerOptions extends ServeHandlerOptions {
+/**
+ * TODO
+ */
+export interface InternalServeHandlerOptions extends RegisterOptions {
+  client: Inngest.Like;
+
+  functions?: readonly InngestFunction.Like[];
+
   /**
    * Can be used to override the framework name given to a particular serve
    * handler.
@@ -127,7 +141,7 @@ interface InngestCommHandlerOptions<
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly InngestFunction.Like[];
+  functions?: readonly InngestFunction.Like[];
 
   /**
    * The `handler` is the function that will be called with your framework's
@@ -159,6 +173,8 @@ interface InngestCommHandlerOptions<
   handler: Handler<Input, Output, StreamOutput>;
 
   skipSignatureValidation?: boolean;
+
+  allowNonInngestRequests?: boolean;
 }
 
 /**
@@ -385,10 +401,12 @@ export class InngestCommHandler<
       arguments["0"]?.__testingAllowExpiredSignatures,
     );
 
-    // Ensure we filter any undefined functions in case of missing imports.
-    this.rawFns = options.functions.filter(Boolean) as InngestFunction.Any[];
+    const fns = options.functions ?? [];
 
-    if (this.rawFns.length !== options.functions.length) {
+    // Ensure we filter any undefined functions in case of missing imports.
+    this.rawFns = fns.filter(Boolean) as InngestFunction.Any[];
+
+    if (this.rawFns.length !== fns.length) {
       // TODO PrettyError
       console.warn(
         `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`,
@@ -650,92 +668,9 @@ export class InngestCommHandler<
    * ```
    */
   public createHandler(): (...args: Input) => Promise<Awaited<Output>> {
-    const handler = async (...args: Input) => {
+    return this.wrapHandler(async (...args: Input) => {
       const timer = new ServerTiming();
-
-      /**
-       * Used for testing, allow setting action overrides externally when
-       * calling the handler. Always search the final argument.
-       */
-      const lastArg = args[args.length - 1] as unknown;
-      const actionOverrides =
-        typeof lastArg === "object" &&
-        lastArg !== null &&
-        "actionOverrides" in lastArg &&
-        typeof lastArg["actionOverrides"] === "object" &&
-        lastArg["actionOverrides"] !== null
-          ? lastArg["actionOverrides"]
-          : {};
-
-      /**
-       * We purposefully `await` the handler, as it could be either sync or
-       * async.
-       */
-      const rawActions = {
-        ...(await timer
-          .wrap("handler", () => this.handler(...args))
-          .catch(rethrowError("Serve handler failed to run"))),
-        ...actionOverrides,
-      };
-
-      /**
-       * Map over every `action` in `rawActions` and create a new `actions`
-       * object where each function is safely promisified with each access
-       * requiring a reason.
-       *
-       * This helps us provide high quality errors about what's going wrong for
-       * each access without having to wrap every access in a try/catch.
-       */
-      const promisifiedActions: ActionHandlerResponseWithErrors =
-        Object.entries(rawActions).reduce((acc, [key, value]) => {
-          if (typeof value !== "function") {
-            return acc;
-          }
-
-          return {
-            ...acc,
-            [key]: (reason: string, ...args: unknown[]) => {
-              const errMessage = [
-                `Failed calling \`${key}\` from serve handler`,
-                reason,
-              ]
-                .filter(Boolean)
-                .join(" when ");
-
-              const fn = () =>
-                (value as (...args: unknown[]) => unknown)(...args);
-
-              return runAsPromise(fn)
-                .catch(rethrowError(errMessage))
-                .catch((err) => {
-                  this.log("error", err);
-                  throw err;
-                });
-            },
-          };
-        }, {} as ActionHandlerResponseWithErrors);
-
-      /**
-       * Mapped promisified handlers from userland `serve()` function mixed in
-       * with some helpers.
-       */
-      const actions: HandlerResponseWithErrors = {
-        ...promisifiedActions,
-        queryStringWithDefaults: async (
-          reason: string,
-          key: string,
-        ): Promise<string | undefined> => {
-          const url = await actions.url(reason);
-
-          const ret =
-            (await actions.queryString?.(reason, key, url)) ||
-            url.searchParams.get(key) ||
-            undefined;
-
-          return ret;
-        },
-        ...actionOverrides,
-      };
+      const actions = await this.getPayloadActions(timer, args);
 
       const [env, expectedServerKind] = await Promise.all([
         actions.env?.("starting to handle request"),
@@ -947,8 +882,240 @@ export class InngestCommHandler<
           return actions.transformResponse("sending back response", actionRes);
         });
       });
+    });
+  }
+
+  private async handleAsyncRequest({
+    actions,
+    timer,
+    getInngestHeaders,
+    reqArgs,
+    signatureValidation,
+    body,
+    method,
+    headers,
+  }: ActionInput) {
+    // This is when the request body is completely missing; it does not
+    // include an empty body. This commonly happens when the HTTP framework
+    // doesn't have body parsing middleware.
+    const isMissingBody = body === undefined;
+
+    if (isMissingBody) {
+      this.log(
+        "error",
+        "Missing body when executing, possibly due to missing request body middleware",
+      );
+
+      return {
+        status: 500,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: stringify(
+          serializeError(
+            new Error(
+              "Missing request body when executing, possibly due to missing request body middleware",
+            ),
+          ),
+        ),
+        version: undefined,
+      };
+    }
+
+    const validationResult = await signatureValidation;
+    if (!validationResult.success) {
+      return {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: stringify(serializeError(validationResult.err)),
+        version: undefined,
+      };
+    }
+
+    const rawProbe = await actions.queryStringWithDefaults(
+      "testing for probe",
+      queryKeys.Probe,
+    );
+    if (rawProbe) {
+      const probe = enumFromValue(probeEnum, rawProbe);
+      if (!probe) {
+        // If we're here, we've received a probe that we don't recognize.
+        // Fail.
+        return {
+          status: 400,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: stringify(
+            serializeError(new Error(`Unknown probe "${rawProbe}"`)),
+          ),
+          version: undefined,
+        };
+      }
+
+      // Provide actions for every probe available.
+      const probeActions: Record<
+        probeEnum,
+        () => MaybePromise<ActionResponse>
+      > = {
+        [probeEnum.Trust]: () => ({
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: "",
+          version: undefined,
+        }),
+      };
+
+      return probeActions[probe]();
+    }
+
+    const fnId = await actions.queryStringWithDefaults(
+      "processing run request",
+      queryKeys.FnId,
+    );
+    if (!fnId) {
+      // TODO PrettyError
+      throw new Error("No function ID found in request");
+    }
+
+    const stepId =
+      (await actions.queryStringWithDefaults(
+        "processing run request",
+        queryKeys.StepId,
+      )) || null;
+
+    const { version, result } = this.runStep({
+      functionId: fnId,
+      data: body,
+      stepId,
+      timer,
+      reqArgs,
+      headers: await headers,
+    });
+    const stepOutput = await result;
+
+    /**
+     * Functions can return `undefined`, but we'll always convert this to
+     * `null`, as this is appropriately serializable by JSON.
+     */
+    const opDataUndefinedToNull = (op: OutgoingOp) => {
+      op.data = undefinedToNull(op.data);
+      return op;
     };
 
+    const resultHandlers: ExecutionResultHandlers<ActionResponse> = {
+      "function-rejected": (result) => {
+        return {
+          status: result.retriable ? 500 : 400,
+          headers: {
+            "Content-Type": "application/json",
+            [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+            ...(typeof result.retriable === "string"
+              ? { [headerKeys.RetryAfter]: result.retriable }
+              : {}),
+          },
+          body: stringify(undefinedToNull(result.error)),
+          version,
+        };
+      },
+      "function-resolved": (result) => {
+        return {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: stringify(undefinedToNull(result.data)),
+          version,
+        };
+      },
+      "step-not-found": (result) => {
+        return {
+          status: 500,
+          headers: {
+            "Content-Type": "application/json",
+            [headerKeys.NoRetry]: "false",
+          },
+          body: stringify({
+            error: `Could not find step "${
+              result.step.displayName || result.step.id
+            }" to run; timed out`,
+          }),
+          version,
+        };
+      },
+      "step-ran": (result) => {
+        const step = opDataUndefinedToNull(result.step);
+
+        return {
+          status: 206,
+          headers: {
+            "Content-Type": "application/json",
+            ...(typeof result.retriable !== "undefined"
+              ? {
+                  [headerKeys.NoRetry]: result.retriable ? "false" : "true",
+                  ...(typeof result.retriable === "string"
+                    ? { [headerKeys.RetryAfter]: result.retriable }
+                    : {}),
+                }
+              : {}),
+          },
+          body: stringify([step]),
+          version,
+        };
+      },
+      "steps-found": (result) => {
+        const steps = result.steps.map(opDataUndefinedToNull);
+
+        return {
+          status: 206,
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: stringify(steps),
+          version,
+        };
+      },
+    };
+
+    const handler = resultHandlers[
+      stepOutput.type
+    ] as ExecutionResultHandler<ActionResponse>;
+
+    try {
+      return await handler(stepOutput);
+    } catch (err) {
+      this.log("error", "Error handling execution result", err);
+      throw err;
+    }
+  }
+
+  // Might not need
+  public createDeferredHandler(): (...args: Input) => Promise<Awaited<Output>> {
+    return this.wrapHandler(async (...args: Input) => {
+      const timer = new ServerTiming();
+      const actions = await this.getPayloadActions(timer, args);
+
+      // TODO Decide if this is a new run or a re-entry
+      // if POST AND (we can validate signature OR in dev) AND Inngest run ID in headers
+      //  -> re-entry
+      // else
+      //  -> new run
+      //
+      // Also, creating a new run is cheap, as we defer anything heavy for if
+      // they use steps, so just do that first and see also see if it's a
+      // re-entry later
+
+      // If it's a re-entry, do we kinda wanna call and use `createHandler`
+      // here? And then we can further wrap the response at the end to? Though I
+      // don't think we even need to do that.
+    });
+  }
+
+  private wrapHandler<T extends (...args: any[]) => any>(handler: T): T {
     /**
      * Some platforms check (at runtime) the length of the function being used
      * to handle an endpoint. If this is a variadic function, it will fail that
@@ -972,6 +1139,97 @@ export class InngestCommHandler<
     });
 
     return handler;
+  }
+
+  private async getPayloadActions(
+    timer: ServerTiming,
+    args: any[],
+  ): Promise<HandlerResponseWithErrors> {
+    /**
+     * Used for testing, allow setting action overrides externally when
+     * calling the handler. Always search the final argument.
+     */
+    const lastArg = args[args.length - 1] as unknown;
+    const actionOverrides =
+      typeof lastArg === "object" &&
+      lastArg !== null &&
+      "actionOverrides" in lastArg &&
+      typeof lastArg["actionOverrides"] === "object" &&
+      lastArg["actionOverrides"] !== null
+        ? lastArg["actionOverrides"]
+        : {};
+
+    /**
+     * We purposefully `await` the handler, as it could be either sync or
+     * async.
+     */
+    const rawActions = {
+      ...(await timer
+        .wrap("handler", () => this.handler(...args))
+        .catch(rethrowError("Serve handler failed to run"))),
+      ...actionOverrides,
+    };
+
+    /**
+     * Map over every `action` in `rawActions` and create a new `actions`
+     * object where each function is safely promisified with each access
+     * requiring a reason.
+     *
+     * This helps us provide high quality errors about what's going wrong for
+     * each access without having to wrap every access in a try/catch.
+     */
+    const promisifiedActions: ActionHandlerResponseWithErrors = Object.entries(
+      rawActions,
+    ).reduce((acc, [key, value]) => {
+      if (typeof value !== "function") {
+        return acc;
+      }
+
+      return {
+        ...acc,
+        [key]: (reason: string, ...args: unknown[]) => {
+          const errMessage = [
+            `Failed calling \`${key}\` from serve handler`,
+            reason,
+          ]
+            .filter(Boolean)
+            .join(" when ");
+
+          const fn = () => (value as (...args: unknown[]) => unknown)(...args);
+
+          return runAsPromise(fn)
+            .catch(rethrowError(errMessage))
+            .catch((err) => {
+              this.log("error", err);
+              throw err;
+            });
+        },
+      };
+    }, {} as ActionHandlerResponseWithErrors);
+
+    /**
+     * Mapped promisified handlers from userland `serve()` function mixed in
+     * with some helpers.
+     */
+    const actions: HandlerResponseWithErrors = {
+      ...promisifiedActions,
+      queryStringWithDefaults: async (
+        reason: string,
+        key: string,
+      ): Promise<string | undefined> => {
+        const url = await actions.url(reason);
+
+        const ret =
+          (await actions.queryString?.(reason, key, url)) ||
+          url.searchParams.get(key) ||
+          undefined;
+
+        return ret;
+      },
+      ...actionOverrides,
+    };
+
+    return actions;
   }
 
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
@@ -1008,216 +1266,67 @@ export class InngestCommHandler<
     body,
     method,
     headers,
-  }: {
-    actions: HandlerResponseWithErrors;
-    timer: ServerTiming;
-    getInngestHeaders: () => Record<string, string>;
-    reqArgs: unknown[];
-    signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    body: any;
-    method: string;
-    headers: Promise<Record<string, string>>;
-  }): Promise<ActionResponse> {
-    // This is when the request body is completely missing; it does not
-    // include an empty body. This commonly happens when the HTTP framework
-    // doesn't have body parsing middleware.
-    const isMissingBody = body === undefined;
+  }: ActionInput): Promise<ActionResponse> {
+    const validationResult = await signatureValidation;
+
+    // TODO Decide if this is a new run or a re-entry
+    // if POST AND (we can validate signature OR in dev) AND Inngest run ID in headers
+    //  -> re-entry
+    // else
+    //  -> new run
+    //
+    // Also, creating a new run is cheap, as we defer anything heavy for if
+    // they use steps, so just do that first and see also see if it's a
+    // re-entry later
+    const runIdHeader = await actions.headers(
+      "checking for run ID to determine if re-entry",
+      headerKeys.InngestRunId,
+    );
+    if (method === "POST" && validationResult.success && runIdHeader) {
+      // This is definitely a re-entry and we absolutely must run the usual
+      // async code.
+    }
 
     try {
       let url = await actions.url("starting to handle request");
 
       if (method === "POST") {
-        if (isMissingBody) {
-          this.log(
-            "error",
-            "Missing body when executing, possibly due to missing request body middleware",
-          );
-
-          return {
-            status: 500,
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: stringify(
-              serializeError(
-                new Error(
-                  "Missing request body when executing, possibly due to missing request body middleware",
-                ),
-              ),
-            ),
-            version: undefined,
-          };
-        }
-
         const validationResult = await signatureValidation;
-        if (!validationResult.success) {
-          return {
-            status: 401,
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: stringify(serializeError(validationResult.err)),
-            version: undefined,
-          };
-        }
-
-        const rawProbe = await actions.queryStringWithDefaults(
-          "testing for probe",
-          queryKeys.Probe,
+        const runIdHeader = await actions.headers(
+          "checking for run ID to determine if re-entry",
+          headerKeys.InngestRunId,
         );
-        if (rawProbe) {
-          const probe = enumFromValue(probeEnum, rawProbe);
-          if (!probe) {
-            // If we're here, we've received a probe that we don't recognize.
-            // Fail.
-            return {
-              status: 400,
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: stringify(
-                serializeError(new Error(`Unknown probe "${rawProbe}"`)),
-              ),
-              version: undefined,
-            };
-          }
 
-          // Provide actions for every probe available.
-          const probeActions: Record<
-            probeEnum,
-            () => MaybePromise<ActionResponse>
-          > = {
-            [probeEnum.Trust]: () => ({
-              status: 200,
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: "",
-              version: undefined,
-            }),
-          };
-
-          return probeActions[probe]();
+        if (
+          (validationResult.success && runIdHeader) || // definitely a re-entry
+          !this._options.allowNonInngestRequests // maybe not a re-entry and we're not allowed to receive non-Inngest requests
+        ) {
+          // Either definitely a re-entry or we're not allowed to receive
+          // non-Inngest requests and .....
+          return this.handleAsyncRequest({
+            actions,
+            timer,
+            getInngestHeaders,
+            reqArgs,
+            signatureValidation,
+            body,
+            method,
+            headers,
+          });
         }
 
-        const fnId = await actions.queryStringWithDefaults(
-          "processing run request",
-          queryKeys.FnId,
-        );
-        if (!fnId) {
-          // TODO PrettyError
-          throw new Error("No function ID found in request");
-        }
-
-        const stepId =
-          (await actions.queryStringWithDefaults(
-            "processing run request",
-            queryKeys.StepId,
-          )) || null;
-
-        const { version, result } = this.runStep({
-          functionId: fnId,
-          data: body,
-          stepId,
-          timer,
-          reqArgs,
-          headers: await headers,
-        });
-        const stepOutput = await result;
-
-        /**
-         * Functions can return `undefined`, but we'll always convert this to
-         * `null`, as this is appropriately serializable by JSON.
-         */
-        const opDataUndefinedToNull = (op: OutgoingOp) => {
-          op.data = undefinedToNull(op.data);
-          return op;
-        };
-
-        const resultHandlers: ExecutionResultHandlers<ActionResponse> = {
-          "function-rejected": (result) => {
-            return {
-              status: result.retriable ? 500 : 400,
-              headers: {
-                "Content-Type": "application/json",
-                [headerKeys.NoRetry]: result.retriable ? "false" : "true",
-                ...(typeof result.retriable === "string"
-                  ? { [headerKeys.RetryAfter]: result.retriable }
-                  : {}),
-              },
-              body: stringify(undefinedToNull(result.error)),
-              version,
-            };
-          },
-          "function-resolved": (result) => {
-            return {
-              status: 200,
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: stringify(undefinedToNull(result.data)),
-              version,
-            };
-          },
-          "step-not-found": (result) => {
-            return {
-              status: 500,
-              headers: {
-                "Content-Type": "application/json",
-                [headerKeys.NoRetry]: "false",
-              },
-              body: stringify({
-                error: `Could not find step "${
-                  result.step.displayName || result.step.id
-                }" to run; timed out`,
-              }),
-              version,
-            };
-          },
-          "step-ran": (result) => {
-            const step = opDataUndefinedToNull(result.step);
-
-            return {
-              status: 206,
-              headers: {
-                "Content-Type": "application/json",
-                ...(typeof result.retriable !== "undefined"
-                  ? {
-                      [headerKeys.NoRetry]: result.retriable ? "false" : "true",
-                      ...(typeof result.retriable === "string"
-                        ? { [headerKeys.RetryAfter]: result.retriable }
-                        : {}),
-                    }
-                  : {}),
-              },
-              body: stringify([step]),
-              version,
-            };
-          },
-          "steps-found": (result) => {
-            const steps = result.steps.map(opDataUndefinedToNull);
-
-            return {
-              status: 206,
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: stringify(steps),
-              version,
-            };
-          },
-        };
-
-        const handler = resultHandlers[
-          stepOutput.type
-        ] as ExecutionResultHandler<ActionResponse>;
-
-        try {
-          return await handler(stepOutput);
-        } catch (err) {
-          this.log("error", "Error handling execution result", err);
-          throw err;
+        // If we're here, this could just be a regular request. Let's check if
+        // this InngestCommHandler instance has a flag that allows us to receive
+        // non-Inngest functions (the initial request for API-based functions).
+        //
+        // If we ARE NOT allowed to receive non-Inngest requests, run the async
+        // handler anyway as that will handle bad requests (may be able to add
+        // this check above to make that logic simpler).
+        //
+        // If we ARE allowed to receive non-Inngest requests, call another fn
+        // here that will be something like handleApiRequest or something.
+        if (allowNonInngestRequests) {
+          //
         }
       }
 
@@ -2228,6 +2337,18 @@ export interface ActionResponse<
    */
   version: ExecutionVersion | null | undefined;
 }
+
+export type ActionInput = {
+  actions: HandlerResponseWithErrors;
+  timer: ServerTiming;
+  getInngestHeaders: () => Record<string, string>;
+  reqArgs: unknown[];
+  signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  body: any;
+  method: string;
+  headers: Promise<Record<string, string>>;
+};
 
 /**
  * A version of {@link HandlerResponse} where each function is safely

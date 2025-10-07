@@ -35,6 +35,7 @@ import type {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import { getAsyncCtx } from "../experimental";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -698,6 +699,43 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
   return tools;
 };
+
+/**
+ * Create a set of step tools that lazily initializes the real step tooling when
+ * they are called.
+ *
+ * This can be used for situations where the tools' context must be loading via
+ * ASL and cannot be immediately provided, such as inside non-Inngest API functions.
+ */
+export const createDeferredStepTools = (): ReturnType<typeof createStepTools> => {
+  const initializeTools = async (): ReturnType<typeof createStepTools> => {
+    const ctx = await getAsyncCtx();
+    if (ctx?.ctx?.step) {
+      // We're already in the context of an execution; return the tools
+      return ctx.ctx.step;
+    }
+
+    // If we're here, it's now our job to create the execution and subsequent
+    // step tooling.
+    if (!ctx) {
+      throw new Error("No Inngest context found for step tools; are you in a function?");
+    }
+
+    if (!ctx.app) {
+      throw new Error("No Inngest app found for step tools; are you in a function?")
+    }
+
+    // We always use the default execution version
+  }
+
+  // We return a proxy here that will lazily initialize the real tools when
+  // they are first accessed.
+  //
+  // It waits for the full path to be retrieved, then initializes the tool when
+  // it is called, grabbing the path that has been accessed so far, and uses
+  // that path to fetch the real step tool.
+
+}
 
 export const gatewaySymbol = Symbol.for("inngest.step.gateway");
 
