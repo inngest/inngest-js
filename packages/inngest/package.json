@@ -225,6 +225,14 @@
       },
       "import": "./internals.js",
       "require": "./internals.cjs"
+    },
+    "./components/connect/types": {
+      "types": {
+        "import": "./components/connect/types.d.ts",
+        "require": "./components/connect/types.d.cts"
+      },
+      "import": "./components/connect/types.js",
+      "require": "./components/connect/types.cjs"
     }
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
