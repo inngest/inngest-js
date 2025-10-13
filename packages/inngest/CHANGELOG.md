@@ -1,5 +1,13 @@
 # inngest
 
+## 3.44.3
+
+### Patch Changes
+
+- [#1133](https://github.com/inngest/inngest-js/pull/1133) [`e7494a67`](https://github.com/inngest/inngest-js/commit/e7494a672af1cebadc55f0a04a8ff5b3a968258b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export the full runtime enum for `ConnectionState` from `"inngest/connect"`
+
+- [#1129](https://github.com/inngest/inngest-js/pull/1129) [`7a7c2f5f`](https://github.com/inngest/inngest-js/commit/7a7c2f5fd527bc0a26eee2e266755e5e2b6d8cf6) Thanks [@de-tester](https://github.com/de-tester)! - Expose types that are used for step result signature
+
 ## 3.44.2
 
 ### Patch Changes
