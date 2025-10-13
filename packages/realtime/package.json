@@ -1,37 +1,49 @@
 {
   "name": "@inngest/realtime",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "description": "",
-  "main": "dist/index.js",
+  "main": "./index.js",
   "publishConfig": {
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
     "test": "vitest run",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
     "postversion": "pnpm run build",
-    "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
+    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
     "release:version": "node ../../scripts/release/jsrVersion.js",
-    "pack": "pnpm run build && pnpm pack --out inngest-realtime.tgz"
+    "pack": "pnpm run build && mv $(npm pack ./dist --pack-destination . --silent) inngest-realtime.tgz"
   },
-  "files": [
-    "dist"
-  ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "require": "./dist/index.js",
-      "import": "./dist/index.js"
+      "import": {
+        "types": "./index.d.mts",
+        "default": "./index.mjs"
+      },
+      "require": {
+        "types": "./index.d.ts",
+        "default": "./index.js"
+      }
     },
     "./hooks": {
-      "types": "./dist/hooks.d.ts",
-      "require": "./dist/hooks.js",
-      "import": "./dist/hooks.js"
+      "import": {
+        "types": "./hooks.d.mts",
+        "default": "./hooks.mjs"
+      },
+      "require": {
+        "types": "./hooks.d.ts",
+        "default": "./hooks.js"
+      }
     },
     "./middleware": {
-      "types": "./dist/middleware.d.ts",
-      "require": "./dist/middleware.js",
-      "import": "./dist/middleware.js"
+      "import": {
+        "types": "./middleware.d.mts",
+        "default": "./middleware.mjs"
+      },
+      "require": {
+        "types": "./middleware.d.ts",
+        "default": "./middleware.js"
+      }
     }
   },
   "keywords": [
@@ -58,6 +70,7 @@
     "eslint-plugin-prettier": "^5.2.1",
     "globals": "^15.14.0",
     "react": "^19.0.0",
+    "tsdown": "^0.15.4",
     "typescript": "^5.8.2",
     "typescript-eslint": "^7.16.1",
     "valibot": "1.0.0-rc.3",

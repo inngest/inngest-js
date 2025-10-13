@@ -1,5 +1,11 @@
 # @inngest/realtime
 
+## 0.4.4
+
+### Patch Changes
+
+- [#1111](https://github.com/inngest/inngest-js/pull/1111) [`b960a7ba`](https://github.com/inngest/inngest-js/commit/b960a7ba1c217474681a478085830e79e1326838) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Alter build process to produce proper ESM/CJS dual build
+
 ## 0.4.3
 
 ### Patch Changes
