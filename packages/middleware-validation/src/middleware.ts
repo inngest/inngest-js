@@ -1,12 +1,13 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import {
-  InngestMiddleware,
-  internalEvents,
-  NonRetriableError,
   type EventPayload,
   type InngestFunction,
+  InngestMiddleware,
+  internalEvents,
   type MiddlewareOptions,
+  NonRetriableError,
 } from "inngest";
-import { type ZodObject } from "zod";
+import type { ZodObject } from "zod";
 
 /**
  * Middleware that validates events using Zod schemas passed using
@@ -51,7 +52,7 @@ export const validationMiddleware = (opts?: {
        */
       const validateEvent = async (
         event: EventPayload,
-        potentialInvokeEvents: string[] = []
+        potentialInvokeEvents: string[] = [],
       ): Promise<EventPayload> => {
         let schemasToAttempt = new Set<string>([event.name]);
         let hasSchema = false;
@@ -75,14 +76,14 @@ export const validationMiddleware = (opts?: {
           });
         } else {
           hasSchema = Boolean(
-            client["schemas"]?.["runtimeSchemas"][event.name]
+            client["schemas"]?.["runtimeSchemas"][event.name],
           );
         }
 
         if (!hasSchema) {
           if (opts?.disallowSchemalessEvents) {
             throw new NonRetriableError(
-              `Event "${event.name}" has no schema defined; disallowing`
+              `Event "${event.name}" has no schema defined; disallowing`,
             );
           }
 
@@ -106,7 +107,22 @@ export const validationMiddleware = (opts?: {
               }
 
               throw new NonRetriableError(
-                `${check.error.name}: ${check.error.message}`
+                `${check.error.name}: ${check.error.message}`,
+              );
+            }
+
+            /**
+             * It could be a Standard Schema v1 object.
+             */
+            if (helpers.isStandardSchema(schema)) {
+              const check = await schema["~standard"].validate(event);
+
+              if (!check.issues) {
+                return check.value as unknown as EventPayload;
+              }
+
+              throw new NonRetriableError(
+                `${check.issues.map((issue) => `${issue.message} at ${issue.path}`).join(", ")}`,
               );
             }
 
@@ -121,23 +137,42 @@ export const validationMiddleware = (opts?: {
                   const fieldSchema = schema[key];
                   const eventField = event[key as keyof EventPayload];
 
-                  if (!helpers.isZodObject(fieldSchema) || !eventField) {
+                  if (!eventField) {
                     return acc;
                   }
 
-                  const check = await fieldSchema
-                    .passthrough()
-                    .safeParseAsync(eventField);
+                  if (helpers.isStandardSchema(fieldSchema)) {
+                    const check =
+                      await fieldSchema["~standard"].validate(eventField);
 
-                  if (check.success) {
-                    return { ...(await acc), [key]: check.data };
+                    if (!check.issues) {
+                      return {
+                        ...(await acc),
+                        [key]: check.value,
+                      };
+                    }
+
+                    throw new NonRetriableError(
+                      `${check.issues.map((issue) => `${issue.message} at ${issue.path}`).join(", ")}`,
+                    );
+                  } else if (helpers.isZodObject(fieldSchema)) {
+                    const check = await fieldSchema
+                      .passthrough()
+                      .safeParseAsync(eventField);
+
+                    if (check.success) {
+                      return { ...(await acc), [key]: check.data };
+                    }
+
+                    throw new NonRetriableError(
+                      `${check.error.name}: ${check.error.message}`,
+                    );
                   }
 
-                  throw new NonRetriableError(
-                    `${check.error.name}: ${check.error.message}`
-                  );
+                  // Nothing matched
+                  return acc;
                 },
-                Promise.resolve<EventPayload>({ ...event })
+                Promise.resolve<EventPayload>({ ...event }),
               );
             }
 
@@ -149,11 +184,11 @@ export const validationMiddleware = (opts?: {
              */
             if (opts?.disallowUnknownSchemas && schemasToAttempt.size === 1) {
               throw new NonRetriableError(
-                `Event "${event.name}" has an unknown schema; disallowing`
+                `Event "${event.name}" has an unknown schema; disallowing`,
               );
             } else {
               console.warn(
-                "Unknown schema found; cannot validate, but allowing"
+                "Unknown schema found; cannot validate, but allowing",
               );
             }
           } catch (err) {
@@ -165,7 +200,7 @@ export const validationMiddleware = (opts?: {
           throw new NonRetriableError(
             `Event "${event.name}" failed validation:\n\n${Object.keys(errors)
               .map((key) => `Using ${key}: ${errors[key].message}`)
-              .join("\n\n")}`
+              .join("\n\n")}`,
           );
         }
 
@@ -192,7 +227,7 @@ export const validationMiddleware = (opts?: {
                     const validatedEvents = await Promise.all(
                       events.map((event) => {
                         return validateEvent(event, backupEvents);
-                      })
+                      }),
                     );
 
                     return {
@@ -216,7 +251,7 @@ export const validationMiddleware = (opts?: {
                       payloads: await Promise.all(
                         payloads.map((payload) => {
                           return validateEvent(payload);
-                        })
+                        }),
                       ),
                     };
                   },
@@ -232,10 +267,32 @@ export const validationMiddleware = (opts?: {
 
 const helpers = {
   isZodObject: (value: unknown): value is ZodObject<any> => {
-    return (value as any)?._def?.typeName === "ZodObject";
+    try {
+      return (value as any)?._def?.typeName === "ZodObject";
+    } catch {
+      return false;
+    }
+  },
+
+  isStandardSchema: (value: unknown): value is StandardSchemaV1 => {
+    try {
+      return (
+        typeof value === "object" &&
+        value !== null &&
+        typeof (value as any)?.["~standard"] !== "undefined"
+      );
+    } catch {
+      return false;
+    }
   },
 
   isObject: (value: unknown): value is Record<string, any> => {
-    return typeof value === "object" && value !== null && !Array.isArray(value);
+    try {
+      return (
+        typeof value === "object" && value !== null && !Array.isArray(value)
+      );
+    } catch {
+      return false;
+    }
   },
 };
