@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "type-check": "tsc --noEmit",
     "lint": "eslint",
     "postversion": "pnpm run build",
     "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
