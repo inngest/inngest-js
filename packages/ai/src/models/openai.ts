@@ -6,6 +6,7 @@ import { envKeys, processEnv } from "../env";
  * Create an OpenAI model using the OpenAI chat format.
  *
  * By default it targets the `https://api.openai.com/v1/` base URL.
+ * @deprecated Use `openaiResponses` instead.
  */
 export const openai: AiAdapter.ModelCreator<
   [options: OpenAi.AiModelOptions],
