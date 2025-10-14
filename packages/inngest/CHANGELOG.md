@@ -1,5 +1,27 @@
 # inngest
 
+## 3.44.3
+
+### Patch Changes
+
+- [#1133](https://github.com/inngest/inngest-js/pull/1133) [`e7494a67`](https://github.com/inngest/inngest-js/commit/e7494a672af1cebadc55f0a04a8ff5b3a968258b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export the full runtime enum for `ConnectionState` from `"inngest/connect"`
+
+- [#1129](https://github.com/inngest/inngest-js/pull/1129) [`7a7c2f5f`](https://github.com/inngest/inngest-js/commit/7a7c2f5fd527bc0a26eee2e266755e5e2b6d8cf6) Thanks [@de-tester](https://github.com/de-tester)! - Expose types that are used for step result signature
+
+## 3.44.2
+
+### Patch Changes
+
+- [#1120](https://github.com/inngest/inngest-js/pull/1120) [`c2b249aa`](https://github.com/inngest/inngest-js/commit/c2b249aa5947e30984e57b3baa578e33c7f527b2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Build targets no specific platform, solving some issues with edge runtimes where the library would internally attempt to `require()` some `node:*` dependencies
+
+## 3.44.1
+
+### Patch Changes
+
+- [#1114](https://github.com/inngest/inngest-js/pull/1114) [`c191c93a`](https://github.com/inngest/inngest-js/commit/c191c93a58f86a7354155e38b1e5316f167337f3) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `.fromSchema()`-defined schemas not being compatible with `@inngest/middleware-validation`
+
+- [#1116](https://github.com/inngest/inngest-js/pull/1116) [`aa4be8f1`](https://github.com/inngest/inngest-js/commit/aa4be8f1784672d88de7bdb377215e6441115bb9) Thanks [@jacobheric](https://github.com/jacobheric)! - Amended a comment for batch event timeouts
+
 ## 3.44.0
 
 ### Minor Changes

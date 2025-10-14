@@ -28,8 +28,9 @@ describe("run", () => {
 
     test(`ran "${stepName}" step`, async () => {
       const item = await runHasTimeline(runId, {
-        type: "StepCompleted",
-        stepName,
+        stepType: "RUN",
+        status: "COMPLETED",
+        name: stepName,
       });
       expect(item).toBeDefined();
 
@@ -45,8 +46,9 @@ describe("run", () => {
 
     test(`ran "${stepName}" step`, async () => {
       const item = await runHasTimeline(runId, {
-        type: "StepCompleted",
-        stepName,
+        stepType: "RUN",
+        status: "COMPLETED",
+        name: stepName,
       });
       expect(item).toBeDefined();
 
@@ -57,11 +59,11 @@ describe("run", () => {
 
   test("Returned correct data", async () => {
     const item = await runHasTimeline(runId, {
-      type: "FunctionCompleted",
+      stepType: "FINALIZATION",
     });
     expect(item).toBeDefined();
 
     const output = await item?.getOutput();
-    expect(output).toEqual([6, `${fruits.join(", ")}`]);
+    expect(output).toEqual({ data: [6, `${fruits.join(", ")}`] });
   }, 60000);
 });

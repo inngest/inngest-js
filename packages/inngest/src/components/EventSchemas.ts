@@ -445,7 +445,12 @@ export class EventSchemas<
   ): EventSchemas<Combine<S, StandardToNormalizedSchema<T>>> {
     this.addRuntimeSchemas(
       Object.entries(schemas).reduce((acc, [name, schema]) => {
-        return { ...acc, [name]: schema };
+        return {
+          ...acc,
+          [name]: {
+            data: schema,
+          },
+        };
       }, {}),
     );
 
