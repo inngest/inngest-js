@@ -107,6 +107,7 @@ export namespace AiAdapter {
    */
   export type Format =
     | "openai-chat"
+    | "openai-responses"
     | "anthropic"
     | "gemini"
     | "grok"
@@ -127,6 +128,7 @@ export namespace AiAdapter {
  */
 const adapters = {
   "openai-chat": null as unknown as OpenAiAiAdapter,
+  "openai-responses": null as unknown as AiAdapter.Any,
   anthropic: null as unknown as AnthropicAiAdapter,
   gemini: null as unknown as GeminiAiAdapter,
   grok: null as unknown as GrokAiAdapter,
@@ -137,3 +139,6 @@ const adapters = {
  * All AI adapters available for use.
  */
 export type AiAdapters = typeof adapters;
+
+// Mark as used at runtime to satisfy no-unused-vars while keeping type inference
+void adapters;
