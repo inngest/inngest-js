@@ -1,4 +1,5 @@
 import { type AnthropicAiAdapter } from "./adapters/anthropic.js";
+import { type OpenAiResponsesAdapter } from "./adapters/openai-responses.js";
 import { type GeminiAiAdapter } from "./adapters/gemini.js";
 import { type GrokAiAdapter } from "./adapters/grok.js";
 import { type OpenAiAiAdapter } from "./adapters/openai.js";
@@ -70,7 +71,7 @@ export interface AiAdapter {
     /**
      * The input to pass to the model.
      */
-    body: this["~types"]["input"],
+    body: this["~types"]["input"]
   ) => void;
 }
 
@@ -119,7 +120,7 @@ export namespace AiAdapter {
    */
   export type ModelCreator<
     TInput extends unknown[],
-    TOutput extends AiAdapter,
+    TOutput extends AiAdapter
   > = (...args: TInput) => TOutput;
 }
 
@@ -128,7 +129,7 @@ export namespace AiAdapter {
  */
 const adapters = {
   "openai-chat": null as unknown as OpenAiAiAdapter,
-  "openai-responses": null as unknown as AiAdapter.Any,
+  "openai-responses": null as unknown as OpenAiResponsesAdapter,
   anthropic: null as unknown as AnthropicAiAdapter,
   gemini: null as unknown as GeminiAiAdapter,
   grok: null as unknown as GrokAiAdapter,
