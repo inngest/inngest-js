@@ -341,4 +341,83 @@ describe("OpenAI Responses Adapter Unit Tests", () => {
       expect(body.model).toBe("gpt-5");
     });
   });
+
+  describe("Tools and tool_choice", () => {
+    test("merges tools and tool_choice via defaultParameters", () => {
+      const model = openaiResponses({
+        model: "gpt-5",
+        apiKey: "test-key",
+        defaultParameters: {
+          tool_choice: "auto",
+          parallel_tool_calls: true,
+          tools: [
+            {
+              type: "function",
+              name: "add",
+              description: "Add two numbers",
+              parameters: {
+                type: "object",
+                properties: {
+                  a: { type: "number" },
+                  b: { type: "number" },
+                },
+                required: ["a", "b"],
+                additionalProperties: false,
+              },
+              strict: true,
+            },
+          ],
+        },
+      });
+
+      const body: OpenAiResponsesApi.Request = {
+        input: "Add 1 and 2 using the provided tool.",
+      };
+
+      model.onCall!(model, body);
+
+      expect(body.model).toBe("gpt-5");
+      expect(body.tool_choice).toBe("auto");
+      expect(body.parallel_tool_calls).toBe(true);
+      expect(Array.isArray(body.tools)).toBe(true);
+      expect(body.tools && body.tools.length).toBe(1);
+    });
+  });
+
+  describe("Function call item types", () => {
+    test("supports function_call and function_call_output items in typing", () => {
+      const response: OpenAiResponsesApi.Response = {
+        id: "res_func_1",
+        object: "response",
+        created_at: Math.floor(Date.now() / 1000),
+        status: "in_progress",
+        model: "gpt-5",
+        output: [
+          {
+            id: "fc_1",
+            type: "function_call",
+            name: "add",
+            arguments: "{\"a\":1,\"b\":2}",
+            call_id: "call_1",
+          },
+          {
+            id: "msg_1",
+            type: "message",
+            status: "in_progress",
+            role: "assistant",
+            content: [{ type: "output_text", text: "Working..." }],
+          },
+          // Allow unknown future/built-in tool items via open union
+          { type: "web_search_call", any: true },
+        ],
+      };
+
+      expect(Array.isArray(response.output)).toBe(true);
+      const call = response.output.find((i) => (i as any).type === "function_call") as
+        | OpenAiResponsesApi.FunctionCallItem
+        | undefined;
+      expect(call?.name).toBe("add");
+      expect(call?.call_id).toBeDefined();
+    });
+  });
 });
