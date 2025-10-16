@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:smoke": "vitest run --config vitest.smoke.config.ts",
-    "test:smoke:watch": "vitest --config vitest.smoke.config.ts"
+    "test:openai": "vitest run --config vitest.smoke.config.ts -- --openai",
+    "test:openai-tools": "vitest run --config vitest.smoke.config.ts -t 'Tool Calling.*GPT-5' test/smoke/openai-responses.smoke.test.ts"
   },
   "files": [
     "dist"
