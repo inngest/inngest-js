@@ -124,6 +124,8 @@ export namespace OpenAiResponsesApi {
 
     /** Text output configuration including structured outputs */
     text?: {
+      /** Controls verbosity of textual outputs for GPT-5 family models. */
+      verbosity?: "low" | "medium" | "high";
       format?:
         | { type: "text" }
         | {
