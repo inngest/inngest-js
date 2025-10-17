@@ -1,5 +1,11 @@
 # @inngest/ai
 
+## 0.1.7
+
+### Patch Changes
+
+- [#1134](https://github.com/inngest/inngest-js/pull/1134) [`68ceb0c9`](https://github.com/inngest/inngest-js/commit/68ceb0c9b84451596e81bceb506438d42af6f70e) Thanks [@tedjames](https://github.com/tedjames)! - added support for latest openai responses api
+
 ## 0.1.6
 
 ### Patch Changes
