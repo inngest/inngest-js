@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "type-check": "tsc --noEmit",
     "lint": "eslint",
     "postversion": "pnpm run build",
     "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
@@ -15,7 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:smoke": "vitest run --config vitest.smoke.config.ts",
-    "test:smoke:watch": "vitest --config vitest.smoke.config.ts"
+    "test:openai": "vitest run --config vitest.smoke.config.ts -- --openai",
+    "test:openai-tools": "vitest run --config vitest.smoke.config.ts -t 'Tool Calling.*GPT-5' test/smoke/openai-responses.smoke.test.ts"
   },
   "files": [
     "dist"
@@ -59,7 +61,7 @@
     "eslint": "^9.18.0",
     "eslint-plugin-prettier": "^5.2.1",
     "globals": "^15.14.0",
-    "typescript-eslint": "^7.16.1",
+    "typescript-eslint": "^8.44.1",
     "vitest": "^2.1.8"
   }
 }
