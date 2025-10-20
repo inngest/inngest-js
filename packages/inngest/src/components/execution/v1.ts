@@ -470,6 +470,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     opts,
     fn,
     displayName,
+    userland,
   }: FoundStep): Promise<OutgoingOp> {
     this.timeout?.clear();
     await this.state.hooks?.afterMemoization?.();
@@ -481,6 +482,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       name,
       opts,
       displayName,
+      userland,
     };
     this.state.executingStep = outgoingOp;
 
