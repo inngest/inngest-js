@@ -557,6 +557,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
           op: StepOpCode.Sleep,
           name: iso,
           displayName: name ?? id,
+          userland: { id },
         };
       } catch (err) {
         /**
