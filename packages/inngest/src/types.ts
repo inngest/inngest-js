@@ -259,7 +259,14 @@ export type Op = {
    * try/catch or `.catch()`.
    */
   error?: unknown;
+
+  userland: OpUserland;
 };
+
+export type OpUserland = {
+  id: string;
+  index?: number;
+}
 
 export const incomingOpSchema = z.object({
   id: z.string().min(1),
@@ -277,7 +284,7 @@ export type IncomingOp = z.output<typeof incomingOpSchema>;
  */
 export type OutgoingOp = Pick<
   HashedOp,
-  "id" | "op" | "name" | "opts" | "data" | "error" | "displayName"
+  "id" | "op" | "name" | "opts" | "data" | "error" | "displayName" | "userland"
 >;
 
 /**
@@ -290,6 +297,8 @@ export type HashedOp = Op & {
    * operation was completed when it is received from Inngest.
    */
   id: string;
+
+  userland?: OpUserland;
 };
 
 /**

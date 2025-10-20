@@ -236,6 +236,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
           name: id,
           displayName: name ?? id,
           ...(Object.keys(opts).length ? { opts } : {}),
+          userland: { id },
         };
       },
       {
@@ -292,6 +293,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
           opts: {
             type: "step.sendEvent",
           },
+          userland: { id },
         };
       },
       {
@@ -329,6 +331,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
           timeout: timeStr(opts.timeout),
           conflict: opts.onConflict,
         },
+        userland: { id },
       };
     }),
 
@@ -348,6 +351,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
             type: "step.sendSignal",
             signal: opts.signal,
           },
+          userland: { id },
         };
       },
       {
@@ -406,6 +410,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
           name: opts.event,
           opts: matchOpts,
           displayName: name ?? id,
+          userland: { id },
         };
       },
     ),
@@ -463,6 +468,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
             // eslint-disable-next-line
             ...rest,
           },
+          userland: { id },
         };
       }),
 
@@ -519,6 +525,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         op: StepOpCode.Sleep,
         name: msTimeStr,
         displayName: name ?? id,
+        userland: { id },
       };
     }),
 
@@ -652,6 +659,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         op: StepOpCode.InvokeFunction,
         displayName: name ?? id,
         opts,
+        userland: { id },
       };
     }),
 
@@ -692,6 +700,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
           headers,
           body: init?.body,
         },
+        userland: { id },
       };
     },
   );
