@@ -283,7 +283,7 @@ export type IncomingOp = z.output<typeof incomingOpSchema>;
  * @public
  */
 export type OutgoingOp = Pick<
-  HashedOp,
+  Omit<HashedOp, "userland"> & {userland?: OpUserland},
   "id" | "op" | "name" | "opts" | "data" | "error" | "displayName" | "userland"
 >;
 
@@ -297,8 +297,6 @@ export type HashedOp = Op & {
    * operation was completed when it is received from Inngest.
    */
   id: string;
-
-  userland?: OpUserland;
 };
 
 /**
