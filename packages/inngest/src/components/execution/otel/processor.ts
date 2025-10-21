@@ -11,6 +11,7 @@ import {
 } from "@opentelemetry/resources";
 import {
   BatchSpanProcessor,
+  SimpleSpanProcessor,
   type ReadableSpan,
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
@@ -89,12 +90,16 @@ export class InngestSpanProcessor implements SpanProcessor {
   }
 
   /**
-   * A `BatchSpanProcessor` that is used to export spans to the Inngest
+   * A `SimpleSpanProcessor` that is used to export spans to the Inngest
    * endpoint. This is created lazily to avoid creating it until the Inngest App
    * has been initialized and has had a chance to receive environment variables,
    * which may be from an incoming request.
+   *
+   * We use SimpleSpanProcessor instead of BatchSpanProcessor to ensure spans
+   * are exported immediately when they end, preserving accurate timing information
+   * and phase categorization in the Inngest UI.
    */
-  #batcher: Promise<BatchSpanProcessor> | undefined;
+  #batcher: Promise<SimpleSpanProcessor> | undefined;
 
   /**
    * A set of spans used to track spans that we care about, so that we can
@@ -235,15 +240,15 @@ export class InngestSpanProcessor implements SpanProcessor {
   }
 
   /**
-   * The batcher is a singleton that is used to export spans to the OTel
+   * The processor is a singleton that is used to export spans to the OTel
    * endpoint. It is created lazily to avoid creating it until the Inngest App
    * has been initialized and has had a chance to receive environment variables,
    * which may be from an incoming request.
    *
-   * The batcher is only referenced once we've found a span we're interested in,
+   * The processor is only referenced once we've found a span we're interested in,
    * so this should always have everything it needs on the app by then.
    */
-  private ensureBatcherInitialized(): Promise<BatchSpanProcessor> {
+  private ensureBatcherInitialized(): Promise<SimpleSpanProcessor> {
     if (!this.#batcher) {
       this.#batcher = new Promise(async (resolve, reject) => {
         try {
@@ -281,7 +286,7 @@ export class InngestSpanProcessor implements SpanProcessor {
           }
 
           processorDebug(
-            "batcher lazily accessed; creating new batcher with URL",
+            "processor lazily accessed; creating new SimpleSpanProcessor with URL",
             url,
           );
 
@@ -293,7 +298,10 @@ export class InngestSpanProcessor implements SpanProcessor {
             },
           });
 
-          resolve(new BatchSpanProcessor(exporter));
+          // Use SimpleSpanProcessor to export spans immediately when they end,
+          // not batched. This ensures the Inngest platform receives spans with
+          // accurate timing and can correctly categorize them by execution phase.
+          resolve(new SimpleSpanProcessor(exporter));
         } catch (err) {
           reject(err);
         }

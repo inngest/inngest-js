@@ -1,4 +1,4 @@
-import { trace } from "@opentelemetry/api";
+import { context, propagation, SpanStatusCode, trace } from "@opentelemetry/api";
 import hashjs from "hash.js";
 import { z } from "zod/v3";
 import { headerKeys, internalEvents } from "../../helpers/consts.ts";
@@ -76,6 +76,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    */
   private timeout?: ReturnType<typeof createTimeoutPromise>;
 
+  /**
+   * The function-level span, stored so step spans can be parented to it.
+   */
+  private functionSpan?: ReturnType<ReturnType<typeof trace.getTracer>["startSpan"]>;
+
   constructor(options: InngestExecutionOptions) {
     super(options);
 
@@ -108,23 +113,96 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         return als.run(
           { app: this.options.client, ctx: this.fnArg },
           async () => {
-            return tracer.startActiveSpan("inngest.execution", (span) => {
-              clientProcessorMap.get(this.options.client)?.declareStartingSpan({
-                span,
-                runId: this.options.runId,
-                traceparent: this.options.headers[headerKeys.TraceParent],
-                tracestate: this.options.headers[headerKeys.TraceState],
-              });
+            /**
+             * EXECUTION MODE DETECTION:
+             * We only create a function span when we have step state (stepsToFulfill > 0).
+             * This indicates we're in execution mode, not discovery mode.
+             */
+            const hasStepState = this.state.stepsToFulfill > 0;
 
-              return this._start()
-                .then((result) => {
-                  this.debug("result:", result);
-                  return result;
-                })
-                .finally(() => {
-                  span.end();
+            if (hasStepState) {
+              /**
+               * PARENT CONTEXT EXTRACTION:
+               * The Inngest platform sends us a traceparent header that links this
+               * execution to the broader trace (includes platform spans like executor.run,
+               * executor.step.discovery, etc.). We extract this to properly parent our span.
+               */
+              const traceparent = this.options.headers[headerKeys.TraceParent];
+              const tracestate = this.options.headers[headerKeys.TraceState];
+              let parentContext = context.active();
+
+              this.debug("🔍 EXECUTION MODE - creating function span");
+              this.debug("  traceparent:", traceparent);
+              this.debug("  stepsToFulfill:", this.state.stepsToFulfill);
+
+              if (traceparent) {
+                // Extract the parent span context from the W3C traceparent header
+                const carrier = { traceparent };
+                parentContext = propagation.extract(context.active(), carrier);
+                this.debug("  ✅ Extracted parent context from traceparent");
+              }
+
+              /**
+               * FUNCTION SPAN CREATION:
+               * We wrap the parent context to ensure our function span is properly parented.
+               * Then we use startActiveSpan() which:
+               * 1. Creates the span with the correct parent
+               * 2. Sets it as ACTIVE in the OpenTelemetry context
+               * 3. Automatically propagates this context through all async operations
+               *
+               * This means any async operations (fetch, DB calls, etc.) that happen during
+               * the execution will automatically be captured as children of this span, even
+               * if they occur across multiple async boundaries.
+               */
+              return context.with(parentContext, () => {
+                return tracer.startActiveSpan("inngest.execution", (span) => {
+                  // Store the span so step functions can explicitly parent to it if needed
+                  this.functionSpan = span;
+
+                  const spanCtx = span.spanContext();
+                  this.debug("  ✨ Function span created:");
+                  this.debug("    traceId:", spanCtx.traceId);
+                  this.debug("    spanId:", spanCtx.spanId);
+
+                  // Register the span with Inngest's client processor for tracking
+                  const processor = clientProcessorMap.get(this.options.client);
+                  this.debug("    processor found:", !!processor);
+
+                  processor?.declareStartingSpan({
+                    span,
+                    runId: this.options.runId,
+                    traceparent,
+                    tracestate,
+                  });
+
+                  /**
+                   * Execute the core function logic.
+                   * All operations within _start() and its callees will automatically
+                   * have this span as their active parent, thanks to OTel's context
+                   * propagation through async_hooks.
+                   */
+                  return this._start()
+                    .then((result) => {
+                      this.debug("result:", result);
+                      return result;
+                    })
+                    .finally(() => {
+                      // Clean up: end the span and clear our reference
+                      span.end();
+                      this.functionSpan = undefined;
+                    });
                 });
-            });
+              });
+            } else {
+              /**
+               * DISCOVERY MODE:
+               * No function-level span is created to avoid duplicate traces.
+               * Steps may still create their own spans during discovery to capture
+               * operations that occur within them.
+               */
+              this.debug("🔍 DISCOVERY MODE - no function span (stepsToFulfill: 0)");
+              return this._start();
+            }
           },
         );
       });
@@ -137,6 +215,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * Starts execution of the user's function and the core loop.
    */
   private async _start(): Promise<ExecutionResult> {
+    console.log("🚀 Starting execution core loop...");
     try {
       const allCheckpointHandler = this.getCheckpointHandler("");
       this.state.hooks = await this.initializeMiddleware();
@@ -494,48 +573,144 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     this.debug(`executing step "${id}"`);
 
-    return runAsPromise(fn)
-      .finally(async () => {
-        if (store) {
-          delete store.executingStep;
-        }
+    const tracer = trace.getTracer("inngest", version);
 
-        await this.state.hooks?.afterExecution?.();
-      })
-      .then<OutgoingOp>((data) => {
-        return {
-          ...outgoingOp,
-          data,
-        };
-      })
-      .catch<OutgoingOp>((error) => {
-        let errorIsRetriable = true;
+    /**
+     * STEP SPAN CREATION AND PARENTING:
+     * =================================
+     * When a step executes, we create a span to capture all operations within that step.
+     * This span should be a child of the function span (if one exists).
+     *
+     * In most cases, the function span will be active in the current context thanks to
+     * OTel's automatic context propagation. However, we defensively check and use the
+     * stored `this.functionSpan` reference if needed.
+     *
+     * Why we might need the stored reference:
+     * - In discovery mode, there's no function span, so steps create root spans
+     * - In execution mode, the function span should be active, but we verify this
+     * - If context is somehow lost, we can restore it using the stored reference
+     *
+     * The step span will automatically capture any operations (HTTP, DB, etc.) that
+     * occur within the step function as its children.
+     */
+    const currentContext = context.active();
+    const currentActiveSpan = trace.getSpan(currentContext);
 
-        if (error instanceof NonRetriableError) {
-          errorIsRetriable = false;
-        } else if (
-          this.fnArg.maxAttempts &&
-          this.fnArg?.maxAttempts - 1 === this.fnArg.attempt
-        ) {
-          errorIsRetriable = false;
-        }
+    // If we have a stored function span but it's not currently active, restore it
+    // This is a defensive measure to ensure proper parenting even if context was lost
+    const contextToUse = this.functionSpan
+      ? trace.setSpan(currentContext, this.functionSpan)
+      : currentContext;
 
-        if (errorIsRetriable) {
-          return {
-            ...outgoingOp,
-            op: StepOpCode.StepError,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
-          };
-        } else {
-          return {
-            ...outgoingOp,
-            op: StepOpCode.StepFailed,
-            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-            error,
-          };
-        }
-      });
+    /**
+     * Create the step span as an ACTIVE span.
+     * This ensures that any operations within the step (like fetch calls) will
+     * automatically be captured as children of this step span.
+     */
+    this.debug(`  🎯 Creating step span: ${displayName}`);
+    this.debug(`    functionSpan exists:`, !!this.functionSpan);
+
+    return context.with(contextToUse, () => {
+      return tracer.startActiveSpan(
+        `step.${name}`,
+        {
+          attributes: {
+            "inngest.step.id": id,
+            "inngest.step.name": name,
+            "inngest.step.displayName": displayName,
+          },
+        },
+        (stepSpan) => {
+          const stepCtx = stepSpan.spanContext();
+          this.debug(`    stepSpan created - traceId: ${stepCtx.traceId}, spanId: ${stepCtx.spanId}`);
+
+          /**
+           * CRITICAL FIX FOR STEP TRACING:
+           * ================================
+           * Register this step span as trackable even if we don't have a parent function span.
+           * This handles the case where the step executes in discovery mode but won't re-execute
+           * in execution mode due to memoization.
+           *
+           * Without this, operations inside steps that only execute in discovery mode would
+           * never be captured, since:
+           * - Discovery mode: No function span exists, step executes but isn't tracked
+           * - Execution mode: Function span exists, but step returns memoized value without executing
+           */
+          const processor = clientProcessorMap.get(this.options.client);
+          const traceparent = this.options.headers[headerKeys.TraceParent];
+          const tracestate = this.options.headers[headerKeys.TraceState];
+
+          if (processor && traceparent && !this.functionSpan) {
+            this.debug(`    📝 No function span - declaring step span as trackable root`);
+            processor.declareStartingSpan({
+              span: stepSpan,
+              runId: this.options.runId,
+              traceparent,
+              tracestate,
+            });
+          }
+
+          /**
+           * Execute the step function.
+           * All async operations within this function will have the step span as their
+           * active parent, just like how the user's main function has the function span
+           * as its active parent.
+           */
+          return runAsPromise(fn)
+            .finally(async () => {
+              if (store) {
+                delete store.executingStep;
+              }
+
+              await this.state.hooks?.afterExecution?.();
+
+              // Clean up: end the step span
+              stepSpan.end();
+            })
+            .then<OutgoingOp>((data) => {
+              // Mark the span as successful
+              stepSpan.setStatus({ code: SpanStatusCode.OK });
+
+              return {
+                ...outgoingOp,
+                data,
+              };
+            })
+            .catch<OutgoingOp>((error) => {
+              // Record the error and mark the span as failed
+              stepSpan.recordException(error);
+              stepSpan.setStatus({ code: SpanStatusCode.ERROR });
+
+              let errorIsRetriable = true;
+
+              if (error instanceof NonRetriableError) {
+                errorIsRetriable = false;
+              } else if (
+                this.fnArg.maxAttempts &&
+                this.fnArg?.maxAttempts - 1 === this.fnArg.attempt
+              ) {
+                errorIsRetriable = false;
+              }
+
+              if (errorIsRetriable) {
+                return {
+                  ...outgoingOp,
+                  op: StepOpCode.StepError,
+                  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                  error,
+                };
+              } else {
+                return {
+                  ...outgoingOp,
+                  op: StepOpCode.StepFailed,
+                  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                  error,
+                };
+              }
+            });
+        },
+      );
+    });
   }
 
   /**
@@ -565,6 +740,39 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     /**
      * Trigger the user's function.
+     *
+     * CRITICAL INSIGHT ABOUT CONTEXT PROPAGATION:
+     * ==========================================
+     * We do NOT need to manually capture and wrap the context here!
+     *
+     * When we created the function span using `startActiveSpan()` in the `start()` method,
+     * OpenTelemetry automatically made that span the "active" span in the current context.
+     * OTel's context manager uses Node.js's async_hooks under the hood, which means the
+     * context automatically propagates through:
+     * - Promise chains
+     * - async/await
+     * - Callbacks
+     * - Any other async operations
+     *
+     * This is why we can just call `this.userFnToRun(this.fnArg)` directly without any
+     * manual context.with() wrapping. When the user's function executes and makes async
+     * calls (like fetch), those operations will automatically see the function span as
+     * their active parent.
+     *
+     * The key is that this entire execution is happening WITHIN the callback passed to
+     * `startActiveSpan()` in the `start()` method, even though we've crossed multiple
+     * async boundaries to get here. async_hooks ensures the context is maintained.
+     *
+     * Why manual context.with() DOESN'T work here:
+     * -------------------------------------------
+     * context.with() only sets the context for the SYNCHRONOUS portion of its callback.
+     * Once the callback returns (even if it returns a Promise), the context set by
+     * context.with() is no longer active. The Promise executes later, and at that point,
+     * it relies on async_hooks to have the context, not on context.with().
+     *
+     * Since `this.userFnToRun()` is an async function, it immediately returns a Promise,
+     * and the actual user code runs later. By that time, context.with() is no longer in
+     * effect. We need to rely on async_hooks, which is what startActiveSpan() uses.
      */
     runAsPromise(() => this.userFnToRun(this.fnArg))
       .finally(async () => {
