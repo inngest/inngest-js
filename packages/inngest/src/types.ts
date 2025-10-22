@@ -260,11 +260,23 @@ export type Op = {
    */
   error?: unknown;
 
+  /**
+   * Extra info used to annotate spans associated with this operation.
+   */
   userland: OpUserland;
 };
 
+/**
+ * Extra info attached to an operation.
+ */
 export type OpUserland = {
+  /**
+   * The unhashed, user-defined ID of the step.
+   */
   id: string;
+  /**
+   * The auto-incremented index for repeated steps (if repeated).
+   */
   index?: number;
 }
 
