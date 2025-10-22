@@ -142,7 +142,7 @@ describe("waitForEvent", () => {
     await expect(
       step.waitForEvent("id", { event: "event", timeout: "2h" }),
     ).resolves.toMatchObject({
-      userland: { id: "id" }
+      userland: { id: "id" },
     });
   });
 });
@@ -250,7 +250,7 @@ describe("run", () => {
 
   test("returns userland", async () => {
     await expect(step.run("id", () => undefined)).resolves.toMatchObject({
-      userland: { id: "id" }
+      userland: { id: "id" },
     });
   });
 });
@@ -609,7 +609,7 @@ describe("sleep", () => {
 
   test("returns userland", async () => {
     await expect(step.sleep("id", "1m")).resolves.toMatchObject({
-      userland: { id: "id" }
+      userland: { id: "id" },
     });
   });
 });
@@ -720,7 +720,7 @@ describe("sleepUntil", () => {
     future.setDate(future.getDate() + 1);
 
     await expect(step.sleepUntil("id", future)).resolves.toMatchObject({
-      userland: { id: "id" }
+      userland: { id: "id" },
     });
   });
 });
@@ -776,7 +776,7 @@ describe("sendEvent", () => {
       await expect(
         step.sendEvent("id", { name: "step", data: "foo" }),
       ).resolves.toMatchObject({
-        userland: { id: "id" }
+        userland: { id: "id" },
       });
     });
   });
