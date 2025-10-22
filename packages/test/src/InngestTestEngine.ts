@@ -489,7 +489,7 @@ export class InngestTestEngine {
       cacheEntry.lazyHandlers.push(mockHandler.__lazyMockHandler!);
     });
 
-    // Helper to execute the mock handler lazily, with memoization across executions
+    // Helper to execute the mock handler, with memoization across executions
     const executeMockHandler = async (
       mockStep: InternalMemoizedOp,
       stepId: string
@@ -545,8 +545,7 @@ export class InngestTestEngine {
       return cacheEntry.promise;
     };
 
-    // Helper to wrap a promise so it executes the handler on .then
-    // We want to ensure we only call the handler when actually trying to await the promise.
+    // Helper to wrap a promise so it executes the handler when awaited (via .then)
     const wrapLazyPromise = <T>(
       promise: Promise<T>,
       mockStep: InternalMemoizedOp,
@@ -571,11 +570,10 @@ export class InngestTestEngine {
       }) as Promise<T>;
     };
 
-    // Track mock step accesses; if we attempt to get a particular step then
-    // assume we've found it and attempt to lazily run the handler to give us
-    // time to return smarter mocked data based on input and other outputs.
+    // Track mock step accesses; execute handler only when the step actually needs to run
+    // (when its promise is awaited), not when the property is merely accessed.
     //
-    // This gives us the ability for mocks be be async and return dynamic data.
+    // This gives us the ability for mocks to be async and return dynamic data.
     const mockStepState = new Proxy(stepState, {
       get(target, prop) {
         if (!(prop in target)) {
@@ -587,12 +585,12 @@ export class InngestTestEngine {
           prop as keyof typeof target
         ] as InternalMemoizedOp;
 
-        // Wrap the mockStep in a proxy that intercepts promise access
+        // Wrap the mockStep in a proxy that intercepts promise .then() calls
         return new Proxy(mockStep, {
           get(stepTarget, stepProp) {
             const value = stepTarget[stepProp as keyof typeof stepTarget];
 
-            // If accessing data or error promises, wrap them for lazy execution
+            // If accessing data or error promises, wrap them for execution on .then()
             if (
               (stepProp === "data" || stepProp === "error") &&
               value instanceof Promise
