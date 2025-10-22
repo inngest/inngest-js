@@ -460,6 +460,55 @@ export class InngestTestEngine {
       stepState[step.id] = mockHandler;
     });
 
+    // Helper to execute the mock handler lazily
+    const executeMockHandler = async (
+      mockStep: InternalMemoizedOp
+    ): Promise<void> => {
+      if (mockStep.__mockResult) {
+        return mockStep.__mockResult;
+      }
+
+      mockStep.__mockResult = new Promise<void>(async (resolve) => {
+        try {
+          const data = await (
+            mockStep as InngestTestEngine.MockedStep
+          ).handler();
+          mockStep.__lazyMockHandler?.({ data });
+        } catch (err) {
+          mockStep.__lazyMockHandler?.({ error: errors.serializeError(err) });
+        } finally {
+          resolve();
+        }
+      });
+
+      return mockStep.__mockResult;
+    };
+
+    // Helper to wrap a promise so it executes the handler on .then
+    // We want to ensure we only call the handler when actually trying to await the promise.
+    const wrapLazyPromise = <T>(
+      promise: Promise<T>,
+      mockStep: InternalMemoizedOp
+    ): Promise<T> => {
+      return new Proxy(promise, {
+        get(target, prop) {
+          if (prop === "then") {
+            return function (
+              this: Promise<T>,
+              ...args: Parameters<Promise<T>["then"]>
+            ) {
+              return executeMockHandler(mockStep).then(() =>
+                target.then(...args)
+              );
+            };
+          }
+
+          const value = target[prop as keyof Promise<T>];
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      }) as Promise<T>;
+    };
+
     // Track mock step accesses; if we attempt to get a particular step then
     // assume we've found it and attempt to lazily run the handler to give us
     // time to return smarter mocked data based on input and other outputs.
@@ -475,21 +524,22 @@ export class InngestTestEngine {
           prop as keyof typeof target
         ] as InternalMemoizedOp;
 
-        // kick off the handler if we haven't already
-        mockStep.__mockResult ??= new Promise<void>(async (resolve) => {
-          try {
-            mockStep.__lazyMockHandler?.({
-              // TODO pass it a context then mate
-              data: await (mockStep as InngestTestEngine.MockedStep).handler(),
-            });
-          } catch (err) {
-            mockStep.__lazyMockHandler?.({ error: errors.serializeError(err) });
-          } finally {
-            resolve();
-          }
-        });
+        // Wrap the mockStep in a proxy that intercepts promise access
+        return new Proxy(mockStep, {
+          get(stepTarget, stepProp) {
+            const value = stepTarget[stepProp as keyof typeof stepTarget];
 
-        return mockStep;
+            // If accessing data or error promises, wrap them for lazy execution
+            if (
+              (stepProp === "data" || stepProp === "error") &&
+              value instanceof Promise
+            ) {
+              return wrapLazyPromise(value, stepTarget);
+            }
+
+            return value;
+          },
+        });
       },
     });
 
