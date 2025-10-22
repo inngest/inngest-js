@@ -278,7 +278,7 @@ export type OpUserland = {
    * The auto-incremented index for repeated steps (if repeated).
    */
   index?: number;
-}
+};
 
 export const incomingOpSchema = z.object({
   id: z.string().min(1),
@@ -295,7 +295,7 @@ export type IncomingOp = z.output<typeof incomingOpSchema>;
  * @public
  */
 export type OutgoingOp = Pick<
-  Omit<HashedOp, "userland"> & {userland?: OpUserland},
+  Omit<HashedOp, "userland"> & { userland?: OpUserland },
   "id" | "op" | "name" | "opts" | "data" | "error" | "displayName" | "userland"
 >;
 
