@@ -387,6 +387,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       id: step.hashedId,
       name: step.name,
       opts: step.opts,
+      userland: step.userland,
     })) as [OutgoingOp, ...OutgoingOp[]];
 
     /**
@@ -469,6 +470,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     opts,
     fn,
     displayName,
+    userland,
   }: FoundStep): Promise<OutgoingOp> {
     this.timeout?.clear();
     await this.state.hooks?.afterMemoization?.();
@@ -480,6 +482,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       name,
       opts,
       displayName,
+      userland,
     };
     this.state.executingStep = outgoingOp;
 
@@ -949,6 +952,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           if (!this.state.steps.has(newId)) {
             expectedNextStepIndexes.set(originalId, i + 1);
             opId.id = newId;
+            opId.userland.index = i;
             break;
           }
         }
