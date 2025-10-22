@@ -192,12 +192,27 @@ interface InternalMemoizedOp extends InngestExecution.MemoizedOp {
 }
 
 /**
+ * A cache for storing mock handler execution results across multiple executions.
+ * This ensures handlers are only called once per test run.
+ */
+interface MockHandlerCache {
+  [stepId: string]: {
+    executed: boolean;
+    promise?: Promise<void>;
+    data?: any;
+    error?: any;
+    lazyHandlers: Array<(state: { data?: any; error?: any }) => Promise<void>>;
+  };
+}
+
+/**
  * A test engine for running Inngest functions in a test environment, providing
  * the ability to assert inputs, outputs, and step usage, as well as mocking
  * with support for popular testing libraries.
  */
 export class InngestTestEngine {
   protected options: InngestTestEngine.Options;
+  protected mockHandlerCache: MockHandlerCache = {};
 
   constructor(options: InngestTestEngine.Options) {
     this.options = options;
@@ -208,9 +223,12 @@ export class InngestTestEngine {
    * existing options.
    */
   public clone(
-    inlineOpts?: InngestTestEngine.InlineOptions,
+    inlineOpts?: InngestTestEngine.InlineOptions
   ): InngestTestEngine {
-    return new InngestTestEngine({ ...this.options, ...inlineOpts });
+    const cloned = new InngestTestEngine({ ...this.options, ...inlineOpts });
+    // Share the same mock handler cache to maintain memoization across clones
+    cloned.mockHandlerCache = this.mockHandlerCache;
+    return cloned;
   }
 
   /**
@@ -223,12 +241,12 @@ export class InngestTestEngine {
     /**
      * Options and state to start the run with.
      */
-    inlineOpts?: InngestTestEngine.ExecuteOptions<T>,
+    inlineOpts?: InngestTestEngine.ExecuteOptions<T>
   ): Promise<InngestTestRun.RunOutput> {
     const output = await this.individualExecution(inlineOpts);
 
     const resolutionHandler = (
-      output: InngestTestEngine.ExecutionOutput<"function-resolved">,
+      output: InngestTestEngine.ExecutionOutput<"function-resolved">
     ) => {
       return {
         ctx: output.ctx,
@@ -238,7 +256,7 @@ export class InngestTestEngine {
     };
 
     const rejectionHandler = (
-      output: InngestTestEngine.ExecutionOutput<"function-rejected">,
+      output: InngestTestEngine.ExecutionOutput<"function-rejected">
     ) => {
       if (
         typeof output === "object" &&
@@ -258,7 +276,7 @@ export class InngestTestEngine {
             error = output.result.step.error;
           } else {
             error = new Error(
-              "Function rejected without a visible error; this is a bug",
+              "Function rejected without a visible error; this is a bug"
             );
           }
         }
@@ -275,11 +293,11 @@ export class InngestTestEngine {
 
     if (output.result.type === "function-resolved") {
       return resolutionHandler(
-        output as InngestTestEngine.ExecutionOutput<"function-resolved">,
+        output as InngestTestEngine.ExecutionOutput<"function-resolved">
       );
     } else if (output.result.type === "function-rejected") {
       return rejectionHandler(
-        output as InngestTestEngine.ExecutionOutput<"function-rejected">,
+        output as InngestTestEngine.ExecutionOutput<"function-rejected">
       );
     } else if (output.result.type === "step-ran") {
       // Any error halts execution until retries are modelled
@@ -288,7 +306,7 @@ export class InngestTestEngine {
           .error
       ) {
         return rejectionHandler(
-          output as InngestTestEngine.ExecutionOutput<"function-rejected">,
+          output as InngestTestEngine.ExecutionOutput<"function-rejected">
         );
       }
     }
@@ -312,7 +330,7 @@ export class InngestTestEngine {
     /**
      * Options and state to start the run with.
      */
-    inlineOpts?: InngestTestEngine.ExecuteOptions,
+    inlineOpts?: InngestTestEngine.ExecuteOptions
   ): Promise<InngestTestRun.RunStepOutput> {
     const { run, result: resultaaa } = await this.individualExecution({
       ...inlineOpts,
@@ -328,13 +346,13 @@ export class InngestTestEngine {
     const hashedStepId = InngestExecutionV1._internals.hashId(stepId);
 
     const step = foundSteps.result.steps.find(
-      (step) => step.id === hashedStepId,
+      (step) => step.id === hashedStepId
     );
 
     // never found the step? Unexpected.
     if (!step) {
       throw new Error(
-        `Step "${stepId}" not found, but execution was still paused. This is a bug.`,
+        `Step "${stepId}" not found, but execution was still paused. This is a bug.`
       );
     }
 
@@ -406,7 +424,7 @@ export class InngestTestEngine {
     /**
      * Options and state to start the run with.
      */
-    inlineOpts?: InngestTestEngine.ExecuteOptions<T>,
+    inlineOpts?: InngestTestEngine.ExecuteOptions<T>
   ): Promise<InngestTestEngine.ExecutionOutput<T>> {
     const { run } = await this.individualExecution(inlineOpts);
 
@@ -417,7 +435,7 @@ export class InngestTestEngine {
    * Execute the function with the given inline options.
    */
   protected async individualExecution(
-    inlineOpts?: InngestTestEngine.InlineOptions,
+    inlineOpts?: InngestTestEngine.InlineOptions
   ): Promise<InngestTestEngine.ExecutionOutput> {
     const options = {
       ...this.options,
@@ -458,37 +476,81 @@ export class InngestTestEngine {
       } satisfies InternalMemoizedOp;
 
       stepState[step.id] = mockHandler;
+
+      // Register this lazy handler so it gets called when the mock executes
+      let cacheEntry = this.mockHandlerCache[step.id];
+      if (!cacheEntry) {
+        cacheEntry = {
+          executed: false,
+          lazyHandlers: [],
+        };
+        this.mockHandlerCache[step.id] = cacheEntry;
+      }
+      cacheEntry.lazyHandlers.push(mockHandler.__lazyMockHandler!);
     });
 
-    // Helper to execute the mock handler lazily
+    // Helper to execute the mock handler lazily, with memoization across executions
     const executeMockHandler = async (
-      mockStep: InternalMemoizedOp
+      mockStep: InternalMemoizedOp,
+      stepId: string
     ): Promise<void> => {
-      if (mockStep.__mockResult) {
-        return mockStep.__mockResult;
+      // Ensure cache entry exists (should always exist from the forEach above)
+      if (!this.mockHandlerCache[stepId]) {
+        this.mockHandlerCache[stepId] = {
+          executed: false,
+          lazyHandlers: [],
+        };
       }
 
-      mockStep.__mockResult = new Promise<void>(async (resolve) => {
+      const cacheEntry = this.mockHandlerCache[stepId];
+
+      // If already executed or executing, wait for it and notify this execution's handler
+      if (cacheEntry.executed || cacheEntry.promise) {
+        await cacheEntry.promise;
+        await mockStep.__lazyMockHandler?.({
+          data: cacheEntry.data,
+          error: cacheEntry.error,
+        });
+        return;
+      }
+
+      // Mark as executing immediately to prevent race conditions
+      cacheEntry.executed = true;
+
+      // Execute the handler only once
+      cacheEntry.promise = new Promise<void>(async (resolve) => {
         try {
           const data = await (
             mockStep as InngestTestEngine.MockedStep
           ).handler();
-          mockStep.__lazyMockHandler?.({ data });
+          cacheEntry.data = data;
+
+          // Notify all registered lazy handlers (from all executions)
+          await Promise.all(
+            cacheEntry.lazyHandlers.map((handler) => handler({ data }))
+          );
         } catch (err) {
-          mockStep.__lazyMockHandler?.({ error: errors.serializeError(err) });
+          const error = errors.serializeError(err);
+          cacheEntry.error = error;
+
+          // Notify all registered lazy handlers (from all executions)
+          await Promise.all(
+            cacheEntry.lazyHandlers.map((handler) => handler({ error }))
+          );
         } finally {
           resolve();
         }
       });
 
-      return mockStep.__mockResult;
+      return cacheEntry.promise;
     };
 
     // Helper to wrap a promise so it executes the handler on .then
     // We want to ensure we only call the handler when actually trying to await the promise.
     const wrapLazyPromise = <T>(
       promise: Promise<T>,
-      mockStep: InternalMemoizedOp
+      mockStep: InternalMemoizedOp,
+      stepId: string
     ): Promise<T> => {
       return new Proxy(promise, {
         get(target, prop) {
@@ -497,7 +559,7 @@ export class InngestTestEngine {
               this: Promise<T>,
               ...args: Parameters<Promise<T>["then"]>
             ) {
-              return executeMockHandler(mockStep).then(() =>
+              return executeMockHandler(mockStep, stepId).then(() =>
                 target.then(...args)
               );
             };
@@ -520,6 +582,7 @@ export class InngestTestEngine {
           return undefined;
         }
 
+        const stepId = prop as string;
         const mockStep = target[
           prop as keyof typeof target
         ] as InternalMemoizedOp;
@@ -534,7 +597,7 @@ export class InngestTestEngine {
               (stepProp === "data" || stepProp === "error") &&
               value instanceof Promise
             ) {
-              return wrapLazyPromise(value, stepTarget);
+              return wrapLazyPromise(value, stepTarget, stepId);
             }
 
             return value;
@@ -573,7 +636,7 @@ export class InngestTestEngine {
     const { ctx, ops, ...result } = await execution.start();
 
     const mockState: InngestTestEngine.MockState = await Object.keys(
-      ops,
+      ops
     ).reduce(
       async (acc, stepId) => {
         const op = ops[stepId];
@@ -592,7 +655,7 @@ export class InngestTestEngine {
           [stepId]: op.promise,
         };
       },
-      Promise.resolve({}) as Promise<InngestTestEngine.MockState>,
+      Promise.resolve({}) as Promise<InngestTestEngine.MockState>
     );
 
     InngestTestRun["updateState"](options, result);
