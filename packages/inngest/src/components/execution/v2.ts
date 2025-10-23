@@ -410,6 +410,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         }
 
         const onSendEventHooks = await getHookStack(
+          this.options.timer,
           this.options.fn["middleware"],
           "onSendEvent",
           undefined,
@@ -1046,6 +1047,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     >;
 
     const hooks = await getHookStack(
+      this.options.timer,
       this.options.fn["middleware"],
       "onFunctionRun",
       {
