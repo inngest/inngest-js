@@ -1,8 +1,39 @@
-import { InngestMiddleware } from "inngest";
+import { 
+  InngestMiddleware, 
+  type MiddlewareOptions,
+} from "inngest";
 import { getAsyncCtx } from "inngest/experimental";
 import type { Realtime } from "./types";
 
-export const realtimeMiddleware = () => {
+/**
+ * Creates middleware that adds real-time publishing capabilities to Inngest functions.
+ * 
+ * When added to an Inngest client, this middleware provides a `publish` function
+ * in the function context that allows you to send real-time messages to channels.
+ * 
+ * @example
+ * ```ts
+ * const inngest = new Inngest({
+ *   id: 'my-app',
+ *   middleware: [realtimeMiddleware()]
+ * });
+ * 
+ * inngest.createFunction(
+ *   { id: 'my-function' },
+ *   { event: 'my/event' },
+ *   async ({ publish }) => {
+ *     await publish({
+ *       channel: 'my-channel',
+ *       topic: 'my-topic',
+ *       data: { message: 'Hello!' }
+ *     });
+ *   }
+ * );
+ * ```
+ * 
+ * @returns An Inngest middleware instance that adds the `publish` function to the context
+ */
+export function realtimeMiddleware() {
   return new InngestMiddleware({
     name: "publish",
     init({ client }) {
@@ -53,7 +84,10 @@ export const realtimeMiddleware = () => {
               return {
                 ctx: {
                   /**
-                   * TODO
+                   * Publishes a real-time message to a channel.
+                   * 
+                   * @param input - The message to publish, containing channel, topic, and data
+                   * @returns A promise that resolves to the published data
                    */
                   publish,
                 },
@@ -63,5 +97,15 @@ export const realtimeMiddleware = () => {
         },
       };
     },
-  });
-};
+  }) as InngestMiddleware<MiddlewareOptions & {
+    init: () => {
+      onFunctionRun: () => {
+        transformInput: () => {
+          ctx: {
+            publish: Realtime.PublishFn;
+          };
+        };
+      };
+    };
+  }>;
+}
