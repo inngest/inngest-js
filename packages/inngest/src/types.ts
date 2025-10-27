@@ -259,6 +259,25 @@ export type Op = {
    * try/catch or `.catch()`.
    */
   error?: unknown;
+
+  /**
+   * Extra info used to annotate spans associated with this operation.
+   */
+  userland: OpUserland;
+};
+
+/**
+ * Extra info attached to an operation.
+ */
+export type OpUserland = {
+  /**
+   * The unhashed, user-defined ID of the step.
+   */
+  id: string;
+  /**
+   * The auto-incremented index for repeated steps (if repeated).
+   */
+  index?: number;
 };
 
 export const incomingOpSchema = z.object({
@@ -276,8 +295,8 @@ export type IncomingOp = z.output<typeof incomingOpSchema>;
  * @public
  */
 export type OutgoingOp = Pick<
-  HashedOp,
-  "id" | "op" | "name" | "opts" | "data" | "error" | "displayName"
+  Omit<HashedOp, "userland"> & { userland?: OpUserland },
+  "id" | "op" | "name" | "opts" | "data" | "error" | "displayName" | "userland"
 >;
 
 /**
