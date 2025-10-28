@@ -1,5 +1,6 @@
 import { type AiAdapter, models } from "@inngest/ai";
 import { z } from "zod/v3";
+import { getAsyncCtx } from "../experimental";
 import { logPrefix } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { timeStr } from "../helpers/strings.ts";
@@ -12,10 +13,13 @@ import type {
   WithoutInternalStr,
 } from "../helpers/types.ts";
 import {
+  type AnyFn,
+  type CreateStepOptionsOrId,
   type EventPayload,
   type HashedOp,
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
+  type JsonifyOutput,
   type MinimalEventPayload,
   type SendEventOutput,
   StepOpCode,
@@ -124,18 +128,77 @@ export interface StepToolOptions<
   fn?: (...args: Parameters<T>) => unknown;
 }
 
-export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
+export const getStepOptions = (
+  // biome-ignore lint/suspicious/noExplicitAny: any fn is fine
+  options: StepOptionsOrId | CreateStepOptionsOrId<any>,
+  idArgs: unknown[] = [],
+): StepOptions => {
   if (typeof options === "string") {
     return { id: options };
   }
 
-  return options;
+  if ("id" in options && typeof options.id === "function") {
+    return { ...options, id: options.id(...idArgs) };
+  }
+
+  return options as StepOptions;
 };
 
 /**
  * Suffix used to namespace steps that are automatically indexed.
  */
 export const STEP_INDEXING_SUFFIX = ":";
+
+/**
+ * Create a step that attempts to use Inngest's step tooling if it's inside that
+ * context, or falls back to being a regular function call if not.
+ */
+export const createStep = <TFn extends AnyFn>(
+  idOrOptions: CreateStepOptionsOrId<TFn>,
+  fn: TFn,
+): ((...args: Parameters<TFn>) => Promise<
+  /**
+   * TODO Middleware can affect this. If run input middleware has returned
+   * new step data, do not Jsonify.
+   */
+  SimplifyDeep<
+    Jsonify<
+      TFn extends (...args: Parameters<TFn>) => Promise<infer U>
+        ? Awaited<U extends void ? null : U>
+        : ReturnType<TFn> extends void
+          ? null
+          : ReturnType<TFn>
+    >
+  >
+>) => {
+  return async (...args: Parameters<TFn>) => {
+    // Try get step tooling from context
+    const ctx = await getAsyncCtx();
+    if (ctx?.ctx?.step?.run) {
+      // We have step tooling available, so use it.
+
+      // First grab the step options
+      const stepOptions = getStepOptions(idOrOptions, args);
+
+      return ctx.ctx.step.run(stepOptions, () => fn(...args));
+    }
+
+    // If we're here, we're not in an Inngest context, so just run the function.
+    // However, we still want to Jsonify the output to ensure consistent types.
+    // In the future this can change to pass through middleware typing
+    // pipelines.
+    const result = await fn(...args);
+
+    return JSON.parse(JSON.stringify(result));
+  };
+};
+
+const foo = createStep(
+  (a, b) => `foo-${a}-${b}`,
+  async (a: number, b: string) => {
+    return `${a}-${b}`;
+  },
+);
 
 /**
  * Create a new set of step function tools ready to be used in a step function.

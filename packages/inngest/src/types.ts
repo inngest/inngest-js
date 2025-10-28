@@ -24,12 +24,14 @@ import type {
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { internalEvents } from "./helpers/consts.ts";
+import type { Jsonify } from "./helpers/jsonify.ts";
 import type {
   AsTuple,
   IsEqual,
   IsNever,
   Public,
   Simplify,
+  SimplifyDeep,
   WithoutInternal,
 } from "./helpers/types.ts";
 import type { Logger } from "./middleware/logger.ts";
@@ -1378,6 +1380,10 @@ export interface StepOptions {
   name?: string;
 }
 
+export type CreateStepIdFn<T extends AnyFn> = (
+  ...args: Parameters<T>
+) => string;
+
 /**
  * Either a step ID or a set of step options.
  *
@@ -1385,8 +1391,43 @@ export interface StepOptions {
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
+/**
+ * Any function type.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: We want any fn
+export type AnyFn = (...args: any[]) => any;
+
+/**
+ * Given a function type, extract its output type and convert it to a JSON-
+ * compatible, Promise type.
+ *
+ * @public
+ */
+export type JsonifyOutput<TFn extends AnyFn> = Promise<
+  /**
+   * TODO Middleware can affect this. If run input middleware has returned
+   * new step data, do not Jsonify.
+   */
+  SimplifyDeep<
+    Jsonify<
+      TFn extends (...args: Parameters<TFn>) => Promise<infer U>
+        ? Awaited<U extends void ? null : U>
+        : ReturnType<TFn> extends void
+          ? null
+          : ReturnType<TFn>
+    >
+  >
+>;
+
+export type CreateStepOptionsOrId<T extends AnyFn> =
+  | StepOptions["id"]
+  | CreateStepIdFn<T>
+  | (Omit<StepOptions, "id"> & {
+      id: string | CreateStepIdFn<T>;
+    });
+
 export type EventsFromFunction<T extends InngestFunction.Any> =
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: infer needed
   T extends InngestFunction<any, any, any, infer IClient, any, any>
     ? GetEvents<IClient, true>
     : never;
