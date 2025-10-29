@@ -1,5 +1,6 @@
 import { type AiAdapter, models } from "@inngest/ai";
 import { z } from "zod/v3";
+import { getAsyncCtx } from "../experimental";
 import { logPrefix } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { timeStr } from "../helpers/strings.ts";
@@ -35,7 +36,6 @@ import type {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
-import { getAsyncCtx } from "../experimental";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -146,7 +146,7 @@ export const STEP_INDEXING_SUFFIX = ":";
  * An op stack (function state) is passed in as well as some mutable properties
  * that the tools can use to submit a new op.
  */
-export const createStepTools = <TClient extends Inngest.Any>(
+const createStepTools = <TClient extends Inngest.Any>(
   client: TClient,
   execution: InngestExecution,
   stepHandler: StepHandler,
@@ -700,6 +700,8 @@ export const createStepTools = <TClient extends Inngest.Any>(
   return tools;
 };
 
+export type GenericStepTools = ReturnType<typeof createStepTools>;
+
 /**
  * Create a set of step tools that lazily initializes the real step tooling when
  * they are called.
@@ -707,8 +709,8 @@ export const createStepTools = <TClient extends Inngest.Any>(
  * This can be used for situations where the tools' context must be loading via
  * ASL and cannot be immediately provided, such as inside non-Inngest API functions.
  */
-export const createDeferredStepTools = (): ReturnType<typeof createStepTools> => {
-  const initializeTools = async (): ReturnType<typeof createStepTools> => {
+export const createDeferredStepTools = (): GenericStepTools => {
+  const initializeTools = async (): GenericStepTools => {
     const ctx = await getAsyncCtx();
     if (ctx?.ctx?.step) {
       // We're already in the context of an execution; return the tools
@@ -718,15 +720,33 @@ export const createDeferredStepTools = (): ReturnType<typeof createStepTools> =>
     // If we're here, it's now our job to create the execution and subsequent
     // step tooling.
     if (!ctx) {
-      throw new Error("No Inngest context found for step tools; are you in a function?");
+      throw new Error(
+        "No Inngest context found for step tools; are you in a function?",
+      );
     }
 
     if (!ctx.app) {
-      throw new Error("No Inngest app found for step tools; are you in a function?")
+      throw new Error(
+        "No Inngest app found for step tools; are you in a function?",
+      );
     }
 
+    // 1. Create a new function
+    // 2. Create a new execution for that function
+
     // We always use the default execution version
-  }
+
+    const tools: GenericStepTools = {
+      ai: {
+        models: {
+          ...models,
+        },
+        wrap: {
+          // initialize tools, then call wrap with args...
+        },
+      },
+    };
+  };
 
   // We return a proxy here that will lazily initialize the real tools when
   // they are first accessed.
@@ -734,8 +754,14 @@ export const createDeferredStepTools = (): ReturnType<typeof createStepTools> =>
   // It waits for the full path to be retrieved, then initializes the tool when
   // it is called, grabbing the path that has been accessed so far, and uses
   // that path to fetch the real step tool.
+};
 
-}
+/**
+ * Top-level export
+ *
+ * TODO comment
+ */
+export const step = createDeferredStepTools();
 
 export const gatewaySymbol = Symbol.for("inngest.step.gateway");
 

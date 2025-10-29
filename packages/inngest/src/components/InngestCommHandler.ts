@@ -1,3 +1,4 @@
+import { models } from "@inngest/ai";
 import debug from "debug";
 import { z } from "zod/v3";
 import {
@@ -40,6 +41,7 @@ import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { createStream } from "../helpers/stream.ts";
 import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
 import type { MaybePromise } from "../helpers/types.ts";
+import type { StepTools } from "../test/helpers";
 import {
   type AuthenticatedIntrospection,
   type EventPayload,
@@ -1093,8 +1095,9 @@ export class InngestCommHandler<
     }
   }
 
-  // Might not need
   public createDeferredHandler(): (...args: Input) => Promise<Awaited<Output>> {
+    const inngestFnHandler = this.createHandler();
+
     return this.wrapHandler(async (...args: Input) => {
       const timer = new ServerTiming();
       const actions = await this.getPayloadActions(timer, args);
@@ -1112,6 +1115,21 @@ export class InngestCommHandler<
       // If it's a re-entry, do we kinda wanna call and use `createHandler`
       // here? And then we can further wrap the response at the end to? Though I
       // don't think we even need to do that.
+      const runIdHeader = await actions.headers(
+        "checking for run ID to determine if re-entry",
+        headerKeys.InngestRunId,
+      );
+
+      if (runIdHeader) {
+        // This is definitely a re-entry. We are an Inngest function now.
+        return inngestFnHandler(...args);
+      }
+
+      // If we're here, we're not (yet) an Inngest function. We run the handler
+      // with deferred step tooling and wait to see what we need to do.
+      //
+      // First off though, let's set some context so that the deferred step
+      // tooling understands what
     });
   }
 
@@ -1276,33 +1294,45 @@ export class InngestCommHandler<
     //  -> new run
     //
     // Also, creating a new run is cheap, as we defer anything heavy for if
-    // they use steps, so just do that first and see also see if it's a
+    // they use steps, so just do that first and also see if it's a
     // re-entry later
     const runIdHeader = await actions.headers(
       "checking for run ID to determine if re-entry",
       headerKeys.InngestRunId,
     );
+    const isReEntry = Boolean(runIdHeader);
+    if (
+      method === "POST" &&
+      (isReEntry || !this._options.allowNonInngestRequests)
+    ) {
+      // This is either definitely a re-entry or we're a classic serve handler
+      // and therefore can't accept non-Inngest requests anyway. For these
+    }
     if (method === "POST" && validationResult.success && runIdHeader) {
       // This is definitely a re-entry and we absolutely must run the usual
       // async code.
+      return this.handleAsyncRequest({
+        actions,
+        timer,
+        getInngestHeaders,
+        reqArgs,
+        signatureValidation,
+        body,
+        method,
+        headers,
+      });
     }
 
     try {
       let url = await actions.url("starting to handle request");
 
       if (method === "POST") {
-        const validationResult = await signatureValidation;
-        const runIdHeader = await actions.headers(
-          "checking for run ID to determine if re-entry",
-          headerKeys.InngestRunId,
-        );
-
         if (
           (validationResult.success && runIdHeader) || // definitely a re-entry
           !this._options.allowNonInngestRequests // maybe not a re-entry and we're not allowed to receive non-Inngest requests
         ) {
           // Either definitely a re-entry or we're not allowed to receive
-          // non-Inngest requests and .....
+          // non-Inngest requests because we're a classic server handler.
           return this.handleAsyncRequest({
             actions,
             timer,
