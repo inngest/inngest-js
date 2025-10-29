@@ -64,6 +64,11 @@ const createFetchShim = (): StepFetch => {
       return stepFetch.fallback(input, init);
     }
 
+    if (!ctx.ctx) {
+      // TODO We must create deferred step tooling!
+      throw new Error("not implemented");
+    }
+
     const targetUrl = new URL(
       input instanceof Request ? input.url : input.toString(),
     );

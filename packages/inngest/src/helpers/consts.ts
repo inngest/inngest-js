@@ -142,6 +142,7 @@ export enum headerKeys {
   EventIdSeed = "x-inngest-event-id-seed",
   TraceParent = "traceparent",
   TraceState = "tracestate",
+  InngestRunId = "x-inngest-run-id",
 }
 
 export const defaultInngestApiBaseUrl = "https://api.inngest.com/";

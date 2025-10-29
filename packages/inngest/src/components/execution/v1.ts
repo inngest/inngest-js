@@ -105,6 +105,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       const tracer = trace.getTracer("inngest", version);
 
       this.execution = getAsyncLocalStorage().then((als) => {
+        // TODO We should kill this. Here we should only MUTATE the context to
+        // add instance, version, ctx
         return als.run(
           { app: this.options.client, ctx: this.fnArg },
           async () => {

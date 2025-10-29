@@ -1,7 +1,9 @@
 import { type AiAdapter, models } from "@inngest/ai";
 import { z } from "zod/v3";
+import { getAsyncCtx } from "../experimental";
 import { logPrefix } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
+import { ServerTiming } from "../helpers/ServerTiming";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
 import type {
@@ -24,7 +26,11 @@ import {
   type TriggerEventFromFunction,
   type TriggersFromClient,
 } from "../types.ts";
-import type { InngestExecution } from "./execution/InngestExecution.ts";
+import {
+  type InngestExecution,
+  PREFERRED_EXECUTION_VERSION,
+} from "./execution/InngestExecution.ts";
+import { createV1InngestExecution } from "./execution/v1";
 import { fetch as stepFetch } from "./Fetch.ts";
 import type {
   ClientOptionsFromInngest,
@@ -709,6 +715,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
   return tools;
 };
 
+/**
+ * A generic set of step tools, without typing information about the client used
+ * to create them.
+ */
+export type GenericStepTools = GetStepTools<Inngest.Any>;
+
 export const gatewaySymbol = Symbol.for("inngest.step.gateway");
 
 export type InternalStepTools = GetStepTools<Inngest.Any> & {
@@ -720,6 +732,161 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
     headers: Record<string, string>;
     body: string;
   }>;
+};
+
+/**
+ * A generic set of step tools that can be used without typing information about
+ * the client used to create them.
+ *
+ * These tools use AsyncLocalStorage to track the context in which they are
+ * used, and will throw an error if used outside of an Inngest context.
+ *
+ * The intention of these high-level tools is to allow usage of Inngest step
+ * tools within API endpoints, though they can still be used within regular
+ * Inngest functions as well.
+ */
+export const step: GenericStepTools = {
+  ai: {
+    infer: (...args) =>
+      getDeferredStepTooling().then((tools) => tools.ai.infer(...args)),
+    wrap: (...args) =>
+      getDeferredStepTooling().then((tools) => tools.ai.wrap(...args)),
+    models: {
+      ...models,
+    },
+  },
+  fetch: stepFetch,
+  invoke: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.invoke(...args)),
+  run: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.run(...args)),
+  sendEvent: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.sendEvent(...args)),
+  sendSignal: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.sendSignal(...args)),
+  sleep: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.sleep(...args)),
+  sleepUntil: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.sleepUntil(...args)),
+  waitForEvent: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.waitForEvent(...args)),
+  waitForSignal: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.waitForSignal(...args)),
+};
+
+/**
+ * An internal function used to retrieve or create step tooling for the current
+ * execution context.
+ *
+ * Note that this requires an existing context to create the step tooling;
+ * something must declare the Inngest execution context before this can be used.
+ */
+const getDeferredStepTooling = async (): Promise<GenericStepTools> => {
+  const ctx = await getAsyncCtx();
+  if (!ctx) {
+    throw new Error(
+      "`step` tools can only be used within Inngest function executions; no execution context was found",
+    );
+  }
+
+  if (!ctx.app) {
+    throw new Error(
+      "`step` tools can only be used within Inngest function executions; no Inngest client was found in the execution context",
+    );
+  }
+
+  if (ctx.execution) {
+    // If we're here, we're in the context of a function execution already and
+    // we can return the existing step tooling.
+    return ctx.execution.ctx.step;
+  }
+
+  // If we're here, we do not yet have a function execution context, but a step
+  // tool has been called.
+  //
+  // This also means that this is the first step tool called in this context;
+  // we're converting this in to an Inngest execution with checkpointing, by
+  // default.
+  //
+  // Noting here that to create this context, we mutate the current store and
+  // the execution we create will reuse that.
+  //
+  // Because we are always creating here, we make sure to only use the preferred
+  // execution version.
+  //
+  // TODO This is duplicted between CommHandler and here.
+  // TODO Type the data/names/etc
+  const runId = "make-a-new-one-here";
+  const event = {
+    name: "http/run.started",
+    data: {
+      domain: "TODO scheme://host", // scheme + host from OG req
+      method: "TODO METHOD", // HTTP method from OG req
+      path: "TODO PATH", // Path from OG req
+      ip: "TODO IP", // X-Forwarded-For or X-Real-IP
+      content_type: "TODO CONTENT TYPE", // parrott header from OG request
+      query_params: "TODO QUERY PARAMS", // QueryParams are the query parameters for the request, as a single string without the leading "?".
+      body: "TODO BODY", // capture req body by default, allow user to opt out
+      fn: "TODO FUNCTION ID", // maybe explicit fn ID from user, else empty
+    },
+  };
+
+  const execution = createV1InngestExecution({
+    client: ctx.app as Inngest.Any,
+    headers: {}, // traceparent/tracestate only - parrotting back
+    runId,
+    data: {
+      runId,
+      attempt: 0,
+      event,
+      events: [event],
+      maxAttempts: 3, // TODO const default? decided here?
+    },
+    reqArgs: [], // TODO from OG req
+    stepCompletionOrder: [],
+    stepState: {},
+    disableImmediateExecution: false,
+    isFailureHandler: false,
+    timer: new ServerTiming(),
+
+    /**
+     * Used for
+     * - fn level middleware, which we can ignore ig? maybe?
+     * - also client level middleware, as we pass the fn in to hooks
+     * - getting the function we'll be calling (fn["fn"])
+     *
+     * I think we need to create one, just as a stub really.
+     *
+     * In fact, I think that the wrapper should create this function ahead of
+     * time, so we always have a function ready to go, even if we don't use it.
+     */
+    fn: null,
+  });
+
+  // TODO Here, I believe that just by creating the execution, our state should
+  // have mutated to include it, which means it should have filled:
+  // ctx.execution;
+  // ctx.execution?.instance;
+  // ctx.execution?.version;
+  // ctx.execution?.ctx;
+
+  // 	Event: inngestgo.GenericEvent[NewAPIRunData]{
+  // 	Name: "http/run.started",
+  // 	Data: input,
+  // },
+
+  // NewAPIRunData{
+  // 		Domain:      scheme + "://" + o.r.Host,
+  // 		Method:      o.r.Method,
+  // 		Path:        o.r.URL.Path,
+  // 		IP:          getClientIP(o.r),
+  // 		ContentType: o.r.Header.Get("Content-Type"),
+  // 		QueryParams: o.r.URL.RawQuery,
+  // 		Body:        requestBody,
+  // 		Fn:          fnID,
+  // 	}
+
+  throw new Error("not implemented");
 };
 
 /**

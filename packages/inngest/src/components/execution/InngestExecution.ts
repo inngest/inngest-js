@@ -21,6 +21,8 @@ export interface ExecutionResults {
   "function-rejected": { error: unknown; retriable: boolean | string };
   "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
   "step-not-found": { step: OutgoingOp };
+  // Crappy `to` fields, but using to get the line through
+  "change-mode": { to: "async" };
 }
 
 export type ExecutionResult = {
