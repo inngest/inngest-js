@@ -94,6 +94,7 @@ export type WrapHandlerOptions = {
 /**
  * TODO Name
  * TODO Comment
+ * TODO We can create an internal helper to create this same pattern everywhere maybe
  */
 export const createEndpointWrapper = (options: WrapHandlerOptions) => {
   // Returns a function that wraps an edge handler
@@ -123,6 +124,10 @@ export const createEndpointWrapper = (options: WrapHandlerOptions) => {
           functions: [fn],
         })(req);
       }
+
+      // TODO Everything below here can probably reside within
+      // `InngestCommHandler#createCheckpointingHandler()` or similar. That way
+      // every one of these wrappers can use it.
 
       // If we're here, this is a regular call to the endpoint and we are not
       // yet running an Inngest execution.
