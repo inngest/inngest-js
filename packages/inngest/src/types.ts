@@ -213,6 +213,21 @@ export enum StepOpCode {
 }
 
 /**
+ * TODO Comment
+ */
+export enum StepMode {
+  /**
+   *  TODO Comment
+   */
+  Sync = "sync",
+
+  /**
+   * TODO Comment
+   */
+  Async = "async",
+}
+
+/**
  * The shape of a single operation in a step function. Used to communicate
  * desired and received operations to Inngest.
  */
@@ -221,6 +236,11 @@ export type Op = {
    * The unique code for this operation.
    */
   op: StepOpCode;
+
+  /**
+   * TODO Comment
+   */
+  mode: StepMode;
 
   /**
    * The unhashed step name for this operation. This is a legacy field that is

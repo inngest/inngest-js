@@ -3,7 +3,6 @@ import { z } from "zod/v3";
 import { getAsyncCtx } from "../experimental";
 import { logPrefix } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
-import { ServerTiming } from "../helpers/ServerTiming";
 import { timeStr } from "../helpers/strings.ts";
 import * as Temporal from "../helpers/temporal.ts";
 import type {
@@ -20,6 +19,7 @@ import {
   type InvokeTargetFunctionDefinition,
   type MinimalEventPayload,
   type SendEventOutput,
+  StepMode,
   StepOpCode,
   type StepOptions,
   type StepOptionsOrId,
@@ -28,9 +28,9 @@ import {
 } from "../types.ts";
 import {
   type InngestExecution,
+  type MemoizedOp,
   PREFERRED_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
-import { createV1InngestExecution } from "./execution/v1";
 import { fetch as stepFetch } from "./Fetch.ts";
 import type {
   ClientOptionsFromInngest,
@@ -238,6 +238,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         return {
           id,
+          mode: StepMode.Sync,
           op: StepOpCode.StepPlanned,
           name: id,
           displayName: name ?? id,
@@ -293,6 +294,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       ({ id, name }) => {
         return {
           id,
+          mode: StepMode.Sync,
           op: StepOpCode.StepPlanned,
           name: "sendEvent",
           displayName: name ?? id,
@@ -329,6 +331,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       // Temporal.ZonedDateTimeLike
       return {
         id,
+        mode: StepMode.Async,
         op: StepOpCode.WaitForSignal,
         name: opts.signal,
         displayName: name ?? id,
@@ -350,6 +353,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       ({ id, name }, opts) => {
         return {
           id,
+          mode: StepMode.Sync,
           op: StepOpCode.StepPlanned,
           name: "sendSignal",
           displayName: name ?? id,
@@ -412,6 +416,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         return {
           id,
+          mode: StepMode.Async,
           op: StepOpCode.WaitForEvent,
           name: opts.event,
           opts: matchOpts,
@@ -461,6 +466,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         return {
           id,
+          mode: StepMode.Async,
           op: StepOpCode.AiGateway,
           displayName: name ?? id,
           opts: {
@@ -528,6 +534,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       return {
         id,
+        mode: StepMode.Async,
         op: StepOpCode.Sleep,
         name: msTimeStr,
         displayName: name ?? id,
@@ -560,6 +567,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
          */
         return {
           id,
+          mode: StepMode.Async,
           op: StepOpCode.Sleep,
           name: iso,
           displayName: name ?? id,
@@ -663,6 +671,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       return {
         id,
+        mode: StepMode.Async,
         op: StepOpCode.InvokeFunction,
         displayName: name ?? id,
         opts,
@@ -699,6 +708,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       return {
         id,
+        mode: StepMode.Async,
         op: StepOpCode.Gateway,
         displayName: name ?? id,
         opts: {
@@ -746,6 +756,8 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
  * Inngest functions as well.
  */
 export const step: GenericStepTools = {
+  // TODO Support `step.fetch` (this is already kinda half way deferred)
+  fetch: null as unknown as GenericStepTools["fetch"],
   ai: {
     infer: (...args) =>
       getDeferredStepTooling().then((tools) => tools.ai.infer(...args)),
@@ -755,7 +767,6 @@ export const step: GenericStepTools = {
       ...models,
     },
   },
-  fetch: stepFetch,
   invoke: (...args) =>
     getDeferredStepTooling().then((tools) => tools.invoke(...args)),
   run: (...args) =>
@@ -785,7 +796,7 @@ const getDeferredStepTooling = async (): Promise<GenericStepTools> => {
   const ctx = await getAsyncCtx();
   if (!ctx) {
     throw new Error(
-      "`step` tools can only be used within Inngest function executions; no execution context was found",
+      "`step` tools can only be used within Inngest function executions; no context was found",
     );
   }
 
@@ -795,98 +806,15 @@ const getDeferredStepTooling = async (): Promise<GenericStepTools> => {
     );
   }
 
-  if (ctx.execution) {
-    // If we're here, we're in the context of a function execution already and
-    // we can return the existing step tooling.
-    return ctx.execution.ctx.step;
+  if (!ctx.execution) {
+    throw new Error(
+      "`step` tools can only be used within Inngest function executions; no execution context was found",
+    );
   }
 
-  // If we're here, we do not yet have a function execution context, but a step
-  // tool has been called.
-  //
-  // This also means that this is the first step tool called in this context;
-  // we're converting this in to an Inngest execution with checkpointing, by
-  // default.
-  //
-  // Noting here that to create this context, we mutate the current store and
-  // the execution we create will reuse that.
-  //
-  // Because we are always creating here, we make sure to only use the preferred
-  // execution version.
-  //
-  // TODO This is duplicted between CommHandler and here.
-  // TODO Type the data/names/etc
-  const runId = "make-a-new-one-here";
-  const event = {
-    name: "http/run.started",
-    data: {
-      domain: "TODO scheme://host", // scheme + host from OG req
-      method: "TODO METHOD", // HTTP method from OG req
-      path: "TODO PATH", // Path from OG req
-      ip: "TODO IP", // X-Forwarded-For or X-Real-IP
-      content_type: "TODO CONTENT TYPE", // parrott header from OG request
-      query_params: "TODO QUERY PARAMS", // QueryParams are the query parameters for the request, as a single string without the leading "?".
-      body: "TODO BODY", // capture req body by default, allow user to opt out
-      fn: "TODO FUNCTION ID", // maybe explicit fn ID from user, else empty
-    },
-  };
-
-  const execution = createV1InngestExecution({
-    client: ctx.app as Inngest.Any,
-    headers: {}, // traceparent/tracestate only - parrotting back
-    runId,
-    data: {
-      runId,
-      attempt: 0,
-      event,
-      events: [event],
-      maxAttempts: 3, // TODO const default? decided here?
-    },
-    reqArgs: [], // TODO from OG req
-    stepCompletionOrder: [],
-    stepState: {},
-    disableImmediateExecution: false,
-    isFailureHandler: false,
-    timer: new ServerTiming(),
-
-    /**
-     * Used for
-     * - fn level middleware, which we can ignore ig? maybe?
-     * - also client level middleware, as we pass the fn in to hooks
-     * - getting the function we'll be calling (fn["fn"])
-     *
-     * I think we need to create one, just as a stub really.
-     *
-     * In fact, I think that the wrapper should create this function ahead of
-     * time, so we always have a function ready to go, even if we don't use it.
-     */
-    fn: null,
-  });
-
-  // TODO Here, I believe that just by creating the execution, our state should
-  // have mutated to include it, which means it should have filled:
-  // ctx.execution;
-  // ctx.execution?.instance;
-  // ctx.execution?.version;
-  // ctx.execution?.ctx;
-
-  // 	Event: inngestgo.GenericEvent[NewAPIRunData]{
-  // 	Name: "http/run.started",
-  // 	Data: input,
-  // },
-
-  // NewAPIRunData{
-  // 		Domain:      scheme + "://" + o.r.Host,
-  // 		Method:      o.r.Method,
-  // 		Path:        o.r.URL.Path,
-  // 		IP:          getClientIP(o.r),
-  // 		ContentType: o.r.Header.Get("Content-Type"),
-  // 		QueryParams: o.r.URL.RawQuery,
-  // 		Body:        requestBody,
-  // 		Fn:          fnID,
-  // 	}
-
-  throw new Error("not implemented");
+  // If we're here, we're in the context of a function execution already and
+  // we can return the existing step tooling.
+  return ctx.execution.ctx.step;
 };
 
 /**

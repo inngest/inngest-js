@@ -109,5 +109,6 @@ export class InngestExecution {
 }
 
 export interface IInngestExecution {
+  version: ExecutionVersion;
   start(): Promise<ExecutionResult>;
 }

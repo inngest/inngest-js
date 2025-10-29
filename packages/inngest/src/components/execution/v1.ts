@@ -1,7 +1,11 @@
 import { trace } from "@opentelemetry/api";
 import hashjs from "hash.js";
 import { z } from "zod/v3";
-import { headerKeys, internalEvents } from "../../helpers/consts.ts";
+import {
+  ExecutionVersion,
+  headerKeys,
+  internalEvents,
+} from "../../helpers/consts.ts";
 import {
   deserializeError,
   ErrCode,
@@ -26,6 +30,7 @@ import {
   type Handler,
   jsonErrorSchema,
   type OutgoingOp,
+  StepMode,
   StepOpCode,
 } from "../../types.ts";
 import { version } from "../../version.ts";
@@ -60,6 +65,8 @@ export const createV1InngestExecution: InngestExecutionFactory = (options) => {
 };
 
 class V1InngestExecution extends InngestExecution implements IInngestExecution {
+  public version = ExecutionVersion.V1;
+
   private state: V1ExecutionState;
   private fnArg: Context.Any;
   private checkpointHandlers: CheckpointHandlers;
@@ -82,7 +89,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     this.userFnToRun = this.getUserFnToRun();
     this.state = this.createExecutionState();
     this.fnArg = this.createFnArg();
-    this.checkpointHandlers = this.createCheckpointHandlers();
+    this.checkpointHandlers = this.createCheckpointingCheckpointHandlers();
     this.initializeTimer(this.state);
 
     this.debug(
@@ -108,7 +115,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         // TODO We should kill this. Here we should only MUTATE the context to
         // add instance, version, ctx
         return als.run(
-          { app: this.options.client, ctx: this.fnArg },
+          {
+            app: this.options.client,
+            execution: {
+              ctx: this.fnArg,
+              instance: this,
+            },
+          },
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
               clientProcessorMap.get(this.options.client)?.declareStartingSpan({
@@ -166,6 +179,110 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * This should never happen.
      */
     throw new Error("Core loop finished without returning a value");
+  }
+
+  private createCheckpointingCheckpointHandlers(): CheckpointHandlers {
+    return {
+      /**
+       * Run for all checkpoints. Best used for logging or common actions.
+       * Use other handlers to return values and interrupt the core loop.
+       */
+      "": (checkpoint) => {
+        this.debug("checkpoint:", checkpoint);
+      },
+
+      "function-resolved": (checkpoint) => {
+        // Done - just return the value
+        return {
+          type: "function-resolved",
+          ctx: this.fnArg,
+          ops: this.ops,
+          data: checkpoint.data,
+        };
+      },
+
+      "function-rejected": (checkpoint) => {
+        // Just pass back the error
+        return {
+          type: "function-rejected",
+          ctx: this.fnArg,
+          error: checkpoint.error,
+          ops: this.ops,
+          retriable: false, // TODO I think this goes async now? So this would be a switch mode type
+        };
+      },
+
+      "step-not-found": ({ step }) => {
+        return {
+          type: "function-rejected",
+          ctx: this.fnArg,
+          error: new Error(
+            "Step not found when checkpointing; this should never happen",
+          ),
+          ops: this.ops,
+          retriable: false,
+        };
+      },
+
+      "steps-found": async ({ steps }) => {
+        /**
+         * Aight sweet. Keep going. Let's see.
+         *
+         * - If it's one little sync step, run it bro.
+         * - If it's multiple steps, switch to async
+         * - If it's one little async step, switch to async
+         */
+        if (steps.length !== 1 || steps[0].mode !== StepMode.Sync) {
+          return {
+            type: "change-mode",
+            ctx: this.fnArg,
+            ops: this.ops,
+            to: "async",
+          };
+        }
+
+        const step = steps[0];
+        console.log("executing step...");
+        const result = await this.executeStep(step);
+        console.log("got", result);
+
+        if (result.error) {
+          // TODO Do we go async?
+          throw new Error("not implemented");
+        }
+
+        // TODO naughty truthy check
+        if (result.data) {
+          const foundStepRef = this.state.steps.get(step.id);
+          if (!foundStepRef) {
+            throw new Error(
+              "TODO Step not found in memoization state; this should never happen",
+            );
+          }
+
+          console.log(
+            "setting step state for id:",
+            steps[0].hashedId,
+            foundStepRef,
+          );
+
+          foundStepRef.data = result.data;
+
+          this.state.stepState[steps[0].hashedId] = foundStepRef;
+          foundStepRef.fulfilled = true; // TODO lol
+          foundStepRef.handle();
+
+          console.log(
+            "executed sync step during checkpointing and now continuing",
+            foundStepRef,
+          );
+
+          return;
+        }
+
+        throw new Error("TODO no data or error? hmm");
+      },
+    };
   }
 
   /**
@@ -490,8 +607,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     const store = await getAsyncCtx();
 
-    if (store) {
-      store.executingStep = {
+    if (store?.execution) {
+      store.execution.executingStep = {
         id,
         name: displayName,
       };
@@ -501,8 +618,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     return runAsPromise(fn)
       .finally(async () => {
-        if (store) {
-          delete store.executingStep;
+        if (store?.execution) {
+          delete store.execution.executingStep;
         }
 
         await this.state.hooks?.afterExecution?.();
@@ -1024,28 +1141,35 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
           step.handled = true;
 
-          if (isFulfilled && stepState) {
-            stepState.fulfilled = true;
+          // Refetch step state because it may have been changed since we found
+          // the step. This could be due to checkpointing, where we run this
+          // live and then return to the function.
+          const result = this.state.stepState[hashedId];
+
+          console.log("handling and found:", result, "looking for", hashedId);
+
+          if (step.fulfilled && result) {
+            result.fulfilled = true;
+
+            console.log("yep yep got here man");
 
             // For some execution scenarios such as testing, `data`, `error`,
             // and `input` may be `Promises`. This could also be the case for
             // future middleware applications. For this reason, we'll make sure
             // the values are fully resolved before continuing.
-            void Promise.all([
-              stepState.data,
-              stepState.error,
-              stepState.input,
-            ]).then(() => {
-              if (typeof stepState.data !== "undefined") {
-                resolve(stepState.data);
-              } else {
-                this.state.recentlyRejectedStepError = new StepError(
-                  opId.id,
-                  stepState.error,
-                );
-                reject(this.state.recentlyRejectedStepError);
-              }
-            });
+            void Promise.all([result.data, result.error, result.input]).then(
+              () => {
+                if (typeof result.data !== "undefined") {
+                  resolve(result.data);
+                } else {
+                  this.state.recentlyRejectedStepError = new StepError(
+                    opId.id,
+                    result.error,
+                  );
+                  reject(this.state.recentlyRejectedStepError);
+                }
+              },
+            );
           }
 
           return true;

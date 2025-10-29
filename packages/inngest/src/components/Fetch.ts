@@ -31,7 +31,7 @@ const createFetchShim = (): StepFetch => {
 
   const fetch: Fetch = async (input, init) => {
     const ctx = await getAsyncCtx();
-    if (!ctx) {
+    if (!ctx?.execution) {
       // Not in a function run
       if (!stepFetch.fallback) {
         // TODO Tell the user how to solve
@@ -48,26 +48,24 @@ const createFetchShim = (): StepFetch => {
     }
 
     // In a function run
-    if (ctx.executingStep) {
+    if (ctx.execution.executingStep) {
       // Inside a step
       if (!stepFetch.fallback) {
         // TODO Tell the user how to solve
         throw new Error(
-          `step.fetch() called inside step "${ctx.executingStep.id}" and had no fallback set`,
+          `step.fetch() called inside step "${ctx.execution.executingStep.id}" and had no fallback set`,
         );
       }
 
       debug(
-        `step.fetch() called inside step "${ctx.executingStep.id}"; falling back to global fetch`,
+        `step.fetch() called inside step "${ctx.execution.executingStep.id}"; falling back to global fetch`,
       );
 
       return stepFetch.fallback(input, init);
     }
 
-    if (!ctx.ctx) {
-      // TODO We must create deferred step tooling!
-      throw new Error("not implemented");
-    }
+    // TODO Do we need to make this better with deferred (global) step tooling?
+    // hmmmmm
 
     const targetUrl = new URL(
       input instanceof Request ? input.url : input.toString(),
@@ -77,11 +75,9 @@ const createFetchShim = (): StepFetch => {
 
     // Purposefully do not try/cacth this; if it throws then we treat that as a
     // regular `fetch()` throw, which also would not return a `Response`.
-    const jsonRes = await (ctx.ctx.step as InternalStepTools)[gatewaySymbol](
-      `step.fetch: ${targetUrl.hostname}`,
-      input,
-      init,
-    );
+    const jsonRes = await (ctx.execution.ctx.step as InternalStepTools)[
+      gatewaySymbol
+    ](`step.fetch: ${targetUrl.hostname}`, input, init);
 
     return new Response(jsonRes.body, {
       headers: jsonRes.headers,

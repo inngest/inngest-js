@@ -1207,6 +1207,19 @@ export class InngestCommHandler<
               version,
             };
           },
+          "change-mode": (result) => {
+            return {
+              status: 500,
+              headers: {
+                "Content-Type": "application/json",
+                [headerKeys.NoRetry]: "true",
+              },
+              body: stringify({
+                error: `We wanted to change mode to "${result.to}", but this is not supported within the InngestCommHandler. This is a bug in the Inngest SDK.`,
+              }),
+              version,
+            };
+          },
         };
 
         const handler = resultHandlers[

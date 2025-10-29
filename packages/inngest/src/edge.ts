@@ -18,6 +18,7 @@
 
 import { getAsyncLocalStorage } from "./components/execution/als";
 import {
+  type ExecutionResultHandler,
   type ExecutionResultHandlers,
   PREFERRED_EXECUTION_VERSION,
 } from "./components/execution/InngestExecution";
@@ -27,8 +28,7 @@ import {
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
 import { InngestFunction } from "./components/InngestFunction";
-import { getAsyncCtx } from "./experimental";
-import { ExecutionVersion, headerKeys } from "./helpers/consts";
+import { headerKeys } from "./helpers/consts";
 import { ServerTiming } from "./helpers/ServerTiming";
 import type { SupportedFrameworkName } from "./types.ts";
 
@@ -177,7 +177,7 @@ export const createEndpointWrapper = (options: WrapHandlerOptions) => {
         },
       }).start();
 
-      const resultHandlers: ExecutionResultHandlers = {
+      const resultHandlers: ExecutionResultHandlers<unknown> = {
         "step-not-found": () => {
           throw new Error(
             "We should not get the result 'step-not-found' when checkpointing. This is a bug in the `inngest` SDK",
@@ -202,7 +202,24 @@ export const createEndpointWrapper = (options: WrapHandlerOptions) => {
           // response.
           return data;
         },
+        "change-mode": () => {
+          // TODO Handle switching to async mode.
+          //
+          // This is where we do redirect, tokens, etc
+          throw new Error("Not implemented: change-mode");
+        },
       };
+
+      const resultHandler = resultHandlers[
+        result.type
+      ] as ExecutionResultHandler<unknown>;
+      if (!resultHandler) {
+        throw new Error(
+          `No handler for execution result type: ${result.type}. This is a bug in the \`inngest\` SDK`,
+        );
+      }
+
+      return resultHandler(result) as Response;
     }) as T;
   };
 };

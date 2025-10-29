@@ -25,11 +25,6 @@ export interface AsyncContext {
     instance: IInngestExecution;
 
     /**
-     * The version of the execution that is currently running.
-     */
-    version: ExecutionVersion;
-
-    /**
      * The `ctx` object that has been passed in to this function execution,
      * including values such as `step` and `event`.
      */
