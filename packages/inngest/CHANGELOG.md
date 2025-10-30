@@ -1,5 +1,13 @@
 # inngest
 
+## 3.44.4
+
+### Patch Changes
+
+- [#1148](https://github.com/inngest/inngest-js/pull/1148) [`9cf36f4d`](https://github.com/inngest/inngest-js/commit/9cf36f4db4d5892cbb3f4eb765fd8367515a5c2c) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Include retry count in the error message if gracefully flushing connect worker progress fails after all attempts
+
+- [#1139](https://github.com/inngest/inngest-js/pull/1139) [`6366f557`](https://github.com/inngest/inngest-js/commit/6366f557785967d0be246036d762ec1b0beb0518) Thanks [@rhino1998](https://github.com/rhino1998)! - Add userland ID & index to Ops
+
 ## 3.44.3
 
 ### Patch Changes
