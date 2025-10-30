@@ -95,6 +95,7 @@ export type WrapHandlerOptions = {
   client: Inngest.Like;
   // TODO
   // e.g. fn id?
+  badNameAsyncMode?: "redirect" | "token" | "custom";
 };
 
 /**
@@ -103,6 +104,8 @@ export type WrapHandlerOptions = {
  * TODO We can create an internal helper to create this same pattern everywhere maybe
  */
 export const createEndpointWrapper = (options: WrapHandlerOptions) => {
+  const badNameAsyncMode = options.badNameAsyncMode || "redirect";
+
   // Returns a function that wraps an edge handler
   return <T extends (req: Request) => Promise<Response>>(handler: T): T => {
     // When the handler is called, we create a new ALS context
@@ -123,6 +126,13 @@ export const createEndpointWrapper = (options: WrapHandlerOptions) => {
       );
 
       const headerRunId = req.headers.get(headerKeys.InngestRunId);
+      const h: Record<string, string> = {};
+      req.headers.forEach((v, k) => {
+        h[k] = v;
+      });
+
+      console.log("ermergerd", { h });
+
       if (headerRunId) {
         // If we have a run ID, we can just use the normal serve path
         return serve({
@@ -245,10 +255,35 @@ export const createEndpointWrapper = (options: WrapHandlerOptions) => {
           // response.
           return data;
         },
-        "change-mode": () => {
+        "change-mode": ({ token }) => {
           // TODO Handle switching to async mode.
           //
           // This is where we do redirect, tokens, etc
+          //
+          // We handle that here, because the wrapper decides and we assume that
+          // the execution engine has already checkpointed as much as possible.
+          //
+          // These should all be user-specified hooks like the onesf ro createhandler
+          switch (badNameAsyncMode) {
+            case "redirect": {
+              return Response.redirect(
+                `http://localhost:8288/v1/http/runs/${newRunId}/output?token=${token}`,
+              );
+            }
+
+            case "token": {
+              // TODO need token back from this checkpoint
+              // user-provided hook mate, incl. req args
+
+              break;
+            }
+
+            case "custom": {
+              // user-provided hook mate, incl. req args
+              break;
+            }
+          }
+
           throw new Error("Not implemented: change-mode");
         },
       };

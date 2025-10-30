@@ -446,7 +446,7 @@ export class InngestApi {
 
       const data = checkpointNewRunResponseSchema.parse(rawData);
 
-      console.log("checkpointed new run:", { req: body, res: data });
+      console.log("checkpointed new run:", { req: body, res: rawData });
 
       return data;
     }
@@ -491,7 +491,7 @@ export class InngestApi {
       );
     }
 
-    console.log("checkpointed steps:", { req: body });
+    console.log("checkpointed steps:", { req: body, res: await res.json() });
   }
 
   /**

@@ -244,56 +244,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        */
       "": async (checkpoint, i) => {
         this.debug("sync checkpoint:", checkpoint);
-
-        // if (checkpoint.type === "step-not-found") {
-        //   // We shouldn't get this for sync executions.
-        //   return;
-        // }
-
-        // // Here we handle the first checkpoint to hit, making sure we
-        // // appropriately checkpoint whatever has happened before we start the
-        // // rest of the loop.
-        // if (i !== 0) {
-        //   return;
-        // }
-
-        // const steps: OutgoingOp[] = [];
-        // switch (checkpoint.type) {
-        //   case "steps-found": {
-        //     for (const step of checkpoint.steps) {
-        //       steps.push({
-        //         displayName: step.displayName,
-        //         op: step.op,
-        //         id: step.hashedId,
-        //         name: step.name,
-        //         opts: step.opts,
-        //         userland: step.userland,
-        //       });
-        //     }
-
-        //     break;
-        //   }
-        //   case "function-rejected": {
-        //     // TODO wut
-        //     throw new Error(
-        //       "not implemented: checkpointing function rejection",
-        //     );
-        //   }
-
-        //   case "function-resolved": {
-        //     // TODO Bad - we need pos checking etc here too? hmm
-        //     steps.push({
-        //       op: StepOpCode.RunComplete,
-        //       id: _internals.hashId("complete"),
-        //       userland: { id: "complete" },
-        //       data: checkpoint.data,
-        //     });
-
-        //     break;
-        //   }
-        // }
-
-        // await this.checkpointNewRun(steps);
       },
 
       "function-resolved": async (checkpoint, i) => {
@@ -355,12 +305,19 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          * - If it's one little async step, switch to async
          */
         if (steps.length !== 1 || steps[0].mode !== StepMode.Sync) {
-          // TODO Do we checkpoint here first?
+          await this.checkpoint(steps);
+          if (!this.state.checkpointedRun?.token) {
+            throw new Error(
+              "TODO need token back from this checkpoint. Maybe if we don't get a token back then we shouldn't switch...",
+            );
+          }
+
           return {
             type: "change-mode",
             ctx: this.fnArg,
             ops: this.ops,
             to: "async",
+            token: this.state.checkpointedRun.token,
           };
         }
 
