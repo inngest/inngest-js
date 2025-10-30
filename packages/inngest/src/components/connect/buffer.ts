@@ -39,7 +39,7 @@ export class MessageBuffer {
 
   private async sendFlushRequest(
     hashedSigningKey: string | undefined,
-    msg: SDKResponse,
+    msg: SDKResponse
   ) {
     const headers: Record<string, string> = {
       "Content-Type": "application/protobuf",
@@ -59,7 +59,7 @@ export class MessageBuffer {
         method: "POST",
         body: new Uint8Array(SDKResponse.encode(msg).finish()),
         headers: headers,
-      },
+      }
     );
 
     if (!resp.ok) {
@@ -68,7 +68,7 @@ export class MessageBuffer {
     }
 
     const flushResp = FlushResponse.decode(
-      new Uint8Array(await resp.arrayBuffer()),
+      new Uint8Array(await resp.arrayBuffer())
     );
 
     return flushResp;
@@ -81,7 +81,9 @@ export class MessageBuffer {
 
     this.debug(`Flushing ${Object.keys(this.buffered).length} messages`);
 
-    for (let attempt = 0; attempt < 5; attempt++) {
+    const maxAttempts = 5;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       for (const [k, v] of Object.entries(this.buffered)) {
         try {
           await this.sendFlushRequest(hashedSigningKey, v);
@@ -99,6 +101,6 @@ export class MessageBuffer {
       await new Promise((resolve) => setTimeout(resolve, expBackoff(attempt)));
     }
 
-    throw new Error("Failed to flush messages");
+    this.debug(`Failed to flush messages after max attempts`, { maxAttempts });
   }
 }
