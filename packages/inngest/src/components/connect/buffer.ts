@@ -1,4 +1,3 @@
-import debug, { type Debugger } from "debug";
 import { headerKeys } from "../../helpers/consts.ts";
 import {
   FlushResponse,
@@ -6,17 +5,16 @@ import {
 } from "../../proto/src/components/connect/protobuf/connect.ts";
 import type { Inngest } from "../Inngest.ts";
 import { expBackoff } from "./util.ts";
+import type { Logger } from "../../middleware/logger.ts";
 
 export class MessageBuffer {
   private buffered: Record<string, SDKResponse> = {};
   private pending: Record<string, SDKResponse> = {};
-  private inngest: Inngest.Any;
-  private debug: Debugger;
 
-  constructor(inngest: Inngest.Any) {
-    this.inngest = inngest;
-    this.debug = debug("inngest:connect:message-buffer");
-  }
+  constructor(
+    private inngest: Inngest.Any,
+    private logger: Logger
+  ) {}
 
   public append(response: SDKResponse) {
     this.buffered[response.requestId] = response;
@@ -27,7 +25,10 @@ export class MessageBuffer {
     this.pending[response.requestId] = response;
     setTimeout(() => {
       if (this.pending[response.requestId]) {
-        this.debug("Message not acknowledged in time", response.requestId);
+        this.logger.warn(
+          "Message not acknowledged in time",
+          response.requestId
+        );
         this.append(response);
       }
     }, deadline);
@@ -39,7 +40,7 @@ export class MessageBuffer {
 
   private async sendFlushRequest(
     hashedSigningKey: string | undefined,
-    msg: SDKResponse,
+    msg: SDKResponse
   ) {
     const headers: Record<string, string> = {
       "Content-Type": "application/protobuf",
@@ -59,16 +60,16 @@ export class MessageBuffer {
         method: "POST",
         body: new Uint8Array(SDKResponse.encode(msg).finish()),
         headers: headers,
-      },
+      }
     );
 
     if (!resp.ok) {
-      this.debug("Failed to flush messages", await resp.text());
+      this.logger.error("Failed to flush messages", await resp.text());
       throw new Error("Failed to flush messages");
     }
 
     const flushResp = FlushResponse.decode(
-      new Uint8Array(await resp.arrayBuffer()),
+      new Uint8Array(await resp.arrayBuffer())
     );
 
     return flushResp;
@@ -79,7 +80,7 @@ export class MessageBuffer {
       return;
     }
 
-    this.debug(`Flushing ${Object.keys(this.buffered).length} messages`);
+    this.logger.info(`Flushing ${Object.keys(this.buffered).length} messages`);
 
     const maxAttempts = 5;
 
@@ -89,7 +90,7 @@ export class MessageBuffer {
           await this.sendFlushRequest(hashedSigningKey, v);
           delete this.buffered[k];
         } catch (err) {
-          this.debug("Failed to flush message", k, err);
+          this.logger.error("Failed to flush message", k, err);
           break;
         }
       }
