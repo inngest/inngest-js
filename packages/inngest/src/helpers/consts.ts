@@ -167,6 +167,16 @@ export enum internalEvents {
   ScheduledTimer = "inngest/scheduled.timer",
 }
 
+/**
+ * Events that are known globally by the Inngest platform.
+ */
+export enum knownEvents {
+  /**
+   * An HTTP request has been received to trigger a function execution.
+   */
+  HttpRunStarted = "http/run.started",
+}
+
 export const logPrefix: string = chalk.magenta.bold("[Inngest]");
 
 export const debugPrefix = "inngest";

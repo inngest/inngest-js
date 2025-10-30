@@ -23,6 +23,7 @@ import {
 } from "../../helpers/promises.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
+  type APIStepPayload,
   type BaseContext,
   type Context,
   type EventPayload,
@@ -35,6 +36,7 @@ import {
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import type { Inngest } from "../Inngest.ts";
+import type { ActionResponse } from "../InngestCommHandler";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
@@ -86,10 +88,22 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   constructor(options: InngestExecutionOptions) {
     super(options);
 
+    /**
+     * Check we have everything we need for checkpointing
+     */
+    if (this.options.stepMode === StepMode.Sync) {
+      if (!this.options.createResponse) {
+        throw new Error("createResponse is required for sync step mode");
+      }
+    }
+
     this.userFnToRun = this.getUserFnToRun();
     this.state = this.createExecutionState();
     this.fnArg = this.createFnArg();
-    this.checkpointHandlers = this.createCheckpointingCheckpointHandlers();
+    this.checkpointHandlers =
+      this.options.stepMode === StepMode.Sync
+        ? this.createCheckpointingCheckpointHandlers()
+        : this.createCheckpointHandlers();
     this.initializeTimer(this.state);
 
     this.debug(
@@ -157,11 +171,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       this.state.hooks = await this.initializeMiddleware();
       await this.startExecution();
 
+      let i = 0;
+
       for await (const checkpoint of this.state.loop) {
-        await allCheckpointHandler(checkpoint);
+        await allCheckpointHandler(checkpoint, i);
 
         const handler = this.getCheckpointHandler(checkpoint.type);
-        const result = await handler(checkpoint);
+        const result = await handler(checkpoint, i++);
 
         if (result) {
           return result;
@@ -181,17 +197,123 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     throw new Error("Core loop finished without returning a value");
   }
 
+  private async checkpointResponse(res: ActionResponse): Promise<void> {
+    if (!this.state.checkpointedRun) {
+      throw new Error(
+        "Cannot checkpoint response without checkpointing new run first. This is a bug in the Inngest SDK",
+      );
+    }
+
+    await this.options.client["inngestApi"].checkpointResponse({
+      appId: this.state.checkpointedRun.appId,
+      fnId: this.state.checkpointedRun.fnId,
+      runId: this.fnArg.runId,
+      response: res,
+    });
+  }
+
+  private async checkpoint(steps: OutgoingOp[]): Promise<void> {
+    if (!this.state.checkpointedRun) {
+      // We have to start the run
+      const res = await this.options.client["inngestApi"].checkpointNewRun({
+        runId: this.fnArg.runId,
+        event: this.fnArg.event as APIStepPayload,
+        steps,
+      });
+
+      this.state.checkpointedRun = {
+        appId: res.data.app_id,
+        fnId: res.data.fn_id,
+        token: res.data.token,
+      };
+    } else {
+      await this.options.client["inngestApi"].checkpointSteps({
+        appId: this.state.checkpointedRun.appId,
+        fnId: this.state.checkpointedRun.fnId,
+        runId: this.fnArg.runId,
+        steps,
+      });
+    }
+  }
+
   private createCheckpointingCheckpointHandlers(): CheckpointHandlers {
     return {
       /**
        * Run for all checkpoints. Best used for logging or common actions.
        * Use other handlers to return values and interrupt the core loop.
        */
-      "": (checkpoint) => {
-        this.debug("checkpoint:", checkpoint);
+      "": async (checkpoint, i) => {
+        this.debug("sync checkpoint:", checkpoint);
+
+        // if (checkpoint.type === "step-not-found") {
+        //   // We shouldn't get this for sync executions.
+        //   return;
+        // }
+
+        // // Here we handle the first checkpoint to hit, making sure we
+        // // appropriately checkpoint whatever has happened before we start the
+        // // rest of the loop.
+        // if (i !== 0) {
+        //   return;
+        // }
+
+        // const steps: OutgoingOp[] = [];
+        // switch (checkpoint.type) {
+        //   case "steps-found": {
+        //     for (const step of checkpoint.steps) {
+        //       steps.push({
+        //         displayName: step.displayName,
+        //         op: step.op,
+        //         id: step.hashedId,
+        //         name: step.name,
+        //         opts: step.opts,
+        //         userland: step.userland,
+        //       });
+        //     }
+
+        //     break;
+        //   }
+        //   case "function-rejected": {
+        //     // TODO wut
+        //     throw new Error(
+        //       "not implemented: checkpointing function rejection",
+        //     );
+        //   }
+
+        //   case "function-resolved": {
+        //     // TODO Bad - we need pos checking etc here too? hmm
+        //     steps.push({
+        //       op: StepOpCode.RunComplete,
+        //       id: _internals.hashId("complete"),
+        //       userland: { id: "complete" },
+        //       data: checkpoint.data,
+        //     });
+
+        //     break;
+        //   }
+        // }
+
+        // await this.checkpointNewRun(steps);
       },
 
-      "function-resolved": (checkpoint) => {
+      "function-resolved": async (checkpoint, i) => {
+        if (i === 0) {
+          await this.checkpoint([
+            {
+              op: StepOpCode.RunComplete,
+              id: _internals.hashId("complete"),
+              data: checkpoint.data,
+            },
+          ]);
+        } else {
+          // hmm checkpointing the response needs status code, headers, etc.
+          // This is unique to each adapter, so we need to pass it up to them to
+          // do this.
+          await this.checkpointResponse(
+            await this.options.createResponse!(checkpoint.data),
+          );
+        }
+
         // Done - just return the value
         return {
           type: "function-resolved",
@@ -233,6 +355,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          * - If it's one little async step, switch to async
          */
         if (steps.length !== 1 || steps[0].mode !== StepMode.Sync) {
+          // TODO Do we checkpoint here first?
           return {
             type: "change-mode",
             ctx: this.fnArg,
@@ -241,41 +364,53 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           };
         }
 
-        const step = steps[0];
-        console.log("executing step...");
+        const step = this.state.steps.get(steps[0].id);
+        if (!step) {
+          throw new Error(
+            "TODO Step not found in memoization state; this should never happen",
+          );
+        }
+
+        // TODO extract timing
+        const start = Date.now();
         const result = await this.executeStep(step);
-        console.log("got", result);
+        const interval = {
+          a: start * 1_000_000,
+          b: (Date.now() - start) * 1_000_000,
+        };
+
+        console.log({ interval });
 
         if (result.error) {
           // TODO Do we go async?
           throw new Error("not implemented");
         }
 
-        // TODO naughty truthy check
-        if (result.data) {
-          const foundStepRef = this.state.steps.get(step.id);
-          if (!foundStepRef) {
-            throw new Error(
-              "TODO Step not found in memoization state; this should never happen",
-            );
-          }
+        if ("data" in result) {
+          step.data = result.data;
 
-          console.log(
-            "setting step state for id:",
-            steps[0].hashedId,
-            foundStepRef,
-          );
+          this.state.stepState[steps[0].hashedId] = step;
+          step.fulfilled = true; // TODO lol
 
-          foundStepRef.data = result.data;
+          await this.checkpoint([
+            {
+              id: step.hashedId,
+              data: step.data,
+              // TODO this trasnform here sucks
+              op:
+                step.op === StepOpCode.StepPlanned
+                  ? StepOpCode.StepRun
+                  : step.op,
+              displayName: step.displayName,
+              opts: step.opts,
+              userland: step.userland,
+              name: step.name,
+              timing: interval,
+            },
+          ]);
 
-          this.state.stepState[steps[0].hashedId] = foundStepRef;
-          foundStepRef.fulfilled = true; // TODO lol
-          foundStepRef.handle();
-
-          console.log(
-            "executed sync step during checkpointing and now continuing",
-            foundStepRef,
-          );
+          // resume execution
+          step.handle();
 
           return;
         }
@@ -296,7 +431,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * Use other handlers to return values and interrupt the core loop.
        */
       "": (checkpoint) => {
-        this.debug("checkpoint:", checkpoint);
+        this.debug("async checkpoint:", checkpoint);
       },
 
       /**
@@ -393,6 +528,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   private getCheckpointHandler(type: keyof CheckpointHandlers) {
     return this.checkpointHandlers[type] as (
       checkpoint: Checkpoint,
+      iteration: number,
     ) => MaybePromise<ExecutionResult | undefined>;
   }
 
@@ -618,6 +754,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     return runAsPromise(fn)
       .finally(async () => {
+        delete this.state.executingStep;
         if (store?.execution) {
           delete store.execution.executingStep;
         }
@@ -1146,12 +1283,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           // live and then return to the function.
           const result = this.state.stepState[hashedId];
 
-          console.log("handling and found:", result, "looking for", hashedId);
-
           if (step.fulfilled && result) {
             result.fulfilled = true;
-
-            console.log("yep yep got here man");
 
             // For some execution scenarios such as testing, `data`, `error`,
             // and `input` may be `Promises`. This could also be the case for
@@ -1293,9 +1426,26 @@ type Checkpoint = {
 type CheckpointHandlers = {
   [C in Checkpoint as C["type"]]: (
     checkpoint: C,
+
+    /**
+     * This is the number of checkpoints that have been seen before this one was
+     * triggered.
+     *
+     * The catch-all `""` checkpoint does not increment this count.
+     */
+    i: number,
   ) => MaybePromise<ExecutionResult | undefined>;
 } & {
-  "": (checkpoint: Checkpoint) => MaybePromise<void>;
+  "": (
+    checkpoint: Checkpoint,
+
+    /**
+     * This is the number of checkpoints that have been seen before this one was
+     * triggered.
+     *
+     * The catch-all `""` checkpoint does not increment this count.
+     */ i: number,
+  ) => MaybePromise<void>;
 };
 
 export interface V1ExecutionState {
@@ -1384,6 +1534,16 @@ export interface V1ExecutionState {
    * little more smoothly with the core loop.
    */
   recentlyRejectedStepError?: StepError;
+
+  /**
+   * If defined, this indicates that we're running a checkpointed function run,
+   * and contains the data needed to report progress back to Inngest.
+   */
+  checkpointedRun?: {
+    fnId: string;
+    appId: string;
+    token?: string;
+  };
 }
 
 const hashId = (id: string): string => {

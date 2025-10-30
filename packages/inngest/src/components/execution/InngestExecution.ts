@@ -2,7 +2,7 @@ import Debug, { type Debugger } from "debug";
 import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
 import type { ServerTiming } from "../../helpers/ServerTiming.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
-import type { Context, IncomingOp, OutgoingOp } from "../../types.ts";
+import type { Context, IncomingOp, OutgoingOp, StepMode } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { ActionResponse } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
@@ -79,6 +79,7 @@ export interface InngestExecutionOptions {
   data: Omit<Context.Any, "step">;
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
+  stepMode: StepMode;
 
   /**
    * Headers to be sent with any request to Inngest during this execution.
@@ -94,6 +95,14 @@ export interface InngestExecutionOptions {
    * the execution starts.
    */
   transformCtx?: (ctx: Readonly<Context.Any>) => Context.Any;
+
+  /**
+   * A hook that is called to create an {@link ActionResponse} from the returned
+   * value of an execution.
+   *
+   * This is required for checkpointing executions.
+   */
+  createResponse?: (data: unknown) => MaybePromise<ActionResponse>;
 }
 
 export type InngestExecutionFactory = (

@@ -16,7 +16,8 @@
  * @module
  */
 
-import { getAsyncLocalStorage } from "./components/execution/als";
+import { ulid } from "ulid";
+import { getAsyncCtx, getAsyncLocalStorage } from "./components/execution/als";
 import {
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
@@ -30,7 +31,11 @@ import {
 import { InngestFunction } from "./components/InngestFunction";
 import { headerKeys } from "./helpers/consts";
 import { ServerTiming } from "./helpers/ServerTiming";
-import type { SupportedFrameworkName } from "./types.ts";
+import {
+  type APIStepPayload,
+  StepMode,
+  type SupportedFrameworkName,
+} from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -89,6 +94,7 @@ export const serve = (options: ServeHandlerOptions): EdgeHandler => {
 export type WrapHandlerOptions = {
   client: Inngest.Like;
   // TODO
+  // e.g. fn id?
 };
 
 /**
@@ -111,7 +117,7 @@ export const createEndpointWrapper = (options: WrapHandlerOptions) => {
       const fn = new InngestFunction(
         options.client as Inngest.Any,
         {
-          id: "???", // TODO
+          id: "", // TODO
         },
         () => handler(req),
       );
@@ -137,34 +143,44 @@ export const createEndpointWrapper = (options: WrapHandlerOptions) => {
       // use must be set up to checkpoint), though we may never become an
       // Inngest function if no steps are run.
 
-      const als = await getAsyncLocalStorage();
-      const ctx = als.getStore();
+      const ctx = await getAsyncCtx();
       if (ctx) {
         throw new Error(
           "We already seem to be in the context of an Inngest execution, but didn't expect to be. Did you already wrap this handler?",
         );
       }
 
-      const newRunId = "make-a-new-one-here";
-      const event = {
+      const newRunId = ulid();
+      const reqUrl = new URL(req.url);
+
+      /**
+       * TODO Extract type
+       */
+      const event: APIStepPayload = {
         name: "http/run.started",
         data: {
-          domain: "TODO scheme://host", // scheme + host from OG req
-          method: "TODO METHOD", // HTTP method from OG req
-          path: "TODO PATH", // Path from OG req
-          ip: "TODO IP", // X-Forwarded-For or X-Real-IP
-          content_type: "TODO CONTENT TYPE", // parrott header from OG request
-          query_params: "TODO QUERY PARAMS", // QueryParams are the query parameters for the request, as a single string without the leading "?".
-          body: "TODO BODY", // capture req body by default, allow user to opt out
-          fn: "TODO FUNCTION ID", // maybe explicit fn ID from user, else empty
+          content_type: req.headers.get("content-type") ?? "",
+          method: req.method,
+          fn: fn.id(),
+          ip:
+            req.headers.get("x-forwarded-for") ||
+            req.headers.get("x-real-ip") ||
+            "",
+          query_params: reqUrl.searchParams.toString(),
+          domain: "https://3000.scratch.jpwilliams.dev", // INNGEST_SERVE_HOST || reqUrl.origin
+          path: reqUrl.pathname,
+          body: await req.text(),
         },
       };
 
-      const result = await fn["createExecution"]({
-        version: PREFERRED_EXECUTION_VERSION,
+      const exeVersion = PREFERRED_EXECUTION_VERSION;
+
+      const exe = fn["createExecution"]({
+        version: exeVersion,
         partialOptions: {
           runId: newRunId,
           client: options.client as Inngest.Any,
+          stepMode: StepMode.Sync,
           data: {
             event,
             runId: newRunId,
@@ -179,8 +195,30 @@ export const createEndpointWrapper = (options: WrapHandlerOptions) => {
           disableImmediateExecution: false,
           isFailureHandler: false,
           timer: new ServerTiming(),
+
+          // TODO This needs to be configurable per framework wrapper
+          createResponse: async (data) => {
+            // Ugly - need proof
+            const res = data as Response;
+
+            const headers: Record<string, string> = {};
+            res.headers.forEach((v, k) => {
+              headers[k] = v;
+            });
+
+            return {
+              headers: headers,
+              status: res.status,
+              version: exeVersion,
+
+              // Note: must clone here to avoid consuming the body of the OG res
+              body: await res.clone().text(),
+            };
+          },
         },
-      }).start();
+      });
+
+      const result = await exe.start();
 
       const resultHandlers: ExecutionResultHandlers<unknown> = {
         "step-not-found": () => {
@@ -188,7 +226,7 @@ export const createEndpointWrapper = (options: WrapHandlerOptions) => {
             "We should not get the result 'step-not-found' when checkpointing. This is a bug in the `inngest` SDK",
           );
         },
-        "steps-found": () => {
+        "steps-found": (foo) => {
           throw new Error(
             "We should not get the result 'steps-found' when checkpointing. This is a bug in the `inngest` SDK",
           );

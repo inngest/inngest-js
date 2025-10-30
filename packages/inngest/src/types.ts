@@ -23,7 +23,7 @@ import type {
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
-import type { internalEvents } from "./helpers/consts.ts";
+import type { internalEvents, knownEvents } from "./helpers/consts.ts";
 import type {
   AsTuple,
   IsEqual,
@@ -78,6 +78,25 @@ export const jsonErrorSchema = baseJsonErrorSchema
       stack: val.stack,
     };
   }) as z.ZodType<JsonError>;
+
+/**
+ * The payload for an API endpoint running steps.
+ *
+ * TODO Property comments
+ */
+export type APIStepPayload = {
+  name: `${knownEvents.HttpRunStarted}`;
+  data: {
+    domain: string; // scheme + host from OG req
+    method: string; // HTTP method from OG req
+    path: string; // Path from OG req
+    ip: string; // X-Forwarded-For or X-Real-IP
+    content_type: string; // parrott header from OG request
+    query_params: string; // QueryParams are the query parameters for the request, as a single string without the leading "?".
+    body?: string; // capture req body by default, allow user to opt out
+    fn?: string; // maybe explicit fn ID from user, else empty
+  };
+};
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -210,6 +229,8 @@ export enum StepOpCode {
   InvokeFunction = "InvokeFunction",
   AiGateway = "AIGateway",
   Gateway = "Gateway",
+
+  RunComplete = "RunComplete",
 }
 
 /**
@@ -284,6 +305,11 @@ export type Op = {
    * Extra info used to annotate spans associated with this operation.
    */
   userland: OpUserland;
+
+  /**
+   * TODO comment
+   */
+  timing?: { a: number; b: number };
 };
 
 /**
@@ -316,7 +342,15 @@ export type IncomingOp = z.output<typeof incomingOpSchema>;
  */
 export type OutgoingOp = Pick<
   Omit<HashedOp, "userland"> & { userland?: OpUserland },
-  "id" | "op" | "name" | "opts" | "data" | "error" | "displayName" | "userland"
+  | "id"
+  | "op"
+  | "name"
+  | "opts"
+  | "data"
+  | "error"
+  | "displayName"
+  | "userland"
+  | "timing"
 >;
 
 /**

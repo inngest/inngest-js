@@ -52,6 +52,7 @@ import {
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
+  StepMode,
   type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
 } from "../types.ts";
@@ -1481,6 +1482,7 @@ export class InngestCommHandler<
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
+              stepMode: StepMode.Async,
               data: {
                 event: event as EventPayload,
                 events: events as [EventPayload, ...EventPayload[]],
@@ -1518,6 +1520,7 @@ export class InngestCommHandler<
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
+              stepMode: StepMode.Async,
               data: {
                 event: event as EventPayload,
                 events: events as [EventPayload, ...EventPayload[]],
@@ -1557,6 +1560,7 @@ export class InngestCommHandler<
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
+              stepMode: StepMode.Async,
               data: {
                 event: event as EventPayload,
                 events: events as [EventPayload, ...EventPayload[]],
