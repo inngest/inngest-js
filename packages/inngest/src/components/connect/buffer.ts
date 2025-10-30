@@ -39,7 +39,7 @@ export class MessageBuffer {
 
   private async sendFlushRequest(
     hashedSigningKey: string | undefined,
-    msg: SDKResponse
+    msg: SDKResponse,
   ) {
     const headers: Record<string, string> = {
       "Content-Type": "application/protobuf",
@@ -59,7 +59,7 @@ export class MessageBuffer {
         method: "POST",
         body: new Uint8Array(SDKResponse.encode(msg).finish()),
         headers: headers,
-      }
+      },
     );
 
     if (!resp.ok) {
@@ -68,7 +68,7 @@ export class MessageBuffer {
     }
 
     const flushResp = FlushResponse.decode(
-      new Uint8Array(await resp.arrayBuffer())
+      new Uint8Array(await resp.arrayBuffer()),
     );
 
     return flushResp;
