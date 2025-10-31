@@ -1,6 +1,6 @@
 // Initialize otel middleware first
-import { otelMiddleware } from "inngest/experimental";
-const otel = otelMiddleware();
+import { extendedTracesMiddleware } from "inngest/experimental";
+const otel = extendedTracesMiddleware();
 
 // Then everything else
 import { Inngest } from "inngest";

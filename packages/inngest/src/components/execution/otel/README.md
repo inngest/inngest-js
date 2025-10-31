@@ -16,7 +16,7 @@ This directory exports some key pieces for the SDK:
 
 - `processor.ts` provides `InngestSpanProcessor`, used to process and export
   spans to Inngest
-- `middleware.ts` provides `otelMiddleware()`, used to instantiate providers and
+- `middleware.ts` provides `extendedTracesMiddleware()`, used to instantiate providers and
   enable it within an app
 - `access.ts` provides safe access to span processors when using a client,
   without importing any OTel depedencies, ensuring we can reliably treeshake
@@ -24,7 +24,7 @@ This directory exports some key pieces for the SDK:
 
 ## Basic usage
 
-Import and run the `otelMiddleware()` before any other code.
+Import and run the `extendedTracesMiddleware()` before any other code.
 
 > [!IMPORTANT]
 > This ensures that the [tracer
@@ -32,13 +32,13 @@ Import and run the `otelMiddleware()` before any other code.
 > and any
 > [instrumentation](https://opentelemetry.io/docs/concepts/instrumentation/) has
 > time to patch code in order to collect traces and spans from all parts of your
-> application. Loading running `otelMiddleware()` after any other code risks not
+> application. Loading running `extendedTracesMiddleware()` after any other code risks not
 > instrumenting it.
 
 ```ts
 // Import this first
-import { otelMiddleware } from "inngest";
-const otel = otelMiddleware();
+import { extendedTracesMiddleware } from "inngest";
+const otel = extendedTracesMiddleware();
 
 // Then everything else
 import { Inngest } from "inngest";
@@ -76,11 +76,11 @@ export const { GET, POST, PUT } = serve({
 A JavaScript process can only have a single OpenTelemetry Provider. Some
 libraries such as Sentry also create their own provider.
 
-`otelMiddleware()` will first try to _extend_ an existing provider and will only
+`extendedTracesMiddleware()` will first try to _extend_ an existing provider and will only
 create one if none has been found. If an existing provider is extended, we won't
 contribute any automatic [instrumentation](#instrumentation).
 
-In the case of Sentry, `otelMiddleware()` will extend Sentry's provider as long
+In the case of Sentry, `extendedTracesMiddleware()` will extend Sentry's provider as long
 as it's run after `Sentry.init()`.
 
 > [!NOTE]
@@ -90,7 +90,7 @@ as it's run after `Sentry.init()`.
 This behaviour can be changed:
 
 ```ts
-otelMiddleware({
+extendedTracesMiddleware({
   behaviour: "auto",
 });
 ```
@@ -103,7 +103,7 @@ The options are:
 - `"createProvider"`: Only attempt to create a provider and fails if we couldn't
 - `"off"`: Do nothing
 
-If you're intending to only use `otelMiddleware()` to extend an existing
+If you're intending to only use `extendedTracesMiddleware()` to extend an existing
 provider, you no longer need to ensure that it is called before any other code.
 
 ### Manually extend
@@ -117,12 +117,12 @@ Add an `InngestSpanExporter` to your provider:
 ```ts
 // Create your client the same as you would normally
 import { Inngest } from "inngest";
-import { otelMiddleware } from "inngest/experimental";
+import { extendedTracesMiddleware } from "inngest/experimental";
 
 export const inngest = new Inngest({
   id: "my-app",
   middleware: [
-    otelMiddleware({
+    extendedTracesMiddleware({
       // Make sure the middleware doesn't try to
       behaviour: "off",
     }),
@@ -147,7 +147,7 @@ provider.register();
 
 ## Instrumentation
 
-`otelMiddleware()` will automatically instrument common code for you if it's
+`extendedTracesMiddleware()` will automatically instrument common code for you if it's
 used to create your provider.
 
 Here's a list of automatic supported instrumentation:
@@ -189,6 +189,7 @@ Here's a list of automatic supported instrumentation:
 - [undici](https://undici.nodejs.org/) (Node.js global
   [fetch](https://nodejs.org/docs/latest/api/globals.html#fetch) API)
 - [winston](https://www.npmjs.com/package/winston)
+- [openai](https://www.npmjs.com/package/@opentelemetry/instrumentation-openai)
 
 ### Custom instrumentation
 
@@ -200,9 +201,9 @@ OpenTelemetry](https://www.prisma.io/docs/orm/prisma-client/observability-and-lo
 
 ```ts
 import { PrismaInstrumentation } from "@prisma/instrumentation";
-import { otelMiddleware } from "inngest/experimental";
+import { extendedTracesMiddleware } from "inngest/experimental";
 
-const otel = otelMiddleware({
+const otel = extendedTracesMiddleware({
   instrumentations: [new PrismaInstrumentation()],
 });
 ```

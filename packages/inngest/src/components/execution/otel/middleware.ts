@@ -14,7 +14,7 @@ import {
 
 const debug = Debug(`${debugPrefix}:middleware`);
 
-class InngestOtelDiagLogger implements DiagLogger {
+class InngestTracesLogger implements DiagLogger {
   #logger = Debug(`${debugPrefix}:diag`);
 
   debug = this.#logger;
@@ -25,25 +25,25 @@ class InngestOtelDiagLogger implements DiagLogger {
 }
 
 /**
- * A set of options for the OTel middleware.
+ * A set of options for the Extended Traces middleware.
  */
-export interface OTelMiddlewareOptions {
+export interface ExtendedTracesMiddlewareOptions {
   /**
-   * The behaviour of the OTel middleware. This controls whether the
-   * middleware will create a new OTel provider, extend an existing one, or
+   * The behaviour of the Extended Traces middleware. This controls whether the
+   * middleware will create a new OpenTelemetry provider, extend an existing one, or
    * do nothing. The default is "auto", which will attempt to extend an
    * existing provider, and if that fails, create a new one.
    *
    * - `"auto"`: Attempt to extend an existing provider, and if that fails,
    *   create a new one.
-   * - `"createProvider"`: Create a new OTel provider.
+   * - `"createProvider"`: Create a new OpenTelemetry provider.
    * - `"extendProvider"`: Attempt to extend an existing provider.
    * - `"off"`: Do nothing.
    */
   behaviour?: Behaviour;
 
   /**
-   * Add additional instrumentations to the OTel provider.
+   * Add additional instrumentations to the OpenTelemetry provider.
    *
    * Note that these only apply if the provider is created by the middleware;
    * extending an existing provider cannot add instrumentations and it instead
@@ -52,8 +52,8 @@ export interface OTelMiddlewareOptions {
   instrumentations?: Instrumentations;
 
   /**
-   * The log level for the OTel middleware, specifially a diagnostic logger
-   * attached to the global OTel provider.
+   * The log level for the Extended Traces middleware, specifically a diagnostic logger
+   * attached to the global OpenTelemetry provider.
    *
    * Defaults to `DiagLogLevel.ERROR`.
    */
@@ -67,11 +67,11 @@ export interface OTelMiddlewareOptions {
  * This can be used to attach additional spans and data to the existing traces
  * in your Inngest dashboard (or Dev Server).
  */
-export const otelMiddleware = ({
+export const extendedTracesMiddleware = ({
   behaviour = "auto",
   instrumentations,
   logLevel = DiagLogLevel.ERROR,
-}: OTelMiddlewareOptions = {}) => {
+}: ExtendedTracesMiddlewareOptions = {}) => {
   debug("behaviour:", behaviour);
 
   let processor: InngestSpanProcessor | undefined;
@@ -104,7 +104,9 @@ export const otelMiddleware = ({
         break;
       }
 
-      console.warn("unable to create provider, OTel middleware will not work");
+      console.warn(
+        "unable to create provider, Extended Traces middleware will not work",
+      );
 
       break;
     }
@@ -117,7 +119,7 @@ export const otelMiddleware = ({
       }
 
       console.warn(
-        'unable to extend provider, OTel middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
+        'unable to extend provider, Extended Traces middleware will not work. Either allow the middleware to create a provider by setting `behaviour: "createProvider"` or `behaviour: "auto"`, or make sure that the provider is created and imported before the middleware is used.',
       );
 
       break;
@@ -134,7 +136,7 @@ export const otelMiddleware = ({
   }
 
   return new InngestMiddleware({
-    name: "Inngest: OTel",
+    name: "Inngest: Extended Traces",
     init({ client }) {
       // Set the logger for our otel processors and exporters.
       // If this is called multiple times (for example by the user in some other
@@ -143,7 +145,7 @@ export const otelMiddleware = ({
       //
       debug(
         "set otel diagLogger:",
-        diag.setLogger(new InngestOtelDiagLogger(), logLevel),
+        diag.setLogger(new InngestTracesLogger(), logLevel),
       );
 
       if (processor) {
