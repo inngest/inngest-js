@@ -94,6 +94,16 @@ export interface InternalServeHandlerOptions extends ServeHandlerOptions {
    * handler.
    */
   frameworkName?: string;
+
+  /**
+   * Can be used to force the handler to always execute functions regardless of
+   * the request method or other factors.
+   *
+   * This is primarily intended for use with Inngest in APIs, where requests may
+   * not have the usual shape of an Inngest payload, but we want to pull data
+   * and execute.
+   */
+  forceExecution?: boolean;
 }
 
 interface InngestCommHandlerOptions<
@@ -855,7 +865,6 @@ export class InngestCommHandler<
           getInngestHeaders,
           reqArgs: args,
           signatureValidation,
-
           body,
           method,
           headers: headersToForwardP,
@@ -1006,7 +1015,7 @@ export class InngestCommHandler<
     getInngestHeaders,
     reqArgs,
     signatureValidation,
-    body,
+    body: rawBody,
     method,
     headers,
   }: {
@@ -1020,16 +1029,70 @@ export class InngestCommHandler<
     method: string;
     headers: Promise<Record<string, string>>;
   }): Promise<ActionResponse> {
+    // If we're forcing execution here, we disregard the shape of the payload
+    // and go straight to fetching data from Inngest.
+    //
+    // This will happen for Inngest in APIs, where we want to reuse serve
+    // handlers for this functionality, but skip a lot of the request processing
+    // for syncing, probes, etc.
+    // if ((this._options as InternalServeHandlerOptions).forceExecution) {
+    //   console.log("we supposed to force execution lol");
+
+    //   if (Object.keys(this.fns).length !== 1) {
+    //     throw new Error(
+    //       "When forcing execution, exactly one function must be served",
+    //     );
+    //   }
+
+    //   const fn = Object.values(this.fns)[0]!.fn;
+
+    //   const runId = await actions.headers(
+    //     "getting run ID to force execution for Inngest in APIs",
+    //     headerKeys.InngestRunId,
+    //   );
+    //   if (!runId) {
+    //     throw new Error(
+    //       "TODO shit, what do we do? we thought this was an inngest req but it aint...?",
+    //     );
+    //   }
+
+    //   // TODO We need a fuckin execution version here hmm
+    //   const stepsResult = await this.client["inngestApi"].getRunSteps(
+    //     runId,
+    //     PREFERRED_EXECUTION_VERSION,
+    //   );
+    //   if (!stepsResult.ok) {
+    //     // TODO rethrow lol
+    //     throw stepsResult.error;
+    //   }
+
+    //   // TODO Okay to 401 here?
+    //   const validationResult = await signatureValidation;
+    //   if (!validationResult.success) {
+    //     return {
+    //       status: 401,
+    //       headers: {
+    //         "Content-Type": "application/json",
+    //       },
+    //       body: stringify(serializeError(validationResult.err)),
+    //       version: undefined,
+    //     };
+    //   }
+    // }
+
     // This is when the request body is completely missing; it does not
     // include an empty body. This commonly happens when the HTTP framework
     // doesn't have body parsing middleware.
-    const isMissingBody = body === undefined;
+    const isMissingBody = rawBody === undefined;
+    let body = rawBody;
 
     try {
       let url = await actions.url("starting to handle request");
+      const forceExecution = (this._options as InternalServeHandlerOptions)
+        .forceExecution;
 
-      if (method === "POST") {
-        if (isMissingBody) {
+      if (method === "POST" || forceExecution) {
+        if (!forceExecution && isMissingBody) {
           this.log(
             "error",
             "Missing body when executing, possibly due to missing request body middleware",
@@ -1063,59 +1126,94 @@ export class InngestCommHandler<
           };
         }
 
-        const rawProbe = await actions.queryStringWithDefaults(
-          "testing for probe",
-          queryKeys.Probe,
-        );
-        if (rawProbe) {
-          const probe = enumFromValue(probeEnum, rawProbe);
-          if (!probe) {
-            // If we're here, we've received a probe that we don't recognize.
-            // Fail.
-            return {
-              status: 400,
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: stringify(
-                serializeError(new Error(`Unknown probe "${rawProbe}"`)),
-              ),
-              version: undefined,
+        let fnId: string | undefined;
+        let stepId: string | null | undefined;
+
+        if (forceExecution) {
+          fnId = Object.values(this.fns)[0]?.fn.id();
+          stepId = "step"; // TODO oof. Where is this?
+          body = {
+            event: {},
+            events: [],
+            steps: {},
+            version: PREFERRED_EXECUTION_VERSION,
+            ctx: {
+              attempt: 0,
+              disable_immediate_execution: false,
+              use_api: true,
+              max_attempts: 3,
+              run_id: await actions.headers(
+                "getting run ID for forced execution",
+                headerKeys.InngestRunId,
+              ), // TODO oof
+            },
+          } as Extract<FnData, { version: typeof PREFERRED_EXECUTION_VERSION }>;
+
+          console.log("yep we hit force", { fnId, stepId, body });
+        } else {
+          const rawProbe = await actions.queryStringWithDefaults(
+            "testing for probe",
+            queryKeys.Probe,
+          );
+          if (rawProbe) {
+            const probe = enumFromValue(probeEnum, rawProbe);
+            if (!probe) {
+              // If we're here, we've received a probe that we don't recognize.
+              // Fail.
+              return {
+                status: 400,
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: stringify(
+                  serializeError(new Error(`Unknown probe "${rawProbe}"`)),
+                ),
+                version: undefined,
+              };
+            }
+
+            // Provide actions for every probe available.
+            const probeActions: Record<
+              probeEnum,
+              () => MaybePromise<ActionResponse>
+            > = {
+              [probeEnum.Trust]: () => ({
+                status: 200,
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: "",
+                version: undefined,
+              }),
             };
+
+            return probeActions[probe]();
           }
 
-          // Provide actions for every probe available.
-          const probeActions: Record<
-            probeEnum,
-            () => MaybePromise<ActionResponse>
-          > = {
-            [probeEnum.Trust]: () => ({
-              status: 200,
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: "",
-              version: undefined,
-            }),
-          };
+          fnId = await actions.queryStringWithDefaults(
+            "processing run request",
+            queryKeys.FnId,
+          );
+          if (!fnId) {
+            // TODO PrettyError
+            throw new Error("No function ID found in request");
+          }
 
-          return probeActions[probe]();
+          stepId =
+            (await actions.queryStringWithDefaults(
+              "processing run request",
+              queryKeys.StepId,
+            )) || null;
         }
 
-        const fnId = await actions.queryStringWithDefaults(
-          "processing run request",
-          queryKeys.FnId,
-        );
-        if (!fnId) {
-          // TODO PrettyError
+        console.log("bar");
+
+        if (typeof fnId === "undefined") {
+          // TODO oof
           throw new Error("No function ID found in request");
         }
 
-        const stepId =
-          (await actions.queryStringWithDefaults(
-            "processing run request",
-            queryKeys.StepId,
-          )) || null;
+        console.log("foo");
 
         const { version, result } = this.runStep({
           functionId: fnId,
@@ -1422,11 +1520,15 @@ export class InngestCommHandler<
     reqArgs: unknown[];
     headers: Record<string, string>;
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
-    const fn = this.fns[functionId];
+    const fn = (this._options as InternalServeHandlerOptions).forceExecution
+      ? Object.values(this.fns)[0]
+      : this.fns[functionId];
     if (!fn) {
       // TODO PrettyError
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
+
+    console.log("hmmmmmm");
 
     const immediateFnData = parseFnData(data);
     let { version } = immediateFnData;
@@ -1445,6 +1547,9 @@ export class InngestCommHandler<
         api: this.client["inngestApi"],
         version,
       });
+
+      console.log({ anyFnData });
+
       if (!anyFnData.ok) {
         throw new Error(anyFnData.error);
       }

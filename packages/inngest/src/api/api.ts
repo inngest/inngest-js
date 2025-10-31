@@ -180,9 +180,10 @@ export class InngestApi {
     runId: string,
     version: ExecutionVersion,
   ): Promise<Result<StepsResponse, ErrorResponse>> {
-    const result = await this.req(`/v0/runs/${runId}/steps`);
+    const result = await this.req(`/v0/runs/${runId}/actions`);
     if (result.ok) {
       const res = result.value;
+      console.log(res);
       const data: unknown = await res.json();
 
       if (res.ok) {

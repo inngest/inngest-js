@@ -305,7 +305,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          * - If it's one little async step, switch to async
          */
         if (steps.length !== 1 || steps[0].mode !== StepMode.Sync) {
-          await this.checkpoint(steps);
+          await this.checkpoint(
+            steps.map((step) => ({
+              ...step,
+              id: step.hashedId,
+            })),
+          );
           if (!this.state.checkpointedRun?.token) {
             throw new Error(
               "TODO need token back from this checkpoint. Maybe if we don't get a token back then we shouldn't switch...",

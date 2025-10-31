@@ -26,6 +26,7 @@ import {
 import type { Inngest } from "./components/Inngest.ts";
 import {
   InngestCommHandler,
+  type InternalServeHandlerOptions,
   type ServeHandlerOptions,
 } from "./components/InngestCommHandler.ts";
 import { InngestFunction } from "./components/InngestFunction";
@@ -120,25 +121,31 @@ export const createEndpointWrapper = (options: WrapHandlerOptions) => {
       const fn = new InngestFunction(
         options.client as Inngest.Any,
         {
-          id: "", // TODO
+          id: "", // TODO - allow user to set explicit, else "" is good
         },
         () => handler(req),
       );
 
-      const headerRunId = req.headers.get(headerKeys.InngestRunId);
+      const looksLikeInngestReq = Boolean(
+        req.headers.get(headerKeys.InngestRunId) &&
+          req.headers.has(headerKeys.Signature),
+      );
+
       const h: Record<string, string> = {};
       req.headers.forEach((v, k) => {
         h[k] = v;
       });
-
       console.log("ermergerd", { h });
 
-      if (headerRunId) {
+      if (looksLikeInngestReq) {
+        console.log("yeppers");
+
         // If we have a run ID, we can just use the normal serve path
         return serve({
           client: options.client,
           functions: [fn],
-        })(req);
+          forceExecution: true,
+        } as InternalServeHandlerOptions)(req);
       }
 
       // TODO Everything below here can probably reside within
