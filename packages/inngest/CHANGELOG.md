@@ -1,5 +1,13 @@
 # inngest
 
+## 3.44.5
+
+### Patch Changes
+
+- [#1149](https://github.com/inngest/inngest-js/pull/1149) [`9d5d7131`](https://github.com/inngest/inngest-js/commit/9d5d7131c530c000e4b476edf3c44baf62a2bacb) Thanks [@Linell](https://github.com/Linell)! - Refactor `otelMiddleware` to `extendedTracesMiddleware` so that its purpose is more easily understood
+
+- [#1150](https://github.com/inngest/inngest-js/pull/1150) [`68e67d80`](https://github.com/inngest/inngest-js/commit/68e67d8009b210c1aa75c02f50395a3fca952d2f) Thanks [@faizanu94](https://github.com/faizanu94)! - Fix custom loggers dumbly waiting 1s to flush; they now correctly call `flush()` if available
+
 ## 3.44.4
 
 ### Patch Changes
