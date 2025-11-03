@@ -105,19 +105,22 @@ export class ProxyLogger implements Logger {
   }
 
   async flush() {
-    // Allow 1s for the provided logger to handle flushing since the ones that do
-    // flushing usually has some kind of timeout of up to 1s.
-    //
-    // TODO:
-    // This should only happen when using a serverless environment because it's very
-    // costly from the compute perspective.
-    // server runtimes should just let the logger do their thing since most of them
-    // should have already figured what to do in those environments, be it threading or
-    // something else.
-    if (this.logger.constructor.name !== DefaultLogger.name) {
-      await new Promise((resolve) => {
-        setTimeout(() => resolve(null), 1000);
-      });
+    // If DefaultLogger, nothing to wait for
+    if (this.logger.constructor.name == DefaultLogger.name) {
+      return;
     }
+
+    const logger = this.logger as Logger & {
+      flush?: () => Promise<void> | void;
+    };
+
+    // If the logger has its own flush, defer to it
+    if (typeof logger.flush === "function") {
+      await logger.flush();
+      return;
+    }
+
+    // Otherwise yield one event-loop tick (non-blocking hint for buffered loggers)
+    await new Promise((r) => setImmediate(r));
   }
 }
