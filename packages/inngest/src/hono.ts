@@ -108,6 +108,7 @@ export const serve = (
         method: () => c.req.method,
         body: () => c.req.json(),
         env: () => env(c) as Env,
+        badNameApi: null,
       };
     },
   });

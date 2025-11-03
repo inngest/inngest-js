@@ -125,6 +125,7 @@ export const serve = (options: ServeHandlerOptions): http.RequestListener => {
             }
           }
         },
+        badNameApi: null,
       };
     },
   });

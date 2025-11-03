@@ -114,6 +114,7 @@ export const serve = (
           setHeaders(event, actionRes.headers);
           return send(event, actionRes.body);
         },
+        badNameApi: null,
       };
     },
   });

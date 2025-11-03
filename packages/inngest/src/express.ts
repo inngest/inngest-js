@@ -143,6 +143,7 @@ export const serve = (options: ServeHandlerOptions): any => {
             }
           }
         },
+        badNameApi: null,
       };
     },
   });

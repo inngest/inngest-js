@@ -139,6 +139,7 @@ export const serve = (
         }): Promise<APIGatewayProxyResult> => {
           return Promise.resolve({ body, statusCode, headers });
         },
+        badNameApi: null,
       };
     },
   });

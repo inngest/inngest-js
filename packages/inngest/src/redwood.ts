@@ -101,6 +101,7 @@ export const serve = (
         }): RedwoodResponse => {
           return { body, statusCode, headers };
         },
+        badNameApi: null,
       };
     },
   });

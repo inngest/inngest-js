@@ -145,6 +145,12 @@ export enum headerKeys {
   InngestRunId = "x-run-id",
 }
 
+/**
+ * Headers that are forwarded from the original request when an Inngest function
+ * is invoked.
+ */
+export const forwardedHeaders = [headerKeys.TraceParent, headerKeys.TraceState];
+
 export const defaultInngestApiBaseUrl = "https://api.inngest.com/";
 export const defaultInngestEventBaseUrl = "https://inn.gs/";
 export const defaultDevServerHost = "http://localhost:8288/";

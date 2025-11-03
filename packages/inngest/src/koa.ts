@@ -107,6 +107,7 @@ export const serve = (
           ctx.status = status;
           ctx.body = body;
         },
+        badNameApi: null,
       };
     },
   });

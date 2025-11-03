@@ -470,6 +470,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
               return baseUrl;
             },
+            badNameApi: null,
           };
         },
       });
