@@ -1074,6 +1074,12 @@ export class InngestCommHandler<
     forceExecution?: boolean;
     fns?: InngestFunction.Any[];
   }): Promise<Awaited<Output>> {
+    if (forceExecution && !actions.transformSyncResponse) {
+      throw new Error(
+        "This platform does not support async executions in Inngest for APIs.",
+      );
+    }
+
     const methodP = actions.method("starting to handle request");
 
     const contentLength = await actions
@@ -1448,6 +1454,10 @@ export class InngestCommHandler<
                 "getting run ID for forced execution",
                 headerKeys.InngestRunId,
               ), // TODO oof
+
+              // TODO Oooof. We need this to be given to us or the API to return
+              // it
+              stack: { stack: [], current: 0 },
             },
           } as Extract<FnData, { version: typeof PREFERRED_EXECUTION_VERSION }>;
 
@@ -1554,6 +1564,8 @@ export class InngestCommHandler<
             };
           },
           "function-resolved": (result) => {
+            // TODO This can optionally be a 206 with a RunComplete opcode.
+            // How do we send back status code, headers, etc?
             return {
               status: 200,
               headers: {
