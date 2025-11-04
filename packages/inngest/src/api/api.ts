@@ -10,7 +10,7 @@ import type { Mode } from "../helpers/env.ts";
 import { getErrorMessage } from "../helpers/errors.ts";
 import { fetchWithAuthFallback } from "../helpers/net.ts";
 import { hashSigningKey } from "../helpers/strings.ts";
-import { err, ok, type Result } from "../types.ts";
+import { err, ok, type Result, type MetadataTarget } from "../types.ts";
 import {
   type BatchResponse,
   batchSchema,
@@ -62,6 +62,12 @@ export namespace InngestApi {
      * If this is undefined, the signal could not be matched to a run.
      */
     runId: string | undefined;
+  }
+
+  export interface UpdateMetadataOptions {
+    target: MetadataTarget;
+    metadata: Record<string, unknown>;
+    id?: string;
   }
 }
 
@@ -327,6 +333,67 @@ export class InngestApi {
         // Catch-all if various things go wrong
         return err({
           error: getErrorMessage(error, "Unknown error sending signal"),
+          status: 500,
+        });
+      });
+  }
+
+  // This is AI generated, but vaguely looks good and follows the other functions in here.
+  async updateMetadata(
+    { target, metadata, id }: InngestApi.UpdateMetadataOptions,
+    options?: {
+      headers?: Record<string, string>;
+    },
+  ): Promise<Result<void, ErrorResponse>> {
+    const url = await this.getTargetUrl("/v1/metadata"); // XXX: does this exist or is it AI hallucination?
+
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url,
+      options: {
+        method: "POST",
+        body: JSON.stringify(
+          // Include the optional id so downstream services can treat all
+          // updates for the same logical scope as a shallow overwrite.
+          typeof id === "string" ? { target, metadata, id } : { target, metadata },
+        ),
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+        },
+      },
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          return ok<void>(undefined);
+        }
+
+        const resClone = res.clone();
+
+        let json: unknown;
+        try {
+          json = await res.json();
+        } catch {
+          return err({
+            error: `Failed to update metadata: ${res.status} ${res.statusText} - ${await resClone.text()}`,
+            status: res.status,
+          });
+        }
+
+        try {
+          return err(errorSchema.parse(json));
+        } catch {
+          return err({
+            error: `Failed to update metadata: ${res.status} ${res.statusText}`,
+            status: res.status,
+          });
+        }
+      })
+      .catch((error) => {
+        return err({
+          error: getErrorMessage(error, "Unknown error updating metadata"),
           status: 500,
         });
       });

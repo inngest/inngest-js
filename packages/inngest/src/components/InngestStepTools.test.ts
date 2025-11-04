@@ -2,6 +2,7 @@ import { openai } from "@inngest/ai";
 import ms from "ms";
 import { Temporal } from "temporal-polyfill";
 import { z } from "zod/v3";
+import { vi } from "vitest";
 import type { IsEqual } from "../helpers/types.ts";
 import {
   createClient,
@@ -10,6 +11,7 @@ import {
   testClientId,
 } from "../test/helpers.ts";
 import {
+  type Context,
   type ClientOptions,
   type InvocationResult,
   StepOpCode,
@@ -18,7 +20,12 @@ import { EventSchemas } from "./EventSchemas.ts";
 import type { Inngest } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { referenceFunction } from "./InngestFunctionReference.ts";
-import type { createStepTools } from "./InngestStepTools.ts";
+import {
+  createStepTools,
+  type StepHandler,
+} from "./InngestStepTools.ts";
+import type { InngestExecution } from "./execution/InngestExecution.ts";
+import { getAsyncLocalStorage } from "./execution/als.ts";
 
 describe("waitForEvent", () => {
   let step: StepTools;
@@ -144,6 +151,198 @@ describe("waitForEvent", () => {
     ).resolves.toMatchObject({
       userland: { id: "id" },
     });
+  });
+});
+
+describe("metadata.update", () => {
+  const stepHandler = vi.fn() as unknown as StepHandler;
+
+  const createTools = () => {
+    const client = createClient({ id: testClientId });
+    const mergeRunMetadata = vi.fn();
+    const mergeStepMetadata = vi.fn();
+    const headers = { "x-test-header": "value" };
+    const execution = {
+      mergeRunMetadata,
+      mergeStepMetadata,
+      options: { headers },
+    } as unknown as InngestExecution;
+
+    const tools = createStepTools(client, execution, stepHandler);
+
+    return {
+      client,
+      execution,
+      headers,
+      mergeRunMetadata,
+      mergeStepMetadata,
+      tools,
+    };
+  };
+
+  test("throws when used outside an async context", async () => {
+    const { tools } = createTools();
+
+    await expect(tools.metadata.update({ foo: "bar" })).rejects.toThrow(
+      "step.metadata.update requires an Inngest function to be running",
+    );
+  });
+
+  const createCtx = (): Context.Any => {
+    return {
+      event: { name: "test/event", data: {} },
+      step: {} as ReturnType<typeof createStepTools>,
+    } as Context.Any;
+  };
+
+  test("merges metadata into the current step when executing", async () => {
+    const { client, mergeRunMetadata, mergeStepMetadata, tools } = createTools();
+
+    const als = await getAsyncLocalStorage();
+
+    await als.run(
+      {
+        app: client,
+        ctx: createCtx(),
+        executingStep: {
+          id: "step-1",
+          name: "Step 1",
+        },
+      },
+      async () => {
+        await tools.metadata.update({ foo: "bar" });
+      },
+    );
+
+    expect(mergeStepMetadata).toHaveBeenCalledWith("step-1", { foo: "bar" });
+    expect(mergeRunMetadata).not.toHaveBeenCalled();
+  });
+
+  test("merges metadata into the run when outside a step", async () => {
+    const { client, mergeRunMetadata, mergeStepMetadata, tools } = createTools();
+
+    const als = await getAsyncLocalStorage();
+
+    await als.run(
+      {
+        app: client,
+        ctx: createCtx(),
+      },
+      async () => {
+        await tools.metadata.update({ foo: "bar" });
+      },
+    );
+
+    expect(mergeRunMetadata).toHaveBeenCalledWith({ foo: "bar" });
+    expect(mergeStepMetadata).not.toHaveBeenCalled();
+  });
+
+  test("namespaces metadata when an id is provided", async () => {
+    const { client, mergeRunMetadata, mergeStepMetadata, tools } = createTools();
+
+    const als = await getAsyncLocalStorage();
+
+    await als.run(
+      {
+        app: client,
+        ctx: createCtx(),
+        executingStep: {
+          id: "step-1",
+          name: "Step 1",
+        },
+      },
+      async () => {
+        await tools.metadata.update("progress", { value: 1 });
+      },
+    );
+
+    expect(mergeStepMetadata).toHaveBeenCalledWith("step-1", {
+      progress: { value: 1 },
+    });
+    expect(mergeRunMetadata).not.toHaveBeenCalled();
+  });
+
+  test("namespaces run metadata when an id is provided", async () => {
+    const { client, mergeRunMetadata, mergeStepMetadata, tools } = createTools();
+
+    const als = await getAsyncLocalStorage();
+
+    await als.run(
+      {
+        app: client,
+        ctx: createCtx(),
+      },
+      async () => {
+        await tools.metadata.update("progress", { value: 1 });
+      },
+    );
+
+    expect(mergeRunMetadata).toHaveBeenCalledWith({
+      progress: { value: 1 },
+    });
+    expect(mergeStepMetadata).not.toHaveBeenCalled();
+  });
+
+  test("delegates to REST fallback when a target is provided", async () => {
+    const { client, headers, mergeRunMetadata, mergeStepMetadata, tools } = createTools();
+
+    const updateMetadata = vi.fn().mockResolvedValue(undefined);
+    Reflect.set(client as object, "_updateMetadata", updateMetadata);
+
+    const als = await getAsyncLocalStorage();
+
+    const target = { runId: "run-123", stepId: "step-456" };
+
+    await als.run(
+      {
+        app: client,
+        ctx: createCtx(),
+      },
+      async () => {
+        await tools.metadata.update({ target }, { foo: "bar" });
+      },
+    );
+
+    expect(updateMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target,
+        metadata: { foo: "bar" },
+        headers,
+      }),
+    );
+
+    expect(mergeRunMetadata).not.toHaveBeenCalled();
+    expect(mergeStepMetadata).not.toHaveBeenCalled();
+  });
+
+  test("passes ids through the REST fallback", async () => {
+    const { client, headers, tools } = createTools();
+
+    const updateMetadata = vi.fn().mockResolvedValue(undefined);
+    Reflect.set(client as object, "_updateMetadata", updateMetadata);
+
+    const als = await getAsyncLocalStorage();
+
+    const target = { executionId: "exec-123" };
+
+    await als.run(
+      {
+        app: client,
+        ctx: createCtx(),
+      },
+      async () => {
+        await tools.metadata.update({ id: "progress", target }, { value: 42 });
+      },
+    );
+
+    expect(updateMetadata).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target,
+        metadata: { progress: { value: 42 } },
+        id: "progress",
+        headers,
+      }),
+    );
   });
 });
 

@@ -208,16 +208,37 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
            * this particular case we want to handle it differently.
            */
           if (transformResult.type === "function-resolved") {
+            const hashedStepId = _internals.hashId(stepResult.id);
+            const stepMetadata = this.consumeStepMetadata(hashedStepId);
+            // Run-level metadata is flushed alongside the next outbound
+            // response so callers see a coherent snapshot of the accumulated
+            // metadata after each step.
+            const runMetadata = this.consumeRunMetadata();
             return {
               type: "step-ran",
               ctx: transformResult.ctx,
               ops: transformResult.ops,
-              step: _internals.hashOp({
+              step: (() => {
+                const stepForResponse = _internals.hashOp({
                 ...stepResult,
                 data: transformResult.data,
-              }),
+                });
+
+                if (stepMetadata) {
+                  stepForResponse.metadata = stepMetadata;
+                }
+
+                return stepForResponse;
+              })(),
+              ...(runMetadata ? { metadata: runMetadata } : {}),
             };
           } else if (transformResult.type === "function-rejected") {
+            const hashedStepId = _internals.hashId(stepResult.id);
+            const stepMetadata = this.consumeStepMetadata(hashedStepId);
+            // Run-level metadata is flushed alongside the next outbound
+            // response so callers see a coherent snapshot of the accumulated
+            // metadata after each step.
+            const runMetadata = this.consumeRunMetadata();
             const stepForResponse = _internals.hashOp({
               ...stepResult,
               error: transformResult.error,
@@ -233,12 +254,17 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               };
             }
 
+            if (stepMetadata) {
+              stepForResponse.metadata = stepMetadata;
+            }
+
             return {
               type: "step-ran",
               ctx: transformResult.ctx,
               ops: transformResult.ops,
               retriable: transformResult.retriable,
               step: stepForResponse,
+              ...(runMetadata ? { metadata: runMetadata } : {}),
             };
           }
 
@@ -249,11 +275,16 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           Array.from(this.state.steps.values()),
         );
         if (newSteps) {
+          // When we surface a new batch of steps we also include any pending
+          // run-level metadata so the executor doesn’t need to perform a
+          // separate fetch to pick up those annotations.
+          const metadata = this.consumeRunMetadata();
           return {
             type: "steps-found",
             ctx: this.fnArg,
             ops: this.ops,
             steps: newSteps,
+            ...(metadata ? { metadata } : {}),
           };
         }
 
@@ -643,6 +674,9 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         retriable = error.retryAfter;
       }
       const serializedError = minifyPrettyError(serializeError(error));
+      const metadata = isStepExecution
+        ? undefined
+        : this.consumeRunMetadata();
 
       return {
         type: "function-rejected",
@@ -650,14 +684,22 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         ops: this.ops,
         error: serializedError,
         retriable,
+        ...(metadata ? { metadata } : {}),
       };
     }
+
+    const metadata = isStepExecution
+      ? undefined
+      : this.consumeRunMetadata();
 
     return {
       type: "function-resolved",
       ctx: this.fnArg,
       ops: this.ops,
       data: undefinedToNull(data),
+      // Run-level metadata only applies to the overall function response; this
+      // ensures step-level executions don’t leak intermediate metadata.
+      ...(metadata ? { metadata } : {}),
     };
   }
 
@@ -694,6 +736,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       hasSteps: Boolean(stepsToFulfill),
       stepCompletionOrder: [...this.options.stepCompletionOrder],
       remainingStepsToBeSeen: new Set(this.options.stepCompletionOrder),
+      pendingRunMetadata: undefined,
+      pendingStepMetadata: new Map(),
       setCheckpoint: (checkpoint: Checkpoint) => {
         ({ resolve: checkpointResolve } = checkpointResolve(checkpoint));
       },
@@ -703,6 +747,64 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     };
 
     return state;
+  }
+
+  public mergeRunMetadata(metadata: Record<string, unknown>): void {
+    if (!metadata || !Object.keys(metadata).length) {
+      return;
+    }
+
+    // Shallow merge so callers can overwrite keys while preserving siblings
+    // the function appended earlier in the run.
+    const next = { ...metadata };
+    this.state.pendingRunMetadata = {
+      ...(this.state.pendingRunMetadata ?? {}),
+      ...next,
+    };
+  }
+
+  public mergeStepMetadata(
+    stepId: string,
+    metadata: Record<string, unknown>,
+  ): void {
+    if (!metadata || !Object.keys(metadata).length) {
+      return;
+    }
+
+    const hashedId = hashId(stepId);
+    const next = { ...metadata };
+    const current = this.state.pendingStepMetadata.get(hashedId) ?? {};
+
+    // Shallow merge so repeated updates replace keys within the same
+    // identifier without dropping other metadata for this step.
+    this.state.pendingStepMetadata.set(hashedId, {
+      ...current,
+      ...next,
+    });
+  }
+
+  private consumeRunMetadata(): Record<string, unknown> | undefined {
+    const metadata = this.state.pendingRunMetadata;
+    this.state.pendingRunMetadata = undefined;
+
+    if (!metadata || !Object.keys(metadata).length) {
+      return;
+    }
+
+    return { ...metadata };
+  }
+
+  private consumeStepMetadata(
+    hashedStepId: string,
+  ): Record<string, unknown> | undefined {
+    const metadata = this.state.pendingStepMetadata.get(hashedStepId);
+    this.state.pendingStepMetadata.delete(hashedStepId);
+
+    if (!metadata || !Object.keys(metadata).length) {
+      return;
+    }
+
+    return { ...metadata };
   }
 
   get ops(): Record<string, MemoizedOp> {
@@ -1187,6 +1289,16 @@ export interface V2ExecutionState {
    * little more smoothly with the core loop.
    */
   recentlyRejectedStepError?: StepError;
+
+  /**
+   * Run-level metadata that should be flushed with the next outbound response.
+   */
+  pendingRunMetadata?: Record<string, unknown>;
+
+  /**
+   * Step-level metadata keyed by hashed step IDs waiting to be flushed.
+   */
+  pendingStepMetadata: Map<string, Record<string, unknown>>;
 }
 
 const hashId = (id: string): string => {

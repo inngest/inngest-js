@@ -16,10 +16,28 @@ export { ExecutionVersion };
  * The possible results of an execution.
  */
 export interface ExecutionResults {
-  "function-resolved": { data: unknown };
-  "step-ran": { step: OutgoingOp; retriable?: boolean | string };
-  "function-rejected": { error: unknown; retriable: boolean | string };
-  "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
+  "function-resolved": {
+    data: unknown;
+    // Optional metadata accumulated via step.metadata.update for the current run.
+    metadata?: Record<string, unknown>;
+  };
+  "step-ran": {
+    step: OutgoingOp;
+    retriable?: boolean | string;
+    // Optional metadata accumulated via step.metadata.update for the current run.
+    metadata?: Record<string, unknown>;
+  };
+  "function-rejected": {
+    error: unknown;
+    retriable: boolean | string;
+    // Optional metadata accumulated via step.metadata.update for the current run.
+    metadata?: Record<string, unknown>;
+  };
+  "steps-found": {
+    steps: [OutgoingOp, ...OutgoingOp[]];
+    // Optional metadata accumulated via step.metadata.update for the current run.
+    metadata?: Record<string, unknown>;
+  };
   "step-not-found": { step: OutgoingOp };
 }
 

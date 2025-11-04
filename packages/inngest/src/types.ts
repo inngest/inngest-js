@@ -261,6 +261,11 @@ export type Op = {
   error?: unknown;
 
   /**
+   * Metadata associated with this operation.
+   */
+  metadata?: Record<string, unknown>;
+
+  /**
    * Extra info used to annotate spans associated with this operation.
    */
   userland: OpUserland;
@@ -296,7 +301,15 @@ export type IncomingOp = z.output<typeof incomingOpSchema>;
  */
 export type OutgoingOp = Pick<
   Omit<HashedOp, "userland"> & { userland?: OpUserland },
-  "id" | "op" | "name" | "opts" | "data" | "error" | "displayName" | "userland"
+  | "id"
+  | "op"
+  | "name"
+  | "opts"
+  | "data"
+  | "error"
+  | "displayName"
+  | "metadata"
+  | "userland"
 >;
 
 /**
@@ -1384,6 +1397,58 @@ export interface StepOptions {
  * @public
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
+
+/**
+ * The target for metadata updates when explicitly referencing another run or
+ * step.
+ *
+ * @public
+ */
+export type MetadataTarget =
+  | {
+      /**
+       * The ID of the run to update.
+       */
+      runId: string;
+      /**
+       * Optionally, scope the update to a specific step within the run.
+       */
+      stepId?: string;
+    }
+  | {
+      /**
+       * The ID of the execution to update.
+       */
+      executionId: string;
+      /**
+       * Optionally, scope the update to a specific step within the execution.
+       */
+      stepId?: string;
+    };
+
+/**
+ * Options for providing metadata updates.
+ *
+ * @public
+ */
+export interface MetadataOptions {
+  /**
+   * An optional identifier for this metadata update.
+   */
+  id?: string;
+
+  /**
+   * Target an alternative run or step when updating metadata.
+   */
+  target?: MetadataTarget;
+}
+
+/**
+ * Either a metadata ID or full metadata options.
+ *
+ * @public
+ */
+export type MetadataOptsOrId = MetadataOptions["id"] | MetadataOptions;
 
 export type EventsFromFunction<T extends InngestFunction.Any> =
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>

@@ -42,6 +42,7 @@ import {
   type FailureEventArgs,
   type Handler,
   type InvokeTargetFunctionDefinition,
+  type MetadataTarget,
   type SendEventOutput,
   type SendEventResponse,
   sendEventResponseSchema,
@@ -474,6 +475,40 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
     throw new Error(
       `Failed to send signal: ${res.error?.error || "Unknown error"}`,
+    );
+  }
+
+  // AI gen but seems correct enough for now
+  private async _updateMetadata({
+    target,
+    metadata,
+    id,
+    headers,
+  }: {
+    target: MetadataTarget;
+    metadata: Record<string, unknown>;
+    id?: string;
+    headers?: Record<string, string>;
+  }): Promise<void> {
+    // Forward the metadata identifier so server-side merging can coalesce
+    // repeated updates for the same logical payload.
+    const res = await this.inngestApi.updateMetadata(
+      {
+        target,
+        metadata,
+        ...(typeof id === "string" ? { id } : {}),
+      },
+      {
+        headers: { ...this.headers, ...headers },
+      },
+    );
+
+    if (res.ok) {
+      return;
+    }
+
+    throw new Error(
+      `Failed to update metadata: ${res.error?.error || "Unknown error"}`,
     );
   }
 

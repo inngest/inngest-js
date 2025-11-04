@@ -16,6 +16,9 @@ import {
   type HashedOp,
   type InvocationResult,
   type InvokeTargetFunctionDefinition,
+  type MetadataOptions,
+  type MetadataOptsOrId,
+  type MetadataTarget,
   type MinimalEventPayload,
   type SendEventOutput,
   StepOpCode,
@@ -26,6 +29,7 @@ import {
 } from "../types.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
+import { getAsyncCtx } from "./execution/als.ts";
 import type {
   ClientOptionsFromInngest,
   GetEvents,
@@ -130,6 +134,10 @@ export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
   }
 
   return options;
+};
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
 /**
@@ -364,6 +372,29 @@ export const createStepTools = <TClient extends Inngest.Any>(
         },
       },
     ),
+
+    metadata: {
+      update: async (
+        metadata: MetadataOptsOrId | Record<string, unknown>,
+        options: Record<string, unknown>,
+      ): Promise<void> => {
+        const ctx = await getAsyncCtx();
+        if (!ctx) {
+          throw new Error(
+            "step.metadata.update requires an Inngest function to be running",
+          );
+        }
+
+        const { executingStep } = ctx;
+        if (executingStep?.id) {
+          // execution.mergeStepMetadata(executingStep.id, metadataForScope);
+          return;
+        }
+
+        // execution.mergeRunMetadata(metadataForScope);
+        ("nice");
+      },
+    },
 
     /**
      * Wait for a particular event to be received before continuing. When the

@@ -1146,7 +1146,15 @@ export class InngestCommHandler<
                   ? { [headerKeys.RetryAfter]: result.retriable }
                   : {}),
               },
-              body: stringify(undefinedToNull(result.error)),
+              body: result.metadata
+                ? stringify({
+                    error: undefinedToNull(result.error),
+                    metadata: result.metadata,
+                    // Attach run-level metadata alongside the primary payload
+                    // so the executor can persist annotations without adding
+                    // new opcodes to the transport contract.
+                  })
+                : stringify(undefinedToNull(result.error)),
               version,
             };
           },
@@ -1156,7 +1164,15 @@ export class InngestCommHandler<
               headers: {
                 "Content-Type": "application/json",
               },
-              body: stringify(undefinedToNull(result.data)),
+              body: result.metadata
+                ? stringify({
+                    data: undefinedToNull(result.data),
+                    metadata: result.metadata,
+                    // Attach run-level metadata alongside the primary payload
+                    // so the executor can persist annotations without adding
+                    // new opcodes to the transport contract.
+                  })
+                : stringify(undefinedToNull(result.data)),
               version,
             };
           },
@@ -1177,6 +1193,7 @@ export class InngestCommHandler<
           },
           "step-ran": (result) => {
             const step = opDataUndefinedToNull(result.step);
+            const steps = [step];
 
             return {
               status: 206,
@@ -1191,7 +1208,14 @@ export class InngestCommHandler<
                     }
                   : {}),
               },
-              body: stringify([step]),
+              body: result.metadata
+                ? stringify({
+                    steps,
+                    metadata: result.metadata,
+                    // Returning metadata with the steps list keeps the client
+                    // response shape stable while exposing the new data.
+                  })
+                : stringify(steps),
               version,
             };
           },
@@ -1203,7 +1227,14 @@ export class InngestCommHandler<
               headers: {
                 "Content-Type": "application/json",
               },
-              body: stringify(steps),
+              body: result.metadata
+                ? stringify({
+                    steps,
+                    metadata: result.metadata,
+                    // Returning metadata with the steps list keeps the client
+                    // response shape stable while exposing the new data.
+                  })
+                : stringify(steps),
               version,
             };
           },
