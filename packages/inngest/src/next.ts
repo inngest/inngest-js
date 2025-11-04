@@ -249,7 +249,7 @@ export const serve = (
         transformStreamingResponse: ({ body, headers, status }) => {
           return new Response(body, { status, headers });
         },
-        badNameApi: null,
+        transformSyncResponse: null,
       };
     },
   });

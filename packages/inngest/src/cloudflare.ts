@@ -156,7 +156,7 @@ export const serve = (
             headers,
           });
         },
-        badNameApi: null,
+        transformSyncResponse: null,
       };
     },
   });

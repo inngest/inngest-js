@@ -104,10 +104,14 @@ export interface SyncHandlerOptions extends RegisterOptions {
   client: Inngest.Like;
 
   // TODO
-  // e.g. fn id?
   // flow control
   // etc
   badNameAsyncMode?: "redirect" | "token" | "custom";
+
+  /**
+   * TODO Comment
+   */
+  functionId?: string;
 }
 
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
@@ -125,7 +129,7 @@ export interface InternalServeHandlerOptions extends ServeHandlerOptions {
    * not have the usual shape of an Inngest payload, but we want to pull data
    * and execute.
    */
-  forceExecution?: boolean;
+  // forceExecution?: boolean;
 }
 
 interface InngestCommHandlerOptions<
@@ -768,6 +772,19 @@ export class InngestCommHandler<
       return this.wrapHandler((async (...args) => {
         const reqInit = await this.initRequest(...args);
 
+        console.log({
+          reqInit,
+          isInngestReq: await this.isInngestReq(reqInit.actions),
+        });
+
+        const fn = new InngestFunction(
+          this.client,
+          {
+            id: "", // TODO - allow user to set explicit, else "" is good
+          },
+          () => handler(...args),
+        );
+
         // Decide if this request looks like an Inngest request. If it does,
         // we'll just use the regular `serve()` handler for this request, as
         // it's async.
@@ -776,7 +793,9 @@ export class InngestCommHandler<
           // return this.createHandler()(...args);
           return this.handleAsyncRequest({
             ...reqInit,
+            forceExecution: true,
             args,
+            fns: [fn],
           });
         }
 
@@ -786,13 +805,7 @@ export class InngestCommHandler<
           ...reqInit,
           args,
           asyncMode: "redirect", // TODO
-          fn: new InngestFunction(
-            this.client,
-            {
-              id: "", // TODO - allow user to set explicit, else "" is good
-            },
-            () => handler(...args),
-          ),
+          fn,
         });
       }) as THandler);
     };
@@ -842,6 +855,74 @@ export class InngestCommHandler<
     }) as THandler);
   }
 
+  /**
+   * TODO Comment
+   */
+  private async createHttpEvent(
+    actions: HandlerResponseWithErrors,
+    fn: InngestFunction.Any,
+  ): Promise<APIStepPayload> {
+    const reason = "creating sync event";
+
+    const contentTypePromise = actions
+      .headers(reason, headerKeys.ContentType)
+      .then((v) => v ?? "");
+
+    const ipPromise = actions
+      .headers(reason, headerKeys.ForwardedFor)
+      .then((v) => {
+        if (v) return v;
+
+        return actions.headers(reason, headerKeys.RealIp).then((v) => v ?? "");
+      });
+
+    const methodPromise = actions.method(reason);
+
+    const urlPromise = (
+      this.serveHost ? Promise.resolve(this.serveHost) : actions.url(reason)
+    ).then((v) => new URL(v));
+
+    const domainPromise = urlPromise.then(
+      (url) => `${url.protocol}//${url.host}`,
+    );
+
+    const pathPromise = urlPromise.then((url) => url.pathname);
+
+    const queryParamsPromise = urlPromise.then((url) =>
+      url.searchParams.toString(),
+    );
+
+    // TODO For body, we can add `textBody()` to the actions
+    const bodyPromise = actions.textBody!(reason).then((body) => {
+      return typeof body === "string" ? body : stringify(body);
+    });
+
+    const [contentType, domain, ip, method, path, queryParams, body] =
+      await Promise.all([
+        contentTypePromise,
+        domainPromise,
+        ipPromise,
+        methodPromise,
+        pathPromise,
+        queryParamsPromise,
+        bodyPromise,
+      ]);
+
+    return {
+      name: "http/run.started",
+      data: {
+        content_type: contentType,
+        domain,
+        ip,
+        method,
+        path,
+        query_params: queryParams,
+        body,
+        fn: fn.id(),
+      },
+    };
+  }
+
   private async handleSyncRequest({
     timer,
     actions,
@@ -856,7 +937,7 @@ export class InngestCommHandler<
     args: unknown[];
   }): Promise<Awaited<Output>> {
     // Do we have actions for handling sync requests? We must!
-    if (!actions.badNameApi) {
+    if (!actions.transformSyncResponse) {
       throw new Error(
         "This platform does not support synchronous Inngest function executions.",
       );
@@ -872,8 +953,7 @@ export class InngestCommHandler<
 
     // We create a new run ID here in the SDK.
     const runId = ulid();
-
-    const event = await actions.badNameApi.createHttpEvent();
+    const event = await this.createHttpEvent(actions, fn);
 
     const exeVersion = PREFERRED_EXECUTION_VERSION;
     const exe = fn["createExecution"]({
@@ -895,7 +975,13 @@ export class InngestCommHandler<
         disableImmediateExecution: false,
         isFailureHandler: false,
         timer,
-        createResponse: actions.badNameApi.createHttpResponse,
+        createResponse: (data: unknown) =>
+          actions
+            .transformSyncResponse("creating sync execution", data)
+            .then((res) => ({
+              ...res,
+              version: exeVersion,
+            })),
         stepMode: StepMode.Sync,
       },
     });
@@ -978,11 +1064,15 @@ export class InngestCommHandler<
     actions,
     args,
     getHeaders,
+    forceExecution,
+    fns,
   }: {
     timer: ServerTiming;
     actions: HandlerResponseWithErrors;
     args: Input;
     getHeaders: () => Promise<Record<string, string>>;
+    forceExecution?: boolean;
+    fns?: InngestFunction.Any[];
   }): Promise<Awaited<Output>> {
     const methodP = actions.method("starting to handle request");
 
@@ -1029,6 +1119,8 @@ export class InngestCommHandler<
         signatureValidation,
         body,
         method,
+        forceExecution: Boolean(forceExecution),
+        fns,
       }),
     );
 
@@ -1272,6 +1364,8 @@ export class InngestCommHandler<
     signatureValidation,
     body: rawBody,
     method,
+    forceExecution,
+    fns,
   }: {
     actions: HandlerResponseWithErrors;
     timer: ServerTiming;
@@ -1280,6 +1374,8 @@ export class InngestCommHandler<
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
     body: unknown;
     method: string;
+    forceExecution: boolean;
+    fns?: InngestFunction.Any[];
   }): Promise<ActionResponse> {
     // This is when the request body is completely missing; it does not
     // include an empty body. This commonly happens when the HTTP framework
@@ -1289,8 +1385,6 @@ export class InngestCommHandler<
 
     try {
       let url = await actions.url("starting to handle request");
-      const forceExecution = (this._options as InternalServeHandlerOptions)
-        .forceExecution;
 
       if (method === "POST" || forceExecution) {
         if (!forceExecution && isMissingBody) {
@@ -1327,11 +1421,18 @@ export class InngestCommHandler<
           };
         }
 
+        let fn: { fn: InngestFunction.Any; onFailure: boolean } | undefined;
         let fnId: string | undefined;
         let stepId: string | null | undefined;
 
         if (forceExecution) {
-          fnId = Object.values(this.fns)[0]?.fn.id();
+          fn =
+            fns?.length && fns[0]
+              ? { fn: fns[0], onFailure: false }
+              : Object.values(this.fns)[0];
+          fnId = fn?.fn.id();
+
+          console.log({ "this.fns": this.fns, fns: fns });
           stepId = "step"; // Checkpointed runs are never parallel atm, so this is hardcoded
           body = {
             event: {},
@@ -1409,7 +1510,8 @@ export class InngestCommHandler<
 
         console.log("bar");
 
-        if (typeof fnId === "undefined") {
+        if (typeof fnId === "undefined" || !fn) {
+          console.log("wtf m9");
           // TODO oof
           throw new Error("No function ID found in request");
         }
@@ -1423,6 +1525,7 @@ export class InngestCommHandler<
           timer,
           reqArgs,
           headers: await getHeaders(),
+          fn,
         });
         const stepOutput = await result;
 
@@ -1713,6 +1816,7 @@ export class InngestCommHandler<
     timer,
     reqArgs,
     headers,
+    fn,
   }: {
     functionId: string;
     stepId: string | null;
@@ -1720,10 +1824,13 @@ export class InngestCommHandler<
     timer: ServerTiming;
     reqArgs: unknown[];
     headers: Record<string, string>;
+    fn: { fn: InngestFunction.Any; onFailure: boolean };
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
-    const fn = (this._options as InternalServeHandlerOptions).forceExecution
-      ? Object.values(this.fns)[0]
-      : this.fns[functionId];
+    // const fn = forceExecution
+    //   ? Object.values(this.fns)[0]
+    //   : this.fns[functionId];
+
+    console.log({ fn });
     if (!fn) {
       // TODO PrettyError
       throw new Error(`Could not find function with ID "${functionId}"`);
@@ -2459,6 +2566,7 @@ export type Handler<
 export type HandlerResponse<Output = any, StreamOutput = any> = {
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   body: () => MaybePromise<any>;
+  textBody?: (() => MaybePromise<string>) | null; // TODO Make this required | null
   env?: () => MaybePromise<Env | undefined>;
   headers: (key: string) => MaybePromise<string | null | undefined>;
 
@@ -2520,10 +2628,9 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
    * TODO Comment
    * TODO Naming
    */
-  badNameApi: {
-    createHttpEvent: () => MaybePromise<APIStepPayload>;
-    createHttpResponse: (data: unknown) => MaybePromise<ActionResponse>;
-  } | null;
+  transformSyncResponse:
+    | ((data: unknown) => MaybePromise<Omit<ActionResponse, "version">>)
+    | null;
 };
 
 /**

@@ -64,7 +64,7 @@ export const serve = (
         transformResponse: ({ body, status, headers }) => {
           return new Response(body, { status, headers });
         },
-        badNameApi: null,
+        transformSyncResponse: null,
       };
     },
   });

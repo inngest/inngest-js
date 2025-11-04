@@ -127,6 +127,10 @@ export enum envKeys {
  * @public
  */
 export enum headerKeys {
+  ContentType = "content-type",
+  Host = "host",
+  ForwardedFor = "x-forwarded-for",
+  RealIp = "x-real-ip",
   ContentLength = "content-length",
   Signature = "x-inngest-signature",
   SdkVersion = "x-inngest-sdk",

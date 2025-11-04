@@ -55,13 +55,27 @@ const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
     handler: (req: Request) => {
       return {
         body: () => req.json(),
-        headers: (key) => req.headers.get(key),
+        textBody: () => req.text(),
+        headers: (key: string) => req.headers.get(key),
         method: () => req.method,
         url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
         transformResponse: ({ body, status, headers }) => {
           return new Response(body, { status, headers });
         },
-        badNameApi: null,
+        transformSyncResponse: async (data) => {
+          const res = data as Response;
+
+          const headers: Record<string, string> = {};
+          res.headers.forEach((v, k) => {
+            headers[k] = v;
+          });
+
+          return {
+            headers: headers,
+            status: res.status,
+            body: await res.clone().text(),
+          };
+        },
       };
     },
   });
@@ -99,6 +113,5 @@ export const serve = (options: ServeHandlerOptions): EdgeHandler => {
 export const createEndpointWrapper = (options: SyncHandlerOptions) => {
   return commHandler({
     ...options,
-    syncOptions: { ...options },
   }).createSyncHandler();
 };
