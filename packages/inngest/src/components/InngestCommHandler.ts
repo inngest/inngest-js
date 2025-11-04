@@ -57,6 +57,7 @@ import {
   type RegisterOptions,
   type RegisterRequest,
   StepMode,
+  StepOpCode,
   type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
 } from "../types.ts";
@@ -68,6 +69,7 @@ import {
   type InngestExecutionOptions,
   PREFERRED_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
+import { _internals } from "./execution/v1";
 import type { Inngest } from "./Inngest.ts";
 import {
   type CreateExecutionOptions,
@@ -1536,6 +1538,8 @@ export class InngestCommHandler<
           reqArgs,
           headers: await getHeaders(),
           fn,
+          forceExecution,
+          actions,
         });
         const stepOutput = await result;
 
@@ -1566,6 +1570,33 @@ export class InngestCommHandler<
           "function-resolved": (result) => {
             // TODO This can optionally be a 206 with a RunComplete opcode.
             // How do we send back status code, headers, etc?
+            if (forceExecution) {
+              // mgrOp := o.mgr.NewOp(enums.OpcodeRunComplete, "complete")
+              // op := sdkrequest.GeneratorOpcode{
+              // 	ID:       mgrOp.MustHash(),
+              // 	Op:       enums.OpcodeRunComplete,
+              // 	Data:     responseBody,
+              // 	Userland: mgrOp.Userland(),
+              // }
+
+              const runCompleteOp: OutgoingOp = {
+                id: _internals.hashId("complete"),
+                op: StepOpCode.RunComplete,
+                data: undefinedToNull(result.data),
+              };
+
+              console.log("lol yer", runCompleteOp);
+
+              return {
+                status: 206,
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: stringify(runCompleteOp),
+                version,
+              };
+            }
+
             return {
               status: 200,
               headers: {
@@ -1822,6 +1853,7 @@ export class InngestCommHandler<
   }
 
   protected runStep({
+    actions,
     functionId,
     stepId,
     data,
@@ -1829,7 +1861,9 @@ export class InngestCommHandler<
     reqArgs,
     headers,
     fn,
+    forceExecution,
   }: {
+    actions: HandlerResponseWithErrors;
     functionId: string;
     stepId: string | null;
     data: unknown;
@@ -1837,11 +1871,8 @@ export class InngestCommHandler<
     reqArgs: unknown[];
     headers: Record<string, string>;
     fn: { fn: InngestFunction.Any; onFailure: boolean };
+    forceExecution: boolean;
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
-    // const fn = forceExecution
-    //   ? Object.values(this.fns)[0]
-    //   : this.fns[functionId];
-
     console.log({ fn });
     if (!fn) {
       // TODO PrettyError
@@ -1889,6 +1920,16 @@ export class InngestCommHandler<
         [V in ExecutionVersion]: ExecutionStarter<V>;
       };
 
+      const createResponse = forceExecution
+        ? (data: unknown) =>
+            actions
+              .transformSyncResponse("created sync->async response", data)
+              .then((res) => ({
+                ...res,
+                version,
+              }))
+        : undefined;
+
       const executionStarters = ((s: ExecutionStarters) =>
         s as GenericExecutionStarters)({
         [ExecutionVersion.V0]: ({ event, events, steps, ctx, version }) => {
@@ -1922,6 +1963,7 @@ export class InngestCommHandler<
               stepCompletionOrder: ctx?.stack?.stack ?? [],
               reqArgs,
               headers,
+              createResponse,
             },
           };
         },
@@ -1962,6 +2004,7 @@ export class InngestCommHandler<
               stepCompletionOrder: ctx?.stack?.stack ?? [],
               reqArgs,
               headers,
+              createResponse,
             },
           };
         },
@@ -2002,6 +2045,7 @@ export class InngestCommHandler<
               stepCompletionOrder: ctx?.stack?.stack ?? [],
               reqArgs,
               headers,
+              createResponse,
             },
           };
         },

@@ -399,8 +399,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       /**
        * The user's function has completed and returned a value.
        */
-      "function-resolved": async (checkpoint) => {
-        return await this.transformOutput({ data: checkpoint.data });
+      "function-resolved": async ({ data }) => {
+        // TODO Don't go through middleware if sync->async? hmm
+        console.log("resolving and like", this.options.createResponse);
+
+        if (this.options.createResponse) {
+          data = await this.options.createResponse(data);
+          console.log("altered data", data);
+        }
+
+        return await this.transformOutput({ data });
       },
 
       /**
@@ -1074,6 +1082,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          */
         .then(() => beforeExecHooksPromise)
         .then(() => {
+          console.log("processing", remainingStepCompletionOrder.length);
           foundStepsReportPromise = undefined;
 
           for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
@@ -1234,6 +1243,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         displayName: opId.displayName ?? opId.id,
         handled: false,
         handle: () => {
+          console.log(
+            ">>>>>>>>>>>>>> handle() called for step",
+            step.displayName,
+          );
+
           if (step.handled) {
             return false;
           }
