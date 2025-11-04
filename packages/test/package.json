@@ -1,6 +1,6 @@
 {
   "name": "@inngest/test",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Tooling for testing Inngest functions.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -46,6 +46,8 @@
     "ulid": "^2.3.0"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^29.5.0",
     "prettier": "^3.1.0",
     "typescript": "^5.9.2"
   }

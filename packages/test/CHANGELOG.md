@@ -1,5 +1,14 @@
 # @inngest/test
 
+## 0.1.9
+
+### Patch Changes
+
+- [#1140](https://github.com/inngest/inngest-js/pull/1140) [`d572e2e9`](https://github.com/inngest/inngest-js/commit/d572e2e9bf8194ce65eea69cdd837def43b79d17) Thanks [@jb-chief](https://github.com/jb-chief)! - @inngest/test: call mock step handlers only once and at the right time
+
+- Updated dependencies [[`9d5d7131`](https://github.com/inngest/inngest-js/commit/9d5d7131c530c000e4b476edf3c44baf62a2bacb), [`68e67d80`](https://github.com/inngest/inngest-js/commit/68e67d8009b210c1aa75c02f50395a3fca952d2f)]:
+  - inngest@3.44.5
+
 ## 0.1.8
 
 ### Patch Changes
