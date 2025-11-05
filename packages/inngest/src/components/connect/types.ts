@@ -1,3 +1,4 @@
+import type { Logger } from "../../middleware/logger.ts";
 import type { RegisterOptions } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
@@ -29,6 +30,8 @@ export interface ConnectHandlerOptions extends RegisterOptions {
   handleShutdownSignals?: string[];
 
   rewriteGatewayEndpoint?: (endpoint: string) => string;
+
+  logger?: Logger;
 }
 
 export interface WorkerConnection {
