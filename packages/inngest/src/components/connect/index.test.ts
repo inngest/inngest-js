@@ -82,11 +82,13 @@ describe("connect maxWorkerConcurrency", () => {
     test("should parse positive integer from INNGEST_CONNECT_MAX_WORKER_CONCURRENCY", () => {
       process.env[envKeys.InngestConnectMaxWorkerConcurrency] = "10";
 
-      const options = createTestOptions();
+      const _options = createTestOptions();
 
       // The applyDefaults method will be called internally during connection setup
       // We test this by verifying the environment variable is accessible
-      expect(process.env[envKeys.InngestConnectMaxWorkerConcurrency]).toBe("10");
+      expect(process.env[envKeys.InngestConnectMaxWorkerConcurrency]).toBe(
+        "10",
+      );
     });
 
     test("should handle various numeric string formats", () => {
@@ -110,14 +112,7 @@ describe("connect maxWorkerConcurrency", () => {
     });
 
     test("should reject invalid values", () => {
-      const invalidCases = [
-        "not-a-number",
-        "abc",
-        "",
-        "-5",
-        "0",
-        "   ",
-      ];
+      const invalidCases = ["not-a-number", "abc", "", "-5", "0", "   "];
 
       for (const input of invalidCases) {
         process.env[envKeys.InngestConnectMaxWorkerConcurrency] = input;
@@ -159,7 +154,6 @@ describe("connect maxWorkerConcurrency", () => {
 
       expect(msg.maxWorkerConcurrency).toBeUndefined();
     });
-
   });
 
   describe("ConnectHandlerOptions type", () => {
@@ -206,7 +200,9 @@ describe("connect maxWorkerConcurrency", () => {
       // No explicit value, so env should be checked
       expect(options.maxWorkerConcurrency).toBeUndefined();
       // But env var is set
-      expect(process.env[envKeys.InngestConnectMaxWorkerConcurrency]).toBe("75");
+      expect(process.env[envKeys.InngestConnectMaxWorkerConcurrency]).toBe(
+        "75",
+      );
     });
   });
 });
