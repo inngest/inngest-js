@@ -39,6 +39,7 @@ export enum envKeys {
   InngestStreaming = "INNGEST_STREAMING",
   InngestDevMode = "INNGEST_DEV",
   InngestAllowInBandSync = "INNGEST_ALLOW_IN_BAND_SYNC",
+  InngestConnectMaxWorkerConcurrency = "INNGEST_CONNECT_MAX_WORKER_CONCURRENCY",
 
   /**
    * @deprecated It's unknown what this env var was used for, but we do not
