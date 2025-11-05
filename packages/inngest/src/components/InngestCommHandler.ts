@@ -885,9 +885,7 @@ export class InngestCommHandler<
 
     const methodPromise = actions.method(reason);
 
-    const urlPromise = (
-      this.serveHost ? Promise.resolve(this.serveHost) : actions.url(reason)
-    ).then((v) => new URL(v));
+    const urlPromise = actions.url(reason).then((v) => this.reqUrl(v));
 
     const domainPromise = urlPromise.then(
       (url) => `${url.protocol}//${url.host}`,
