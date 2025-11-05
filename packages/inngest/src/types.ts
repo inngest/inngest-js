@@ -249,6 +249,34 @@ export enum StepMode {
 }
 
 /**
+ * TODO Comment
+ */
+export enum AsyncResponseType {
+  /**
+   * TODO Comment
+   */
+  Redirect = "redirect",
+
+  /**
+   * TODO Comment
+   */
+  Token = "token",
+
+  /**
+   * TODO Comment
+   */
+  // Custom = "custom",
+}
+
+/**
+ * TODO Comment
+ */
+export type AsyncResponseValue =
+  | AsyncResponseType.Redirect
+  | AsyncResponseType.Token;
+// | (() => null);
+
+/**
  * The shape of a single operation in a step function. Used to communicate
  * desired and received operations to Inngest.
  */

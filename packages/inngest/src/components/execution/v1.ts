@@ -236,6 +236,36 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
   }
 
+  private async checkpointAndSwitchToAsync(
+    steps: OutgoingOp[],
+  ): Promise<ExecutionResult> {
+    await this.checkpoint(steps);
+
+    if (!this.state.checkpointedRun?.token) {
+      throw new Error("Failed to checkpoint and switch to async mode");
+    }
+
+    return {
+      type: "change-mode",
+      ctx: this.fnArg,
+      ops: this.ops,
+      to: "async",
+      token: this.state.checkpointedRun?.token!,
+    };
+  }
+
+  /**
+   * Returns whether we're in the final attempt of execution, or `null` if we
+   * can't determine this in the SDK.
+   */
+  private inFinalAttempt(): boolean | null {
+    if (typeof this.fnArg.maxAttempts !== "number") {
+      return null;
+    }
+
+    return this.fnArg.attempt + 1 >= this.fnArg.maxAttempts;
+  }
+
   private createCheckpointingCheckpointHandlers(): CheckpointHandlers {
     return {
       /**
@@ -251,7 +281,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           await this.checkpoint([
             {
               op: StepOpCode.RunComplete,
-              id: _internals.hashId("complete"),
+              id: _internals.hashId("complete"), // TODO bad ID, bad use of _internals here
               data: checkpoint.data,
             },
           ]);
@@ -274,14 +304,27 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       },
 
       "function-rejected": (checkpoint) => {
-        // Just pass back the error
-        return {
-          type: "function-rejected",
-          ctx: this.fnArg,
-          error: checkpoint.error,
-          ops: this.ops,
-          retriable: false, // TODO I think this goes async now? So this would be a switch mode type
-        };
+        // If the function throws during sync execution, we want to switch to
+        // async mode so that we can retry. The exception is that we're already
+        // at max attempts, in which case we do actually want to reject.
+        if (this.inFinalAttempt()) {
+          return {
+            type: "function-rejected",
+            ctx: this.fnArg,
+            error: checkpoint.error,
+            ops: this.ops,
+            retriable: false, // TODO I think this goes async now? So this would be a switch mode type
+          };
+        }
+
+        // Otherwise, checkpoint the error and switch to async mode
+        return this.checkpointAndSwitchToAsync([
+          {
+            id: _internals.hashId("complete"), // TODO bad ID, bad use of _internals here
+            op: StepOpCode.StepError,
+            error: checkpoint.error,
+          },
+        ]);
       },
 
       "step-not-found": ({ step }) => {
@@ -297,35 +340,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       },
 
       "steps-found": async ({ steps }) => {
-        /**
-         * Aight sweet. Keep going. Let's see.
-         *
-         * - If it's one little sync step, run it bro.
-         * - If it's multiple steps, switch to async
-         * - If it's one little async step, switch to async
-         */
+        // If we're entering parallelism or async mode, checkpoint and switch
+        // to aysnc.
         if (steps.length !== 1 || steps[0].mode !== StepMode.Sync) {
-          await this.checkpoint(
-            steps.map((step) => ({
-              ...step,
-              id: step.hashedId,
-            })),
+          return this.checkpointAndSwitchToAsync(
+            steps.map((step) => ({ ...step, id: step.hashedId })),
           );
-          if (!this.state.checkpointedRun?.token) {
-            throw new Error(
-              "TODO need token back from this checkpoint. Maybe if we don't get a token back then we shouldn't switch...",
-            );
-          }
-
-          return {
-            type: "change-mode",
-            ctx: this.fnArg,
-            ops: this.ops,
-            to: "async",
-            token: this.state.checkpointedRun.token,
-          };
         }
 
+        // Otherwise we're good to start executing things right now.
         const step = this.state.steps.get(steps[0].id);
         if (!step) {
           throw new Error(
@@ -341,14 +364,31 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           b: (Date.now() - start) * 1_000_000,
         };
 
-        console.log({ interval });
-
         if (result.error) {
-          // TODO Do we go async?
-          throw new Error("not implemented");
+          // The step errored, so now we go async. Let's checkpoint and change
+          // the mode.
+          await this.checkpoint([
+            {
+              ...step,
+              error: result.error,
+            },
+          ]);
+          if (!this.state.checkpointedRun?.token) {
+            throw new Error("TODO need token back from this checkpoint");
+          }
+
+          return {
+            type: "change-mode",
+            ctx: this.fnArg,
+            ops: this.ops,
+            to: "async",
+            token: this.state.checkpointedRun.token,
+          };
         }
 
         if ("data" in result) {
+          // If we're here, the step succeeded - let's checkpoint the result and
+          // resume execution.
           step.data = result.data;
 
           this.state.stepState[steps[0].hashedId] = step;

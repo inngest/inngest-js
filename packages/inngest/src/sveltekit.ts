@@ -103,6 +103,7 @@ export const serve = (
 
           return new Res(body, { status, headers });
         },
+        transformSyncRequest: null,
         transformSyncResponse: null,
       };
     },

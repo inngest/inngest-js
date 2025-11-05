@@ -45,6 +45,8 @@ import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
 import type { MaybePromise } from "../helpers/types.ts";
 import {
   type APIStepPayload,
+  AsyncResponseType,
+  type AsyncResponseValue,
   type AuthenticatedIntrospection,
   type EventPayload,
   type FunctionConfig,
@@ -57,7 +59,6 @@ import {
   type RegisterOptions,
   type RegisterRequest,
   StepMode,
-  StepOpCode,
   type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
 } from "../types.ts";
@@ -108,7 +109,7 @@ export interface SyncHandlerOptions extends RegisterOptions {
   // TODO
   // flow control
   // etc
-  badNameAsyncMode?: "redirect" | "token" | "custom";
+  asyncResponse?: AsyncResponseValue;
 
   /**
    * TODO Comment
@@ -203,6 +204,11 @@ interface InngestCommHandlerOptions<
    * TODO Comment
    */
   functionId?: string;
+
+  /**
+   * TODO Comment
+   */
+  asyncResponse?: AsyncResponseValue;
 }
 
 /**
@@ -811,7 +817,7 @@ export class InngestCommHandler<
         return this.handleSyncRequest({
           ...reqInit,
           args,
-          asyncMode: "redirect", // TODO
+          asyncMode: this._options.asyncResponse ?? AsyncResponseType.Redirect,
           fn,
         });
       }) as THandler);
@@ -938,7 +944,7 @@ export class InngestCommHandler<
     timer: ServerTiming;
     actions: HandlerResponseWithErrors;
     fn: InngestFunction.Any;
-    asyncMode: string; // TODO enum
+    asyncMode: AsyncResponseValue;
     args: unknown[];
   }): Promise<Awaited<Output>> {
     // Do we have actions for handling sync requests? We must!
@@ -1019,7 +1025,7 @@ export class InngestCommHandler<
         // response.
         return data;
       },
-      "change-mode": ({ token }) => {
+      "change-mode": async ({ token }) => {
         // TODO Handle switching to async mode.
         //
         // This is where we do redirect, tokens, etc
@@ -1029,21 +1035,38 @@ export class InngestCommHandler<
         //
         // These should all be user-specified hooks like the onesf ro createhandler
         switch (asyncMode) {
-          case "redirect": {
-            return Response.redirect(
-              `http://localhost:8288/v1/http/runs/${runId}/output?token=${token}`,
+          case AsyncResponseType.Redirect: {
+            return actions.transformResponse(
+              "creating sync->async redirect response",
+              {
+                status: 302,
+                headers: {
+                  [headerKeys.Location]: await this.client["inngestApi"]
+                    ["getTargetUrl"](
+                      `/v1/http/runs/${runId}/output?token=${token}`,
+                    )
+                    .then((url) => url.toString()),
+                },
+                version: exeVersion,
+                body: "",
+              },
             );
           }
 
-          case "token": {
-            // TODO need token back from this checkpoint
-            // user-provided hook mate, incl. req args
-
-            break;
+          case AsyncResponseType.Token: {
+            return actions.transformResponse(
+              "creating sync->async token response",
+              {
+                status: 200,
+                headers: {},
+                version: exeVersion,
+                body: stringify({ run_id: runId, token }),
+              },
+            );
           }
 
-          case "custom": {
-            // user-provided hook mate, incl. req args
+          default: {
+            // TODO user-provided hook mate, incl. req args
             break;
           }
         }
@@ -2685,7 +2708,11 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
 
   /**
    * TODO Comment
-   * TODO Naming
+   */
+  transformSyncRequest: ((...args: unknown[]) => MaybePromise<unknown>) | null;
+
+  /**
+   * TODO Comment
    */
   transformSyncResponse:
     | ((data: unknown) => MaybePromise<Omit<ActionResponse, "version">>)

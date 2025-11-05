@@ -96,6 +96,7 @@ export const serve = (
         url: () => new URL(`${options.serveHost}${options.servePath || "/"}`),
         queryString: (key) => main[key] as string,
         transformResponse: (res) => res,
+        transformSyncRequest: null,
         transformSyncResponse: null,
       };
     },

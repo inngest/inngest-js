@@ -101,6 +101,7 @@ export const serve = (
         }): RedwoodResponse => {
           return { body, statusCode, headers };
         },
+        transformSyncRequest: null,
         transformSyncResponse: null,
       };
     },

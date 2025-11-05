@@ -144,6 +144,7 @@ export const serve = (
           void reply.code(status);
           return reply.send(body);
         },
+        transformSyncRequest: null,
         transformSyncResponse: null,
       };
     },

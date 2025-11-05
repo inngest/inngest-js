@@ -139,6 +139,7 @@ export const serve = (
         }): Promise<APIGatewayProxyResult> => {
           return Promise.resolve({ body, statusCode, headers });
         },
+        transformSyncRequest: null,
         transformSyncResponse: null,
       };
     },

@@ -16,28 +16,12 @@
  * @module
  */
 
-import { ulid } from "ulid";
-import { getAsyncCtx, getAsyncLocalStorage } from "./components/execution/als";
-import {
-  type ExecutionResultHandler,
-  type ExecutionResultHandlers,
-  PREFERRED_EXECUTION_VERSION,
-} from "./components/execution/InngestExecution";
-import type { Inngest } from "./components/Inngest.ts";
 import {
   InngestCommHandler,
-  type InternalServeHandlerOptions,
   type ServeHandlerOptions,
   type SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
-import { InngestFunction } from "./components/InngestFunction";
-import { headerKeys } from "./helpers/consts";
-import { ServerTiming } from "./helpers/ServerTiming";
-import {
-  type APIStepPayload,
-  StepMode,
-  type SupportedFrameworkName,
-} from "./types.ts";
+import type { SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -62,6 +46,7 @@ const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
         transformResponse: ({ body, status, headers }) => {
           return new Response(body, { status, headers });
         },
+        transformSyncRequest: null,
         transformSyncResponse: async (data) => {
           const res = data as Response;
 

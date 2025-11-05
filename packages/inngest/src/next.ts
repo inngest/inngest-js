@@ -249,6 +249,7 @@ export const serve = (
         transformStreamingResponse: ({ body, headers, status }) => {
           return new Response(body, { status, headers });
         },
+        transformSyncRequest: null,
         transformSyncResponse: null,
       };
     },

@@ -156,6 +156,7 @@ export const serve = (
             headers,
           });
         },
+        transformSyncRequest: null,
         transformSyncResponse: null,
       };
     },

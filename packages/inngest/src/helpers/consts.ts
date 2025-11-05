@@ -131,6 +131,7 @@ export enum headerKeys {
   Host = "host",
   ForwardedFor = "x-forwarded-for",
   RealIp = "x-real-ip",
+  Location = "location",
   ContentLength = "content-length",
   Signature = "x-inngest-signature",
   SdkVersion = "x-inngest-sdk",
