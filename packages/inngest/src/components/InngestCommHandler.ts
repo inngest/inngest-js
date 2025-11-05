@@ -198,6 +198,11 @@ interface InngestCommHandlerOptions<
   handler: Handler<Input, Output, StreamOutput>;
 
   skipSignatureValidation?: boolean;
+
+  /**
+   * TODO Comment
+   */
+  functionId?: string;
 }
 
 /**
@@ -782,7 +787,7 @@ export class InngestCommHandler<
         const fn = new InngestFunction(
           this.client,
           {
-            id: "", // TODO - allow user to set explicit, else "" is good
+            id: this._options.functionId ?? "",
           },
           () => handler(...args),
         );
