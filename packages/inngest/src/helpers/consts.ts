@@ -234,3 +234,8 @@ export enum ExecutionVersion {
    */
   V2 = 2,
 }
+
+/**
+ * Default maximum number of retries for function/step executions.
+ */
+export const defaultMaxRetries = 3;

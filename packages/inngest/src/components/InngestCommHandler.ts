@@ -6,6 +6,7 @@ import {
   debugPrefix,
   defaultInngestApiBaseUrl,
   defaultInngestEventBaseUrl,
+  defaultMaxRetries,
   dummyEventKey,
   ExecutionVersion,
   envKeys,
@@ -59,6 +60,7 @@ import {
   type RegisterOptions,
   type RegisterRequest,
   StepMode,
+  StepOpCode,
   type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
 } from "../types.ts";
@@ -93,11 +95,6 @@ export interface ServeHandlerOptions extends RegisterOptions {
    * An array of the functions to serve and register with Inngest.
    */
   functions: readonly InngestFunction.Like[];
-
-  /**
-   * TODO comment
-   */
-  syncOptions?: Omit<SyncHandlerOptions, "client">;
 }
 
 export interface SyncHandlerOptions extends RegisterOptions {
@@ -106,15 +103,43 @@ export interface SyncHandlerOptions extends RegisterOptions {
    */
   client: Inngest.Like;
 
-  // TODO
-  // flow control
-  // etc
+  /**
+   * TODO Comment
+   */
   asyncResponse?: AsyncResponseValue;
 
   /**
    * TODO Comment
    */
   functionId?: string;
+
+  /**
+   * Specifies the maximum number of retries for all steps.
+   *
+   * Can be a number from `0` to `20`. Defaults to `3`.
+   */
+  retries?:
+    | 0
+    | 1
+    | 2
+    | 3
+    | 4
+    | 5
+    | 6
+    | 7
+    | 8
+    | 9
+    | 10
+    | 11
+    | 12
+    | 13
+    | 14
+    | 15
+    | 16
+    | 17
+    | 18
+    | 19
+    | 20;
 }
 
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
@@ -203,12 +228,7 @@ interface InngestCommHandlerOptions<
   /**
    * TODO Comment
    */
-  functionId?: string;
-
-  /**
-   * TODO Comment
-   */
-  asyncResponse?: AsyncResponseValue;
+  syncOptions?: SyncHandlerOptions;
 }
 
 /**
@@ -793,7 +813,8 @@ export class InngestCommHandler<
         const fn = new InngestFunction(
           this.client,
           {
-            id: this._options.functionId ?? "",
+            id: this._options.syncOptions?.functionId ?? "",
+            retries: this._options.syncOptions?.retries ?? defaultMaxRetries,
           },
           () => handler(...args),
         );
@@ -817,7 +838,9 @@ export class InngestCommHandler<
         return this.handleSyncRequest({
           ...reqInit,
           args,
-          asyncMode: this._options.asyncResponse ?? AsyncResponseType.Redirect,
+          asyncMode:
+            this._options.syncOptions?.asyncResponse ??
+            AsyncResponseType.Redirect,
           fn,
         });
       }) as THandler);
@@ -966,7 +989,9 @@ export class InngestCommHandler<
     const runId = ulid();
     const event = await this.createHttpEvent(actions, fn);
 
+    // TODO Nope. Should be v2, so we now have two preferred versions...
     const exeVersion = PREFERRED_EXECUTION_VERSION;
+
     const exe = fn["createExecution"]({
       version: exeVersion,
       partialOptions: {
@@ -1596,41 +1621,33 @@ export class InngestCommHandler<
           "function-resolved": (result) => {
             // TODO This can optionally be a 206 with a RunComplete opcode.
             // How do we send back status code, headers, etc?
-            if (forceExecution) {
-              // mgrOp := o.mgr.NewOp(enums.OpcodeRunComplete, "complete")
-              // op := sdkrequest.GeneratorOpcode{
-              // 	ID:       mgrOp.MustHash(),
-              // 	Op:       enums.OpcodeRunComplete,
-              // 	Data:     responseBody,
-              // 	Userland: mgrOp.Userland(),
-              // }
+            // if (forceExecution) {
+            const runCompleteOp: OutgoingOp = {
+              id: _internals.hashId("complete"),
+              op: StepOpCode.RunComplete,
+              data: undefinedToNull(result.data),
+            };
 
-              const runCompleteOp: OutgoingOp = {
-                id: _internals.hashId("complete"),
-                op: StepOpCode.RunComplete,
-                data: undefinedToNull(result.data),
-              };
-
-              console.log("lol yer", runCompleteOp);
-
-              return {
-                status: 206,
-                headers: {
-                  "Content-Type": "application/json",
-                },
-                body: stringify(runCompleteOp),
-                version,
-              };
-            }
+            console.log("lol yer", undefinedToNull(result.data));
 
             return {
-              status: 200,
+              status: 206,
               headers: {
                 "Content-Type": "application/json",
               },
-              body: stringify(undefinedToNull(result.data)),
+              body: stringify(runCompleteOp),
               version,
             };
+            // }
+
+            // return {
+            //   status: 200,
+            //   headers: {
+            //     "Content-Type": "application/json",
+            //   },
+            //   body: stringify(undefinedToNull(result.data)),
+            //   version,
+            // };
           },
           "step-not-found": (result) => {
             return {
@@ -2707,12 +2724,24 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
   ) => StreamOutput;
 
   /**
-   * TODO Comment
+   * TODO Needed to give folks a chance to wrap arguments if they need to in
+   * order to extract the request body so that it can be sent back to Inngest
+   * during either sync or async calls.
+   *
+   * This is because usually they do not interact directly with e.g. the
+   * `Response` object, but with sync mode they do, so we need to provide hooks
+   * to let us access the body.
    */
   transformSyncRequest: ((...args: unknown[]) => MaybePromise<unknown>) | null;
 
   /**
-   * TODO Comment
+   * TODO Needed to give folks a chance to transform the response from their own
+   * code to an Inngestish response. This is only needed so that sync mode can
+   * checkpoint the response if we've gone through the entire run with no
+   * interruptions.
+   *
+   * Because of its location when being specified, we have scoped access to the
+   * `reqArgs` (e.g. `req` and `res`), so we don't need to pass them here.
    */
   transformSyncResponse:
     | ((data: unknown) => MaybePromise<Omit<ActionResponse, "version">>)

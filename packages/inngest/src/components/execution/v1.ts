@@ -126,8 +126,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       const tracer = trace.getTracer("inngest", version);
 
       this.execution = getAsyncLocalStorage().then((als) => {
-        // TODO We should kill this. Here we should only MUTATE the context to
-        // add instance, version, ctx
         return als.run(
           {
             app: this.options.client,
@@ -321,6 +319,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         return this.checkpointAndSwitchToAsync([
           {
             id: _internals.hashId("complete"), // TODO bad ID, bad use of _internals here
+            displayName: "complete", // TODO bad display name
             op: StepOpCode.StepError,
             error: checkpoint.error,
           },
@@ -370,6 +369,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           await this.checkpoint([
             {
               ...step,
+              op:
+                step.op === StepOpCode.StepPlanned
+                  ? StepOpCode.StepError
+                  : step.op,
               error: result.error,
             },
           ]);

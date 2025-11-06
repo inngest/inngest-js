@@ -16,12 +16,13 @@
  * @module
  */
 
+import type { Inngest } from "./components/Inngest.ts";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
   type SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
-import type { SupportedFrameworkName } from "./types.ts";
+import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
@@ -31,11 +32,15 @@ export const frameworkName: SupportedFrameworkName = "edge";
 
 export type EdgeHandler = (req: Request) => Promise<Response>;
 
-const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
+const commHandler = (
+  options: RegisterOptions & { client: Inngest.Like },
+  syncOptions?: SyncHandlerOptions,
+) => {
   const handler = new InngestCommHandler({
     frameworkName,
     fetch: fetch.bind(globalThis),
     ...options,
+    syncOptions,
     handler: (req: Request) => {
       return {
         body: () => req.json(),
@@ -95,8 +100,8 @@ export const serve = (options: ServeHandlerOptions): EdgeHandler => {
  * TODO Name
  * TODO Comment
  */
-export const createEndpointWrapper = (options: SyncHandlerOptions) => {
-  return commHandler({
-    ...options,
-  }).createSyncHandler();
+export const createExperimentalEndpointWrapper = (
+  options: SyncHandlerOptions,
+) => {
+  return commHandler(options, options).createSyncHandler();
 };
