@@ -316,7 +316,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       "steps-found": async ({ steps }) => {
         // If we're entering parallelism or async mode, checkpoint and switch
-        // to aysnc.
+        // to async.
         if (steps.length !== 1 || steps[0].mode !== StepMode.Sync) {
           return this.checkpointAndSwitchToAsync(
             steps.map((step) => ({ ...step, id: step.hashedId })),
