@@ -26,11 +26,7 @@ import {
   type TriggerEventFromFunction,
   type TriggersFromClient,
 } from "../types.ts";
-import {
-  type InngestExecution,
-  type MemoizedOp,
-  PREFERRED_EXECUTION_VERSION,
-} from "./execution/InngestExecution.ts";
+import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import type {
   ClientOptionsFromInngest,
