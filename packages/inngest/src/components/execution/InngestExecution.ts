@@ -21,12 +21,13 @@ export interface ExecutionResults {
   "function-rejected": { error: unknown; retriable: boolean | string };
   "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
   "step-not-found": { step: OutgoingOp };
+
   /**
-   * TODO Comment
-   * Crappy `to` fields, but using to get the line through
+   * Indicates that we need to relinquish control back to Inngest in order to
+   * change step modes.
    */
   "change-mode": {
-    to: "async";
+    to: StepMode;
     token: string;
   };
 }

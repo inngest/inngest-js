@@ -84,10 +84,6 @@ const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
     frameworkName,
     ...options,
     handler: (req: http.IncomingMessage, res: http.ServerResponse) => {
-      // const { proxy: resProxy, data: resData } = createResProxy(res);
-      // TODO We need a way here to transform the req args for the resulting
-      // calls.
-
       return {
         body: async () => parseRequestBody(req),
         headers: (key) => {
@@ -176,16 +172,6 @@ const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
 // Has explicit return type to avoid JSR-defined "slow types"
 export const serve = (options: ServeHandlerOptions): http.RequestListener => {
   return commHandler(options).createHandler() as http.RequestListener;
-};
-
-/**
- * TODO Name
- * TODO Comment
- */
-export const createEndpointWrapper = (options: SyncHandlerOptions) => {
-  return commHandler({
-    ...options,
-  }).createSyncHandler();
 };
 
 /**

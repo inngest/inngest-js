@@ -51,7 +51,7 @@ const commHandler = (
         transformResponse: ({ body, status, headers }) => {
           return new Response(body, { status, headers });
         },
-        transformSyncResponse: async (data) => {
+        experimentalTransformSyncResponse: async (data) => {
           const res = data as Response;
 
           const headers: Record<string, string> = {};
@@ -96,8 +96,32 @@ export const serve = (options: ServeHandlerOptions): EdgeHandler => {
 };
 
 /**
- * TODO Name
- * TODO Comment
+ * In an edge runtime, create a function that can wrap any endpoint to be able
+ * to use steps seamlessly within that API.
+ *
+ * The edge runtime is a generic term for any serverless runtime that supports
+ * only standard Web APIs such as `fetch`, `Request`, and `Response`, such as
+ * Cloudflare Workers, Vercel Edge Functions, and AWS Lambda@Edge.
+ *
+ * @example
+ * ```ts
+ * import { Inngest, step } from "inngest";
+ * import { createExperimentalEndpointWrapper } from "inngest/edge";
+ *
+ * const wrap = createExperimentalEndpointWrapper({
+ *   client: new Inngest({ id: "my-app" }),
+ * });
+ *
+ * Bun.serve({
+ *   routes: {
+ *     "/": wrap(async (req) => {
+ *       const foo = await step.run("my-step", () => ({ foo: "bar" }));
+ *
+ *       return new Response(`Result: ${JSON.stringify(foo)}`);
+ *     }),
+ *   },
+ * });
+ * ```
  */
 export const createExperimentalEndpointWrapper = (
   options: SyncHandlerOptions,

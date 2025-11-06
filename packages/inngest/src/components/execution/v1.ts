@@ -247,7 +247,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       type: "change-mode",
       ctx: this.fnArg,
       ops: this.ops,
-      to: "async",
+      to: StepMode.Async,
       token: this.state.checkpointedRun?.token!,
     };
   }
@@ -311,7 +311,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             ctx: this.fnArg,
             error: checkpoint.error,
             ops: this.ops,
-            retriable: false, // TODO I think this goes async now? So this would be a switch mode type
+            retriable: false,
           };
         }
 
@@ -351,7 +351,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         const step = this.state.steps.get(steps[0].id);
         if (!step) {
           throw new Error(
-            "TODO Step not found in memoization state; this should never happen",
+            "Step not found in memoization state; this should never happen and is a bug in the Inngest SDK",
           );
         }
 
@@ -377,14 +377,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             },
           ]);
           if (!this.state.checkpointedRun?.token) {
-            throw new Error("TODO need token back from this checkpoint");
+            throw new Error(
+              "Failed to checkpoint and switch to async mode as no token was returned from the API",
+            );
           }
 
           return {
             type: "change-mode",
             ctx: this.fnArg,
             ops: this.ops,
-            to: "async",
+            to: StepMode.Async,
             token: this.state.checkpointedRun.token,
           };
         }
@@ -395,13 +397,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           step.data = result.data;
 
           this.state.stepState[steps[0].hashedId] = step;
-          step.fulfilled = true; // TODO lol
+          step.fulfilled = true; // TODO We can wrap all of this up in a direct function on the `FoundStep`
 
           await this.checkpoint([
             {
               id: step.hashedId,
               data: step.data,
-              // TODO this trasnform here sucks
+              // TODO This should also be wrapped up on the `FoundStep`
               op:
                 step.op === StepOpCode.StepPlanned
                   ? StepOpCode.StepRun
@@ -420,7 +422,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           return;
         }
 
-        throw new Error("TODO no data or error? hmm");
+        throw new Error(
+          "A step was run and had no data or error; this is a bug in the Inngest SDK",
+        );
       },
     };
   }
@@ -443,12 +447,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * The user's function has completed and returned a value.
        */
       "function-resolved": async ({ data }) => {
-        // TODO Don't go through middleware if sync->async? hmm
-        console.log("resolving and like", this.options.createResponse);
-
         if (this.options.createResponse) {
           data = await this.options.createResponse(data);
-          console.log("altered data", data);
         }
 
         return await this.transformOutput({ data });

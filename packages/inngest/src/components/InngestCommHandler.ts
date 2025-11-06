@@ -104,12 +104,17 @@ export interface SyncHandlerOptions extends RegisterOptions {
   client: Inngest.Like;
 
   /**
-   * TODO Comment
+   * The type of response you wish to return to an API endpoint when using steps
+   * within it and we must transition to {@link StepMode.Async}.
+   *
+   * In most cases, this defaults to {@link AsyncResponseType.Redirect}.
    */
   asyncResponse?: AsyncResponseValue;
 
   /**
-   * TODO Comment
+   * If defined, this sets the function ID that represents this endpoint.
+   * Without this set, it defaults to using the detected method and path of the
+   * request, for example: `GET /api/my-endpoint`.
    */
   functionId?: string;
 
@@ -226,7 +231,7 @@ interface InngestCommHandlerOptions<
   skipSignatureValidation?: boolean;
 
   /**
-   * TODO Comment
+   * Options for when this comm handler executes a synchronous (API) function.
    */
   syncOptions?: SyncHandlerOptions;
 }
@@ -795,7 +800,8 @@ export class InngestCommHandler<
   }
 
   /**
-   * TODO Comment
+   * `createSyncHandler` should be used to return a type-equivalent version of
+   * the `handler` specified during instantiation.
    */
   public createSyncHandler<
     THandler extends (...args: Input) => Promise<Awaited<Output>>,
@@ -892,7 +898,9 @@ export class InngestCommHandler<
   }
 
   /**
-   * TODO Comment
+   * Given a set of actions that let us access the incoming request, create a
+   * `http/run.started` event that repesents a run starting from an HTTP
+   * request.
    */
   private async createHttpEvent(
     actions: HandlerResponseWithErrors,
@@ -971,7 +979,7 @@ export class InngestCommHandler<
     args: unknown[];
   }): Promise<Awaited<Output>> {
     // Do we have actions for handling sync requests? We must!
-    if (!actions.transformSyncResponse) {
+    if (!actions.experimentalTransformSyncResponse) {
       throw new Error(
         "This platform does not support synchronous Inngest function executions.",
       );
@@ -1001,7 +1009,7 @@ export class InngestCommHandler<
           event,
           attempt: 0,
           events: [event],
-          maxAttempts: 3, // TODO const
+          maxAttempts: fn.opts.retries ?? defaultMaxRetries,
         },
         runId,
         headers: {},
@@ -1012,12 +1020,13 @@ export class InngestCommHandler<
         isFailureHandler: false,
         timer,
         createResponse: (data: unknown) =>
-          actions.transformSyncResponse!("creating sync execution", data).then(
-            (res) => ({
-              ...res,
-              version: exeVersion,
-            }),
-          ),
+          actions.experimentalTransformSyncResponse!(
+            "creating sync execution",
+            data,
+          ).then((res) => ({
+            ...res,
+            version: exeVersion,
+          })),
         stepMode: StepMode.Sync,
       },
     });
@@ -1051,14 +1060,6 @@ export class InngestCommHandler<
         return data;
       },
       "change-mode": async ({ token }) => {
-        // TODO Handle switching to async mode.
-        //
-        // This is where we do redirect, tokens, etc
-        //
-        // We handle that here, because the wrapper decides and we assume that
-        // the execution engine has already checkpointed as much as possible.
-        //
-        // These should all be user-specified hooks like the onesf ro createhandler
         switch (asyncMode) {
           case AsyncResponseType.Redirect: {
             return actions.transformResponse(
@@ -1127,7 +1128,7 @@ export class InngestCommHandler<
     forceExecution?: boolean;
     fns?: InngestFunction.Any[];
   }): Promise<Awaited<Output>> {
-    if (forceExecution && !actions.transformSyncResponse) {
+    if (forceExecution && !actions.experimentalTransformSyncResponse) {
       throw new Error(
         "This platform does not support async executions in Inngest for APIs.",
       );
@@ -1506,10 +1507,8 @@ export class InngestCommHandler<
               run_id: await actions.headers(
                 "getting run ID for forced execution",
                 headerKeys.InngestRunId,
-              ), // TODO oof
-
-              // TODO Oooof. We need this to be given to us or the API to return
-              // it
+              ),
+              // TODO We need this to be given to us or the API to return it
               stack: { stack: [], current: 0 },
             },
           } as Extract<FnData, { version: typeof PREFERRED_EXECUTION_VERSION }>;
@@ -1561,7 +1560,7 @@ export class InngestCommHandler<
           );
           if (!fnId) {
             // TODO PrettyError
-            throw new Error("No function ID found in request");
+            throw new Error("No function ID found in async request");
           }
 
           fn = this.fns[fnId];
@@ -1573,15 +1572,9 @@ export class InngestCommHandler<
             )) || null;
         }
 
-        console.log("bar");
-
         if (typeof fnId === "undefined" || !fn) {
-          console.log("wtf m9");
-          // TODO oof
           throw new Error("No function ID found in request");
         }
-
-        console.log("foo");
 
         const { version, result } = this.runStep({
           functionId: fnId,
@@ -1964,9 +1957,9 @@ export class InngestCommHandler<
       };
 
       const createResponse =
-        forceExecution && actions.transformSyncResponse
+        forceExecution && actions.experimentalTransformSyncResponse
           ? (data: unknown) =>
-              actions.transformSyncResponse!(
+              actions.experimentalTransformSyncResponse!(
                 "created sync->async response",
                 data,
               ).then((res) => ({
@@ -2734,7 +2727,9 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
    * `Response` object, but with sync mode they do, so we need to provide hooks
    * to let us access the body.
    */
-  transformSyncRequest?: (...args: unknown[]) => MaybePromise<unknown>;
+  experimentalTransformSyncRequest?: (
+    ...args: unknown[]
+  ) => MaybePromise<unknown>;
 
   /**
    * TODO Needed to give folks a chance to transform the response from their own
@@ -2745,7 +2740,7 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
    * Because of its location when being specified, we have scoped access to the
    * `reqArgs` (e.g. `req` and `res`), so we don't need to pass them here.
    */
-  transformSyncResponse?: (
+  experimentalTransformSyncResponse?: (
     data: unknown,
   ) => MaybePromise<Omit<ActionResponse, "version">>;
 };

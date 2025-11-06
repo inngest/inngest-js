@@ -410,8 +410,8 @@ export class InngestApi {
   }
 
   /**
-   * TODO Comment
-   * TODO Extract types
+   * Start a new run, optionally passing in a number of steps to initialize the
+   * run with.
    */
   async checkpointNewRun(args: {
     runId: string;
@@ -424,8 +424,6 @@ export class InngestApi {
       steps: args.steps,
     });
 
-    console.log("checkpointing new run with:", body);
-
     const result = await this.req("/v1/http/runs", {
       method: "POST",
       body,
@@ -437,17 +435,10 @@ export class InngestApi {
       );
     }
 
-    console.log("rse:", result.value);
-
     const res = result.value;
     if (res.ok) {
       const rawData: unknown = await res.json();
-
-      console.log({ rawData });
-
       const data = checkpointNewRunResponseSchema.parse(rawData);
-
-      console.log("checkpointed new run:", { req: body, res: rawData });
 
       return data;
     }
@@ -458,8 +449,7 @@ export class InngestApi {
   }
 
   /**
-   * TODO Comment
-   * TODO Extract types
+   * Checkpoint steps for a given run.
    */
   async checkpointSteps(args: {
     runId: string;
@@ -491,13 +481,10 @@ export class InngestApi {
         `Failed to checkpoint steps: ${res.status} ${res.statusText} - ${await res.text()}`,
       );
     }
-
-    console.log("checkpointed steps:", { req: body, res: await res.json() });
   }
 
   /**
-   * TODO Comment
-   * TODO Extract types
+   * Checkpoint a function response for a given run.
    */
   async checkpointResponse(args: {
     runId: string;
