@@ -481,45 +481,4 @@ export class InngestApi {
       );
     }
   }
-
-  /**
-   * Checkpoint a function response for a given run.
-   */
-  async checkpointResponse(args: {
-    runId: string;
-    fnId: string;
-    appId: string;
-    response: ActionResponse;
-  }): Promise<void> {
-    const body = JSON.stringify({
-      fn_id: args.fnId,
-      app_id: args.appId,
-      run_id: args.runId,
-      response: {
-        status_code: args.response.status,
-        headers: args.response.headers,
-        body: args.response.body,
-        // TODO 'error'
-        // TODO 'duration'
-      },
-    });
-
-    const result = await this.req(`/v1/http/runs/${args.runId}/response`, {
-      method: "POST",
-      body,
-    });
-
-    if (!result.ok) {
-      throw new Error(
-        getErrorMessage(result.error, "Unknown error checkpointing response"),
-      );
-    }
-
-    const res = result.value;
-    if (!res.ok) {
-      throw new Error(
-        `Failed to checkpoint response: ${res.status} ${res.statusText} - ${await res.text()}`,
-      );
-    }
-  }
 }

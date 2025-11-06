@@ -195,21 +195,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     throw new Error("Core loop finished without returning a value");
   }
 
-  private async checkpointResponse(res: ActionResponse): Promise<void> {
-    if (!this.state.checkpointedRun) {
-      throw new Error(
-        "Cannot checkpoint response without checkpointing new run first. This is a bug in the Inngest SDK",
-      );
-    }
-
-    await this.options.client["inngestApi"].checkpointResponse({
-      appId: this.state.checkpointedRun.appId,
-      fnId: this.state.checkpointedRun.fnId,
-      runId: this.fnArg.runId,
-      response: res,
-    });
-  }
-
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
     if (!this.state.checkpointedRun) {
       // We have to start the run
@@ -275,22 +260,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       },
 
       "function-resolved": async (checkpoint, i) => {
-        if (i === 0) {
-          await this.checkpoint([
-            {
-              op: StepOpCode.RunComplete,
-              id: _internals.hashId("complete"), // TODO bad ID, bad use of _internals here
-              data: checkpoint.data,
-            },
-          ]);
-        } else {
-          // hmm checkpointing the response needs status code, headers, etc.
-          // This is unique to each adapter, so we need to pass it up to them to
-          // do this.
-          await this.checkpointResponse(
-            await this.options.createResponse!(checkpoint.data),
-          );
-        }
+        await this.checkpoint([
+          {
+            op: StepOpCode.RunComplete,
+            id: _internals.hashId("complete"), // TODO bad ID
+            data: await this.options.createResponse!(checkpoint.data),
+          },
+        ]);
 
         // Done - just return the value
         return {
