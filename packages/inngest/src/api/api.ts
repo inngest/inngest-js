@@ -423,7 +423,7 @@ export class InngestApi {
       steps: args.steps,
     });
 
-    const result = await this.req("/v1/http/runs", {
+    const result = await this.req("/v1/checkpoint", {
       method: "POST",
       body,
     });
@@ -463,7 +463,7 @@ export class InngestApi {
       steps: args.steps,
     });
 
-    const result = await this.req(`/v1/http/runs/${args.runId}/steps`, {
+    const result = await this.req(`/v1/checkpoint/${args.runId}/steps`, {
       method: "POST",
       body,
     });
