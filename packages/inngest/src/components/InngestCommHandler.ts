@@ -811,11 +811,6 @@ export class InngestCommHandler<
       return this.wrapHandler((async (...args) => {
         const reqInit = await this.initRequest(...args);
 
-        console.log({
-          reqInit,
-          isInngestReq: await this.isInngestReq(reqInit.actions),
-        });
-
         const fn = new InngestFunction(
           this.client,
           {
@@ -1491,8 +1486,6 @@ export class InngestCommHandler<
               ? { fn: fns[0], onFailure: false }
               : Object.values(this.fns)[0];
           fnId = fn?.fn.id();
-
-          console.log({ "this.fns": this.fns, fns: fns });
           stepId = "step"; // Checkpointed runs are never parallel atm, so this is hardcoded
           body = {
             event: {},
@@ -1512,8 +1505,6 @@ export class InngestCommHandler<
               stack: { stack: [], current: 0 },
             },
           } as Extract<FnData, { version: typeof PREFERRED_EXECUTION_VERSION }>;
-
-          console.log("yep we hit force", { fnId, stepId, body });
         } else {
           const rawProbe = await actions.queryStringWithDefaults(
             "testing for probe",
@@ -1620,8 +1611,6 @@ export class InngestCommHandler<
                 op: StepOpCode.RunComplete,
                 data: undefinedToNull(result.data),
               };
-
-              console.log("lol yer", undefinedToNull(result.data));
 
               return {
                 status: 206,
@@ -1909,13 +1898,10 @@ export class InngestCommHandler<
     fn: { fn: InngestFunction.Any; onFailure: boolean };
     forceExecution: boolean;
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
-    console.log({ fn });
     if (!fn) {
       // TODO PrettyError
       throw new Error(`Could not find function with ID "${functionId}"`);
     }
-
-    console.log("hmmmmmm");
 
     const immediateFnData = parseFnData(data);
     let { version } = immediateFnData;
@@ -1934,8 +1920,6 @@ export class InngestCommHandler<
         api: this.client["inngestApi"],
         version,
       });
-
-      console.log({ anyFnData });
 
       if (!anyFnData.ok) {
         throw new Error(anyFnData.error);

@@ -1125,7 +1125,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          */
         .then(() => beforeExecHooksPromise)
         .then(() => {
-          console.log("processing", remainingStepCompletionOrder.length);
           foundStepsReportPromise = undefined;
 
           for (let i = 0; i < remainingStepCompletionOrder.length; i++) {
@@ -1286,11 +1285,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         displayName: opId.displayName ?? opId.id,
         handled: false,
         handle: () => {
-          console.log(
-            ">>>>>>>>>>>>>> handle() called for step",
-            step.displayName,
-          );
-
           if (step.handled) {
             return false;
           }

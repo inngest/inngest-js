@@ -183,7 +183,6 @@ export class InngestApi {
     const result = await this.req(`/v0/runs/${runId}/actions`);
     if (result.ok) {
       const res = result.value;
-      console.log(res);
       const data: unknown = await res.json();
 
       if (res.ok) {
@@ -522,7 +521,5 @@ export class InngestApi {
         `Failed to checkpoint response: ${res.status} ${res.statusText} - ${await res.text()}`,
       );
     }
-
-    console.log("checkpointed response:", { req: body });
   }
 }
