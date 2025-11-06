@@ -23,7 +23,7 @@ export interface ConnectHandlerOptions extends RegisterOptions {
   /**
    * MaxWorkerConcurrency represents the maximum number of worker concurrency to use.
    *
-   * If nil, there will be no limit on the number of concurrent requests on the worker.
+   * If left undefined, there will be no limit on the number of concurrent requests on the worker.
    */
   maxWorkerConcurrency?: number;
 
