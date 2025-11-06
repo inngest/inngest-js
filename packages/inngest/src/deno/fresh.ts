@@ -64,8 +64,6 @@ export const serve = (
         transformResponse: ({ body, status, headers }) => {
           return new Response(body, { status, headers });
         },
-        transformSyncRequest: null,
-        transformSyncResponse: null,
       };
     },
   });

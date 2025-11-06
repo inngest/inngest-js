@@ -114,8 +114,6 @@ export const serve = (
           setHeaders(event, actionRes.headers);
           return send(event, actionRes.body);
         },
-        transformSyncRequest: null,
-        transformSyncResponse: null,
       };
     },
   });

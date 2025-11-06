@@ -131,15 +131,6 @@ const commHandler = (options: ServeHandlerOptions | SyncHandlerOptions) => {
             }
           }
         },
-        transformSyncRequest: null,
-        transformSyncResponse: null,
-        // transformSyncResponse: async (data) => {
-        //   return {
-        //     status: res.statusCode,
-        //     headers: res.getHeaders(),
-        //     body: res,
-        //   };
-        // },
       };
     },
   });

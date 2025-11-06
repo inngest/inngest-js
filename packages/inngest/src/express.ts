@@ -143,8 +143,6 @@ export const serve = (options: ServeHandlerOptions): any => {
             }
           }
         },
-        transformSyncRequest: null,
-        transformSyncResponse: null,
       };
     },
   });

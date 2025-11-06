@@ -1012,12 +1012,12 @@ export class InngestCommHandler<
         isFailureHandler: false,
         timer,
         createResponse: (data: unknown) =>
-          actions
-            .transformSyncResponse("creating sync execution", data)
-            .then((res) => ({
+          actions.transformSyncResponse!("creating sync execution", data).then(
+            (res) => ({
               ...res,
               version: exeVersion,
-            })),
+            }),
+          ),
         stepMode: StepMode.Sync,
       },
     });
@@ -1564,6 +1564,8 @@ export class InngestCommHandler<
             throw new Error("No function ID found in request");
           }
 
+          fn = this.fns[fnId];
+
           stepId =
             (await actions.queryStringWithDefaults(
               "processing run request",
@@ -1619,35 +1621,33 @@ export class InngestCommHandler<
             };
           },
           "function-resolved": (result) => {
-            // TODO This can optionally be a 206 with a RunComplete opcode.
-            // How do we send back status code, headers, etc?
-            // if (forceExecution) {
-            const runCompleteOp: OutgoingOp = {
-              id: _internals.hashId("complete"),
-              op: StepOpCode.RunComplete,
-              data: undefinedToNull(result.data),
-            };
+            if (forceExecution) {
+              const runCompleteOp: OutgoingOp = {
+                id: _internals.hashId("complete"),
+                op: StepOpCode.RunComplete,
+                data: undefinedToNull(result.data),
+              };
 
-            console.log("lol yer", undefinedToNull(result.data));
+              console.log("lol yer", undefinedToNull(result.data));
+
+              return {
+                status: 206,
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: stringify(runCompleteOp),
+                version,
+              };
+            }
 
             return {
-              status: 206,
+              status: 200,
               headers: {
                 "Content-Type": "application/json",
               },
-              body: stringify(runCompleteOp),
+              body: stringify(undefinedToNull(result.data)),
               version,
             };
-            // }
-
-            // return {
-            //   status: 200,
-            //   headers: {
-            //     "Content-Type": "application/json",
-            //   },
-            //   body: stringify(undefinedToNull(result.data)),
-            //   version,
-            // };
           },
           "step-not-found": (result) => {
             return {
@@ -1963,15 +1963,17 @@ export class InngestCommHandler<
         [V in ExecutionVersion]: ExecutionStarter<V>;
       };
 
-      const createResponse = forceExecution
-        ? (data: unknown) =>
-            actions
-              .transformSyncResponse("created sync->async response", data)
-              .then((res) => ({
+      const createResponse =
+        forceExecution && actions.transformSyncResponse
+          ? (data: unknown) =>
+              actions.transformSyncResponse!(
+                "created sync->async response",
+                data,
+              ).then((res) => ({
                 ...res,
                 version,
               }))
-        : undefined;
+          : undefined;
 
       const executionStarters = ((s: ExecutionStarters) =>
         s as GenericExecutionStarters)({
@@ -2732,7 +2734,7 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
    * `Response` object, but with sync mode they do, so we need to provide hooks
    * to let us access the body.
    */
-  transformSyncRequest: ((...args: unknown[]) => MaybePromise<unknown>) | null;
+  transformSyncRequest?: (...args: unknown[]) => MaybePromise<unknown>;
 
   /**
    * TODO Needed to give folks a chance to transform the response from their own
@@ -2743,9 +2745,9 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
    * Because of its location when being specified, we have scoped access to the
    * `reqArgs` (e.g. `req` and `res`), so we don't need to pass them here.
    */
-  transformSyncResponse:
-    | ((data: unknown) => MaybePromise<Omit<ActionResponse, "version">>)
-    | null;
+  transformSyncResponse?: (
+    data: unknown,
+  ) => MaybePromise<Omit<ActionResponse, "version">>;
 };
 
 /**

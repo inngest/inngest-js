@@ -92,6 +92,6 @@ describe("getAsyncCtx", () => {
 
     const store = await externalP;
     expect(store).toBeDefined();
-    expect(store?.ctx.runId).toBe(internalRunId);
+    expect(store?.execution?.ctx.runId).toBe(internalRunId);
   });
 });

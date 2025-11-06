@@ -470,8 +470,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
               return baseUrl;
             },
-            transformSyncRequest: null,
-            transformSyncResponse: null,
           };
         },
       });

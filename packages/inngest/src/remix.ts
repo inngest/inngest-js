@@ -110,8 +110,6 @@ export const serve = (
         url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
         transformResponse: createNewResponse,
         transformStreamingResponse: createNewResponse,
-        transformSyncRequest: null,
-        transformSyncResponse: null,
       };
     },
   });

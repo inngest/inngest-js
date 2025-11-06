@@ -51,7 +51,6 @@ const commHandler = (
         transformResponse: ({ body, status, headers }) => {
           return new Response(body, { status, headers });
         },
-        transformSyncRequest: null,
         transformSyncResponse: async (data) => {
           const res = data as Response;
 
