@@ -1,5 +1,11 @@
 # inngest
 
+## 3.45.0
+
+### Minor Changes
+
+- [#1154](https://github.com/inngest/inngest-js/pull/1154) [`ead9837b`](https://github.com/inngest/inngest-js/commit/ead9837bb88f0722806a721ec2e3666adb757bb6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add experimental APIs for supporting synchronous execution
+
 ## 3.44.5
 
 ### Patch Changes
