@@ -111,7 +111,7 @@ export type APIStepPayload = {
     content_type: string;
 
     /**
-     * The query parameteres of the original request, as a single string without
+     * The query parameters of the original request, as a single string without
      * the leading `"?"`.
      */
     query_params: string;
