@@ -163,6 +163,9 @@ importers:
       temporal-polyfill:
         specifier: ^0.2.5
         version: 0.2.5
+      ulid:
+        specifier: ^2.3.0
+        version: 2.3.0
       zod:
         specifier: ^4.0.17
         version: 4.0.17

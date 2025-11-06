@@ -35,6 +35,7 @@ import {
   type ClientOptions,
   type FailureEventPayload,
   type OutgoingOp,
+  StepMode,
   StepOpCode,
 } from "../types.ts";
 import {
@@ -181,6 +182,7 @@ describe("runFn", () => {
                 stepCompletionOrder: [],
                 reqArgs: [],
                 headers: {},
+                stepMode: StepMode.Async,
               },
             });
 
@@ -227,6 +229,7 @@ describe("runFn", () => {
                 stepCompletionOrder: [],
                 reqArgs: [],
                 headers: {},
+                stepMode: StepMode.Async,
               },
             });
 

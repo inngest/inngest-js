@@ -272,6 +272,7 @@ jobs:
         exclude:
           - example: framework-nextjs-starter
           - example: framework-hono
+          - example: bun-sync
     steps:
       # Checkout the repo
       - name: Checkout SDK

@@ -127,6 +127,11 @@ export enum envKeys {
  * @public
  */
 export enum headerKeys {
+  ContentType = "content-type",
+  Host = "host",
+  ForwardedFor = "x-forwarded-for",
+  RealIp = "x-real-ip",
+  Location = "location",
   ContentLength = "content-length",
   Signature = "x-inngest-signature",
   SdkVersion = "x-inngest-sdk",
@@ -142,7 +147,14 @@ export enum headerKeys {
   EventIdSeed = "x-inngest-event-id-seed",
   TraceParent = "traceparent",
   TraceState = "tracestate",
+  InngestRunId = "x-run-id",
 }
+
+/**
+ * Headers that are forwarded from the original request when an Inngest function
+ * is invoked.
+ */
+export const forwardedHeaders = [headerKeys.TraceParent, headerKeys.TraceState];
 
 export const defaultInngestApiBaseUrl = "https://api.inngest.com/";
 export const defaultInngestEventBaseUrl = "https://inn.gs/";
@@ -164,6 +176,16 @@ export enum internalEvents {
   FunctionFinished = "inngest/function.finished",
   FunctionCancelled = "inngest/function.cancelled",
   ScheduledTimer = "inngest/scheduled.timer",
+}
+
+/**
+ * Events that are known globally by the Inngest platform.
+ */
+export enum knownEvents {
+  /**
+   * An HTTP request has been received to trigger a function execution.
+   */
+  HttpRunStarted = "http/run.started",
 }
 
 export const logPrefix: string = chalk.magenta.bold("[Inngest]");
@@ -212,3 +234,8 @@ export enum ExecutionVersion {
    */
   V2 = 2,
 }
+
+/**
+ * Default maximum number of retries for function/step executions.
+ */
+export const defaultMaxRetries = 3;

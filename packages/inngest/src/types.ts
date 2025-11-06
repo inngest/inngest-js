@@ -23,7 +23,7 @@ import type {
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
-import type { internalEvents } from "./helpers/consts.ts";
+import type { internalEvents, knownEvents } from "./helpers/consts.ts";
 import type {
   AsTuple,
   IsEqual,
@@ -78,6 +78,57 @@ export const jsonErrorSchema = baseJsonErrorSchema
       stack: val.stack,
     };
   }) as z.ZodType<JsonError>;
+
+/**
+ * The payload for an API endpoint running steps.
+ */
+export type APIStepPayload = {
+  name: `${knownEvents.HttpRunStarted}`;
+  data: {
+    /**
+     * The domain that served the original request.
+     */
+    domain: string;
+
+    /**
+     * The method used to trigger the original request.
+     */
+    method: string;
+
+    /**
+     * The URL path of the original request.
+     */
+    path: string;
+
+    /**
+     * The IP that made the original request, fetched from headers.
+     */
+    ip: string;
+
+    /**
+     * The "Content-Type" header of the original request.
+     */
+    content_type: string;
+
+    /**
+     * The query parameters of the original request, as a single string without
+     * the leading `"?"`.
+     */
+    query_params: string;
+
+    /**
+     * The body of the original request.
+     */
+    body?: string;
+
+    /**
+     * An optional function ID to use for this endpoint. If not provided,
+     * Inngest will generate a function ID based on the method and path, e.g.
+     * `"GET /api/hello"`.
+     */
+    fn?: string; // maybe explicit fn ID from user, else empty
+  };
+};
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -210,7 +261,63 @@ export enum StepOpCode {
   InvokeFunction = "InvokeFunction",
   AiGateway = "AIGateway",
   Gateway = "Gateway",
+
+  RunComplete = "RunComplete",
 }
+
+/**
+ * StepModes are used to specify how the SDK should execute a function.
+ */
+export enum StepMode {
+  /**
+   * A synchronous method of execution, where steps are executed immediately and
+   * their results are "checkpointed" back to Inngest in real-time.
+   */
+  Sync = "sync",
+
+  /**
+   * The traditional, background method of execution, where all steps are queued
+   * and executed asynchronously and always triggered by Inngest.
+   */
+  Async = "async",
+}
+
+/**
+ * The type of response you wish to return to an API endpoint when using steps
+ * within it and we must transition to {@link StepMode.Async}.
+ *
+ * In most cases, this defaults to {@link AsyncResponseType.Redirect}.
+ */
+export enum AsyncResponseType {
+  /**
+   * When switching to {@link StepMode.Async}, respond with a 302 redirect which
+   * will end the request once the run has completed asynchronously in the
+   * background.
+   */
+  Redirect = "redirect",
+
+  /**
+   * When switching to {@link StepMode.Async}, respond with a token and run ID
+   * which can be used to poll for the status of the run.
+   */
+  Token = "token",
+
+  /**
+   * TODO Comment
+   */
+  // Custom = "custom",
+}
+
+/**
+ * The type of response you wish to return to an API endpoint when using steps
+ * within it and we must transition to {@link StepMode.Async}.
+ *
+ * In most cases, this defaults to {@link AsyncResponseType.Redirect}.
+ */
+export type AsyncResponseValue =
+  | AsyncResponseType.Redirect
+  | AsyncResponseType.Token;
+// | (() => null);
 
 /**
  * The shape of a single operation in a step function. Used to communicate
@@ -221,6 +328,13 @@ export type Op = {
    * The unique code for this operation.
    */
   op: StepOpCode;
+
+  /**
+   * What {@link StepMode} this step supports. If a step is marked as supporting
+   * {@link StepMode.Async} we must be in (or switch to) async mode in order to
+   * execute it.
+   */
+  mode: StepMode;
 
   /**
    * The unhashed step name for this operation. This is a legacy field that is
@@ -264,6 +378,21 @@ export type Op = {
    * Extra info used to annotate spans associated with this operation.
    */
   userland: OpUserland;
+
+  /**
+   * Golang-compatibile `interval.Interval` timing information for this operation.
+   */
+  timing?: {
+    /**
+     * UNIX nanosecond timestamp for when the operation started.
+     */
+    a: number;
+
+    /**
+     * The duration of the operation in nanoseconds.
+     */
+    b: number;
+  };
 };
 
 /**
@@ -296,7 +425,15 @@ export type IncomingOp = z.output<typeof incomingOpSchema>;
  */
 export type OutgoingOp = Pick<
   Omit<HashedOp, "userland"> & { userland?: OpUserland },
-  "id" | "op" | "name" | "opts" | "data" | "error" | "displayName" | "userland"
+  | "id"
+  | "op"
+  | "name"
+  | "opts"
+  | "data"
+  | "error"
+  | "displayName"
+  | "userland"
+  | "timing"
 >;
 
 /**

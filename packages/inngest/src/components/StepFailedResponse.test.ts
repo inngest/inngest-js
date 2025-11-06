@@ -1,5 +1,5 @@
 import { isSerializedError } from "../helpers/errors";
-import { StepOpCode } from "../types";
+import { StepMode, StepOpCode } from "../types";
 import { createV1InngestExecution } from "./execution/v1";
 import { Inngest } from "./Inngest";
 import type { InngestFunction } from "./InngestFunction";
@@ -35,6 +35,7 @@ describe("StepFailed response contains minimal serialized error and retriable fa
       isFailureHandler: false,
       runId: "test-run",
       headers: {},
+      stepMode: StepMode.Async,
     });
 
     const result = await execution.start();

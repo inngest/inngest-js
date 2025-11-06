@@ -2,7 +2,7 @@ import Debug, { type Debugger } from "debug";
 import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
 import type { ServerTiming } from "../../helpers/ServerTiming.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
-import type { Context, IncomingOp, OutgoingOp } from "../../types.ts";
+import type { Context, IncomingOp, OutgoingOp, StepMode } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { ActionResponse } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
@@ -21,6 +21,15 @@ export interface ExecutionResults {
   "function-rejected": { error: unknown; retriable: boolean | string };
   "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
   "step-not-found": { step: OutgoingOp };
+
+  /**
+   * Indicates that we need to relinquish control back to Inngest in order to
+   * change step modes.
+   */
+  "change-mode": {
+    to: StepMode;
+    token: string;
+  };
 }
 
 export type ExecutionResult = {
@@ -77,6 +86,7 @@ export interface InngestExecutionOptions {
   data: Omit<Context.Any, "step">;
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
+  stepMode: StepMode;
 
   /**
    * Headers to be sent with any request to Inngest during this execution.
@@ -92,6 +102,14 @@ export interface InngestExecutionOptions {
    * the execution starts.
    */
   transformCtx?: (ctx: Readonly<Context.Any>) => Context.Any;
+
+  /**
+   * A hook that is called to create an {@link ActionResponse} from the returned
+   * value of an execution.
+   *
+   * This is required for checkpointing executions.
+   */
+  createResponse?: (data: unknown) => MaybePromise<ActionResponse>;
 }
 
 export type InngestExecutionFactory = (
@@ -107,5 +125,6 @@ export class InngestExecution {
 }
 
 export interface IInngestExecution {
+  version: ExecutionVersion;
   start(): Promise<ExecutionResult>;
 }

@@ -39,6 +39,7 @@ import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import {
   type ExecutionResult,
+  ExecutionVersion,
   type IInngestExecution,
   InngestExecution,
   type InngestExecutionFactory,
@@ -56,6 +57,8 @@ export class V0InngestExecution
   extends InngestExecution
   implements IInngestExecution
 {
+  public version = ExecutionVersion.V0;
+
   private state: V0ExecutionState;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;

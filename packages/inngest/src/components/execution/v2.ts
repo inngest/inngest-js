@@ -1,7 +1,11 @@
 import { trace } from "@opentelemetry/api";
 import hashjs from "hash.js";
 import { z } from "zod/v3";
-import { headerKeys, internalEvents } from "../../helpers/consts.ts";
+import {
+  ExecutionVersion,
+  headerKeys,
+  internalEvents,
+} from "../../helpers/consts.ts";
 import {
   deserializeError,
   ErrCode,
@@ -59,6 +63,8 @@ export const createV2InngestExecution: InngestExecutionFactory = (options) => {
 };
 
 class V2InngestExecution extends InngestExecution implements IInngestExecution {
+  public version = ExecutionVersion.V2;
+
   private state: V2ExecutionState;
   private fnArg: Context.Any;
   private checkpointHandlers: CheckpointHandlers;
@@ -105,7 +111,13 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
       this.execution = getAsyncLocalStorage().then((als) => {
         return als.run(
-          { app: this.options.client, ctx: this.fnArg },
+          {
+            app: this.options.client,
+            execution: {
+              ctx: this.fnArg,
+              instance: this,
+            },
+          },
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
               clientProcessorMap.get(this.options.client)?.declareStartingSpan({
@@ -487,8 +499,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     const store = await getAsyncCtx();
 
-    if (store) {
-      store.executingStep = {
+    if (store?.execution) {
+      store.execution.executingStep = {
         id,
         name: displayName,
       };
@@ -498,8 +510,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     return runAsPromise(fn)
       .finally(async () => {
-        if (store) {
-          delete store.executingStep;
+        if (store?.execution) {
+          delete store.execution.executingStep;
         }
 
         await this.state.hooks?.afterExecution?.();
