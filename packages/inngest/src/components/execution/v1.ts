@@ -1433,7 +1433,8 @@ type CheckpointHandlers = {
      * triggered.
      *
      * The catch-all `""` checkpoint does not increment this count.
-     */ i: number,
+     */
+    i: number,
   ) => MaybePromise<void>;
 };
 
