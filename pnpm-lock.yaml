@@ -166,6 +166,9 @@ importers:
       ulid:
         specifier: ^2.3.0
         version: 2.3.0
+      zod:
+        specifier: ^3.25.0 || ^4.0.0
+        version: 3.25.76
     devDependencies:
       '@actions/core':
         specifier: ^1.10.0
@@ -299,9 +302,6 @@ importers:
       vitest-fetch-mock:
         specifier: ^0.4.5
         version: 0.4.5(vitest@3.2.4(@edge-runtime/vm@3.0.3)(@types/debug@4.1.12)(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7))
-      zod:
-        specifier: ^4.0.17
-        version: 4.1.11
 
   packages/middleware-encryption:
     dependencies:
