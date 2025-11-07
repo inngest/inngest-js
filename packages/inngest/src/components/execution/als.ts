@@ -1,10 +1,10 @@
 import type { Context, StepOptions } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
-import type {
-  ExecutionVersion,
-  IInngestExecution,
-} from "./InngestExecution.ts";
+import type { IInngestExecution } from "./InngestExecution.ts";
 
+/**
+ * Note - this structure can be used by other libraries, so cannot have breaking changes.
+ */
 export interface AsyncContext {
   /**
    * The Inngest App that is currently being used to execute the function.
