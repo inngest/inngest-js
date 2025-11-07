@@ -439,6 +439,12 @@ importers:
       debug:
         specifier: ^4.3.4
         version: 4.3.4
+      inngest:
+        specifier: ^3.42.3
+        version: 3.42.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@22.13.10)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@4.1.11)
+      zod:
+        specifier: ^3.25.0 || ^4.0.0
+        version: 4.1.11
     devDependencies:
       '@eslint/js':
         specifier: ^9.7.0
@@ -461,9 +467,6 @@ importers:
       globals:
         specifier: ^15.14.0
         version: 15.14.0
-      inngest:
-        specifier: ^3.42.3
-        version: 3.42.3(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@7.0.2(@types/node@22.13.10)(jiti@2.5.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@4.21.0)(h3@1.8.1)(hono@4.2.7)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@19.0.0))(react@19.0.0))(typescript@5.8.2)(zod@4.1.11)
       react:
         specifier: ^19.0.0
         version: 19.0.0
@@ -485,9 +488,6 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.4(@edge-runtime/vm@3.0.3)(@types/debug@4.1.12)(@types/node@22.13.10)(jiti@2.5.1)
-      zod:
-        specifier: ^4.0.17
-        version: 4.1.11
 
   packages/test:
     dependencies:
