@@ -452,7 +452,7 @@ describe("referenceFunction", () => {
       // Output should be a discriminated union
       type ExpectedOutput =
         // biome-ignore lint/suspicious/noExplicitAny: z.any() returns any type
-        { type: "success"; data: any } | { type: "error"; message: string };
+        { type: "success"; data?: any } | { type: "error"; message: string };
       assertType<IsEqual<ActualOutput, ExpectedOutput>>(true);
     });
 
