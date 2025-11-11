@@ -1,5 +1,5 @@
 import { type StandardSchemaV1 } from "@standard-schema/spec";
-import { z } from "zod";
+import { z } from "zod/v3";
 
 export namespace Realtime {
   export type PublishFn = <
