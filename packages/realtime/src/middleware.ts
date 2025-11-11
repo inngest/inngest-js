@@ -72,3 +72,6 @@ export const realtimeMiddleware = () => {
     },
   });
 };
+
+// Re-export types from here, as this is used as a separate entrypoint now
+export * from "./types";
