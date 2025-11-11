@@ -39,8 +39,15 @@ export const realtimeMiddleware = () => {
                   }
                 };
 
+                // This could be a couple of different versions, but is now
+                // stable in the latter format.
+                const isExecutingStep =
+                  store.executingStep ||
+                  // biome-ignore lint/suspicious/noExplicitAny: Testing across version boundaries
+                  (store as any).execution?.executingStep;
+
                 return (
-                  store.executingStep
+                  isExecutingStep
                     ? action()
                     : step.run(`publish:${publishOpts.channel}`, action)
                 ).then(() => {
