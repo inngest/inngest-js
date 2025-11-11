@@ -8,6 +8,7 @@ option go_package = "github.com/inngest/inngest/proto/gen/connect/v1;connect";
 enum GatewayMessageType {
   GATEWAY_HELLO = 0;
   WORKER_CONNECT = 1;
+  SYNC_FAILED = 14;
   GATEWAY_CONNECTION_READY = 2;
   GATEWAY_EXECUTOR_REQUEST = 3;
   WORKER_READY = 4;
@@ -57,6 +58,8 @@ message WorkerConnectRequestData {
 	string sdk_language = 12;
 
 	google.protobuf.Timestamp started_at = 13;
+
+	optional int64 max_worker_concurrency = 14;
 }
 
 message GatewayConnectionReadyData {
@@ -191,6 +194,8 @@ enum WorkerDisconnectReason {
 	WORKER_SHUTDOWN = 0;
 	UNEXPECTED = 1;
 	GATEWAY_DRAINING = 2;
+	CONSECUTIVE_HEARTBEATS_MISSED = 3;
+	MESSAGE_TOO_LARGE = 4;
 }
 
 message StartResponse {
