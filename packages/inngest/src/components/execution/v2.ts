@@ -18,6 +18,7 @@ import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
   createTimeoutPromise,
+  resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
@@ -791,7 +792,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      foundStepsReportPromise = new Promise((resolve) => setImmediate(resolve))
+      foundStepsReportPromise = resolveNextTick()
         /**
          * Ensure that we wait for this promise to resolve before continuing.
          *

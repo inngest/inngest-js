@@ -19,6 +19,7 @@ import {
   createDeferredPromiseWithStack,
   createTimeoutPromise,
   resolveAfterPending,
+  resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
@@ -1081,7 +1082,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       let extensionPromise: Promise<void>;
       if (++tickExtensionCount >= 10) {
         tickExtensionCount = 0;
-        extensionPromise = new Promise((resolve) => setTimeout(resolve));
+        extensionPromise = resolveNextTick();
       } else {
         extensionPromise = resolveAfterPending();
       }

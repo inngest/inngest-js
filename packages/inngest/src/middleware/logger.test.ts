@@ -26,10 +26,10 @@ describe("ProxyLogger", () => {
   };
 
   describe("flush", () => {
-    let immediate: MockInstance<typeof setImmediate>;
+    let immediate: MockInstance<typeof setTimeout>;
 
     beforeEach(() => {
-      immediate = vi.spyOn(global, "setImmediate");
+      immediate = vi.spyOn(global, "setTimeout");
     });
 
     afterEach(() => {

@@ -1,3 +1,5 @@
+import { resolveNextTick } from "../helpers/promises.ts";
+
 /**
  * All kinds of arguments can come through
  *
@@ -121,6 +123,6 @@ export class ProxyLogger implements Logger {
     }
 
     // Otherwise yield one event-loop tick (non-blocking hint for buffered loggers)
-    await new Promise((r) => setImmediate(r));
+    await resolveNextTick();
   }
 }
