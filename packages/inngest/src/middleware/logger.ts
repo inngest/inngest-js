@@ -121,6 +121,6 @@ export class ProxyLogger implements Logger {
     }
 
     // Otherwise yield one event-loop tick (non-blocking hint for buffered loggers)
-    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setTimeout(r));
   }
 }

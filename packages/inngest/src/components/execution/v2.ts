@@ -791,7 +791,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      foundStepsReportPromise = new Promise((resolve) => setImmediate(resolve))
+      foundStepsReportPromise = new Promise((resolve) => setTimeout(resolve))
         /**
          * Ensure that we wait for this promise to resolve before continuing.
          *
