@@ -1,5 +1,15 @@
 # inngest
 
+## 3.45.1
+
+### Patch Changes
+
+- [#1155](https://github.com/inngest/inngest-js/pull/1155) [`9fa34d12`](https://github.com/inngest/inngest-js/commit/9fa34d1250e25256ddb69606d7932419f131e998) Thanks [@mar-inngest](https://github.com/mar-inngest)! - Connect - Adding support for worker concurrency limits
+
+- [#1160](https://github.com/inngest/inngest-js/pull/1160) [`ab446473`](https://github.com/inngest/inngest-js/commit/ab4464730ffea7d85de7db603fbda9fb3ac645fe) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Widen `zod` dependency range to support v3/v4 across libraries
+
+- [#1165](https://github.com/inngest/inngest-js/pull/1165) [`b5139f04`](https://github.com/inngest/inngest-js/commit/b5139f041cfef8a78d75bf9d0254d892e40060fe) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove `setImmediate` use (Node only)
+
 ## 3.45.0
 
 ### Minor Changes
