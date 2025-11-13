@@ -1,5 +1,11 @@
 # inngest
 
+## 3.45.2
+
+### Patch Changes
+
+- [#1156](https://github.com/inngest/inngest-js/pull/1156) [`ef6fd33d`](https://github.com/inngest/inngest-js/commit/ef6fd33da9b21443302d726a69a62a4704809d10) Thanks [@Linell](https://github.com/Linell)! - Updated OpenTelemetry dependencies to support broader version ranges and adapted code for OTEL 2.x API compatibilty
+
 ## 3.45.1
 
 ### Patch Changes
