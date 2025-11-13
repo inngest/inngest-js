@@ -173,6 +173,10 @@ async function startDevServer(
   exampleServerPort: number,
   examplePath: string
 ): Promise<void> {
+  console.log(
+    'IUHFUIOSDHFIUSHDIFUSDHUIOFSDHIOFHSIDUFHISUDHF starting"??????????????????????',
+  );
+
   const serverProcess = startProcess(
     "npx",
     [
@@ -200,7 +204,13 @@ async function startDevServer(
 
   serverProcess.unref();
 
-  return checkServerReady(`http://localhost:${devServerPort}`, 60000);
+  const isReady = await checkServerReady(
+    `http://localhost:${devServerPort}`,
+    60000,
+  );
+  console.log({ isReady });
+
+  return isReady;
 }
 
 async function startExampleServer(
@@ -214,8 +224,9 @@ async function startExampleServer(
     HOST: "0.0.0.0",
     PORT: "3000",
     NODE_ENV: "development",
-    INNGEST_LOG_LEVEL: "debug",
+    // INNGEST_LOG_LEVEL: "debug",
     INNGEST_BASE_URL: `http://localhost:${devServerPort}`,
+    DEBUG: "inngest:connect:message-buffer",
   } as const;
   const command = exampleName.startsWith("bun") ? "bun" : "npm";
 
@@ -255,7 +266,14 @@ async function registerExample(exampleServerPort: number): Promise<void> {
 
 function runTests(sdkPath: string): void {
   try {
-    execSync("pnpm run test:examples", { cwd: sdkPath, stdio: "inherit" });
+    execSync("pnpm run test:examples", {
+      cwd: sdkPath,
+      stdio: "inherit",
+      env: {
+        INNGEST_TEST_CONNECT: "1",
+        NODE_ENV: "development",
+      },
+    });
     console.log("Tests completed successfully");
   } catch (error) {
     console.error("Test suite failed to execute", error);
@@ -321,16 +339,18 @@ async function runIntegrationTest(
 
   const reset = await getExampleResetter(examplePath);
 
-  const startExamplePromise = (async () => {
-    await setupExample(examplePath);
-    await startExampleServer(examplePath, exampleServerPort, devServerPort);
-  })();
-
   const startDevServerPromise = startDevServer(
     devServerPort,
     exampleServerPort,
     examplePath
   );
+
+  await startDevServerPromise;
+
+  const startExamplePromise = (async () => {
+    await setupExample(examplePath);
+    await startExampleServer(examplePath, exampleServerPort, devServerPort);
+  })();
 
   await Promise.all([startExamplePromise, startDevServerPromise]);
   await registerExample(exampleServerPort);
