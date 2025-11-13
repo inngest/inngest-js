@@ -1,59 +1,31 @@
-import { Inngest } from "inngest";
+// a
+
+// aa
+import { createServer } from "node:http";
 import { connect } from "inngest/connect";
+import whyIsNodeRunning from "why-is-node-running";
+import { functions, inngest } from "./inngest";
 
 console.log("Starting up worker with pid", process.pid);
-
-const app1 = new Inngest({
-  id: "my-connect-js-app-1",
-  eventKey: "abc123",
-  appVersion: "v1.0",
-});
-
-const app2 = new Inngest({
-  id: "my-connect-js-app-2",
-  eventKey: "abc123",
-  appVersion: "v1.0",
-});
-
 console.log("Connecting...");
+
+// Create a local server to receive data from
+const server = createServer((req, res) => {
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(
+    JSON.stringify({
+      data: "Hello World!",
+    }),
+  );
+});
+
+server.listen(3000);
 
 connect({
   apps: [
     {
-      client: app1,
-      functions: [
-        app1.createFunction(
-          { id: "test-function" },
-          { event: "connect-demo/test" },
-          async ({ step }) => {
-            await step.run("test", async () => {
-              console.log("via connect!");
-              await new Promise((resolve) => setTimeout(resolve, 10000));
-              console.log("function done");
-              return "this works";
-            });
-          }
-        ),
-        app1.createFunction(
-          { id: "hello-world" },
-          { event: "connect-demo/hello-world" },
-          async ({ step }) => {
-            return { success: true };
-          }
-        ),
-      ],
-    },
-    {
-      client: app2,
-      functions: [
-        app2.createFunction(
-          { id: "hello-world" },
-          { event: "connect-demo/hello-world" },
-          async ({ step }) => {
-            return { success: true };
-          }
-        ),
-      ],
+      client: inngest,
+      functions,
     },
   ],
   instanceId: "my-worker",
@@ -71,4 +43,8 @@ connect({
 
   console.log("Closed, clearing");
   clearInterval(statusLog);
+
+  setInterval(() => {
+    whyIsNodeRunning();
+  }, 2000);
 });
