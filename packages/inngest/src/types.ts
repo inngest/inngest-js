@@ -1542,6 +1542,41 @@ export interface StepOptions {
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
+// TODO: document
+export type MetadataTarget =
+  | {
+      // run level
+      run_id: string;
+    }
+  | {
+      // step level
+      run_id: string;
+      step_id: string; // user-defined
+      index?: number;
+    }
+  | {
+      // step attempt level
+      run_id: string;
+      step_id: string; // user-defined
+      index?: number;
+      attempt: number; // -1 === last attempt?
+    }
+  | {
+      // span level
+      run_id: string;
+      step_id: string; // user-defined
+      index?: number;
+      attempt: number; // -1 === last attempt?
+      span_id: string;
+    };
+
+// TODO:document
+export type MetadataOptsOrId = StepOptionsOrId & {
+  target?: MetadataTarget;
+  kind?: string;
+  live?: boolean;
+};
+
 export type EventsFromFunction<T extends InngestFunction.Any> =
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   T extends InngestFunction<any, any, any, infer IClient, any, any>
