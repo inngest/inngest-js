@@ -14,6 +14,7 @@ import { hashSigningKey } from "../helpers/strings.ts";
 import {
   type APIStepPayload,
   err,
+  type MetadataTarget,
   type OutgoingOp,
   ok,
   type Result,
@@ -405,6 +406,80 @@ export class InngestApi {
         throw new Error(
           getErrorMessage(error, "Unknown error getting subscription token"),
         );
+      });
+  }
+
+  async updateMetadata(
+    args: {
+      target: MetadataTarget;
+      metadata: Array<{
+        kind: string;
+        op: string;
+        values: Record<string, unknown>;
+      }>;
+    },
+    options?: {
+      headers?: Record<string, string>;
+    },
+  ): Promise<Result<void, ErrorResponse>> {
+    const url = await this.getTargetUrl(
+      `/v1/runs/${args.target.run_id}/metadata`,
+    );
+    const payload = { target: args.target, metadata: args.metadata };
+
+    console.log("Fetching URL: ", url);
+    console.log("With Payload: ", JSON.stringify(payload, null, 2));
+
+    return fetchWithAuthFallback({
+      authToken: this.hashedKey,
+      authTokenFallback: this.hashedFallbackKey,
+      fetch: this.fetch,
+      url,
+      options: {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+        },
+      },
+    })
+      .then(async (res) => {
+        console.log(
+          `Metadata update response: ${res.status} ${res.statusText}`,
+        );
+        console.log(res);
+
+        if (res.ok) {
+          return ok<void>(undefined);
+        }
+
+        const resClone = res.clone();
+
+        let json: unknown;
+        try {
+          json = await res.json();
+        } catch {
+          return err({
+            error: `Failed to update metadata: ${res.status} ${res.statusText} - ${await resClone.text()}`,
+            status: res.status,
+          });
+        }
+
+        try {
+          return err(errorSchema.parse(json));
+        } catch {
+          return err({
+            error: `Failed to update metadata: ${res.status} ${res.statusText}`,
+            status: res.status,
+          });
+        }
+      })
+      .catch((error) => {
+        return err({
+          error: getErrorMessage(error, "Unknown error updating metadata"),
+          status: 500,
+        });
       });
   }
 
