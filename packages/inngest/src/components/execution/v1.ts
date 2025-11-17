@@ -161,6 +161,23 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return this.execution;
   }
 
+  public addMetadata(
+    stepId: string,
+    kind: string,
+    values: Record<string, any>,
+  ) {
+    console.log("State Metadata Before: ", this.state.metadata);
+    if (!this.state.metadata) {
+      this.state.metadata = new Map();
+    }
+
+    if (!this.state.metadata.has(stepId)) {
+      this.state.metadata.set(stepId, []);
+    }
+    this.state.metadata.get(stepId)!.push({ kind, values });
+    console.log("State Metadata After: ", this.state.metadata);
+  }
+
   /**
    * Starts execution of the user's function and the core loop.
    */
@@ -752,9 +769,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         await this.state.hooks?.afterExecution?.();
       })
       .then<OutgoingOp>((data) => {
+        const metadata = this.state.metadata?.get(id);
+
         return {
           ...outgoingOp,
           data,
+          ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
         };
       })
       .catch<OutgoingOp>((error) => {
@@ -769,12 +789,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           errorIsRetriable = false;
         }
 
+        const metadata = this.state.metadata?.get(id);
+
         if (errorIsRetriable) {
           return {
             ...outgoingOp,
             op: StepOpCode.StepError,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
+            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
           };
         } else {
           return {
@@ -782,6 +805,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             op: StepOpCode.StepFailed,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
+            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
           };
         }
       });
@@ -948,6 +972,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       allStateUsed: () => {
         return this.state.remainingStepsToBeSeen.size === 0;
       },
+      metadata: new Map(),
     };
 
     return state;
@@ -1535,6 +1560,11 @@ export interface V1ExecutionState {
     appId: string;
     token?: string;
   };
+
+  /**
+   * TODO: document this
+   */
+  metadata?: Map<string, Array<{ kind: string; values: Record<string, any> }>>;
 }
 
 const hashId = (id: string): string => {
