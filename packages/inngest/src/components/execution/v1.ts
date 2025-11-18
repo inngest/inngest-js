@@ -258,13 +258,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          * Use other handlers to return values and interrupt the core loop.
          */
         "": (checkpoint) => {
-          this.debug("async checkpoint:", checkpoint);
+          this.debug(`${this.options.stepMode} checkpoint:`, checkpoint);
         },
 
         /**
          * The user's function has completed and returned a value.
          */
         "function-resolved": async ({ data }) => {
+          // We need to do this even here for async, as we could be returning
+          // data from an API endpoint, even if we were triggered async.
           if (this.options.createResponse) {
             data = await this.options.createResponse(data);
           }
@@ -365,7 +367,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          * Use other handlers to return values and interrupt the core loop.
          */
         "": async (checkpoint, i) => {
-          this.debug("sync checkpoint:", checkpoint);
+          this.debug(`${this.options.stepMode} checkpoint:`, checkpoint);
         },
 
         "function-resolved": async (checkpoint, i) => {
@@ -513,19 +515,30 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         },
       },
       [StepMode.AsyncCheckpointing]: {
-        "": () => {
-          throw new Error("not implemented");
+        "": (checkpoint) => {
+          this.debug(`${this.options.stepMode} checkpoint:`, checkpoint);
         },
-        "function-rejected": () => {
-          throw new Error("not implemented");
+        "function-resolved": async ({ data }) => {
+          if (this.options.createResponse) {
+            // We need to do this even here for async, as we could be returning
+            // data from an API endpoint, even if we were triggered async.
+            data = await this.options.createResponse(data);
+          }
+
+          return await this.transformOutput({ data });
         },
-        "function-resolved": () => {
-          throw new Error("not implemented");
+        "function-rejected": async (checkpoint) => {
+          return await this.transformOutput({ error: checkpoint.error });
         },
-        "step-not-found": () => {
-          throw new Error("not implemented");
+        "step-not-found": ({ step }) => {
+          return {
+            type: "step-not-found",
+            ctx: this.fnArg,
+            ops: this.ops,
+            step,
+          };
         },
-        "steps-found": () => {
+        "steps-found": ({ steps }) => {
           throw new Error("not implemented");
         },
       },
