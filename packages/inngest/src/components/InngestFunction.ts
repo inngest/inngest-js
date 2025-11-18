@@ -306,7 +306,7 @@ export class InngestFunction<
     return (
       this.opts.mode === StepMode.AsyncCheckpointing ||
       // TODO We should check the commhandler's client instead of this one?
-      this.client["options"].mode === StepMode.AsyncCheckpointing
+      this.client["options"].stepMode === StepMode.AsyncCheckpointing
     );
   }
 }
@@ -709,7 +709,11 @@ export namespace InngestFunction {
     optimizeParallelism?: boolean;
 
     /**
-     * TODO Comment
+     * The default {@link StepMode} to use for all steps executed in this
+     * function.
+     *
+     * This can be set for all functons created by a client by setting the `stepMode`
+     * on the client itself.
      */
     mode?: StepMode;
   }

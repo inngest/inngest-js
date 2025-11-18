@@ -90,7 +90,10 @@ export interface InngestExecutionOptions {
   stepMode: StepMode;
 
   /**
-   * TODO
+   * If this execution is being run from a queue job, this will be an identifier
+   * used to reference this execution in Inngest. SDKs are expected to parrot
+   * this back in some responses to correctly attribute actions to this queue
+   * item.
    */
   queueItemId?: string;
 

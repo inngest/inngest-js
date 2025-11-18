@@ -931,9 +931,12 @@ export interface ClientOptions {
   optimizeParallelism?: boolean;
 
   /**
-   * TODO Comment
+   * The default {@link StepMode} to use for all steps executed by this client.
+   *
+   * This can be overridden on a per-function basis by setting the `stepMode` on
+   * the function itself.
    */
-  mode?: StepMode;
+  stepMode?: StepMode;
 }
 
 /**
