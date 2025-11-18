@@ -280,6 +280,13 @@ export enum StepMode {
    * and executed asynchronously and always triggered by Inngest.
    */
   Async = "async",
+
+  /**
+   * The traditional, background method of execution, but step results are
+   * checkpointed when they can be to reduce latency and the number of requests
+   * being sent back and forth between Inngest and the SDK.
+   */
+  AsyncCheckpointing = "async_checkpointing",
 }
 
 /**
