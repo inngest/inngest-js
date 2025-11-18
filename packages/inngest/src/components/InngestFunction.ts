@@ -10,6 +10,7 @@ import type {
   ConcurrencyOption,
   FunctionConfig,
   Handler,
+  StepMode,
   TimeStr,
   TimeStrBatch,
   TriggersFromClient,
@@ -688,6 +689,11 @@ export namespace InngestFunction {
      * @default false
      */
     optimizeParallelism?: boolean;
+
+    /**
+     * TODO Comment
+     */
+    mode?: StepMode;
   }
 }
 
