@@ -252,7 +252,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    */
   private createCheckpointHandlers(): CheckpointHandlers {
     return {
-      [StepMode.Sync]: {
+      [StepMode.Async]: {
         /**
          * Run for all checkpoints. Best used for logging or common actions.
          * Use other handlers to return values and interrupt the core loop.
@@ -359,7 +359,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           };
         },
       },
-      [StepMode.Async]: {
+      [StepMode.Sync]: {
         /**
          * Run for all checkpoints. Best used for logging or common actions.
          * Use other handlers to return values and interrupt the core loop.
