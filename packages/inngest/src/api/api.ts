@@ -498,7 +498,7 @@ export class InngestApi {
       steps: args.steps,
     });
 
-    const result = await this.req(`/v1/checkpoint/async`, {
+    const result = await this.req(`/v1/checkpoint/${args.runId}/async`, {
       method: "POST",
       body,
     });
