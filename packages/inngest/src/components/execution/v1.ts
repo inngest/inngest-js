@@ -251,297 +251,287 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    * reach that checkpoint in the core loop.
    */
   private createCheckpointHandlers(): CheckpointHandlers {
-    return {
-      [StepMode.Async]: {
-        /**
-         * Run for all checkpoints. Best used for logging or common actions.
-         * Use other handlers to return values and interrupt the core loop.
-         */
-        "": (checkpoint) => {
-          this.debug(`${this.options.stepMode} checkpoint:`, checkpoint);
-        },
+    const commonCheckpointHandler: CheckpointHandlers[StepMode][""] = (
+      checkpoint,
+    ) => {
+      this.debug(`${this.options.stepMode} checkpoint:`, checkpoint);
+    };
 
-        /**
-         * The user's function has completed and returned a value.
-         */
-        "function-resolved": async ({ data }) => {
-          // We need to do this even here for async, as we could be returning
-          // data from an API endpoint, even if we were triggered async.
-          if (this.options.createResponse) {
-            data = await this.options.createResponse(data);
-          }
+    const syncHandlers: CheckpointHandlers[StepMode.Sync] = {
+      /**
+       * Run for all checkpoints. Best used for logging or common actions.
+       * Use other handlers to return values and interrupt the core loop.
+       */
+      "": commonCheckpointHandler,
 
-          return await this.transformOutput({ data });
-        },
+      "function-resolved": async (checkpoint, i) => {
+        await this.checkpoint([
+          {
+            op: StepOpCode.RunComplete,
+            id: _internals.hashId("complete"), // TODO bad ID
+            data: await this.options.createResponse!(checkpoint.data),
+          },
+        ]);
 
-        /**
-         * The user's function has thrown an error.
-         */
-        "function-rejected": async (checkpoint) => {
-          return await this.transformOutput({ error: checkpoint.error });
-        },
-
-        /**
-         * We've found one or more steps. Here we may want to run a step or report
-         * them back to Inngest.
-         */
-        "steps-found": async ({ steps }) => {
-          const stepResult = await this.tryExecuteStep(steps);
-          if (stepResult) {
-            const transformResult = await this.transformOutput(stepResult);
-
-            /**
-             * Transforming output will always return either function rejection or
-             * resolution. In most cases, this can be immediately returned, but in
-             * this particular case we want to handle it differently.
-             */
-            if (transformResult.type === "function-resolved") {
-              return {
-                type: "step-ran",
-                ctx: transformResult.ctx,
-                ops: transformResult.ops,
-                step: _internals.hashOp({
-                  ...stepResult,
-                  data: transformResult.data,
-                }),
-              };
-            } else if (transformResult.type === "function-rejected") {
-              const stepForResponse = _internals.hashOp({
-                ...stepResult,
-                error: transformResult.error,
-              });
-
-              if (stepResult.op === StepOpCode.StepFailed) {
-                const ser = serializeError(transformResult.error);
-                stepForResponse.data = {
-                  __serialized: true,
-                  name: ser.name,
-                  message: ser.message,
-                  stack: "",
-                };
-              }
-
-              return {
-                type: "step-ran",
-                ctx: transformResult.ctx,
-                ops: transformResult.ops,
-                retriable: transformResult.retriable,
-                step: stepForResponse,
-              };
-            }
-
-            return transformResult;
-          }
-
-          const newSteps = await this.filterNewSteps(
-            Array.from(this.state.steps.values()),
-          );
-          if (newSteps) {
-            return {
-              type: "steps-found",
-              ctx: this.fnArg,
-              ops: this.ops,
-              steps: newSteps,
-            };
-          }
-
-          return;
-        },
-
-        /**
-         * While trying to find a step that Inngest has told us to run, we've
-         * timed out or have otherwise decided that it doesn't exist.
-         */
-        "step-not-found": ({ step }) => {
-          return {
-            type: "step-not-found",
-            ctx: this.fnArg,
-            ops: this.ops,
-            step,
-          };
-        },
+        // Done - just return the value
+        return {
+          type: "function-resolved",
+          ctx: this.fnArg,
+          ops: this.ops,
+          data: checkpoint.data,
+        };
       },
-      [StepMode.Sync]: {
-        /**
-         * Run for all checkpoints. Best used for logging or common actions.
-         * Use other handlers to return values and interrupt the core loop.
-         */
-        "": async (checkpoint, i) => {
-          this.debug(`${this.options.stepMode} checkpoint:`, checkpoint);
-        },
 
-        "function-resolved": async (checkpoint, i) => {
-          await this.checkpoint([
-            {
-              op: StepOpCode.RunComplete,
-              id: _internals.hashId("complete"), // TODO bad ID
-              data: await this.options.createResponse!(checkpoint.data),
-            },
-          ]);
-
-          // Done - just return the value
-          return {
-            type: "function-resolved",
-            ctx: this.fnArg,
-            ops: this.ops,
-            data: checkpoint.data,
-          };
-        },
-
-        "function-rejected": (checkpoint) => {
-          // If the function throws during sync execution, we want to switch to
-          // async mode so that we can retry. The exception is that we're already
-          // at max attempts, in which case we do actually want to reject.
-          if (this.inFinalAttempt()) {
-            return {
-              type: "function-rejected",
-              ctx: this.fnArg,
-              error: checkpoint.error,
-              ops: this.ops,
-              retriable: false,
-            };
-          }
-
-          // Otherwise, checkpoint the error and switch to async mode
-          return this.checkpointAndSwitchToAsync([
-            {
-              id: _internals.hashId("complete"), // TODO bad ID, bad use of _internals here
-              displayName: "complete", // TODO bad display name
-              op: StepOpCode.StepError,
-              error: checkpoint.error,
-            },
-          ]);
-        },
-
-        "step-not-found": ({ step }) => {
+      "function-rejected": (checkpoint) => {
+        // If the function throws during sync execution, we want to switch to
+        // async mode so that we can retry. The exception is that we're already
+        // at max attempts, in which case we do actually want to reject.
+        if (this.inFinalAttempt()) {
           return {
             type: "function-rejected",
             ctx: this.fnArg,
-            error: new Error(
-              "Step not found when checkpointing; this should never happen",
-            ),
+            error: checkpoint.error,
             ops: this.ops,
             retriable: false,
           };
-        },
+        }
 
-        "steps-found": async ({ steps }) => {
-          // If we're entering parallelism or async mode, checkpoint and switch
-          // to async.
-          if (steps.length !== 1 || steps[0].mode !== StepMode.Sync) {
-            return this.checkpointAndSwitchToAsync(
-              steps.map((step) => ({ ...step, id: step.hashedId })),
-            );
-          }
+        // Otherwise, checkpoint the error and switch to async mode
+        return this.checkpointAndSwitchToAsync([
+          {
+            id: _internals.hashId("complete"), // TODO bad ID, bad use of _internals here
+            displayName: "complete", // TODO bad display name
+            op: StepOpCode.StepError,
+            error: checkpoint.error,
+          },
+        ]);
+      },
 
-          // Otherwise we're good to start executing things right now.
-          const step = this.state.steps.get(steps[0].id);
-          if (!step) {
+      "step-not-found": ({ step }) => {
+        return {
+          type: "function-rejected",
+          ctx: this.fnArg,
+          error: new Error(
+            "Step not found when checkpointing; this should never happen",
+          ),
+          ops: this.ops,
+          retriable: false,
+        };
+      },
+
+      "steps-found": async ({ steps }) => {
+        // If we're entering parallelism or async mode, checkpoint and switch
+        // to async.
+        if (steps.length !== 1 || steps[0].mode !== StepMode.Sync) {
+          return this.checkpointAndSwitchToAsync(
+            steps.map((step) => ({ ...step, id: step.hashedId })),
+          );
+        }
+
+        // Otherwise we're good to start executing things right now.
+        const step = this.state.steps.get(steps[0].id);
+        if (!step) {
+          throw new Error(
+            "Step not found in memoization state; this should never happen and is a bug in the Inngest SDK",
+          );
+        }
+
+        // TODO extract timing
+        const start = Date.now();
+        const result = await this.executeStep(step);
+        const interval = {
+          a: start * 1_000_000,
+          b: (Date.now() - start) * 1_000_000,
+        };
+
+        if (result.error) {
+          // The step errored, so now we go async. Let's checkpoint and change
+          // the mode.
+          await this.checkpoint([
+            {
+              ...step,
+              op:
+                step.op === StepOpCode.StepPlanned
+                  ? StepOpCode.StepError
+                  : step.op,
+              error: result.error,
+            },
+          ]);
+          if (!this.state.checkpointedRun?.token) {
             throw new Error(
-              "Step not found in memoization state; this should never happen and is a bug in the Inngest SDK",
+              "Failed to checkpoint and switch to async mode as no token was returned from the API",
             );
           }
 
-          // TODO extract timing
-          const start = Date.now();
-          const result = await this.executeStep(step);
-          const interval = {
-            a: start * 1_000_000,
-            b: (Date.now() - start) * 1_000_000,
+          return {
+            type: "change-mode",
+            ctx: this.fnArg,
+            ops: this.ops,
+            to: StepMode.Async,
+            token: this.state.checkpointedRun.token,
           };
+        }
 
-          if (result.error) {
-            // The step errored, so now we go async. Let's checkpoint and change
-            // the mode.
-            await this.checkpoint([
-              {
-                ...step,
-                op:
-                  step.op === StepOpCode.StepPlanned
-                    ? StepOpCode.StepError
-                    : step.op,
-                error: result.error,
-              },
-            ]);
-            if (!this.state.checkpointedRun?.token) {
-              throw new Error(
-                "Failed to checkpoint and switch to async mode as no token was returned from the API",
-              );
+        if ("data" in result) {
+          // If we're here, the step succeeded - let's checkpoint the result and
+          // resume execution.
+          step.data = result.data;
+
+          this.state.stepState[steps[0].hashedId] = step;
+          step.fulfilled = true; // TODO We can wrap all of this up in a direct function on the `FoundStep`
+
+          await this.checkpoint([
+            {
+              id: step.hashedId,
+              data: step.data,
+              // TODO This should also be wrapped up on the `FoundStep`
+              op:
+                step.op === StepOpCode.StepPlanned
+                  ? StepOpCode.StepRun
+                  : step.op,
+              displayName: step.displayName,
+              opts: step.opts,
+              userland: step.userland,
+              name: step.name,
+              timing: interval,
+            },
+          ]);
+
+          // resume execution
+          step.handle();
+
+          return;
+        }
+
+        throw new Error(
+          "A step was run and had no data or error; this is a bug in the Inngest SDK",
+        );
+      },
+    };
+
+    const asyncHandlers: CheckpointHandlers[StepMode.Async] = {
+      /**
+       * Run for all checkpoints. Best used for logging or common actions.
+       * Use other handlers to return values and interrupt the core loop.
+       */
+      "": commonCheckpointHandler,
+
+      /**
+       * The user's function has completed and returned a value.
+       */
+      "function-resolved": async ({ data }) => {
+        // We need to do this even here for async, as we could be returning
+        // data from an API endpoint, even if we were triggered async.
+        if (this.options.createResponse) {
+          data = await this.options.createResponse(data);
+        }
+
+        return await this.transformOutput({ data });
+      },
+
+      /**
+       * The user's function has thrown an error.
+       */
+      "function-rejected": async (checkpoint) => {
+        return await this.transformOutput({ error: checkpoint.error });
+      },
+
+      /**
+       * We've found one or more steps. Here we may want to run a step or report
+       * them back to Inngest.
+       */
+      "steps-found": async ({ steps }) => {
+        const stepResult = await this.tryExecuteStep(steps);
+        if (stepResult) {
+          const transformResult = await this.transformOutput(stepResult);
+
+          /**
+           * Transforming output will always return either function rejection or
+           * resolution. In most cases, this can be immediately returned, but in
+           * this particular case we want to handle it differently.
+           */
+          if (transformResult.type === "function-resolved") {
+            return {
+              type: "step-ran",
+              ctx: transformResult.ctx,
+              ops: transformResult.ops,
+              step: _internals.hashOp({
+                ...stepResult,
+                data: transformResult.data,
+              }),
+            };
+          } else if (transformResult.type === "function-rejected") {
+            const stepForResponse = _internals.hashOp({
+              ...stepResult,
+              error: transformResult.error,
+            });
+
+            if (stepResult.op === StepOpCode.StepFailed) {
+              const ser = serializeError(transformResult.error);
+              stepForResponse.data = {
+                __serialized: true,
+                name: ser.name,
+                message: ser.message,
+                stack: "",
+              };
             }
 
             return {
-              type: "change-mode",
-              ctx: this.fnArg,
-              ops: this.ops,
-              to: StepMode.Async,
-              token: this.state.checkpointedRun.token,
+              type: "step-ran",
+              ctx: transformResult.ctx,
+              ops: transformResult.ops,
+              retriable: transformResult.retriable,
+              step: stepForResponse,
             };
           }
 
-          if ("data" in result) {
-            // If we're here, the step succeeded - let's checkpoint the result and
-            // resume execution.
-            step.data = result.data;
+          return transformResult;
+        }
 
-            this.state.stepState[steps[0].hashedId] = step;
-            step.fulfilled = true; // TODO We can wrap all of this up in a direct function on the `FoundStep`
-
-            await this.checkpoint([
-              {
-                id: step.hashedId,
-                data: step.data,
-                // TODO This should also be wrapped up on the `FoundStep`
-                op:
-                  step.op === StepOpCode.StepPlanned
-                    ? StepOpCode.StepRun
-                    : step.op,
-                displayName: step.displayName,
-                opts: step.opts,
-                userland: step.userland,
-                name: step.name,
-                timing: interval,
-              },
-            ]);
-
-            // resume execution
-            step.handle();
-
-            return;
-          }
-
-          throw new Error(
-            "A step was run and had no data or error; this is a bug in the Inngest SDK",
-          );
-        },
-      },
-      [StepMode.AsyncCheckpointing]: {
-        "": (checkpoint) => {
-          this.debug(`${this.options.stepMode} checkpoint:`, checkpoint);
-        },
-        "function-resolved": async ({ data }) => {
-          if (this.options.createResponse) {
-            // We need to do this even here for async, as we could be returning
-            // data from an API endpoint, even if we were triggered async.
-            data = await this.options.createResponse(data);
-          }
-
-          return await this.transformOutput({ data });
-        },
-        "function-rejected": async (checkpoint) => {
-          return await this.transformOutput({ error: checkpoint.error });
-        },
-        "step-not-found": ({ step }) => {
+        const newSteps = await this.filterNewSteps(
+          Array.from(this.state.steps.values()),
+        );
+        if (newSteps) {
           return {
-            type: "step-not-found",
+            type: "steps-found",
             ctx: this.fnArg,
             ops: this.ops,
-            step,
+            steps: newSteps,
           };
-        },
+        }
+
+        return;
+      },
+
+      /**
+       * While trying to find a step that Inngest has told us to run, we've
+       * timed out or have otherwise decided that it doesn't exist.
+       */
+      "step-not-found": ({ step }) => {
+        return {
+          type: "step-not-found",
+          ctx: this.fnArg,
+          ops: this.ops,
+          step,
+        };
+      },
+    };
+
+    const asyncCheckpointingHandlers: CheckpointHandlers[StepMode.AsyncCheckpointing] =
+      {
+        "": commonCheckpointHandler,
+        "function-resolved": asyncHandlers["function-resolved"],
+        "function-rejected": asyncHandlers["function-rejected"],
+        "step-not-found": asyncHandlers["step-not-found"],
         "steps-found": ({ steps }) => {
           throw new Error("not implemented");
         },
-      },
+      };
+
+    return {
+      [StepMode.Async]: asyncHandlers,
+      [StepMode.Sync]: syncHandlers,
+      [StepMode.AsyncCheckpointing]: asyncCheckpointingHandlers,
     };
   }
 
