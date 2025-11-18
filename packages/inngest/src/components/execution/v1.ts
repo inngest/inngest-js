@@ -257,6 +257,72 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       this.debug(`${this.options.stepMode} checkpoint:`, checkpoint);
     };
 
+    const stepRanHandler = async (
+      stepResult: OutgoingOp,
+    ): Promise<ExecutionResult> => {
+      const transformResult = await this.transformOutput(stepResult);
+
+      /**
+       * Transforming output will always return either function rejection or
+       * resolution. In most cases, this can be immediately returned, but in
+       * this particular case we want to handle it differently.
+       */
+      if (transformResult.type === "function-resolved") {
+        return {
+          type: "step-ran",
+          ctx: transformResult.ctx,
+          ops: transformResult.ops,
+          step: _internals.hashOp({
+            ...stepResult,
+            data: transformResult.data,
+          }),
+        };
+      } else if (transformResult.type === "function-rejected") {
+        const stepForResponse = _internals.hashOp({
+          ...stepResult,
+          error: transformResult.error,
+        });
+
+        if (stepResult.op === StepOpCode.StepFailed) {
+          const ser = serializeError(transformResult.error);
+          stepForResponse.data = {
+            __serialized: true,
+            name: ser.name,
+            message: ser.message,
+            stack: "",
+          };
+        }
+
+        return {
+          type: "step-ran",
+          ctx: transformResult.ctx,
+          ops: transformResult.ops,
+          retriable: transformResult.retriable,
+          step: stepForResponse,
+        };
+      }
+
+      return transformResult;
+    };
+
+    const maybeReturnNewSteps = async (): Promise<
+      ExecutionResult | undefined
+    > => {
+      const newSteps = await this.filterNewSteps(
+        Array.from(this.state.steps.values()),
+      );
+      if (newSteps) {
+        return {
+          type: "steps-found",
+          ctx: this.fnArg,
+          ops: this.ops,
+          steps: newSteps,
+        };
+      }
+
+      return;
+    };
+
     const syncHandlers: CheckpointHandlers[StepMode.Sync] = {
       /**
        * Run for all checkpoints. Best used for logging or common actions.
@@ -443,64 +509,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       "steps-found": async ({ steps }) => {
         const stepResult = await this.tryExecuteStep(steps);
         if (stepResult) {
-          const transformResult = await this.transformOutput(stepResult);
-
-          /**
-           * Transforming output will always return either function rejection or
-           * resolution. In most cases, this can be immediately returned, but in
-           * this particular case we want to handle it differently.
-           */
-          if (transformResult.type === "function-resolved") {
-            return {
-              type: "step-ran",
-              ctx: transformResult.ctx,
-              ops: transformResult.ops,
-              step: _internals.hashOp({
-                ...stepResult,
-                data: transformResult.data,
-              }),
-            };
-          } else if (transformResult.type === "function-rejected") {
-            const stepForResponse = _internals.hashOp({
-              ...stepResult,
-              error: transformResult.error,
-            });
-
-            if (stepResult.op === StepOpCode.StepFailed) {
-              const ser = serializeError(transformResult.error);
-              stepForResponse.data = {
-                __serialized: true,
-                name: ser.name,
-                message: ser.message,
-                stack: "",
-              };
-            }
-
-            return {
-              type: "step-ran",
-              ctx: transformResult.ctx,
-              ops: transformResult.ops,
-              retriable: transformResult.retriable,
-              step: stepForResponse,
-            };
-          }
-
-          return transformResult;
+          return stepRanHandler(stepResult);
         }
 
-        const newSteps = await this.filterNewSteps(
-          Array.from(this.state.steps.values()),
-        );
-        if (newSteps) {
-          return {
-            type: "steps-found",
-            ctx: this.fnArg,
-            ops: this.ops,
-            steps: newSteps,
-          };
-        }
-
-        return;
+        return maybeReturnNewSteps();
       },
 
       /**
@@ -523,8 +535,34 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         "function-resolved": asyncHandlers["function-resolved"],
         "function-rejected": asyncHandlers["function-rejected"],
         "step-not-found": asyncHandlers["step-not-found"],
-        "steps-found": ({ steps }) => {
-          throw new Error("not implemented");
+        "steps-found": async ({ steps }) => {
+          const stepResult = await this.tryExecuteStep(steps);
+
+          if (stepResult) {
+            // We executed a step!
+            //
+            // If this was a targeted step, then we're in a mode where we
+            // shouldn't checkpoint and continue (parallelism). Instead, carry
+            // on as normal.
+            if (this.options.requestedRunStep) {
+              return stepRanHandler(stepResult);
+            }
+
+            // If it wasn't a targeted step, we can continue to checkpoint this!
+            // Woohoo!
+            //
+            // Because we're already async here, we know that the run already
+            // exists, so we can just start to checkpoint immediately.
+
+            // TODO Convert opcode to error/run as needed
+            // TODO this.state.checkpointedRun must exist from the start of this execution
+            await this.checkpoint([stepResult]);
+            return;
+          }
+
+          // We didn't execute a step, so let's just see if we found stuff and
+          // report back as normal.
+          return maybeReturnNewSteps();
         },
       };
 
