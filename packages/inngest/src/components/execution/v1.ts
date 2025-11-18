@@ -224,9 +224,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         );
       }
 
+      if (!this.options.internalFnId) {
+        throw new Error(
+          "Missing internalFnId for async checkpointing. This is a bug in the Inngest SDK.",
+        );
+      }
+
       await this.options.client["inngestApi"].checkpointStepsAsync({
         runId: this.fnArg.runId,
-        fnId: this.options.fn.id((this.options.fn["client"] as Inngest.Any).id),
+        fnId: this.options.internalFnId,
         queueItemId: this.options.queueItemId,
         steps,
       });
@@ -419,7 +425,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         const step = this.state.steps.get(steps[0].id);
         if (!step) {
           throw new Error(
-            "Step not found in memoization state; this should never happen and is a bug in the Inngest SDK",
+            "Step not found in memoization state during sync checkpointing; this should never happen and is a bug in the Inngest SDK",
           );
         }
 
@@ -456,7 +462,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         if ("data" in result) {
           // If we're here, the step succeeded - let's checkpoint the result and
           // resume execution.
-          step.data = result.data;
+          const data = undefinedToNull(result.data);
+
+          step.data = data;
           step.timing = result.timing;
 
           this.state.stepState[steps[0].hashedId] = step;
@@ -465,7 +473,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           await this.checkpoint([
             {
               id: step.hashedId,
-              data: step.data,
+              data,
               // TODO This should also be wrapped up on the `FoundStep`
               op:
                 step.op === StepOpCode.StepPlanned
@@ -557,11 +565,32 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             // We executed a step!
             //
             // We know that because we're in this mode, we're always free to
-            // checkpoint and continue if we ran a step.
-            // TODO this.state.checkpointedRun must exist from the start of this execution
+            // checkpoint and continue if we ran a step and it was successful.
+            if (stepResult.error) {
+              // If we failed, go back to the regular async flow.
+              return stepRanHandler(stepResult);
+            }
+
+            // Otherwise, we succeeded - checkpoint and continue.
+            const step = this.state.steps.get(steps[0].id);
+            if (!step) {
+              throw new Error(
+                "Step not found in memoization state during async checkpointing; this should never happen and is a bug in the Inngest SDK",
+              );
+            }
+
+            const data = undefinedToNull(stepResult.data);
+
+            step.data = data;
+            step.timing = stepResult.timing;
+            this.state.stepState[steps[0].hashedId] = step;
+            step.fulfilled = true; // TODO We can wrap all of this up in a direct function on the `FoundStep`
+
             await this.checkpoint([stepResult]);
 
-            // TODO continue run
+            // resume execution
+            step.handle();
+
             return;
           }
 
