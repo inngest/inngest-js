@@ -3639,4 +3639,98 @@ describe("runFn", () => {
       });
     });
   });
+
+  describe("shouldOptimizeParallelism", () => {
+    test("uses function-level setting when provided", () => {
+      const client = createClient({ id: "test", optimizeParallelism: false });
+      const fn = client.createFunction(
+        { id: "test", optimizeParallelism: true },
+        { event: "test" },
+        () => undefined,
+      );
+
+      expect(fn["shouldOptimizeParallelism"]()).toBe(true);
+    });
+
+    test("uses client setting when function-level setting is not provided", () => {
+      const client = createClient({ id: "test", optimizeParallelism: true });
+      const fn = client.createFunction(
+        { id: "test" },
+        { event: "test" },
+        () => undefined,
+      );
+
+      expect(fn["shouldOptimizeParallelism"]()).toBe(true);
+    });
+
+    test("defaults to false when neither setting is provided", () => {
+      const client = createClient({ id: "test" });
+      const fn = client.createFunction(
+        { id: "test" },
+        { event: "test" },
+        () => undefined,
+      );
+
+      expect(fn["shouldOptimizeParallelism"]()).toBe(false);
+    });
+
+    test("prioritizes commHandler client setting over function client setting", () => {
+      const fnClient = createClient({
+        id: "fn-client",
+        optimizeParallelism: false,
+      });
+      const handlerClient = createClient({
+        id: "handler-client",
+        optimizeParallelism: true,
+      });
+
+      const fn = fnClient.createFunction(
+        { id: "test" },
+        { event: "test" },
+        () => undefined,
+      );
+
+      // Without commHandler client, should use function's client setting
+      expect(fn["shouldOptimizeParallelism"]()).toBe(false);
+
+      // With commHandler client, should use handler's client setting
+      expect(fn["shouldOptimizeParallelism"](handlerClient)).toBe(true);
+    });
+
+    test("function-level setting takes precedence over commHandler client setting", () => {
+      const fnClient = createClient({
+        id: "fn-client",
+        optimizeParallelism: false,
+      });
+      const handlerClient = createClient({
+        id: "handler-client",
+        optimizeParallelism: true,
+      });
+
+      const fn = fnClient.createFunction(
+        { id: "test", optimizeParallelism: false },
+        { event: "test" },
+        () => undefined,
+      );
+
+      // Function-level setting should override both clients
+      expect(fn["shouldOptimizeParallelism"](handlerClient)).toBe(false);
+    });
+
+    test("uses commHandler client when function client has no setting", () => {
+      const fnClient = createClient({ id: "fn-client" });
+      const handlerClient = createClient({
+        id: "handler-client",
+        optimizeParallelism: true,
+      });
+
+      const fn = fnClient.createFunction(
+        { id: "test" },
+        { event: "test" },
+        () => undefined,
+      );
+
+      expect(fn["shouldOptimizeParallelism"](handlerClient)).toBe(true);
+    });
+  });
 });

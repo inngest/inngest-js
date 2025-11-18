@@ -1909,7 +1909,7 @@ export class InngestCommHandler<
     // Handle opting in to optimized parallelism in v3.
     if (
       version === ExecutionVersion.V1 &&
-      fn.fn["shouldOptimizeParallelism"]?.()
+      fn.fn["shouldOptimizeParallelism"]?.(this.client)
     ) {
       version = ExecutionVersion.V2;
     }

@@ -282,10 +282,10 @@ export class InngestFunction<
   }
 
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used within the SDK
-  private shouldOptimizeParallelism(): boolean {
-    // TODO We should check the commhandler's client instead of this one?
+  private shouldOptimizeParallelism(commHandlerClient?: Inngest.Any): boolean {
     return (
       this.opts.optimizeParallelism ??
+      commHandlerClient?.["options"].optimizeParallelism ??
       this.client["options"].optimizeParallelism ??
       false
     );
