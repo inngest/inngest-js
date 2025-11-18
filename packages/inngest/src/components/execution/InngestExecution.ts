@@ -81,6 +81,7 @@ export const PREFERRED_EXECUTION_VERSION =
 export interface InngestExecutionOptions {
   client: Inngest.Any;
   fn: InngestFunction.Any;
+  internalFnId?: string;
   reqArgs: unknown[];
   runId: string;
   data: Omit<Context.Any, "step">;

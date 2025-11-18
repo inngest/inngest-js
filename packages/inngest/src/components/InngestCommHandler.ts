@@ -2014,6 +2014,7 @@ export class InngestCommHandler<
               runId: ctx?.run_id || "",
               stepMode: fn.fn["shouldAsyncCheckpoint"](
                 requestedRunStep,
+                ctx?.fn_id,
                 Boolean(ctx?.disable_immediate_execution),
               )
                 ? StepMode.AsyncCheckpointing
@@ -2025,6 +2026,7 @@ export class InngestCommHandler<
                 attempt: ctx?.attempt ?? 0,
                 maxAttempts: ctx?.max_attempts,
               },
+              internalFnId: ctx?.fn_id,
               queueItemId: ctx?.qi_id,
               stepState,
               requestedRunStep,
@@ -2063,6 +2065,7 @@ export class InngestCommHandler<
               runId: ctx?.run_id || "",
               stepMode: fn.fn["shouldAsyncCheckpoint"](
                 requestedRunStep,
+                ctx?.fn_id,
                 Boolean(ctx?.disable_immediate_execution),
               )
                 ? StepMode.AsyncCheckpointing
@@ -2074,6 +2077,7 @@ export class InngestCommHandler<
                 attempt: ctx?.attempt ?? 0,
                 maxAttempts: ctx?.max_attempts,
               },
+              internalFnId: ctx?.fn_id,
               queueItemId: ctx?.qi_id,
               stepState,
               requestedRunStep,
