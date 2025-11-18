@@ -448,7 +448,7 @@ export class InngestApi {
   }
 
   /**
-   * Checkpoint steps for a given run.
+   * Checkpoint steps for a given sync run.
    */
   async checkpointSteps(args: {
     runId: string;
@@ -478,6 +478,41 @@ export class InngestApi {
     if (!res.ok) {
       throw new Error(
         `Failed to checkpoint steps: ${res.status} ${res.statusText} - ${await res.text()}`,
+      );
+    }
+  }
+
+  /**
+   * Checkpoint steps for a given async run.
+   */
+  async checkpointStepsAsync(args: {
+    runId: string;
+    fnId: string;
+    queueItemId: string;
+    steps: OutgoingOp[];
+  }): Promise<void> {
+    const body = JSON.stringify({
+      run_id: args.runId,
+      fn_id: args.fnId,
+      qi_id: args.queueItemId,
+      steps: args.steps,
+    });
+
+    const result = await this.req(`/v1/checkpoint/async`, {
+      method: "POST",
+      body,
+    });
+
+    if (!result.ok) {
+      throw new Error(
+        getErrorMessage(result.error, "Unknown error checkpointing async"),
+      );
+    }
+
+    const res = result.value;
+    if (!res.ok) {
+      throw new Error(
+        `Failed to checkpoint async: ${res.status} ${res.statusText} - ${await res.text()}`,
       );
     }
   }

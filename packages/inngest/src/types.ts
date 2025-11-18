@@ -929,6 +929,11 @@ export interface ClientOptions {
    * @default false
    */
   optimizeParallelism?: boolean;
+
+  /**
+   * TODO Comment
+   */
+  mode?: StepMode;
 }
 
 /**

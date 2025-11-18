@@ -5,15 +5,15 @@ import {
 } from "../helpers/consts.ts";
 import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
-import type {
-  Cancellation,
-  ConcurrencyOption,
-  FunctionConfig,
-  Handler,
+import {
+  type Cancellation,
+  type ConcurrencyOption,
+  type FunctionConfig,
+  type Handler,
   StepMode,
-  TimeStr,
-  TimeStrBatch,
-  TriggersFromClient,
+  type TimeStr,
+  type TimeStrBatch,
+  type TriggersFromClient,
 } from "../types.ts";
 import type {
   IInngestExecution,
@@ -289,6 +289,23 @@ export class InngestFunction<
       this.opts.optimizeParallelism ??
       this.client["options"].optimizeParallelism ??
       false
+    );
+  }
+
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used within the SDK
+  private shouldAsyncCheckpoint(
+    requestedRunStep: string | undefined,
+    disableImmediateExecution: boolean,
+  ): boolean {
+    if (requestedRunStep || disableImmediateExecution) {
+      return false;
+    }
+
+    // TODO Explicit `enabled` check
+    return (
+      this.opts.mode === StepMode.AsyncCheckpointing ||
+      // TODO We should check the commhandler's client instead of this one?
+      this.client["options"].mode === StepMode.AsyncCheckpointing
     );
   }
 }

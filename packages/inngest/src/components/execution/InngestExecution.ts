@@ -89,6 +89,11 @@ export interface InngestExecutionOptions {
   stepMode: StepMode;
 
   /**
+   * TODO
+   */
+  queueItemId?: string;
+
+  /**
    * Headers to be sent with any request to Inngest during this execution.
    */
   headers: Record<string, string>;

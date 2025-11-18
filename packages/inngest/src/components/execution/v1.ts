@@ -18,6 +18,8 @@ import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
   createTimeoutPromise,
+  type GoInterval,
+  goIntervalTiming,
   resolveAfterPending,
   resolveNextTick,
   runAsPromise,
@@ -193,26 +195,45 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   private async checkpoint(steps: OutgoingOp[]): Promise<void> {
-    if (!this.state.checkpointedRun) {
-      // We have to start the run
-      const res = await this.options.client["inngestApi"].checkpointNewRun({
-        runId: this.fnArg.runId,
-        event: this.fnArg.event as APIStepPayload,
-        steps,
-      });
+    if (this.options.stepMode === StepMode.Sync) {
+      if (!this.state.checkpointedRun) {
+        // We have to start the run
+        const res = await this.options.client["inngestApi"].checkpointNewRun({
+          runId: this.fnArg.runId,
+          event: this.fnArg.event as APIStepPayload,
+          steps,
+        });
 
-      this.state.checkpointedRun = {
-        appId: res.data.app_id,
-        fnId: res.data.fn_id,
-        token: res.data.token,
-      };
-    } else {
-      await this.options.client["inngestApi"].checkpointSteps({
-        appId: this.state.checkpointedRun.appId,
-        fnId: this.state.checkpointedRun.fnId,
+        this.state.checkpointedRun = {
+          appId: res.data.app_id,
+          fnId: res.data.fn_id,
+          token: res.data.token,
+        };
+      } else {
+        await this.options.client["inngestApi"].checkpointSteps({
+          appId: this.state.checkpointedRun.appId,
+          fnId: this.state.checkpointedRun.fnId,
+          runId: this.fnArg.runId,
+          steps,
+        });
+      }
+    } else if (this.options.stepMode === StepMode.AsyncCheckpointing) {
+      if (!this.options.queueItemId) {
+        throw new Error(
+          "Missing queueItemId for async checkpointing. This is a bug in the Inngest SDK.",
+        );
+      }
+
+      await this.options.client["inngestApi"].checkpointStepsAsync({
         runId: this.fnArg.runId,
+        fnId: this.options.fn.id((this.options.fn["client"] as Inngest.Any).id),
+        queueItemId: this.options.queueItemId,
         steps,
       });
+    } else {
+      throw new Error(
+        "Checkpointing is only supported in Sync and AsyncCheckpointing step modes. This is a bug in the Inngest SDK.",
+      );
     }
   }
 
@@ -402,13 +423,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           );
         }
 
-        // TODO extract timing
-        const start = Date.now();
         const result = await this.executeStep(step);
-        const interval = {
-          a: start * 1_000_000,
-          b: (Date.now() - start) * 1_000_000,
-        };
 
         if (result.error) {
           // The step errored, so now we go async. Let's checkpoint and change
@@ -442,6 +457,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           // If we're here, the step succeeded - let's checkpoint the result and
           // resume execution.
           step.data = result.data;
+          step.timing = result.timing;
 
           this.state.stepState[steps[0].hashedId] = step;
           step.fulfilled = true; // TODO We can wrap all of this up in a direct function on the `FoundStep`
@@ -459,7 +475,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               opts: step.opts,
               userland: step.userland,
               name: step.name,
-              timing: interval,
+              timing: step.timing,
             },
           ]);
 
@@ -537,26 +553,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         "step-not-found": asyncHandlers["step-not-found"],
         "steps-found": async ({ steps }) => {
           const stepResult = await this.tryExecuteStep(steps);
-
           if (stepResult) {
             // We executed a step!
             //
-            // If this was a targeted step, then we're in a mode where we
-            // shouldn't checkpoint and continue (parallelism). Instead, carry
-            // on as normal.
-            if (this.options.requestedRunStep) {
-              return stepRanHandler(stepResult);
-            }
-
-            // If it wasn't a targeted step, we can continue to checkpoint this!
-            // Woohoo!
-            //
-            // Because we're already async here, we know that the run already
-            // exists, so we can just start to checkpoint immediately.
-
-            // TODO Convert opcode to error/run as needed
+            // We know that because we're in this mode, we're always free to
+            // checkpoint and continue if we ran a step.
             // TODO this.state.checkpointedRun must exist from the start of this execution
             await this.checkpoint([stepResult]);
+
+            // TODO continue run
             return;
           }
 
@@ -800,7 +805,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     this.debug(`executing step "${id}"`);
 
-    return runAsPromise(fn)
+    let interval: GoInterval | undefined;
+
+    return goIntervalTiming(() => runAsPromise(fn))
       .finally(async () => {
         delete this.state.executingStep;
         if (store?.execution) {
@@ -809,10 +816,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
         await this.state.hooks?.afterExecution?.();
       })
-      .then<OutgoingOp>((data) => {
+      .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
+        interval = _interval;
+
         return {
           ...outgoingOp,
-          data,
+          data: await resultPromise,
         };
       })
       .catch<OutgoingOp>((error) => {
@@ -842,7 +851,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             error,
           };
         }
-      });
+      })
+      .then((op) => ({
+        ...op,
+        timing: interval,
+      }));
   }
 
   /**
