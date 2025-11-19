@@ -71,7 +71,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
   private checkpointHandlers: CheckpointHandlers;
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
-  private userFnToRun: Handler.Any;
+  private userFnToRun: () => unknown;
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -85,9 +85,9 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
   constructor(options: InngestExecutionOptions) {
     super(options);
 
-    this.userFnToRun = this.getUserFnToRun();
     this.state = this.createExecutionState();
     this.fnArg = this.createFnArg();
+    this.userFnToRun = this.getUserFnToRun();
     this.checkpointHandlers = this.createCheckpointHandlers();
     this.initializeTimer(this.state);
 
@@ -581,7 +581,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     /**
      * Trigger the user's function.
      */
-    runAsPromise(() => this.userFnToRun(this.fnArg))
+    runAsPromise(this.userFnToRun)
       .finally(async () => {
         await this.state.hooks?.afterMemoization?.();
         await this.state.hooks?.beforeExecution?.();
@@ -604,6 +604,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       steps: Object.values(this.state.stepState),
       fn: this.options.fn,
       reqArgs: this.options.reqArgs,
+      fnToRun: this.userFnToRun,
     });
 
     if (inputMutations?.ctx) {
@@ -614,6 +615,10 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       this.state.stepState = Object.fromEntries(
         inputMutations.steps.map((step) => [step.id, step]),
       );
+    }
+
+    if (inputMutations?.fnToRun) {
+      this.userFnToRun = inputMutations.fnToRun;
     }
   }
 
@@ -1014,9 +1019,9 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     return createStepTools(this.options.client, this, stepHandler);
   }
 
-  private getUserFnToRun(): Handler.Any {
+  private getUserFnToRun(): () => unknown {
     if (!this.options.isFailureHandler) {
-      return this.options.fn["fn"];
+      return () => this.options.fn["fn"](this.fnArg);
     }
 
     if (!this.options.fn["onFailureFn"]) {
@@ -1027,7 +1032,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       throw new Error("Cannot find function `onFailure` handler");
     }
 
-    return this.options.fn["onFailureFn"];
+    return () => this.options.fn["onFailureFn"]?.(this.fnArg);
   }
 
   private initializeTimer(state: V2ExecutionState): void {
@@ -1066,6 +1071,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         fn: this.options.fn,
         steps: Object.values(this.options.stepState),
         reqArgs: this.options.reqArgs,
+        fnToRun: this.userFnToRun,
       },
       {
         transformInput: (prev, output) => {
@@ -1077,6 +1083,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               ...output?.steps?.[i],
             })),
             reqArgs: prev.reqArgs,
+            fnToRun: this.userFnToRun,
           };
         },
         transformOutput: (prev, output) => {

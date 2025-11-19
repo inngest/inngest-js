@@ -61,15 +61,15 @@ export class V0InngestExecution
 
   private state: V0ExecutionState;
   private execution: Promise<ExecutionResult> | undefined;
-  private userFnToRun: Handler.Any;
+  private userFnToRun: () => unknown;
   private fnArg: Context.Any;
 
   constructor(options: InngestExecutionOptions) {
     super(options);
 
-    this.userFnToRun = this.getUserFnToRun();
     this.state = this.createExecutionState();
     this.fnArg = this.createFnArg();
+    this.userFnToRun = this.getUserFnToRun();
   }
 
   public start() {
@@ -94,7 +94,7 @@ export class V0InngestExecution
         await this.state.hooks.beforeExecution?.();
       }
 
-      const userFnPromise = runAsPromise(() => this.userFnToRun(this.fnArg));
+      const userFnPromise = runAsPromise(this.userFnToRun);
 
       let pos = -1;
 
@@ -272,6 +272,7 @@ export class V0InngestExecution
         fn: this.options.fn,
         steps: Object.values(this.options.stepState),
         reqArgs: this.options.reqArgs,
+        fnToRun: this.userFnToRun,
       },
       {
         transformInput: (prev, output) => {
@@ -283,6 +284,7 @@ export class V0InngestExecution
               ...output?.steps?.[i],
             })),
             reqArgs: prev.reqArgs,
+            fnToRun: output?.fnToRun ?? prev.fnToRun,
           };
         },
         transformOutput: (prev, output) => {
@@ -344,9 +346,9 @@ export class V0InngestExecution
     );
   }
 
-  private getUserFnToRun(): Handler.Any {
+  private getUserFnToRun(): () => unknown {
     if (!this.options.isFailureHandler) {
-      return this.options.fn["fn"];
+      return () => this.options.fn["fn"](this.fnArg);
     }
 
     if (!this.options.fn["onFailureFn"]) {
@@ -358,7 +360,7 @@ export class V0InngestExecution
     }
 
     // TODO: Review; inferred types results in an `any` here!
-    return this.options.fn["onFailureFn"];
+    return () => this.options.fn["onFailureFn"]?.(this.fnArg);
   }
 
   private createFnArg(): Context.Any {
@@ -483,6 +485,7 @@ export class V0InngestExecution
       steps: Object.values(this.options.stepState),
       fn: this.options.fn,
       reqArgs: this.options.reqArgs,
+      fnToRun: this.userFnToRun,
     });
 
     if (inputMutations?.ctx) {
@@ -491,6 +494,10 @@ export class V0InngestExecution
 
     if (inputMutations?.steps) {
       this.state.opStack = [...inputMutations.steps];
+    }
+
+    if (inputMutations?.fnToRun) {
+      this.userFnToRun = inputMutations.fnToRun;
     }
   }
 

@@ -470,6 +470,11 @@ type MiddlewareRunArgs = Readonly<{
    * function.
    */
   reqArgs: Readonly<unknown[]>;
+
+  /**
+   * TODO Comment
+   */
+  fnToRun: () => unknown;
 }>;
 
 /**
@@ -504,6 +509,7 @@ type MiddlewareRunInput = (ctx: MiddlewareRunArgs) => MaybePromise<
   | {
       ctx?: Record<string, unknown>;
       steps?: Pick<IncomingOp, "data">[];
+      fnToRun?: () => unknown;
       // We need these in the future to allow users to specify their own complex
       // types for transforming data above using just inference. e.g. every field
       // ending with "_at" is transformed to a Date.
