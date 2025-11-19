@@ -6,8 +6,9 @@ on:
 
 concurrency: prerelease-${{ github.ref }}
 
-env:
-  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   generate-matrix:
@@ -64,7 +65,6 @@ jobs:
       - name: Prerelease PR
         run: |
           export TAG=pr-${{ github.event.pull_request.number }}
-          export NPM_TOKEN=${{ secrets.NPM_TOKEN }}
           export NODE_ENV=test
           [[ -n "${{ matrix.dist_dir }}" ]] && export DIST_DIR=${{ matrix.dist_dir }}
           node ../../scripts/release/prerelease.js
