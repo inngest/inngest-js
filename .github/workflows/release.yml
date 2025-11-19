@@ -74,6 +74,7 @@ jobs:
 
   prereleases:
     needs: generate-prerelease-matrix
+    concurrency: prerelease-${{ github.ref }}
     continue-on-error: true
     strategy:
       matrix: ${{ fromJson(needs.generate-prerelease-matrix.outputs.matrix) }}
