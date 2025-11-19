@@ -7,7 +7,7 @@ on:
       - main
       - "v*.x"
 
-  # Labeled-powered prereleases
+  # Label-powered prereleases
   pull_request:
     types: [labeled, opened, reopened, synchronize]
 
