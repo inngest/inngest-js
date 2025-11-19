@@ -74,7 +74,6 @@ jobs:
 
   prereleases:
     needs: generate-prerelease-matrix
-    if: github.event_name == 'pull_request' && needs.generate-prerelease-matrix.outputs.matrix != '[]'
     continue-on-error: true
     strategy:
       matrix: ${{ fromJson(needs.generate-prerelease-matrix.outputs.matrix) }}
