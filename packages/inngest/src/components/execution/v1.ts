@@ -1124,14 +1124,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     /**
      * Given a colliding step ID, maybe warn the user about parallel indexing.
      */
-    const maybeWarnOfParallelIndexing = (collisionId: string) => {
+    const maybeWarnOfParallelIndexing = (userlandCollisionId: string) => {
       if (warnOfParallelIndexing) {
         return;
       }
 
-      const stepExists = this.state.steps.has(collisionId);
+      const hashedCollisionId = _internals.hashId(userlandCollisionId);
+
+      const stepExists = this.state.steps.has(hashedCollisionId);
       if (stepExists) {
-        const stepFoundThisTick = foundStepsToReport.has(collisionId);
+        const stepFoundThisTick = foundStepsToReport.has(hashedCollisionId);
         if (!stepFoundThisTick) {
           warnOfParallelIndexing = true;
 
@@ -1141,7 +1143,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               whatHappened:
                 "We detected that you have multiple steps with the same ID.",
               code: ErrCode.AUTOMATIC_PARALLEL_INDEXING,
-              why: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${collisionId}".`,
+              why: `This can happen if you're using the same ID for multiple steps across different chains of parallel work. We found the issue with step "${userlandCollisionId}".`,
               reassurance:
                 "Your function is still running, though it may exhibit unexpected behaviour.",
               consequences:
@@ -1226,7 +1228,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * A helper used to push a step to the list of steps to report.
      */
     const pushStepToReport = (step: FoundStep) => {
-      foundStepsToReport.set(step.id, step);
+      foundStepsToReport.set(step.hashedId, step);
       unhandledFoundStepsToReport.set(step.hashedId, step);
       reportNextTick();
     };
@@ -1272,7 +1274,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         );
       }
 
-      if (this.state.steps.has(opId.id)) {
+      if (this.state.steps.has(_internals.hashId(opId.id))) {
         const originalId = opId.id;
         maybeWarnOfParallelIndexing(originalId);
 
@@ -1280,7 +1282,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         for (let i = expectedNextIndex; ; i++) {
           const newId = originalId + STEP_INDEXING_SUFFIX + i;
 
-          if (!this.state.steps.has(newId)) {
+          if (!this.state.steps.has(_internals.hashId(newId))) {
             expectedNextStepIndexes.set(originalId, i + 1);
             opId.id = newId;
             opId.userland.index = i;
