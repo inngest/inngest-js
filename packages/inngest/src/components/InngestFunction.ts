@@ -5,15 +5,14 @@ import {
 } from "../helpers/consts.ts";
 import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
-import {
-  type Cancellation,
-  type ConcurrencyOption,
-  type FunctionConfig,
-  type Handler,
-  StepMode,
-  type TimeStr,
-  type TimeStrBatch,
-  type TriggersFromClient,
+import type {
+  Cancellation,
+  ConcurrencyOption,
+  FunctionConfig,
+  Handler,
+  TimeStr,
+  TimeStrBatch,
+  TriggersFromClient,
 } from "../types.ts";
 import type {
   IInngestExecution,
@@ -302,11 +301,10 @@ export class InngestFunction<
       return false;
     }
 
-    // TODO Explicit `enabled` check
-    return (
-      this.opts.mode === StepMode.AsyncCheckpointing ||
-      // TODO We should check the commhandler's client instead of this one?
-      this.client["options"].stepMode === StepMode.AsyncCheckpointing
+    return Boolean(
+      this.opts.checkpointing ||
+        // TODO We should check the commhandler's client instead of this one?
+        this.client["options"].checkpointing,
     );
   }
 }
@@ -709,13 +707,25 @@ export namespace InngestFunction {
     optimizeParallelism?: boolean;
 
     /**
-     * The default {@link StepMode} to use for all steps executed in this
-     * function.
+     * Whether or not to use checkpointing for this function's executions.
      *
-     * This can be set for all functons created by a client by setting the `stepMode`
-     * on the client itself.
+     * If `true`, enables checkpointing with default settings, which is a safe,
+     * blocking version of checkpointing, where we check in with Inngest after
+     * every step is run.
      */
-    mode?: StepMode;
+    checkpointing?: boolean;
+    /**
+     * If an object, you can tweak the settings to batch many steps into a
+     * single checkpoint. Note that if your server dies before the checkpoint
+     * completes, step data will be lost and steps will be rerun.
+     *
+     * We recommend starting with the default `true` configuration and only
+     * tweak the parameters directly if necessary.
+     */
+    // | {
+    //     maxSteps?: number;
+    //     maxInterval?: number | string | Temporal.DurationLike;
+    //   };
   }
 }
 

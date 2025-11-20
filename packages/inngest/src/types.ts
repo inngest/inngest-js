@@ -922,12 +922,26 @@ export interface ClientOptions {
   optimizeParallelism?: boolean;
 
   /**
-   * The default {@link StepMode} to use for all steps executed by this client.
+   * Whether or not to use checkpointing by default for executions of functions
+   * created using this client.
    *
-   * This can be overridden on a per-function basis by setting the `stepMode` on
-   * the function itself.
+   * If `true`, enables checkpointing with default settings, which is a safe,
+   * blocking version of checkpointing, where we check in with Inngest after
+   * every step is run.
    */
-  stepMode?: StepMode;
+  checkpointing?: boolean;
+  /**
+   * If an object, you can tweak the settings to batch many steps into a
+   * single checkpoint. Note that if your server dies before the checkpoint
+   * completes, step data will be lost and steps will be rerun.
+   *
+   * We recommend starting with the default `true` configuration and only
+   * tweak the parameters directly if necessary.
+   */
+  // | {
+  //     maxSteps?: number;
+  //     maxInterval?: number | string | Temporal.DurationLike;
+  //   };
 }
 
 /**
