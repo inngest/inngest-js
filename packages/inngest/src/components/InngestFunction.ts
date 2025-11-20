@@ -302,9 +302,9 @@ export class InngestFunction<
     }
 
     return Boolean(
-      this.opts.checkpointing ||
+      this.opts.experimentalCheckpointing ||
         // TODO We should check the commhandler's client instead of this one?
-        this.client["options"].checkpointing,
+        this.client["options"].experimentalCheckpointing,
     );
   }
 }
@@ -713,7 +713,7 @@ export namespace InngestFunction {
      * blocking version of checkpointing, where we check in with Inngest after
      * every step is run.
      */
-    checkpointing?: boolean;
+    experimentalCheckpointing?: boolean;
     /**
      * If an object, you can tweak the settings to batch many steps into a
      * single checkpoint. Note that if your server dies before the checkpoint
