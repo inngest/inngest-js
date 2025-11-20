@@ -87,7 +87,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    */
   private timeout?: ReturnType<typeof createTimeoutPromise>;
 
-  constructor(options: InngestExecutionOptions) {
+  constructor(rawOptions: InngestExecutionOptions) {
+    const options: InngestExecutionOptions = {
+      ...rawOptions,
+      stepMode: rawOptions.stepMode ?? StepMode.Async,
+    };
+
     super(options);
 
     /**
