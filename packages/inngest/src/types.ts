@@ -24,6 +24,7 @@ import type {
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { internalEvents, knownEvents } from "./helpers/consts.ts";
+import type { GoInterval } from "./helpers/promises.ts";
 import type {
   AsTuple,
   IsEqual,
@@ -389,17 +390,7 @@ export type Op = {
   /**
    * Golang-compatibile `interval.Interval` timing information for this operation.
    */
-  timing?: {
-    /**
-     * UNIX nanosecond timestamp for when the operation started.
-     */
-    a: number;
-
-    /**
-     * The duration of the operation in nanoseconds.
-     */
-    b: number;
-  };
+  timing?: GoInterval;
 };
 
 /**
