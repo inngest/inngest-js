@@ -432,70 +432,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         const result = await this.executeStep(step);
 
         if (result.error) {
-          // The step errored, so now we go async. Let's checkpoint and change
-          // the mode.
-          await this.checkpoint([
-            {
-              ...step,
-              op:
-                step.op === StepOpCode.StepPlanned
-                  ? StepOpCode.StepError
-                  : step.op,
-              error: result.error,
-            },
-          ]);
-          if (!this.state.checkpointedRun?.token) {
-            throw new Error(
-              "Failed to checkpoint and switch to async mode as no token was returned from the API",
-            );
-          }
-
-          return {
-            type: "change-mode",
-            ctx: this.fnArg,
-            ops: this.ops,
-            to: StepMode.Async,
-            token: this.state.checkpointedRun.token,
-          };
+          return this.checkpointAndSwitchToAsync([result]);
         }
 
-        if ("data" in result) {
-          // If we're here, the step succeeded - let's checkpoint the result and
-          // resume execution.
-          const data = undefinedToNull(result.data);
-
-          step.data = data;
-          step.timing = result.timing;
-
-          this.state.stepState[steps[0].hashedId] = step;
-          step.fulfilled = true; // TODO We can wrap all of this up in a direct function on the `FoundStep`
-
-          await this.checkpoint([
-            {
-              id: step.hashedId,
-              data,
-              // TODO This should also be wrapped up on the `FoundStep`
-              op:
-                step.op === StepOpCode.StepPlanned
-                  ? StepOpCode.StepRun
-                  : step.op,
-              displayName: step.displayName,
-              opts: step.opts,
-              userland: step.userland,
-              name: step.name,
-              timing: step.timing,
-            },
-          ]);
-
-          // resume execution
-          step.handle();
-
-          return;
-        }
-
-        throw new Error(
-          "A step was run and had no data or error; this is a bug in the Inngest SDK",
-        );
+        return void (await this.checkpoint([
+          this.resumeStepWithResult(result),
+        ]));
       },
     };
 
@@ -584,9 +526,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           // If we are targeting a step and we have it, run it immediately and
           // return end
           if (this.options.requestedRunStep) {
-            console.log(
-              "trying to run requested step:",
-              this.options.requestedRunStep,
+            this.debug(
+              "async checkpointing looking for step to run, so attempting to find it",
             );
 
             const step = steps.find(
@@ -603,10 +544,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           // Break found steps in to { stepsToResume, newSteps }
           const { stepsToResume, newSteps } = steps.reduce(
             (acc, step) => {
-              if (step.hasStepState) {
-                acc.stepsToResume.push(step);
-              } else {
+              if (!step.hasStepState) {
                 acc.newSteps.push(step);
+              } else if (!step.fulfilled) {
+                acc.stepsToResume.push(step);
               }
 
               return acc;
@@ -617,18 +558,17 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             },
           );
 
-          // Got new steps? Exit early.
-          //
-          // TODO This sucks, as we should explore as far as we can with resumes
-          // first.
-          if (!this.options.requestedRunStep && newSteps.length) {
-            console.log(
-              "not trying to run a step and found new ones:",
-              newSteps,
-            );
+          this.debug("split founds steps in to:", {
+            stepsToResume: stepsToResume.length,
+            newSteps: newSteps.length,
+          });
 
+          // Got new steps? Exit early.
+          if (!this.options.requestedRunStep && newSteps.length) {
             const stepResult = await this.tryExecuteStep(newSteps);
             if (stepResult) {
+              this.debug(`executed step "${stepResult.id}" successfully`);
+
               // We executed a step!
               //
               // We know that because we're in this mode, we're always free to
@@ -638,106 +578,29 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 return stepRanHandler(stepResult);
               }
 
-              // Otherwise, we succeeded - checkpoint and continue.
-              const step = this.state.steps.get(stepResult.id);
-              if (!step) {
-                throw new Error(
-                  "Step not found in memoization state during async checkpointing; this should never happen and is a bug in the Inngest SDK",
-                );
-              }
+              this.debug("checkpointing and resuming execution after step run");
 
-              console.log("got back", stepResult, step);
-
-              const data = undefinedToNull(stepResult.data);
-
-              step.data = data;
-              step.timing = stepResult.timing;
-              this.state.stepState[stepResult.id] = step;
-              step.fulfilled = true; // TODO We can wrap all of this up in a direct function on the `FoundStep`
-
-              await this.checkpoint([
-                {
-                  ...stepResult,
-                  id: step.hashedId,
-                },
-              ]);
-
-              // resume execution
-              console.log("resuming execution", step.handle());
-
-              return;
+              return void (await this.checkpoint([
+                this.resumeStepWithResult(stepResult),
+              ]));
             }
 
-            // TODO diff implementation?
             return maybeReturnNewSteps();
           }
 
           // If we have stepsToResume, resume as many as possible and resume exe
           if (stepsToResume.length) {
-            console.log("resuming steps:", stepsToResume);
+            this.debug(`resuming ${stepsToResume.length} steps`);
 
             for (const st of stepsToResume) {
-              const step = this.state.steps.get(st.hashedId);
-              if (!step) {
-                throw new Error("TODO bad");
-              }
-
-              step.data = this.state.stepState[st.hashedId];
-              step.fulfilled = true;
-              console.log("handling", st.hashedId, step.handle());
+              this.resumeStepWithResult({
+                ...st,
+                id: st.hashedId,
+              });
             }
           }
 
           return;
-
-          // // Else if we have newSteps...
-          // // If we have only one and we can run it, run it
-          // // If we have multiple or can't run it, return them all to the server
-
-          // // Undefined return
-
-          // const stepResult = await this.tryExecuteStep(steps);
-          // if (stepResult) {
-          //   // We executed a step!
-          //   //
-          //   // We know that because we're in this mode, we're always free to
-          //   // checkpoint and continue if we ran a step and it was successful.
-          //   if (stepResult.error) {
-          //     // If we failed, go back to the regular async flow.
-          //     return stepRanHandler(stepResult);
-          //   }
-
-          //   // Otherwise, we succeeded - checkpoint and continue.
-          //   const step = this.state.steps.get(steps[0].hashedId);
-          //   if (!step) {
-          //     throw new Error(
-          //       "Step not found in memoization state during async checkpointing; this should never happen and is a bug in the Inngest SDK",
-          //     );
-          //   }
-
-          //   const data = undefinedToNull(stepResult.data);
-
-          //   step.data = data;
-          //   step.timing = stepResult.timing;
-          //   this.state.stepState[steps[0].hashedId] = step;
-          //   step.fulfilled = true; // TODO We can wrap all of this up in a direct function on the `FoundStep`
-
-          //   await this.checkpoint([
-          //     {
-          //       ...stepResult,
-          //       id: step.hashedId,
-          //     },
-          //   ]);
-
-          //   // resume execution
-          //   step.handle();
-
-          //   return;
-          // }
-
-          // // We didn't execute a step, so let's just see if we found stuff and
-          // // report back as normal.
-          // return maybeReturnNewSteps();
         },
       };
 
@@ -769,19 +632,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     );
 
     if (step) {
-      // Figure out if we should actually just resolve this right now
-      // TODO UNIFYYYY
-      console.log("tryExecuteStep", { "this.state": this.state, step });
-
-      const stateStep = this.state.stepState[step.hashedId];
-      if (!stateStep) {
-        return await this.executeStep(step);
-      }
-
-      step.data = stateStep;
-      step.fulfilled = true;
-      step.handle();
-      return;
+      return await this.executeStep(step);
     }
 
     /**
@@ -828,41 +679,17 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       return;
     }
 
-    const foo: { stepsToResume: FoundStep[]; newSteps: FoundStep[] } = {
-      stepsToResume: [],
-      newSteps: [],
-    };
-
-    const { stepsToResume, newSteps } = foundSteps.reduce((acc, step) => {
-      if (this.state.stepState[step.hashedId]) {
-        acc.stepsToResume.push(step);
-      } else {
-        acc.newSteps.push(step);
+    const newSteps = foundSteps.reduce((acc, step) => {
+      if (!step.hasStepState) {
+        acc.push(step);
       }
 
       return acc;
-    }, foo);
-
-    console.log("filtering new steps", { stepsToResume, newSteps });
+    }, [] as FoundStep[]);
 
     if (!newSteps.length) {
-      // RESUME IT MATEEE
-      for (const st of stepsToResume) {
-        const stateStep = this.state.steps.get(st.hashedId);
-        if (!stateStep) {
-          throw new Error("TODO bad");
-        }
-
-        stateStep.data = this.state.stepState[st.hashedId];
-        stateStep.fulfilled = true;
-
-        stateStep.handle();
-      }
-
       return;
     }
-
-    console.log("BRO WE GOT NEW STEPS");
 
     /**
      * We're finishing up; let's trigger the last of the hooks.
@@ -879,8 +706,6 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       opts: step.opts,
       userland: step.userland,
     })) as [OutgoingOp, ...OutgoingOp[]];
-
-    console.log("steps sending back like", stepList);
 
     /**
      * We also run `onSendEvent` middleware hooks against `step.invoke()` steps
@@ -965,6 +790,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     userland,
     hashedId,
   }: FoundStep): Promise<OutgoingOp> {
+    this.debug(`preparing to execute step "${id}"`);
+
     this.timeout?.clear();
     await this.state.hooks?.afterMemoization?.();
     await this.state.hooks?.beforeExecution?.();
@@ -994,6 +821,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     return goIntervalTiming(() => runAsPromise(fn))
       .finally(async () => {
+        this.debug(`finished executing step "${id}"`);
+
         delete this.state.executingStep;
         if (store?.execution) {
           delete store.execution.executingStep;
@@ -1522,7 +1351,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             return false;
           }
 
-          console.log("handling", opId.id);
+          this.debug(`handling step "${hashedId}"`);
 
           step.handled = true;
 
@@ -1577,6 +1406,30 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     };
 
     return createStepTools(this.options.client, this, stepHandler);
+  }
+
+  private resumeStepWithResult(resultOp: OutgoingOp): FoundStep {
+    const userlandStep = this.state.steps.get(resultOp.id);
+    if (!userlandStep) {
+      throw new Error(
+        "Step not found in memoization state during async checkpointing; this should never happen and is a bug in the Inngest SDK",
+      );
+    }
+
+    const data = undefinedToNull(resultOp.data);
+
+    userlandStep.data = data;
+    userlandStep.timing = resultOp.timing;
+    userlandStep.fulfilled = true;
+    userlandStep.hasStepState = true;
+    userlandStep.op = resultOp.op;
+    userlandStep.id = resultOp.id;
+
+    this.state.stepState[resultOp.id] = userlandStep;
+
+    userlandStep.handle();
+
+    return userlandStep;
   }
 
   private getUserFnToRun(): Handler.Any {
