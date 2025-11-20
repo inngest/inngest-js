@@ -299,16 +299,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           type: "step-ran",
           ctx: transformResult.ctx,
           ops: transformResult.ops,
-          step: _internals.hashOp({
+          step: {
             ...stepResult,
             data: transformResult.data,
-          }),
+          },
         };
       } else if (transformResult.type === "function-rejected") {
-        const stepForResponse = _internals.hashOp({
+        const stepForResponse = {
           ...stepResult,
           error: transformResult.error,
-        });
+        };
 
         if (stepResult.op === StepOpCode.StepFailed) {
           const ser = serializeError(transformResult.error);
