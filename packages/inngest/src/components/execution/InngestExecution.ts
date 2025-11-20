@@ -81,6 +81,14 @@ export const PREFERRED_EXECUTION_VERSION =
 export interface InngestExecutionOptions {
   client: Inngest.Any;
   fn: InngestFunction.Any;
+
+  /**
+   * The UUID that represents this function in Inngest.
+   *
+   * This is used to reference the function during async checkpointing, when we
+   * know the function/run already exists and just wish tor reference it
+   * directly.
+   */
   internalFnId?: string;
   reqArgs: unknown[];
   runId: string;
