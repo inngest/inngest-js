@@ -1,5 +1,43 @@
 # inngest
 
+## 3.46.0
+
+### Minor Changes
+
+- [#1173](https://github.com/inngest/inngest-js/pull/1173) [`75820c72`](https://github.com/inngest/inngest-js/commit/75820c724408dbf34d6e0c929f8617e83e62981f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add async checkpointing to functions and clients. Only allows checkpointing after every step (`maxSteps: 1`) currently.
+
+  Can be enabled on the client:
+
+  ```ts
+  import { Inngest } from "inngest";
+
+  const inngest = new Inngest({
+    id: "...",
+    experimentalCheckpointing: true,
+  });
+  ```
+
+  ...or on each function...
+
+  ```ts
+  inngest.createFunction(
+    {
+      id: "...",
+      experimentalCheckpointing: true,
+    },
+    {
+      event: "demo/event.sent",
+    },
+    async ({ event, step }) => {
+      // ...
+    },
+  );
+  ```
+
+### Patch Changes
+
+- [#1156](https://github.com/inngest/inngest-js/pull/1156) [`ef6fd33d`](https://github.com/inngest/inngest-js/commit/ef6fd33da9b21443302d726a69a62a4704809d10) Thanks [@Linell](https://github.com/Linell)! - Updated OpenTelemetry dependencies to support broader version ranges and adapted code for OTEL 2.x API compatibilty
+
 ## 3.45.1
 
 ### Patch Changes
