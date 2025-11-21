@@ -1,5 +1,75 @@
 # inngest
 
+## 3.46.0
+
+### Minor Changes
+
+- [#1173](https://github.com/inngest/inngest-js/pull/1173) [`75820c72`](https://github.com/inngest/inngest-js/commit/75820c724408dbf34d6e0c929f8617e83e62981f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add async checkpointing to functions and clients. Only allows checkpointing after every step (`maxSteps: 1`) currently.
+
+  Can be enabled on the client:
+
+  ```ts
+  import { Inngest } from "inngest";
+
+  const inngest = new Inngest({
+    id: "...",
+    experimentalCheckpointing: true,
+  });
+  ```
+
+  ...or on each function...
+
+  ```ts
+  inngest.createFunction(
+    {
+      id: "...",
+      experimentalCheckpointing: true,
+    },
+    {
+      event: "demo/event.sent",
+    },
+    async ({ event, step }) => {
+      // ...
+    },
+  );
+  ```
+
+### Patch Changes
+
+- [#1156](https://github.com/inngest/inngest-js/pull/1156) [`ef6fd33d`](https://github.com/inngest/inngest-js/commit/ef6fd33da9b21443302d726a69a62a4704809d10) Thanks [@Linell](https://github.com/Linell)! - Updated OpenTelemetry dependencies to support broader version ranges and adapted code for OTEL 2.x API compatibilty
+
+## 3.45.1
+
+### Patch Changes
+
+- [#1155](https://github.com/inngest/inngest-js/pull/1155) [`9fa34d12`](https://github.com/inngest/inngest-js/commit/9fa34d1250e25256ddb69606d7932419f131e998) Thanks [@mar-inngest](https://github.com/mar-inngest)! - Connect - Adding support for worker concurrency limits
+
+- [#1160](https://github.com/inngest/inngest-js/pull/1160) [`ab446473`](https://github.com/inngest/inngest-js/commit/ab4464730ffea7d85de7db603fbda9fb3ac645fe) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Widen `zod` dependency range to support v3/v4 across libraries
+
+- [#1165](https://github.com/inngest/inngest-js/pull/1165) [`b5139f04`](https://github.com/inngest/inngest-js/commit/b5139f041cfef8a78d75bf9d0254d892e40060fe) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove `setImmediate` use (Node only)
+
+## 3.45.0
+
+### Minor Changes
+
+- [#1154](https://github.com/inngest/inngest-js/pull/1154) [`ead9837b`](https://github.com/inngest/inngest-js/commit/ead9837bb88f0722806a721ec2e3666adb757bb6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add experimental APIs for supporting synchronous execution
+
+## 3.44.5
+
+### Patch Changes
+
+- [#1149](https://github.com/inngest/inngest-js/pull/1149) [`9d5d7131`](https://github.com/inngest/inngest-js/commit/9d5d7131c530c000e4b476edf3c44baf62a2bacb) Thanks [@Linell](https://github.com/Linell)! - Refactor `otelMiddleware` to `extendedTracesMiddleware` so that its purpose is more easily understood
+
+- [#1150](https://github.com/inngest/inngest-js/pull/1150) [`68e67d80`](https://github.com/inngest/inngest-js/commit/68e67d8009b210c1aa75c02f50395a3fca952d2f) Thanks [@faizanu94](https://github.com/faizanu94)! - Fix custom loggers dumbly waiting 1s to flush; they now correctly call `flush()` if available
+
+## 3.44.4
+
+### Patch Changes
+
+- [#1148](https://github.com/inngest/inngest-js/pull/1148) [`9cf36f4d`](https://github.com/inngest/inngest-js/commit/9cf36f4db4d5892cbb3f4eb765fd8367515a5c2c) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Include retry count in the error message if gracefully flushing connect worker progress fails after all attempts
+
+- [#1139](https://github.com/inngest/inngest-js/pull/1139) [`6366f557`](https://github.com/inngest/inngest-js/commit/6366f557785967d0be246036d762ec1b0beb0518) Thanks [@rhino1998](https://github.com/rhino1998)! - Add userland ID & index to Ops
+
 ## 3.44.3
 
 ### Patch Changes

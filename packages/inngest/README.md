@@ -107,7 +107,7 @@ Inngest invokes functions via HTTP, so you need to _serve_ them using an adapter
 import { Inngest } from "inngest";
 // See the "inngest/next" adapter imported here:
 import { serve } from "inngest/next";
-import myFunction from "../userOnboardingCOmmunication"; // see above function
+import myFunction from "../userOnboardingCommunication"; // see above function
 
 // You can create this in a single file and import where it's needed
 const inngest = new Inngest({ id: "my-app" });

@@ -1,5 +1,6 @@
 import { type AiAdapter, models } from "@inngest/ai";
 import { z } from "zod/v3";
+import { getAsyncCtx } from "../experimental";
 import { logPrefix } from "../helpers/consts.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { timeStr } from "../helpers/strings.ts";
@@ -18,6 +19,7 @@ import {
   type InvokeTargetFunctionDefinition,
   type MinimalEventPayload,
   type SendEventOutput,
+  StepMode,
   StepOpCode,
   type StepOptions,
   type StepOptionsOrId,
@@ -232,6 +234,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         return {
           id,
+          mode: StepMode.Sync,
           op: StepOpCode.StepPlanned,
           name: id,
           displayName: name ?? id,
@@ -287,6 +290,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       ({ id, name }) => {
         return {
           id,
+          mode: StepMode.Sync,
           op: StepOpCode.StepPlanned,
           name: "sendEvent",
           displayName: name ?? id,
@@ -323,6 +327,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       // Temporal.ZonedDateTimeLike
       return {
         id,
+        mode: StepMode.Async,
         op: StepOpCode.WaitForSignal,
         name: opts.signal,
         displayName: name ?? id,
@@ -344,6 +349,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
       ({ id, name }, opts) => {
         return {
           id,
+          mode: StepMode.Sync,
           op: StepOpCode.StepPlanned,
           name: "sendSignal",
           displayName: name ?? id,
@@ -406,6 +412,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         return {
           id,
+          mode: StepMode.Async,
           op: StepOpCode.WaitForEvent,
           name: opts.event,
           opts: matchOpts,
@@ -455,6 +462,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
         return {
           id,
+          mode: StepMode.Async,
           op: StepOpCode.AiGateway,
           displayName: name ?? id,
           opts: {
@@ -522,6 +530,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       return {
         id,
+        mode: StepMode.Async,
         op: StepOpCode.Sleep,
         name: msTimeStr,
         displayName: name ?? id,
@@ -554,6 +563,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
          */
         return {
           id,
+          mode: StepMode.Async,
           op: StepOpCode.Sleep,
           name: iso,
           displayName: name ?? id,
@@ -657,6 +667,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       return {
         id,
+        mode: StepMode.Async,
         op: StepOpCode.InvokeFunction,
         displayName: name ?? id,
         opts,
@@ -693,6 +704,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
       return {
         id,
+        mode: StepMode.Async,
         op: StepOpCode.Gateway,
         displayName: name ?? id,
         opts: {
@@ -709,6 +721,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
   return tools;
 };
 
+/**
+ * A generic set of step tools, without typing information about the client used
+ * to create them.
+ */
+export type GenericStepTools = GetStepTools<Inngest.Any>;
+
 export const gatewaySymbol = Symbol.for("inngest.step.gateway");
 
 export type InternalStepTools = GetStepTools<Inngest.Any> & {
@@ -720,6 +738,79 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
     headers: Record<string, string>;
     body: string;
   }>;
+};
+
+/**
+ * A generic set of step tools that can be used without typing information about
+ * the client used to create them.
+ *
+ * These tools use AsyncLocalStorage to track the context in which they are
+ * used, and will throw an error if used outside of an Inngest context.
+ *
+ * The intention of these high-level tools is to allow usage of Inngest step
+ * tools within API endpoints, though they can still be used within regular
+ * Inngest functions as well.
+ */
+export const step: GenericStepTools = {
+  // TODO Support `step.fetch` (this is already kinda half way deferred)
+  fetch: null as unknown as GenericStepTools["fetch"],
+  ai: {
+    infer: (...args) =>
+      getDeferredStepTooling().then((tools) => tools.ai.infer(...args)),
+    wrap: (...args) =>
+      getDeferredStepTooling().then((tools) => tools.ai.wrap(...args)),
+    models: {
+      ...models,
+    },
+  },
+  invoke: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.invoke(...args)),
+  run: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.run(...args)),
+  sendEvent: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.sendEvent(...args)),
+  sendSignal: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.sendSignal(...args)),
+  sleep: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.sleep(...args)),
+  sleepUntil: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.sleepUntil(...args)),
+  waitForEvent: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.waitForEvent(...args)),
+  waitForSignal: (...args) =>
+    getDeferredStepTooling().then((tools) => tools.waitForSignal(...args)),
+};
+
+/**
+ * An internal function used to retrieve or create step tooling for the current
+ * execution context.
+ *
+ * Note that this requires an existing context to create the step tooling;
+ * something must declare the Inngest execution context before this can be used.
+ */
+const getDeferredStepTooling = async (): Promise<GenericStepTools> => {
+  const ctx = await getAsyncCtx();
+  if (!ctx) {
+    throw new Error(
+      "`step` tools can only be used within Inngest function executions; no context was found",
+    );
+  }
+
+  if (!ctx.app) {
+    throw new Error(
+      "`step` tools can only be used within Inngest function executions; no Inngest client was found in the execution context",
+    );
+  }
+
+  if (!ctx.execution) {
+    throw new Error(
+      "`step` tools can only be used within Inngest function executions; no execution context was found",
+    );
+  }
+
+  // If we're here, we're in the context of a function execution already and
+  // we can return the existing step tooling.
+  return ctx.execution.ctx.step;
 };
 
 /**
