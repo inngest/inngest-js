@@ -81,12 +81,29 @@ export const PREFERRED_EXECUTION_VERSION =
 export interface InngestExecutionOptions {
   client: Inngest.Any;
   fn: InngestFunction.Any;
+
+  /**
+   * The UUID that represents this function in Inngest.
+   *
+   * This is used to reference the function during async checkpointing, when we
+   * know the function/run already exists and just wish to reference it
+   * directly.
+   */
+  internalFnId?: string;
   reqArgs: unknown[];
   runId: string;
   data: Omit<Context.Any, "step">;
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
   stepMode: StepMode;
+
+  /**
+   * If this execution is being run from a queue job, this will be an identifier
+   * used to reference this execution in Inngest. SDKs are expected to parrot
+   * this back in some responses to correctly attribute actions to this queue
+   * item.
+   */
+  queueItemId?: string;
 
   /**
    * Headers to be sent with any request to Inngest during this execution.

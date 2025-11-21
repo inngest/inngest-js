@@ -24,6 +24,7 @@ import type {
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { internalEvents, knownEvents } from "./helpers/consts.ts";
+import type { GoInterval } from "./helpers/promises.ts";
 import type {
   AsTuple,
   IsEqual,
@@ -280,6 +281,13 @@ export enum StepMode {
    * and executed asynchronously and always triggered by Inngest.
    */
   Async = "async",
+
+  /**
+   * The traditional, background method of execution, but step results are
+   * checkpointed when they can be to reduce latency and the number of requests
+   * being sent back and forth between Inngest and the SDK.
+   */
+  AsyncCheckpointing = "async_checkpointing",
 }
 
 /**
@@ -382,17 +390,7 @@ export type Op = {
   /**
    * Golang-compatibile `interval.Interval` timing information for this operation.
    */
-  timing?: {
-    /**
-     * UNIX nanosecond timestamp for when the operation started.
-     */
-    a: number;
-
-    /**
-     * The duration of the operation in nanoseconds.
-     */
-    b: number;
-  };
+  timing?: GoInterval;
 };
 
 /**
@@ -922,6 +920,28 @@ export interface ClientOptions {
    * @default false
    */
   optimizeParallelism?: boolean;
+
+  /**
+   * Whether or not to use checkpointing by default for executions of functions
+   * created using this client.
+   *
+   * If `true`, enables checkpointing with default settings, which is a safe,
+   * blocking version of checkpointing, where we check in with Inngest after
+   * every step is run.
+   */
+  experimentalCheckpointing?: boolean;
+  /**
+   * If an object, you can tweak the settings to batch many steps into a
+   * single checkpoint. Note that if your server dies before the checkpoint
+   * completes, step data will be lost and steps will be rerun.
+   *
+   * We recommend starting with the default `true` configuration and only
+   * tweak the parameters directly if necessary.
+   */
+  // | {
+  //     maxSteps?: number;
+  //     maxInterval?: number | string | Temporal.DurationLike;
+  //   };
 }
 
 /**

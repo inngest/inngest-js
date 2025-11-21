@@ -2004,12 +2004,21 @@ export class InngestCommHandler<
             };
           }, {});
 
+          const requestedRunStep =
+            stepId === "step" ? undefined : stepId || undefined;
+
           return {
             version,
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
-              stepMode: StepMode.Async,
+              stepMode: fn.fn["shouldAsyncCheckpoint"](
+                requestedRunStep,
+                ctx?.fn_id,
+                Boolean(ctx?.disable_immediate_execution),
+              )
+                ? StepMode.AsyncCheckpointing
+                : StepMode.Async,
               data: {
                 event: event as EventPayload,
                 events: events as [EventPayload, ...EventPayload[]],
@@ -2017,9 +2026,10 @@ export class InngestCommHandler<
                 attempt: ctx?.attempt ?? 0,
                 maxAttempts: ctx?.max_attempts,
               },
+              internalFnId: ctx?.fn_id,
+              queueItemId: ctx?.qi_id,
               stepState,
-              requestedRunStep:
-                stepId === "step" ? undefined : stepId || undefined,
+              requestedRunStep,
               timer,
               isFailureHandler: fn.onFailure,
               disableImmediateExecution: ctx?.disable_immediate_execution,
@@ -2045,12 +2055,21 @@ export class InngestCommHandler<
             };
           }, {});
 
+          const requestedRunStep =
+            stepId === "step" ? undefined : stepId || undefined;
+
           return {
             version,
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
-              stepMode: StepMode.Async,
+              stepMode: fn.fn["shouldAsyncCheckpoint"](
+                requestedRunStep,
+                ctx?.fn_id,
+                Boolean(ctx?.disable_immediate_execution),
+              )
+                ? StepMode.AsyncCheckpointing
+                : StepMode.Async,
               data: {
                 event: event as EventPayload,
                 events: events as [EventPayload, ...EventPayload[]],
@@ -2058,9 +2077,10 @@ export class InngestCommHandler<
                 attempt: ctx?.attempt ?? 0,
                 maxAttempts: ctx?.max_attempts,
               },
+              internalFnId: ctx?.fn_id,
+              queueItemId: ctx?.qi_id,
               stepState,
-              requestedRunStep:
-                stepId === "step" ? undefined : stepId || undefined,
+              requestedRunStep,
               timer,
               isFailureHandler: fn.onFailure,
               disableImmediateExecution: ctx?.disable_immediate_execution,
