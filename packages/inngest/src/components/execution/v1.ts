@@ -563,7 +563,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             },
           );
 
-          this.debug("split founds steps in to:", {
+          this.debug("split found steps in to:", {
             stepsToResume: stepsToResume.length,
             newSteps: newSteps.length,
           });
@@ -593,7 +593,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             return maybeReturnNewSteps();
           }
 
-          // If we have stepsToResume, resume as many as possible and resume exe
+          // If we have stepsToResume, resume as many as possible and resume execution
           if (stepsToResume.length) {
             this.debug(`resuming ${stepsToResume.length} steps`);
 
