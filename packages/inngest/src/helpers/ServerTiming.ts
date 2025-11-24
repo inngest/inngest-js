@@ -88,7 +88,7 @@ export class ServerTiming {
   /**
    * Wrap the given scope in a timing. This returns `stop()` function similar to
    * `start()`, but it does not need to be explicitly called. It will start the
-   * timer and then stop the timer automatically as soon as the stop functon
+   * timer and then stop the timer automatically as soon as the stop function
    * falls out of scope.
    */
   public wrapScope(name: string, description?: string): () => void {
