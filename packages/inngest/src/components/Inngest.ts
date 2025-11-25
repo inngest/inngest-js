@@ -51,6 +51,7 @@ import {
 import type { EventSchemas } from "./EventSchemas.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import { MetadataBuilder } from "./InngestMetadata.ts";
 import {
   type ExtendWithMiddleware,
   getHookStack,
@@ -184,6 +185,23 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   get appVersion(): string | undefined {
     return this._appVersion;
+  }
+
+  /**
+   * Access the metadata builder for updating run and step metadata.
+   *
+   * @example
+   * ```ts
+   * // Update metadata for the current run
+   * await inngest.metadata.update({ status: "processing" });
+   *
+   * // Update metadata for a different run
+   * await inngest.metadata.run(otherRunId).update({ key: "val" });
+   *
+   * ```
+   */
+  get metadata(): MetadataBuilder {
+    return new MetadataBuilder(this);
   }
 
   /**
