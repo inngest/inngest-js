@@ -25,10 +25,10 @@ import {
   type StepOptionsOrId,
   type TriggerEventFromFunction,
   type TriggersFromClient,
-  type MetadataOptsOrId,
 } from "../types.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
+import { MetadataBuilder } from "./InngestMetadata.ts";
 import type {
   ClientOptionsFromInngest,
   GetEvents,
@@ -250,165 +250,33 @@ export const createStepTools = <TClient extends Inngest.Any>(
   };
 
   /**
-   * Creates a metadata array payload for API calls.
+   * Creates a metadata builder wrapper for step.metadata("id").
+   * Uses MetadataBuilder for config accumulation, but wraps .update() in tools.run() for memoization.
    */
-  const createMetadataPayload = (
-    kind: string,
-    metadata: Record<string, any>,
+  const createStepMetadataWrapper = (
+    memoizationId: string,
+    builder = new MetadataBuilder(client),
   ) => {
-    return [
-      {
-        kind,
-        op: "merge",
-        values: metadata,
+    const withBuilder = (next: MetadataBuilder) =>
+      createStepMetadataWrapper(memoizationId, next);
+
+    return {
+      run: (runId?: string) => withBuilder(builder.run(runId)),
+      step: (stepId: string, index?: number) =>
+        withBuilder(builder.step(stepId, index)),
+      attempt: (attemptIndex: number) =>
+        withBuilder(builder.attempt(attemptIndex)),
+      span: (spanId: string) => withBuilder(builder.span(spanId)),
+      update: async (
+        values: Record<string, unknown>,
+        kind = "default",
+      ): Promise<void> => {
+        await tools.run(memoizationId, async () => {
+          await builder.update(values, kind);
+          return null;
+        });
       },
-    ];
-  };
-
-  /**
-   * Sends metadata update via REST API to a specific target.
-   */
-  const sendMetadataViaAPI = async (
-    target: import("../types.ts").MetadataTarget,
-    kind: string,
-    metadata: Record<string, any>,
-  ): Promise<null> => {
-    const metadataArray = createMetadataPayload(kind, metadata);
-
-    await client["_updateMetadata"]({
-      target,
-      metadata: metadataArray,
-      headers: execution["options"]["headers"],
-    });
-
-    return null;
-  };
-
-  /**
-   * Adds metadata to the current execution instance for batched opcode delivery.
-   * This is more efficient than making immediate HTTP calls.
-   */
-  const addMetadataToBatch = (
-    execInstance: any,
-    stepId: string,
-    kind: string,
-    metadata: Record<string, any>,
-  ): null => {
-    if (execInstance && "addMetadata" in execInstance) {
-      console.log("executingInstance: ", execInstance);
-      execInstance.addMetadata(stepId, kind, metadata);
-      console.log("addedMetadata && returning null");
-      return null;
-    }
-
-    throw new Error(
-      "Unable to add metadata: execution instance does not support metadata. " +
-        "This may be due to using an older execution version that doesn't support metadata updates.",
-    );
-  };
-
-  /**
-   * Handles metadata updates when called inside a step context.
-   * Supports three scenarios:
-   * 1. Target specified → immediate REST API call to update arbitrary target
-   * 2. No target + live=true → immediate REST API call to update current step
-   * 3. No target + live=false → batch metadata with step completion (default)
-   */
-  const handleInsideStepContext = async (
-    store: any,
-    opts: any,
-    kind: string,
-    metadata: Record<string, any>,
-  ): Promise<null> => {
-    const executingStep = store?.execution?.executingStep;
-    const execInstance = store?.execution?.instance;
-
-    // User specified a target - update that target via API
-    if (opts.target) {
-      return sendMetadataViaAPI(opts.target, kind, metadata);
-    }
-
-    // Live update - send immediately to current step via API
-    if (opts.live === true) {
-      if (!store.execution) {
-        throw new Error("Execution context is not available");
-      }
-
-      const target = {
-        step_id: executingStep.id,
-        run_id: store.execution.ctx.runId,
-      };
-
-      const metadataArray = createMetadataPayload(kind, metadata);
-
-      const res = await client["_updateMetadata"]({
-        target,
-        metadata: metadataArray,
-        headers: execution["options"]["headers"],
-      });
-
-      console.log("Response: ", res);
-      return null;
-    }
-
-    // Default batched mode - add to opcode for step completion
-    return addMetadataToBatch(execInstance, executingStep.id, kind, metadata);
-  };
-
-  /**
-   * Handles metadata updates when called outside a step context.
-   * Wraps the update in a step.run() to ensure proper memoization.
-   * Supports two scenarios:
-   * 1. No target → create step that updates current run's metadata
-   * 2. Target specified → create step that updates arbitrary target via API
-   */
-  const handleOutsideStepContext = async (
-    opts: any,
-    kind: string,
-    metadata: Record<string, any>,
-  ): Promise<null> => {
-    const tools = await getDeferredStepTooling();
-
-    // No target - update current run's metadata
-    if (!opts.target) {
-      // Require explicit step ID to avoid collisions on retries
-      if (!opts.id) {
-        throw new Error(
-          "step.metadata.update() requires an explicit 'id' parameter when called outside a step context. " +
-            "This ensures metadata updates are properly memoized across retries.",
-        );
-      }
-
-      await tools.run(opts.id, async () => {
-        const currentStore = await getAsyncCtx();
-        const currentStepId = currentStore?.execution?.executingStep?.id;
-        const currentExec = currentStore?.execution?.instance;
-
-        if (!currentStepId || !currentExec) {
-          throw new Error(
-            "Unable to determine current step context for metadata update",
-          );
-        }
-
-        return addMetadataToBatch(currentExec, currentStepId, kind, metadata);
-      });
-
-      return null;
-    }
-
-    // Target specified - update arbitrary target via API
-    if (!opts.id) {
-      throw new Error(
-        "step.metadata.update() requires an explicit 'id' parameter when called outside a step context. " +
-          "This ensures metadata updates are properly memoized across retries.",
-      );
-    }
-
-    await tools.run(opts.id, async () => {
-      return sendMetadataViaAPI(opts.target, kind, metadata);
-    });
-
-    return null;
+    };
   };
 
   /**
@@ -533,29 +401,6 @@ export const createStepTools = <TClient extends Inngest.Any>(
         },
       },
     ),
-
-    metadata: {
-      update: async (
-        idOrOptions: MetadataOptsOrId,
-        metadata: Record<string, any>,
-      ): Promise<null> => {
-        const store = await getAsyncCtx();
-        const opts =
-          typeof idOrOptions === "string" ? { id: idOrOptions } : idOrOptions;
-        const kind = opts.kind || "default";
-
-        // XXX: note that we do NOT seem to get the retries and indexes, so we'll have to figure out
-        // how to handle that automatically...
-        const executingStep = store?.execution?.executingStep;
-        console.log("Executing Step: ", executingStep);
-
-        if (executingStep) {
-          return handleInsideStepContext(store, opts, kind, metadata);
-        } else {
-          return handleOutsideStepContext(opts, kind, metadata);
-        }
-      },
-    },
 
     /**
      * Wait for a particular event to be received before continuing. When the
@@ -869,6 +714,26 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * this context, and a custom fallback can be set using the `config` method.
      */
     fetch: stepFetch,
+
+    /**
+     * Create a durable metadata update wrapped in a step
+     *
+     * @param memoizationId - The step ID used for the step itself, ensuring the
+     *   metadata update is only performed once even on function retries.
+     *
+     * @example
+     * ```ts
+     * // Update metadata for the current run
+     * await step.metadata("update-status").update({ status: "processing" });
+     *
+     * // Update metadata for a different run
+     * await step.metadata("notify-parent")
+     *   .run(parentRunId)
+     *   .update({ childCompleted: true });
+     * ```
+     */
+    metadata: (memoizationId: string) =>
+      createStepMetadataWrapper(memoizationId),
   };
 
   // Add an uptyped gateway
@@ -926,6 +791,25 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
   }>;
 };
 
+const deferredStepMetadata = Object.assign(
+  (() => {
+    throw new Error(
+      '`step.metadata("id")` can only be used within an Inngest execution context. ' +
+        "Use the `step` argument provided to your function instead.",
+    );
+  }) as GenericStepTools["metadata"],
+  {
+    update: (
+      memoizationId: string,
+      values: Record<string, unknown>,
+      kind = "default",
+    ) =>
+      getDeferredStepTooling().then((tools) =>
+        tools.metadata(memoizationId).update(values, kind),
+      ),
+  },
+);
+
 /**
  * A generic set of step tools that can be used without typing information about
  * the client used to create them.
@@ -951,16 +835,13 @@ export const step: GenericStepTools = {
   },
   invoke: (...args) =>
     getDeferredStepTooling().then((tools) => tools.invoke(...args)),
+  metadata: deferredStepMetadata,
   run: (...args) =>
     getDeferredStepTooling().then((tools) => tools.run(...args)),
   sendEvent: (...args) =>
     getDeferredStepTooling().then((tools) => tools.sendEvent(...args)),
   sendSignal: (...args) =>
     getDeferredStepTooling().then((tools) => tools.sendSignal(...args)),
-  metadata: {
-    update: (...args) =>
-      getDeferredStepTooling().then((tools) => tools.metadata.update(...args)),
-  },
   sleep: (...args) =>
     getDeferredStepTooling().then((tools) => tools.sleep(...args)),
   sleepUntil: (...args) =>
