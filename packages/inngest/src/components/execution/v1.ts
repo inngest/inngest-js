@@ -426,15 +426,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           );
         }
 
-        // Otherwise we're good to start executing things right now.
-        const step = this.state.steps.get(steps[0].id);
-        if (!step) {
-          throw new Error(
-            "Step not found in memoization state during sync checkpointing; this should never happen and is a bug in the Inngest SDK",
-          );
-        }
-
-        const result = await this.executeStep(step);
+        const result = await this.executeStep(steps[0]);
 
         if (result.error) {
           return this.checkpointAndSwitchToAsync([result]);
