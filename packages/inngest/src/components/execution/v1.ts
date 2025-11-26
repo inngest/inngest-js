@@ -426,6 +426,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           );
         }
 
+        // Otherwise we're good to start executing things right now.
         const result = await this.executeStep(steps[0]);
 
         if (result.error) {
