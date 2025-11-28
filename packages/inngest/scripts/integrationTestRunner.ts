@@ -266,6 +266,7 @@ function runTests(sdkPath: string): void {
       cwd: sdkPath,
       stdio: "inherit",
       env: {
+        ...process.env,
         INNGEST_TEST_CONNECT: "1",
         NODE_ENV: "development",
       },
