@@ -173,10 +173,6 @@ async function startDevServer(
   exampleServerPort: number,
   examplePath: string
 ): Promise<void> {
-  console.log(
-    'IUHFUIOSDHFIUSHDIFUSDHUIOFSDHIOFHSIDUFHISUDHF starting"??????????????????????',
-  );
-
   const serverProcess = startProcess(
     "npx",
     [
@@ -206,7 +202,7 @@ async function startDevServer(
 
   const isReady = await checkServerReady(
     `http://localhost:${devServerPort}`,
-    60000,
+    60000
   );
   console.log({ isReady });
 
@@ -224,9 +220,9 @@ async function startExampleServer(
     HOST: "0.0.0.0",
     PORT: "3000",
     NODE_ENV: "development",
-    // INNGEST_LOG_LEVEL: "debug",
+    INNGEST_LOG_LEVEL: "debug",
     INNGEST_BASE_URL: `http://localhost:${devServerPort}`,
-    DEBUG: "inngest:connect:message-buffer",
+    DEBUG: "inngest:*",
   } as const;
   const command = exampleName.startsWith("bun") ? "bun" : "npm";
 
