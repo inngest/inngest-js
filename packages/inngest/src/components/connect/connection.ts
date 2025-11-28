@@ -209,6 +209,7 @@ export class ConnectionManager extends Base {
           capabilities: new TextEncoder().encode(data.marshaledCapabilities),
           startedAt: startedAt,
           instanceId: this.options.instanceId || (await getHostname()),
+          maxWorkerConcurrency: this.options.maxWorkerConcurrency,
         });
 
         const workerConnectRequestMsgBytes = WorkerConnectRequestData.encode(

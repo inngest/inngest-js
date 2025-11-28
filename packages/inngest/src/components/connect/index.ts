@@ -12,7 +12,7 @@ export {
   type DEFAULT_SHUTDOWN_SIGNALS,
   type ConnectApp,
   type ConnectHandlerOptions,
-  ConnectionState,
+  type ConnectionState,
   type WorkerConnection,
 };
 

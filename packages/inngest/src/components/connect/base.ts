@@ -118,6 +118,18 @@ export class Base {
     options.signingKeyFallback =
       options.signingKeyFallback || env[envKeys.InngestSigningKeyFallback];
 
+    if (options.maxWorkerConcurrency === undefined) {
+      const envValue = env[envKeys.InngestConnectMaxWorkerConcurrency];
+
+      if (envValue) {
+        const parsed = Number.parseInt(envValue, 10);
+
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          options.maxWorkerConcurrency = parsed;
+        }
+      }
+    }
+
     return options;
   }
 
