@@ -16,7 +16,11 @@ async function main() {
 
   const server = createServer((req, res) => {
     console.log("Got health check");
-    if (connection.state !== ConnectionState.ACTIVE) {
+    if (
+      !connection ||
+      !connection.state ||
+      connection.state !== ConnectionState.ACTIVE
+    ) {
       res.writeHead(500);
       return;
     }
