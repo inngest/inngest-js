@@ -102,6 +102,8 @@ export class MessageBuffer {
       await new Promise((resolve) => setTimeout(resolve, expBackoff(attempt)));
     }
 
-    this.debug(`Failed to flush messages after max attempts`, { maxAttempts });
+    this.logger.info(`Failed to flush messages after max attempts`, {
+      maxAttempts,
+    });
   }
 }
