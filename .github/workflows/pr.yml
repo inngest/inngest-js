@@ -246,10 +246,7 @@ jobs:
       - id: matrix
         run: |
           blocklist=$(grep -v '^#' examples/.inngestignore | jq -R . | jq -s .)
-          echo "matrix=$(find examples -mindepth 1 -maxdepth 1 -type d \( -name
-          'framework-*' -or -name 'bun*' -or -name 'connect-*' \) | grep -v -f <(echo $blocklist | jq
-          -r '.[]') | xargs -n 1 basename | jq -R -s -c 'split("\n")[:-1]')" >>
-          $GITHUB_OUTPUT
+          echo "matrix=$(find examples -mindepth 1 -maxdepth 1 -type d \( -name 'framework-*' -or -name 'bun*' -or -name 'connect-*' \) | grep -v -f <(echo $blocklist | jq -r '.[]') | xargs -n 1 basename | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
 
   examples:
     name: Test examples
