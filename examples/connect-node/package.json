@@ -1,19 +1,19 @@
 {
-  "name": "connect-example",
+  "name": "connect-nodejs",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "ts-node index.ts"
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx index.ts",
+    "start": "node dist/index.js"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "ts-node": "^10.9.2",
-    "tsx": "^4.19.2",
-    "typescript": "^5.8.2",
-    "why-is-node-running": "^3.2.2"
+    "@types/node": "^20.5.2",
+    "tsx": "^4.7.3",
+    "typescript": "^5.1.6"
   },
   "dependencies": {
     "inngest": "file:../../packages/inngest/inngest.tgz"
