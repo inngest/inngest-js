@@ -1,11 +1,11 @@
 import { headerKeys } from "../../helpers/consts.ts";
+import type { Logger } from "../../middleware/logger.ts";
 import {
   FlushResponse,
   SDKResponse,
 } from "../../proto/src/components/connect/protobuf/connect.ts";
 import type { Inngest } from "../Inngest.ts";
 import { expBackoff } from "./util.ts";
-import type { Logger } from "../../middleware/logger.ts";
 
 export class MessageBuffer {
   private buffered: Record<string, SDKResponse> = {};
@@ -13,7 +13,7 @@ export class MessageBuffer {
 
   constructor(
     private inngest: Inngest.Any,
-    private logger: Logger
+    private logger: Logger,
   ) {}
 
   public append(response: SDKResponse) {
@@ -27,7 +27,7 @@ export class MessageBuffer {
       if (this.pending[response.requestId]) {
         this.logger.warn(
           "Message not acknowledged in time",
-          response.requestId
+          response.requestId,
         );
         this.append(response);
       }
@@ -40,7 +40,7 @@ export class MessageBuffer {
 
   private async sendFlushRequest(
     hashedSigningKey: string | undefined,
-    msg: SDKResponse
+    msg: SDKResponse,
   ) {
     const headers: Record<string, string> = {
       "Content-Type": "application/protobuf",
@@ -60,7 +60,7 @@ export class MessageBuffer {
         method: "POST",
         body: new Uint8Array(SDKResponse.encode(msg).finish()),
         headers: headers,
-      }
+      },
     );
 
     if (!resp.ok) {
@@ -69,7 +69,7 @@ export class MessageBuffer {
     }
 
     const flushResp = FlushResponse.decode(
-      new Uint8Array(await resp.arrayBuffer())
+      new Uint8Array(await resp.arrayBuffer()),
     );
 
     return flushResp;

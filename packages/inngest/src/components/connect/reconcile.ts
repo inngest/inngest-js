@@ -1,13 +1,13 @@
-import { ConnectionState, type ConnectHandlerOptions } from "./types.ts";
+import { WaitGroup } from "@jpwilliams/waitgroup";
+import { MessageBuffer } from "./buffer.ts";
+import { ConnectionManager } from "./connection.ts";
+import { type ConnectHandlerOptions, ConnectionState } from "./types.ts";
 import {
   AuthError,
   ConnectionLimitError,
   expBackoff,
   ReconnectError,
 } from "./util.ts";
-import { ConnectionManager } from "./connection.ts";
-import { MessageBuffer } from "./buffer.ts";
-import { WaitGroup } from "@jpwilliams/waitgroup";
 
 interface ReconcileResult {
   deduped?: boolean;
@@ -146,7 +146,7 @@ export class Reconciler extends ConnectionManager {
 
         // Wait for remaining requests to finish
         const waitingFor = Object.keys(
-          this.inProgressRequests.requestLeases
+          this.inProgressRequests.requestLeases,
         ).length;
         if (waitingFor > 0) {
           this.logger.debug("Still waiting for requests to finish", {
@@ -189,7 +189,7 @@ export class Reconciler extends ConnectionManager {
 
           if (err instanceof ConnectionLimitError) {
             console.error(
-              "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue."
+              "You have reached the maximum number of concurrent connections. Please disconnect other active workers to continue.",
             );
             // Continue reconnecting, do not throw.
           }

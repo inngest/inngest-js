@@ -98,11 +98,11 @@ export function parseTraceCtx(serializedTraceCtx: Uint8Array<ArrayBufferLike>) {
 export function getPromiseHandle<T>(): {
   promise: Promise<T>;
   resolve?: (value: T | PromiseLike<T>) => void;
-  reject?: ((reason?: any) => void) | undefined;
+  reject?: ((reason?: unknown) => void) | undefined;
 } {
   let resolveFn: ((value: T | PromiseLike<T>) => void) | undefined;
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  let rejectFn: ((reason?: any) => void) | undefined;
+  let rejectFn: ((reason?: unknown) => void) | undefined;
   const promise = new Promise<T>((resolve, reject) => {
     resolveFn = resolve;
     rejectFn = reject;

@@ -5,12 +5,14 @@ import {
   GatewayConnectionReadyData,
   GatewayMessageType,
   gatewayMessageTypeToJSON,
+  type StartResponse,
   WorkerConnectRequestData,
   WorkerDisconnectReason,
   workerDisconnectReasonToJSON,
-  StartResponse,
 } from "../../proto/src/components/connect/protobuf/connect.ts";
 import { version } from "../../version.ts";
+import { sendStartRequest } from "./api.ts";
+import { Base } from "./base.ts";
 import { parseConnectMessage } from "./messages.ts";
 import { getHostname, onShutdown, retrieveSystemAttributes } from "./os.ts";
 import {
@@ -19,8 +21,6 @@ import {
   ReconnectError,
   waitWithCancel,
 } from "./util.ts";
-import { sendStartRequest } from "./api.ts";
-import { Base } from "./base.ts";
 
 const ConnectWebSocketProtocol = "v0.connect.inngest.com";
 
@@ -76,7 +76,7 @@ export class ConnectionManager extends Base {
     connectionId: string,
     startResp: StartResponse,
     endpoint: string,
-    startedAt: Date
+    startedAt: Date,
   ): Promise<{
     ws: WebSocket;
     heartbeatIntervalMs: number;
@@ -108,7 +108,7 @@ export class ConnectionManager extends Base {
     const connectTimeout = setTimeout(() => {
       this.excludeGateways.add(startResp.gatewayGroup);
       rejectWebsocketConnected?.(
-        new ReconnectError(`Connection ${connectionId} timed out`)
+        new ReconnectError(`Connection ${connectionId} timed out`),
       );
     }, 10_000);
 
@@ -123,7 +123,7 @@ export class ConnectionManager extends Base {
           `Connection error while initializing but already in closed state, skipping`,
           {
             connectionId,
-          }
+          },
         );
         return;
       }
@@ -133,7 +133,7 @@ export class ConnectionManager extends Base {
         `Connection error in connecting state, rejecting promise`,
         {
           connectionId,
-        }
+        },
       );
 
       this.excludeGateways.add(startResp.gatewayGroup);
@@ -145,22 +145,22 @@ export class ConnectionManager extends Base {
       ws.onclose = () => {};
       ws.close(
         4001, // incomplete setup
-        workerDisconnectReasonToJSON(WorkerDisconnectReason.UNEXPECTED)
+        workerDisconnectReasonToJSON(WorkerDisconnectReason.UNEXPECTED),
       );
 
       rejectWebsocketConnected?.(
         new ReconnectError(
           `Error while connecting (${connectionId}): ${
             error instanceof Error ? error.message : "Unknown error"
-          }`
-        )
+          }`,
+        ),
       );
     };
 
     ws.onerror = (err) => onConnectionError(err);
     ws.onclose = (ev) => {
       void onConnectionError(
-        new ReconnectError(`Connection ${connectionId} closed: ${ev.reason}`)
+        new ReconnectError(`Connection ${connectionId} closed: ${ev.reason}`),
       );
     };
     ws.onmessage = async (event) => {
@@ -172,7 +172,7 @@ export class ConnectionManager extends Base {
         `Received message: ${gatewayMessageTypeToJSON(connectMessage.kind)}`,
         {
           connectionId,
-        }
+        },
       );
 
       if (!setupState.receivedGatewayHello) {
@@ -180,9 +180,9 @@ export class ConnectionManager extends Base {
           void onConnectionError(
             new ReconnectError(
               `Expected hello message, got ${gatewayMessageTypeToJSON(
-                connectMessage.kind
-              )}`
-            )
+                connectMessage.kind,
+              )}`,
+            ),
           );
           return;
         }
@@ -213,7 +213,7 @@ export class ConnectionManager extends Base {
         });
 
         const workerConnectRequestMsgBytes = WorkerConnectRequestData.encode(
-          workerConnectRequestMsg
+          workerConnectRequestMsg,
         ).finish();
 
         ws.send(
@@ -221,8 +221,8 @@ export class ConnectionManager extends Base {
             ConnectMessage.create({
               kind: GatewayMessageType.WORKER_CONNECT,
               payload: workerConnectRequestMsgBytes,
-            })
-          ).finish()
+            }),
+          ).finish(),
         );
 
         setupState.sentWorkerConnect = true;
@@ -236,15 +236,15 @@ export class ConnectionManager extends Base {
           void onConnectionError(
             new ReconnectError(
               `Expected ready message, got ${gatewayMessageTypeToJSON(
-                connectMessage.kind
-              )}`
-            )
+                connectMessage.kind,
+              )}`,
+            ),
           );
           return;
         }
 
         const readyPayload = GatewayConnectionReadyData.decode(
-          connectMessage.payload
+          connectMessage.payload,
         );
 
         setupState.receivedConnectionReady = true;
@@ -312,7 +312,7 @@ export class ConnectionManager extends Base {
     let finalEndpoint = startResp.gatewayEndpoint;
     if (this.options.rewriteGatewayEndpoint) {
       const rewritten = this.options.rewriteGatewayEndpoint(
-        startResp.gatewayEndpoint
+        startResp.gatewayEndpoint,
       );
       this.logger.debug("Rewriting gateway endpoint", {
         original: startResp.gatewayEndpoint,
@@ -333,7 +333,7 @@ export class ConnectionManager extends Base {
         connectionId,
         startResp,
         finalEndpoint,
-        startedAt
+        startedAt,
       );
 
     this.excludeGateways.delete(startResp.gatewayGroup);
@@ -358,7 +358,7 @@ export class ConnectionManager extends Base {
 
         // Remove from list of connections
         this.connections = this.connections.filter(
-          (c) => c.id !== connectionId
+          (c) => c.id !== connectionId,
         );
       },
       pendingHeartbeats: 0,
@@ -385,7 +385,7 @@ export class ConnectionManager extends Base {
       const delay = expBackoff(attempt);
       const cancelled = await waitWithCancel(
         delay,
-        () => this.activeConnection !== undefined
+        () => this.activeConnection !== undefined,
       );
 
       if (cancelled) {
@@ -413,7 +413,7 @@ export class ConnectionManager extends Base {
           `Connection error but already in closed state, skipping`,
           {
             connectionId: conn.id,
-          }
+          },
         );
         return;
       }
@@ -430,7 +430,7 @@ export class ConnectionManager extends Base {
     ws.onerror = (err) => onConnectionError(err);
     ws.onclose = (ev) => {
       void onConnectionError(
-        new ReconnectError(`Connection closed: ${ev.reason}`)
+        new ReconnectError(`Connection closed: ${ev.reason}`),
       );
     };
 
@@ -456,8 +456,8 @@ export class ConnectionManager extends Base {
           this.logger.warn("Gateway heartbeat missed");
           void onConnectionError(
             new ReconnectError(
-              `Consecutive gateway heartbeats missed (${conn.id})`
-            )
+              `Consecutive gateway heartbeats missed (${conn.id})`,
+            ),
           );
           return;
         }
@@ -472,8 +472,8 @@ export class ConnectionManager extends Base {
           ConnectMessage.encode(
             ConnectMessage.create({
               kind: GatewayMessageType.WORKER_HEARTBEAT,
-            })
-          ).finish()
+            }),
+          ).finish(),
         );
       }, conn.heartbeatIntervalMs);
     }
@@ -497,8 +497,8 @@ export class ConnectionManager extends Base {
           ConnectMessage.encode(
             ConnectMessage.create({
               kind: GatewayMessageType.WORKER_PAUSE,
-            })
-          ).finish()
+            }),
+          ).finish(),
         );
       }
 
@@ -507,7 +507,7 @@ export class ConnectionManager extends Base {
       ws.onclose = () => {};
       ws.close(
         1000,
-        workerDisconnectReasonToJSON(WorkerDisconnectReason.WORKER_SHUTDOWN)
+        workerDisconnectReasonToJSON(WorkerDisconnectReason.WORKER_SHUTDOWN),
       );
 
       if (this.activeConnection?.id === conn.id) {
@@ -527,7 +527,7 @@ export class ConnectionManager extends Base {
     }
 
     this.logger.debug(
-      `Setting up shutdown signal handler for ${signals.join(", ")}`
+      `Setting up shutdown signal handler for ${signals.join(", ")}`,
     );
 
     const cleanupShutdownHandlers = onShutdown(signals, () => {

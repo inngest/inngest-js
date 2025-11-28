@@ -1,7 +1,7 @@
-import { createStartRequest, parseStartResponse } from "./messages.ts";
-import type { Inngest } from "../Inngest.ts";
 import { headerKeys } from "../../helpers/consts.ts";
-import { AuthError, ReconnectError, ConnectionLimitError } from "./util";
+import type { Inngest } from "../Inngest.ts";
+import { createStartRequest, parseStartResponse } from "./messages.ts";
+import { AuthError, ConnectionLimitError, ReconnectError } from "./util";
 
 export async function sendStartRequest({
   excludeGateways,
@@ -39,7 +39,7 @@ export async function sendStartRequest({
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : "Unknown error";
     throw new ReconnectError(
-      `Failed initial API handshake request to ${targetUrl.toString()}, ${errMsg}`
+      `Failed initial API handshake request to ${targetUrl.toString()}, ${errMsg}`,
     );
   }
 
@@ -48,7 +48,7 @@ export async function sendStartRequest({
       throw new AuthError(
         `Failed initial API handshake request to ${targetUrl.toString()}${
           env ? ` (env: ${env})` : ""
-        }, ${await resp.text()}`
+        }, ${await resp.text()}`,
       );
     }
 
@@ -57,7 +57,7 @@ export async function sendStartRequest({
     }
 
     throw new ReconnectError(
-      `Failed initial API handshake request to ${targetUrl.toString()}, ${await resp.text()}`
+      `Failed initial API handshake request to ${targetUrl.toString()}, ${await resp.text()}`,
     );
   }
 

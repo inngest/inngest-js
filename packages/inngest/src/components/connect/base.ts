@@ -2,6 +2,7 @@ import { envKeys, headerKeys, queryKeys } from "../../helpers/consts.ts";
 import { allProcessEnv, getEnvironmentName } from "../../helpers/env.ts";
 import { parseFnData } from "../../helpers/functions.ts";
 import { hashSigningKey } from "../../helpers/strings.ts";
+import { DefaultLogger, type Logger } from "../../middleware/logger.ts";
 import {
   type GatewayExecutorRequestData,
   SDKResponse,
@@ -18,7 +19,6 @@ import {
   DEFAULT_SHUTDOWN_SIGNALS,
 } from "./types.ts";
 import { parseTraceCtx } from "./util.ts";
-import { DefaultLogger, type Logger } from "../../middleware/logger.ts";
 
 const InngestBranchEnvironmentSigningKeyPrefix = "signkey-branch-";
 
@@ -59,7 +59,7 @@ export class Base {
 
       if (client.env !== this.inngest.env) {
         throw new Error(
-          `All apps must be configured to the same environment. ${client.id} is configured to ${client.env} but ${this.inngest.id} is configured to ${this.inngest.env}`
+          `All apps must be configured to the same environment. ${client.id} is configured to ${client.env} but ${this.inngest.id} is configured to ${this.inngest.env}`,
         );
       }
     }
@@ -101,7 +101,7 @@ export class Base {
             baseUrl: new URL("wss://connect"),
             appPrefix: (client as Inngest.Any).id,
             isConnect: true,
-          })
+          }),
         ),
       };
     });
@@ -165,12 +165,12 @@ export class Base {
     if (
       this.options.signingKey &&
       this.options.signingKey.startsWith(
-        InngestBranchEnvironmentSigningKeyPrefix
+        InngestBranchEnvironmentSigningKeyPrefix,
       ) &&
       !this._inngestEnv
     ) {
       throw new Error(
-        "Environment is required when using branch environment signing keys"
+        "Environment is required when using branch environment signing keys",
       );
     }
 
@@ -184,7 +184,7 @@ export class Base {
     for (const { appId, client, functions } of this.functions) {
       this._requestHandlers[appId] = this.createRequestHandler(
         client,
-        functions
+        functions,
       );
     }
   }
@@ -211,7 +211,7 @@ export class Base {
 
   private createRequestHandler(
     client: Inngest.Like,
-    functions: InngestFunction.Any[]
+    functions: InngestFunction.Any[],
   ) {
     const inngestCommHandler: ConnectCommHandler = new InngestCommHandler({
       client: client,
@@ -279,7 +279,7 @@ export class Base {
               requestVersion: parseInt(
                 headers[headerKeys.RequestVersion] ??
                   PREFERRED_EXECUTION_VERSION.toString(),
-                10
+                10,
               ),
               systemTraceCtx: msg.systemTraceCtx,
               userTraceCtx: msg.userTraceCtx,

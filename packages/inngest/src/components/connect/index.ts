@@ -17,7 +17,7 @@ export {
 };
 
 export const connect = async (
-  options: ConnectHandlerOptions
+  options: ConnectHandlerOptions,
 ): Promise<WorkerConnection> => {
   const conn = new MessageHandler(options);
 

@@ -11,7 +11,7 @@ import {
   WorkerRequestExtendLeaseAckData,
   WorkerRequestExtendLeaseData,
 } from "../../proto/src/components/connect/protobuf/connect.ts";
-import { type Connection } from "./connection.ts";
+import type { Connection } from "./connection.ts";
 import { Reconciler } from "./reconcile.ts";
 
 export const ResponseAcknowlegeDeadline = 5_000;
@@ -33,7 +33,7 @@ export class MessageHandler extends Reconciler {
           connectionId: conn.id,
         });
         return;
-      case GatewayMessageType.GATEWAY_EXECUTOR_REQUEST:
+      case GatewayMessageType.GATEWAY_EXECUTOR_REQUEST: {
         if (this.activeConnection?.id !== conn.id) {
           this.logger.warn("Received request while not active, skipping", {
             connectionId: conn.id,
@@ -42,7 +42,7 @@ export class MessageHandler extends Reconciler {
         }
 
         const gatewayExecutorRequest = parseGatewayExecutorRequest(
-          message.payload
+          message.payload,
         );
 
         this.logger.debug("Received gateway executor request", {
@@ -98,10 +98,10 @@ export class MessageHandler extends Reconciler {
                   userTraceCtx: gatewayExecutorRequest.userTraceCtx,
                   systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
                   runId: gatewayExecutorRequest.runId,
-                })
+                }),
               ).finish(),
-            })
-          ).finish()
+            }),
+          ).finish(),
         );
 
         this.inProgressRequests.wg.add(1);
@@ -149,10 +149,10 @@ export class MessageHandler extends Reconciler {
                       systemTraceCtx: gatewayExecutorRequest.systemTraceCtx,
 
                       leaseId: currentLeaseId,
-                    })
+                    }),
                   ).finish(),
-                })
-              ).finish()
+                }),
+              ).finish(),
             );
           }, conn.extendLeaseIntervalMs);
 
@@ -180,8 +180,8 @@ export class MessageHandler extends Reconciler {
               ConnectMessage.create({
                 kind: GatewayMessageType.WORKER_REPLY,
                 payload: SDKResponse.encode(res).finish(),
-              })
-            ).finish()
+              }),
+            ).finish(),
           );
         } finally {
           this.inProgressRequests.wg.done();
@@ -192,7 +192,8 @@ export class MessageHandler extends Reconciler {
         }
 
         return;
-      case GatewayMessageType.WORKER_REPLY_ACK:
+      }
+      case GatewayMessageType.WORKER_REPLY_ACK: {
         const replyAck = parseWorkerReplyAck(message.payload);
 
         this.logger.debug("Acknowledging reply ack", {
@@ -203,9 +204,10 @@ export class MessageHandler extends Reconciler {
         this.messageBuffer.acknowledgePending(replyAck.requestId);
 
         return;
-      case GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE_ACK:
+      }
+      case GatewayMessageType.WORKER_REQUEST_EXTEND_LEASE_ACK: {
         const extendLeaseAck = WorkerRequestExtendLeaseAckData.decode(
-          message.payload
+          message.payload,
         );
 
         this.logger.debug("received extend lease ack", {
@@ -227,6 +229,7 @@ export class MessageHandler extends Reconciler {
         }
 
         return;
+      }
       default:
         this.logger.error("Unexpected message type", {
           kind: gatewayMessageTypeToJSON(message.kind),
@@ -241,7 +244,7 @@ export function createStartRequest(excludeGateways: string[]) {
   return StartRequest.encode(
     StartRequest.create({
       excludeGateways,
-    })
+    }),
   ).finish();
 }
 
