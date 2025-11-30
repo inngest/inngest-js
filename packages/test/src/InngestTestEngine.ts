@@ -103,7 +103,7 @@ export namespace InngestTestEngine {
   export interface MockedStep {
     id: string;
     idIsHashed?: boolean;
-    handler: () => any;
+    handler: (...args: any[]) => any;
   }
 
   export type DeepMock<T> = T extends (...args: any[]) => any
