@@ -213,10 +213,19 @@ interface MockHandlerCache {
  */
 export class InngestTestEngine {
   protected options: InngestTestEngine.Options;
-  protected mockHandlerCache: MockHandlerCache = {};
+  protected mockHandlerCache: MockHandlerCache;
 
-  constructor(options: InngestTestEngine.Options) {
-    this.options = options;
+  constructor(
+    options: InngestTestEngine.Options,
+    mockHandlerCache: MockHandlerCache = {},
+  ) {
+    this.options = {
+      ...options,
+      // Initialize steps as an array so that individualExecution and InngestTestRun.updateState()
+      // reference the same array, even after applying per execution mocks
+      steps: options.steps || [],
+    };
+    this.mockHandlerCache = mockHandlerCache;
   }
 
   /**
@@ -226,10 +235,16 @@ export class InngestTestEngine {
   public clone(
     inlineOpts?: InngestTestEngine.InlineOptions
   ): InngestTestEngine {
-    const cloned = new InngestTestEngine({ ...this.options, ...inlineOpts });
-    // Share the same mock handler cache to maintain memoization across clones
-    cloned.mockHandlerCache = this.mockHandlerCache;
-    return cloned;
+    // Shallow copy the steps and mockHandlerCache to preserve existing entries
+    // at moment of clone but allow independent new entries after
+    return new InngestTestEngine(
+      {
+        ...this.options,
+        steps: [...(this.options.steps || [])],
+        ...inlineOpts,
+      },
+      { ...this.mockHandlerCache },
+    );
   }
 
   /**
@@ -694,7 +709,9 @@ export class InngestTestEngine {
     InngestTestRun["updateState"](options, result);
 
     const run = new InngestTestRun({
-      testEngine: this.clone(options),
+      // create a fresh InngestTestEngine instance overriding with individual execution
+      // specific mocks, but share mockHandlerCache
+      testEngine: new InngestTestEngine(options, this.mockHandlerCache),
     });
 
     return {
