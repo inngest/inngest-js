@@ -294,4 +294,115 @@ describe("InngestTestEngine", () => {
       });
     });
   });
+
+  describe("InngestTestEngine state with clone", () => {
+    const inngest = new Inngest({
+      id: "test",
+    });
+
+    it("clone immediately after new doesn't share any state", async () => {
+      const myFunction = inngest.createFunction(
+        { id: "add-numbers" },
+        { event: "test/add" },
+        async ({ event, step }) => {
+          const firstResult = await step.run("add-one", () => {
+            return event.data.value + 1;
+          });
+
+          const secondResult = await step.run("add-two", () => {
+            return (firstResult as number) + 2;
+          });
+
+          return secondResult;
+        },
+      );
+
+      const t = new InngestTestEngine({
+        function: myFunction,
+      });
+      const t2 = t.clone();
+
+      const { result, error, state } = await t.execute({
+        events: [{ name: "test/add", data: { value: 5 } }],
+      });
+
+      expect(error).toBeUndefined();
+      await expect(state["add-one"]).resolves.toEqual(6); // 5 + 1
+      await expect(state["add-two"]).resolves.toEqual(8); // 6 + 2
+      expect(result).toEqual(8); // 5 + 1 + 2 = 8
+
+      const {
+        result: result2,
+        error: error2,
+        state: state2,
+      } = await t2.execute({
+        events: [{ name: "test/add", data: { value: 7 } }],
+      });
+
+      expect(error2).toBeUndefined();
+      await expect(state2["add-one"]).resolves.toEqual(8); // 7 + 1
+      await expect(state2["add-two"]).resolves.toEqual(10); // 8 + 2
+
+      expect(result2).toEqual(10); // 7 + 1 + 2 = 10
+    });
+
+    describe("non deterministic steps", () => {
+      const myFunction = inngest.createFunction(
+        { id: "two-random-numbers" },
+        { event: "test/random" },
+        async ({ step }) => {
+          const firstResult = await step.run("random-one", () => {
+            return Math.random();
+          });
+
+          const secondResult = await step.run("random-two", () => {
+            return Math.random();
+          });
+
+          return {
+            firstResult,
+            secondResult
+          };
+        },
+      );
+
+      it("also doesn't share state", async () => {
+        const t = new InngestTestEngine({
+          function: myFunction,
+        });
+        const t2 = t.clone();
+
+        const { result, error, state } = await t.execute()
+        expect(error).toBeUndefined();
+
+        const { result: result2, error: error2, state: state2 } = await t2.execute();
+        expect(error2).toBeUndefined();
+
+        expect(result2).not.toEqual(result);
+        await expect(state2["random-one"]).resolves.not.toEqual(await state["random-one"]);
+        await expect(state2["random-two"]).resolves.not.toEqual(await state["random-two"]);
+      });
+
+      it("executing a single step before clone shares just the state of that step", async () => {
+        const t = new InngestTestEngine({
+          function: myFunction,
+        });
+        // execute a single step before cloning
+        await t.executeStep("random-one");
+        const t2 = t.clone();
+
+        // resume both test engines to completion
+        const { result, error, state } = await t.execute();
+        expect(error).toBeUndefined();
+
+        const { result: result2, error: error2, state: state2, } = await t2.execute();
+        expect(error2).toBeUndefined();
+
+        expect(result2).not.toEqual(result);
+        // First step state (before clone) should be the same, but not the second
+        await expect(state2["random-one"]).resolves.toEqual(await state["random-one"]);
+        await expect(state2["random-two"]).resolves.not.toEqual(await state["random-two"]);
+      });
+    });
+  });
 });
