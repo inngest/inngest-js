@@ -25,6 +25,7 @@ import type {
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { internalEvents, knownEvents } from "./helpers/consts.ts";
 import type { GoInterval } from "./helpers/promises.ts";
+import type * as Temporal from "./helpers/temporal.ts";
 import type {
   AsTuple,
   IsEqual,
@@ -928,21 +929,24 @@ export interface ClientOptions {
    * If `true`, enables checkpointing with default settings, which is a safe,
    * blocking version of checkpointing, where we check in with Inngest after
    * every step is run.
-   */
-  experimentalCheckpointing?: boolean;
-  /**
-   * If an object, you can tweak the settings to batch many steps into a
-   * single checkpoint. Note that if your server dies before the checkpoint
-   * completes, step data will be lost and steps will be rerun.
    *
-   * We recommend starting with the default `true` configuration and only
-   * tweak the parameters directly if necessary.
+   * If an object, you can tweak the settings to batch, set a maximum runtime
+   * before going async, and more. Note that if your server dies before the
+   * checkpoint completes, step data will be lost and steps will be rerun.
+   *
+   * We recommend starting with the default `true` configuration and only tweak
+   * the parameters directly if necessary.
    */
-  // | {
-  //     maxSteps?: number;
-  //     maxInterval?: number | string | Temporal.DurationLike;
-  //   };
+  experimentalCheckpointing?: CheckpointingOptions;
 }
+
+export type CheckpointingOptions =
+  | boolean
+  | {
+      maxRuntime?: number | string | Temporal.DurationLike;
+      // maxSteps?: number;
+      // maxInterval?: number | string | Temporal.DurationLike;
+    };
 
 /**
  * A set of log levels that can be used to control the amount of logging output
