@@ -1,11 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as experimental from "../experimental";
 import type { Inngest } from "./Inngest.ts";
-import {
-  buildTarget,
-  MetadataBuilder,
-  UnscopedMetadataBuilder,
-} from "./InngestMetadata.ts";
+import { buildTarget, UnscopedMetadataBuilder } from "./InngestMetadata.ts";
 
 const mockClient = () =>
   ({
@@ -18,15 +14,12 @@ afterEach(() => {
 
 describe("buildTarget", () => {
   test("uses execution context when no config provided", () => {
-    const target = buildTarget(
-      {},
-      {
-        execution: {
-          ctx: { runId: "run-1", attempt: 2 },
-          executingStep: { id: "step-1" },
-        },
+    const target = buildTarget({}, {
+      execution: {
+        ctx: { runId: "run-1", attempt: 2 },
+        executingStep: { id: "step-1" },
       },
-    );
+    } as unknown as experimental.AsyncContext);
 
     expect(target).toEqual({
       run_id: "run-1",
@@ -36,29 +29,23 @@ describe("buildTarget", () => {
   });
 
   test("does not leak context when run override is used", () => {
-    const target = buildTarget(
-      { runId: "other-run" },
-      {
-        execution: {
-          ctx: { runId: "current-run", attempt: 1 },
-          executingStep: { id: "step-ctx" },
-        },
+    const target = buildTarget({ runId: "other-run" }, {
+      execution: {
+        ctx: { runId: "current-run", attempt: 1 },
+        executingStep: { id: "step-ctx" },
       },
-    );
+    } as unknown as experimental.AsyncContext);
 
     expect(target).toEqual({ run_id: "other-run" });
   });
 
   test("supports explicit step overrides for other runs", () => {
-    const target = buildTarget(
-      { runId: "other-run", stepId: "custom-step" },
-      {
-        execution: {
-          ctx: { runId: "current-run", attempt: 1 },
-          executingStep: { id: "step-ctx" },
-        },
+    const target = buildTarget({ runId: "other-run", stepId: "custom-step" }, {
+      execution: {
+        ctx: { runId: "current-run", attempt: 1 },
+        executingStep: { id: "step-ctx" },
       },
-    );
+    } as unknown as experimental.AsyncContext);
 
     expect(target).toEqual({
       run_id: "other-run",
@@ -67,7 +54,7 @@ describe("buildTarget", () => {
   });
 
   test("throws when no run context is available", () => {
-    expect(() => buildTarget({}, {})).toThrow("No run context available");
+    expect(() => buildTarget({})).toThrow("No run context available");
   });
 });
 
@@ -82,7 +69,9 @@ describe("MetadataBuilder.update", () => {
       },
     };
 
-    vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(ctx as any);
+    vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as experimental.AsyncContext,
+    );
 
     const client = mockClient();
     await new UnscopedMetadataBuilder(client).update({ foo: "bar" });
@@ -103,7 +92,9 @@ describe("MetadataBuilder.update", () => {
       },
     };
 
-    vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(ctx as any);
+    vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as experimental.AsyncContext,
+    );
 
     const client = mockClient();
     await new UnscopedMetadataBuilder(client)

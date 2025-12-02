@@ -1552,21 +1552,21 @@ export type MetadataTarget =
       // step level
       run_id: string;
       step_id: string; // user-defined
-      index?: number;
+      step_index?: number;
     }
   | {
       // step attempt level
       run_id: string;
       step_id: string; // user-defined
-      index?: number;
-      attempt: number; // -1 === last attempt?
+      step_index?: number;
+      step_attempt: number; // -1 === last attempt?
     }
   | {
       // span level
       run_id: string;
       step_id: string; // user-defined
-      index?: number;
-      attempt: number; // -1 === last attempt?
+      step_index?: number;
+      step_attempt: number; // -1 === last attempt?
       span_id: string;
     };
 

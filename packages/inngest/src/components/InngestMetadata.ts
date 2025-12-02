@@ -1,11 +1,12 @@
-import { getAsyncCtx } from "../experimental";
+import { type AsyncContext, getAsyncCtx } from "../experimental";
 import type { MetadataTarget } from "../types.ts";
+import type { IInngestExecution } from "./execution/InngestExecution.ts";
 import type { Inngest } from "./Inngest.ts";
 
 export interface BuilderConfig {
   runId?: string | null;
   stepId?: string | null;
-  stepIndex?: number | null;
+  stepIndex?: number;
   attempt?: number | null;
   spanId?: string;
 }
@@ -39,7 +40,7 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
     return new UnscopedMetadataBuilder(this.client, {
       ...this.config,
       stepId: id ?? null,
-      stepIndex: index ?? null,
+      stepIndex: index ?? 0,
     });
   }
 
@@ -69,7 +70,10 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
   }
 }
 
-export function buildTarget(config: BuilderConfig, ctx: any): MetadataTarget {
+export function buildTarget(
+  config: BuilderConfig,
+  ctx?: AsyncContext,
+): MetadataTarget {
   const ctxExecution = ctx?.execution;
   const ctxRunId = ctxExecution?.ctx?.runId;
   const targetRunId = config.runId ?? ctxRunId;
@@ -80,13 +84,16 @@ export function buildTarget(config: BuilderConfig, ctx: any): MetadataTarget {
   const ctxStepId = ctxExecution?.executingStep?.id;
   const stepId = config.stepId ?? (isSameRunAsCtx ? ctxStepId : undefined);
 
-  const target: MetadataTarget & Record<string, unknown> = {
+  let target: MetadataTarget = {
     run_id: targetRunId,
   };
 
   if (stepId) {
-    target.step_id = stepId;
-    if (config.stepIndex !== undefined) target.index = config.stepIndex;
+    target = { ...target, step_id: stepId };
+
+    if (config.stepIndex !== undefined) {
+      target = { ...target, step_index: config.stepIndex };
+    }
   }
 
   const ctxAttempt = ctxExecution?.ctx?.attempt;
@@ -96,46 +103,23 @@ export function buildTarget(config: BuilderConfig, ctx: any): MetadataTarget {
 
   if (attempt !== undefined) {
     if (!stepId) throw new Error("attempt() requires step()");
-    target.attempt = attempt;
+    target = { ...target, step_attempt: attempt };
   }
 
   if (config.spanId) {
     if (attempt === undefined) throw new Error("span() requires attempt()");
-    target.span_id = config.spanId;
+    target = { ...target, span_id: config.spanId };
   }
 
   return target as MetadataTarget;
 }
-
-// function createUpdate(client: Inngest, config: BuilderConfig, values: Record<string, unknown>): MetadataUpdateFuture {
-//   return new MetadataUpdateFuture(async (forceNow: boolean) => {
-//     const ctx = await getAsyncCtx();
-//     const target = buildTarget(config, ctx);
-//     // validateTarget(target); // TODO: I think we'll need this to be really sure that the target is valid?
-
-//     const canBatch = (
-//       config.runId === undefined &&
-//       config.stepId === undefined &&
-//       config.attempt === undefined &&
-//       config.spanId === undefined
-//     )
-
-//     if (canBatch && !forceNow) {
-//       // addMetadataToBatch();
-//       console.log("Adding metadata to batch");
-//     } else {
-//       // sendMetadataViaAPI()
-//       console.log("Sending metadata via API");
-//     }
-//   });
-// }
 
 /**
  * Creates a metadata array payload for API calls.
  */
 export function createMetadataPayload(
   kind: string,
-  metadata: Record<string, any>,
+  metadata: Record<string, unknown>,
 ) {
   return [
     {
@@ -153,7 +137,7 @@ export async function sendMetadataViaAPI(
   client: Inngest,
   target: MetadataTarget,
   kind: string,
-  metadata: Record<string, any>,
+  metadata: Record<string, unknown>,
   headers?: Record<string, string>,
 ): Promise<void> {
   const metadataArray = createMetadataPayload(kind, metadata);
@@ -169,14 +153,14 @@ export async function sendMetadataViaAPI(
  * Adds metadata to the current execution instance for batched opcode delivery.
  */
 export function addMetadataToBatch(
-  execInstance: any,
-  stepId: string,
-  kind: string,
+  execInstance: IInngestExecution,
+  stepID: string,
+  kind: MetadataKind,
   scope: MetadataScope,
-  metadata: Record<string, any>,
+  metadata: Record<string, unknown>,
 ): void {
-  if (execInstance && "addMetadata" in execInstance) {
-    execInstance.addMetadata(stepId, kind, scope, metadata);
+  if (execInstance) {
+    execInstance.addMetadata(stepID, kind, scope, metadata);
     return;
   }
 
