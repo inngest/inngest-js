@@ -452,7 +452,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       },
 
       "checkpointing-runtime-reached": () => {
-        throw new Error("not implemenetd");
+        return this.checkpointAndSwitchToAsync([]);
       },
     };
 
