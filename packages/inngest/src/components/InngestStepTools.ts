@@ -28,7 +28,7 @@ import {
 } from "../types.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
-import { MetadataBuilder } from "./InngestMetadata.ts";
+import { type MetadataBuilder, UnscopedMetadataBuilder } from "./InngestMetadata.ts";
 import type {
   ClientOptionsFromInngest,
   GetEvents,
@@ -255,9 +255,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
    */
   const createStepMetadataWrapper = (
     memoizationId: string,
-    builder = new MetadataBuilder(client),
+    builder = new UnscopedMetadataBuilder(client),
   ) => {
-    const withBuilder = (next: MetadataBuilder) =>
+    const withBuilder = (next: UnscopedMetadataBuilder) =>
       createStepMetadataWrapper(memoizationId, next);
 
     return {
@@ -732,7 +732,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
      *   .update({ childCompleted: true });
      * ```
      */
-    metadata: (memoizationId: string) =>
+    metadata: (memoizationId: string): MetadataBuilder =>
       createStepMetadataWrapper(memoizationId),
   };
 
