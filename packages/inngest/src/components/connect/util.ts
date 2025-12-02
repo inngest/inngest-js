@@ -1,25 +1,29 @@
 import { headerKeys } from "../../helpers/consts.ts";
 
 export class ReconnectError extends Error {
-  constructor(
-    message: string,
-    public attempt: number,
-  ) {
+  constructor(message: string) {
     super(message);
     this.name = "ReconnectError";
   }
 }
 
+export class PermanentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PermanentError";
+  }
+}
+
 export class AuthError extends ReconnectError {
-  constructor(message: string, attempt: number) {
-    super(message, attempt);
+  constructor(message: string) {
+    super(message);
     this.name = "AuthError";
   }
 }
 
 export class ConnectionLimitError extends ReconnectError {
-  constructor(attempt: number) {
-    super("Connection limit exceeded", attempt);
+  constructor() {
+    super("Connection limit exceeded");
     this.name = "ConnectionLimitError";
   }
 }
@@ -88,5 +92,25 @@ export function parseTraceCtx(serializedTraceCtx: Uint8Array<ArrayBufferLike>) {
   return {
     traceParent,
     traceState,
+  };
+}
+
+export function getPromiseHandle<T>(): {
+  promise: Promise<T>;
+  resolve?: (value: T | PromiseLike<T>) => void;
+  reject?: ((reason?: unknown) => void) | undefined;
+} {
+  let resolveFn: ((value: T | PromiseLike<T>) => void) | undefined;
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  let rejectFn: ((reason?: unknown) => void) | undefined;
+  const promise = new Promise<T>((resolve, reject) => {
+    resolveFn = resolve;
+    rejectFn = reject;
+  });
+
+  return {
+    promise,
+    resolve: resolveFn,
+    reject: rejectFn,
   };
 }

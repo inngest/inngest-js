@@ -45,15 +45,15 @@ testFramework("Bun", BunHandler, {
   },
   transformReq: (req) => {
     const headers = new Headers();
-    // biome-ignore lint/complexity/noForEach: <explanation>
+    // biome-ignore lint/complexity/noForEach: Ignore complexity here
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
     });
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: Ignore complexity here
     (req as any).headers = headers;
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: Ignore complexity here
     (req as any).json = () => Promise.resolve(req.body);
 
     return [req];
