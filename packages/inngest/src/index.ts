@@ -70,7 +70,7 @@ export type {
   MiddlewareRegisterReturn,
 } from "./components/InngestMiddleware";
 export { InngestMiddleware } from "./components/InngestMiddleware.ts";
-export { MetadataBuilder } from "./components/InngestMetadata.ts";
+export { type MetadataBuilder } from "./components/InngestMetadata.ts";
 export { step } from "./components/InngestStepTools.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
