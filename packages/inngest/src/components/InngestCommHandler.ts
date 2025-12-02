@@ -1,5 +1,5 @@
 import debug from "debug";
-import { ulid } from "ulid";
+import { ulid } from "ulidx";
 import { z } from "zod/v3";
 import { getAsyncCtx } from "../experimental";
 import {
