@@ -159,8 +159,7 @@ export function addMetadataToBatch(
   scope: MetadataScope,
   metadata: Record<string, unknown>,
 ): void {
-  if (execInstance) {
-    execInstance.addMetadata(stepID, kind, scope, metadata);
+  if (execInstance.addMetadata(stepID, kind, scope, metadata)) {
     return;
   }
 
