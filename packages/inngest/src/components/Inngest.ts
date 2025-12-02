@@ -30,7 +30,6 @@ import type {
   SingleOrArray,
   WithoutInternal,
 } from "../helpers/types.ts";
-import { type MetadataTarget } from "../types.ts";
 import {
   DefaultLogger,
   type Logger,
@@ -43,6 +42,7 @@ import {
   type FailureEventArgs,
   type Handler,
   type InvokeTargetFunctionDefinition,
+  type MetadataTarget,
   type SendEventOutput,
   type SendEventResponse,
   sendEventResponseSchema,
@@ -51,7 +51,10 @@ import {
 import type { EventSchemas } from "./EventSchemas.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
-import { UnscopedMetadataBuilder, type MetadataBuilder } from "./InngestMetadata.ts";
+import {
+  type MetadataBuilder,
+  UnscopedMetadataBuilder,
+} from "./InngestMetadata.ts";
 import {
   type ExtendWithMiddleware,
   getHookStack,

@@ -41,6 +41,7 @@ import {
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import type { Inngest } from "../Inngest.ts";
+import type { MetadataKind, MetadataScope } from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
@@ -63,7 +64,6 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.ts";
 import { clientProcessorMap } from "./otel/access.ts";
-import type { MetadataKind, MetadataScope } from "../InngestMetadata.ts";
 
 const { sha1 } = hashjs;
 
@@ -1776,11 +1776,14 @@ export interface V1ExecutionState {
   /**
    * Metadata collected during execution to be sent with outgoing ops.
    */
-  metadata?: Map<string, Array<{
-    kind: string;
-    scope: string;
-    values: Record<string, any>
-  }>>;
+  metadata?: Map<
+    string,
+    Array<{
+      kind: string;
+      scope: string;
+      values: Record<string, any>;
+    }>
+  >;
 }
 
 const hashId = (id: string): string => {

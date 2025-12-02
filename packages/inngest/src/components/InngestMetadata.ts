@@ -1,5 +1,5 @@
-import type { MetadataTarget } from "../types.ts";
 import { getAsyncCtx } from "../experimental";
+import type { MetadataTarget } from "../types.ts";
 import type { Inngest } from "./Inngest.ts";
 
 export interface BuilderConfig {
@@ -29,7 +29,10 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
   ) {}
 
   run(id?: string): UnscopedMetadataBuilder {
-    return new UnscopedMetadataBuilder(this.client, { ...this.config, runId: id ?? null });
+    return new UnscopedMetadataBuilder(this.client, {
+      ...this.config,
+      runId: id ?? null,
+    });
   }
 
   step(id?: string, index?: number): UnscopedMetadataBuilder {
@@ -41,11 +44,17 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
   }
 
   attempt(attempt?: number): UnscopedMetadataBuilder {
-    return new UnscopedMetadataBuilder(this.client, { ...this.config, attempt: attempt ?? null});
+    return new UnscopedMetadataBuilder(this.client, {
+      ...this.config,
+      attempt: attempt ?? null,
+    });
   }
 
   span(id?: string): UnscopedMetadataBuilder {
-    return new UnscopedMetadataBuilder(this.client, { ...this.config, spanId: id });
+    return new UnscopedMetadataBuilder(this.client, {
+      ...this.config,
+      spanId: id,
+    });
   }
 
   async update(
@@ -66,12 +75,10 @@ export function buildTarget(config: BuilderConfig, ctx: any): MetadataTarget {
   const targetRunId = config.runId ?? ctxRunId;
   if (!targetRunId) throw new Error("No run context available");
 
-  const isSameRunAsCtx =
-    ctxRunId !== undefined && targetRunId === ctxRunId;
+  const isSameRunAsCtx = ctxRunId !== undefined && targetRunId === ctxRunId;
 
   const ctxStepId = ctxExecution?.executingStep?.id;
-  const stepId =
-    config.stepId ?? (isSameRunAsCtx ? ctxStepId : undefined);
+  const stepId = config.stepId ?? (isSameRunAsCtx ? ctxStepId : undefined);
 
   const target: MetadataTarget & Record<string, unknown> = {
     run_id: targetRunId,
@@ -197,8 +204,17 @@ async function performUpdate(
   const ctx = await getAsyncCtx();
   const target = buildTarget(config, ctx);
 
+  const runId = config.runId ?? ctx?.execution?.ctx?.runId;
+  const stepId = config.stepId ?? ctx?.execution?.executingStep?.id;
+  // TODO: get step index from ctx?
+  const attempt = config.attempt ?? ctx?.execution?.ctx?.attempt;
+
   // We can batch metadata if we're updating the current run
-  const canBatch = !config.runId && !config.stepId && !config.attempt && !config.spanId;
+  const canBatch =
+    runId === ctx?.execution?.ctx?.runId &&
+    stepId === ctx?.execution?.executingStep?.id &&
+    attempt === ctx?.execution?.ctx?.attempt &&
+    !config.spanId;
 
   if (canBatch) {
     const executingStep = ctx?.execution?.executingStep;

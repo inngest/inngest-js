@@ -64,13 +64,13 @@ export { InngestCommHandler } from "./components/InngestCommHandler.ts";
 export type { InngestFunction } from "./components/InngestFunction";
 export type { InngestFunctionReference } from "./components/InngestFunctionReference";
 export { referenceFunction } from "./components/InngestFunctionReference.ts";
+export { type MetadataBuilder } from "./components/InngestMetadata.ts";
 export type {
   MiddlewareOptions,
   MiddlewareRegisterFn,
   MiddlewareRegisterReturn,
 } from "./components/InngestMiddleware";
 export { InngestMiddleware } from "./components/InngestMiddleware.ts";
-export { type MetadataBuilder } from "./components/InngestMetadata.ts";
 export { step } from "./components/InngestStepTools.ts";
 export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
