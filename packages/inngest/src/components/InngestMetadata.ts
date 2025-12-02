@@ -3,12 +3,16 @@ import { getAsyncCtx } from "../experimental";
 import type { Inngest } from "./Inngest.ts";
 
 export interface BuilderConfig {
-  runId?: string;
-  stepId?: string;
-  stepIndex?: number;
-  attempt?: number;
+  runId?: string | null;
+  stepId?: string | null;
+  stepIndex?: number | null;
+  attempt?: number | null;
   spanId?: string;
 }
+
+export type MetadataScope = "run" | "step" | "step_attempt" | "extended_trace";
+
+export type MetadataKind = "inngest.warning" | `userland.${string}`;
 
 export interface MetadataBuilder {
   run(id?: string): Omit<MetadataBuilder, "run">;
@@ -25,19 +29,19 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
   ) {}
 
   run(id?: string): UnscopedMetadataBuilder {
-    return new UnscopedMetadataBuilder(this.client, { ...this.config, runId: id });
+    return new UnscopedMetadataBuilder(this.client, { ...this.config, runId: id ?? null });
   }
 
   step(id?: string, index?: number): UnscopedMetadataBuilder {
     return new UnscopedMetadataBuilder(this.client, {
       ...this.config,
-      stepId: id,
-      stepIndex: index,
+      stepId: id ?? null,
+      stepIndex: index ?? null,
     });
   }
 
-  attempt(index?: number): UnscopedMetadataBuilder {
-    return new UnscopedMetadataBuilder(this.client, { ...this.config, attempt: index });
+  attempt(attempt?: number): UnscopedMetadataBuilder {
+    return new UnscopedMetadataBuilder(this.client, { ...this.config, attempt: attempt ?? null});
   }
 
   span(id?: string): UnscopedMetadataBuilder {
@@ -48,7 +52,7 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
     values: Record<string, unknown>,
     kind = "default",
   ): Promise<void> {
-    await performUpdate(this.client, this.config, values, kind);
+    await performUpdate(this.client, this.config, values, `userland.${kind}`);
   }
 
   toJSON() {
@@ -161,10 +165,11 @@ export function addMetadataToBatch(
   execInstance: any,
   stepId: string,
   kind: string,
+  scope: MetadataScope,
   metadata: Record<string, any>,
 ): void {
   if (execInstance && "addMetadata" in execInstance) {
-    execInstance.addMetadata(stepId, kind, metadata);
+    execInstance.addMetadata(stepId, kind, scope, metadata);
     return;
   }
 
@@ -174,32 +179,36 @@ export function addMetadataToBatch(
   );
 }
 
+function getBatchScope(config: BuilderConfig): MetadataScope {
+  if (config.spanId != undefined) return "extended_trace";
+  if (config.attempt != undefined) return "step_attempt";
+  if (config.stepId != undefined) return "step";
+  if (config.runId != undefined) return "run";
+
+  return "step_attempt";
+}
+
 async function performUpdate(
   client: Inngest,
   config: BuilderConfig,
   values: Record<string, unknown>,
-  kind: string,
+  kind: MetadataKind,
 ): Promise<void> {
   const ctx = await getAsyncCtx();
   const target = buildTarget(config, ctx);
 
-  const canBatch =
-    config.runId === undefined &&
-    config.stepId === undefined &&
-    config.attempt === undefined &&
-    config.spanId === undefined;
+  // We can batch metadata if we're updating the current run
+  const canBatch = !config.runId && !config.stepId && !config.attempt && !config.spanId;
 
   if (canBatch) {
     const executingStep = ctx?.execution?.executingStep;
     const execInstance = ctx?.execution?.instance;
 
     if (executingStep?.id && execInstance) {
-      console.debug("🐌 batching metadata update into opcode");
-      addMetadataToBatch(execInstance, executingStep.id, kind, values);
+      const scope = getBatchScope(config);
+      addMetadataToBatch(execInstance, executingStep.id, kind, scope, values);
       return;
     }
-
-    console.debug("⚡ unable to batch metadata update; sending via API instead");
   }
 
   const headers =
@@ -209,6 +218,5 @@ async function performUpdate(
         | undefined
     )?.options?.headers ?? undefined;
 
-  console.debug("⚡ sending metadata update via API");
   await sendMetadataViaAPI(client, target, kind, values, headers);
 }

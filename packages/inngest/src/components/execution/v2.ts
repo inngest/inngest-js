@@ -56,6 +56,7 @@ import {
   type MemoizedOp,
 } from "./InngestExecution.ts";
 import { clientProcessorMap } from "./otel/access.ts";
+import type { MetadataKind, MetadataScope } from "../InngestMetadata.ts";
 
 const { sha1 } = hashjs;
 
@@ -143,6 +144,22 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     return this.execution;
+  }
+
+  public addMetadata(
+    stepId: string,
+    kind: MetadataKind,
+    scope: MetadataScope,
+    values: Record<string, any>,
+  ) {
+    if (!this.state.metadata) {
+      this.state.metadata = new Map();
+    }
+
+    if (!this.state.metadata.has(stepId)) {
+      this.state.metadata.set(stepId, []);
+    }
+    this.state.metadata.get(stepId)!.push({ kind, scope, values });
   }
 
   /**
@@ -1200,6 +1217,15 @@ export interface V2ExecutionState {
    * little more smoothly with the core loop.
    */
   recentlyRejectedStepError?: StepError;
+
+  /**
+   * Metadata collected during execution to be sent with outgoing ops.
+   */
+  metadata?: Map<string, Array<{
+    kind: string;
+    scope: string;
+    values: Record<string, any>
+  }>>;
 }
 
 const hashId = (id: string): string => {
