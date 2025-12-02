@@ -28,7 +28,6 @@ import {
 } from "../types.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
-import { type MetadataBuilder, UnscopedMetadataBuilder } from "./InngestMetadata.ts";
 import type {
   ClientOptionsFromInngest,
   GetEvents,
@@ -38,6 +37,10 @@ import type {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import {
+  type MetadataBuilder,
+  UnscopedMetadataBuilder,
+} from "./InngestMetadata.ts";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;

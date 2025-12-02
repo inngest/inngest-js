@@ -1,9 +1,10 @@
-import { describe, expect, test, vi, afterEach } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import * as experimental from "../experimental";
 import type { Inngest } from "./Inngest.ts";
 import {
-  MetadataBuilder,
   buildTarget,
+  MetadataBuilder,
+  UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
 
 const mockClient = () =>
@@ -84,7 +85,7 @@ describe("MetadataBuilder.update", () => {
     vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(ctx as any);
 
     const client = mockClient();
-    await new MetadataBuilder(client).update({ foo: "bar" });
+    await new UnscopedMetadataBuilder(client).update({ foo: "bar" });
 
     expect(addMetadata).toHaveBeenCalledWith("step-ctx", "default", {
       foo: "bar",
@@ -105,7 +106,9 @@ describe("MetadataBuilder.update", () => {
     vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(ctx as any);
 
     const client = mockClient();
-    await new MetadataBuilder(client).run("other-run").update({ foo: "bar" });
+    await new UnscopedMetadataBuilder(client)
+      .run("other-run")
+      .update({ foo: "bar" });
 
     expect(client["_updateMetadata"]).toHaveBeenCalledWith({
       target: {
