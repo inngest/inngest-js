@@ -206,6 +206,7 @@ async function performUpdate(
 
     if (executingStep?.id && execInstance) {
       const scope = getBatchScope(config);
+      // TODO: handle case where too much metadata is added to batch
       addMetadataToBatch(execInstance, executingStep.id, kind, scope, values);
       return;
     }
