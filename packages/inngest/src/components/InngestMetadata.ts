@@ -10,30 +10,38 @@ export interface BuilderConfig {
   spanId?: string;
 }
 
-export class MetadataBuilder {
+export interface MetadataBuilder {
+  run(id?: string): Omit<MetadataBuilder, "run">;
+  step(id?: string, index?: number): Omit<MetadataBuilder, "run" | "step">;
+  attempt(index?: number): Omit<MetadataBuilder, "run" | "step" | "attempt">;
+  span(id?: string): Omit<MetadataBuilder, "run" | "step" | "attempt" | "span">;
+  update(values: Record<string, unknown>, kind?: string): Promise<void>;
+}
+
+export class UnscopedMetadataBuilder implements MetadataBuilder {
   constructor(
     private client: Inngest,
     private config: BuilderConfig = {},
   ) {}
 
-  run(id?: string): MetadataBuilder {
-    return new MetadataBuilder(this.client, { ...this.config, runId: id });
+  run(id?: string): UnscopedMetadataBuilder {
+    return new UnscopedMetadataBuilder(this.client, { ...this.config, runId: id });
   }
 
-  step(id?: string, index?: number): MetadataBuilder {
-    return new MetadataBuilder(this.client, {
+  step(id?: string, index?: number): UnscopedMetadataBuilder {
+    return new UnscopedMetadataBuilder(this.client, {
       ...this.config,
       stepId: id,
       stepIndex: index,
     });
   }
 
-  attempt(index?: number): MetadataBuilder {
-    return new MetadataBuilder(this.client, { ...this.config, attempt: index });
+  attempt(index?: number): UnscopedMetadataBuilder {
+    return new UnscopedMetadataBuilder(this.client, { ...this.config, attempt: index });
   }
 
-  span(id?: string): MetadataBuilder {
-    return new MetadataBuilder(this.client, { ...this.config, spanId: id });
+  span(id?: string): UnscopedMetadataBuilder {
+    return new UnscopedMetadataBuilder(this.client, { ...this.config, spanId: id });
   }
 
   async update(

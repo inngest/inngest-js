@@ -51,7 +51,7 @@ import {
 import type { EventSchemas } from "./EventSchemas.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
-import { MetadataBuilder } from "./InngestMetadata.ts";
+import { UnscopedMetadataBuilder, type MetadataBuilder } from "./InngestMetadata.ts";
 import {
   type ExtendWithMiddleware,
   getHookStack,
@@ -201,7 +201,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * ```
    */
   get metadata(): MetadataBuilder {
-    return new MetadataBuilder(this);
+    return new UnscopedMetadataBuilder(this);
   }
 
   /**
