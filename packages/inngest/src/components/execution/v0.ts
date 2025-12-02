@@ -444,7 +444,7 @@ export class V0InngestExecution
       return new Promise<unknown>((resolve, reject) => {
         this.state.tickOps[opId.id] = {
           ...opId,
-          ...(opts?.fn ? { fn: () => opts.fn?.(...args) } : {}),
+          ...(opts?.fn ? { fn: () => opts.fn?.(this.fnArg, ...args) } : {}),
           rawArgs: args,
           resolve,
           reject,
