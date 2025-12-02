@@ -182,7 +182,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     stepId: string,
     kind: MetadataKind,
     scope: MetadataScope,
-    values: Record<string, any>,
+    values: Record<string, unknown>,
   ) {
     if (!this.state.metadata) {
       this.state.metadata = new Map();
@@ -192,6 +192,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       this.state.metadata.set(stepId, []);
     }
     this.state.metadata.get(stepId)!.push({ kind, scope, values });
+
+    return true;
   }
 
   /**
@@ -1781,7 +1783,7 @@ export interface V1ExecutionState {
     Array<{
       kind: string;
       scope: string;
-      values: Record<string, any>;
+      values: Record<string, unknown>;
     }>
   >;
 }
