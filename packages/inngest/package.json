@@ -283,6 +283,7 @@
     "@opentelemetry/resources": ">=2.0.0 <3.0.0",
     "@opentelemetry/sdk-trace-base": ">=2.0.0 <3.0.0",
     "@standard-schema/spec": "^1.0.0",
+    "@traceloop/instrumentation-anthropic": "^0.20.0",
     "@types/debug": "^4.1.12",
     "canonicalize": "^1.0.8",
     "chalk": "^4.1.2",

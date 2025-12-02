@@ -6,6 +6,7 @@ import {
   registerInstrumentations,
 } from "@opentelemetry/instrumentation";
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
+import { AnthropicInstrumentation } from "@traceloop/instrumentation-anthropic";
 import { InngestSpanProcessor } from "./processor.ts";
 
 export type Behaviour = "createProvider" | "extendProvider" | "off" | "auto";
@@ -25,6 +26,7 @@ export const createProvider = (
   const instrList: Instrumentations = [
     ...instrumentations,
     ...getNodeAutoInstrumentations(),
+    new AnthropicInstrumentation(),
   ];
 
   registerInstrumentations({
