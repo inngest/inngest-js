@@ -149,26 +149,6 @@ export async function sendMetadataViaAPI(
   });
 }
 
-/**
- * Adds metadata to the current execution instance for batched opcode delivery.
- */
-export function addMetadataToBatch(
-  execInstance: IInngestExecution,
-  stepID: string,
-  kind: MetadataKind,
-  scope: MetadataScope,
-  metadata: Record<string, unknown>,
-): void {
-  if (execInstance.addMetadata(stepID, kind, scope, metadata)) {
-    return;
-  }
-
-  throw new Error(
-    "Unable to add metadata: execution instance does not support metadata. " +
-      "This may be due to using an older execution version that doesn't support metadata updates.",
-  );
-}
-
 function getBatchScope(config: BuilderConfig): MetadataScope {
   if (config.spanId != undefined) return "extended_trace";
   if (config.attempt != undefined) return "step_attempt";
@@ -203,10 +183,15 @@ async function performUpdate(
     const executingStep = ctx?.execution?.executingStep;
     const execInstance = ctx?.execution?.instance;
 
-    if (executingStep?.id && execInstance) {
-      const scope = getBatchScope(config);
-      // TODO: handle case where too much metadata is added to batch
-      addMetadataToBatch(execInstance, executingStep.id, kind, scope, values);
+    if (
+      executingStep?.id
+        && execInstance
+        && execInstance.addMetadata(
+          executingStep.id,
+          kind,
+          getBatchScope(config),
+          values,
+        )) {
       return;
     }
   }
