@@ -452,7 +452,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       },
 
       "checkpointing-runtime-reached": () => {
-        return this.checkpointAndSwitchToAsync([]);
+        return this.checkpointAndSwitchToAsync([
+          {
+            op: StepOpCode.DiscoveryRequest,
+            id: _internals.hashId("discovery-request"), // ID doesn't matter
+          },
+        ]);
       },
     };
 
