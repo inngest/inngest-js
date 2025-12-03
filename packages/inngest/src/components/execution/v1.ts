@@ -624,7 +624,17 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           return;
         },
         "checkpointing-runtime-reached": async () => {
-          throw new Error("not implemeneted");
+          return {
+            type: "steps-found",
+            ctx: this.fnArg,
+            ops: this.ops,
+            steps: [
+              {
+                op: StepOpCode.DiscoveryRequest,
+                id: _internals.hashId("discovery-request"), // ID doesn't matter
+              },
+            ],
+          };
         },
       };
 

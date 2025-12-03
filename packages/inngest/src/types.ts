@@ -265,6 +265,7 @@ export enum StepOpCode {
   Gateway = "Gateway",
 
   RunComplete = "RunComplete",
+  DiscoveryRequest = "DiscoveryRequest",
 }
 
 /**
