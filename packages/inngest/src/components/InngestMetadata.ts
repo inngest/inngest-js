@@ -184,14 +184,15 @@ async function performUpdate(
     const execInstance = ctx?.execution?.instance;
 
     if (
-      executingStep?.id
-        && execInstance
-        && execInstance.addMetadata(
-          executingStep.id,
-          kind,
-          getBatchScope(config),
-          values,
-        )) {
+      executingStep?.id &&
+      execInstance &&
+      execInstance.addMetadata(
+        executingStep.id,
+        kind,
+        getBatchScope(config),
+        values,
+      )
+    ) {
       return;
     }
   }
