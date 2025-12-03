@@ -24,7 +24,7 @@ describe("buildTarget", () => {
     expect(target).toEqual({
       run_id: "run-1",
       step_id: "step-1",
-      attempt: 2,
+      step_attempt: 2,
     });
   });
 
@@ -76,7 +76,7 @@ describe("MetadataBuilder.update", () => {
     const client = mockClient();
     await new UnscopedMetadataBuilder(client).update({ foo: "bar" });
 
-    expect(addMetadata).toHaveBeenCalledWith("step-ctx", "default", {
+    expect(addMetadata).toHaveBeenCalledWith("step-ctx", "userland.default", {
       foo: "bar",
     });
     expect(client["_updateMetadata"]).not.toHaveBeenCalled();
@@ -107,7 +107,7 @@ describe("MetadataBuilder.update", () => {
       },
       metadata: [
         {
-          kind: "default",
+          kind: "userland.default",
           op: "merge",
           values: { foo: "bar" },
         },
