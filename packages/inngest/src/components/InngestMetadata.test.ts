@@ -60,7 +60,7 @@ describe("buildTarget", () => {
 
 describe("MetadataBuilder.update", () => {
   test("batches updates when execution context supports metadata", async () => {
-    const addMetadata = vi.fn();
+    const addMetadata = vi.fn(()=>true);
     const ctx = {
       execution: {
         ctx: { runId: "run-ctx", attempt: 0 },
@@ -76,10 +76,43 @@ describe("MetadataBuilder.update", () => {
     const client = mockClient();
     await new UnscopedMetadataBuilder(client).update({ foo: "bar" });
 
-    expect(addMetadata).toHaveBeenCalledWith("step-ctx", "userland.default", "step_attempt", {
-      foo: "bar",
-    });
+    expect(addMetadata).toHaveBeenCalledWith(
+      "step-ctx",
+      "userland.default",
+      "step_attempt",
+      {
+        foo: "bar",
+      },
+    );
     expect(client["_updateMetadata"]).not.toHaveBeenCalled();
+  });
+
+  test("batches updates when execution context doesn't support metadata", async () => {
+    const addMetadata = vi.fn(()=>false);
+    const ctx = {
+      execution: {
+        ctx: { runId: "run-ctx", attempt: 0 },
+        executingStep: { id: "step-ctx" },
+        instance: { addMetadata },
+      },
+    };
+
+    vi.spyOn(experimental, "getAsyncCtx").mockResolvedValue(
+      ctx as unknown as experimental.AsyncContext,
+    );
+
+    const client = mockClient();
+    await new UnscopedMetadataBuilder(client).update({ foo: "bar" });
+
+    expect(addMetadata).toHaveBeenCalledWith(
+      "step-ctx",
+      "userland.default",
+      "step_attempt",
+      {
+        foo: "bar",
+      },
+    );
+    expect(client["_updateMetadata"]).toHaveBeenCalled();
   });
 
   test("sends updates via API with execution headers when batching unavailable", async () => {
