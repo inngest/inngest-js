@@ -76,7 +76,7 @@ describe("MetadataBuilder.update", () => {
     const client = mockClient();
     await new UnscopedMetadataBuilder(client).update({ foo: "bar" });
 
-    expect(addMetadata).toHaveBeenCalledWith("step-ctx", "userland.default", {
+    expect(addMetadata).toHaveBeenCalledWith("step-ctx", "userland.default", "step_attempt", {
       foo: "bar",
     });
     expect(client["_updateMetadata"]).not.toHaveBeenCalled();
