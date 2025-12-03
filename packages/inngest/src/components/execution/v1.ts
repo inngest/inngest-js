@@ -920,6 +920,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * Start the timer to time out the run if needed.
      */
     void this.timeout?.start();
+    void this.checkpointingMaxRuntimeTimer?.start();
 
     await this.state.hooks?.beforeMemoization?.();
 
@@ -1048,6 +1049,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       }
     })(() => {
       this.timeout?.clear();
+      this.checkpointingMaxRuntimeTimer?.clear();
       void checkpointResults.return();
     });
 
