@@ -60,7 +60,7 @@ describe("buildTarget", () => {
 
 describe("MetadataBuilder.update", () => {
   test("batches updates when execution context supports metadata", async () => {
-    const addMetadata = vi.fn(()=>true);
+    const addMetadata = vi.fn(() => true);
     const ctx = {
       execution: {
         ctx: { runId: "run-ctx", attempt: 0 },
@@ -88,7 +88,7 @@ describe("MetadataBuilder.update", () => {
   });
 
   test("batches updates when execution context doesn't support metadata", async () => {
-    const addMetadata = vi.fn(()=>false);
+    const addMetadata = vi.fn(() => false);
     const ctx = {
       execution: {
         ctx: { runId: "run-ctx", attempt: 0 },
