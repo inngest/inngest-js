@@ -1,8 +1,9 @@
+import { trace } from "@opentelemetry/api";
+import type { Metadata } from "next";
 import { type AsyncContext, getAsyncCtx } from "../experimental";
 import type { MetadataTarget } from "../types.ts";
 import type { IInngestExecution } from "./execution/InngestExecution.ts";
 import type { Inngest } from "./Inngest.ts";
-
 export interface BuilderConfig {
   runId?: string | null;
   stepId?: string | null;
@@ -15,13 +16,35 @@ export type MetadataScope = "run" | "step" | "step_attempt" | "extended_trace";
 
 export type MetadataKind = "inngest.warning" | `userland.${string}`;
 
-export interface MetadataBuilder {
-  run(id?: string): Omit<MetadataBuilder, "run">;
-  step(id?: string, index?: number): Omit<MetadataBuilder, "run" | "step">;
-  attempt(index?: number): Omit<MetadataBuilder, "run" | "step" | "attempt">;
-  span(id?: string): Omit<MetadataBuilder, "run" | "step" | "attempt" | "span">;
+export type MetadataOpcode = "merge" | "set" | "delete" | "add";
+
+export type MetadataUpdate = {
+  kind: MetadataKind;
+  scope: MetadataScope;
+  op: MetadataOpcode;
+  values: Record<string, unknown>;
+};
+
+export type MetadataBuilder<Extras = {}> = {
+  run(id?: string): Omit<MetadataBuilder<Extras>, "run">;
+  step(
+    id?: string,
+    index?: number,
+  ): Omit<MetadataBuilder<Extras>, "run" | "step">;
+  attempt(
+    index?: number,
+  ): Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt">;
+  span(
+    id?: string,
+  ): Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt" | "span">;
   update(values: Record<string, unknown>, kind?: string): Promise<void>;
-}
+  set(values: Record<string, unknown>, kind?: string): Promise<void>;
+  delete(values: string[], kind?: string): Promise<void>;
+} & Extras;
+
+export type MetadataStepTool = MetadataBuilder<{
+  do: (fn: (builder: MetadataBuilder) => Promise<void>) => Promise<void>;
+}>;
 
 export class UnscopedMetadataBuilder implements MetadataBuilder {
   constructor(
@@ -60,9 +83,38 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
 
   async update(
     values: Record<string, unknown>,
-    kind = "default",
+    kind: string = "default",
   ): Promise<void> {
-    await performUpdate(this.client, this.config, values, `userland.${kind}`);
+    await performOp(
+      this.client,
+      this.config,
+      values,
+      `userland.${kind}`,
+      "merge",
+    );
+  }
+
+  async set(
+    values: Record<string, unknown>,
+    kind: string = "default",
+  ): Promise<void> {
+    await performOp(
+      this.client,
+      this.config,
+      values,
+      `userland.${kind}`,
+      "set",
+    );
+  }
+
+  async delete(values: string[], kind: string = "default"): Promise<void> {
+    await performOp(
+      this.client,
+      this.config,
+      Object.fromEntries(values.map((k) => [k, null])),
+      `userland.${kind}`,
+      "delete",
+    );
   }
 
   toJSON() {
@@ -119,12 +171,13 @@ export function buildTarget(
  */
 export function createMetadataPayload(
   kind: string,
+  op: MetadataOpcode,
   metadata: Record<string, unknown>,
 ) {
   return [
     {
       kind,
-      op: "merge",
+      op,
       values: metadata,
     },
   ];
@@ -137,10 +190,11 @@ export async function sendMetadataViaAPI(
   client: Inngest,
   target: MetadataTarget,
   kind: string,
+  op: MetadataOpcode,
   metadata: Record<string, unknown>,
   headers?: Record<string, string>,
 ): Promise<void> {
-  const metadataArray = createMetadataPayload(kind, metadata);
+  const metadataArray = createMetadataPayload(kind, op, metadata);
 
   await client["_updateMetadata"]({
     target,
@@ -150,19 +204,20 @@ export async function sendMetadataViaAPI(
 }
 
 function getBatchScope(config: BuilderConfig): MetadataScope {
-  if (config.spanId != undefined) return "extended_trace";
-  if (config.attempt != undefined) return "step_attempt";
-  if (config.stepId != undefined) return "step";
-  if (config.runId != undefined) return "run";
+  if (config.spanId !== undefined) return "extended_trace";
+  if (config.attempt !== undefined) return "step_attempt";
+  if (config.stepId !== undefined) return "step";
+  if (config.runId !== undefined) return "run";
 
   return "step_attempt";
 }
 
-async function performUpdate(
+async function performOp(
   client: Inngest,
   config: BuilderConfig,
   values: Record<string, unknown>,
   kind: MetadataKind,
+  op: MetadataOpcode,
 ): Promise<void> {
   const ctx = await getAsyncCtx();
   const target = buildTarget(config, ctx);
@@ -182,16 +237,13 @@ async function performUpdate(
   if (canBatch) {
     const executingStep = ctx?.execution?.executingStep;
     const execInstance = ctx?.execution?.instance;
+    const scope = getBatchScope(config);
+    console.log("getBatchScope", config, scope);
 
     if (
       executingStep?.id &&
       execInstance &&
-      execInstance.addMetadata(
-        executingStep.id,
-        kind,
-        getBatchScope(config),
-        values,
-      )
+      execInstance.addMetadata(executingStep.id, kind, scope, op, values)
     ) {
       return;
     }
@@ -204,5 +256,5 @@ async function performUpdate(
         | undefined
     )?.options?.headers ?? undefined;
 
-  await sendMetadataViaAPI(client, target, kind, values, headers);
+  await sendMetadataViaAPI(client, target, kind, op, values, headers);
 }

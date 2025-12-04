@@ -39,6 +39,7 @@ import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
   type MetadataBuilder,
+  type MetadataStepTool,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
 
@@ -258,10 +259,14 @@ export const createStepTools = <TClient extends Inngest.Any>(
    */
   const createStepMetadataWrapper = (
     memoizationId: string,
-    builder = new UnscopedMetadataBuilder(client),
+    builder?: UnscopedMetadataBuilder,
   ) => {
     const withBuilder = (next: UnscopedMetadataBuilder) =>
       createStepMetadataWrapper(memoizationId, next);
+
+    if (!builder) {
+      builder = new UnscopedMetadataBuilder(client).run();
+    }
 
     return {
       run: (runId?: string) => withBuilder(builder.run(runId)),
@@ -276,7 +281,29 @@ export const createStepTools = <TClient extends Inngest.Any>(
       ): Promise<void> => {
         await tools.run(memoizationId, async () => {
           await builder.update(values, kind);
-          return null;
+        });
+      },
+
+      set: async (
+        values: Record<string, unknown>,
+        kind = "default",
+      ): Promise<void> => {
+        await tools.run(memoizationId, async () => {
+          await builder.update(values, kind);
+        });
+      },
+
+      delete: async (values: string[], kind = "default"): Promise<void> => {
+        await tools.run(memoizationId, async () => {
+          await builder.delete(values, kind);
+        });
+      },
+
+      do: async (
+        fn: (builder: MetadataBuilder) => Promise<void>,
+      ): Promise<void> => {
+        await tools.run(memoizationId, async () => {
+          await fn(builder);
         });
       },
     };
@@ -735,7 +762,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
      *   .update({ childCompleted: true });
      * ```
      */
-    metadata: (memoizationId: string): MetadataBuilder =>
+    metadata: (memoizationId: string): MetadataStepTool =>
       createStepMetadataWrapper(memoizationId),
   };
 

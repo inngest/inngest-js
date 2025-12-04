@@ -12,7 +12,11 @@ import type {
 import type { Inngest } from "../Inngest.ts";
 import type { ActionResponse } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
-import type { MetadataKind, MetadataScope } from "../InngestMetadata.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+} from "../InngestMetadata.ts";
 
 // Re-export ExecutionVersion so it's correctly recognized as an enum and not
 // just a type. This can be lost when bundling if we don't re-export it here.
@@ -157,6 +161,7 @@ export interface IInngestExecution {
     stepID: string,
     kind: MetadataKind,
     scope: MetadataScope,
+    op: MetadataOpcode,
     values: Record<string, unknown>,
   ): boolean;
 }
