@@ -1540,7 +1540,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         : (this.options.checkpointingConfig.maxRuntime as number);
 
     // 0 or negative max runtime? Skip.
-    if (maxRuntimeMs <= 0) {
+    if (!Number.isFinite(maxRuntimeMs) || maxRuntimeMs <= 0) {
       return;
     }
 
