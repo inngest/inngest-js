@@ -579,9 +579,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               this.debug("checkpointing and resuming execution after step run");
 
               try {
-                return await this.checkpoint([
+                return void (await this.checkpoint([
                   this.resumeStepWithResult(stepResult),
-                ]);
+                ]));
               } catch (err) {
                 // If checkpointing fails for any reason, fall back to the async
                 // flow
