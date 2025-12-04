@@ -29,7 +29,11 @@ import {
   StepOpCode,
 } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
-import type { MetadataKind, MetadataScope } from "../InngestMetadata.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+} from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
@@ -77,6 +81,7 @@ export class V0InngestExecution
     _stepID: string,
     _kind: MetadataKind,
     _scope: MetadataScope,
+    _op: MetadataOpcode,
     _values: Record<string, unknown>,
   ): boolean {
     return false;
