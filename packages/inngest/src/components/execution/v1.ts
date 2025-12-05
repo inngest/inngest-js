@@ -1,5 +1,6 @@
 import { trace } from "@opentelemetry/api";
 import hashjs from "hash.js";
+import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
 import {
   ExecutionVersion,
@@ -24,6 +25,7 @@ import {
   resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises.ts";
+import * as Temporal from "../../helpers/temporal.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
   type APIStepPayload,
@@ -87,6 +89,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    */
   private timeout?: ReturnType<typeof createTimeoutPromise>;
 
+  /**
+   * If we're checkpointing and have been given a maximum runtime, this will be
+   * a `Promise` that resolves after that duration has elapsed, allowing us to
+   * ensure that we end the execution in good time, especially in serverless
+   * environments.
+   */
+  private checkpointingMaxRuntimeTimer?: ReturnType<
+    typeof createTimeoutPromise
+  >;
+
   constructor(rawOptions: InngestExecutionOptions) {
     const options: InngestExecutionOptions = {
       ...rawOptions,
@@ -109,6 +121,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     this.fnArg = this.createFnArg();
     this.checkpointHandlers = this.createCheckpointHandlers();
     this.initializeTimer(this.state);
+    this.initializeCheckpointRuntimeTimer(this.state);
 
     this.debug(
       "created new V1 execution for run;",
@@ -437,6 +450,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           this.resumeStepWithResult(result),
         ]));
       },
+
+      "checkpointing-runtime-reached": () => {
+        return this.checkpointAndSwitchToAsync([
+          {
+            op: StepOpCode.DiscoveryRequest,
+            id: _internals.hashId("discovery-request"), // ID doesn't matter
+          },
+        ]);
+      },
     };
 
     const asyncHandlers: CheckpointHandlers[StepMode.Async] = {
@@ -490,6 +512,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           ops: this.ops,
           step,
         };
+      },
+
+      "checkpointing-runtime-reached": () => {
+        throw new Error(
+          "Checkpointing maximum runtime reached, but this is not in a checkpointing step mode. This is a bug in the Inngest SDK.",
+        );
       },
     };
 
@@ -599,6 +627,19 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           }
 
           return;
+        },
+        "checkpointing-runtime-reached": async () => {
+          return {
+            type: "steps-found",
+            ctx: this.fnArg,
+            ops: this.ops,
+            steps: [
+              {
+                op: StepOpCode.DiscoveryRequest,
+                id: _internals.hashId("discovery-request"), // ID doesn't matter
+              },
+            ],
+          };
         },
       };
 
@@ -884,6 +925,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * Start the timer to time out the run if needed.
      */
     void this.timeout?.start();
+    void this.checkpointingMaxRuntimeTimer?.start();
 
     await this.state.hooks?.beforeMemoization?.();
 
@@ -1012,6 +1054,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       }
     })(() => {
       this.timeout?.clear();
+      this.checkpointingMaxRuntimeTimer?.clear();
       void checkpointResults.return();
     });
 
@@ -1470,6 +1513,50 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     });
   }
 
+  private initializeCheckpointRuntimeTimer(state: V1ExecutionState): void {
+    // Not checkpointing? Skip.
+    if (!this.options.checkpointingConfig) {
+      return;
+    }
+
+    // Default checkpointing config? Skip.
+    if (typeof this.options.checkpointingConfig === "boolean") {
+      return;
+    }
+
+    // Custom checkpointing config but no max runtime? Skip.
+    if (!this.options.checkpointingConfig.maxRuntime) {
+      return;
+    }
+
+    const maxRuntimeMs = Temporal.isTemporalDuration(
+      this.options.checkpointingConfig.maxRuntime,
+    )
+      ? this.options.checkpointingConfig.maxRuntime.total({
+          unit: "milliseconds",
+        })
+      : typeof this.options.checkpointingConfig.maxRuntime === "string"
+        ? ms(this.options.checkpointingConfig.maxRuntime as StringValue) // type assertion to satisfy ms package
+        : (this.options.checkpointingConfig.maxRuntime as number);
+
+    // 0 or negative max runtime? Skip.
+    if (!Number.isFinite(maxRuntimeMs) || maxRuntimeMs <= 0) {
+      return;
+    }
+
+    this.checkpointingMaxRuntimeTimer = createTimeoutPromise(maxRuntimeMs);
+
+    void this.checkpointingMaxRuntimeTimer.then(async () => {
+      await this.state.hooks?.afterMemoization?.();
+      await this.state.hooks?.beforeExecution?.();
+      await this.state.hooks?.afterExecution?.();
+
+      state.setCheckpoint({
+        type: "checkpointing-runtime-reached",
+      });
+    });
+  }
+
   private async initializeMiddleware(): Promise<RunHookStack> {
     const ctx = this.options.data as Pick<
       Readonly<BaseContext<Inngest.Any>>,
@@ -1518,6 +1605,7 @@ export interface Checkpoints {
   "function-rejected": { error: unknown };
   "function-resolved": { data: unknown };
   "step-not-found": { step: OutgoingOp };
+  "checkpointing-runtime-reached": {};
 }
 
 type Checkpoint = {

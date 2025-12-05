@@ -2,7 +2,13 @@ import Debug, { type Debugger } from "debug";
 import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
 import type { ServerTiming } from "../../helpers/ServerTiming.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
-import type { Context, IncomingOp, OutgoingOp, StepMode } from "../../types.ts";
+import type {
+  CheckpointingOptions,
+  Context,
+  IncomingOp,
+  OutgoingOp,
+  StepMode,
+} from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { ActionResponse } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
@@ -96,6 +102,7 @@ export interface InngestExecutionOptions {
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
   stepMode: StepMode;
+  checkpointingConfig?: CheckpointingOptions;
 
   /**
    * If this execution is being run from a queue job, this will be an identifier
