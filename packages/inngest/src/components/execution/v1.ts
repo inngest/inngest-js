@@ -41,6 +41,12 @@ import {
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import type { Inngest } from "../Inngest.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+  MetadataUpdate,
+} from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
@@ -175,6 +181,25 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     return this.execution;
+  }
+
+  public addMetadata(
+    stepId: string,
+    kind: MetadataKind,
+    scope: MetadataScope,
+    op: MetadataOpcode,
+    values: Record<string, unknown>,
+  ) {
+    if (!this.state.metadata) {
+      this.state.metadata = new Map();
+    }
+
+    if (!this.state.metadata.has(stepId)) {
+      this.state.metadata.set(stepId, []);
+    }
+    this.state.metadata.get(stepId)!.push({ kind, scope, op, values });
+
+    return true;
   }
 
   /**
@@ -882,10 +907,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       })
       .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
         interval = _interval;
+        const metadata = this.state.metadata?.get(id);
 
         return {
           ...outgoingOp,
           data: await resultPromise,
+          ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
         };
       })
       .catch<OutgoingOp>((error) => {
@@ -900,12 +927,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           errorIsRetriable = false;
         }
 
+        const metadata = this.state.metadata?.get(id);
+
         if (errorIsRetriable) {
           return {
             ...outgoingOp,
             op: StepOpCode.StepError,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
+            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
           };
         } else {
           return {
@@ -913,6 +943,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             op: StepOpCode.StepFailed,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
+            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
           };
         }
       })
@@ -1085,6 +1116,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       allStateUsed: () => {
         return this.state.remainingStepsToBeSeen.size === 0;
       },
+      metadata: new Map(),
     };
 
     return state;
@@ -1748,6 +1780,11 @@ export interface V1ExecutionState {
     appId: string;
     token?: string;
   };
+
+  /**
+   * Metadata collected during execution to be sent with outgoing ops.
+   */
+  metadata?: Map<string, Array<MetadataUpdate>>;
 }
 
 const hashId = (id: string): string => {

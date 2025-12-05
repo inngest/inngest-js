@@ -34,6 +34,12 @@ import {
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import type { Inngest } from "../Inngest.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+  MetadataUpdate,
+} from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
@@ -143,6 +149,25 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     return this.execution;
+  }
+
+  public addMetadata(
+    stepId: string,
+    kind: MetadataKind,
+    scope: MetadataScope,
+    op: MetadataOpcode,
+    values: Record<string, unknown>,
+  ) {
+    if (!this.state.metadata) {
+      this.state.metadata = new Map();
+    }
+
+    if (!this.state.metadata.has(stepId)) {
+      this.state.metadata.set(stepId, []);
+    }
+    this.state.metadata.get(stepId)!.push({ kind, scope, op, values });
+
+    return true;
   }
 
   /**
@@ -1200,6 +1225,11 @@ export interface V2ExecutionState {
    * little more smoothly with the core loop.
    */
   recentlyRejectedStepError?: StepError;
+
+  /**
+   * Metadata collected during execution to be sent with outgoing ops.
+   */
+  metadata?: Map<string, Array<MetadataUpdate>>;
 }
 
 const hashId = (id: string): string => {
