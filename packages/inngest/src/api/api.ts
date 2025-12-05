@@ -421,6 +421,7 @@ export class InngestApi {
       run_id: args.runId,
       event: args.event,
       steps: args.steps,
+      ts: new Date().valueOf(),
     });
 
     const result = await this.req("/v1/checkpoint", {
@@ -461,6 +462,7 @@ export class InngestApi {
       app_id: args.appId,
       run_id: args.runId,
       steps: args.steps,
+      ts: new Date().valueOf(),
     });
 
     const result = await this.req(`/v1/checkpoint/${args.runId}/steps`, {
@@ -496,6 +498,7 @@ export class InngestApi {
       fn_id: args.fnId,
       qi_id: args.queueItemId,
       steps: args.steps,
+      ts: new Date().valueOf(),
     });
 
     const result = await this.req(`/v1/checkpoint/${args.runId}/async`, {
