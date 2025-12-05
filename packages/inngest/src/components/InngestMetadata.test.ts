@@ -80,6 +80,7 @@ describe("MetadataBuilder.update", () => {
       "step-ctx",
       "userland.default",
       "step_attempt",
+      "merge",
       {
         foo: "bar",
       },
@@ -108,6 +109,7 @@ describe("MetadataBuilder.update", () => {
       "step-ctx",
       "userland.default",
       "step_attempt",
+      "merge",
       {
         foo: "bar",
       },
