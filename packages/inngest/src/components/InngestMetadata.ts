@@ -1,8 +1,5 @@
-import { trace } from "@opentelemetry/api";
-import type { Metadata } from "next";
 import { type AsyncContext, getAsyncCtx } from "../experimental";
 import type { MetadataTarget } from "../types.ts";
-import type { IInngestExecution } from "./execution/InngestExecution.ts";
 import type { Inngest } from "./Inngest.ts";
 export interface BuilderConfig {
   runId?: string | null;
