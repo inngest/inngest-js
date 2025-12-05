@@ -496,6 +496,7 @@ export class InngestApi {
       fn_id: args.fnId,
       qi_id: args.queueItemId,
       steps: args.steps,
+      ts: new Date().valueOf(),
     });
 
     const result = await this.req(`/v1/checkpoint/${args.runId}/async`, {
