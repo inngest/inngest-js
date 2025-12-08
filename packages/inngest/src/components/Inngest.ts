@@ -174,6 +174,12 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private _appVersion: string | undefined;
 
+  /**
+   * @internal
+   * Flag set by metadataMiddleware to enable step.metadata()
+   */
+  public _experimentalMetadataEnabled = false;
+
   get apiBaseUrl(): string | undefined {
     return this._apiBaseUrl;
   }
@@ -204,6 +210,11 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * ```
    */
   get metadata(): MetadataBuilder {
+    if (!this._experimentalMetadataEnabled) {
+      throw new Error(
+        'inngest.metadata is experimental. Enable it by adding metadataMiddleware() from "inngest/experimental" to your client middleware.',
+      );
+    }
     return new UnscopedMetadataBuilder(this);
   }
 
