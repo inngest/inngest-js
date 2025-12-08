@@ -1,6 +1,7 @@
 import { type AsyncContext, getAsyncCtx } from "../experimental";
 import type { MetadataTarget } from "../types.ts";
 import type { Inngest } from "./Inngest.ts";
+import { InngestMiddleware } from "./InngestMiddleware.ts";
 export interface BuilderConfig {
   runId?: string | null;
   stepId?: string | null;
@@ -255,3 +256,26 @@ async function performOp(
 
   await sendMetadataViaAPI(client, target, kind, op, values, headers);
 }
+
+/**
+ * Middleware that enables the experimental step.metadata() feature.
+ *
+ * @example
+ * ```ts
+ * import { metadataMiddleware } from "inngest/experimental";
+ *
+ * const inngest = new Inngest({
+ *   id: "my-app",
+ *   middleware: [metadataMiddleware()],
+ * });
+ * ```
+ */
+export const metadataMiddleware = () => {
+  return new InngestMiddleware({
+    name: "Inngest: Experimental Metadata",
+    init({ client }) {
+      (client as Inngest.Any)._experimentalMetadataEnabled = true;
+      return {};
+    },
+  });
+};
