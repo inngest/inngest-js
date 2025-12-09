@@ -134,6 +134,16 @@ export function buildTarget(
   const ctxStepId = ctxExecution?.executingStep?.id;
   const stepId = config.stepId ?? (isSameRunAsCtx ? ctxStepId : undefined);
 
+  if (config.stepId === null && !stepId) {
+    const reason = !ctxExecution
+      ? "no function execution context is available"
+      : !ctxExecution.executingStep
+        ? "you are not inside a step.run() callback"
+        : "you are targeting a different run";
+
+    throw new Error(`step() was called without a step ID, but ${reason}`);
+  }
+
   let target: MetadataTarget = {
     run_id: targetRunId,
   };
@@ -150,6 +160,14 @@ export function buildTarget(
   const attempt =
     config.attempt ??
     (isSameRunAsCtx && stepId && stepId === ctxStepId ? ctxAttempt : undefined);
+
+  if (config.attempt === null && attempt === undefined) {
+    const reason = !stepId
+      ? "no step context is available"
+      : "you are targeting a different step";
+
+    throw new Error(`attempt() was called without a value, but ${reason}`);
+  }
 
   if (attempt !== undefined) {
     if (!stepId) throw new Error("attempt() requires step()");

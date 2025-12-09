@@ -56,6 +56,81 @@ describe("buildTarget", () => {
   test("throws when no run context is available", () => {
     expect(() => buildTarget({})).toThrow("No run context available");
   });
+
+  describe("step() scope validation", () => {
+    test("throws when step() called without ID and no execution context", () => {
+      expect(() =>
+        buildTarget(
+          { runId: "run-1", stepId: null },
+          undefined, // no context
+        ),
+      ).toThrow("no function execution context is available");
+    });
+
+    test("throws when step() called without ID and not inside a step.run() callback", () => {
+      expect(() =>
+        buildTarget({ stepId: null }, {
+          execution: {
+            ctx: { runId: "run-1" },
+            // no executingStep - we're in a function but not inside step.run()
+          },
+        } as unknown as experimental.AsyncContext),
+      ).toThrow("you are not inside a step.run() callback");
+    });
+
+    test("throws when step() called without ID and targeting a different run", () => {
+      expect(() =>
+        buildTarget({ runId: "other-run", stepId: null }, {
+          execution: {
+            ctx: { runId: "current-run" },
+            executingStep: { id: "step-1" },
+          },
+        } as unknown as experimental.AsyncContext),
+      ).toThrow("you are targeting a different run");
+    });
+
+    test("succeeds when step() called without ID inside a step.run() callback", () => {
+      const target = buildTarget({ stepId: null }, {
+        execution: {
+          ctx: { runId: "run-1" },
+          executingStep: { id: "step-1" },
+        },
+      } as unknown as experimental.AsyncContext);
+
+      expect(target).toEqual({
+        run_id: "run-1",
+        step_id: "step-1",
+      });
+    });
+  });
+
+  describe("attempt() scope validation", () => {
+    test("throws when attempt() called without value and no step context", () => {
+      expect(() =>
+        buildTarget({ attempt: null }, {
+          execution: {
+            ctx: { runId: "run-1", attempt: 0 },
+            // no executingStep
+          },
+        } as unknown as experimental.AsyncContext),
+      ).toThrow("no step context is available");
+    });
+
+    test("succeeds when attempt() called without value inside matching step context", () => {
+      const target = buildTarget({ stepId: null, attempt: null }, {
+        execution: {
+          ctx: { runId: "run-1", attempt: 2 },
+          executingStep: { id: "step-1" },
+        },
+      } as unknown as experimental.AsyncContext);
+
+      expect(target).toEqual({
+        run_id: "run-1",
+        step_id: "step-1",
+        step_attempt: 2,
+      });
+    });
+  });
 });
 
 describe("MetadataBuilder.update", () => {
