@@ -1547,6 +1547,11 @@ export interface StepOptions {
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
+/**
+ * Either an object containing info to target a run/step/step attempt/span.
+ *
+ * @public
+ */
 export type MetadataTarget =
   | {
       // run level
@@ -1573,12 +1578,6 @@ export type MetadataTarget =
       step_attempt: number; // -1 === last attempt?
       span_id: string;
     };
-
-export type MetadataOptsOrId = StepOptionsOrId & {
-  target?: MetadataTarget;
-  kind?: string;
-  live?: boolean;
-};
 
 export type EventsFromFunction<T extends InngestFunction.Any> =
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
