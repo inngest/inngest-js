@@ -1548,7 +1548,7 @@ export interface StepOptions {
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
 /**
- * Either an object containing info to target a run/step/step attempt/span.
+ * An object containing info to target a run/step/step attempt/span, used for attaching metadata.
  *
  * @public
  */
