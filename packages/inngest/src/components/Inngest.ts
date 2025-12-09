@@ -529,11 +529,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       { headers: { ...this.headers, ...headers } },
     );
     if (res.ok) {
-      console.log("We got this response: ", res);
       return res.value;
     }
-
-    console.log("Failed to update metadata!");
 
     throw new Error(
       `Failed to update metadata: ${res.error?.error || "Unknown error"}`,

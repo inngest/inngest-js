@@ -427,9 +427,6 @@ export class InngestApi {
     );
     const payload = { target: args.target, metadata: args.metadata };
 
-    console.log("Fetching URL: ", url);
-    console.log("With Payload: ", JSON.stringify(payload, null, 2));
-
     return fetchWithAuthFallback({
       authToken: this.hashedKey,
       authTokenFallback: this.hashedFallbackKey,
@@ -445,11 +442,6 @@ export class InngestApi {
       },
     })
       .then(async (res) => {
-        console.log(
-          `Metadata update response: ${res.status} ${res.statusText}`,
-        );
-        console.log(res);
-
         if (res.ok) {
           return ok<void>(undefined);
         }

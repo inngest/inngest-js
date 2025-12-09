@@ -238,6 +238,14 @@ async function performOp(
   const ctx = await getAsyncCtx();
   const target = buildTarget(config, ctx);
 
+  const isInsideRun = !!ctx?.execution;
+  const isInsideStep = !!ctx?.execution?.executingStep;
+  if (isInsideRun && !isInsideStep) {
+    console.warn(
+      "inngest: metadata.update() called outside of a step. This metadata may be lost on retries. Wrap the call in step.run() for durable metadata.",
+    );
+  }
+
   const runId = config.runId ?? ctx?.execution?.ctx?.runId;
   const stepId = config.stepId ?? ctx?.execution?.executingStep?.id;
   // TODO: get step index from ctx?
@@ -254,7 +262,6 @@ async function performOp(
     const executingStep = ctx?.execution?.executingStep;
     const execInstance = ctx?.execution?.instance;
     const scope = getBatchScope(config);
-    console.log("getBatchScope", config, scope);
 
     if (
       executingStep?.id &&
