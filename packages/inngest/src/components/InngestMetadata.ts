@@ -1,4 +1,5 @@
 import { type AsyncContext, getAsyncCtx } from "../experimental";
+import type { Simplify } from "../helpers/types.ts";
 import type { MetadataTarget } from "../types.ts";
 import type { Inngest } from "./Inngest.ts";
 import { InngestMiddleware } from "./InngestMiddleware.ts";
@@ -23,22 +24,22 @@ export type MetadataUpdate = {
   values: Record<string, unknown>;
 };
 
-export type MetadataBuilder<Extras = {}> = {
-  run(id?: string): Omit<MetadataBuilder<Extras>, "run">;
+export type MetadataBuilder<Extras = {}> = Simplify<{
+  run(id?: string): Simplify<Omit<MetadataBuilder<Extras>, "run">>;
   step(
     id?: string,
     index?: number,
-  ): Omit<MetadataBuilder<Extras>, "run" | "step">;
+  ): Simplify<Omit<MetadataBuilder<Extras>, "run" | "step">>;
   attempt(
     index?: number,
-  ): Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt">;
+  ): Simplify<Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt">>;
   span(
     id?: string,
-  ): Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt" | "span">;
+  ): Simplify<Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt" | "span">>;
   update(values: Record<string, unknown>, kind?: string): Promise<void>;
   set(values: Record<string, unknown>, kind?: string): Promise<void>;
   delete(values: string[], kind?: string): Promise<void>;
-} & Extras;
+} & Extras>;
 
 export type MetadataStepTool = MetadataBuilder<{
   do: (fn: (builder: MetadataBuilder) => Promise<void>) => Promise<void>;
