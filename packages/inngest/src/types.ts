@@ -1547,7 +1547,6 @@ export interface StepOptions {
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
-// TODO: document
 export type MetadataTarget =
   | {
       // run level
@@ -1575,7 +1574,6 @@ export type MetadataTarget =
       span_id: string;
     };
 
-// TODO:document
 export type MetadataOptsOrId = StepOptionsOrId & {
   target?: MetadataTarget;
   kind?: string;
