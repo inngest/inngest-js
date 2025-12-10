@@ -5,7 +5,7 @@ import { buildTarget, UnscopedMetadataBuilder } from "./InngestMetadata.ts";
 
 const mockClient = () =>
   ({
-    _updateMetadata: vi.fn().mockResolvedValue(undefined),
+    updateMetadata: vi.fn().mockResolvedValue(undefined),
   }) as unknown as Inngest;
 
 afterEach(() => {
@@ -160,7 +160,7 @@ describe("MetadataBuilder.update", () => {
         foo: "bar",
       },
     );
-    expect(client["_updateMetadata"]).not.toHaveBeenCalled();
+    expect(client["updateMetadata"]).not.toHaveBeenCalled();
   });
 
   test("batches updates when execution context doesn't support metadata", async () => {
@@ -189,7 +189,7 @@ describe("MetadataBuilder.update", () => {
         foo: "bar",
       },
     );
-    expect(client["_updateMetadata"]).toHaveBeenCalled();
+    expect(client["updateMetadata"]).toHaveBeenCalled();
   });
 
   test("sends updates via API with execution headers when batching unavailable", async () => {
@@ -211,7 +211,7 @@ describe("MetadataBuilder.update", () => {
       .run("other-run")
       .update({ foo: "bar" });
 
-    expect(client["_updateMetadata"]).toHaveBeenCalledWith({
+    expect(client["updateMetadata"]).toHaveBeenCalledWith({
       target: {
         run_id: "other-run",
       },
