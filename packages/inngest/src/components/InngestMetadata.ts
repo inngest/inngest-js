@@ -82,6 +82,9 @@ export type MetadataBuilder<Extras = {}> = Simplify<
  * A wrapper around `MetadataBuilder` to attach metadata as a step.
  */
 export type MetadataStepTool = MetadataBuilder<{
+  /**
+   * Allows many `updates` to be sent with the same scope.
+   */
   do: (fn: (builder: MetadataBuilder) => Promise<void>) => Promise<void>;
 }>;
 
