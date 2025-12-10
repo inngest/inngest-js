@@ -341,19 +341,37 @@ export const metadataMiddleware = () => {
       return {
         onFunctionRun() {
           return {
-
             transformInput(input) {
               return {
                 ctx: {
                   step: {
                     ...input.steps,
-                    metadata: (input.steps as unknown as ExperimentalStepTools)[metadataSymbol],
+                    /**
+                     * Create a durable metadata update wrapped in a step
+                     *
+                     * @param memoizationId - The step ID used for the step itself, ensuring the
+                     *   metadata update is only performed once even on function retries.
+                     *
+                     * @example
+                     * ```ts
+                     * // Update metadata for the current run
+                     * await step.metadata("update-status").update({ status: "processing" });
+                     *
+                     * // Update metadata for a different run
+                     * await step.metadata("notify-parent")
+                     *   .run(parentRunId)
+                     *   .update({ childCompleted: true });
+                     * ```
+                     */
+                    metadata: (input.steps as unknown as ExperimentalStepTools)[
+                      metadataSymbol
+                    ],
                   },
-                }
-              }
-            }
-          }
-        }
+                },
+              };
+            },
+          };
+        },
       };
     },
   });
