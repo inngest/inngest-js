@@ -3,6 +3,7 @@ import type { Simplify } from "../helpers/types.ts";
 import type { MetadataTarget } from "../types.ts";
 import type { Inngest } from "./Inngest.ts";
 import { InngestMiddleware } from "./InngestMiddleware.ts";
+import type { ExperimentalStepTools } from "./InngestStepTools.ts";
 export interface BuilderConfig {
   runId?: string | null;
   stepId?: string | null;
@@ -27,8 +28,8 @@ export type MetadataKind = "inngest.warning" | `userland.${string}`;
 export type MetadataOpcode = "merge";
 
 /**
- * A metadata update containing `values` to be merged according to `op` at the configured `scope` for the
- * configured `kind`.
+ * A metadata update containing `values` to be merged according to `op`
+ * at the configured `scope` for the configured `kind`.
  */
 export type MetadataUpdate = {
   kind: MetadataKind;
@@ -317,6 +318,8 @@ async function performOp(
   await sendMetadataViaAPI(client, target, kind, op, values, headers);
 }
 
+export const metadataSymbol = Symbol.for("inngest.step.metadata");
+
 /**
  * Middleware that enables the experimental step.metadata() feature.
  *
@@ -335,7 +338,23 @@ export const metadataMiddleware = () => {
     name: "Inngest: Experimental Metadata",
     init({ client }) {
       (client as Inngest.Any)._experimentalMetadataEnabled = true;
-      return {};
+      return {
+        onFunctionRun() {
+          return {
+
+            transformInput(input) {
+              return {
+                ctx: {
+                  step: {
+                    ...input.steps,
+                    metadata: (input.steps as unknown as ExperimentalStepTools)[metadataSymbol],
+                  },
+                }
+              }
+            }
+          }
+        }
+      };
     },
   });
 };

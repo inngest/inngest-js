@@ -41,6 +41,7 @@ import {
   type MetadataBuilder,
   type MetadataStepTool,
   UnscopedMetadataBuilder,
+  metadataSymbol,
 } from "./InngestMetadata.ts";
 
 export interface FoundStep extends HashedOp {
@@ -734,27 +735,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * this context, and a custom fallback can be set using the `config` method.
      */
     fetch: stepFetch,
-
-    /**
-     * Create a durable metadata update wrapped in a step
-     *
-     * @param memoizationId - The step ID used for the step itself, ensuring the
-     *   metadata update is only performed once even on function retries.
-     *
-     * @example
-     * ```ts
-     * // Update metadata for the current run
-     * await step.metadata("update-status").update({ status: "processing" });
-     *
-     * // Update metadata for a different run
-     * await step.metadata("notify-parent")
-     *   .run(parentRunId)
-     *   .update({ childCompleted: true });
-     * ```
-     */
-    metadata: (memoizationId: string): MetadataStepTool =>
-      createStepMetadataWrapper(memoizationId),
   };
+
+  // NOTE: This should be moved into the above object definition under the key
+  // "metadata" when metadata is made non-experimental.
+  (tools as unknown as ExperimentalStepTools)[metadataSymbol] = (memoizationId: string): MetadataStepTool =>
+    createStepMetadataWrapper(memoizationId);
 
   // Add an uptyped gateway
   (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
@@ -811,24 +797,11 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
   }>;
 };
 
-const deferredStepMetadata = Object.assign(
-  (() => {
-    throw new Error(
-      '`step.metadata("id")` can only be used within an Inngest execution context. ' +
-        "Use the `step` argument provided to your function instead.",
-    );
-  }) as GenericStepTools["metadata"],
-  {
-    update: (
-      memoizationId: string,
-      values: Record<string, unknown>,
-      kind = "default",
-    ) =>
-      getDeferredStepTooling().then((tools) =>
-        tools.metadata(memoizationId).update(values, kind),
-      ),
-  },
-);
+export type ExperimentalStepTools = GetStepTools<Inngest.Any> & {
+  [metadataSymbol]: (
+    memoizationId: string
+  ) => MetadataStepTool;
+};
 
 /**
  * A generic set of step tools that can be used without typing information about
@@ -855,7 +828,6 @@ export const step: GenericStepTools = {
   },
   invoke: (...args) =>
     getDeferredStepTooling().then((tools) => tools.invoke(...args)),
-  metadata: deferredStepMetadata,
   run: (...args) =>
     getDeferredStepTooling().then((tools) => tools.run(...args)),
   sendEvent: (...args) =>
