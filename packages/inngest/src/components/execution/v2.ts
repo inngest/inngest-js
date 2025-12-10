@@ -162,10 +162,9 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       this.state.metadata = new Map();
     }
 
-    if (!this.state.metadata.has(stepId)) {
-      this.state.metadata.set(stepId, []);
-    }
-    this.state.metadata.get(stepId)!.push({ kind, scope, op, values });
+    const updates = this.state.metadata.get(stepId) ?? [];
+    updates.push({ kind, scope, op, values });
+    this.state.metadata.set(stepId, updates);
 
     return true;
   }
