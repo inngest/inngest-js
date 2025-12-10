@@ -522,13 +522,15 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       op: string;
       values: Record<string, unknown>;
     }>;
-    headers: Record<string, string>;
+    headers?: Record<string, string>;
   }): Promise<void> {
-    const res = await this.inngestApi.updateMetadata({
-      target,
-      metadata,
-      options: { headers },
-    });
+    const res = await this.inngestApi.updateMetadata(
+      {
+        target,
+        metadata,
+      },
+      { headers },
+    );
     if (res.ok) {
       return res.value;
     }
