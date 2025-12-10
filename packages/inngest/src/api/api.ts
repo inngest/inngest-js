@@ -1,6 +1,5 @@
 import type { fetch } from "cross-fetch";
 import { z } from "zod/v3";
-import type { ActionResponse } from "../components/InngestCommHandler.ts";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
@@ -409,70 +408,53 @@ export class InngestApi {
       });
   }
 
-  async updateMetadata(
-    args: {
-      target: MetadataTarget;
-      metadata: Array<{
-        kind: string;
-        op: string;
-        values: Record<string, unknown>;
-      }>;
-    },
-    options?: {
-      headers?: Record<string, string>;
-    },
-  ): Promise<Result<void, ErrorResponse>> {
-    const url = await this.getTargetUrl(
-      `/v1/runs/${args.target.run_id}/metadata`,
-    );
+  async updateMetadata(args: {
+    target: MetadataTarget;
+    metadata: Array<{
+      kind: string;
+      op: string;
+      values: Record<string, unknown>;
+    }>;
+  }): Promise<Result<void, ErrorResponse>> {
     const payload = { target: args.target, metadata: args.metadata };
 
-    return fetchWithAuthFallback({
-      authToken: this.hashedKey,
-      authTokenFallback: this.hashedFallbackKey,
-      fetch: this.fetch,
-      url,
-      options: {
-        method: "POST",
-        body: JSON.stringify(payload),
-        headers: {
-          "Content-Type": "application/json",
-          ...options?.headers,
-        },
-      },
-    })
-      .then(async (res) => {
-        if (res.ok) {
-          return ok<void>(undefined);
-        }
+    const result = await this.req(`/v1/runs/${args.target.run_id}/metadata`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
 
-        const resClone = res.clone();
-
-        let json: unknown;
-        try {
-          json = await res.json();
-        } catch {
-          return err({
-            error: `Failed to update metadata: ${res.status} ${res.statusText} - ${await resClone.text()}`,
-            status: res.status,
-          });
-        }
-
-        try {
-          return err(errorSchema.parse(json));
-        } catch {
-          return err({
-            error: `Failed to update metadata: ${res.status} ${res.statusText}`,
-            status: res.status,
-          });
-        }
-      })
-      .catch((error) => {
-        return err({
-          error: getErrorMessage(error, "Unknown error updating metadata"),
-          status: 500,
-        });
+    if (!result.ok) {
+      return err({
+        error: getErrorMessage(result.error, "Unknown error updating metadata"),
+        status: 500,
       });
+    }
+
+    const res = result.value;
+    if (res.ok) {
+      return ok<void>(undefined);
+    }
+
+    const resClone = res.clone();
+
+    let json: unknown;
+    try {
+      json = await res.json();
+    } catch {
+      return err({
+        error: `Failed to update metadata: ${res.status} ${res.statusText} - ${await resClone.text()}`,
+        status: res.status,
+      });
+    }
+
+    try {
+      return err(errorSchema.parse(json));
+    } catch {
+      return err({
+        error: `Failed to update metadata: ${res.status} ${res.statusText}`,
+        status: res.status,
+      });
+    }
   }
 
   /**

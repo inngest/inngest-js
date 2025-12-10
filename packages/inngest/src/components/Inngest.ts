@@ -514,7 +514,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   private async _updateMetadata({
     target,
     metadata,
-    headers,
   }: {
     target: MetadataTarget;
     metadata: Array<{
@@ -522,12 +521,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       op: string;
       values: Record<string, unknown>;
     }>;
-    headers?: Record<string, string>;
   }): Promise<void> {
-    const res = await this.inngestApi.updateMetadata(
-      { target, metadata },
-      { headers: { ...this.headers, ...headers } },
-    );
+    const res = await this.inngestApi.updateMetadata({ target, metadata });
     if (res.ok) {
       return res.value;
     }
