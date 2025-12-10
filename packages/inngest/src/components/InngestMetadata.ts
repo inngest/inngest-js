@@ -35,7 +35,7 @@ export type MetadataBuilder<Extras = {}> = Simplify<
       index?: number,
     ): Simplify<Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt">>;
     span(
-      id?: string,
+      id: string,
     ): Simplify<
       Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt" | "span">
     >;
@@ -75,7 +75,7 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
     });
   }
 
-  span(id?: string): UnscopedMetadataBuilder {
+  span(id: string): UnscopedMetadataBuilder {
     return new UnscopedMetadataBuilder(this.client, {
       ...this.config,
       spanId: id,
