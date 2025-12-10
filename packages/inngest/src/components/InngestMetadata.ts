@@ -235,26 +235,6 @@ export function createMetadataPayload(
   ];
 }
 
-/**
- * Sends metadata update via REST API to a specific target.
- */
-export async function sendMetadataViaAPI(
-  client: Inngest,
-  target: MetadataTarget,
-  kind: string,
-  op: MetadataOpcode,
-  metadata: Record<string, unknown>,
-  headers?: Record<string, string>,
-): Promise<void> {
-  const metadataArray = createMetadataPayload(kind, op, metadata);
-
-  await client["_updateMetadata"]({
-    target,
-    metadata: metadataArray,
-    headers,
-  });
-}
-
 function getBatchScope(config: BuilderConfig): MetadataScope {
   if (config.spanId !== undefined) return "extended_trace";
   if (config.attempt !== undefined) return "step_attempt";
@@ -308,14 +288,10 @@ async function performOp(
     }
   }
 
-  const headers =
-    (
-      ctx?.execution?.instance as
-        | { options?: { headers?: Record<string, string> } }
-        | undefined
-    )?.options?.headers ?? undefined;
-
-  await sendMetadataViaAPI(client, target, kind, op, values, headers);
+  await client["updateMetadata"]({
+    target,
+    metadata: createMetadataPayload(kind, op, values),
+  });
 }
 
 export const metadataSymbol = Symbol.for("inngest.step.metadata");
