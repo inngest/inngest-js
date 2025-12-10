@@ -938,7 +938,7 @@ export interface ClientOptions {
    * We recommend starting with the default `true` configuration and only tweak
    * the parameters directly if necessary.
    */
-  experimentalCheckpointing?: CheckpointingOptions;
+  checkpointing?: CheckpointingOptions;
 }
 
 export type CheckpointingOptions =

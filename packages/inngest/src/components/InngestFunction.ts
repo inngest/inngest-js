@@ -303,10 +303,7 @@ export class InngestFunction<
     }
 
     // TODO We should check the commhandler's client instead of this one?
-    return (
-      this.opts.experimentalCheckpointing ??
-      this.client["options"].experimentalCheckpointing
-    );
+    return this.opts.checkpointing ?? this.client["options"].checkpointing;
   }
 }
 
@@ -721,7 +718,7 @@ export namespace InngestFunction {
      * We recommend starting with the default `true` configuration and only tweak
      * the parameters directly if necessary.
      */
-    experimentalCheckpointing?: CheckpointingOptions;
+    checkpointing?: CheckpointingOptions;
   }
 }
 
