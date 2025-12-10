@@ -345,7 +345,7 @@ export const metadataMiddleware = () => {
               return {
                 ctx: {
                   step: {
-                    ...input.steps,
+                    ...input.ctx.step,
                     /**
                      * Create a durable metadata update wrapped in a step
                      *
