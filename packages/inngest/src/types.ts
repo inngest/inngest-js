@@ -1549,8 +1549,6 @@ export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
 /**
  * An object containing info to target a run/step/step attempt/span, used for attaching metadata.
- *
- * @public
  */
 export type MetadataTarget =
   | {
@@ -1587,8 +1585,6 @@ export type EventsFromFunction<T extends InngestFunction.Any> =
 
 /**
  * A function that can be invoked by Inngest.
- *
- * @public
  */
 export type InvokeTargetFunctionDefinition =
   | Public<InngestFunctionReference.Any>
