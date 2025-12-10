@@ -337,7 +337,7 @@ export const metadataMiddleware = () => {
   return new InngestMiddleware({
     name: "Inngest: Experimental Metadata",
     init({ client }) {
-      (client as Inngest.Any)._experimentalMetadataEnabled = true;
+      (client as Inngest.Any)["experimentalMetadataEnabled"] = true;
       return {
         onFunctionRun() {
           return {

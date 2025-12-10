@@ -262,7 +262,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
     memoizationId: string,
     builder?: UnscopedMetadataBuilder,
   ) => {
-    if (!client._experimentalMetadataEnabled) {
+    if (!client["experimentalMetadataEnabled"]) {
       throw new Error(
         'step.metadata() is experimental. Enable it by adding metadataMiddleware() from "inngest/experimental" to your client middleware.',
       );
