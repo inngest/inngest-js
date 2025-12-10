@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import type { u } from "vitest/dist/chunks/reporters.d.BFLkQcL6.js";
+import type { unknown } from "zod";
 import * as experimental from "../experimental";
-import type { Simplify } from "../helpers/types.ts";
+import type { KnownKeys } from "../helpers/types.ts";
 import { Inngest } from "./Inngest.ts";
 import {
   buildTarget,
+  type MetadataBuilder,
   type metadataSymbol,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
@@ -20,6 +23,30 @@ const mockClient = () =>
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+type Not<T extends boolean> = T extends true ? false : true;
+
+type HasProperty<
+  T,
+  I extends string | number | symbol,
+  E extends string | number | symbol = "",
+> = T extends {
+  [K in I]: unknown;
+}
+  ? Not<HasProperty<T, E>>
+  : false;
+
+type Equal<Arr> = Arr extends [infer First, ...infer Rest]
+  ? Rest extends []
+    ? true
+    : Rest extends [infer Second, ...infer Rest]
+      ? First extends Second
+        ? Second extends First
+          ? Equal<[First, ...Rest]>
+          : false
+        : false
+      : false
+  : true;
 
 describe("buildTarget", () => {
   test("uses execution context when no config provided", () => {
@@ -245,10 +272,7 @@ describe("MetadataBuilder.update", () => {
       { id: "test" },
       { event: "foo" },
       ({ step }) => {
-        // has no metadata field w/o middleware
-        assertType<typeof step extends { metadata: unknown } ? never : unknown>(
-          step,
-        );
+        assertType<HasProperty<typeof step, "metadata">>(false);
       },
     );
 
@@ -262,11 +286,201 @@ describe("MetadataBuilder.update", () => {
       { id: "test" },
       { event: "foo" },
       ({ step }) => {
-        assertType<typeof step extends { metadata: unknown } ? unknown : never>(
-          step,
-        );
+        assertType<HasProperty<typeof step, "metadata">>(true);
         assertType<ExperimentalStepTools[typeof metadataSymbol]>(step.metadata);
       },
     );
+  });
+
+  test("metadata builder scope reduces", async () => {
+    const inngest = new Inngest({
+      id: "test",
+      eventKey: "test-key-123",
+      middleware: [experimental.metadataMiddleware()],
+    });
+
+    assertType<
+      HasProperty<
+        typeof inngest.metadata,
+        "run" | "step" | "attempt" | "span" | "update"
+      >
+    >(true);
+
+    assertType<
+      HasProperty<
+        ReturnType<(typeof inngest.metadata)["run"]>,
+        "step" | "attempt" | "span" | "update",
+        "run"
+      >
+    >(true);
+
+    assertType<
+      HasProperty<
+        ReturnType<(typeof inngest.metadata)["step"]>,
+        "attempt" | "span" | "update",
+        "run" | "step"
+      >
+    >(true);
+
+    assertType<
+      HasProperty<
+        ReturnType<(typeof inngest.metadata)["attempt"]>,
+        "span" | "update",
+        "run" | "step" | "attempt"
+      >
+    >(true);
+
+    assertType<
+      HasProperty<
+        ReturnType<(typeof inngest.metadata)["span"]>,
+        "update",
+        "run" | "step" | "attempt" | "span"
+      >
+    >(true);
+
+    assertType<
+      Equal<
+        [
+          ReturnType<ReturnType<(typeof inngest.metadata)["run"]>["step"]>,
+          ReturnType<(typeof inngest.metadata)["step"]>,
+        ]
+      >
+    >(true);
+
+    assertType<
+      Equal<
+        [
+          ReturnType<
+            ReturnType<
+              ReturnType<(typeof inngest.metadata)["run"]>["step"]
+            >["attempt"]
+          >,
+          ReturnType<ReturnType<(typeof inngest.metadata)["step"]>["attempt"]>,
+          ReturnType<(typeof inngest.metadata)["attempt"]>,
+        ]
+      >
+    >(true);
+
+    assertType<
+      Equal<
+        [
+          ReturnType<
+            ReturnType<
+              ReturnType<
+                ReturnType<(typeof inngest.metadata)["run"]>["step"]
+              >["attempt"]
+            >["span"]
+          >,
+          ReturnType<
+            ReturnType<
+              ReturnType<(typeof inngest.metadata)["step"]>["attempt"]
+            >["span"]
+          >,
+          ReturnType<ReturnType<(typeof inngest.metadata)["attempt"]>["span"]>,
+          ReturnType<(typeof inngest.metadata)["span"]>,
+        ]
+      >
+    >(true);
+
+    inngest.createFunction({ id: "test" }, { event: "foo" }, ({ step }) => {
+      assertType<ExperimentalStepTools[typeof metadataSymbol]>(step.metadata);
+
+      assertType<
+        HasProperty<
+          ReturnType<typeof step.metadata>,
+          "run" | "step" | "attempt" | "span" | "update" | "do"
+        >
+      >(true);
+
+      assertType<
+        HasProperty<
+          ReturnType<ReturnType<typeof step.metadata>["run"]>,
+          "step" | "attempt" | "span" | "update" | "do",
+          "run"
+        >
+      >(true);
+
+      assertType<
+        HasProperty<
+          ReturnType<ReturnType<typeof step.metadata>["step"]>,
+          "attempt" | "span" | "update" | "do",
+          "run" | "step"
+        >
+      >(true);
+
+      assertType<
+        HasProperty<
+          ReturnType<ReturnType<typeof step.metadata>["step"]>,
+          "attempt" | "span" | "update" | "do",
+          "run" | "step"
+        >
+      >(true);
+
+      assertType<
+        HasProperty<
+          ReturnType<ReturnType<typeof step.metadata>["attempt"]>,
+          "span" | "update" | "do",
+          "run" | "step" | "attempt"
+        >
+      >(true);
+
+      assertType<
+        HasProperty<
+          ReturnType<ReturnType<typeof step.metadata>["span"]>,
+          "update" | "do",
+          "run" | "step" | "attempt" | "span"
+        >
+      >(true);
+
+      assertType<
+        Equal<
+          [
+            ReturnType<
+              ReturnType<ReturnType<typeof step.metadata>["run"]>["step"]
+            >,
+            ReturnType<ReturnType<typeof step.metadata>["step"]>,
+          ]
+        >
+      >(true);
+
+      assertType<
+        Equal<
+          [
+            ReturnType<
+              ReturnType<
+                ReturnType<ReturnType<typeof step.metadata>["run"]>["step"]
+              >["attempt"]
+            >,
+            ReturnType<
+              ReturnType<ReturnType<typeof step.metadata>["step"]>["attempt"]
+            >,
+            ReturnType<ReturnType<typeof step.metadata>["attempt"]>,
+          ]
+        >
+      >(true);
+
+      assertType<
+        Equal<
+          [
+            ReturnType<
+              ReturnType<
+                ReturnType<
+                  ReturnType<ReturnType<typeof step.metadata>["run"]>["step"]
+                >["attempt"]
+              >["span"]
+            >,
+            ReturnType<
+              ReturnType<
+                ReturnType<ReturnType<typeof step.metadata>["step"]>["attempt"]
+              >["span"]
+            >,
+            ReturnType<
+              ReturnType<ReturnType<typeof step.metadata>["attempt"]>["span"]
+            >,
+            ReturnType<ReturnType<typeof step.metadata>["span"]>,
+          ]
+        >
+      >(true);
+    });
   });
 });
