@@ -248,7 +248,7 @@ export async function sendMetadataViaAPI(
 ): Promise<void> {
   const metadataArray = createMetadataPayload(kind, op, metadata);
 
-  await client["_updateMetadata"]({
+  await client["updateMetadata"]({
     target,
     metadata: metadataArray,
     headers,

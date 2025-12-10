@@ -408,19 +408,25 @@ export class InngestApi {
       });
   }
 
-  async updateMetadata(args: {
-    target: MetadataTarget;
-    metadata: Array<{
-      kind: string;
-      op: string;
-      values: Record<string, unknown>;
-    }>;
-  }): Promise<Result<void, ErrorResponse>> {
+  async updateMetadata(
+    args: {
+      target: MetadataTarget;
+      metadata: Array<{
+        kind: string;
+        op: string;
+        values: Record<string, unknown>;
+      }>;
+    },
+    options?: {
+      headers?: Record<string, string>;
+    },
+  ): Promise<Result<void, ErrorResponse>> {
     const payload = { target: args.target, metadata: args.metadata };
 
     const result = await this.req(`/v1/runs/${args.target.run_id}/metadata`, {
       method: "POST",
       body: JSON.stringify(payload),
+      headers: options?.headers,
     });
 
     if (!result.ok) {
