@@ -40,8 +40,6 @@ export type MetadataBuilder<Extras = {}> = Simplify<
       Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt" | "span">
     >;
     update(values: Record<string, unknown>, kind?: string): Promise<void>;
-    set(values: Record<string, unknown>, kind?: string): Promise<void>;
-    delete(values: string[], kind?: string): Promise<void>;
   } & Extras
 >;
 
@@ -94,29 +92,6 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
       values,
       `userland.${kind}`,
       "merge",
-    );
-  }
-
-  async set(
-    values: Record<string, unknown>,
-    kind: string = "default",
-  ): Promise<void> {
-    await performOp(
-      this.client,
-      this.config,
-      values,
-      `userland.${kind}`,
-      "set",
-    );
-  }
-
-  async delete(values: string[], kind: string = "default"): Promise<void> {
-    await performOp(
-      this.client,
-      this.config,
-      Object.fromEntries(values.map((k) => [k, null])),
-      `userland.${kind}`,
-      "delete",
     );
   }
 

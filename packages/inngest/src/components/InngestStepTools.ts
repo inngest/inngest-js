@@ -289,21 +289,6 @@ export const createStepTools = <TClient extends Inngest.Any>(
         });
       },
 
-      set: async (
-        values: Record<string, unknown>,
-        kind = "default",
-      ): Promise<void> => {
-        await tools.run(memoizationId, async () => {
-          await builder.update(values, kind);
-        });
-      },
-
-      delete: async (values: string[], kind = "default"): Promise<void> => {
-        await tools.run(memoizationId, async () => {
-          await builder.delete(values, kind);
-        });
-      },
-
       do: async (
         fn: (builder: MetadataBuilder) => Promise<void>,
       ): Promise<void> => {
