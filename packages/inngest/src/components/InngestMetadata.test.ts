@@ -1,7 +1,16 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import * as experimental from "../experimental";
-import type { Inngest } from "./Inngest.ts";
-import { buildTarget, UnscopedMetadataBuilder } from "./InngestMetadata.ts";
+import type { Simplify } from "../helpers/types.ts";
+import { Inngest } from "./Inngest.ts";
+import {
+  buildTarget,
+  type metadataSymbol,
+  UnscopedMetadataBuilder,
+} from "./InngestMetadata.ts";
+import type {
+  ExperimentalStepTools,
+  GenericStepTools,
+} from "./InngestStepTools.ts";
 
 const mockClient = () =>
   ({
@@ -224,5 +233,40 @@ describe("MetadataBuilder.update", () => {
       ],
       headers: { Authorization: "Bearer 123" },
     });
+  });
+
+  test("metadata is only present as a step tool if the middleware is used", async () => {
+    const inngestWithoutMiddleware = new Inngest({
+      id: "test",
+      eventKey: "test-key-123",
+    });
+
+    inngestWithoutMiddleware.createFunction(
+      { id: "test" },
+      { event: "foo" },
+      ({ step }) => {
+        // has no metadata field w/o middleware
+        assertType<typeof step extends { metadata: unknown } ? never : unknown>(
+          step,
+        );
+      },
+    );
+
+    const inngestWithMiddleware = new Inngest({
+      id: "test",
+      eventKey: "test-key-123",
+      middleware: [experimental.metadataMiddleware()],
+    });
+
+    inngestWithMiddleware.createFunction(
+      { id: "test" },
+      { event: "foo" },
+      ({ step }) => {
+        assertType<typeof step extends { metadata: unknown } ? unknown : never>(
+          step,
+        );
+        assertType<ExperimentalStepTools[typeof metadataSymbol]>(step.metadata);
+      },
+    );
   });
 });
