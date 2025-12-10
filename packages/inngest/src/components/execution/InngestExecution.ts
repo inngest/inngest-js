@@ -158,7 +158,7 @@ export interface IInngestExecution {
   start(): Promise<ExecutionResult>;
 
   addMetadata(
-    stepID: string,
+    stepId: string,
     kind: MetadataKind,
     scope: MetadataScope,
     op: MetadataOpcode,

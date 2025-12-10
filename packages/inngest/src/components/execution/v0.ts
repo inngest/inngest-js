@@ -78,7 +78,7 @@ export class V0InngestExecution
   }
 
   public addMetadata(
-    _stepID: string,
+    _stepId: string,
     _kind: MetadataKind,
     _scope: MetadataScope,
     _op: MetadataOpcode,
