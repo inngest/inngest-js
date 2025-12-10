@@ -24,22 +24,26 @@ export type MetadataUpdate = {
   values: Record<string, unknown>;
 };
 
-export type MetadataBuilder<Extras = {}> = Simplify<{
-  run(id?: string): Simplify<Omit<MetadataBuilder<Extras>, "run">>;
-  step(
-    id?: string,
-    index?: number,
-  ): Simplify<Omit<MetadataBuilder<Extras>, "run" | "step">>;
-  attempt(
-    index?: number,
-  ): Simplify<Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt">>;
-  span(
-    id?: string,
-  ): Simplify<Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt" | "span">>;
-  update(values: Record<string, unknown>, kind?: string): Promise<void>;
-  set(values: Record<string, unknown>, kind?: string): Promise<void>;
-  delete(values: string[], kind?: string): Promise<void>;
-} & Extras>;
+export type MetadataBuilder<Extras = {}> = Simplify<
+  {
+    run(id?: string): Simplify<Omit<MetadataBuilder<Extras>, "run">>;
+    step(
+      id?: string,
+      index?: number,
+    ): Simplify<Omit<MetadataBuilder<Extras>, "run" | "step">>;
+    attempt(
+      index?: number,
+    ): Simplify<Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt">>;
+    span(
+      id?: string,
+    ): Simplify<
+      Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt" | "span">
+    >;
+    update(values: Record<string, unknown>, kind?: string): Promise<void>;
+    set(values: Record<string, unknown>, kind?: string): Promise<void>;
+    delete(values: string[], kind?: string): Promise<void>;
+  } & Extras
+>;
 
 export type MetadataStepTool = MetadataBuilder<{
   do: (fn: (builder: MetadataBuilder) => Promise<void>) => Promise<void>;
