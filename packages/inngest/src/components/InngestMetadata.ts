@@ -11,12 +11,24 @@ export interface BuilderConfig {
   spanId?: string;
 }
 
+/**
+ * The level at which to attach the metadata.
+ */
 export type MetadataScope = "run" | "step" | "step_attempt" | "extended_trace";
 
+/**
+ * Metadata of the same kind attached to the same item at the same scope are combined.
+ */
 export type MetadataKind = "inngest.warning" | `userland.${string}`;
 
-export type MetadataOpcode = "merge" | "set" | "delete" | "add";
+/**
+ * The operation use to combine multiple metadata updates of the same kind.
+ */
+export type MetadataOpcode = "merge";
 
+/**
+ * A single metadata update issued
+ */
 export type MetadataUpdate = {
   kind: MetadataKind;
   scope: MetadataScope;
@@ -26,27 +38,62 @@ export type MetadataUpdate = {
 
 export type MetadataBuilder<Extras = {}> = Simplify<
   {
+    /**
+     * Sets the metadata context to a specific (or current if omitted) run.
+     */
     run(id?: string): Simplify<Omit<MetadataBuilder<Extras>, "run">>;
+
+    /**
+     * Sets the metadata context to a specific (or current if omitted) step.
+     */
     step(
       id?: string,
       index?: number,
     ): Simplify<Omit<MetadataBuilder<Extras>, "run" | "step">>;
+
+    /**
+     * Sets the metadata context to a specific (or current if omitted) step attempt.
+     */
     attempt(
       index?: number,
     ): Simplify<Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt">>;
+
+    /**
+     * Sets the metadata context to a specific span.
+     */
     span(
       id: string,
     ): Simplify<
       Omit<MetadataBuilder<Extras>, "run" | "step" | "attempt" | "span">
     >;
+
+    /**
+     * Attach metadata to the configured run/step/step attempt/span.
+     *
+     * By default it will attach metadata to the current run if
+     * executed inside the body of `createFunction` or to the
+     * current step attempt if executed inside `step.run`.
+     */
     update(values: Record<string, unknown>, kind?: string): Promise<void>;
   } & Extras
 >;
 
+/**
+ * A wrapper around `MetadataBuilder` to attach metadata as a step.
+ */
 export type MetadataStepTool = MetadataBuilder<{
   do: (fn: (builder: MetadataBuilder) => Promise<void>) => Promise<void>;
 }>;
 
+/**
+ * Configures and sends metadata updates.
+ *
+ * It sends metadata updates via step opcodes if the metadata is
+ * configured to be attached to the current run/step/step attempt
+ * and `update` is called inside of `step.run`.
+ *
+ * Otherwise it sends updates via the Inngest API.
+ */
 export class UnscopedMetadataBuilder implements MetadataBuilder {
   constructor(
     private client: Inngest,
@@ -100,6 +147,10 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
   }
 }
 
+/**
+ * Creates a `MetadataTarget` based on the current execution context and the `BuilderConfig` created using
+ * `MetadataBuilder`.
+ */
 export function buildTarget(
   config: BuilderConfig,
   ctx?: AsyncContext,
