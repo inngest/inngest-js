@@ -40,8 +40,8 @@ import { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
   type MetadataBuilder,
   type MetadataStepTool,
-  UnscopedMetadataBuilder,
   metadataSymbol,
+  UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
 
 export interface FoundStep extends HashedOp {
@@ -739,8 +739,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
 
   // NOTE: This should be moved into the above object definition under the key
   // "metadata" when metadata is made non-experimental.
-  (tools as unknown as ExperimentalStepTools)[metadataSymbol] = (memoizationId: string): MetadataStepTool =>
-    createStepMetadataWrapper(memoizationId);
+  (tools as unknown as ExperimentalStepTools)[metadataSymbol] = (
+    memoizationId: string,
+  ): MetadataStepTool => createStepMetadataWrapper(memoizationId);
 
   // Add an uptyped gateway
   (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
@@ -798,9 +799,7 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
 };
 
 export type ExperimentalStepTools = GetStepTools<Inngest.Any> & {
-  [metadataSymbol]: (
-    memoizationId: string
-  ) => MetadataStepTool;
+  [metadataSymbol]: (memoizationId: string) => MetadataStepTool;
 };
 
 /**
