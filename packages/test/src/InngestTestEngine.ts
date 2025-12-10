@@ -332,7 +332,7 @@ export class InngestTestEngine {
      */
     inlineOpts?: InngestTestEngine.ExecuteOptions
   ): Promise<InngestTestRun.RunStepOutput> {
-    const { run, result: resultaaa } = await this.individualExecution({
+    const { run } = await this.individualExecution({
       ...inlineOpts,
       // always overwrite this so it's easier to capture non-runnable steps in
       // the same flow.

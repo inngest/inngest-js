@@ -1,5 +1,17 @@
 # inngest
 
+## 3.47.0
+
+### Minor Changes
+
+- [#1188](https://github.com/inngest/inngest-js/pull/1188) [`90b14e92`](https://github.com/inngest/inngest-js/commit/90b14e926a1fe79917789512b162ed49e66d4666) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `experimentalCheckpointing: { maxRuntime?: number | string | Temporal.DurationLike }` to set max runtime duration before re-entry during checkpointing
+
+### Patch Changes
+
+- [#1190](https://github.com/inngest/inngest-js/pull/1190) [`cb286c5e`](https://github.com/inngest/inngest-js/commit/cb286c5e3a4747d5fc6abb0b09cac56b76b3a12a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Recover from checkpointing failures by falling back to async mode
+
+- [#1179](https://github.com/inngest/inngest-js/pull/1179) [`9c88fd19`](https://github.com/inngest/inngest-js/commit/9c88fd191e461bc5aaec50f4f3a709d258c6c61a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix sync execution looking for step in the wrong place
+
 ## 3.46.0
 
 ### Minor Changes
