@@ -27,7 +27,8 @@ export type MetadataKind = "inngest.warning" | `userland.${string}`;
 export type MetadataOpcode = "merge";
 
 /**
- * A single metadata update issued
+ * A metadata update containing `values` to be merged according to `op` at the configured `scope` for the
+ * configured `kind`.
  */
 export type MetadataUpdate = {
   kind: MetadataKind;
