@@ -11,7 +11,7 @@
   "dependencies": {
     "@inngest/realtime": "0.3.1",
     "inngest": "^3.35.1",
-    "next": "15.2.1",
+    "next": "15.2.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
