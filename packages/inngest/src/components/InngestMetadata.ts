@@ -4,13 +4,7 @@ import type { MetadataTarget } from "../types.ts";
 import type { Inngest } from "./Inngest.ts";
 import { InngestMiddleware } from "./InngestMiddleware.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
-export interface BuilderConfig {
-  runId?: string | null;
-  stepId?: string | null;
-  stepIndex?: number;
-  attempt?: number | null;
-  spanId?: string;
-}
+
 
 /**
  * The level at which to attach the metadata.
@@ -37,6 +31,14 @@ export type MetadataUpdate = {
   op: MetadataOpcode;
   values: Record<string, unknown>;
 };
+
+interface BuilderConfig {
+  runId?: string | null;
+  stepId?: string | null;
+  stepIndex?: number;
+  attempt?: number | null;
+  spanId?: string;
+}
 
 /**
  * Configures and sends metadata updates.
