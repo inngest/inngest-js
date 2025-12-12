@@ -38,6 +38,12 @@ export type MetadataUpdate = {
   values: Record<string, unknown>;
 };
 
+/**
+ * Configures and sends metadata updates.
+ *
+ * This is used to limit the available methods as target is
+ * configured and the specified scope narrows.
+ */
 export type MetadataBuilder<Extras = {}> = Simplify<
   {
     /**
