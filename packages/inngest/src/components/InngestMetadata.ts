@@ -5,7 +5,6 @@ import type { Inngest } from "./Inngest.ts";
 import { InngestMiddleware } from "./InngestMiddleware.ts";
 import type { ExperimentalStepTools } from "./InngestStepTools.ts";
 
-
 /**
  * The level at which to attach the metadata.
  */
