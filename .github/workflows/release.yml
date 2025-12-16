@@ -1,16 +1,19 @@
 name: Release
 
 on:
+  # Changeset-powered releases
   push:
     branches:
       - main
-      - 'v*.x'
+      - "v*.x"
 
-env:
-  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+  # Label-powered prereleases
+  pull_request:
+    types: [labeled, opened, reopened, synchronize]
 
 jobs:
   release:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -40,6 +43,84 @@ jobs:
           title: ${{ github.ref_name == 'main' && 'Release @latest' || format('Release {0}', github.ref_name) }}
         env:
           GITHUB_TOKEN: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NODE_ENV: test # disable npm access checks; they don't work in CI
           BRANCH: ${{ github.ref_name }}
+
+  generate-prerelease-matrix:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - id: set-matrix
+        run: |
+          LABELS='${{ toJson(github.event.pull_request.labels.*.name) }}'
+
+          MATRIX=$(jq -n --arg labels "$LABELS" '
+            ($labels | fromjson) as $labelList |
+            [
+              {package: "inngest", dist_dir: "dist"},
+              {package: "eslint-plugin"},
+              {package: "middleware-sentry"},
+              {package: "middleware-encryption", dist_dir: "dist"},
+              {package: "test"},
+              {package: "ai"},
+              {package: "realtime", dist_dir: "dist"},
+              {package: "middleware-validation", dist_dir: "dist"}
+            ] | map(. as $pkg | select($labelList | index("prerelease/" + $pkg.package)))
+          ')
+
+          echo "matrix=$(jq -cn --argjson data "$MATRIX" '{include: $data}')" >> $GITHUB_OUTPUT
+
+  prereleases:
+    needs: generate-prerelease-matrix
+    concurrency: prerelease-${{ github.ref }}
+    continue-on-error: true
+    strategy:
+      matrix: ${{ fromJson(needs.generate-prerelease-matrix.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-and-build
+        with:
+          install-dependencies: true
+          build: ${{ matrix.package == 'inngest' }}
+
+      - run: pnpm build
+        if: matrix.package != 'inngest'
+
+      - name: Prerelease PR
+        run: |
+          export TAG=pr-${{ github.event.pull_request.number }}
+          export NODE_ENV=test
+          [[ -n "${{ matrix.dist_dir }}" ]] && export DIST_DIR=${{ matrix.dist_dir }}
+          node ../../scripts/release/prerelease.js
+
+      - name: Update PR with latest prerelease
+        uses: edumserrano/find-create-or-update-comment@v1
+        with:
+          token: ${{ secrets.CHANGESET_GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body-includes: "<!-- pr-prerelease-comment-${{ matrix.package }} -->"
+          comment-author: "inngest-release-bot"
+          edit-mode: "replace"
+          body: |
+            <!-- pr-prerelease-comment-${{ matrix.package }} -->
+            A user has added the <kbd>[prerelease/${{ matrix.package }}](https://github.com/inngest/inngest-js/labels/prerelease%2F${{ matrix.package }})</kbd> label, so this PR will be published to npm with the tag `pr-${{ github.event.pull_request.number }}`. It will be updated with the latest changes as you push commits to this PR.
+
+            You can install this prerelease version with:
+
+            ```sh
+            npm install ${{ matrix.package == 'inngest' && 'inngest' || format('@inngest/{0}', matrix.package) }}@pr-${{ github.event.pull_request.number }}
+            ```
+
+            The last release was built and published from ${{ github.event.pull_request.head.sha }}.

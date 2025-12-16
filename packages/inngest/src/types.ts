@@ -23,7 +23,9 @@ import type {
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
-import type { internalEvents } from "./helpers/consts.ts";
+import type { internalEvents, knownEvents } from "./helpers/consts.ts";
+import type { GoInterval } from "./helpers/promises.ts";
+import type * as Temporal from "./helpers/temporal.ts";
 import type {
   AsTuple,
   IsEqual,
@@ -33,6 +35,9 @@ import type {
   WithoutInternal,
 } from "./helpers/types.ts";
 import type { Logger } from "./middleware/logger.ts";
+
+export type { Jsonify } from "./helpers/jsonify.ts";
+export type { SimplifyDeep } from "./helpers/types.ts";
 
 const baseJsonErrorSchema = z.object({
   name: z.string().trim().optional(),
@@ -75,6 +80,57 @@ export const jsonErrorSchema = baseJsonErrorSchema
       stack: val.stack,
     };
   }) as z.ZodType<JsonError>;
+
+/**
+ * The payload for an API endpoint running steps.
+ */
+export type APIStepPayload = {
+  name: `${knownEvents.HttpRunStarted}`;
+  data: {
+    /**
+     * The domain that served the original request.
+     */
+    domain: string;
+
+    /**
+     * The method used to trigger the original request.
+     */
+    method: string;
+
+    /**
+     * The URL path of the original request.
+     */
+    path: string;
+
+    /**
+     * The IP that made the original request, fetched from headers.
+     */
+    ip: string;
+
+    /**
+     * The "Content-Type" header of the original request.
+     */
+    content_type: string;
+
+    /**
+     * The query parameters of the original request, as a single string without
+     * the leading `"?"`.
+     */
+    query_params: string;
+
+    /**
+     * The body of the original request.
+     */
+    body?: string;
+
+    /**
+     * An optional function ID to use for this endpoint. If not provided,
+     * Inngest will generate a function ID based on the method and path, e.g.
+     * `"GET /api/hello"`.
+     */
+    fn?: string; // maybe explicit fn ID from user, else empty
+  };
+};
 
 /**
  * The payload for an internal Inngest event that is sent when a function fails.
@@ -207,7 +263,71 @@ export enum StepOpCode {
   InvokeFunction = "InvokeFunction",
   AiGateway = "AIGateway",
   Gateway = "Gateway",
+
+  RunComplete = "RunComplete",
+  DiscoveryRequest = "DiscoveryRequest",
 }
+
+/**
+ * StepModes are used to specify how the SDK should execute a function.
+ */
+export enum StepMode {
+  /**
+   * A synchronous method of execution, where steps are executed immediately and
+   * their results are "checkpointed" back to Inngest in real-time.
+   */
+  Sync = "sync",
+
+  /**
+   * The traditional, background method of execution, where all steps are queued
+   * and executed asynchronously and always triggered by Inngest.
+   */
+  Async = "async",
+
+  /**
+   * The traditional, background method of execution, but step results are
+   * checkpointed when they can be to reduce latency and the number of requests
+   * being sent back and forth between Inngest and the SDK.
+   */
+  AsyncCheckpointing = "async_checkpointing",
+}
+
+/**
+ * The type of response you wish to return to an API endpoint when using steps
+ * within it and we must transition to {@link StepMode.Async}.
+ *
+ * In most cases, this defaults to {@link AsyncResponseType.Redirect}.
+ */
+export enum AsyncResponseType {
+  /**
+   * When switching to {@link StepMode.Async}, respond with a 302 redirect which
+   * will end the request once the run has completed asynchronously in the
+   * background.
+   */
+  Redirect = "redirect",
+
+  /**
+   * When switching to {@link StepMode.Async}, respond with a token and run ID
+   * which can be used to poll for the status of the run.
+   */
+  Token = "token",
+
+  /**
+   * TODO Comment
+   */
+  // Custom = "custom",
+}
+
+/**
+ * The type of response you wish to return to an API endpoint when using steps
+ * within it and we must transition to {@link StepMode.Async}.
+ *
+ * In most cases, this defaults to {@link AsyncResponseType.Redirect}.
+ */
+export type AsyncResponseValue =
+  | AsyncResponseType.Redirect
+  | AsyncResponseType.Token;
+// | (() => null);
 
 /**
  * The shape of a single operation in a step function. Used to communicate
@@ -218,6 +338,13 @@ export type Op = {
    * The unique code for this operation.
    */
   op: StepOpCode;
+
+  /**
+   * What {@link StepMode} this step supports. If a step is marked as supporting
+   * {@link StepMode.Async} we must be in (or switch to) async mode in order to
+   * execute it.
+   */
+  mode: StepMode;
 
   /**
    * The unhashed step name for this operation. This is a legacy field that is
@@ -256,6 +383,30 @@ export type Op = {
    * try/catch or `.catch()`.
    */
   error?: unknown;
+
+  /**
+   * Extra info used to annotate spans associated with this operation.
+   */
+  userland: OpUserland;
+
+  /**
+   * Golang-compatibile `interval.Interval` timing information for this operation.
+   */
+  timing?: GoInterval;
+};
+
+/**
+ * Extra info attached to an operation.
+ */
+export type OpUserland = {
+  /**
+   * The unhashed, user-defined ID of the step.
+   */
+  id: string;
+  /**
+   * The auto-incremented index for repeated steps (if repeated).
+   */
+  index?: number;
 };
 
 export const incomingOpSchema = z.object({
@@ -273,8 +424,16 @@ export type IncomingOp = z.output<typeof incomingOpSchema>;
  * @public
  */
 export type OutgoingOp = Pick<
-  HashedOp,
-  "id" | "op" | "name" | "opts" | "data" | "error" | "displayName"
+  Omit<HashedOp, "userland"> & { userland?: OpUserland },
+  | "id"
+  | "op"
+  | "name"
+  | "opts"
+  | "data"
+  | "error"
+  | "displayName"
+  | "userland"
+  | "timing"
 >;
 
 /**
@@ -763,7 +922,51 @@ export interface ClientOptions {
    * @default false
    */
   optimizeParallelism?: boolean;
+
+  /**
+   * Whether or not to use checkpointing by default for executions of functions
+   * created using this client.
+   *
+   * If `true`, enables checkpointing with default settings, which is a safe,
+   * blocking version of checkpointing, where we check in with Inngest after
+   * every step is run.
+   *
+   * If an object, you can tweak the settings to batch, set a maximum runtime
+   * before going async, and more. Note that if your server dies before the
+   * checkpoint completes, step data will be lost and steps will be rerun.
+   *
+   * We recommend starting with the default `true` configuration and only tweak
+   * the parameters directly if necessary.
+   *
+   * @deprecated Use `checkpointing` instead.
+   */
+  experimentalCheckpointing?: CheckpointingOptions;
+
+  /**
+   * Whether or not to use checkpointing by default for executions of functions
+   * created using this client.
+   *
+   * If `true`, enables checkpointing with default settings, which is a safe,
+   * blocking version of checkpointing, where we check in with Inngest after
+   * every step is run.
+   *
+   * If an object, you can tweak the settings to batch, set a maximum runtime
+   * before going async, and more. Note that if your server dies before the
+   * checkpoint completes, step data will be lost and steps will be rerun.
+   *
+   * We recommend starting with the default `true` configuration and only tweak
+   * the parameters directly if necessary.
+   */
+  checkpointing?: CheckpointingOptions;
 }
+
+export type CheckpointingOptions =
+  | boolean
+  | {
+      maxRuntime?: number | string | Temporal.DurationLike;
+      // maxSteps?: number;
+      // maxInterval?: number | string | Temporal.DurationLike;
+    };
 
 /**
  * A set of log levels that can be used to control the amount of logging output

@@ -214,6 +214,16 @@ class WebSocketWorkerConnection implements WorkerConnection {
     options.signingKeyFallback =
       options.signingKeyFallback || env[envKeys.InngestSigningKeyFallback];
 
+    if (options.maxWorkerConcurrency === undefined) {
+      const envValue = env[envKeys.InngestConnectMaxWorkerConcurrency];
+      if (envValue) {
+        const parsed = Number.parseInt(envValue, 10);
+        if (!Number.isNaN(parsed) && parsed > 0) {
+          options.maxWorkerConcurrency = parsed;
+        }
+      }
+    }
+
     return options;
   }
 
@@ -785,6 +795,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
           capabilities: new TextEncoder().encode(data.marshaledCapabilities),
           startedAt: startedAt,
           instanceId: this.options.instanceId || (await getHostname()),
+          maxWorkerConcurrency: this.options.maxWorkerConcurrency,
         });
 
         const workerConnectRequestMsgBytes = WorkerConnectRequestData.encode(
@@ -1284,7 +1295,7 @@ export {
   DEFAULT_SHUTDOWN_SIGNALS,
   type ConnectApp,
   type ConnectHandlerOptions,
-  type ConnectionState,
+  ConnectionState,
   type WorkerConnection,
 };
 

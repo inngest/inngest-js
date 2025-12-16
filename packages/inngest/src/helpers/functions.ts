@@ -146,10 +146,12 @@ export const parseFnData = (data: unknown) => {
               ctx: z
                 .object({
                   run_id: z.string(),
+                  fn_id: z.string().optional(),
                   attempt: z.number().default(0),
                   max_attempts: z.number().optional(),
                   disable_immediate_execution: z.boolean().default(false),
                   use_api: z.boolean().default(false),
+                  qi_id: z.string().optional(),
                   stack: z
                     .object({
                       stack: z
@@ -179,10 +181,12 @@ export const parseFnData = (data: unknown) => {
               ctx: z
                 .object({
                   run_id: z.string(),
+                  fn_id: z.string().optional(),
                   attempt: z.number().default(0),
                   max_attempts: z.number().optional(),
                   disable_immediate_execution: z.boolean().default(false),
                   use_api: z.boolean().default(false),
+                  qi_id: z.string().optional(),
                   stack: z
                     .object({
                       stack: z
@@ -267,6 +271,19 @@ export const fetchAllFnData = async ({
           }),
         );
       }
+    }
+
+    // If we don't have a stack here, we need to at least set something.
+    // TODO We should be passed this by the steps API.
+    const stepIds = Object.keys(result.steps || {});
+    if (stepIds.length && !result.ctx?.stack?.length) {
+      result.ctx = {
+        ...(result.ctx as NonNullable<typeof result.ctx>),
+        stack: {
+          stack: stepIds,
+          current: stepIds.length - 1,
+        },
+      };
     }
 
     return ok(result);

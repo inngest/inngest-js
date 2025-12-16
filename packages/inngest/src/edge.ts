@@ -16,17 +16,61 @@
  * @module
  */
 
+import type { Inngest } from "./components/Inngest.ts";
 import {
   InngestCommHandler,
   type ServeHandlerOptions,
+  type SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
-import type { SupportedFrameworkName } from "./types.ts";
+import type { RegisterOptions, SupportedFrameworkName } from "./types.ts";
 
 /**
  * The name of the framework, used to identify the framework in Inngest
  * dashboards and during testing.
  */
 export const frameworkName: SupportedFrameworkName = "edge";
+
+export type EdgeHandler = (req: Request) => Promise<Response>;
+
+const commHandler = (
+  options: RegisterOptions & { client: Inngest.Like },
+  syncOptions?: SyncHandlerOptions,
+) => {
+  const handler = new InngestCommHandler({
+    frameworkName,
+    fetch: fetch.bind(globalThis),
+    ...options,
+    syncOptions,
+    handler: (req: Request) => {
+      return {
+        body: () => req.json(),
+        textBody: () => req.text(),
+        headers: (key: string) => req.headers.get(key),
+        method: () => req.method,
+        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
+        transformResponse: ({ body, status, headers }) => {
+          return new Response(body, { status, headers });
+        },
+        experimentalTransformSyncResponse: async (data) => {
+          const res = data as Response;
+
+          const headers: Record<string, string> = {};
+          res.headers.forEach((v, k) => {
+            headers[k] = v;
+          });
+
+          return {
+            headers: headers,
+            status: res.status,
+            body: await res.clone().text(),
+          };
+        },
+      };
+    },
+  });
+
+  return handler;
+};
 
 /**
  * In an edge runtime, serve and register any declared functions with Inngest,
@@ -47,25 +91,40 @@ export const frameworkName: SupportedFrameworkName = "edge";
  * @public
  */
 // Has explicit return type to avoid JSR-defined "slow types"
-export const serve = (
-  options: ServeHandlerOptions,
-): ((req: Request) => Promise<Response>) => {
-  const handler = new InngestCommHandler({
-    frameworkName,
-    fetch: fetch.bind(globalThis),
-    ...options,
-    handler: (req: Request) => {
-      return {
-        body: () => req.json(),
-        headers: (key) => req.headers.get(key),
-        method: () => req.method,
-        url: () => new URL(req.url, `https://${req.headers.get("host") || ""}`),
-        transformResponse: ({ body, status, headers }) => {
-          return new Response(body, { status, headers });
-        },
-      };
-    },
-  });
+export const serve = (options: ServeHandlerOptions): EdgeHandler => {
+  return commHandler(options).createHandler();
+};
 
-  return handler.createHandler();
+/**
+ * In an edge runtime, create a function that can wrap any endpoint to be able
+ * to use steps seamlessly within that API.
+ *
+ * The edge runtime is a generic term for any serverless runtime that supports
+ * only standard Web APIs such as `fetch`, `Request`, and `Response`, such as
+ * Cloudflare Workers, Vercel Edge Functions, and AWS Lambda@Edge.
+ *
+ * @example
+ * ```ts
+ * import { Inngest, step } from "inngest";
+ * import { createExperimentalEndpointWrapper } from "inngest/edge";
+ *
+ * const wrap = createExperimentalEndpointWrapper({
+ *   client: new Inngest({ id: "my-app" }),
+ * });
+ *
+ * Bun.serve({
+ *   routes: {
+ *     "/": wrap(async (req) => {
+ *       const foo = await step.run("my-step", () => ({ foo: "bar" }));
+ *
+ *       return new Response(`Result: ${JSON.stringify(foo)}`);
+ *     }),
+ *   },
+ * });
+ * ```
+ */
+export const createExperimentalEndpointWrapper = (
+  options: SyncHandlerOptions,
+) => {
+  return commHandler(options, options).createSyncHandler();
 };

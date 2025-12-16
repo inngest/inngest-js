@@ -26,23 +26,43 @@ describe("ProxyLogger", () => {
   };
 
   describe("flush", () => {
-    let timeout: MockInstance<typeof setTimeout>;
+    let immediate: MockInstance<typeof setTimeout>;
 
     beforeEach(() => {
-      timeout = vi.spyOn(global, "setTimeout");
+      immediate = vi.spyOn(global, "setTimeout");
     });
 
     afterEach(() => {
-      timeout.mockClear();
+      immediate.mockReset();
     });
 
     test("should not try to wait for flushing if _logger is DefaultLogger", async () => {
       populateBuf();
       await logger.flush();
-      expect(timeout).toBeCalledTimes(0);
+      expect(immediate).toHaveBeenCalledTimes(0);
     });
 
-    test("should attempt to wait for flushing with non DefaultLogger", async () => {
+    test("should call flush on underlying logger if exposed by logger", async () => {
+      const flushMock = vi.fn();
+
+      _internal = {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        flush: flushMock,
+      } as Logger & { flush: () => void };
+
+      logger = new ProxyLogger(_internal);
+
+      populateBuf();
+      await logger.flush();
+
+      expect(flushMock).toHaveBeenCalledTimes(1);
+      expect(immediate).toHaveBeenCalledTimes(0);
+    });
+
+    test("should attempt to yield event loop with non DefaultLogger", async () => {
       _internal = new (class DummyLogger implements Logger {
         info(..._args: unknown[]) {}
         warn(..._args: unknown[]) {}
@@ -54,7 +74,7 @@ describe("ProxyLogger", () => {
 
       populateBuf();
       await logger.flush();
-      expect(timeout).toBeCalledTimes(1);
+      expect(immediate).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -1,5 +1,109 @@
 # inngest
 
+## 3.47.0
+
+### Minor Changes
+
+- [#1188](https://github.com/inngest/inngest-js/pull/1188) [`90b14e92`](https://github.com/inngest/inngest-js/commit/90b14e926a1fe79917789512b162ed49e66d4666) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `experimentalCheckpointing: { maxRuntime?: number | string | Temporal.DurationLike }` to set max runtime duration before re-entry during checkpointing
+
+### Patch Changes
+
+- [#1190](https://github.com/inngest/inngest-js/pull/1190) [`cb286c5e`](https://github.com/inngest/inngest-js/commit/cb286c5e3a4747d5fc6abb0b09cac56b76b3a12a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Recover from checkpointing failures by falling back to async mode
+
+- [#1179](https://github.com/inngest/inngest-js/pull/1179) [`9c88fd19`](https://github.com/inngest/inngest-js/commit/9c88fd191e461bc5aaec50f4f3a709d258c6c61a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix sync execution looking for step in the wrong place
+
+## 3.46.0
+
+### Minor Changes
+
+- [#1173](https://github.com/inngest/inngest-js/pull/1173) [`75820c72`](https://github.com/inngest/inngest-js/commit/75820c724408dbf34d6e0c929f8617e83e62981f) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add async checkpointing to functions and clients. Only allows checkpointing after every step (`maxSteps: 1`) currently.
+
+  Can be enabled on the client:
+
+  ```ts
+  import { Inngest } from "inngest";
+
+  const inngest = new Inngest({
+    id: "...",
+    experimentalCheckpointing: true,
+  });
+  ```
+
+  ...or on each function...
+
+  ```ts
+  inngest.createFunction(
+    {
+      id: "...",
+      experimentalCheckpointing: true,
+    },
+    {
+      event: "demo/event.sent",
+    },
+    async ({ event, step }) => {
+      // ...
+    },
+  );
+  ```
+
+### Patch Changes
+
+- [#1156](https://github.com/inngest/inngest-js/pull/1156) [`ef6fd33d`](https://github.com/inngest/inngest-js/commit/ef6fd33da9b21443302d726a69a62a4704809d10) Thanks [@Linell](https://github.com/Linell)! - Updated OpenTelemetry dependencies to support broader version ranges and adapted code for OTEL 2.x API compatibilty
+
+## 3.45.1
+
+### Patch Changes
+
+- [#1155](https://github.com/inngest/inngest-js/pull/1155) [`9fa34d12`](https://github.com/inngest/inngest-js/commit/9fa34d1250e25256ddb69606d7932419f131e998) Thanks [@mar-inngest](https://github.com/mar-inngest)! - Connect - Adding support for worker concurrency limits
+
+- [#1160](https://github.com/inngest/inngest-js/pull/1160) [`ab446473`](https://github.com/inngest/inngest-js/commit/ab4464730ffea7d85de7db603fbda9fb3ac645fe) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Widen `zod` dependency range to support v3/v4 across libraries
+
+- [#1165](https://github.com/inngest/inngest-js/pull/1165) [`b5139f04`](https://github.com/inngest/inngest-js/commit/b5139f041cfef8a78d75bf9d0254d892e40060fe) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Remove `setImmediate` use (Node only)
+
+## 3.45.0
+
+### Minor Changes
+
+- [#1154](https://github.com/inngest/inngest-js/pull/1154) [`ead9837b`](https://github.com/inngest/inngest-js/commit/ead9837bb88f0722806a721ec2e3666adb757bb6) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add experimental APIs for supporting synchronous execution
+
+## 3.44.5
+
+### Patch Changes
+
+- [#1149](https://github.com/inngest/inngest-js/pull/1149) [`9d5d7131`](https://github.com/inngest/inngest-js/commit/9d5d7131c530c000e4b476edf3c44baf62a2bacb) Thanks [@Linell](https://github.com/Linell)! - Refactor `otelMiddleware` to `extendedTracesMiddleware` so that its purpose is more easily understood
+
+- [#1150](https://github.com/inngest/inngest-js/pull/1150) [`68e67d80`](https://github.com/inngest/inngest-js/commit/68e67d8009b210c1aa75c02f50395a3fca952d2f) Thanks [@faizanu94](https://github.com/faizanu94)! - Fix custom loggers dumbly waiting 1s to flush; they now correctly call `flush()` if available
+
+## 3.44.4
+
+### Patch Changes
+
+- [#1148](https://github.com/inngest/inngest-js/pull/1148) [`9cf36f4d`](https://github.com/inngest/inngest-js/commit/9cf36f4db4d5892cbb3f4eb765fd8367515a5c2c) Thanks [@BrunoScheufler](https://github.com/BrunoScheufler)! - Include retry count in the error message if gracefully flushing connect worker progress fails after all attempts
+
+- [#1139](https://github.com/inngest/inngest-js/pull/1139) [`6366f557`](https://github.com/inngest/inngest-js/commit/6366f557785967d0be246036d762ec1b0beb0518) Thanks [@rhino1998](https://github.com/rhino1998)! - Add userland ID & index to Ops
+
+## 3.44.3
+
+### Patch Changes
+
+- [#1133](https://github.com/inngest/inngest-js/pull/1133) [`e7494a67`](https://github.com/inngest/inngest-js/commit/e7494a672af1cebadc55f0a04a8ff5b3a968258b) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Export the full runtime enum for `ConnectionState` from `"inngest/connect"`
+
+- [#1129](https://github.com/inngest/inngest-js/pull/1129) [`7a7c2f5f`](https://github.com/inngest/inngest-js/commit/7a7c2f5fd527bc0a26eee2e266755e5e2b6d8cf6) Thanks [@de-tester](https://github.com/de-tester)! - Expose types that are used for step result signature
+
+## 3.44.2
+
+### Patch Changes
+
+- [#1120](https://github.com/inngest/inngest-js/pull/1120) [`c2b249aa`](https://github.com/inngest/inngest-js/commit/c2b249aa5947e30984e57b3baa578e33c7f527b2) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Build targets no specific platform, solving some issues with edge runtimes where the library would internally attempt to `require()` some `node:*` dependencies
+
+## 3.44.1
+
+### Patch Changes
+
+- [#1114](https://github.com/inngest/inngest-js/pull/1114) [`c191c93a`](https://github.com/inngest/inngest-js/commit/c191c93a58f86a7354155e38b1e5316f167337f3) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix `.fromSchema()`-defined schemas not being compatible with `@inngest/middleware-validation`
+
+- [#1116](https://github.com/inngest/inngest-js/pull/1116) [`aa4be8f1`](https://github.com/inngest/inngest-js/commit/aa4be8f1784672d88de7bdb377215e6441115bb9) Thanks [@jacobheric](https://github.com/jacobheric)! - Amended a comment for batch event timeouts
+
 ## 3.44.0
 
 ### Minor Changes

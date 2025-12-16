@@ -257,3 +257,41 @@ export const retryWithBackoff = async <T>(
 
   throw new Error("Max retries reached; this should be unreachable.");
 };
+
+export type GoInterval = {
+  a: number;
+  b: number;
+};
+
+/**
+ * Given a function, returns a Promise that resolves with the result of the
+ * function and a Go-compatible `interval.Interval` timing object.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: match any fn
+export const goIntervalTiming = async <T extends (...args: any[]) => any>(
+  fn: T,
+): Promise<{
+  resultPromise: Promise<Awaited<ReturnType<T>>>;
+  interval: { a: number; b: number };
+}> => {
+  // Ideally this would use process.hrtime, but that's not available in all
+  // runtimes, so we must revert to less accurate timing and `Date`.
+  const start = Date.now();
+  const resultPromise = runAsPromise(fn) as Promise<Awaited<ReturnType<T>>>;
+
+  // Let the function run to completion.
+  try {
+    await resultPromise;
+  } catch {
+    // no-op
+  }
+
+  const end = Date.now();
+
+  const interval = {
+    a: start * 1_000_000,
+    b: (end - start) * 1_000_000,
+  };
+
+  return { resultPromise, interval };
+};

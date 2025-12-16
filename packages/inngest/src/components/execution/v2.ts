@@ -1,7 +1,11 @@
 import { trace } from "@opentelemetry/api";
 import hashjs from "hash.js";
 import { z } from "zod/v3";
-import { headerKeys, internalEvents } from "../../helpers/consts.ts";
+import {
+  ExecutionVersion,
+  headerKeys,
+  internalEvents,
+} from "../../helpers/consts.ts";
 import {
   deserializeError,
   ErrCode,
@@ -14,8 +18,10 @@ import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
   createTimeoutPromise,
+  resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises.ts";
+import { ServerTiming } from "../../helpers/ServerTiming.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
   type BaseContext,
@@ -59,12 +65,15 @@ export const createV2InngestExecution: InngestExecutionFactory = (options) => {
 };
 
 class V2InngestExecution extends InngestExecution implements IInngestExecution {
+  public version = ExecutionVersion.V2;
+
   private state: V2ExecutionState;
   private fnArg: Context.Any;
   private checkpointHandlers: CheckpointHandlers;
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
+  private debugTimer: ServerTiming;
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -77,6 +86,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
   constructor(options: InngestExecutionOptions) {
     super(options);
+
+    this.debugTimer = this.options.timer ?? new ServerTiming();
 
     this.userFnToRun = this.getUserFnToRun();
     this.state = this.createExecutionState();
@@ -105,7 +116,13 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
       this.execution = getAsyncLocalStorage().then((als) => {
         return als.run(
-          { app: this.options.client, ctx: this.fnArg },
+          {
+            app: this.options.client,
+            execution: {
+              ctx: this.fnArg,
+              instance: this,
+            },
+          },
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
               clientProcessorMap.get(this.options.client)?.declareStartingSpan({
@@ -386,6 +403,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       id: step.hashedId,
       name: step.name,
       opts: step.opts,
+      userland: step.userland,
     })) as [OutgoingOp, ...OutgoingOp[]];
 
     /**
@@ -409,7 +427,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         }
 
         const onSendEventHooks = await getHookStack(
-          this.options.timer,
+          this.debugTimer,
           this.options.fn["middleware"],
           "onSendEvent",
           undefined,
@@ -469,6 +487,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     opts,
     fn,
     displayName,
+    userland,
   }: FoundStep): Promise<OutgoingOp> {
     this.timeout?.clear();
     await this.state.hooks?.afterMemoization?.();
@@ -480,13 +499,14 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       name,
       opts,
       displayName,
+      userland,
     };
     this.state.executingStep = outgoingOp;
 
     const store = await getAsyncCtx();
 
-    if (store) {
-      store.executingStep = {
+    if (store?.execution) {
+      store.execution.executingStep = {
         id,
         name: displayName,
       };
@@ -496,8 +516,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     return runAsPromise(fn)
       .finally(async () => {
-        if (store) {
-          delete store.executingStep;
+        if (store?.execution) {
+          delete store.execution.executingStep;
         }
 
         await this.state.hooks?.afterExecution?.();
@@ -777,7 +797,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      foundStepsReportPromise = new Promise((resolve) => setImmediate(resolve))
+      foundStepsReportPromise = resolveNextTick()
         /**
          * Ensure that we wait for this promise to resolve before continuing.
          *
@@ -879,6 +899,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           if (!this.state.steps.has(newId)) {
             expectedNextStepIndexes.set(originalId, i + 1);
             opId.id = newId;
+            opId.userland.index = i;
             break;
           }
         }
@@ -1043,7 +1064,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     >;
 
     const hooks = await getHookStack(
-      this.options.timer,
+      this.debugTimer,
       this.options.fn["middleware"],
       "onFunctionRun",
       {

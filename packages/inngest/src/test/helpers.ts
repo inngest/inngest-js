@@ -32,7 +32,7 @@ import { signDataWithKey } from "../helpers/net.ts";
 import { ServerTiming } from "../helpers/ServerTiming.ts";
 import { slugify } from "../helpers/strings.ts";
 import { Inngest, type InngestFunction } from "../index.ts";
-import type { EventPayload, FunctionConfig } from "../types.ts";
+import { type EventPayload, type FunctionConfig, StepMode } from "../types.ts";
 
 interface HandlerStandardReturn {
   status: number;
@@ -104,6 +104,7 @@ export const getStepTools = (
         disableImmediateExecution: false,
         reqArgs: [],
         headers: {},
+        stepMode: StepMode.Async,
         ...executionOptions,
       },
     }) as IInngestExecution & InngestExecution;
@@ -150,6 +151,7 @@ export const runFnWithStack = async (
       disableImmediateExecution: opts?.disableImmediateExecution,
       reqArgs: [],
       headers: {},
+      stepMode: StepMode.Async,
     },
   });
 

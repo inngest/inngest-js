@@ -1,4 +1,5 @@
-import { ServerTiming } from "../helpers/ServerTiming.ts";
+import { serializeError } from "../helpers/errors";
+import { StepMode } from "../types";
 import {
   createV1InngestExecution,
   _internals as v1Internals,
@@ -40,7 +41,6 @@ describe("StepFailed OpCode with try/catch", () => {
         runId: "test-run",
         attempt: 0,
       },
-      timer: new ServerTiming(),
       stepState: {
         [stepHashedId]: {
           id: stepHashedId,
@@ -59,6 +59,7 @@ describe("StepFailed OpCode with try/catch", () => {
       isFailureHandler: false,
       runId: "test-run",
       headers: {},
+      stepMode: StepMode.Async,
     });
 
     const result = await execution.start();
@@ -102,7 +103,6 @@ describe("StepFailed OpCode with try/catch", () => {
         attempt: 0,
         maxAttempts: 1,
       },
-      timer: new ServerTiming(),
       stepState: {
         [stepHashedId]: {
           id: stepHashedId,
@@ -121,6 +121,7 @@ describe("StepFailed OpCode with try/catch", () => {
       isFailureHandler: false,
       runId: "test-run",
       headers: {},
+      stepMode: StepMode.Async,
     });
 
     const result = await execution.start();
@@ -156,7 +157,6 @@ describe("StepFailed OpCode with try/catch", () => {
         runId: "test-run",
         attempt: 0,
       },
-      timer: new ServerTiming(),
       stepState: {
         [stepHashedId]: {
           id: stepHashedId,
@@ -171,6 +171,7 @@ describe("StepFailed OpCode with try/catch", () => {
       isFailureHandler: false,
       runId: "test-run",
       headers: {},
+      stepMode: StepMode.Async,
     });
 
     const result = await execution.start();

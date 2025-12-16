@@ -14,6 +14,7 @@ import {
   resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises.ts";
+import { ServerTiming } from "../../helpers/ServerTiming.ts";
 import type { MaybePromise, PartialK } from "../../helpers/types.ts";
 import {
   type BaseContext,
@@ -39,6 +40,7 @@ import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import {
   type ExecutionResult,
+  ExecutionVersion,
   type IInngestExecution,
   InngestExecution,
   type InngestExecutionFactory,
@@ -56,13 +58,18 @@ export class V0InngestExecution
   extends InngestExecution
   implements IInngestExecution
 {
+  public version = ExecutionVersion.V0;
+
   private state: V0ExecutionState;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
   private fnArg: Context.Any;
+  private debugTimer: ServerTiming;
 
   constructor(options: InngestExecutionOptions) {
     super(options);
+
+    this.debugTimer = this.options.timer ?? new ServerTiming();
 
     this.userFnToRun = this.getUserFnToRun();
     this.state = this.createExecutionState();
@@ -262,7 +269,7 @@ export class V0InngestExecution
     >;
 
     const hooks = await getHookStack(
-      this.options.timer,
+      this.debugTimer,
       this.options.fn["middleware"],
       "onFunctionRun",
       {
