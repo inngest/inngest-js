@@ -12,8 +12,7 @@
     "build": "tsc",
     "lint": "eslint",
     "postversion": "pnpm run build",
-    "release:version": "node ../../scripts/release/jsrVersion.js",
-    "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty"
+    "release": "node ../../scripts/release/publish.js"
   },
   "files": [
     "dist"
