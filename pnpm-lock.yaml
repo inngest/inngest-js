@@ -37,17 +37,13 @@ importers:
         version: 3.2.4(@edge-runtime/vm@3.0.3)(@types/debug@4.1.12)(@types/node@24.3.0)(jiti@2.5.1)(tsx@3.12.7)
 
   packages/ai:
-    dependencies:
-      '@types/node':
-        specifier: ^22.10.5
-        version: 22.10.5
-      typescript:
-        specifier: ^5.7.3
-        version: 5.7.3
     devDependencies:
       '@eslint/js':
         specifier: ^9.7.0
         version: 9.7.0
+      '@types/node':
+        specifier: ^22.10.5
+        version: 22.10.5
       dotenv:
         specifier: ^17.0.1
         version: 17.0.1
@@ -60,6 +56,9 @@ importers:
       globals:
         specifier: ^15.14.0
         version: 15.14.0
+      typescript:
+        specifier: ^5.7.3
+        version: 5.7.3
       typescript-eslint:
         specifier: ^8.44.1
         version: 8.46.1(eslint@9.18.0(jiti@2.5.1))(typescript@5.7.3)
