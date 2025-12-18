@@ -34,7 +34,10 @@ const env: ExpectedEnv | undefined = (() => {
     if (viteEnv) {
       return {
         INNGEST_DEV: viteEnv.INNGEST_DEV ?? viteEnv.VITE_INNGEST_DEV,
-        NODE_ENV: viteEnv.NODE_ENV,
+        NODE_ENV:
+          viteEnv.NODE_ENV ??
+          process.env.VITE_NODE_ENV ??
+          process.env.VITE_MODE,
         INNGEST_BASE_URL:
           viteEnv.INNGEST_BASE_URL ?? viteEnv.VITE_INNGEST_BASE_URL,
         INNGEST_API_BASE_URL:
