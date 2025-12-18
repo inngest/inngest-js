@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "3.47.0",
+  "version": "3.48.0",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "main": "./index.cjs",
   "module": "./index.js",
@@ -24,8 +24,7 @@
     "lint": "biome check",
     "lint:fix": "biome check --fix",
     "postversion": "pnpm run build",
-    "release": "pnpm run test && pnpm run build && cross-env DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
-    "release:version": "node ../../scripts/release/jsrVersion.js",
+    "release": "pnpm run test && pnpm run build && cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
     "dev": "pnpm install && concurrently --names Build,Lint --prefix-colors \"green.inverse,magenta.inverse\" --handle-input \"pnpm run dev:build\" \"pnpm run dev:lint\"",
     "dev:build": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run build'",
     "dev:lint": "nodemon -w src -e ts -i version.ts --delay 300ms -x 'pnpm run lint'",

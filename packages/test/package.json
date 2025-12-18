@@ -14,8 +14,7 @@
     "build:tsc": "tsc --project tsconfig.build.json",
     "pack": "pnpm run build && pnpm pack --out ../inngest-test.tgz",
     "postversion": "pnpm run build",
-    "release": "node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
-    "release:version": "node ../../scripts/release/jsrVersion.js"
+    "release": "node ../../scripts/release/publish.js"
   },
   "exports": {
     ".": {
