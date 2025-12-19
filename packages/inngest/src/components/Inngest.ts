@@ -58,6 +58,7 @@ import {
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
 } from "./InngestMiddleware.ts";
+import type { Realtime } from "./realtime/types";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -476,6 +477,59 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       `Failed to send signal: ${res.error?.error || "Unknown error"}`,
     );
   }
+
+  /**
+   * TODO
+   */
+  public realtime: {
+    /**
+     * TODO
+     */
+    publish: Realtime.PublishFn;
+
+    /**
+     * TODO
+     */
+    getSubscriptionToken: Realtime.GetSubscriptionTokenFn;
+  } = {
+    publish: async (opts) => {
+      const { topic, channel, data } = await opts;
+
+      const res = await this.inngestApi.publish(
+        {
+          channel: channel,
+          topics: [topic],
+        },
+        data,
+      );
+
+      if (res.ok) {
+        return data;
+      }
+
+      throw new Error(
+        `Failed to publish event: ${res.error?.error || "Unknown error"}`,
+      );
+    },
+
+    getSubscriptionToken: async ({ channel, topics }) => {
+      const channelId = typeof channel === "string" ? channel : channel.name;
+      if (!channelId) {
+        throw new Error(
+          "Channel ID is required to create a subscription token",
+        );
+      }
+
+      const key = await this.inngestApi.getSubscriptionToken(channelId, topics);
+
+      return {
+        channel: channelId,
+        topics,
+        key,
+        // biome-ignore lint/suspicious/noExplicitAny: sacrifice for clean generics
+      } as any;
+    },
+  };
 
   /**
    * Send one or many events to Inngest. Takes an entire payload (including

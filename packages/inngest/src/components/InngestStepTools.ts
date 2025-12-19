@@ -13,6 +13,7 @@ import type {
   WithoutInternalStr,
 } from "../helpers/types.ts";
 import {
+  type Context,
   type EventPayload,
   type HashedOp,
   type InvocationResult,
@@ -37,6 +38,7 @@ import type {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import type { Realtime } from "./realtime/types.ts";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -123,7 +125,7 @@ export interface StepToolOptions<
    * when we receive an operation matching this one that does not contain a
    * `data` property.
    */
-  fn?: (...args: Parameters<T>) => unknown;
+  fn?: (...args: [Context.Any, ...Parameters<T>]) => unknown;
 }
 
 export const getStepOptions = (options: StepOptionsOrId): StepOptions => {
@@ -243,7 +245,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         };
       },
       {
-        fn: (_, fn, ...input) => fn(...input),
+        fn: (_, __, fn, ...input) => fn(...input),
       },
     );
   };
@@ -301,7 +303,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         };
       },
       {
-        fn: (_idOrOptions, payload) => {
+        fn: (_ctx, _idOrOptions, payload) => {
           return client["_send"]({
             payload,
             headers: execution["options"]["headers"],
@@ -341,6 +343,44 @@ export const createStepTools = <TClient extends Inngest.Any>(
     }),
 
     /**
+     * TODO
+     */
+    realtime: {
+      /**
+       * TODO
+       */
+      publish: createTool<
+        <TMessage extends Realtime.Message.Input>(
+          idOrOptions: StepOptionsOrId,
+          opts: TMessage,
+        ) => Promise<Awaited<TMessage>["data"]>
+      >(
+        ({ id, name }) => {
+          return {
+            id,
+            op: StepOpCode.StepPlanned,
+            displayName: name ?? id,
+            opts: {
+              type: "step.realtime.publish",
+            },
+          };
+        },
+        {
+          fn: (ctx, _idOrOptions, opts) => {
+            return client["inngestApi"].publish(
+              {
+                topics: [opts.topic],
+                channel: opts.channel,
+                runId: ctx.runId,
+              },
+              opts.data,
+            );
+          },
+        },
+      ),
+    },
+
+    /**
      * Send a Signal to Inngest.
      */
     sendSignal: createTool<
@@ -361,7 +401,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
         };
       },
       {
-        fn: (_idOrOptions, opts) => {
+        fn: (_ctx, _idOrOptions, opts) => {
           return client["_sendSignal"]({
             signal: opts.signal,
             data: opts.data,
