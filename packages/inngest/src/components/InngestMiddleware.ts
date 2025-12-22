@@ -1,3 +1,4 @@
+import { timings } from "../helpers/consts";
 import { cacheFn, waterfall } from "../helpers/functions.ts";
 import type { ServerTiming } from "../helpers/ServerTiming.ts";
 import type {
@@ -245,8 +246,9 @@ export const getHookStack = async <
       ret[hookKey] = ((
         ...args: Parameters<Await<TMiddleware[TKey]>[keyof TRet]>
       ) => {
-        return timer.wrap(`mw.${key.toString()}.${hookKey.toString()}`, () =>
-          chain(...args),
+        return timer.wrap(
+          `${timings.SdkMiddlewareHookPrefix}.${key.toString()}.${hookKey.toString()}`,
+          () => chain(...args),
         );
       }) as TRet[keyof TRet];
     }
