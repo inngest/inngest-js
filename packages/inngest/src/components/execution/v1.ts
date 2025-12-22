@@ -25,6 +25,7 @@ import {
   resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises.ts";
+import { ServerTiming } from "../../helpers/ServerTiming.ts";
 import * as Temporal from "../../helpers/temporal.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
@@ -79,6 +80,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
+  private debugTimer: ServerTiming;
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -115,6 +117,11 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         throw new Error("createResponse is required for sync step mode");
       }
     }
+
+    /**
+     * Make sure we have a timer for this execution
+     */
+    this.debugTimer = this.options.timer ?? new ServerTiming();
 
     this.userFnToRun = this.getUserFnToRun();
     this.state = this.createExecutionState();
@@ -778,6 +785,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         }
 
         const onSendEventHooks = await getHookStack(
+          this.debugTimer,
           this.options.fn["middleware"],
           "onSendEvent",
           undefined,
@@ -1220,6 +1228,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
       let extensionPromise: Promise<void>;
       if (++tickExtensionCount >= 10) {
+        this.debugTimer.append("debug.tick_extension_break", ">=10");
         tickExtensionCount = 0;
         extensionPromise = resolveNextTick();
       } else {
@@ -1296,6 +1305,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       const opId = matchOp(stepOptions, ...args.slice(1));
 
       if (this.state.executingStep) {
+        this.debugTimer.append("debug.nested_step_found", "warn");
+
         /**
          * If a step is found after asynchronous actions during another step's
          * execution, everything is fine. The problem here is if we've found
@@ -1575,6 +1586,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     >;
 
     const hooks = await getHookStack(
+      this.debugTimer,
       this.options.fn["middleware"],
       "onFunctionRun",
       {

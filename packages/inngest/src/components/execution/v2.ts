@@ -21,6 +21,7 @@ import {
   resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises.ts";
+import { ServerTiming } from "../../helpers/ServerTiming.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
   type BaseContext,
@@ -72,6 +73,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
   private timeoutDuration = 1000 * 10;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
+  private debugTimer: ServerTiming;
 
   /**
    * If we're supposed to run a particular step via `requestedRunStep`, this
@@ -84,6 +86,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
   constructor(options: InngestExecutionOptions) {
     super(options);
+
+    this.debugTimer = this.options.timer ?? new ServerTiming();
 
     this.userFnToRun = this.getUserFnToRun();
     this.state = this.createExecutionState();
@@ -423,6 +427,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         }
 
         const onSendEventHooks = await getHookStack(
+          this.debugTimer,
           this.options.fn["middleware"],
           "onSendEvent",
           undefined,
@@ -1059,6 +1064,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     >;
 
     const hooks = await getHookStack(
+      this.debugTimer,
       this.options.fn["middleware"],
       "onFunctionRun",
       {
