@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "commonjs",
+    "outDir": "./dist",
+    "paths": {
+      "inngest": ["../packages/inngest/src/index.ts"],
+      "inngest/*": ["../packages/inngest/src/*"]
+    },
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "es2016"
+  }
+}
