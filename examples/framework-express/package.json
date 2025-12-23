@@ -12,7 +12,7 @@
   "license": "ISC",
   "dependencies": {
     "express": "^4.19.2",
-    "inngest": "*"
+    "inngest": "^3.0.0"
   },
   "devDependencies": {
     "@types/node": "^20.5.2",

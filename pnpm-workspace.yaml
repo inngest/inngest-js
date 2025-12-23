@@ -1,7 +1,5 @@
 packages:
-  # TODO: Change this to `examples/*`
-  - examples/framework-express
-
+  - examples/*
   - packages/*
 
 onlyBuiltDependencies:

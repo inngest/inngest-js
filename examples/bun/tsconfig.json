@@ -1,5 +1,9 @@
 {
+  // Delete this line when copying this example to a new project
+  "extends": "../tsconfig.json",
+
   "compilerOptions": {
+    "baseUrl": ".",
     "lib": ["ESNext"],
     "target": "ESNext",
     "module": "ESNext",
