@@ -396,8 +396,9 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     const foundAllCompletedSteps = this.state.stepsToFulfill === knownSteps;
 
     if (!foundAllCompletedSteps) {
-      // TODO Tag
-      console.warn(
+      await this.options.client["warnMetadata"](
+        { run_id: this.options.runId },
+        ErrCode.NONDETERMINISTIC_STEPS,
         prettyError({
           type: "warn",
           whatHappened: "Function may be indeterminate",
@@ -891,7 +892,9 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
          * Therefore, we'll only show a warning here to indicate that this is
          * potentially an issue.
          */
-        console.warn(
+        this.options.client["warnMetadata"](
+          { run_id: this.options.runId },
+          ErrCode.NESTING_STEPS,
           prettyError({
             whatHappened: `We detected that you have nested \`step.*\` tooling in \`${
               opId.displayName ?? opId.id

@@ -1220,7 +1220,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         if (!stepFoundThisTick) {
           warnOfParallelIndexing = true;
 
-          console.warn(
+          this.options.client["warnMetadata"](
+            { run_id: this.fnArg.runId },
+            ErrCode.AUTOMATIC_PARALLEL_INDEXING,
             prettyError({
               type: "warn",
               whatHappened:
@@ -1340,7 +1342,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          * Therefore, we'll only show a warning here to indicate that this is
          * potentially an issue.
          */
-        console.warn(
+        this.options.client["warnMetadata"](
+          { run_id: this.fnArg.runId },
+          ErrCode.NESTING_STEPS,
           prettyError({
             whatHappened: `We detected that you have nested \`step.*\` tooling in \`${
               opId.displayName ?? opId.id
