@@ -18,7 +18,11 @@ import {
   type Mode,
   processEnv,
 } from "../helpers/env.ts";
-import { ErrCode, fixEventKeyMissingSteps, prettyError } from "../helpers/errors.ts";
+import {
+  type ErrCode,
+  fixEventKeyMissingSteps,
+  prettyError,
+} from "../helpers/errors.ts";
 import type { Jsonify } from "../helpers/jsonify.ts";
 import { retryWithBackoff } from "../helpers/promises.ts";
 import { stringify } from "../helpers/strings.ts";
@@ -540,7 +544,12 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     );
   }
 
-  private async warnMetadata(target: MetadataTarget, kind: ErrCode, text: string) {
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
+  private async warnMetadata(
+    target: MetadataTarget,
+    kind: ErrCode,
+    text: string,
+  ) {
     console.warn(text);
 
     if (!this.experimentalMetadataEnabled) return;
@@ -553,9 +562,9 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
           op: "merge",
           values: {
             [`sdk.${kind}`]: text,
-          }
-        }
-      ]
+          },
+        },
+      ],
     });
   }
 
