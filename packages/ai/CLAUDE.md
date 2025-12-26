@@ -9,6 +9,7 @@ This is the `@inngest/ai` package - a TypeScript library that provides AI model 
 ## Development Workflow
 
 ### Setup
+
 ```bash
 # From the ai package directory
 cd packages/ai/
@@ -20,7 +21,7 @@ pnpm install
 ```bash
 pnpm build            # Build TypeScript to dist/
 pnpm test             # Run tests (if any)
-pnpm release          # Build and publish to npm + JSR
+pnpm release          # Build and publish to npm
 ```
 
 ### Code Quality
@@ -32,18 +33,22 @@ pnpm release          # Build and publish to npm + JSR
 ## Architecture
 
 ### Key Concepts
+
 - **Model Adapters**: Standardized interfaces for different AI providers
 - **Provider Support**: OpenAI, Anthropic (Claude), Google Gemini, Grok, DeepSeek
 - **Type Safety**: Full TypeScript support with proper typing for each provider
 
 ### Package Structure
+
 - `src/models/` - Provider-specific model implementations
-- `src/adapters/` - Adapter interfaces and implementations  
+- `src/adapters/` - Adapter interfaces and implementations
 - `src/index.ts` - Main exports
 - `src/env.ts` - Environment variable handling
 
 ### Exports
+
 The package provides three main export paths:
+
 - `@inngest/ai` - Main package exports
 - `@inngest/ai/models` - Direct model access
 - `@inngest/ai/adapters` - Adapter interfaces
