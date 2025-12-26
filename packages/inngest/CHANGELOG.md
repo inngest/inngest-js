@@ -1,5 +1,17 @@
 # inngest
 
+## 3.48.1
+
+### Patch Changes
+
+- [#1205](https://github.com/inngest/inngest-js/pull/1205) [`8ca992e9`](https://github.com/inngest/inngest-js/commit/8ca992e913d1d41c5704dfd7b0d262848b9fb84f) Thanks [@Linell](https://github.com/Linell)! - Include client headers, such as `x-inngest-env` in trace exports.
+
+## 3.48.0
+
+### Minor Changes
+
+- [#1189](https://github.com/inngest/inngest-js/pull/1189) [`28ffbc89`](https://github.com/inngest/inngest-js/commit/28ffbc8962602bbc1a14a10cee724fd5f8747930) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Bring checkpointing out of experimental
+
 ## 3.47.0
 
 ### Minor Changes

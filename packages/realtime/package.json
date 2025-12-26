@@ -10,8 +10,7 @@
     "test": "vitest run",
     "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
     "postversion": "pnpm run build",
-    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
-    "release:version": "node ../../scripts/release/jsrVersion.js",
+    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
     "pack": "pnpm run build && mv $(npm pack ./dist --pack-destination . --silent) inngest-realtime.tgz"
   },
   "exports": {

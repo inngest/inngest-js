@@ -14,8 +14,7 @@
     "build:tsc": "tsc --project tsconfig.build.json",
     "build:copy": "cp package.json LICENSE.md README.md CHANGELOG.md dist",
     "postversion": "pnpm run build",
-    "release:version": "node ../../scripts/release/jsrVersion.js",
-    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-dirty",
+    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
     "pack": "pnpm run build && cd dist && pnpm pack --out ../inngest-middleware-encryption.tgz"
   },
   "exports": {
