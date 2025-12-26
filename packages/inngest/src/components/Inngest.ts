@@ -42,6 +42,7 @@ import {
   type FailureEventArgs,
   type Handler,
   type InvokeTargetFunctionDefinition,
+  type MetadataTarget,
   type SendEventOutput,
   type SendEventResponse,
   sendEventResponseSchema,
@@ -50,6 +51,10 @@ import {
 import type { EventSchemas } from "./EventSchemas.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import {
+  type MetadataBuilder,
+  UnscopedMetadataBuilder,
+} from "./InngestMetadata.ts";
 import {
   type ExtendWithMiddleware,
   getHookStack,
@@ -169,6 +174,12 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private _appVersion: string | undefined;
 
+  /**
+   * @internal
+   * Flag set by metadataMiddleware to enable step.metadata()
+   */
+  protected experimentalMetadataEnabled = false;
+
   get apiBaseUrl(): string | undefined {
     return this._apiBaseUrl;
   }
@@ -183,6 +194,28 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   get appVersion(): string | undefined {
     return this._appVersion;
+  }
+
+  /**
+   * Access the metadata builder for updating run and step metadata.
+   *
+   * @example
+   * ```ts
+   * // Update metadata for the current run
+   * await inngest.metadata.update({ status: "processing" });
+   *
+   * // Update metadata for a different run
+   * await inngest.metadata.run(otherRunId).update({ key: "val" });
+   *
+   * ```
+   */
+  get metadata(): MetadataBuilder {
+    if (!this.experimentalMetadataEnabled) {
+      throw new Error(
+        'inngest.metadata is experimental. Enable it by adding metadataMiddleware() from "inngest/experimental" to your client middleware.',
+      );
+    }
+    return new UnscopedMetadataBuilder(this);
   }
 
   /**
@@ -474,6 +507,36 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
     throw new Error(
       `Failed to send signal: ${res.error?.error || "Unknown error"}`,
+    );
+  }
+
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
+  private async updateMetadata({
+    target,
+    metadata,
+    headers,
+  }: {
+    target: MetadataTarget;
+    metadata: Array<{
+      kind: string;
+      op: string;
+      values: Record<string, unknown>;
+    }>;
+    headers?: Record<string, string>;
+  }): Promise<void> {
+    const res = await this.inngestApi.updateMetadata(
+      {
+        target,
+        metadata,
+      },
+      { headers },
+    );
+    if (res.ok) {
+      return res.value;
+    }
+
+    throw new Error(
+      `Failed to update metadata: ${res.error?.error || "Unknown error"}`,
     );
   }
 

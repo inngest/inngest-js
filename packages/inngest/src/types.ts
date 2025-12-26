@@ -1566,6 +1566,36 @@ export interface StepOptions {
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
+/**
+ * An object containing info to target a run/step/step attempt/span, used for attaching metadata.
+ */
+export type MetadataTarget =
+  | {
+      // run level
+      run_id: string;
+    }
+  | {
+      // step level
+      run_id: string;
+      step_id: string; // user-defined
+      step_index?: number;
+    }
+  | {
+      // step attempt level
+      run_id: string;
+      step_id: string; // user-defined
+      step_index?: number;
+      step_attempt: number; // -1 === last attempt?
+    }
+  | {
+      // span level
+      run_id: string;
+      step_id: string; // user-defined
+      step_index?: number;
+      step_attempt: number; // -1 === last attempt?
+      span_id: string;
+    };
+
 export type EventsFromFunction<T extends InngestFunction.Any> =
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   T extends InngestFunction<any, any, any, infer IClient, any, any>
@@ -1574,8 +1604,6 @@ export type EventsFromFunction<T extends InngestFunction.Any> =
 
 /**
  * A function that can be invoked by Inngest.
- *
- * @public
  */
 export type InvokeTargetFunctionDefinition =
   | Public<InngestFunctionReference.Any>
