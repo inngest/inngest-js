@@ -1,5 +1,10 @@
 {
+  // Delete this line when copying this example to a new project
+  "extends": "../tsconfig.json",
+
   "compilerOptions": {
+    "baseUrl": ".",
+
     /* Visit https://aka.ms/tsconfig to read more about this file */
 
     /* Projects */

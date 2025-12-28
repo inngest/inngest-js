@@ -1,6 +1,9 @@
 {
-	"extends": "./.svelte-kit/tsconfig.json",
+	// Delete this line when copying this example to a new project
+	"extends": ["../tsconfig.json", "./.svelte-kit/tsconfig.json"],
 	"compilerOptions": {
+		"baseUrl": ".",
+
 		"allowJs": true,
 		"checkJs": true,
 		"esModuleInterop": true,
