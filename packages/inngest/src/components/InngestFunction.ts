@@ -356,6 +356,10 @@ export namespace InngestFunction {
         if?: string;
       }
     | {
+        name: T;
+        if?: string;
+      }
+    | {
         cron: string;
       }
   >;
