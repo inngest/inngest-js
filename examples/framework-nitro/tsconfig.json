@@ -1,5 +1,4 @@
+// https://nitro.unjs.io/guide/typescript
 {
-  // Delete this line when copying this example to a new project
-  // https://nitro.unjs.io/guide/typescript
-  "extends": ["../tsconfig.json", "./.nitro/types/tsconfig.json"]
+  "extends": "./.nitro/types/tsconfig.json"
 }

@@ -1,10 +1,6 @@
 {
-  // Delete this line when copying this example to a new project
-  "extends": "../tsconfig.json",
-
   "compilerOptions": {
-    "baseUrl": ".",
-
+  
     /* Language and Environment */
     "target": "ES2021",            
                           /* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */

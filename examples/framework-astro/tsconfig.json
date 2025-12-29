@@ -1,4 +1,3 @@
 {
-  // Delete this line when copying this example to a new project
-  "extends": ["../tsconfig.json", "astro/tsconfigs/strict"]
+  "extends": "astro/tsconfigs/strict"
 }

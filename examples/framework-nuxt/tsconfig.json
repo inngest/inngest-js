@@ -1,9 +1,4 @@
 {
-  // Delete this line when copying this example to a new project
   // https://nuxt.com/docs/guide/concepts/typescript
-  "extends": ["../tsconfig.json", "./.nuxt/tsconfig.json"],
-
-  "compilerOptions": {
-    "baseUrl": "."
-  }
+  "extends": "./.nuxt/tsconfig.json"
 }

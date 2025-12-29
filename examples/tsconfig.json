@@ -1,9 +1,0 @@
-{
-  "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "inngest": ["../../packages/inngest/src/index.ts"],
-      "inngest/*": ["../../packages/inngest/src/*"]
-    }
-  }
-}
