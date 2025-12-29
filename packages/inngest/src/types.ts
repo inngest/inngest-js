@@ -10,6 +10,7 @@
  */
 
 import { z } from "zod/v3";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import type { EventSchemas } from "./components/EventSchemas.ts";
 import type {
   builtInMiddleware,
@@ -547,13 +548,19 @@ type GetContextEvents<
  */
 export type BaseContext<
   TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
+  TTriggers extends string = string,
+  TTriggerArray extends readonly any[] = never,
 > = {
   /**
    * The event data present in the payload.
    */
-  event: GetContextEvents<TClient, TTriggers>;
-  events: AsTuple<GetContextEvents<TClient, TTriggers, true>>;
+  event: [TTriggerArray] extends [never]
+    ? GetContextEvents<TClient, TTriggers>
+    : EventsFromTriggers<TTriggerArray>;
+
+  events: [TTriggerArray] extends [never]
+    ? AsTuple<GetContextEvents<TClient, TTriggers, true>>
+    : AsTuple<EventsFromTriggers<TTriggerArray>>;
 
   /**
    * The run ID for the current function execution
@@ -583,9 +590,10 @@ export type BaseContext<
  */
 export type Context<
   TClient extends Inngest.Any = Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
+  TTriggers extends string = string,
   TOverrides extends Record<string, unknown> = Record<never, never>,
-> = Omit<BaseContext<TClient, TTriggers>, keyof TOverrides> & TOverrides;
+  TTriggerArray extends readonly any[] = never,
+> = Omit<BaseContext<TClient, TTriggers, TTriggerArray>, keyof TOverrides> & TOverrides;
 
 /**
  * Builds a context object for an Inngest handler, optionally overriding some
@@ -608,14 +616,15 @@ export namespace Context {
  */
 export type Handler<
   TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
+  TTriggers extends string = string,
   TOverrides extends Record<string, unknown> = Record<never, never>,
+  TTriggerArray extends readonly any[] = never,
 > = (
   /**
    * The context argument provides access to all data and tooling available to
    * the function.
    */
-  ctx: Context<TClient, TTriggers, TOverrides>,
+  ctx: Context<TClient, TTriggers, TOverrides, TTriggerArray>,
 ) => unknown;
 
 export type TriggersFromClient<TClient extends Inngest.Any = Inngest.Any> =
@@ -632,7 +641,7 @@ export namespace Handler {
    * Represents any `Handler`, regardless of generics and inference.
    */
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  export type Any = Handler<Inngest.Any, any, any>;
+  export type Any = Handler<Inngest.Any, any, any, any>;
 }
 
 /**
@@ -1513,6 +1522,65 @@ export type EventNameFromTrigger<
       : T extends { cron: string } // a cron trigger
         ? `${internalEvents.ScheduledTimer}`
         : never;
+
+/**
+ * Extract the StandardSchemaV1 from a trigger if it exists.
+ * Returns undefined if no schema present.
+ *
+ * @public
+ */
+export type SchemaFromTrigger<TTrigger> =
+  TTrigger extends { schema: infer TSchema }
+    ? TSchema
+    : undefined;
+
+/**
+ * Extract the inferred data type from a StandardSchemaV1.
+ * Falls back to Record<string, any> if no schema exists.
+ *
+ * @public
+ */
+export type DataFromSchema<TSchema> =
+  TSchema extends StandardSchemaV1<infer TData>
+    ? TData
+    : Record<string, any>;
+
+/**
+ * Extract event name from a trigger object.
+ * Handles EventType instances, event triggers, cron triggers.
+ *
+ * @public
+ */
+export type EventNameFromTriggerObject<TTrigger> =
+  TTrigger extends { name: infer TName extends string }
+    ? TName
+    : TTrigger extends { event: infer TEvent extends string }
+      ? TEvent
+      : TTrigger extends { cron: string }
+        ? `${internalEvents.ScheduledTimer}`
+        : never;
+
+/**
+ * Build an event payload from a single trigger.
+ * Uses schema if present, otherwise falls back to Record<string, any>.
+ * This type distributes over unions to create proper discriminated unions.
+ *
+ * @public
+ */
+export type EventPayloadFromTrigger<TTrigger> = TTrigger extends any
+  ? {
+      name: EventNameFromTriggerObject<TTrigger>;
+      data: DataFromSchema<SchemaFromTrigger<TTrigger>>;
+    }
+  : never;
+
+/**
+ * Create a union of event payloads from an array of triggers.
+ *
+ * @public
+ */
+export type EventsFromTriggers<TTriggers extends readonly any[]> =
+  EventPayloadFromTrigger<TTriggers[number]>;
 
 /**
  * A union to represent known names of supported frameworks that we can use

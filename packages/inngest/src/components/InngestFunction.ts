@@ -28,6 +28,7 @@ import type {
   InngestMiddleware,
   MiddlewareRegisterReturn,
 } from "./InngestMiddleware.ts";
+import type { EventType } from "./trigger2.ts";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any
@@ -355,10 +356,12 @@ export namespace InngestFunction {
     | {
         event: T;
         if?: string;
+        schema?: StandardSchemaV1<any>;
       }
     | {
         cron: string;
       }
+    | EventType<T, any>
   >;
 
   export type GetOptions<T extends InngestFunction.Any> =

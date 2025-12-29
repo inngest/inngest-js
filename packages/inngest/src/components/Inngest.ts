@@ -1,3 +1,4 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { InngestApi } from "../api/api.ts";
 import {
   defaultDevServerHost,
@@ -37,7 +38,7 @@ import {
 } from "../middleware/logger.ts";
 import {
   type ClientOptions,
-  type EventNameFromTrigger,
+  type EventNameFromTriggerObject,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
@@ -58,6 +59,7 @@ import {
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
 } from "./InngestMiddleware.ts";
+import type { EventType } from "./trigger2.ts";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -908,35 +910,35 @@ export namespace Inngest {
   export type CreateFunction<TClient extends Inngest.Any> = <
     TMiddleware extends InngestMiddleware.Stack,
     TTrigger extends SingleOrArray<
-      InngestFunction.Trigger<TriggersFromClient<TClient>>
+      | InngestFunction.Trigger<string>
+      | EventType<string, any>
+      | { event: string; schema?: StandardSchemaV1<any>; if?: string }
+      | { cron: string }
     >,
     THandler extends Handler.Any = Handler<
       TClient,
-      EventNameFromTrigger<GetEvents<TClient, true>, AsArray<TTrigger>[number]>,
+      EventNameFromTriggerObject<AsArray<TTrigger>[number]>,
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
           NonNullable<ClientOptionsFromInngest<TClient>["middleware"]>,
           TMiddleware,
         ]
-      >
+      >,
+      AsArray<TTrigger>
     >,
     TFailureHandler extends Handler.Any = Handler<
       TClient,
-      EventNameFromTrigger<GetEvents<TClient, true>, AsArray<TTrigger>[number]>,
+      EventNameFromTriggerObject<AsArray<TTrigger>[number]>,
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
           NonNullable<ClientOptionsFromInngest<TClient>["middleware"]>,
           TMiddleware,
         ],
-        FailureEventArgs<
-          GetEvents<TClient, true>[EventNameFromTrigger<
-            GetEvents<TClient, true>,
-            AsArray<TTrigger>[number]
-          >]
-        >
-      >
+        FailureEventArgs<EventPayload>
+      >,
+      AsArray<TTrigger>
     >,
   >(
     options: Omit<

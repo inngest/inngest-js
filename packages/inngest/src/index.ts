@@ -75,6 +75,12 @@ export { NonRetriableError } from "./components/NonRetriableError.ts";
 export { RetryAfterError } from "./components/RetryAfterError.ts";
 export { StepError } from "./components/StepError.ts";
 export {
+  cron,
+  eventType,
+  type EventType,
+  invoke,
+} from "./components/trigger2.ts";
+export {
   isInngest,
   isInngestFunction,
   isInngestMiddleware,
@@ -97,8 +103,12 @@ export type {
   BaseContext,
   ClientOptions,
   Context,
+  DataFromSchema,
   EventNameFromTrigger,
+  EventNameFromTriggerObject,
   EventPayload,
+  EventPayloadFromTrigger,
+  EventsFromTriggers,
   FailureEventArgs,
   FailureEventPayload,
   FinishedEventPayload,
@@ -108,6 +118,7 @@ export type {
   OutgoingOp,
   RegisterOptions,
   ScheduledTimerEventPayload,
+  SchemaFromTrigger,
   SendEventBaseOutput,
   StepOptions,
   StepOptionsOrId,

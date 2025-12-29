@@ -110,3 +110,118 @@ describe("invoke", () => {
     );
   });
 });
+
+describe("type inference from triggers", () => {
+  test("handler receives typed event from trigger schema", () => {
+    const inngest = new Inngest({ id: "app" });
+    const userCreated = eventType(
+      "my-event",
+      z.object({
+        email: z.string(),
+        userId: z.string(),
+      })
+    );
+
+    inngest.createFunction({ id: "fn" }, userCreated, ({ event }) => {
+      expectTypeOf(event.data).toEqualTypeOf<{
+        email: string;
+        userId: string;
+      }>();
+      expectTypeOf(event.name).toEqualTypeOf<"my-event">();
+    });
+  });
+
+  test("multiple triggers create union type", () => {
+    const inngest = new Inngest({ id: "app" });
+    const event1 = eventType("event-1", z.object({ a: z.string() }));
+    const event2 = eventType("event-2", z.object({ b: z.number() }));
+
+    inngest.createFunction({ id: "fn" }, [event1, event2], ({ event }) => {
+      // event is a union
+      expectTypeOf(event).toEqualTypeOf<
+        | { name: "event-1"; data: { a: string } }
+        | { name: "event-2"; data: { b: number } }
+      >();
+
+      // User can narrow the type
+      if (event.name === "event-1") {
+        expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
+      } else {
+        expectTypeOf(event.data).toEqualTypeOf<{ b: number }>();
+      }
+    });
+  });
+
+  test("trigger without schema uses Record<string, any>", () => {
+    const inngest = new Inngest({ id: "app" });
+    const untyped = eventType("my-event");
+
+    inngest.createFunction({ id: "fn" }, untyped, ({ event }) => {
+      expectTypeOf(event.data).toEqualTypeOf<Record<string, any>>();
+      expectTypeOf(event.name).toEqualTypeOf<"my-event">();
+    });
+  });
+
+  test("cron trigger works without schema", () => {
+    const inngest = new Inngest({ id: "app" });
+
+    inngest.createFunction({ id: "fn" }, cron("0 0 * * *"), ({ event }) => {
+      expectTypeOf(event.name).toEqualTypeOf<"inngest/scheduled.timer">();
+    });
+  });
+
+  test("invoke trigger with schema provides typed data", () => {
+    const inngest = new Inngest({ id: "app" });
+
+    inngest.createFunction(
+      { id: "fn" },
+      invoke(z.object({ payload: z.string() })),
+      ({ event }) => {
+        expectTypeOf(event.data).toEqualTypeOf<{ payload: string }>();
+        expectTypeOf(event.name).toEqualTypeOf<"inngest/function.invoked">();
+      }
+    );
+  });
+
+  test("mixed triggers with and without schemas", () => {
+    const inngest = new Inngest({ id: "app" });
+    const typed = eventType("typed", z.object({ x: z.number() }));
+    const untyped = eventType("untyped");
+
+    inngest.createFunction({ id: "fn" }, [typed, untyped], ({ event }) => {
+      expectTypeOf(event).toEqualTypeOf<
+        | { name: "typed"; data: { x: number } }
+        | { name: "untyped"; data: Record<string, any> }
+      >();
+    });
+  });
+
+  test("EventType with withIf maintains typing", () => {
+    const inngest = new Inngest({ id: "app" });
+    const conditional = eventType(
+      "conditional",
+      z.object({ count: z.number() })
+    ).withIf("event.data.count > 10");
+
+    inngest.createFunction({ id: "fn" }, conditional, ({ event }) => {
+      expectTypeOf(event.data).toEqualTypeOf<{ count: number }>();
+      expectTypeOf(event.name).toEqualTypeOf<"conditional">();
+    });
+  });
+
+  test("plain event object trigger with schema", () => {
+    const inngest = new Inngest({ id: "app" });
+
+    inngest.createFunction(
+      { id: "fn" },
+      {
+        event: "plain-event",
+        schema: z.object({ value: z.boolean() }),
+      } as const,
+      ({ event }) => {
+        expectTypeOf(event.data).toEqualTypeOf<{ value: boolean }>();
+        expectTypeOf(event.name).toEqualTypeOf<"plain-event">();
+      }
+    );
+  });
+});
