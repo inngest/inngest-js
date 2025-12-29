@@ -1,10 +1,6 @@
-import { EventSchemas } from "inngest";
+import { eventType } from "inngest/experimental";
+import { z } from "zod";
 
-type DemoEventSent = {
-  name: "demo/event.sent";
-  data: {
-    message: string;
-  };
-};
-
-export const schemas = new EventSchemas().fromUnion<DemoEventSent>();
+export const event1 = eventType("event-1");
+export const event2 = eventType("event-2");
+export const event3 = eventType("event-3", z.object({ message: z.string() }));

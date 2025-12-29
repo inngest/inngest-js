@@ -1,3 +1,4 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import {
   ExecutionVersion,
   internalEvents,
@@ -353,10 +354,6 @@ export namespace InngestFunction {
   export type Trigger<T extends string> = StrictUnion<
     | {
         event: T;
-        if?: string;
-      }
-    | {
-        name: T;
         if?: string;
       }
     | {

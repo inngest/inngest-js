@@ -40,7 +40,7 @@ importers:
     dependencies:
       inngest:
         specifier: ^3.0.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
       typescript:
         specifier: ^5.0.0
         version: 5.9.2
@@ -53,7 +53,7 @@ importers:
     dependencies:
       inngest:
         specifier: ../../packages/inngest/inngest.tgz
-        version: file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
       typescript:
         specifier: ^5
         version: 5.9.2
@@ -66,7 +66,7 @@ importers:
     dependencies:
       inngest:
         specifier: file:../../packages/inngest/inngest.tgz
-        version: file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
     devDependencies:
       tsx:
         specifier: ^4.19.2
@@ -97,7 +97,7 @@ importers:
         version: 1.4.19(@sinclair/typebox@0.34.41)(@types/bun@1.3.5)(exact-mirror@0.2.5(@sinclair/typebox@0.34.41))(file-type@21.1.1)(openapi-types@12.1.3)(typescript@5.9.3)
       inngest:
         specifier: ^3.40.2
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.2.1)
     devDependencies:
       bun-types:
         specifier: latest
@@ -105,12 +105,18 @@ importers:
 
   examples/framework-express:
     dependencies:
+      '@standard-schema/spec':
+        specifier: ^1.0.0
+        version: 1.0.0
       express:
         specifier: ^4.19.2
         version: 4.19.2
       inngest:
-        specifier: ^3.0.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        specifier: workspace:^3.0.0
+        version: link:../../packages/inngest
+      zod:
+        specifier: 4.2.1
+        version: 4.2.1
     devDependencies:
       '@types/node':
         specifier: ^20.5.2
@@ -129,7 +135,7 @@ importers:
         version: 4.21.0
       inngest:
         specifier: ^3.0.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@4.21.0)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@4.21.0)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
     devDependencies:
       '@types/node':
         specifier: ^20.5.2
@@ -148,7 +154,7 @@ importers:
         version: 3.5.1
       inngest:
         specifier: ^3.6.2
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
     devDependencies:
       nodemon:
         specifier: ^3.0.2
@@ -164,7 +170,7 @@ importers:
         version: 4.11.3
       inngest:
         specifier: ^3.40.2
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.2.1)
     devDependencies:
       '@cloudflare/vite-plugin':
         specifier: ^1.2.3
@@ -183,7 +189,7 @@ importers:
     dependencies:
       inngest:
         specifier: ^3.5.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
       koa:
         specifier: ^2.14.2
         version: 2.14.2
@@ -226,7 +232,7 @@ importers:
         version: 0.14.3
       inngest:
         specifier: ^3.0.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
@@ -329,7 +335,7 @@ importers:
         version: 0.14.3
       inngest:
         specifier: ^3.0.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2
@@ -411,7 +417,7 @@ importers:
     dependencies:
       inngest:
         specifier: ^3.0.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@18.3.1))(react@18.3.1))(typescript@5.9.2)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@18.3.1))(react@18.3.1))(typescript@5.9.2)(zod@4.2.1)
       next:
         specifier: 13.5.4
         version: 13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@18.3.1))(react@18.3.1)
@@ -445,7 +451,7 @@ importers:
     dependencies:
       inngest:
         specifier: ^3.0.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@18.3.1))(react@18.3.1))(typescript@5.9.2)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@18.3.1))(react@18.3.1))(typescript@5.9.2)(zod@4.2.1)
       next:
         specifier: 13.5.4
         version: 13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@18.3.1))(react@18.3.1)
@@ -555,7 +561,7 @@ importers:
     dependencies:
       inngest:
         specifier: ^3.0.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.2.1)
     devDependencies:
       nitropack:
         specifier: latest
@@ -565,7 +571,7 @@ importers:
     dependencies:
       inngest:
         specifier: ^3.0.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.2.1)
     devDependencies:
       nuxt:
         specifier: ^3.0.0
@@ -587,7 +593,7 @@ importers:
         version: 2.15.9
       inngest:
         specifier: ^3.0.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@14.18.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@14.18.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@18.2.0(react@18.3.1))(react@18.3.1))(typescript@5.9.2)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@14.18.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@14.18.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@18.2.0(react@18.3.1))(react@18.3.1))(typescript@5.9.2)(zod@4.2.1)
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -624,7 +630,7 @@ importers:
         version: 1.8.1
       inngest:
         specifier: ^3.0.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.14(@types/node@22.19.3)(lightningcss@1.30.2)(terser@5.44.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.8.1)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.14(@types/node@22.19.3)(lightningcss@1.30.2)(terser@5.44.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.8.1)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
     devDependencies:
       '@sveltejs/adapter-auto':
         specifier: ^2.0.0
@@ -664,7 +670,7 @@ importers:
     dependencies:
       inngest:
         specifier: file:../../packages/inngest/inngest.tgz
-        version: file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
     devDependencies:
       '@eslint/compat':
         specifier: ^1.2.5
@@ -780,7 +786,7 @@ importers:
     dependencies:
       inngest:
         specifier: ^3.0.0
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.2.1)
     devDependencies:
       '@types/node':
         specifier: ^20.9.1
@@ -854,7 +860,7 @@ importers:
     dependencies:
       inngest:
         specifier: file:../../packages/inngest/inngest.tgz
-        version: file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
     devDependencies:
       '@types/node':
         specifier: ^20.5.2
@@ -870,7 +876,7 @@ importers:
     dependencies:
       inngest:
         specifier: file:../../packages/inngest/inngest.tgz
-        version: file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
     devDependencies:
       '@types/node':
         specifier: ^20.5.2
@@ -889,7 +895,7 @@ importers:
         version: 5.2.1
       inngest:
         specifier: ^3.35.1
-        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: 3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
     devDependencies:
       '@types/express':
         specifier: ^5.0.1
@@ -1101,6 +1107,9 @@ importers:
       concurrently:
         specifier: ^7.4.0
         version: 7.4.0
+      expect-type:
+        specifier: 1.3.0
+        version: 1.3.0
       express:
         specifier: ^4.19.2
         version: 4.19.2
@@ -1212,7 +1221,7 @@ importers:
         version: 1.5.1(node-fetch@2.7.0)
       inngest:
         specifier: ^3.42.3
-        version: 3.42.3(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.5.2)(zod@4.1.11)
+        version: 3.42.3(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.5.2)(zod@4.2.1)
       jest:
         specifier: ^30.0.0
         version: 30.2.0(@types/node@24.3.0)
@@ -1248,7 +1257,7 @@ importers:
         version: 15.14.0
       inngest:
         specifier: ^3.42.3
-        version: 3.42.3(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.4.2)(zod@4.1.11)
+        version: 3.42.3(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.4.2)(zod@4.2.1)
       typescript:
         specifier: ~5.4.0
         version: 5.4.2
@@ -1364,7 +1373,7 @@ importers:
     dependencies:
       inngest:
         specifier: ^3.42.3
-        version: 3.42.3(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11)
+        version: 3.42.3(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1)
       tinyspy:
         specifier: ^3.0.2
         version: 3.0.2
@@ -11639,6 +11648,10 @@ packages:
     resolution: {integrity: sha512-JhFGDVJ7tmDJItKhYgJCGLOWjuK9vPxiXoUFLwLDc99NlmklilbiQJwoctZtt13+xMw91MCk/REan6MWHqDjyA==}
     engines: {node: '>=12.0.0'}
 
+  expect-type@1.3.0:
+    resolution: {integrity: sha512-knvyeauYhqjOYvQ66MznSMs83wmHrCycNEN6Ao+2AeYEfxUIkuiVxdEa1qlGEPK+We3n0THiDciYSsCcgW/DoA==}
+    engines: {node: '>=12.0.0'}
+
   expect@29.5.0:
     resolution: {integrity: sha512-yM7xqUrCO2JdpFo4XpM82t+PJBFybdqoQuJLDGeDX2ij8NZzqRHyu3Hp188/JX7SWqud+7t4MUdvcgGBICMHZg==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
@@ -18841,8 +18854,8 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
-  zod@4.1.11:
-    resolution: {integrity: sha512-WPsqwxITS2tzx1bzhIKsEs19ABD5vmCVa4xBo2tq/SrV4RNZtfws1EnCWQXM6yh8bD08a1idvkB5MZSBiZsjwg==}
+  zod@4.2.1:
+    resolution: {integrity: sha512-0wZ1IRqGGhMP76gLqz8EyfBXKk0J2qo2+H3fi4mcUP/KtTocoX08nmIAHl1Z2kJIZbZee8KOpBCSNPRgauucjw==}
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -32308,6 +32321,8 @@ snapshots:
 
   expect-type@1.2.2: {}
 
+  expect-type@1.3.0: {}
+
   expect@29.5.0:
     dependencies:
       '@jest/expect-utils': 29.5.0
@@ -33663,7 +33678,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.42.3(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.5.2)(zod@4.1.11):
+  inngest@3.42.3(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.5.2)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -33687,7 +33702,7 @@ snapshots:
       serialize-error-cjs: 0.1.3
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -33703,7 +33718,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.42.3(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.4.2)(zod@4.1.11):
+  inngest@3.42.3(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.4.2)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -33727,7 +33742,7 @@ snapshots:
       serialize-error-cjs: 0.1.3
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -33743,7 +33758,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.42.3(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11):
+  inngest@3.42.3(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -33767,7 +33782,7 @@ snapshots:
       serialize-error-cjs: 0.1.3
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -33823,7 +33838,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.14(@types/node@22.19.3)(lightningcss@1.30.2)(terser@5.44.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.8.1)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11):
+  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@1.27.3(svelte@4.2.5)(vite@4.5.14(@types/node@22.19.3)(lightningcss@1.30.2)(terser@5.44.1)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.8.1)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -33849,7 +33864,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.3.0
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 1.27.3(svelte@4.2.5)(vite@4.5.14(@types/node@22.19.3)(lightningcss@1.30.2)(terser@5.44.1))
       '@vercel/node': 2.15.9
@@ -33952,7 +33967,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.1.11):
+  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -33978,7 +33993,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.3.0
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -33995,7 +34010,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@14.18.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@14.18.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@18.2.0(react@18.3.1))(react@18.3.1))(typescript@5.9.2)(zod@4.1.11):
+  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@14.18.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@14.18.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.23.6)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@18.2.0(react@18.3.1))(react@18.3.1))(typescript@5.9.2)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -34021,7 +34036,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.3.0
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@14.18.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@14.18.33)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -34081,7 +34096,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@4.19.2)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11):
+  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@4.21.0)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -34107,50 +34122,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.3.0
-      zod: 4.1.11
-    optionalDependencies:
-      '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
-      '@vercel/node': 2.15.9
-      aws-lambda: 1.0.7
-      express: 4.19.2
-      fastify: 5.6.2
-      h3: 1.15.4
-      hono: 4.11.3
-      koa: 2.14.2
-      next: 15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
-      typescript: 5.9.2
-    transitivePeerDependencies:
-      - '@opentelemetry/core'
-      - encoding
-      - supports-color
-
-  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@4.21.0)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11):
-    dependencies:
-      '@bufbuild/protobuf': 2.2.3
-      '@inngest/ai': 0.1.3
-      '@jpwilliams/waitgroup': 2.1.1
-      '@opentelemetry/api': 1.9.0
-      '@opentelemetry/auto-instrumentations-node': 0.66.0(@opentelemetry/api@1.9.0)(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))
-      '@opentelemetry/context-async-hooks': 2.2.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/exporter-trace-otlp-http': 0.207.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/instrumentation': 0.207.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/resources': 2.2.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/sdk-trace-base': 2.2.0(@opentelemetry/api@1.9.0)
-      '@standard-schema/spec': 1.0.0
-      '@types/debug': 4.1.12
-      '@types/ms': 2.1.0
-      canonicalize: 1.0.8
-      chalk: 4.1.2
-      cross-fetch: 4.0.0
-      debug: 4.4.3(supports-color@5.5.0)
-      hash.js: 1.1.7
-      json-stringify-safe: 5.0.1
-      ms: 2.1.3
-      serialize-error-cjs: 0.1.3
-      strip-ansi: 5.2.0
-      temporal-polyfill: 0.2.5
-      ulid: 2.3.0
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -34167,7 +34139,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@18.3.1))(react@18.3.1))(typescript@5.9.2)(zod@4.1.11):
+  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@13.5.4(@opentelemetry/api@1.9.0)(react-dom@18.2.0(react@18.3.1))(react@18.3.1))(typescript@5.9.2)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -34193,7 +34165,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.3.0
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -34253,7 +34225,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.1.11):
+  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -34279,7 +34251,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.3.0
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -34296,7 +34268,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11):
+  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -34322,7 +34294,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.3.0
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@22.19.3)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -34339,7 +34311,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.1.11):
+  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@babel/core@7.28.5)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.3)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -34365,7 +34337,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.3.0
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -34382,7 +34354,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11):
+  inngest@3.48.1(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -34408,7 +34380,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.3.0
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -34425,7 +34397,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11):
+  inngest@file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -34451,7 +34423,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.3.0
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@6.4.1(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -34468,7 +34440,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11):
+  inngest@file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -34494,7 +34466,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.3.0
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@20.19.27)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -34511,7 +34483,7 @@ snapshots:
       - encoding
       - supports-color
 
-  inngest@file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.1.11):
+  inngest@file:packages/inngest/inngest.tgz(@opentelemetry/core@2.2.0(@opentelemetry/api@1.9.0))(@sveltejs/kit@2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(@vercel/node@2.15.9)(aws-lambda@1.0.7)(express@5.2.1)(fastify@5.6.2)(h3@1.15.4)(hono@4.11.3)(koa@2.14.2)(next@15.3.6(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(typescript@5.9.2)(zod@4.2.1):
     dependencies:
       '@bufbuild/protobuf': 2.2.3
       '@inngest/ai': 0.1.3
@@ -34537,7 +34509,7 @@ snapshots:
       strip-ansi: 5.2.0
       temporal-polyfill: 0.2.5
       ulid: 2.3.0
-      zod: 4.1.11
+      zod: 4.2.1
     optionalDependencies:
       '@sveltejs/kit': 2.49.2(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@5.1.1(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.46.1)(vite@7.3.0(@types/node@24.3.0)(jiti@2.6.1)(lightningcss@1.30.2)(terser@5.44.1)(tsx@4.21.0)(yaml@2.8.2))
       '@vercel/node': 2.15.9
@@ -42256,7 +42228,7 @@ snapshots:
       '@vitest/utils': 3.2.4
       chai: 5.2.0
       debug: 4.4.3(supports-color@5.5.0)
-      expect-type: 1.2.2
+      expect-type: 1.3.0
       magic-string: 0.30.19
       pathe: 2.0.3
       picomatch: 4.0.3
@@ -42299,7 +42271,7 @@ snapshots:
       '@vitest/utils': 3.2.4
       chai: 5.2.0
       debug: 4.4.3(supports-color@5.5.0)
-      expect-type: 1.2.2
+      expect-type: 1.3.0
       magic-string: 0.30.19
       pathe: 2.0.3
       picomatch: 4.0.3
@@ -42342,7 +42314,7 @@ snapshots:
       '@vitest/utils': 3.2.4
       chai: 5.2.0
       debug: 4.4.3(supports-color@5.5.0)
-      expect-type: 1.2.2
+      expect-type: 1.3.0
       magic-string: 0.30.19
       pathe: 2.0.3
       picomatch: 4.0.3
@@ -42939,6 +42911,6 @@ snapshots:
 
   zod@3.25.76: {}
 
-  zod@4.1.11: {}
+  zod@4.2.1: {}
 
   zwitch@2.0.4: {}
