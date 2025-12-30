@@ -241,4 +241,27 @@ describe("mixed triggers", () => {
       }
     );
   });
+
+  test("event type and invoke", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction(
+      { id: "fn" },
+      [
+        eventType("event-1", z.object({ a: z.string() })),
+        invoke(z.object({ b: z.number() })),
+      ] as const,
+      ({ event }) => {
+        expectTypeOf(event.name).toEqualTypeOf<
+          "event-1" | "inngest/function.invoked"
+        >();
+        expectTypeOf(event.data).toEqualTypeOf<{ a: string } | { b: number }>();
+
+        if (event.name === "event-1") {
+          expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
+        } else if (event.name === "inngest/function.invoked") {
+          expectTypeOf(event.data).toEqualTypeOf<{ b: number }>();
+        }
+      }
+    );
+  });
 });
