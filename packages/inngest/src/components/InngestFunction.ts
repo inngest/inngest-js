@@ -28,7 +28,7 @@ import type {
   InngestMiddleware,
   MiddlewareRegisterReturn,
 } from "./InngestMiddleware.ts";
-import type { EventType } from "./trigger2.ts";
+import type { EventType } from "./triggers/triggers.js";
 
 /**
  * A stateless Inngest function, wrapping up function configuration and any

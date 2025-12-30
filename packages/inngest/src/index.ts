@@ -79,7 +79,7 @@ export {
   eventType,
   type EventType,
   invoke,
-} from "./components/trigger2.ts";
+} from "./components/triggers/triggers.js";
 export {
   isInngest,
   isInngestFunction,

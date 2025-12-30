@@ -24,6 +24,7 @@ import type {
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
+import type { ToReceivedEvent } from "./components/triggers/helpers.ts";
 import type { internalEvents, knownEvents } from "./helpers/consts.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
@@ -1580,7 +1581,7 @@ export type EventPayloadFromTrigger<TTrigger> = TTrigger extends any
  * @public
  */
 export type EventsFromTriggers<TTriggers extends readonly any[]> =
-  EventPayloadFromTrigger<TTriggers[number]>;
+  ToReceivedEvent<TTriggers>[number];
 
 /**
  * A union to represent known names of supported frameworks that we can use

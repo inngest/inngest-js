@@ -59,7 +59,7 @@ import {
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
 } from "./InngestMiddleware.ts";
-import type { EventType } from "./trigger2.ts";
+import type { EventType } from "./triggers/triggers.js";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.

@@ -7,4 +7,4 @@ export type { ExtendedTracesMiddlewareOptions } from "./components/execution/ote
 export { extendedTracesMiddleware } from "./components/execution/otel/middleware.ts";
 export { PublicInngestSpanProcessor as InngestSpanProcessor } from "./components/execution/otel/processor.ts";
 
-export { cron, eventType, invoke } from "./components/trigger2.ts";
+export { cron, eventType, invoke } from "./components/triggers/triggers.js";
