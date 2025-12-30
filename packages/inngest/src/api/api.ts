@@ -1,5 +1,6 @@
 import type { fetch } from "cross-fetch";
 import { z } from "zod/v3";
+import type { MetadataEntry } from "../components/InngestMetadata.ts";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
@@ -458,6 +459,86 @@ export class InngestApi {
     } catch {
       return err({
         error: `Failed to update metadata: ${res.status} ${res.statusText}`,
+        status: res.status,
+      });
+    }
+  }
+
+  async getMetadata(
+    args: {
+      target: MetadataTarget;
+    },
+    options?: {
+      headers?: Record<string, string>;
+    },
+  ): Promise<Result<MetadataEntry[], ErrorResponse>> {
+    const url = await this.getTargetUrl(
+      `/v1/runs/${args.target.run_id}/metadata`,
+    );
+
+    if ("span_id" in args.target) {
+      url.searchParams.append("span_id", args.target.span_id);
+    }
+
+    if (
+      "step_attempt" in args.target &&
+      args.target.step_attempt !== undefined
+    ) {
+      url.searchParams.append(
+        "step_attempt",
+        args.target.step_attempt.toString(),
+      );
+    }
+
+    if ("step_id" in args.target) {
+      url.searchParams.append("step_id", args.target.step_id);
+    }
+
+    if ("step_index" in args.target && args.target.step_index !== undefined) {
+      url.searchParams.append("step_index", args.target.step_index.toString());
+    }
+
+    const result = await this.req(url, {
+      method: "GET",
+      headers: options?.headers,
+    });
+
+    if (!result.ok) {
+      return err({
+        error: getErrorMessage(result.error, "Unknown error updating metadata"),
+        status: 500,
+      });
+    }
+
+    const res = result.value;
+    if (res.ok) {
+      try {
+        return ok<MetadataEntry[]>(await result.value.json());
+      } catch {
+        return err({
+          error: `Failed to parse metadata response: ${res.status} ${res.statusText}`,
+          status: res.status,
+        });
+      }
+    }
+
+    const resClone = res.clone();
+
+    let json: unknown;
+    try {
+      json = await res.json();
+    } catch {
+      return err({
+        error: `Failed to get metadata: ${res.status} ${res.statusText} - ${await resClone.text()}`,
+        status: res.status,
+      });
+    }
+
+    try {
+      return err(errorSchema.parse(json));
+    } catch {
+      return err({
+        error: `Failed to get metadata: ${res.status} ${res.statusText}`,
         status: res.status,
       });
     }
