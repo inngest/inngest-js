@@ -370,7 +370,7 @@ export const metadataMiddleware = () => {
                      *   .update({ childCompleted: true });
                      * ```
                      */
-                    metadata: (input.steps as unknown as ExperimentalStepTools)[
+                    metadata: (input.ctx.step as ExperimentalStepTools)[
                       metadataSymbol
                     ],
                   },
