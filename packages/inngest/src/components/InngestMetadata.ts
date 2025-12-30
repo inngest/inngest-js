@@ -184,8 +184,18 @@ export function buildTarget(
       ? "you are not inside a step.run() callback"
       : "you are targeting a different run";
 
-  if (config.attempt === null && (!isSameRunAsCtx || !ctxExecution?.executingStep)) throw new Error(`attempt() was called without a value, but ${stepCtxReason}`);
-  if (config.stepId === null && (!isSameRunAsCtx || !ctxExecution?.executingStep)) throw new Error(`step() was called without a value, but ${stepCtxReason}`);
+  if (
+    config.attempt === null &&
+    (!isSameRunAsCtx || !ctxExecution?.executingStep)
+  )
+    throw new Error(
+      `attempt() was called without a value, but ${stepCtxReason}`,
+    );
+  if (
+    config.stepId === null &&
+    (!isSameRunAsCtx || !ctxExecution?.executingStep)
+  )
+    throw new Error(`step() was called without a value, but ${stepCtxReason}`);
 
   if (config.spanId !== undefined) {
     return {
@@ -194,24 +204,24 @@ export function buildTarget(
       step_index: config.stepIndex,
       step_attempt: config.attempt ?? ctxAttempt,
       span_id: config.spanId,
-    }
+    };
   } else if (config.attempt !== undefined) {
     return {
       run_id: targetRunId,
       step_id: config.stepId ?? ctxStepId,
       step_index: config.stepIndex,
       step_attempt: config.attempt ?? ctxAttempt,
-    }
+    };
   } else if (config.stepId !== undefined) {
     return {
       run_id: targetRunId,
       step_id: config.stepId ?? ctxStepId,
       step_index: config.stepIndex,
-    }
+    };
   } else {
     return {
       run_id: targetRunId,
-    }
+    };
   }
 }
 
