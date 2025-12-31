@@ -1777,6 +1777,13 @@ interface CheckIntrospection {
 
 export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
   describe("introspection", () => {
+    if (process.env.INNGEST_TEST_CONNECT) {
+      // Skip introspection tests when running connect tests
+      it("skipped during connect tests", () => {});
+
+      return;
+    }
+
     it("should be registered in SDK UI", async () => {
       const res = await retryFetch(5, "http://localhost:3000/api/inngest");
 
