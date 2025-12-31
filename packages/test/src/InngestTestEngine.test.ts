@@ -188,54 +188,110 @@ describe("InngestTestEngine", () => {
       expect(executionOrder).not.toContain("parallel-3-unmocked");
     });
 
-    it("should support mocking with data that depends on earlier step execution", async () => {
+    describe("should support mocking with data that depends on earlier step execution", () => {
       const inngest = new Inngest({ id: "test-app" });
-      let capturedStep1Result: string | undefined;
 
       const fn = inngest.createFunction(
         { id: "test-fn" },
         { event: "test/event" },
         async ({ step }) => {
           const step1Result = await step.run("step-1", () => {
-            return "first-result";
+            return 1;
           });
 
-          const step2Result = await step.run("step-2", () => {
-            return "second-result";
-          });
+          const step2Result = await step.run(
+            "step-2",
+            (input) => {
+              return input + 2;
+            },
+            step1Result + 1,
+          );
 
           return { step1Result, step2Result };
-        }
+        },
       );
 
-      const t = new InngestTestEngine({
-        function: fn,
-        steps: [
-          {
-            id: "step-1",
-            handler: () => {
-              return "mocked-first";
-            },
-          },
-          {
-            id: "step-2",
-            handler: () => {
-              // This handler runs lazily, so it can access state from earlier execution
-              capturedStep1Result = "mocked-first"; // In real use, you'd access this from context
-              return `depends-on-${capturedStep1Result}`;
-            },
-          },
-        ],
+      it("works without any mocked steps", async () => {
+        const t = new InngestTestEngine({
+          function: fn,
+        });
+
+        const { result } = await t.execute();
+
+        expect(result).toEqual({
+          step1Result: 1,
+          step2Result: 4,
+        });
       });
 
-      const { result } = await t.execute();
+      it("works when step-1 is mocked (so step-2 reads from a mocked output)", async () => {
+        const t = new InngestTestEngine({
+          function: fn,
+          steps: [
+            {
+              id: "step-1",
+              handler: () => {
+                return 4;
+              },
+            },
+          ],
+        });
 
-      expect(result).toEqual({
-        step1Result: "mocked-first",
-        step2Result: "depends-on-mocked-first",
+        const { result } = await t.execute();
+
+        expect(result).toEqual({
+          step1Result: 4,
+          step2Result: 7,
+        });
       });
 
-      expect(capturedStep1Result).toBe("mocked-first");
+      it("works when step-2 is mocked, reading from the real step-1 ", async () => {
+        const t = new InngestTestEngine({
+          function: fn,
+          steps: [
+            {
+              id: "step-2",
+              handler: (input) => {
+                return input + 3;
+              },
+            },
+          ],
+        });
+
+        const { result } = await t.execute();
+
+        expect(result).toEqual({
+          step1Result: 1,
+          step2Result: 5,
+        });
+      });
+
+      it("when both steps are mocked", async () => {
+        const t = new InngestTestEngine({
+          function: fn,
+          steps: [
+            {
+              id: "step-1",
+              handler: () => {
+                return 4;
+              },
+            },
+            {
+              id: "step-2",
+              handler: (input) => {
+                return input + 3;
+              },
+            },
+          ],
+        });
+
+        const { result } = await t.execute();
+
+        expect(result).toEqual({
+          step1Result: 4,
+          step2Result: 8,
+        });
+      });
     });
   });
 });
