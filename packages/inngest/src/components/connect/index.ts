@@ -1231,7 +1231,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
       }, heartbeatIntervalMs);
     }
 
-    conn.cleanup = () => {
+    conn.cleanup = async () => {
       if (closed) {
         return;
       }
@@ -1253,27 +1253,26 @@ class WebSocketWorkerConnection implements WorkerConnection {
       ws.onerror = () => {};
       ws.onclose = () => {};
 
-      this.inProgressRequests.wg.wait().then(() => {
-        // We must wait for all in-flight requests to complete before closing
-        // the connection and stopping the heartbeater. If we don't, then
-        // Inngest Server will mark the step as failed since it lost contact
-        // with the worker
+      // We must wait for all in-flight requests to complete before closing
+      // the connection and stopping the heartbeater. If we don't, then
+      // Inngest Server will mark the step as failed since it lost contact
+      // with the worker
+      await this.inProgressRequests.wg.wait();
 
-        ws.close(
-          1000,
-          workerDisconnectReasonToJSON(WorkerDisconnectReason.WORKER_SHUTDOWN),
-        );
+      ws.close(
+        1000,
+        workerDisconnectReasonToJSON(WorkerDisconnectReason.WORKER_SHUTDOWN),
+      );
 
-        if (this.currentConnection?.id === connectionId) {
-          this.currentConnection = undefined;
-        }
+      if (this.currentConnection?.id === connectionId) {
+        this.currentConnection = undefined;
+      }
 
-        this.debug("Cleaning up worker heartbeat", {
-          connectionId,
-        });
-
-        clearInterval(heartbeatInterval);
+      this.debug("Cleaning up worker heartbeat", {
+        connectionId,
       });
+
+      clearInterval(heartbeatInterval);
     };
 
     return conn;
