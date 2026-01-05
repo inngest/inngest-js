@@ -550,7 +550,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     kind: ErrCode,
     text: string,
   ) {
-    console.warn(text);
+    this.logger.warn(text);
 
     if (!this.experimentalMetadataEnabled) return;
 
