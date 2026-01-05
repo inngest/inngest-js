@@ -149,7 +149,7 @@ describe("buildTarget", () => {
             // no executingStep
           },
         } as unknown as experimental.AsyncContext),
-      ).toThrow("no step context is available");
+      ).toThrow("attempt() was called without a value, but you are not inside a step.run() callback");
     });
 
     test("succeeds when attempt() called without value inside matching step context", () => {
