@@ -53,6 +53,7 @@ import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
   type MetadataBuilder,
+  type MetadataEntry,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
 import {
@@ -537,6 +538,29 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
     throw new Error(
       `Failed to update metadata: ${res.error?.error || "Unknown error"}`,
+    );
+  }
+
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
+  private async getMetadata({
+    target,
+    headers,
+  }: {
+    target: MetadataTarget;
+    headers?: Record<string, string>;
+  }): Promise<MetadataEntry[]> {
+    const res = await this.inngestApi.getMetadata(
+      {
+        target,
+      },
+      { headers },
+    );
+    if (res.ok) {
+      return res.value;
+    }
+
+    throw new Error(
+      `Failed to get metadata: ${res.error?.error || "Unknown error"}`,
     );
   }
 

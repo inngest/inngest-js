@@ -39,6 +39,7 @@ import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
   type MetadataBuilder,
+  type MetadataEntry,
   type MetadataStepTool,
   metadataSymbol,
   UnscopedMetadataBuilder,
@@ -287,6 +288,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
       ): Promise<void> => {
         await tools.run(memoizationId, async () => {
           await builder.update(values, kind);
+        });
+      },
+
+      get: async (): Promise<MetadataEntry[]> => {
+        return await tools.run(memoizationId, async () => {
+          return await builder.get();
         });
       },
 

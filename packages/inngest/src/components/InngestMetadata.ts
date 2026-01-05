@@ -31,6 +31,12 @@ export type MetadataUpdate = {
   values: MetadataValues;
 };
 
+export type MetadataEntry = {
+  kind: MetadataKind;
+  scope: MetadataScope;
+  values: MetadataValues;
+};
+
 export type MetadataValues = Record<string, unknown>;
 
 interface BuilderConfig {
@@ -86,6 +92,11 @@ export type MetadataBuilder<Extras = {}> = Simplify<
      * current step attempt if executed inside `step.run`.
      */
     update(values: Record<string, unknown>, kind?: string): Promise<void>;
+
+    /**
+     * Retrieve metadata for the configured run/step/step attempt/span.
+     */
+    get(): Promise<MetadataEntry[] | null>;
   } & Extras
 >;
 
@@ -154,6 +165,15 @@ export class UnscopedMetadataBuilder implements MetadataBuilder {
       `userland.${kind}`,
       "merge",
     );
+  }
+
+  async get(): Promise<MetadataEntry[]> {
+    const ctx = await getAsyncCtx();
+    const target = buildTarget(this.config, ctx);
+
+    return await this.client["getMetadata"]({
+      target,
+    });
   }
 
   toJSON() {
