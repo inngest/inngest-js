@@ -28,8 +28,10 @@ export type MetadataUpdate = {
   kind: MetadataKind;
   scope: MetadataScope;
   op: MetadataOpcode;
-  values: Record<string, unknown>;
+  values: MetadataValues;
 };
+
+export type MetadataValues = Record<string, unknown>;
 
 interface BuilderConfig {
   runId?: string | null;
@@ -169,60 +171,58 @@ export function buildTarget(
 ): MetadataTarget {
   const ctxExecution = ctx?.execution;
   const ctxRunId = ctxExecution?.ctx?.runId;
+  const ctxStepId = ctxExecution?.executingStep?.id;
+  const ctxAttempt = ctxExecution?.ctx?.attempt;
   const targetRunId = config.runId ?? ctxRunId;
   if (!targetRunId) throw new Error("No run context available");
 
   const isSameRunAsCtx = ctxRunId !== undefined && targetRunId === ctxRunId;
 
-  const ctxStepId = ctxExecution?.executingStep?.id;
-  const stepId = config.stepId ?? (isSameRunAsCtx ? ctxStepId : undefined);
+  const stepCtxReason = !ctxExecution
+    ? "no function execution context is available"
+    : !ctxExecution.executingStep
+      ? "you are not inside a step.run() callback"
+      : "you are targeting a different run";
 
-  if (config.stepId === null && !stepId) {
-    const reason = !ctxExecution
-      ? "no function execution context is available"
-      : !ctxExecution.executingStep
-        ? "you are not inside a step.run() callback"
-        : "you are targeting a different run";
+  if (
+    config.attempt === null &&
+    (!isSameRunAsCtx || !ctxExecution?.executingStep)
+  )
+    throw new Error(
+      `attempt() was called without a value, but ${stepCtxReason}`,
+    );
+  if (
+    config.stepId === null &&
+    (!isSameRunAsCtx || !ctxExecution?.executingStep)
+  )
+    throw new Error(`step() was called without a value, but ${stepCtxReason}`);
 
-    throw new Error(`step() was called without a step ID, but ${reason}`);
+  if (config.spanId !== undefined) {
+    return {
+      run_id: targetRunId,
+      step_id: config.stepId ?? ctxStepId,
+      step_index: config.stepIndex,
+      step_attempt: config.attempt ?? ctxAttempt,
+      span_id: config.spanId,
+    };
+  } else if (config.attempt !== undefined) {
+    return {
+      run_id: targetRunId,
+      step_id: config.stepId ?? ctxStepId,
+      step_index: config.stepIndex,
+      step_attempt: config.attempt ?? ctxAttempt,
+    };
+  } else if (config.stepId !== undefined) {
+    return {
+      run_id: targetRunId,
+      step_id: config.stepId ?? ctxStepId,
+      step_index: config.stepIndex,
+    };
+  } else {
+    return {
+      run_id: targetRunId,
+    };
   }
-
-  let target: MetadataTarget = {
-    run_id: targetRunId,
-  };
-
-  if (stepId) {
-    target = { ...target, step_id: stepId };
-
-    if (config.stepIndex !== undefined) {
-      target = { ...target, step_index: config.stepIndex };
-    }
-  }
-
-  const ctxAttempt = ctxExecution?.ctx?.attempt;
-  const attempt =
-    config.attempt ??
-    (isSameRunAsCtx && stepId && stepId === ctxStepId ? ctxAttempt : undefined);
-
-  if (config.attempt === null && attempt === undefined) {
-    const reason = !stepId
-      ? "no step context is available"
-      : "you are targeting a different step";
-
-    throw new Error(`attempt() was called without a value, but ${reason}`);
-  }
-
-  if (attempt !== undefined) {
-    if (!stepId) throw new Error("attempt() requires step()");
-    target = { ...target, step_attempt: attempt };
-  }
-
-  if (config.spanId) {
-    if (attempt === undefined) throw new Error("span() requires attempt()");
-    target = { ...target, span_id: config.spanId };
-  }
-
-  return target as MetadataTarget;
 }
 
 /**
@@ -370,7 +370,7 @@ export const metadataMiddleware = () => {
                      *   .update({ childCompleted: true });
                      * ```
                      */
-                    metadata: (input.steps as unknown as ExperimentalStepTools)[
+                    metadata: (input.ctx.step as ExperimentalStepTools)[
                       metadataSymbol
                     ],
                   },
