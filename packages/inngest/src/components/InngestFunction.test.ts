@@ -382,7 +382,7 @@ describe("runFn", () => {
                 describe("warning logs", () => {
                   t.expectedWarnings?.forEach((warning, i) => {
                     test(`warning log #${i + 1} includes "${warning}"`, () => {
-                      expect(globalThis.console.warn).toHaveBeenNthCalledWith(
+                      expect(mockLogger.warn).toHaveBeenNthCalledWith(
                         i + 1,
                         expect.stringContaining(warning),
                       );
@@ -391,7 +391,7 @@ describe("runFn", () => {
                 });
               } else {
                 test("no warning logs", () => {
-                  expect(globalThis.console.warn).not.toHaveBeenCalled();
+                  expect(mockLogger.warn).not.toHaveBeenCalled();
                 });
               }
 
