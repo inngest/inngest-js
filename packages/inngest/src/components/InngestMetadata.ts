@@ -218,6 +218,16 @@ export function buildTarget(
       step_id: config.stepId ?? ctxStepId,
       step_index: config.stepIndex,
     };
+  } else if (config.runId !== undefined) {
+    return {
+      run_id: targetRunId,
+    };
+  } else if (ctxStepId && ctxAttempt !== undefined) {
+    return {
+      run_id: targetRunId,
+      step_id: ctxStepId,
+      step_attempt: ctxAttempt,
+    };
   } else {
     return {
       run_id: targetRunId,
