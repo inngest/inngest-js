@@ -1017,9 +1017,13 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        * Ensure we give middleware the chance to decide on retriable behaviour
        * by looking at the error returned from output transformation.
        */
+      const shouldUseStepFailed =
+        this.fnArg.maxAttempts != null &&
+        this.fnArg.attempt + 1 >= this.fnArg.maxAttempts;
       let retriable: boolean | string = !(
         error instanceof NonRetriableError ||
-        (error instanceof StepError &&
+        (shouldUseStepFailed &&
+          error instanceof StepError &&
           error === this.state.recentlyRejectedStepError)
       );
       if (retriable && error instanceof RetryAfterError) {
@@ -1426,11 +1430,25 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 if (typeof result.data !== "undefined") {
                   resolve(result.data);
                 } else {
-                  this.state.recentlyRejectedStepError = new StepError(
-                    opId.id,
-                    result.error,
-                  );
-                  reject(this.state.recentlyRejectedStepError);
+                  const maxAttempts = this.fnArg.maxAttempts ?? Infinity;
+                  const hasRetriesRemaining =
+                    this.fnArg.attempt < maxAttempts - 1;
+
+                  if (hasRetriesRemaining && step.fn) {
+                    void Promise.resolve().then(async () => {
+                      try {
+                        resolve(await step.fn!());
+                      } catch (err) {
+                        reject(err);
+                      }
+                    });
+                  } else {
+                    this.state.recentlyRejectedStepError = new StepError(
+                      opId.id,
+                      result.error,
+                    );
+                    reject(this.state.recentlyRejectedStepError);
+                  }
                 }
               },
             );
