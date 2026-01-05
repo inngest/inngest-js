@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 describe("package.json", () => {
@@ -17,13 +17,13 @@ describe("package.json", () => {
               import: z.string(),
               require: z.string(),
             }),
-          })
+          }),
         ),
       }),
     });
 
     const packageJson = packageJsonSchema.parse(
-      JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf8"))
+      JSON.parse(readFileSync(resolve(__dirname, "package.json"), "utf8")),
     );
 
     // Every `exports` key exists in `publishConfig.exports`
