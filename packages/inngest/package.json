@@ -16,14 +16,6 @@
         "import": "./index.js",
         "require": "./index.cjs"
       },
-      "./experimental": {
-        "types": {
-          "import": "./experimental.d.ts",
-          "require": "./experimental.d.cts"
-        },
-        "import": "./experimental.js",
-        "require": "./experimental.cjs"
-      },
       "./astro": {
         "types": {
           "import": "./astro.d.ts",
@@ -48,6 +40,22 @@
         "import": "./cloudflare.js",
         "require": "./cloudflare.cjs"
       },
+      "./connect": {
+        "types": {
+          "import": "./connect.d.ts",
+          "require": "./connect.d.cts"
+        },
+        "import": "./connect.js",
+        "require": "./connect.cjs"
+      },
+      "./deno/fresh": {
+        "types": {
+          "import": "./deno/fresh.d.ts",
+          "require": "./deno/fresh.d.cts"
+        },
+        "import": "./deno/fresh.js",
+        "require": "./deno/fresh.cjs"
+      },
       "./digitalocean": {
         "types": {
           "import": "./digitalocean.d.ts",
@@ -63,6 +71,14 @@
         },
         "import": "./edge.js",
         "require": "./edge.cjs"
+      },
+      "./experimental": {
+        "types": {
+          "import": "./experimental.d.ts",
+          "require": "./experimental.d.cts"
+        },
+        "import": "./experimental.js",
+        "require": "./experimental.cjs"
       },
       "./express": {
         "types": {
@@ -88,6 +104,22 @@
         "import": "./h3.js",
         "require": "./h3.cjs"
       },
+      "./hono": {
+        "types": {
+          "import": "./hono.d.ts",
+          "require": "./hono.d.cts"
+        },
+        "import": "./hono.js",
+        "require": "./hono.cjs"
+      },
+      "./internals": {
+        "types": {
+          "import": "./internals.d.ts",
+          "require": "./internals.d.cts"
+        },
+        "import": "./internals.js",
+        "require": "./internals.cjs"
+      },
       "./koa": {
         "types": {
           "import": "./koa.d.ts",
@@ -111,6 +143,22 @@
         },
         "import": "./next.js",
         "require": "./next.cjs"
+      },
+      "./nitro": {
+        "types": {
+          "import": "./nitro.d.ts",
+          "require": "./nitro.d.cts"
+        },
+        "import": "./nitro.js",
+        "require": "./nitro.cjs"
+      },
+      "./node": {
+        "types": {
+          "import": "./node.d.ts",
+          "require": "./node.d.cts"
+        },
+        "import": "./node.js",
+        "require": "./node.cjs"
       },
       "./nuxt": {
         "types": {
@@ -144,38 +192,6 @@
         "import": "./sveltekit.js",
         "require": "./sveltekit.cjs"
       },
-      "./deno/fresh": {
-        "types": {
-          "import": "./deno/fresh.d.ts",
-          "require": "./deno/fresh.d.cts"
-        },
-        "import": "./deno/fresh.js",
-        "require": "./deno/fresh.cjs"
-      },
-      "./hono": {
-        "types": {
-          "import": "./hono.d.ts",
-          "require": "./hono.d.cts"
-        },
-        "import": "./hono.js",
-        "require": "./hono.cjs"
-      },
-      "./nitro": {
-        "types": {
-          "import": "./nitro.d.ts",
-          "require": "./nitro.d.cts"
-        },
-        "import": "./nitro.js",
-        "require": "./nitro.cjs"
-      },
-      "./node": {
-        "types": {
-          "import": "./node.d.ts",
-          "require": "./node.d.cts"
-        },
-        "import": "./node.js",
-        "require": "./node.cjs"
-      },
       "./types": {
         "types": {
           "import": "./types.d.ts",
@@ -183,22 +199,6 @@
         },
         "import": "./types.js",
         "require": "./types.cjs"
-      },
-      "./connect": {
-        "types": {
-          "import": "./connect.d.ts",
-          "require": "./connect.d.cts"
-        },
-        "import": "./connect.js",
-        "require": "./connect.cjs"
-      },
-      "./internals": {
-        "types": {
-          "import": "./internals.d.ts",
-          "require": "./internals.d.cts"
-        },
-        "import": "./internals.js",
-        "require": "./internals.cjs"
       }
     },
     "registry": "https://registry.npmjs.org"
@@ -228,29 +228,29 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./experimental": "./src/experimental.ts",
     "./astro": "./src/astro.ts",
     "./bun": "./src/bun.ts",
     "./cloudflare": "./src/cloudflare.ts",
+    "./connect": "./src/connect.ts",
+    "./deno/fresh": "./src/deno/fresh.ts",
     "./digitalocean": "./src/digitalocean.ts",
     "./edge": "./src/edge.ts",
+    "./experimental": "./src/experimental.ts",
     "./express": "./src/express.ts",
     "./fastify": "./src/fastify.ts",
     "./h3": "./src/h3.ts",
+    "./hono": "./src/hono.ts",
+    "./internals": "./src/internals.ts",
     "./koa": "./src/koa.ts",
     "./lambda": "./src/lambda.ts",
     "./next": "./src/next.ts",
+    "./nitro": "./src/nitro.ts",
+    "./node": "./src/node.ts",
     "./nuxt": "./src/nuxt.ts",
     "./redwood": "./src/redwood.ts",
     "./remix": "./src/remix.ts",
     "./sveltekit": "./src/sveltekit.ts",
-    "./deno/fresh": "./src/deno/fresh.ts",
-    "./hono": "./src/hono.ts",
-    "./nitro": "./src/nitro.ts",
-    "./node": "./src/node.ts",
-    "./types": "./src/types.ts",
-    "./connect": "./src/connect.ts",
-    "./internals": "./src/internals.ts"
+    "./types": "./src/types.ts"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
