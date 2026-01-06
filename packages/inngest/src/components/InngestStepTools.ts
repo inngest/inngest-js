@@ -37,6 +37,12 @@ import type {
 } from "./Inngest.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { InngestFunctionReference } from "./InngestFunctionReference.ts";
+import {
+  type MetadataBuilder,
+  type MetadataStepTool,
+  metadataSymbol,
+  UnscopedMetadataBuilder,
+} from "./InngestMetadata.ts";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -246,6 +252,52 @@ export const createStepTools = <TClient extends Inngest.Any>(
         fn: (_, fn, ...input) => fn(...input),
       },
     );
+  };
+
+  /**
+   * Creates a metadata builder wrapper for step.metadata("id").
+   * Uses MetadataBuilder for config accumulation, but wraps .update() in tools.run() for memoization.
+   */
+  const createStepMetadataWrapper = (
+    memoizationId: string,
+    builder?: UnscopedMetadataBuilder,
+  ) => {
+    if (!client["experimentalMetadataEnabled"]) {
+      throw new Error(
+        'step.metadata() is experimental. Enable it by adding metadataMiddleware() from "inngest/experimental" to your client middleware.',
+      );
+    }
+    const withBuilder = (next: UnscopedMetadataBuilder) =>
+      createStepMetadataWrapper(memoizationId, next);
+
+    if (!builder) {
+      builder = new UnscopedMetadataBuilder(client).run();
+    }
+
+    return {
+      run: (runId?: string) => withBuilder(builder.run(runId)),
+      step: (stepId: string, index?: number) =>
+        withBuilder(builder.step(stepId, index)),
+      attempt: (attemptIndex: number) =>
+        withBuilder(builder.attempt(attemptIndex)),
+      span: (spanId: string) => withBuilder(builder.span(spanId)),
+      update: async (
+        values: Record<string, unknown>,
+        kind = "default",
+      ): Promise<void> => {
+        await tools.run(memoizationId, async () => {
+          await builder.update(values, kind);
+        });
+      },
+
+      do: async (
+        fn: (builder: MetadataBuilder) => Promise<void>,
+      ): Promise<void> => {
+        await tools.run(memoizationId, async () => {
+          await fn(builder);
+        });
+      },
+    };
   };
 
   /**
@@ -685,6 +737,12 @@ export const createStepTools = <TClient extends Inngest.Any>(
     fetch: stepFetch,
   };
 
+  // NOTE: This should be moved into the above object definition under the key
+  // "metadata" when metadata is made non-experimental.
+  (tools as unknown as ExperimentalStepTools)[metadataSymbol] = (
+    memoizationId: string,
+  ): MetadataStepTool => createStepMetadataWrapper(memoizationId);
+
   // Add an uptyped gateway
   (tools as unknown as InternalStepTools)[gatewaySymbol] = createTool(
     ({ id, name }, input, init) => {
@@ -738,6 +796,10 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
     headers: Record<string, string>;
     body: string;
   }>;
+};
+
+export type ExperimentalStepTools = GetStepTools<Inngest.Any> & {
+  [metadataSymbol]: (memoizationId: string) => MetadataStepTool;
 };
 
 /**
