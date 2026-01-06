@@ -792,7 +792,7 @@ export type InternalStepTools = GetStepTools<Inngest.Any> & {
     idOrOptions: StepOptionsOrId,
     ...args: Parameters<typeof fetch>
   ) => Promise<{
-    status: number;
+    status_code: number;
     headers: Record<string, string>;
     body: string;
   }>;
