@@ -1,5 +1,4 @@
-import { serializeError } from "../helpers/errors";
-import { StepMode } from "../types";
+import { StepMode, StepOpCode } from "../types";
 import {
   createV1InngestExecution,
   _internals as v1Internals,
@@ -181,6 +180,210 @@ describe("StepFailed OpCode with try/catch", () => {
       expect(result.step.data).toEqual({ name: "Alice", message: "Hello" });
     } else {
       throw new Error(`Unexpected result type: ${result.type}`);
+    }
+  });
+});
+
+describe("Step retry behavior with cached errors", () => {
+  const inngest = new Inngest({ id: "test" });
+
+  test("step with cached error re-runs when retries remaining", async () => {
+    let stepRunCount = 0;
+
+    const fn = inngest.createFunction(
+      { id: "test-step-retry", retries: 3 },
+      { event: "test/event" },
+      async ({ step }) => {
+        const result = await step.run("retrying-step", () => {
+          stepRunCount++;
+          return "success on retry";
+        });
+        return result;
+      },
+    );
+
+    // Simulate cached error state with retries remaining (attempt 0, maxAttempts 3)
+    const stepHashedId = v1Internals.hashId("retrying-step");
+    const execution = createV1InngestExecution({
+      client: inngest,
+      fn: fn as InngestFunction.Any,
+      data: {
+        event: { name: "test/event", data: {} },
+        events: [{ name: "test/event", data: {} }],
+        runId: "test-run",
+        attempt: 0,
+        maxAttempts: 3,
+      },
+      stepState: {
+        [stepHashedId]: {
+          id: stepHashedId,
+          data: undefined,
+          error: {
+            name: "Error",
+            message: "Previous attempt failed",
+            stack: "Error: Previous attempt failed",
+          },
+          seen: false,
+          fulfilled: false,
+        },
+      },
+      stepCompletionOrder: [stepHashedId],
+      reqArgs: [],
+      isFailureHandler: false,
+      runId: "test-run",
+      headers: {},
+      stepMode: StepMode.Async,
+    });
+
+    const result = await execution.start();
+
+    // Step should have been re-run
+    expect(stepRunCount).toBe(1);
+    expect(result.type).toBe("function-resolved");
+    if (result.type === "function-resolved") {
+      expect(result.data).toBe("success on retry");
+    }
+  });
+
+  test("step with cached error throws when no retries remaining", async () => {
+    let stepRunCount = 0;
+    let caughtError: Error | undefined;
+
+    const fn = inngest.createFunction(
+      { id: "test-step-no-retry", retries: 1 },
+      { event: "test/event" },
+      async ({ step }) => {
+        try {
+          await step.run("final-attempt-step", () => {
+            stepRunCount++;
+            return "should not run";
+          });
+        } catch (err) {
+          caughtError = err as Error;
+          throw err;
+        }
+      },
+    );
+
+    // Simulate cached error state with NO retries remaining (attempt 0, maxAttempts 1)
+    const stepHashedId = v1Internals.hashId("final-attempt-step");
+    const execution = createV1InngestExecution({
+      client: inngest,
+      fn: fn as InngestFunction.Any,
+      data: {
+        event: { name: "test/event", data: {} },
+        events: [{ name: "test/event", data: {} }],
+        runId: "test-run",
+        attempt: 0,
+        maxAttempts: 1,
+      },
+      stepState: {
+        [stepHashedId]: {
+          id: stepHashedId,
+          data: undefined,
+          error: {
+            name: "Error",
+            message: "Final attempt failed",
+            stack: "Error: Final attempt failed",
+          },
+          seen: false,
+          fulfilled: false,
+        },
+      },
+      stepCompletionOrder: [stepHashedId],
+      reqArgs: [],
+      isFailureHandler: false,
+      runId: "test-run",
+      headers: {},
+      stepMode: StepMode.Async,
+    });
+
+    const result = await execution.start();
+
+    // Step should NOT have been re-run - cached error should be thrown
+    expect(stepRunCount).toBe(0);
+    expect(caughtError).toBeDefined();
+    expect(caughtError?.message).toBe("Final attempt failed");
+    expect(result.type).toBe("function-rejected");
+    if (result.type === "function-rejected") {
+      expect(result.retriable).toBe(false);
+    }
+  });
+
+  test("step error is retriable when not on final attempt", async () => {
+    const fn = inngest.createFunction(
+      { id: "test-retriable-error", retries: 3 },
+      { event: "test/event" },
+      async ({ step }) => {
+        await step.run("failing-step", () => {
+          throw new Error("Step failed");
+        });
+      },
+    );
+
+    const execution = createV1InngestExecution({
+      client: inngest,
+      fn: fn as InngestFunction.Any,
+      data: {
+        event: { name: "test/event", data: {} },
+        events: [{ name: "test/event", data: {} }],
+        runId: "test-run",
+        attempt: 0,
+        maxAttempts: 3,
+      },
+      stepState: {},
+      stepCompletionOrder: [],
+      reqArgs: [],
+      isFailureHandler: false,
+      runId: "test-run",
+      headers: {},
+      stepMode: StepMode.Async,
+    });
+
+    const result = await execution.start();
+
+    expect(result.type).toBe("step-ran");
+    if (result.type === "step-ran") {
+      expect(result.step.op).toBe(StepOpCode.StepError);
+    }
+  });
+
+  test("step error is non-retriable on final attempt", async () => {
+    const fn = inngest.createFunction(
+      { id: "test-final-attempt-error", retries: 3 },
+      { event: "test/event" },
+      async ({ step }) => {
+        await step.run("failing-step", () => {
+          throw new Error("Step failed");
+        });
+      },
+    );
+
+    // Final attempt: attempt 2, maxAttempts 3 (0-indexed, so attempt+1 >= maxAttempts)
+    const execution = createV1InngestExecution({
+      client: inngest,
+      fn: fn as InngestFunction.Any,
+      data: {
+        event: { name: "test/event", data: {} },
+        events: [{ name: "test/event", data: {} }],
+        runId: "test-run",
+        attempt: 2,
+        maxAttempts: 3,
+      },
+      stepState: {},
+      stepCompletionOrder: [],
+      reqArgs: [],
+      isFailureHandler: false,
+      runId: "test-run",
+      headers: {},
+      stepMode: StepMode.Async,
+    });
+
+    const result = await execution.start();
+
+    expect(result.type).toBe("step-ran");
+    if (result.type === "step-ran") {
+      expect(result.step.op).toBe(StepOpCode.StepFailed);
     }
   });
 });
