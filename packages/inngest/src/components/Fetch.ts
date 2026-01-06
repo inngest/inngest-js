@@ -81,7 +81,7 @@ const createFetchShim = (): StepFetch => {
 
     return new Response(jsonRes.body, {
       headers: jsonRes.headers,
-      status: jsonRes.status,
+      status: jsonRes.status_code,
     });
   };
 
