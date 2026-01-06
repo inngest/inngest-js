@@ -361,7 +361,7 @@
     "prettier": "^3.1.0",
     "shx": "^0.3.4",
     "ts-proto": "^2.6.1",
-    "tsdown": "^0.15.4",
+    "tsdown": "^0.18.4",
     "tsx": "^3.12.7",
     "typescript": "^5.9.2",
     "vite-tsconfig-paths": "^5.1.4",
