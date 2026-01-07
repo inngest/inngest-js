@@ -930,8 +930,12 @@ export class InngestCommHandler<
     );
 
     // TODO For body, we can add `textBody()` to the actions
+    // Body must be base64 encoded as the server expects []byte which unmarshals from base64 in JSON
     const bodyPromise = actions.textBody!(reason).then((body) => {
-      return typeof body === "string" ? body : stringify(body);
+      const str = typeof body === "string" ? body : stringify(body);
+      return typeof btoa !== "undefined"
+        ? btoa(str)
+        : Buffer.from(str).toString("base64");
     });
 
     const [contentType, domain, ip, method, path, queryParams, body] =
