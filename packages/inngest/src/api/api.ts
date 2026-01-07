@@ -1,6 +1,5 @@
 import type { fetch } from "cross-fetch";
 import { z } from "zod/v3";
-import type { ActionResponse } from "../components/InngestCommHandler.ts";
 import {
   defaultDevServerHost,
   defaultInngestApiBaseUrl,
@@ -14,6 +13,7 @@ import { hashSigningKey } from "../helpers/strings.ts";
 import {
   type APIStepPayload,
   err,
+  type MetadataTarget,
   type OutgoingOp,
   ok,
   type Result,
@@ -406,6 +406,61 @@ export class InngestApi {
           getErrorMessage(error, "Unknown error getting subscription token"),
         );
       });
+  }
+
+  async updateMetadata(
+    args: {
+      target: MetadataTarget;
+      metadata: Array<{
+        kind: string;
+        op: string;
+        values: Record<string, unknown>;
+      }>;
+    },
+    options?: {
+      headers?: Record<string, string>;
+    },
+  ): Promise<Result<void, ErrorResponse>> {
+    const payload = { target: args.target, metadata: args.metadata };
+
+    const result = await this.req(`/v1/runs/${args.target.run_id}/metadata`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: options?.headers,
+    });
+
+    if (!result.ok) {
+      return err({
+        error: getErrorMessage(result.error, "Unknown error updating metadata"),
+        status: 500,
+      });
+    }
+
+    const res = result.value;
+    if (res.ok) {
+      return ok<void>(undefined);
+    }
+
+    const resClone = res.clone();
+
+    let json: unknown;
+    try {
+      json = await res.json();
+    } catch {
+      return err({
+        error: `Failed to update metadata: ${res.status} ${res.statusText} - ${await resClone.text()}`,
+        status: res.status,
+      });
+    }
+
+    try {
+      return err(errorSchema.parse(json));
+    } catch {
+      return err({
+        error: `Failed to update metadata: ${res.status} ${res.statusText}`,
+        status: res.status,
+      });
+    }
   }
 
   /**
