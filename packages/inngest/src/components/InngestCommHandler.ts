@@ -2234,7 +2234,10 @@ export class InngestCommHandler<
       url: registerBody.url,
     };
 
-    if (introspectionBody.authentication_succeeded) {
+    if (
+      "authentication_succeeded" in introspectionBody &&
+      introspectionBody.authentication_succeeded
+    ) {
       body.sdk_language = introspectionBody.sdk_language;
       body.sdk_version = introspectionBody.sdk_version;
     }
@@ -2265,7 +2268,6 @@ export class InngestCommHandler<
     let introspection:
       | UnauthenticatedIntrospection
       | AuthenticatedIntrospection = {
-      authentication_succeeded: null,
       extra: {
         is_mode_explicit: this._mode.isExplicit,
       },
@@ -2314,7 +2316,6 @@ export class InngestCommHandler<
         // unauthenticated introspection
         introspection = {
           ...introspection,
-          authentication_succeeded: false,
         } satisfies UnauthenticatedIntrospection;
       }
     }
