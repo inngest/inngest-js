@@ -1,11 +1,11 @@
 import chalk from "chalk";
 import stringify from "json-stringify-safe";
 import {
-  type SerializedError as CjsSerializedError,
+  addKnownErrorConstructor,
+  type ErrorLike as CjsSerializedError,
   deserializeError as cjsDeserializeError,
   serializeError as cjsSerializeError,
-  errorConstructors,
-} from "serialize-error-cjs";
+} from "serialize-error";
 import stripAnsi from "strip-ansi";
 import { z } from "zod/v3";
 import type { Inngest } from "../components/Inngest.ts";
@@ -26,10 +26,7 @@ const SERIALIZED_VALUE = true;
  * Note that these errors only support `message?: string | undefined` as the
  * input; more custom errors are not supported with this current strategy.
  */
-errorConstructors.set(
-  "NonRetriableError",
-  NonRetriableError as ErrorConstructor,
-);
+addKnownErrorConstructor(NonRetriableError as ErrorConstructor);
 
 export interface SerializedError extends Readonly<CjsSerializedError> {
   readonly [SERIALIZED_KEY]: typeof SERIALIZED_VALUE;
@@ -174,10 +171,7 @@ export const isSerializedError = (
       const parsed = z
         .object({
           [SERIALIZED_KEY]: z.literal(SERIALIZED_VALUE),
-          name: z.enum([...Array.from(errorConstructors.keys())] as [
-            string,
-            ...string[],
-          ]),
+          name: z.string(),
           message: z.string(),
           stack: z.string(),
         })
