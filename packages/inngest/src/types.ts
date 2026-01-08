@@ -822,6 +822,30 @@ export interface ClientOptions {
   eventKey?: string;
 
   /**
+   * A key used to sign requests to and from Inngest in order to prove that the
+   * source is legitimate.
+   *
+   * You must provide a signing key to communicate securely with Inngest. If
+   * your key is not provided here, we'll try to retrieve it from the
+   * `INNGEST_SIGNING_KEY` environment variable.
+   *
+   * You can retrieve your signing key from the Inngest UI inside the "Secrets"
+   * section at {@link https://app.inngest.com/secrets}. We highly recommend
+   * that you add this to your platform's available environment variables as
+   * `INNGEST_SIGNING_KEY`.
+   *
+   * If no key can be found, you will not be able to register your functions or
+   * receive events from Inngest.
+   */
+  signingKey?: string;
+
+  /**
+   * The same as signingKey, except used as a fallback when auth fails using the
+   * primary signing key.
+   */
+  signingKeyFallback?: string;
+
+  /**
    * The base URL to use when contacting Inngest.
    *
    * Defaults to https://inn.gs/ for sending events and https://api.inngest.com
@@ -892,6 +916,14 @@ export interface ClientOptions {
    * Defaults to a dummy logger that just log things to the console if nothing is provided.
    */
   logger?: Logger;
+
+  /**
+   * The minimum level to log from the Inngest serve endpoint.
+   *
+   * Default level: "info"
+   */
+  logLevel?: LogLevel;
+
   middleware?: InngestMiddleware.Stack;
 
   /**
@@ -998,46 +1030,6 @@ export type LogLevel = (typeof logLevels)[number];
  */
 export interface RegisterOptions {
   /**
-   * A key used to sign requests to and from Inngest in order to prove that the
-   * source is legitimate.
-   *
-   * You must provide a signing key to communicate securely with Inngest. If
-   * your key is not provided here, we'll try to retrieve it from the
-   * `INNGEST_SIGNING_KEY` environment variable.
-   *
-   * You can retrieve your signing key from the Inngest UI inside the "Secrets"
-   * section at {@link https://app.inngest.com/secrets}. We highly recommend
-   * that you add this to your platform's available environment variables as
-   * `INNGEST_SIGNING_KEY`.
-   *
-   * If no key can be found, you will not be able to register your functions or
-   * receive events from Inngest.
-   */
-  signingKey?: string;
-
-  /**
-   * The same as signingKey, except used as a fallback when auth fails using the
-   * primary signing key.
-   */
-  signingKeyFallback?: string;
-
-  /**
-   * The URL used to register functions with Inngest.
-   * Defaults to https://api.inngest.com/fn/register
-   */
-  baseUrl?: string;
-
-  /**
-   * If provided, will override the used `fetch` implementation. Useful for
-   * giving the library a particular implementation if accessing it is not done
-   * via globals.
-   *
-   * By default the library will try to use the native Web API fetch, falling
-   * back to a Node implementation if no global fetch can be found.
-   */
-  fetch?: typeof fetch;
-
-  /**
    * The path to the Inngest serve endpoint. e.g.:
    *
    *     "/some/long/path/to/inngest/endpoint"
@@ -1072,13 +1064,6 @@ export interface RegisterOptions {
   serveHost?: string;
 
   /**
-   * The minimum level to log from the Inngest serve endpoint.
-   *
-   * Default level: "info"
-   */
-  logLevel?: LogLevel;
-
-  /**
    * Some serverless providers (especially those with edge compute) may support
    * streaming responses back to Inngest. This can be used to circumvent
    * restrictive request timeouts and other limitations. It is only available if
@@ -1098,13 +1083,6 @@ export interface RegisterOptions {
    * Defaults to `false`.
    */
   streaming?: "allow" | "force" | false;
-
-  /**
-   * The ID of this app. This is used to group functions together in the Inngest
-   * UI. The ID of the passed client is used by default.
-   * @deprecated Will be removed in v4.
-   */
-  id?: string;
 }
 
 /**

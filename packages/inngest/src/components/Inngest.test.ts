@@ -1299,3 +1299,118 @@ describe("helper types", () => {
     });
   });
 });
+
+describe("loadEnvVars", () => {
+  test("sets signing key from env when not already set", () => {
+    const inngest = createClient({ id: "test" });
+    expect(inngest.signingKey).toBeUndefined();
+
+    inngest["loadEnvVars"]({ [envKeys.InngestSigningKey]: "env-key" });
+    expect(inngest.signingKey).toBe("env-key");
+  });
+
+  test("does NOT override existing signing key from constructor", () => {
+    const inngest = createClient({ id: "test", signingKey: "constructor-key" });
+    expect(inngest.signingKey).toBe("constructor-key");
+
+    inngest["loadEnvVars"]({ [envKeys.InngestSigningKey]: "env-key" });
+    expect(inngest.signingKey).toBe("constructor-key"); // NOT overwritten
+  });
+
+  test("sets signing key fallback from env when not already set", () => {
+    const inngest = createClient({ id: "test" });
+    expect(inngest.signingKeyFallback).toBeUndefined();
+
+    inngest["loadEnvVars"]({
+      [envKeys.InngestSigningKeyFallback]: "fallback-env-key",
+    });
+    expect(inngest.signingKeyFallback).toBe("fallback-env-key");
+  });
+
+  test("does NOT override existing signing key fallback from constructor", () => {
+    const inngest = createClient({
+      id: "test",
+      signingKeyFallback: "constructor-fallback",
+    });
+    expect(inngest.signingKeyFallback).toBe("constructor-fallback");
+
+    inngest["loadEnvVars"]({
+      [envKeys.InngestSigningKeyFallback]: "env-fallback",
+    });
+    expect(inngest.signingKeyFallback).toBe("constructor-fallback"); // NOT overwritten
+  });
+
+  test("sets event key from env when not already set", () => {
+    const inngest = createClient({ id: "test" });
+    expect(inngest["eventKeySet"]()).toBe(false);
+
+    inngest["loadEnvVars"]({ [envKeys.InngestEventKey]: "env-event-key" });
+    expect(inngest["eventKeySet"]()).toBe(true);
+  });
+
+  test("does NOT override existing event key from constructor", () => {
+    const inngest = createClient({ id: "test", eventKey: "constructor-event" });
+    expect(inngest["eventKeySet"]()).toBe(true);
+
+    // loadEnvVars shouldn't override - we can't directly check the value,
+    // but we can verify the eventKeySet() state remains true
+    inngest["loadEnvVars"]({ [envKeys.InngestEventKey]: "env-event-key" });
+    expect(inngest["eventKeySet"]()).toBe(true);
+  });
+
+  test("sets logLevel from env when not already set", () => {
+    const inngest = createClient({ id: "test" });
+    expect(inngest.logLevel).toBeUndefined();
+
+    inngest["loadEnvVars"]({ [envKeys.InngestLogLevel]: "debug" });
+    expect(inngest.logLevel).toBe("debug");
+  });
+
+  test("does NOT override existing logLevel from constructor", () => {
+    const inngest = createClient({ id: "test", logLevel: "warn" });
+    expect(inngest.logLevel).toBe("warn");
+
+    inngest["loadEnvVars"]({ [envKeys.InngestLogLevel]: "debug" });
+    expect(inngest.logLevel).toBe("warn");
+  });
+
+  test("syncs signing key to InngestApi", () => {
+    const inngest = createClient({ id: "test" });
+    const setSigningKeySpy = vi.spyOn(inngest["inngestApi"], "setSigningKey");
+
+    inngest["loadEnvVars"]({ [envKeys.InngestSigningKey]: "env-key" });
+    expect(setSigningKeySpy).toHaveBeenCalledWith("env-key");
+  });
+
+  test("syncs signing key fallback to InngestApi", () => {
+    const inngest = createClient({ id: "test" });
+    const setSigningKeyFallbackSpy = vi.spyOn(
+      inngest["inngestApi"],
+      "setSigningKeyFallback",
+    );
+
+    inngest["loadEnvVars"]({
+      [envKeys.InngestSigningKeyFallback]: "fallback-env-key",
+    });
+    expect(setSigningKeyFallbackSpy).toHaveBeenCalledWith("fallback-env-key");
+  });
+
+  test("handles empty env object without errors", () => {
+    const inngest = createClient({ id: "test" });
+
+    expect(() => inngest["loadEnvVars"]({})).not.toThrow();
+    expect(inngest.signingKey).toBeUndefined();
+    expect(inngest.signingKeyFallback).toBeUndefined();
+  });
+
+  test("handles multiple calls - only first env value is used", () => {
+    const inngest = createClient({ id: "test" });
+
+    inngest["loadEnvVars"]({ [envKeys.InngestSigningKey]: "first-key" });
+    expect(inngest.signingKey).toBe("first-key");
+
+    // Second call should not override since signingKey is already set
+    inngest["loadEnvVars"]({ [envKeys.InngestSigningKey]: "second-key" });
+    expect(inngest.signingKey).toBe("first-key");
+  });
+});

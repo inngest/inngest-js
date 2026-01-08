@@ -210,10 +210,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
     }
 
     const env = allProcessEnv();
-    options.signingKey = options.signingKey || env[envKeys.InngestSigningKey];
-    options.signingKeyFallback =
-      options.signingKeyFallback || env[envKeys.InngestSigningKeyFallback];
-
     if (options.maxWorkerConcurrency === undefined) {
       const envValue = env[envKeys.InngestConnectMaxWorkerConcurrency];
       if (envValue) {
@@ -304,19 +300,22 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this.debug("Establishing connection", { attempt });
 
-    if (this.inngest["mode"].isCloud && !this.options.signingKey) {
+    this.inngest["loadEnvVars"](allProcessEnv());
+
+    const signingKey = this.inngest.signingKey;
+    const signingKeyFallback = this.inngest.signingKeyFallback;
+
+    if (this.inngest["mode"].isCloud && !signingKey) {
       throw new Error("Signing key is required");
     }
 
-    this._hashedSigningKey = this.options.signingKey
-      ? hashSigningKey(this.options.signingKey)
+    this._hashedSigningKey = signingKey
+      ? hashSigningKey(signingKey)
       : undefined;
 
     if (
-      this.options.signingKey &&
-      this.options.signingKey.startsWith(
-        InngestBranchEnvironmentSigningKeyPrefix,
-      ) &&
+      signingKey &&
+      signingKey.startsWith(InngestBranchEnvironmentSigningKeyPrefix) &&
       !this._inngestEnv
     ) {
       throw new Error(
@@ -324,8 +323,8 @@ class WebSocketWorkerConnection implements WorkerConnection {
       );
     }
 
-    if (this.options.signingKeyFallback) {
-      this._hashedFallbackKey = hashSigningKey(this.options.signingKeyFallback);
+    if (signingKeyFallback) {
+      this._hashedFallbackKey = hashSigningKey(signingKeyFallback);
     }
 
     try {
@@ -400,8 +399,6 @@ class WebSocketWorkerConnection implements WorkerConnection {
         client: client,
         functions: functions,
         frameworkName: "connect",
-        signingKey: this.options.signingKey,
-        signingKeyFallback: this.options.signingKeyFallback,
         skipSignatureValidation: true,
         handler: (msg: GatewayExecutorRequestData) => {
           const asString = new TextDecoder().decode(msg.requestPayload);

@@ -46,6 +46,8 @@ import {
   type FailureEventArgs,
   type Handler,
   type InvokeTargetFunctionDefinition,
+  type LogLevel,
+  logLevels,
   type MetadataTarget,
   type SendEventOutput,
   type SendEventResponse,
@@ -179,6 +181,33 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   private _appVersion: string | undefined;
 
   /**
+   * Signing key used to authenticate requests to and from Inngest.
+   */
+  private _signingKey: string | undefined;
+
+  /**
+   * Fallback signing key for key rotation scenarios.
+   */
+  private _signingKeyFallback: string | undefined;
+
+  /**
+   * The minimum log level for the client.
+   */
+  private _logLevel: LogLevel | undefined;
+
+  /**
+   * Validates and sets the log level, warning if invalid.
+   */
+  private trySetLogLevel(level: string | undefined): void {
+    if (!level) return;
+    if (logLevels.includes(level as LogLevel)) {
+      this._logLevel = level as LogLevel;
+    } else {
+      console.warn(`${logPrefix} Unknown log level "${level}"; ignoring`);
+    }
+  }
+
+  /**
    * @internal
    * Flag set by metadataMiddleware to enable step.metadata()
    */
@@ -198,6 +227,36 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   get appVersion(): string | undefined {
     return this._appVersion;
+  }
+
+  /**
+   * The signing key used to authenticate requests to and from Inngest.
+   */
+  get signingKey(): string | undefined {
+    return this._signingKey ?? processEnv(envKeys.InngestSigningKey);
+  }
+
+  /**
+   * The fallback signing key for key rotation scenarios.
+   */
+  get signingKeyFallback(): string | undefined {
+    return (
+      this._signingKeyFallback ?? processEnv(envKeys.InngestSigningKeyFallback)
+    );
+  }
+
+  /**
+   * The minimum log level for the client.
+   */
+  get logLevel(): LogLevel | undefined {
+    if (this._logLevel) return this._logLevel;
+
+    const envLevel = processEnv(envKeys.InngestLogLevel);
+    if (envLevel && logLevels.includes(envLevel as LogLevel)) {
+      return envLevel as LogLevel;
+    }
+
+    return undefined;
   }
 
   /**
@@ -253,6 +312,9 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       isDev,
       schemas,
       appVersion,
+      signingKey,
+      signingKeyFallback,
+      logLevel,
     } = this.options;
 
     if (!id) {
@@ -269,10 +331,14 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
     this.fetch = getFetch(fetch);
 
+    this._signingKey = signingKey;
+    this._signingKeyFallback = signingKeyFallback;
+    this.trySetLogLevel(logLevel);
+
     this.inngestApi = new InngestApi({
       baseUrl: this.apiBaseUrl,
-      signingKey: processEnv(envKeys.InngestSigningKey) || "",
-      signingKeyFallback: processEnv(envKeys.InngestSigningKeyFallback),
+      signingKey: this.signingKey ?? "",
+      signingKeyFallback: this.signingKeyFallback,
       fetch: this.fetch,
       mode: this.mode,
     });
@@ -453,6 +519,44 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
   private eventKeySet(): boolean {
     return Boolean(this.eventKey) && this.eventKey !== dummyEventKey;
+  }
+
+  /**
+   * Load environment variables into the client if not already set.
+   * Called by InngestCommHandler to discover keys at request time
+   * when they may not have been available at client construction time
+   * (e.g., in edge environments where env vars are passed per-request).
+   *
+   * @internal
+   */
+  public loadEnvVars(env: Record<string, string | undefined>): void {
+    // Set signing key from env if not already set via options
+    if (this._signingKey === undefined && env[envKeys.InngestSigningKey]) {
+      this._signingKey = env[envKeys.InngestSigningKey];
+    }
+
+    // Set signing key fallback from env if not already set via options
+    if (
+      this._signingKeyFallback === undefined &&
+      env[envKeys.InngestSigningKeyFallback]
+    ) {
+      this._signingKeyFallback = env[envKeys.InngestSigningKeyFallback];
+    }
+
+    if (this._logLevel === undefined) {
+      this.trySetLogLevel(env[envKeys.InngestLogLevel]);
+    }
+
+    // Set event key from env if not already set
+    if (!this.eventKeySet() && env[envKeys.InngestEventKey]) {
+      this.setEventKey(env[envKeys.InngestEventKey]!);
+    }
+
+    // Sync current resolved values to InngestApi
+    this.inngestApi.setSigningKey(this.signingKey ?? "");
+    if (this.signingKeyFallback) {
+      this.inngestApi.setSigningKeyFallback(this.signingKeyFallback);
+    }
   }
 
   /**

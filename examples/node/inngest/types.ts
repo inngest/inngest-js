@@ -7,4 +7,10 @@ type DemoEventSent = {
   };
 };
 
-export const schemas = new EventSchemas().fromUnion<DemoEventSent>();
+type HelloWorldEvent = {
+  name: "hello-world";
+};
+
+export const schemas = new EventSchemas().fromUnion<
+  HelloWorldEvent | DemoEventSent
+>();

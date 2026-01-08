@@ -1,5 +1,10 @@
 import { fromPartial } from "@total-typescript/shoehorn";
-import fetch from "cross-fetch";
+/**
+ * For tests, use cross-fetch because it uses node-fetch under the hood,
+ * which uses http/https modules that nock can intercept.
+ * Note: nock@13.2.9 doesn't support Node.js native fetch (added in nock v13.4.0).
+ */
+import crossFetch from "cross-fetch";
 import type { Request, Response } from "express";
 import nock from "nock";
 import httpMocks from "node-mocks-http";
@@ -50,13 +55,13 @@ const createReqRes = (...args: Parameters<typeof httpMocks.createRequest>) => {
 
 const retryFetch = async (
   retries: number,
-  ...args: Parameters<typeof fetch>
+  ...args: Parameters<typeof crossFetch>
 ) => {
   let lastError;
 
   for (let i = 0; i < retries; i++) {
     try {
-      return await fetch(...args);
+      return await crossFetch(...args);
     } catch (err) {
       lastError = err;
     }
@@ -160,7 +165,30 @@ export const runFnWithStack = async (
   return rest;
 };
 
-const inngest = createClient({ id: "test", eventKey: "event-key-123" });
+/**
+ * A shared Inngest client for framework handler tests.
+ * Uses cross-fetch so that nock can intercept HTTP requests.
+ */
+const inngest = createClient({
+  id: "test",
+  eventKey: "event-key-123",
+  fetch: crossFetch,
+});
+
+/**
+ * Creates a test client with a signing key for signature validation tests.
+ */
+const createTestClientWithSigningKey = (
+  signingKey: string,
+  opts?: { signingKeyFallback?: string; eventKey?: string },
+) =>
+  createClient({
+    id: "test",
+    eventKey: opts?.eventKey,
+    signingKey,
+    signingKeyFallback: opts?.signingKeyFallback,
+    fetch: crossFetch,
+  });
 
 export const testFramework = (
   /**
@@ -243,12 +271,6 @@ export const testFramework = (
   ) => {
     const serveHandler = handler.serve({
       ...handlerOpts[0],
-
-      /**
-       * For testing, the fetch implementation has to be stable for us to
-       * appropriately mock out the network requests.
-       */
-      fetch,
     });
 
     return serveHandler;
@@ -709,7 +731,12 @@ export const testFramework = (
             const ret = await run(
               [
                 {
-                  client: new Inngest({ id: "Test", env: "FOO", isDev: false }),
+                  client: new Inngest({
+                    id: "Test",
+                    env: "FOO",
+                    isDev: false,
+                    fetch: crossFetch,
+                  }),
                   functions: [],
                 },
               ],
@@ -1121,7 +1148,12 @@ export const testFramework = (
         };
         test("should throw an error in prod with no signature", async () => {
           const ret = await run(
-            [{ client: inngest, functions: [fn], signingKey: "test" }],
+            [
+              {
+                client: createTestClientWithSigningKey("test"),
+                functions: [fn],
+              },
+            ],
 
             [{ method: "POST", headers: {} }],
             env,
@@ -1135,7 +1167,12 @@ export const testFramework = (
         });
         test("should throw an error with an invalid signature", async () => {
           const ret = await run(
-            [{ client: inngest, functions: [fn], signingKey: "test" }],
+            [
+              {
+                client: createTestClientWithSigningKey("test"),
+                functions: [fn],
+              },
+            ],
             [{ method: "POST", headers: { [headerKeys.Signature]: "t=&s=" } }],
             env,
           );
@@ -1150,7 +1187,12 @@ export const testFramework = (
           const yesterday = new Date();
           yesterday.setDate(yesterday.getDate() - 1);
           const ret = await run(
-            [{ client: inngest, functions: [fn], signingKey: "test" }],
+            [
+              {
+                client: createTestClientWithSigningKey("test"),
+                functions: [fn],
+              },
+            ],
             [
               {
                 method: "POST",
@@ -1199,10 +1241,11 @@ export const testFramework = (
           const ret = await run(
             [
               {
-                client: inngest,
-                functions: [fn],
-                signingKey:
+                client: createTestClientWithSigningKey(
                   "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+                  { eventKey: "event-key-123" },
+                ),
+                functions: [fn],
                 __testingAllowExpiredSignatures: true,
               } as any,
             ],
@@ -1250,11 +1293,12 @@ export const testFramework = (
             const ret = await run(
               [
                 {
-                  client: inngest,
+                  client: createTestClientWithSigningKey("fake", {
+                    eventKey: "event-key-123",
+                    signingKeyFallback:
+                      "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+                  }),
                   functions: [fn],
-                  signingKey: "fake",
-                  signingKeyFallback:
-                    "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
                   __testingAllowExpiredSignatures: true,
                 } as any,
               ],
@@ -1301,10 +1345,11 @@ export const testFramework = (
             const ret = await run(
               [
                 {
-                  client: inngest,
+                  client: createTestClientWithSigningKey("fake", {
+                    eventKey: "event-key-123",
+                    signingKeyFallback: "another-fake",
+                  }),
                   functions: [fn],
-                  signingKey: "fake",
-                  signingKeyFallback: "another-fake",
                   __testingAllowExpiredSignatures: true,
                 } as any,
               ],
@@ -1367,10 +1412,11 @@ export const testFramework = (
             const ret = await run(
               [
                 {
-                  client: inngest,
-                  functions: [fn],
-                  signingKey:
+                  client: createTestClientWithSigningKey(
                     "signkey-test-f00f3005a3666b359a79c2bc3380ce2715e62727ac461ae1a2618f8766029c9f",
+                    { eventKey: "event-key-123" },
+                  ),
+                  functions: [fn],
                   __testingAllowExpiredSignatures: true,
                 } as any,
               ],
@@ -1408,7 +1454,12 @@ export const testFramework = (
 
         test("should throw an error with an invalid JSON body", async () => {
           const ret = await run(
-            [{ client: inngest, functions: [fn], signingKey: "test" }],
+            [
+              {
+                client: createTestClientWithSigningKey("test"),
+                functions: [fn],
+              },
+            ],
             [
               {
                 method: "POST",
@@ -1438,7 +1489,7 @@ export const sendEvent = async (
   data?: Record<string, unknown>,
   user?: Record<string, unknown>,
 ): Promise<string> => {
-  const res = await fetch("http://localhost:8288/e/key", {
+  const res = await crossFetch("http://localhost:8288/e/key", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1489,7 +1540,7 @@ export const receivedEventWithName = async (
   for (let i = 0; i < 140; i++) {
     const start = new Date();
 
-    const res = await fetch("http://localhost:8288/v0/gql", {
+    const res = await crossFetch("http://localhost:8288/v0/gql", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1557,7 +1608,7 @@ export const eventRunWithName = async (
       operationName: "GetEventStream",
     };
 
-    const res = await fetch("http://localhost:8288/v0/gql", {
+    const res = await crossFetch("http://localhost:8288/v0/gql", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1635,7 +1686,7 @@ class TimelineItem {
   }
 
   public async getOutput() {
-    const res = await fetch("http://localhost:8288/v0/gql", {
+    const res = await crossFetch("http://localhost:8288/v0/gql", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1694,7 +1745,7 @@ export const runHasTimeline = async (
   for (let i = 0; i < attempts; i++) {
     const start = new Date();
 
-    const res = await fetch("http://localhost:8288/v0/gql", {
+    const res = await crossFetch("http://localhost:8288/v0/gql", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1789,7 +1840,7 @@ export const checkIntrospection = ({ name, triggers }: CheckIntrospection) => {
     });
 
     it("should be registered in Dev Server UI", async () => {
-      const res = await fetch("http://localhost:8288/dev");
+      const res = await crossFetch("http://localhost:8288/dev");
 
       const data = z
         .object({

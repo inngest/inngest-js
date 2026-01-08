@@ -1,6 +1,9 @@
 # Node packages
 node_modules
 
+# Local Inngest dev server
+.inngest/
+
 # Nix
 /.direnv/
 

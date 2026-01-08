@@ -327,17 +327,19 @@ export class InngestCommHandler<
   protected readonly frameworkName: string;
 
   /**
-   * The signing key used to validate requests from Inngest. This is
-   * intentionally mutable so that we can pick up the signing key from the
-   * environment during execution if needed.
+   * The signing key used to validate requests from Inngest.
    */
-  protected signingKey: string | undefined;
+  protected get signingKey(): string | undefined {
+    return this.client.signingKey;
+  }
 
   /**
    * The same as signingKey, except used as a fallback when auth fails using the
-   * primary signing key.
+   * primary signing key (eg, key rotation scenarios)
    */
-  protected signingKeyFallback: string | undefined;
+  protected get signingKeyFallback(): string | undefined {
+    return this.client.signingKeyFallback;
+  }
 
   /**
    * A property that can be set to indicate whether we believe we are in
@@ -389,7 +391,9 @@ export class InngestCommHandler<
   /**
    * The minimum level to log from the Inngest serve handler.
    */
-  protected readonly logLevel: LogLevel;
+  protected get logLevel(): LogLevel {
+    return this.client.logLevel ?? "info";
+  }
 
   protected readonly streaming: RegisterOptions["streaming"];
 
@@ -441,13 +445,7 @@ export class InngestCommHandler<
 
     this.frameworkName = options.frameworkName;
     this.client = options.client as Inngest.Any;
-
-    if (options.id) {
-      console.warn(
-        `${logPrefix} The \`id\` serve option is deprecated and will be removed in v4`,
-      );
-    }
-    this.id = options.id || this.client.id;
+    this.id = this.client.id;
 
     this.handler = options.handler as Handler;
 
@@ -501,28 +499,10 @@ export class InngestCommHandler<
 
     this.inngestRegisterUrl = new URL("/fn/register", this.apiBaseUrl);
 
-    this.signingKey = options.signingKey;
-    this.signingKeyFallback = options.signingKeyFallback;
     this._serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
     this._servePath = options.servePath || this.env[envKeys.InngestServePath];
 
     this.skipSignatureValidation = options.skipSignatureValidation || false;
-
-    const defaultLogLevel: typeof this.logLevel = "info";
-    this.logLevel = z
-      .enum(logLevels)
-      .default(defaultLogLevel)
-      .catch((ctx) => {
-        this.log(
-          "warn",
-          `Unknown log level passed: ${String(
-            ctx.input,
-          )}; defaulting to ${defaultLogLevel}`,
-        );
-
-        return defaultLogLevel;
-      })
-      .parse(options.logLevel || this.env[envKeys.InngestLogLevel]);
 
     if (this.logLevel === "debug") {
       /**
@@ -556,7 +536,7 @@ export class InngestCommHandler<
       })
       .parse(options.streaming || this.env[envKeys.InngestStreaming]);
 
-    this.fetch = options.fetch ? getFetch(options.fetch) : this.client["fetch"];
+    this.fetch = this.client["fetch"];
   }
 
   /**
@@ -567,7 +547,6 @@ export class InngestCommHandler<
    */
   protected get apiBaseUrl(): string {
     return (
-      this._options.baseUrl ||
       this.env[envKeys.InngestApiBaseUrl] ||
       this.env[envKeys.InngestBaseUrl] ||
       this.client.apiBaseUrl ||
@@ -583,7 +562,6 @@ export class InngestCommHandler<
    */
   protected get eventApiBaseUrl(): string {
     return (
-      this._options.baseUrl ||
       this.env[envKeys.InngestEventApiBaseUrl] ||
       this.env[envKeys.InngestBaseUrl] ||
       this.client.eventBaseUrl ||
@@ -2453,35 +2431,7 @@ export class InngestCommHandler<
    * are otherwise difficult to access during initialization.
    */
   private upsertKeysFromEnv() {
-    if (this.env[envKeys.InngestSigningKey]) {
-      if (!this.signingKey) {
-        this.signingKey = String(this.env[envKeys.InngestSigningKey]);
-      }
-
-      this.client["inngestApi"].setSigningKey(this.signingKey);
-    }
-
-    if (this.env[envKeys.InngestSigningKeyFallback]) {
-      if (!this.signingKeyFallback) {
-        this.signingKeyFallback = String(
-          this.env[envKeys.InngestSigningKeyFallback],
-        );
-      }
-
-      this.client["inngestApi"].setSigningKeyFallback(this.signingKeyFallback);
-    }
-
-    if (!this.client["eventKeySet"]() && this.env[envKeys.InngestEventKey]) {
-      this.client.setEventKey(String(this.env[envKeys.InngestEventKey]));
-    }
-
-    // v2 -> v3 migration warnings
-    if (this.env[envKeys.InngestDevServerUrl]) {
-      this.log(
-        "warn",
-        `Use of ${envKeys.InngestDevServerUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`,
-      );
-    }
+    this.client["loadEnvVars"](this.env);
   }
 
   /**
