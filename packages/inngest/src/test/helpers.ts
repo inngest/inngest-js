@@ -8,7 +8,7 @@ import {
   type IInngestExecution,
   type InngestExecution,
   type InngestExecutionOptions,
-  PREFERRED_EXECUTION_VERSION,
+  PREFERRED_ASYNC_EXECUTION_VERSION,
 } from "../components/execution/InngestExecution.ts";
 import {
   type HandlerResponse,
@@ -89,7 +89,7 @@ export const getStepTools = (
   const execution = client
     .createFunction({ id: "test" }, { event: "test" }, () => undefined)
     ["createExecution"]({
-      version: PREFERRED_EXECUTION_VERSION,
+      version: PREFERRED_ASYNC_EXECUTION_VERSION,
       partialOptions: {
         client,
         data: fromPartial({
