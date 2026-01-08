@@ -580,14 +580,6 @@ export namespace Handler {
 }
 
 /**
- * Asserts that the given keys `U` are all present in the given object `T`.
- *
- * Used as an internal type guard to ensure that changes to keys are accounted
- * for
- */
-type AssertKeysAreFrom<T, K extends keyof T> = K;
-
-/**
  * The shape of a single event's payload without any fields used to identify the
  * actual event being sent.
  *
