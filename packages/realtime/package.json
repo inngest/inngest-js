@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "vitest run",
-    "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
+    "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts && node ./scripts/transformPackageJson.js",
     "postversion": "pnpm run build",
     "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
     "pack": "pnpm run build && mv $(npm pack ./dist --pack-destination . --silent) inngest-realtime.tgz"
