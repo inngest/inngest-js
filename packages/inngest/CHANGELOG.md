@@ -1,5 +1,19 @@
 # inngest
 
+## 3.49.0
+
+### Minor Changes
+
+- [#1176](https://github.com/inngest/inngest-js/pull/1176) [`e828e226`](https://github.com/inngest/inngest-js/commit/e828e226e3575fea988a8272bba8cfcdd66ba28a) Thanks [@Linell](https://github.com/Linell)! - feat(metadata): Add step.update.metadata
+
+### Patch Changes
+
+- [#1215](https://github.com/inngest/inngest-js/pull/1215) [`29307e2e`](https://github.com/inngest/inngest-js/commit/29307e2e341a550eefc2118b1e35470ca8478c81) Thanks [@rhino1998](https://github.com/rhino1998)! - Fix step.fetch response status code
+
+- [#1222](https://github.com/inngest/inngest-js/pull/1222) [`ecf46a58`](https://github.com/inngest/inngest-js/commit/ecf46a58f6e67558bf6dc19ac4524f995cdf0754) Thanks [@amh4r](https://github.com/amh4r)! - Remove "authentication_succeeded: false" when responding to unsigned requests
+
+- [#1214](https://github.com/inngest/inngest-js/pull/1214) [`326fe06b`](https://github.com/inngest/inngest-js/commit/326fe06b5231f2528be46922084e1673bb63ae3d) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Fix Connect heartbeater stops too soon during shutdown
+
 ## 3.48.1
 
 ### Patch Changes
