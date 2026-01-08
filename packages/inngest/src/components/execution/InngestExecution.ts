@@ -3,9 +3,9 @@ import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
 import type { ServerTiming } from "../../helpers/ServerTiming.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import type {
-  CheckpointingOptions,
   Context,
   IncomingOp,
+  InternalCheckpointingOptions,
   OutgoingOp,
   StepMode,
 } from "../../types.ts";
@@ -107,7 +107,7 @@ export interface InngestExecutionOptions {
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
   stepMode: StepMode;
-  checkpointingConfig?: CheckpointingOptions;
+  checkpointingConfig?: InternalCheckpointingOptions;
 
   /**
    * If this execution is being run from a queue job, this will be an identifier
