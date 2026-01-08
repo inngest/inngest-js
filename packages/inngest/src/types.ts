@@ -964,17 +964,33 @@ export type CheckpointingOptions =
   | boolean
   | {
       /**
-       * TODO
+       * The maximum amount of time the function should be allowed to checkpoint
+       * before falling back to async execution.
+       *
+       * We recommend setting this to a value slightly lower than your
+       * platform's request timeout to ensure that functions can complete
+       * checkpointing before being forcefully terminated.
+       *
+       * Set to `0` to disable maximum runtime.
+       *
+       * @default 0
        */
       maxRuntime?: number | string | Temporal.DurationLike;
 
       /**
-       * TODO
+       * The number of steps to buffer together before checkpointing. This can
+       * help reduce the number of requests made to Inngest when running many
+       * steps in sequence.
+       *
+       * Set to `1` to checkpoint after every step.
+       *
+       * @default 1
        */
       bufferedSteps?: number;
 
       /**
-       * TODO
+       * The maximum interval to wait before checkpointing, even if the buffered
+       * step count has not been reached.
        */
       maxInterval?: number | string | Temporal.DurationLike;
     };
