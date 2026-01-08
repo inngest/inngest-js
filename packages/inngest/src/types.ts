@@ -1326,7 +1326,6 @@ export interface InBandRegisterRequest
  * @internal
  */
 export interface UnauthenticatedIntrospection {
-  authentication_succeeded: false | null;
   extra: {
     is_mode_explicit: boolean;
   };
