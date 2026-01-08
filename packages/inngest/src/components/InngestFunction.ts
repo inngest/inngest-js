@@ -324,6 +324,8 @@ export class InngestFunction<
       bufferedSteps:
         userCfg.bufferedSteps ?? defaultCheckpointingOptions.bufferedSteps,
       maxRuntime: userCfg.maxRuntime ?? defaultCheckpointingOptions.maxRuntime,
+      maxInterval:
+        userCfg.maxInterval ?? defaultCheckpointingOptions.maxInterval,
     };
   }
 }

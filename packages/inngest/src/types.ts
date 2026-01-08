@@ -976,7 +976,7 @@ export type CheckpointingOptions =
       /**
        * TODO
        */
-      // maxInterval?: number | string | Temporal.DurationLike;
+      maxInterval?: number | string | Temporal.DurationLike;
     };
 
 /**
@@ -994,6 +994,7 @@ export type InternalCheckpointingOptions = Exclude<
 export const defaultCheckpointingOptions: InternalCheckpointingOptions = {
   bufferedSteps: 1,
   maxRuntime: 0,
+  maxInterval: 0,
 };
 
 /**

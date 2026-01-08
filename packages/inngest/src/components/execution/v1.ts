@@ -105,6 +105,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     typeof createTimeoutPromise
   >;
 
+  /**
+   * If we're checkpointing and have been given a maximum buffer interval, this
+   * will be a `Promise` that resolves after that duration has elapsed, allowing
+   * us to periodically checkpoint even if the step buffer hasn't filled.
+   */
+  private checkpointingMaxBufferIntervalTimer?: ReturnType<
+    typeof createTimeoutPromise
+  >;
+
   constructor(rawOptions: InngestExecutionOptions) {
     const options: InngestExecutionOptions = {
       ...rawOptions,
@@ -395,6 +404,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     const attemptCheckpointAndResume = async (
       stepResult?: OutgoingOp,
       resume = true,
+      force = false,
     ) => {
       // If we're here, we successfully ran a step, so we may now need
       // to checkpoint it depending on the step buffer configured.
@@ -405,6 +415,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       }
 
       if (
+        force ||
         !this.options.checkpointingConfig?.bufferedSteps ||
         this.state.checkpointingStepBuffer.length >=
           this.options.checkpointingConfig.bufferedSteps
@@ -537,6 +548,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           },
         ]);
       },
+
+      "checkpointing-buffer-interval-reached": () => {
+        return attemptCheckpointAndResume(undefined, false, true);
+      },
     };
 
     const asyncHandlers: CheckpointHandlers[StepMode.Async] = {
@@ -595,6 +610,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       "checkpointing-runtime-reached": () => {
         throw new Error(
           "Checkpointing maximum runtime reached, but this is not in a checkpointing step mode. This is a bug in the Inngest SDK.",
+        );
+      },
+
+      "checkpointing-buffer-interval-reached": () => {
+        throw new Error(
+          "Checkpointing maximum buffer interval reached, but this is not in a checkpointing step mode. This is a bug in the Inngest SDK.",
         );
       },
     };
@@ -708,6 +729,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
               },
             ],
           };
+        },
+
+        "checkpointing-buffer-interval-reached": () => {
+          return attemptCheckpointAndResume(undefined, false, true);
         },
       };
 
@@ -1000,6 +1025,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      */
     void this.timeout?.start();
     void this.checkpointingMaxRuntimeTimer?.start();
+    void this.checkpointingMaxBufferIntervalTimer?.start();
 
     await this.state.hooks?.beforeMemoization?.();
 
@@ -1129,6 +1155,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     })(() => {
       this.timeout?.clear();
       this.checkpointingMaxRuntimeTimer?.clear();
+      this.checkpointingMaxBufferIntervalTimer?.clear();
       void checkpointResults.return();
     });
 
@@ -1143,6 +1170,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       stepCompletionOrder: [...this.options.stepCompletionOrder],
       remainingStepsToBeSeen: new Set(this.options.stepCompletionOrder),
       setCheckpoint: (checkpoint: Checkpoint) => {
+        this.debug("setting checkpoint:", checkpoint.type);
+
         ({ resolve: checkpointResolve } = checkpointResolve(checkpoint));
       },
       allStateUsed: () => {
@@ -1596,37 +1625,71 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   private initializeCheckpointRuntimeTimer(state: V1ExecutionState): void {
-    // Not checkpointing or no max runtime? Skip.
-    if (!this.options.checkpointingConfig?.maxRuntime) {
-      return;
+    this.debug(
+      "initializing checkpointing runtime timers",
+      this.options.checkpointingConfig,
+    );
+
+    if (this.options.checkpointingConfig?.maxRuntime) {
+      const maxRuntimeMs = Temporal.isTemporalDuration(
+        this.options.checkpointingConfig.maxRuntime,
+      )
+        ? this.options.checkpointingConfig.maxRuntime.total({
+            unit: "milliseconds",
+          })
+        : typeof this.options.checkpointingConfig.maxRuntime === "string"
+          ? ms(this.options.checkpointingConfig.maxRuntime as StringValue) // type assertion to satisfy ms package
+          : (this.options.checkpointingConfig.maxRuntime as number);
+
+      // 0 or negative max runtime? Skip.
+      if (Number.isFinite(maxRuntimeMs) && maxRuntimeMs > 0) {
+        this.checkpointingMaxRuntimeTimer = createTimeoutPromise(maxRuntimeMs);
+
+        void this.checkpointingMaxRuntimeTimer.then(async () => {
+          await this.state.hooks?.afterMemoization?.();
+          await this.state.hooks?.beforeExecution?.();
+          await this.state.hooks?.afterExecution?.();
+
+          state.setCheckpoint({
+            type: "checkpointing-runtime-reached",
+          });
+        });
+      }
     }
 
-    const maxRuntimeMs = Temporal.isTemporalDuration(
-      this.options.checkpointingConfig.maxRuntime,
-    )
-      ? this.options.checkpointingConfig.maxRuntime.total({
-          unit: "milliseconds",
-        })
-      : typeof this.options.checkpointingConfig.maxRuntime === "string"
-        ? ms(this.options.checkpointingConfig.maxRuntime as StringValue) // type assertion to satisfy ms package
-        : (this.options.checkpointingConfig.maxRuntime as number);
+    if (this.options.checkpointingConfig?.maxInterval) {
+      const maxIntervalMs = Temporal.isTemporalDuration(
+        this.options.checkpointingConfig.maxInterval,
+      )
+        ? this.options.checkpointingConfig.maxInterval.total({
+            unit: "milliseconds",
+          })
+        : typeof this.options.checkpointingConfig.maxInterval === "string"
+          ? ms(this.options.checkpointingConfig.maxInterval as StringValue) // type assertion to satisfy ms package
+          : (this.options.checkpointingConfig.maxInterval as number);
 
-    // 0 or negative max runtime? Skip.
-    if (!Number.isFinite(maxRuntimeMs) || maxRuntimeMs <= 0) {
-      return;
+      // 0 or negative max interval? Skip.
+      if (Number.isFinite(maxIntervalMs) && maxIntervalMs > 0) {
+        this.checkpointingMaxBufferIntervalTimer =
+          createTimeoutPromise(maxIntervalMs);
+
+        void this.checkpointingMaxBufferIntervalTimer.then(async () => {
+          // Note that this will not immediately run; it will be queued like all
+          // other checkpoints so that we're never running multiple checkpoints
+          // at the same time and it's easier to reason about those decision
+          // points.
+          //
+          // A change in the future may be to make this particular checkpointing
+          // action immediate and have the checkpoint action itself be
+          // idempotent.
+          state.setCheckpoint({
+            type: "checkpointing-buffer-interval-reached",
+          });
+
+          this.checkpointingMaxBufferIntervalTimer?.reset();
+        });
+      }
     }
-
-    this.checkpointingMaxRuntimeTimer = createTimeoutPromise(maxRuntimeMs);
-
-    void this.checkpointingMaxRuntimeTimer.then(async () => {
-      await this.state.hooks?.afterMemoization?.();
-      await this.state.hooks?.beforeExecution?.();
-      await this.state.hooks?.afterExecution?.();
-
-      state.setCheckpoint({
-        type: "checkpointing-runtime-reached",
-      });
-    });
   }
 
   private async initializeMiddleware(): Promise<RunHookStack> {
@@ -1678,6 +1741,7 @@ export interface Checkpoints {
   "function-resolved": { data: unknown };
   "step-not-found": { step: OutgoingOp };
   "checkpointing-runtime-reached": {};
+  "checkpointing-buffer-interval-reached": {};
 }
 
 type Checkpoint = {
