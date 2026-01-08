@@ -392,6 +392,60 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       return;
     };
 
+    const attemptCheckpointAndResume = async (
+      stepResult?: OutgoingOp,
+      resume = true,
+    ) => {
+      // If we're here, we successfully ran a step, so we may now need
+      // to checkpoint it depending on the step buffer configured.
+      if (stepResult) {
+        this.state.checkpointingStepBuffer.push(
+          this.resumeStepWithResult(stepResult, resume),
+        );
+      }
+
+      if (
+        !this.options.checkpointingConfig?.bufferedSteps ||
+        this.state.checkpointingStepBuffer.length >=
+          this.options.checkpointingConfig.bufferedSteps
+      ) {
+        this.debug("checkpointing and resuming execution after step run");
+
+        try {
+          this.debug(
+            `checkpointing all buffered steps:`,
+            this.state.checkpointingStepBuffer
+              .map((op) => op.displayName || op.id)
+              .join(", "),
+          );
+
+          return void (await this.checkpoint(
+            this.state.checkpointingStepBuffer,
+          ));
+        } catch (err) {
+          // If checkpointing fails for any reason, fall back to the async
+          // flow
+          this.debug(
+            "error checkpointing after step run, so falling back to async",
+            err,
+          );
+
+          if (stepResult) {
+            return stepRanHandler(stepResult);
+          }
+        } finally {
+          // Clear the checkpointing buffer
+          this.state.checkpointingStepBuffer = [];
+        }
+      } else {
+        this.debug(
+          `not checkpointing yet, continuing execution as we haven't reached buffered step limit of ${this.options.checkpointingConfig?.bufferedSteps}`,
+        );
+      }
+
+      return;
+    };
+
     const syncHandlers: CheckpointHandlers[StepMode.Sync] = {
       /**
        * Run for all checkpoints. Best used for logging or common actions.
@@ -554,42 +608,34 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             i,
           );
           if (output?.type === "function-resolved") {
+            const steps = this.state.checkpointingStepBuffer.concat({
+              op: StepOpCode.RunComplete,
+              id: _internals.hashId("complete"), // TODO bad ID. bad bad bad
+              data: output.data,
+            }) as [OutgoingOp, ...OutgoingOp[]];
+
             return {
               type: "steps-found",
               ctx: output.ctx,
               ops: output.ops,
-              steps: [
-                {
-                  op: StepOpCode.RunComplete,
-                  id: _internals.hashId("complete"), // TODO bad ID. bad bad bad
-                  data: output.data,
-                },
-              ],
+              steps,
             };
           }
 
           return;
         },
-        "function-rejected": asyncHandlers["function-rejected"],
+        "function-rejected": async (checkpoint) => {
+          // If we have buffered steps, attempt checkpointing them first
+          if (this.state.checkpointingStepBuffer.length) {
+            await attemptCheckpointAndResume(undefined, false);
+          }
+
+          return await this.transformOutput({ error: checkpoint.error });
+        },
         "step-not-found": asyncHandlers["step-not-found"],
         "steps-found": async ({ steps }) => {
-          // If we are targeting a step and we have it, run it immediately and
-          // return end
-          if (this.options.requestedRunStep) {
-            this.debug(
-              "async checkpointing looking for step to run, so attempting to find it",
-            );
-
-            const step = steps.find(
-              (s) => s.hashedId === this.options.requestedRunStep && s.fn,
-            );
-            if (step) {
-              const stepResult = await this.executeStep(step);
-              if (stepResult) {
-                return stepRanHandler(stepResult);
-              }
-            }
-          }
+          // Note that if we have a requested run step, we'll never be
+          // checkpointing, as that's an async parallel execution mode.
 
           // Break found steps in to { stepsToResume, newSteps }
           const { stepsToResume, newSteps } = steps.reduce(
@@ -628,22 +674,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
                 return stepRanHandler(stepResult);
               }
 
-              this.debug("checkpointing and resuming execution after step run");
-
-              try {
-                return void (await this.checkpoint([
-                  this.resumeStepWithResult(stepResult),
-                ]));
-              } catch (err) {
-                // If checkpointing fails for any reason, fall back to the async
-                // flow
-                this.debug(
-                  "error checkpointing after step run, so falling back to async",
-                  err,
-                );
-
-                return stepRanHandler(stepResult);
-              }
+              // If we're here, we successfully ran a step, so we may now need
+              // to checkpoint it depending on the step buffer configured.
+              return await attemptCheckpointAndResume(stepResult);
             }
 
             return maybeReturnNewSteps();
@@ -1115,6 +1148,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       allStateUsed: () => {
         return this.state.remainingStepsToBeSeen.size === 0;
       },
+      checkpointingStepBuffer: [],
       metadata: new Map(),
     };
 
@@ -1497,7 +1531,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     return createStepTools(this.options.client, this, stepHandler);
   }
 
-  private resumeStepWithResult(resultOp: OutgoingOp): FoundStep {
+  private resumeStepWithResult(resultOp: OutgoingOp, resume = true): FoundStep {
     const userlandStep = this.state.steps.get(resultOp.id);
     if (!userlandStep) {
       throw new Error(
@@ -1509,14 +1543,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
     userlandStep.data = data;
     userlandStep.timing = resultOp.timing;
-    userlandStep.fulfilled = true;
-    userlandStep.hasStepState = true;
     userlandStep.op = resultOp.op;
     userlandStep.id = resultOp.id;
 
-    this.state.stepState[resultOp.id] = userlandStep;
+    if (resume) {
+      userlandStep.fulfilled = true;
+      userlandStep.hasStepState = true;
+      this.state.stepState[resultOp.id] = userlandStep;
 
-    userlandStep.handle();
+      userlandStep.handle();
+    }
 
     return userlandStep;
   }
@@ -1560,18 +1596,8 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
   }
 
   private initializeCheckpointRuntimeTimer(state: V1ExecutionState): void {
-    // Not checkpointing? Skip.
-    if (!this.options.checkpointingConfig) {
-      return;
-    }
-
-    // Default checkpointing config? Skip.
-    if (typeof this.options.checkpointingConfig === "boolean") {
-      return;
-    }
-
-    // Custom checkpointing config but no max runtime? Skip.
-    if (!this.options.checkpointingConfig.maxRuntime) {
+    // Not checkpointing or no max runtime? Skip.
+    if (!this.options.checkpointingConfig?.maxRuntime) {
       return;
     }
 
@@ -1783,6 +1809,11 @@ export interface V1ExecutionState {
     appId: string;
     token?: string;
   };
+
+  /**
+   * A buffer of steps that are currently queued to be checkpointed.
+   */
+  checkpointingStepBuffer: OutgoingOp[];
 
   /**
    * Metadata collected during execution to be sent with outgoing ops.
