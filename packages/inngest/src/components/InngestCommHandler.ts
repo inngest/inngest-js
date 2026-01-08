@@ -70,8 +70,8 @@ import {
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
+  PREFERRED_ASYNC_EXECUTION_VERSION,
   PREFERRED_CHECKPOINTING_EXECUTION_VERSION,
-  PREFERRED_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
 import { _internals } from "./execution/v1";
 import type { Inngest } from "./Inngest.ts";
@@ -1196,7 +1196,7 @@ export class InngestCommHandler<
           ? {}
           : {
               [headerKeys.RequestVersion]: (
-                res.version ?? PREFERRED_EXECUTION_VERSION
+                res.version ?? PREFERRED_ASYNC_EXECUTION_VERSION
               ).toString(),
             }),
       };
@@ -1491,7 +1491,8 @@ export class InngestCommHandler<
             event: {},
             events: [],
             steps: {},
-            version: PREFERRED_EXECUTION_VERSION,
+            version: PREFERRED_ASYNC_EXECUTION_VERSION,
+            sdkDecidedVersion: true,
             ctx: {
               attempt: 0,
               disable_immediate_execution: false,
@@ -1504,7 +1505,10 @@ export class InngestCommHandler<
               // TODO We need this to be given to us or the API to return it
               stack: { stack: [], current: 0 },
             },
-          } as Extract<FnData, { version: typeof PREFERRED_EXECUTION_VERSION }>;
+          } as Extract<
+            FnData,
+            { version: typeof PREFERRED_ASYNC_EXECUTION_VERSION }
+          >;
         } else {
           const rawProbe = await actions.queryStringWithDefaults(
             "testing for probe",
@@ -1904,7 +1908,7 @@ export class InngestCommHandler<
     }
 
     const immediateFnData = parseFnData(data);
-    let { version } = immediateFnData;
+    let { version, sdkDecidedVersion } = immediateFnData;
 
     // Handle opting in to optimized parallelism in v3.
     if (
@@ -2014,7 +2018,10 @@ export class InngestCommHandler<
           );
 
           return {
-            version,
+            version:
+              checkpointingConfig && sdkDecidedVersion
+                ? ExecutionVersion.V2
+                : version,
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",

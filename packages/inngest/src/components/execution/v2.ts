@@ -840,7 +840,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     if (!foundAllCompletedSteps) {
       await this.options.client["warnMetadata"](
         { run_id: this.options.runId },
-        ErrCode.NONDETERMINISTIC_STEPS,
+        ErrCode.NON_DETERMINISTIC_FUNCTION,
         prettyError({
           type: "warn",
           whatHappened: "Function may be indeterminate",
@@ -1288,7 +1288,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      foundStepsReportPromise = resolveNextTick()
+      foundStepsReportPromise = resolveAfterPending()
         /**
          * Ensure that we wait for this promise to resolve before continuing.
          *
@@ -1306,8 +1306,12 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           foundStepsReportPromise = undefined;
 
           for (const [hashedId, step] of unhandledFoundStepsToReport) {
-            if (step.handle()) {
+            // Note that we only run `step.handle()` if `step.hasStepState` is
+            // `true`. This gives us a chance to handle checkpointing in another
+            // part of the loop.
+            if (step.hasStepState && step.handle()) {
               unhandledFoundStepsToReport.delete(hashedId);
+
               if (step.fulfilled) {
                 foundStepsToReport.delete(step.id);
               }
@@ -1321,6 +1325,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             ];
 
             foundStepsToReport.clear();
+            unhandledFoundStepsToReport.clear();
 
             return void this.state.setCheckpoint({
               type: "steps-found",
@@ -1531,10 +1536,13 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     userlandStep.timing = resultOp.timing;
     userlandStep.op = resultOp.op;
     userlandStep.id = resultOp.id;
+    userlandStep.hasStepState = true;
+
+    console.log(`resumeStepWithResult: resuming step ${resultOp.id}`);
 
     if (resume) {
+      console.log(`resumeStepWithResult: handling step ${resultOp.id}`);
       userlandStep.fulfilled = true;
-      userlandStep.hasStepState = true;
       this.state.stepState[resultOp.id] = userlandStep;
 
       userlandStep.handle();
