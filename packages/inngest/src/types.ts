@@ -963,10 +963,38 @@ export interface ClientOptions {
 export type CheckpointingOptions =
   | boolean
   | {
+      /**
+       * TODO
+       */
       maxRuntime?: number | string | Temporal.DurationLike;
-      // maxSteps?: number;
+
+      /**
+       * TODO
+       */
+      bufferedSteps?: number;
+
+      /**
+       * TODO
+       */
       // maxInterval?: number | string | Temporal.DurationLike;
     };
+
+/**
+ * Internal version of {@link CheckpointingOptions} with the `true` option
+ * excluded, as that just suggests using the default options.
+ */
+export type InternalCheckpointingOptions = Exclude<
+  Required<CheckpointingOptions>,
+  boolean
+>;
+
+/**
+ * Default config options if `true` has been passed by a user.
+ */
+export const defaultCheckpointingOptions: InternalCheckpointingOptions = {
+  bufferedSteps: 1,
+  maxRuntime: 0,
+};
 
 /**
  * A set of log levels that can be used to control the amount of logging output
