@@ -7,7 +7,6 @@ import type { Inngest } from "../components/Inngest.ts";
 import type { SupportedFrameworkName } from "../types.ts";
 import { version } from "../version.ts";
 import { defaultDevServerHost, envKeys, headerKeys } from "./consts.ts";
-import { stringifyUnknown } from "./strings.ts";
 
 /**
  * @public
@@ -60,38 +59,7 @@ export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
   });
 };
 
-const checkFns = (<
-  T extends Record<string, (actual: EnvValue, expected: EnvValue) => boolean>,
->(
-  checks: T,
-): T => checks)({
-  equals: (actual, expected) => actual === expected,
-  "starts with": (actual, expected) =>
-    expected ? (actual?.startsWith(expected) ?? false) : false,
-  "is truthy": (actual) => Boolean(actual),
-  "is truthy but not": (actual, expected) =>
-    Boolean(actual) && actual !== expected,
-});
-
-const prodChecks: [
-  key: string,
-  customCheck: keyof typeof checkFns,
-  value?: string,
-][] = [
-  ["CF_PAGES", "equals", "1"],
-  ["CONTEXT", "starts with", "prod"],
-  ["ENVIRONMENT", "starts with", "prod"],
-  ["NODE_ENV", "starts with", "prod"],
-  ["VERCEL_ENV", "starts with", "prod"],
-  ["DENO_DEPLOYMENT_ID", "is truthy"],
-  [envKeys.VercelEnvKey, "is truthy but not", "development"],
-  [envKeys.IsNetlify, "is truthy"],
-  [envKeys.IsRender, "is truthy"],
-  [envKeys.RailwayBranch, "is truthy"],
-  [envKeys.IsCloudflarePages, "is truthy"],
-];
-
-interface IsProdOptions {
+interface GetModeOptions {
   /**
    * The optional environment variables to use instead of `process.env`.
    */
@@ -201,7 +169,7 @@ export const getMode = ({
   env = allProcessEnv(),
   client,
   explicitMode,
-}: IsProdOptions = {}): Mode => {
+}: GetModeOptions = {}): Mode => {
   if (explicitMode) {
     return new Mode({ type: explicitMode, isExplicit: true, env });
   }
@@ -230,11 +198,7 @@ export const getMode = ({
     }
   }
 
-  const isProd = prodChecks.some(([key, checkKey, expected]) => {
-    return checkFns[checkKey](stringifyUnknown(env[key]), expected);
-  });
-
-  return new Mode({ type: isProd ? "cloud" : "dev", isExplicit: false, env });
+  return new Mode({ type: "cloud", isExplicit: false, env });
 };
 
 /**

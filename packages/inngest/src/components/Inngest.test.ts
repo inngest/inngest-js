@@ -65,9 +65,9 @@ describe("new Inngest()", () => {
       return inngest;
     };
 
-    test("should default to inferred dev mode", () => {
+    test("should default to inferred cloud mode", () => {
       const inngest = createTestClient();
-      expect(inngest["mode"].isDev).toBe(true);
+      expect(inngest["mode"].isCloud).toBe(true);
       expect(inngest["mode"].isExplicit).toBe(false);
     });
 
@@ -429,12 +429,12 @@ describe("send", () => {
         ids: Array(1).fill(expect.any(String)),
       });
 
-      expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
-      expect(mockedFetch.mock.calls[1]).toHaveLength(2);
-      expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
+      expect(mockedFetch).toHaveBeenCalledTimes(1);
+      expect(mockedFetch.mock.calls[0]).toHaveLength(2);
+      expect(typeof mockedFetch.mock.calls[0]?.[1]?.body).toBe("string");
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       const body: Array<Record<string, any>> = JSON.parse(
-        mockedFetch.mock.calls[1]?.[1]?.body as string,
+        mockedFetch.mock.calls[0]?.[1]?.body as string,
       );
       expect(body).toHaveLength(1);
       expect(body[0]).toEqual(
@@ -460,12 +460,12 @@ describe("send", () => {
         ids: Array(1).fill(expect.any(String)),
       });
 
-      expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
-      expect(mockedFetch.mock.calls[1]).toHaveLength(2);
-      expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
+      expect(mockedFetch).toHaveBeenCalledTimes(1);
+      expect(mockedFetch.mock.calls[0]).toHaveLength(2);
+      expect(typeof mockedFetch.mock.calls[0]?.[1]?.body).toBe("string");
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       const body: Array<Record<string, any>> = JSON.parse(
-        mockedFetch.mock.calls[1]?.[1]?.body as string,
+        mockedFetch.mock.calls[0]?.[1]?.body as string,
       );
       expect(body).toHaveLength(1);
       expect(body[0]).toEqual(
@@ -492,10 +492,10 @@ describe("send", () => {
           ids: Array(1).fill(expect.any(String)),
         });
 
-        expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
-        expect(mockedFetch.mock.calls[1]).toHaveLength(2);
+        expect(mockedFetch).toHaveBeenCalledTimes(1);
+        expect(mockedFetch.mock.calls[0]).toHaveLength(2);
 
-        const reqHeaders = mockedFetch.mock.calls[1]?.[1]?.headers as Record<
+        const reqHeaders = mockedFetch.mock.calls[0]?.[1]?.headers as Record<
           string,
           string
         >;
@@ -1085,7 +1085,7 @@ describe("setEnvVars", () => {
     const inngest = createClient({ id: "test" });
 
     expect(inngest["_mode"]).toMatchObject({
-      type: "dev",
+      type: "cloud",
       isExplicit: false,
     });
     expect(inngest["mode"]["explicitDevUrl"]).toBeUndefined();
@@ -1093,11 +1093,6 @@ describe("setEnvVars", () => {
     expect(inngest["_eventBaseUrl"]).toBeUndefined();
     expect(inngest["eventKey"]).toBe(dummyEventKey);
     expect(inngest["inngestApi"]["apiBaseUrl"]).toBeUndefined();
-    expect(inngest["inngestApi"]["mode"]).toMatchObject({
-      type: "dev",
-      isExplicit: false,
-    });
-    expect(inngest["inngestApi"]["mode"]["explicitDevUrl"]).toBeUndefined();
 
     const devUrl = "http://example.com:5000/";
     const devEventKey = "dev-event-key";
@@ -1116,11 +1111,6 @@ describe("setEnvVars", () => {
     expect(inngest["_eventBaseUrl"]).toBe(devUrl);
     expect(inngest["eventKey"]).toBe(devEventKey);
     expect(inngest["inngestApi"]["apiBaseUrl"]).toBe(devUrl);
-    expect(inngest["inngestApi"]["mode"]).toMatchObject({
-      type: "dev",
-      isExplicit: true,
-    });
-    expect(inngest["inngestApi"]["mode"]["explicitDevUrl"]?.href).toBe(devUrl);
   });
 });
 

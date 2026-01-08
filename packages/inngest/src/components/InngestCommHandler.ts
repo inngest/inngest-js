@@ -17,11 +17,10 @@ import {
   queryKeys,
   syncKind,
 } from "../helpers/consts.ts";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
+import { devServerUrl } from "../helpers/devserver.ts";
 import { enumFromValue } from "../helpers/enum.ts";
 import {
   allProcessEnv,
-  devServerHost,
   type Env,
   getFetch,
   getMode,
@@ -2332,21 +2331,11 @@ export class InngestCommHandler<
 
     let res: globalThis.Response;
 
-    // Whenever we register, we check to see if the dev server is up.  This
-    // is a noop and returns false in production. Clone the URL object to avoid
-    // mutating the property between requests.
+    // Clone the URL object to avoid mutating the property between requests.
     let registerURL = new URL(this.inngestRegisterUrl.href);
 
-    const inferredDevMode =
-      this._mode && this._mode.isInferred && this._mode.isDev;
-
-    if (inferredDevMode) {
-      const host = devServerHost(this.env);
-      const hasDevServer = await devServerAvailable(host, this.fetch);
-      if (hasDevServer) {
-        registerURL = devServerUrl(host, "/fn/register");
-      }
-    } else if (this._mode?.explicitDevUrl) {
+    // Use explicit dev server URL if provided via INNGEST_DEV=<url>
+    if (this._mode?.explicitDevUrl) {
       registerURL = devServerUrl(
         this._mode.explicitDevUrl.href,
         "/fn/register",

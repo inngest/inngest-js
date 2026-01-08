@@ -1,6 +1,5 @@
 import { InngestApi } from "../api/api.ts";
 import {
-  defaultDevServerHost,
   defaultInngestApiBaseUrl,
   defaultInngestEventBaseUrl,
   dummyEventKey,
@@ -9,7 +8,6 @@ import {
   logPrefix,
 } from "../helpers/consts.ts";
 import { createEntropy } from "../helpers/crypto.ts";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
 import {
   allProcessEnv,
   getFetch,
@@ -274,7 +272,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       signingKey: processEnv(envKeys.InngestSigningKey) || "",
       signingKeyFallback: processEnv(envKeys.InngestSigningKeyFallback),
       fetch: this.fetch,
-      mode: this.mode,
     });
 
     this.schemas = schemas;
@@ -333,7 +330,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       env: this.mode["env"],
     });
 
-    this.inngestApi["mode"] = this.mode;
     this.inngestApi["apiBaseUrl"] = this._apiBaseUrl;
   }
 
@@ -740,25 +736,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
           toFixNow: fixEventKeyMissingSteps,
         }),
       );
-    }
-
-    /**
-     * If dev mode has been inferred, try to hit the dev server first to see if
-     * it exists. If it does, use it, otherwise fall back to whatever server we
-     * have configured.
-     *
-     * `INNGEST_BASE_URL` is used to set both dev server and prod URLs, so if a
-     * user has set this it means they have already chosen a URL to hit.
-     */
-    if (this.mode.isDev && this.mode.isInferred && !this.eventBaseUrl) {
-      const devAvailable = await devServerAvailable(
-        defaultDevServerHost,
-        this.fetch,
-      );
-
-      if (devAvailable) {
-        url = devServerUrl(defaultDevServerHost, `e/${this.eventKey}`).href;
-      }
     }
 
     const body = await retryWithBackoff(

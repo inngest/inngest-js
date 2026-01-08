@@ -1,12 +1,9 @@
 import type { fetch } from "cross-fetch";
 import { z } from "zod/v3";
 import {
-  defaultDevServerHost,
   defaultInngestApiBaseUrl,
   type ExecutionVersion,
 } from "../helpers/consts.ts";
-import { devServerAvailable } from "../helpers/devserver.ts";
-import type { Mode } from "../helpers/env.ts";
 import { getErrorMessage } from "../helpers/errors.ts";
 import { fetchWithAuthFallback } from "../helpers/net.ts";
 import { hashSigningKey } from "../helpers/strings.ts";
@@ -54,7 +51,6 @@ export namespace InngestApi {
     signingKey: string;
     signingKeyFallback: string | undefined;
     fetch: FetchT;
-    mode: Mode;
   }
 
   export interface Subscription {
@@ -86,20 +82,17 @@ export class InngestApi {
   private signingKey: string;
   private signingKeyFallback: string | undefined;
   private readonly fetch: FetchT;
-  private mode: Mode;
 
   constructor({
     baseUrl,
     signingKey,
     signingKeyFallback,
     fetch,
-    mode,
   }: InngestApi.Options) {
     this.apiBaseUrl = baseUrl;
     this.signingKey = signingKey;
     this.signingKeyFallback = signingKeyFallback;
     this.fetch = fetch;
-    this.mode = mode;
   }
 
   private get hashedKey(): string {
@@ -128,24 +121,8 @@ export class InngestApi {
   }
 
   private async getTargetUrl(path: string): Promise<URL> {
-    if (this.apiBaseUrl) {
-      return new URL(path, this.apiBaseUrl);
-    }
-
-    let url = new URL(path, defaultInngestApiBaseUrl);
-
-    if (this.mode.isDev && this.mode.isInferred && !this.apiBaseUrl) {
-      const devAvailable = await devServerAvailable(
-        defaultDevServerHost,
-        this.fetch,
-      );
-
-      if (devAvailable) {
-        url = new URL(path, defaultDevServerHost);
-      }
-    }
-
-    return url;
+    const baseUrl = this.apiBaseUrl || defaultInngestApiBaseUrl;
+    return new URL(path, baseUrl);
   }
 
   private async req(

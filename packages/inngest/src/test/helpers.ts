@@ -1086,7 +1086,7 @@ export const testFramework = (
     describe("POST (run function)", () => {
       describe("#789 missing body", () => {
         test("returns 500", async () => {
-          const client = createClient({ id: "test" });
+          const client = createClient({ id: "test", isDev: true });
 
           const fn = client.createFunction(
             { name: "Test", id: "test" },
