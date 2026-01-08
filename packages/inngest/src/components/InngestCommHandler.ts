@@ -70,6 +70,7 @@ import {
   type ExecutionResultHandler,
   type ExecutionResultHandlers,
   type InngestExecutionOptions,
+  PREFERRED_CHECKPOINTING_EXECUTION_VERSION,
   PREFERRED_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
 import { _internals } from "./execution/v1";
@@ -992,8 +993,7 @@ export class InngestCommHandler<
     const runId = ulid();
     const event = await this.createHttpEvent(actions, fn);
 
-    // TODO Nope. Should be v2, so we now have two preferred versions...
-    const exeVersion = PREFERRED_EXECUTION_VERSION;
+    const exeVersion = PREFERRED_CHECKPOINTING_EXECUTION_VERSION;
 
     const exe = fn["createExecution"]({
       version: exeVersion,
