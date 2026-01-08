@@ -468,7 +468,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         await this.checkpoint([
           {
             op: StepOpCode.RunComplete,
-            id: _internals.hashId("complete"), // TODO bad ID
+            id: _internals.hashId("complete"), // ID is not important here
             data: await this.options.createResponse!(checkpoint.data),
           },
         ]);
@@ -499,15 +499,14 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         // Otherwise, checkpoint the error and switch to async mode
         return this.checkpointAndSwitchToAsync([
           {
-            id: _internals.hashId("complete"), // TODO bad ID, bad use of _internals here
-            displayName: "complete", // TODO bad display name
+            id: _internals.hashId("complete"), // ID is not important here
             op: StepOpCode.StepError,
             error: checkpoint.error,
           },
         ]);
       },
 
-      "step-not-found": ({ step }) => {
+      "step-not-found": () => {
         return {
           type: "function-rejected",
           ctx: this.fnArg,
@@ -631,7 +630,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           if (output?.type === "function-resolved") {
             const steps = this.state.checkpointingStepBuffer.concat({
               op: StepOpCode.RunComplete,
-              id: _internals.hashId("complete"), // TODO bad ID. bad bad bad
+              id: _internals.hashId("complete"), // ID is not important here
               data: output.data,
             }) as [OutgoingOp, ...OutgoingOp[]];
 
