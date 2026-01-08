@@ -12,7 +12,7 @@ import {
   referenceFunction,
 } from "../index.ts";
 import type { Logger } from "../middleware/logger.ts";
-import { createClient, nodeVersion } from "../test/helpers.ts";
+import { createClient, nodeVersion, testSigningKey } from "../test/helpers.ts";
 import type { SendEventResponse } from "../types.ts";
 import type { createStepTools } from "./InngestStepTools.ts";
 
@@ -58,54 +58,47 @@ describe("new Inngest()", () => {
       return inngest;
     };
 
-    test("should default to inferred dev mode", () => {
+    test("should default to cloud mode", () => {
       const inngest = createTestClient();
-      expect(inngest["mode"].isDev).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(false);
+      expect(inngest.mode === "cloud").toBe(true);
     });
 
-    test("`isDev: true` sets explicit dev mode", () => {
+    test("`isDev: true` sets dev mode", () => {
       const inngest = createTestClient({ opts: { isDev: true } });
-      expect(inngest["mode"].isDev).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "dev").toBe(true);
     });
 
-    test("`isDev: false` sets explict cloud mode", () => {
+    test("`isDev: false` sets cloud mode", () => {
       const inngest = createTestClient({ opts: { isDev: false } });
-      expect(inngest["mode"].isCloud).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "cloud").toBe(true);
     });
 
-    test("`INNGEST_DEV=1 sets explicit dev mode", () => {
+    test("`INNGEST_DEV=1` sets dev mode", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "1" },
       });
-      expect(inngest["mode"].isDev).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "dev").toBe(true);
     });
 
-    test("`INNGEST_DEV=true` sets explicit dev mode", () => {
+    test("`INNGEST_DEV=true` sets dev mode", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "true" },
       });
-      expect(inngest["mode"].isDev).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "dev").toBe(true);
     });
 
-    test("`INNGEST_DEV=false` sets explicit cloud mode", () => {
+    test("`INNGEST_DEV=false` sets cloud mode", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "false" },
       });
-      expect(inngest["mode"].isCloud).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "cloud").toBe(true);
     });
 
-    test("`INNGEST_DEV=0 sets explicit cloud mode", () => {
+    test("`INNGEST_DEV=0` sets cloud mode", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "0" },
       });
-      expect(inngest["mode"].isCloud).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "cloud").toBe(true);
     });
 
     test("`isDev` overwrites `INNGEST_DEV`", () => {
@@ -113,19 +106,15 @@ describe("new Inngest()", () => {
         env: { [envKeys.InngestDevMode]: "1" },
         opts: { isDev: false },
       });
-      expect(inngest["mode"].isDev).toBe(false);
-      expect(inngest["mode"].isExplicit).toBe(true);
+      expect(inngest.mode === "cloud").toBe(true);
     });
 
-    test("`INNGEST_DEV=URL sets explicit dev mode", () => {
+    test("`INNGEST_DEV=URL` sets dev mode with custom URL", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "http://localhost:3000" },
       });
-      expect(inngest["mode"].isDev).toBe(true);
-      expect(inngest["mode"].isExplicit).toBe(true);
-      expect(inngest["mode"].explicitDevUrl?.href).toBe(
-        "http://localhost:3000/",
-      );
+      expect(inngest.mode === "dev").toBe(true);
+      expect(inngest.getExplicitDevUrl?.href).toBe("http://localhost:3000/");
     });
   });
 });
@@ -422,12 +411,12 @@ describe("send", () => {
         ids: Array(1).fill(expect.any(String)),
       });
 
-      expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
-      expect(mockedFetch.mock.calls[1]).toHaveLength(2);
-      expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
+      expect(mockedFetch).toHaveBeenCalledTimes(1);
+      expect(mockedFetch.mock.calls[0]).toHaveLength(2);
+      expect(typeof mockedFetch.mock.calls[0]?.[1]?.body).toBe("string");
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       const body: Array<Record<string, any>> = JSON.parse(
-        mockedFetch.mock.calls[1]?.[1]?.body as string,
+        mockedFetch.mock.calls[0]?.[1]?.body as string,
       );
       expect(body).toHaveLength(1);
       expect(body[0]).toEqual(
@@ -453,12 +442,12 @@ describe("send", () => {
         ids: Array(1).fill(expect.any(String)),
       });
 
-      expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
-      expect(mockedFetch.mock.calls[1]).toHaveLength(2);
-      expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
+      expect(mockedFetch).toHaveBeenCalledTimes(1);
+      expect(mockedFetch.mock.calls[0]).toHaveLength(2);
+      expect(typeof mockedFetch.mock.calls[0]?.[1]?.body).toBe("string");
       // biome-ignore lint/suspicious/noExplicitAny: <explanation>
       const body: Array<Record<string, any>> = JSON.parse(
-        mockedFetch.mock.calls[1]?.[1]?.body as string,
+        mockedFetch.mock.calls[0]?.[1]?.body as string,
       );
       expect(body).toHaveLength(1);
       expect(body[0]).toEqual(
@@ -485,10 +474,10 @@ describe("send", () => {
           ids: Array(1).fill(expect.any(String)),
         });
 
-        expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
-        expect(mockedFetch.mock.calls[1]).toHaveLength(2);
+        expect(mockedFetch).toHaveBeenCalledTimes(1);
+        expect(mockedFetch.mock.calls[0]).toHaveLength(2);
 
-        const reqHeaders = mockedFetch.mock.calls[1]?.[1]?.headers as Record<
+        const reqHeaders = mockedFetch.mock.calls[0]?.[1]?.headers as Record<
           string,
           string
         >;
@@ -753,46 +742,91 @@ describe("createFunction", () => {
 });
 
 describe("setEnvVars", () => {
-  test("overwrites existing env vars", () => {
+  test("mode is mutable after construction", () => {
     const inngest = createClient({ id: "test" });
+    expect(inngest.mode).toBe("cloud");
 
-    expect(inngest["_mode"]).toMatchObject({
-      type: "dev",
-      isExplicit: false,
-    });
-    expect(inngest["mode"]["explicitDevUrl"]).toBeUndefined();
-    expect(inngest["_apiBaseUrl"]).toBeUndefined();
-    expect(inngest["_eventBaseUrl"]).toBeUndefined();
+    inngest.setEnvVars({ [envKeys.InngestDevMode]: "1" });
+
+    // Mode changed by INNGEST_DEV=1
+    expect(inngest.mode).toBe("dev");
+  });
+
+  test("updates event key from env", () => {
+    const inngest = createClient({ id: "test" });
     expect(inngest["eventKey"]).toBe(dummyEventKey);
-    expect(inngest["inngestApi"]["apiBaseUrl"]).toBeUndefined();
-    expect(inngest["inngestApi"]["mode"]).toMatchObject({
-      type: "dev",
-      isExplicit: false,
-    });
-    expect(inngest["inngestApi"]["mode"]["explicitDevUrl"]).toBeUndefined();
 
-    const devUrl = "http://example.com:5000/";
-    const devEventKey = "dev-event-key";
+    inngest.setEnvVars({ [envKeys.InngestEventKey]: "new-key" });
+    expect(inngest["eventKey"]).toBe("new-key");
+  });
+});
 
+describe("URL configuration", () => {
+  test("defaults to cloud URLs", () => {
+    const inngest = createClient({ id: "test" });
+    expect(inngest.apiBaseUrl).toBe("https://api.inngest.com/");
+    expect(inngest.eventBaseUrl).toBe("https://inn.gs/");
+  });
+
+  test("isDev: true uses dev server URL", () => {
+    const inngest = createClient({ id: "test", isDev: true });
+    expect(inngest.apiBaseUrl).toBe("http://localhost:8288/");
+    expect(inngest.eventBaseUrl).toBe("http://localhost:8288/");
+  });
+
+  test("INNGEST_BASE_URL sets both URLs", () => {
+    const inngest = createClient({ id: "test" });
+    inngest.setEnvVars({ [envKeys.InngestBaseUrl]: "http://custom:8000/" });
+
+    expect(inngest.apiBaseUrl).toBe("http://custom:8000/");
+    expect(inngest.eventBaseUrl).toBe("http://custom:8000/");
+  });
+
+  test("INNGEST_API_BASE_URL sets only API URL", () => {
+    const inngest = createClient({ id: "test" });
     inngest.setEnvVars({
-      [envKeys.InngestDevMode]: devUrl,
-      [envKeys.InngestEventKey]: devEventKey,
+      [envKeys.InngestApiBaseUrl]: "http://api-only:8000/",
     });
 
-    expect(inngest["_mode"]).toMatchObject({
-      type: "dev",
-      isExplicit: true,
+    expect(inngest.apiBaseUrl).toBe("http://api-only:8000/");
+    expect(inngest.eventBaseUrl).toBe("https://inn.gs/"); // unchanged
+  });
+
+  test("INNGEST_EVENT_API_BASE_URL sets only event URL", () => {
+    const inngest = createClient({ id: "test" });
+    inngest.setEnvVars({
+      [envKeys.InngestEventApiBaseUrl]: "http://event-only:8000/",
     });
-    expect(inngest["_mode"]["explicitDevUrl"]?.href).toBe(devUrl);
-    expect(inngest["_apiBaseUrl"]).toBe(devUrl);
-    expect(inngest["_eventBaseUrl"]).toBe(devUrl);
-    expect(inngest["eventKey"]).toBe(devEventKey);
-    expect(inngest["inngestApi"]["apiBaseUrl"]).toBe(devUrl);
-    expect(inngest["inngestApi"]["mode"]).toMatchObject({
-      type: "dev",
-      isExplicit: true,
+
+    expect(inngest.apiBaseUrl).toBe("https://api.inngest.com/"); // unchanged
+    expect(inngest.eventBaseUrl).toBe("http://event-only:8000/");
+  });
+
+  test("specific URL env vars override INNGEST_BASE_URL", () => {
+    const inngest = createClient({ id: "test" });
+    inngest.setEnvVars({
+      [envKeys.InngestBaseUrl]: "http://base:8000/",
+      [envKeys.InngestApiBaseUrl]: "http://api-specific:9000/",
+      [envKeys.InngestEventApiBaseUrl]: "http://event-specific:9001/",
     });
-    expect(inngest["inngestApi"]["mode"]["explicitDevUrl"]?.href).toBe(devUrl);
+
+    expect(inngest.apiBaseUrl).toBe("http://api-specific:9000/");
+    expect(inngest.eventBaseUrl).toBe("http://event-specific:9001/");
+  });
+
+  test("options.baseUrl overrides all env vars", () => {
+    const inngest = createClient({
+      id: "test",
+      baseUrl: "http://option:7000/",
+    });
+    inngest.setEnvVars({
+      [envKeys.InngestBaseUrl]: "http://base:8000/",
+      [envKeys.InngestApiBaseUrl]: "http://api:9000/",
+      [envKeys.InngestEventApiBaseUrl]: "http://event:9001/",
+    });
+
+    expect(inngest.apiBaseUrl).toBe("http://option:7000/");
+    expect(inngest.eventBaseUrl).toBe("http://option:7000/");
   });
 });
 

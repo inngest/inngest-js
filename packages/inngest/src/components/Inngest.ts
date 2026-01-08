@@ -9,13 +9,13 @@ import {
   logPrefix,
 } from "../helpers/consts.ts";
 import { createEntropy } from "../helpers/crypto.ts";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
 import {
   allProcessEnv,
+  type Env,
   getFetch,
-  getMode,
   inngestHeaders,
   type Mode,
+  parseAsBoolean,
   processEnv,
 } from "../helpers/env.ts";
 import {
@@ -108,9 +108,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    */
   private eventKey = "";
 
-  private _apiBaseUrl: string | undefined;
-  private _eventBaseUrl: string | undefined;
-
   private readonly inngestApi: InngestApi;
 
   /**
@@ -121,7 +118,7 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     defaultInngestEventBaseUrl,
   );
 
-  private headers!: Record<string, string>;
+  // private headers!: Record<string, string>;
 
   private readonly fetch: FetchT;
 
@@ -146,7 +143,9 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * settings, but should still check for the presence of an environment
    * variable if it is not set.
    */
-  private _mode!: Mode;
+
+  // private _mode: Mode | undefined; // TODO: do we even need this?
+  private _env: Env = {};
 
   private _appVersion: string | undefined;
 
@@ -156,12 +155,75 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    */
   protected experimentalMetadataEnabled = false;
 
-  get apiBaseUrl(): string | undefined {
-    return this._apiBaseUrl;
+  /**
+   * Try to parse the `INNGEST_DEV` environment variable as a URL.
+   * Returns the URL if valid, otherwise `undefined`.
+   */
+  // TODO: this is really more internal, right?
+  get getExplicitDevUrl(): URL | undefined {
+    const devEnvValue = this._env[envKeys.InngestDevMode];
+    if (typeof devEnvValue !== "string" || !devEnvValue) {
+      return undefined;
+    }
+
+    try {
+      return new URL(devEnvValue);
+    } catch {
+      return undefined;
+    }
   }
 
-  get eventBaseUrl(): string | undefined {
-    return this._eventBaseUrl;
+  /**
+   * Given a default cloud URL, return the appropriate URL based on the
+   * current mode and environment variables.
+   *
+   * If `INNGEST_DEV` is set to a URL, that URL is used. Otherwise, we use
+   * the default cloud URL in cloud mode or the default dev server host in
+   * dev mode.
+   */
+  private resolveDefaultUrl(cloudUrl: string): string {
+    const explicitDevUrl = this.getExplicitDevUrl;
+    if (explicitDevUrl) {
+      return explicitDevUrl.href;
+    }
+
+    return this.mode === "cloud" ? cloudUrl : defaultDevServerHost;
+  }
+
+  get apiBaseUrl(): string {
+    return (
+      this.options.baseUrl ||
+      this._env[envKeys.InngestApiBaseUrl] ||
+      this._env[envKeys.InngestBaseUrl] ||
+      this.resolveDefaultUrl(defaultInngestApiBaseUrl)
+    );
+  }
+
+  get eventBaseUrl(): string {
+    return (
+      this.options.baseUrl ||
+      this._env[envKeys.InngestEventApiBaseUrl] ||
+      this._env[envKeys.InngestBaseUrl] ||
+      this.resolveDefaultUrl(defaultInngestEventBaseUrl)
+    );
+  }
+
+  // NOTE:
+  // This being undefined makes sense here, but once it's accessed IRL
+  // it should cause issues!
+  get signingKey(): string | undefined {
+    return this._env[envKeys.InngestSigningKey];
+  }
+
+  get signingKeyFallback(): string | undefined {
+    return this._env[envKeys.InngestSigningKeyFallback];
+  }
+
+  get headers(): Record<string, string> {
+    return inngestHeaders({
+      inngestEnv: this.options.env,
+      env: this._env,
+    });
   }
 
   get env(): string | null {
@@ -210,33 +272,36 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       fetch,
       logger = new DefaultLogger(),
       middleware,
-      isDev,
       appVersion,
     } = this.options;
 
     if (!id) {
-      // TODO PrettyError
       throw new Error("An `id` must be passed to create an Inngest instance.");
     }
 
+    // anything in the client that comes from an ENV var should probably be
+    // a getter, because it coudl be updated after the client has been
+    // constructed
+    // ....
+    // since the comm handler is reconstructed on every req, can we just
+    // put all of the validation in there?
+    // comm handler's first action is to update the env on the client, so then
+    // the getters for url/key/etc all just work
+    // ahhhhh wait, looking closer at the cloudflare serve, it looks like it's
+    // returning the request handler
+
     this.id = id;
-
-    this._mode = getMode({
-      explicitMode:
-        typeof isDev === "boolean" ? (isDev ? "dev" : "cloud") : undefined,
-    });
-
+    this._env = { ...allProcessEnv() };
     this.fetch = getFetch(fetch);
 
     this.inngestApi = new InngestApi({
-      baseUrl: this.apiBaseUrl,
-      signingKey: processEnv(envKeys.InngestSigningKey) || "",
-      signingKeyFallback: processEnv(envKeys.InngestSigningKeyFallback),
+      baseUrl: () => this.apiBaseUrl,
+      signingKey: () => this.signingKey,
+      signingKeyFallback: () => this.signingKeyFallback,
       fetch: this.fetch,
-      mode: this.mode,
     });
 
-    this.loadModeEnvVars();
+    this.loadEnvDependentConfig();
 
     this.logger = logger;
 
@@ -264,35 +329,19 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   public setEnvVars(
     env: Record<string, string | undefined> = allProcessEnv(),
   ): this {
-    this.mode = getMode({ env, client: this });
+    this._env = { ...this._env, ...env };
+    this.loadEnvDependentConfig();
 
     return this;
   }
 
-  private loadModeEnvVars(): void {
-    this._apiBaseUrl =
-      this.options.baseUrl ||
-      this.mode["env"][envKeys.InngestApiBaseUrl] ||
-      this.mode["env"][envKeys.InngestBaseUrl] ||
-      this.mode.getExplicitUrl(defaultInngestApiBaseUrl);
-
-    this._eventBaseUrl =
-      this.options.baseUrl ||
-      this.mode["env"][envKeys.InngestEventApiBaseUrl] ||
-      this.mode["env"][envKeys.InngestBaseUrl] ||
-      this.mode.getExplicitUrl(defaultInngestEventBaseUrl);
-
+  // TODO: I think that these should both also be getters?
+  private loadEnvDependentConfig(): void {
+    // TODO: this should probably set the default event key better, right?
+    // although IIRC an empty one flows through correctly?
     this.setEventKey(
-      this.options.eventKey || this.mode["env"][envKeys.InngestEventKey] || "",
+      this.options.eventKey || this._env[envKeys.InngestEventKey] || "",
     );
-
-    this.headers = inngestHeaders({
-      inngestEnv: this.options.env,
-      env: this.mode["env"],
-    });
-
-    this.inngestApi["mode"] = this.mode;
-    this.inngestApi["apiBaseUrl"] = this._apiBaseUrl;
   }
 
   /**
@@ -329,13 +378,21 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     return [...prefix, ...(await stack)];
   }
 
-  private get mode(): Mode {
-    return this._mode;
-  }
+  get mode(): Mode {
+    if (typeof this.options.isDev === "boolean") {
+      return this.options.isDev ? "dev" : "cloud";
+    }
 
-  private set mode(m) {
-    this._mode = m;
-    this.loadModeEnvVars();
+    if (this.getExplicitDevUrl) {
+      return "dev";
+    }
+
+    const envIsDev = parseAsBoolean(this._env[envKeys.InngestDevMode]);
+    if (typeof envIsDev === "boolean") {
+      return envIsDev ? "dev" : "cloud";
+    }
+
+    return "cloud";
   }
 
   /**
@@ -668,12 +725,12 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
     // When sending events, check if the dev server is available.  If so, use the
     // dev server.
-    let url = this.sendEventUrl.href;
+    const url = this.sendEventUrl.href;
 
     /**
      * If in prod mode and key is not present, fail now.
      */
-    if (this.mode.isCloud && !this.eventKeySet()) {
+    if (this.mode === "cloud" && !this.eventKeySet()) {
       throw new Error(
         prettyError({
           whatHappened: "Failed to send event",
@@ -682,25 +739,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
           toFixNow: fixEventKeyMissingSteps,
         }),
       );
-    }
-
-    /**
-     * If dev mode has been inferred, try to hit the dev server first to see if
-     * it exists. If it does, use it, otherwise fall back to whatever server we
-     * have configured.
-     *
-     * `INNGEST_BASE_URL` is used to set both dev server and prod URLs, so if a
-     * user has set this it means they have already chosen a URL to hit.
-     */
-    if (this.mode.isDev && this.mode.isInferred && !this.eventBaseUrl) {
-      const devAvailable = await devServerAvailable(
-        defaultDevServerHost,
-        this.fetch,
-      );
-
-      if (devAvailable) {
-        url = devServerUrl(defaultDevServerHost, `e/${this.eventKey}`).href;
-      }
     }
 
     const body = await retryWithBackoff(

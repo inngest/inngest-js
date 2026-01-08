@@ -4,8 +4,6 @@ import { z } from "zod/v3";
 import { getAsyncCtx } from "../experimental";
 import {
   debugPrefix,
-  defaultInngestApiBaseUrl,
-  defaultInngestEventBaseUrl,
   defaultMaxRetries,
   dummyEventKey,
   ExecutionVersion,
@@ -17,17 +15,14 @@ import {
   queryKeys,
   syncKind,
 } from "../helpers/consts.ts";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
+import { devServerUrl } from "../helpers/devserver.ts";
 import { enumFromValue } from "../helpers/enum.ts";
 import {
   allProcessEnv,
-  devServerHost,
   type Env,
   getFetch,
-  getMode,
   getPlatformName,
   inngestHeaders,
-  Mode,
   parseAsBoolean,
   platformSupportsStreaming,
 } from "../helpers/env.ts";
@@ -327,27 +322,6 @@ export class InngestCommHandler<
   protected readonly frameworkName: string;
 
   /**
-   * The signing key used to validate requests from Inngest. This is
-   * intentionally mutable so that we can pick up the signing key from the
-   * environment during execution if needed.
-   */
-  protected signingKey: string | undefined;
-
-  /**
-   * The same as signingKey, except used as a fallback when auth fails using the
-   * primary signing key.
-   */
-  protected signingKeyFallback: string | undefined;
-
-  /**
-   * A property that can be set to indicate whether we believe we are in
-   * production mode.
-   *
-   * Should be set every time a request is received.
-   */
-  protected _mode: Mode | undefined;
-
-  /**
    * The localized `fetch` implementation used by this handler.
    */
   private readonly fetch: FetchT;
@@ -428,6 +402,7 @@ export class InngestCommHandler<
 
     /**
      * v2 -> v3 migration error.
+     * TODO: do we need to handle people going from v2->v4?
      *
      * If a serve handler is passed a client as the first argument, it'll be
      * spread in to these options. We should be able to detect this by picking
@@ -442,12 +417,13 @@ export class InngestCommHandler<
     this.frameworkName = options.frameworkName;
     this.client = options.client as Inngest.Any;
 
+    // XXX: remove for v3->v4
     if (options.id) {
-      console.warn(
-        `${logPrefix} The \`id\` serve option is deprecated and will be removed in v4`,
+      throw new Error(
+        `${logPrefix} The \`id\` serve option is deprecated and has been removed in v4`,
       );
     }
-    this.id = options.id || this.client.id;
+    this.id = this.client.id;
 
     this.handler = options.handler as Handler;
 
@@ -501,8 +477,6 @@ export class InngestCommHandler<
 
     this.inngestRegisterUrl = new URL("/fn/register", this.apiBaseUrl);
 
-    this.signingKey = options.signingKey;
-    this.signingKeyFallback = options.signingKeyFallback;
     this._serveHost = options.serveHost || this.env[envKeys.InngestServeHost];
     this._servePath = options.servePath || this.env[envKeys.InngestServePath];
 
@@ -557,6 +531,10 @@ export class InngestCommHandler<
       .parse(options.streaming || this.env[envKeys.InngestStreaming]);
 
     this.fetch = options.fetch ? getFetch(options.fetch) : this.client["fetch"];
+
+    // Early validation for environments where process.env is available (Node.js).
+    // Edge environments will skip this and validate at request time instead.
+    this.validateModeConfiguration({ skipIfNoEnv: true });
   }
 
   /**
@@ -566,13 +544,7 @@ export class InngestCommHandler<
    * each time it's accessed, as it may change during execution.
    */
   protected get apiBaseUrl(): string {
-    return (
-      this._options.baseUrl ||
-      this.env[envKeys.InngestApiBaseUrl] ||
-      this.env[envKeys.InngestBaseUrl] ||
-      this.client.apiBaseUrl ||
-      defaultInngestApiBaseUrl
-    );
+    return this._options.baseUrl || this.client.apiBaseUrl;
   }
 
   /**
@@ -582,13 +554,7 @@ export class InngestCommHandler<
    * base URL each time it's accessed, as it may change during execution.
    */
   protected get eventApiBaseUrl(): string {
-    return (
-      this._options.baseUrl ||
-      this.env[envKeys.InngestEventApiBaseUrl] ||
-      this.env[envKeys.InngestBaseUrl] ||
-      this.client.eventBaseUrl ||
-      defaultInngestEventBaseUrl
-    );
+    return this._options.baseUrl || this.client.eventBaseUrl;
   }
 
   /**
@@ -642,17 +608,17 @@ export class InngestCommHandler<
   // hashedSigningKey creates a sha256 checksum of the signing key with the
   // same signing key prefix.
   private get hashedSigningKey(): string | undefined {
-    if (!this.signingKey) {
+    if (!this.client.signingKey) {
       return undefined;
     }
-    return hashSigningKey(this.signingKey);
+    return hashSigningKey(this.client.signingKey);
   }
 
   private get hashedSigningKeyFallback(): string | undefined {
-    if (!this.signingKeyFallback) {
+    if (!this.client.signingKeyFallback) {
       return undefined;
     }
-    return hashSigningKey(this.signingKeyFallback);
+    return hashSigningKey(this.client.signingKeyFallback);
   }
 
   /**
@@ -730,10 +696,9 @@ export class InngestCommHandler<
     // Always make sure to merge whatever env we've been given with
     // `process.env`; some platforms may not provide all the necessary
     // environment variables or may use two sources.
-    this.env = {
-      ...allProcessEnv(),
-      ...env,
-    };
+    // Update both handler's env and client's env to ensure consistency.
+    this.env = { ...allProcessEnv(), ...env };
+    this.client.setEnvVars(this.env);
 
     const headerPromises = forwardedHeaders.map(async (header) => {
       const value = await actions.headers(
@@ -772,25 +737,7 @@ export class InngestCommHandler<
       ...(await headersToForwardP),
     });
 
-    const assumedMode = getMode({ env: this.env, client: this.client });
-
-    if (assumedMode.isExplicit) {
-      this._mode = assumedMode;
-    } else {
-      const serveIsProd = await actions.isProduction?.(
-        "starting to handle request",
-      );
-      if (typeof serveIsProd === "boolean") {
-        this._mode = new Mode({
-          type: serveIsProd ? "cloud" : "dev",
-          isExplicit: false,
-        });
-      } else {
-        this._mode = assumedMode;
-      }
-    }
-
-    this.upsertKeysFromEnv();
+    this.validateModeConfiguration();
 
     return {
       timer,
@@ -1386,20 +1333,6 @@ export class InngestCommHandler<
     return handler;
   }
 
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
-  private get mode(): Mode | undefined {
-    return this._mode;
-  }
-
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
-  private set mode(m) {
-    this._mode = m;
-
-    if (m) {
-      this.client["mode"] = m;
-    }
-  }
-
   /**
    * Given a set of functions to check if an action is available from the
    * instance's handler, enact any action that is found.
@@ -1870,7 +1803,7 @@ export class InngestCommHandler<
       status: 405,
       body: JSON.stringify({
         message: "No action found; request was likely not POST, PUT, or GET",
-        mode: this._mode,
+        mode: this.client.mode,
       }),
       headers: {},
       version: undefined,
@@ -2261,26 +2194,24 @@ export class InngestCommHandler<
       deployId: null,
     });
 
-    if (!this._mode) {
+    if (!this.client.mode) {
       throw new Error("No mode set; cannot introspect without mode");
     }
 
     let introspection:
       | UnauthenticatedIntrospection
       | AuthenticatedIntrospection = {
-      extra: {
-        is_mode_explicit: this._mode.isExplicit,
-      },
+      extra: {},
       has_event_key: this.client["eventKeySet"](),
-      has_signing_key: Boolean(this.signingKey),
+      has_signing_key: Boolean(this.client.signingKey),
       function_count: registerBody.functions.length,
-      mode: this._mode.type,
+      mode: this.client.mode,
       schema_version: "2024-05-24",
     } satisfies UnauthenticatedIntrospection;
 
     // Only allow authenticated introspection in Cloud mode, since Dev mode skips
     // signature validation
-    if (this._mode.type === "cloud") {
+    if (this.client.mode === "cloud") {
       try {
         const validationResult = await signatureValidation;
         if (!validationResult.success) {
@@ -2332,23 +2263,13 @@ export class InngestCommHandler<
 
     let res: globalThis.Response;
 
-    // Whenever we register, we check to see if the dev server is up.  This
-    // is a noop and returns false in production. Clone the URL object to avoid
-    // mutating the property between requests.
+    // Clone the URL object to avoid mutating the property between requests.
     let registerURL = new URL(this.inngestRegisterUrl.href);
 
-    const inferredDevMode =
-      this._mode && this._mode.isInferred && this._mode.isDev;
-
-    if (inferredDevMode) {
-      const host = devServerHost(this.env);
-      const hasDevServer = await devServerAvailable(host, this.fetch);
-      if (hasDevServer) {
-        registerURL = devServerUrl(host, "/fn/register");
-      }
-    } else if (this._mode?.explicitDevUrl) {
+    // Use explicit dev server URL if provided via INNGEST_DEV=<url>
+    if (this.client.getExplicitDevUrl) {
       registerURL = devServerUrl(
-        this._mode.explicitDevUrl.href,
+        this.client.getExplicitDevUrl.href,
         "/fn/register",
       );
     }
@@ -2448,38 +2369,33 @@ export class InngestCommHandler<
   }
 
   /**
-   * Given an environment, upsert any missing keys. This is useful in
-   * situations where environment variables are passed directly to handlers or
-   * are otherwise difficult to access during initialization.
+   * Validate that the current mode has the configuration it requires.
    */
-  private upsertKeysFromEnv() {
-    if (this.env[envKeys.InngestSigningKey]) {
-      if (!this.signingKey) {
-        this.signingKey = String(this.env[envKeys.InngestSigningKey]);
+  private validateModeConfiguration({
+    skipIfNoEnv = false,
+  }: {
+    skipIfNoEnv?: boolean;
+  } = {}) {
+    // During early validation (construction time), sync client env with
+    // the handler's env to pick up any process.env changes since client
+    // construction. At request time, this is done in createRequestHandler.
+    if (skipIfNoEnv) {
+      this.client.setEnvVars(this.env);
+
+      // Skip validation if env is empty - this indicates an edge environment
+      // where env vars come via request context rather than process.env.
+      if (Object.keys(this.env).length === 0) {
+        return;
       }
-
-      this.client["inngestApi"].setSigningKey(this.signingKey);
     }
 
-    if (this.env[envKeys.InngestSigningKeyFallback]) {
-      if (!this.signingKeyFallback) {
-        this.signingKeyFallback = String(
-          this.env[envKeys.InngestSigningKeyFallback],
-        );
-      }
-
-      this.client["inngestApi"].setSigningKeyFallback(this.signingKeyFallback);
-    }
-
-    if (!this.client["eventKeySet"]() && this.env[envKeys.InngestEventKey]) {
-      this.client.setEventKey(String(this.env[envKeys.InngestEventKey]));
-    }
-
-    // v2 -> v3 migration warnings
-    if (this.env[envKeys.InngestDevServerUrl]) {
-      this.log(
-        "warn",
-        `Use of ${envKeys.InngestDevServerUrl} has been deprecated in v3; please use ${envKeys.InngestBaseUrl} instead. See https://www.inngest.com/docs/sdk/migration`,
+    if (this.client.mode === "cloud" && !this.client.signingKey) {
+      throw new Error(
+        `Inngest error: A signing key is required to run in Cloud mode, but no signing key was found.\n\n` +
+          `To fix this, choose one of the following:\n` +
+          `  - For local development, set INNGEST_DEV=1 to use the Dev Server (e.g. INNGEST_DEV=1 npm run dev)\n` +
+          `  - For production, set the ${envKeys.InngestSigningKey} environment variable\n\n` +
+          `Find your keys at https://app.inngest.com/secrets`,
       );
     }
   }
@@ -2504,12 +2420,12 @@ export class InngestCommHandler<
       // Never validate signatures outside of prod. Make sure to check the mode
       // exists here instead of using nullish coalescing to confirm that the check
       // has been completed.
-      if (this._mode && !this._mode.isCloud) {
+      if (this.client.mode && this.client.mode !== "cloud") {
         return { success: true, keyUsed: "" };
       }
 
       // If we're here, we're in production; lack of a signing key is an error.
-      if (!this.signingKey) {
+      if (!this.client.signingKey) {
         // TODO PrettyError
         throw new Error(
           `No signing key found in client options or ${envKeys.InngestSigningKey} env var. Find your keys at https://app.inngest.com/secrets`,
@@ -2528,8 +2444,8 @@ export class InngestCommHandler<
         keyUsed: new RequestSignature(sig).verifySignature({
           body,
           allowExpiredSignatures: this.allowExpiredSignatures,
-          signingKey: this.signingKey,
-          signingKeyFallback: this.signingKeyFallback,
+          signingKey: this.client.signingKey,
+          signingKeyFallback: this.client.signingKeyFallback,
         }),
       };
     } catch (err) {
@@ -2675,16 +2591,6 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
   env?: () => MaybePromise<Env | undefined>;
   headers: (key: string) => MaybePromise<string | null | undefined>;
 
-  /**
-   * Whether the current environment is production. This is used to determine
-   * some functionality like whether to connect to the dev server or whether to
-   * show debug logging.
-   *
-   * If this is not provided--or is provided and returns `undefined`--we'll try
-   * to automatically detect whether we're in production by checking various
-   * environment variables.
-   */
-  isProduction?: () => MaybePromise<boolean | undefined>;
   method: () => MaybePromise<string>;
   queryString?: (
     key: string,
