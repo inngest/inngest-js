@@ -135,13 +135,20 @@ export const runFnWithStack = async (
     disableImmediateExecution?: boolean;
   },
 ) => {
+  const checkpointingConfig = fn["shouldAsyncCheckpoint"](
+    opts?.runStep,
+    "fake-fn-id",
+    Boolean(opts?.disableImmediateExecution),
+  );
+
   const execution = fn["createExecution"]({
-    version: opts?.executionVersion ?? PREFERRED_EXECUTION_VERSION,
+    version: opts?.executionVersion ?? PREFERRED_ASYNC_EXECUTION_VERSION,
     partialOptions: {
       client: fn["client"],
       data: fromPartial({
         event: opts?.event || { name: "foo", data: {} },
       }),
+      checkpointingConfig,
       runId: "run",
       stepState,
       stepCompletionOrder: opts?.stackOrder ?? Object.keys(stepState),
@@ -151,7 +158,11 @@ export const runFnWithStack = async (
       disableImmediateExecution: opts?.disableImmediateExecution,
       reqArgs: [],
       headers: {},
-      stepMode: StepMode.Async,
+      stepMode: checkpointingConfig
+        ? StepMode.AsyncCheckpointing
+        : StepMode.Async,
+      internalFnId: "fake-fn-id",
+      queueItemId: "fake-queue-item-id",
     },
   });
 
