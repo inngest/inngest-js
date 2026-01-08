@@ -63,17 +63,11 @@ export type PartialK<T, K extends PropertyKey = PropertyKey> = Partial<
   : never;
 
 /**
- * A payload that could be sent to Inngest, based on the given `Events`.
+ * A payload that could be sent to Inngest.
  */
-export type SendEventPayload<Events extends Record<string, EventPayload>> =
-  SingleOrArray<
-    {
-      [K in keyof WithoutInternal<Events>]: PartialK<
-        Omit<WithoutInternal<Events>[K], "v">,
-        "ts"
-      >;
-    }[keyof WithoutInternal<Events>]
-  >;
+export type SendEventPayload = SingleOrArray<
+  PartialK<Omit<EventPayload, "v">, "ts">
+>;
 
 /**
  * @public

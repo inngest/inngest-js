@@ -1,16 +1,9 @@
 import type { Mock } from "vitest";
 import { literal } from "zod/v3";
-import {
-  dummyEventKey,
-  envKeys,
-  headerKeys,
-  internalEvents,
-} from "../helpers/consts.ts";
-import type { IsAny, IsEqual, IsNever } from "../helpers/types.ts";
+import { dummyEventKey, envKeys, headerKeys } from "../helpers/consts.ts";
+import type { IsAny, IsEqual } from "../helpers/types.ts";
 import {
   type EventPayload,
-  EventSchemas,
-  type GetEvents,
   type GetFunctionInput,
   type GetFunctionOutput,
   type GetStepTools,
@@ -664,115 +657,6 @@ describe("send", () => {
           inngest.send({ name: "anything", data: "foo", id: "test" });
       });
     });
-
-    describe("multiple custom types", () => {
-      const inngest = createClient({
-        id: "test",
-        eventKey: testEventKey,
-        schemas: new EventSchemas().fromRecord<{
-          foo: {
-            name: "foo";
-            data: { foo: string };
-          };
-          bar: {
-            data: { bar: string };
-          };
-          baz: {};
-        }>(),
-      });
-
-      test("disallows sending a single unknown event with a string", () => {
-        // @ts-expect-error Unknown event
-        const _fn = () => inngest.send("unknown", { data: { foo: "" } });
-      });
-
-      test("disallows sending a single unknown event with an object", () => {
-        // @ts-expect-error Unknown event
-        const _fn = () => inngest.send({ name: "unknown", data: { foo: "" } });
-      });
-
-      test("disallows sending multiple unknown events", () => {
-        const _fn = () =>
-          inngest.send([
-            // @ts-expect-error Unknown event
-            { name: "unknown", data: { foo: "" } },
-            // @ts-expect-error Unknown event
-            { name: "unknown2", data: { foo: "" } },
-          ]);
-      });
-
-      test("disallows sending one unknown event with multiple known events", () => {
-        const _fn = () =>
-          inngest.send([
-            { name: "foo", data: { foo: "" } },
-            // @ts-expect-error Unknown event
-            { name: "unknown", data: { foo: "" } },
-          ]);
-      });
-
-      test("disallows sending a single known event with a string and invalid data", () => {
-        // @ts-expect-error Invalid data
-        const _fn = () => inngest.send("foo", { data: { foo: 1 } });
-      });
-
-      test("disallows sending a single known event with an object and invalid data", () => {
-        // @ts-expect-error Invalid data
-        const _fn = () => inngest.send({ name: "foo", data: { foo: 1 } });
-      });
-
-      test("disallows sending multiple known events with invalid data", () => {
-        const _fn = () =>
-          inngest.send([
-            // @ts-expect-error Invalid data
-            { name: "foo", data: { bar: "" } },
-            // @ts-expect-error Invalid data
-            { name: "bar", data: { foo: "" } },
-          ]);
-      });
-
-      test("disallows sending known data-filled event with no data", () => {
-        // @ts-expect-error No data
-        const _fn = () => inngest.send({ name: "foo" });
-      });
-
-      test("disallows sending known data-filled event with empty data object", () => {
-        // @ts-expect-error Empty data
-        const _fn = () => inngest.send({ name: "foo", data: {} });
-      });
-
-      test.todo("disallows sending invalid fields for a known event");
-
-      test("allows sending known data-empty event with no data", () => {
-        const _fn = () => inngest.send({ name: "baz" });
-      });
-
-      test("allows sending known data-empty event with empty data object", () => {
-        const _fn = () => inngest.send({ name: "baz", data: {} });
-      });
-
-      test("allows sending a single known event with an object", () => {
-        const _fn = () => inngest.send({ name: "foo", data: { foo: "" } });
-      });
-
-      test("allows sending multiple known events", () => {
-        const _fn = () =>
-          inngest.send([
-            { name: "foo", data: { foo: "" } },
-            { name: "bar", data: { bar: "" } },
-          ]);
-      });
-
-      test("allows setting an ID for a known event", () => {
-        const _fn = () =>
-          inngest.send({ name: "foo", data: { foo: "" }, id: "test" });
-      });
-
-      test("disallows sending an internal event", () => {
-        const _fn = () =>
-          // @ts-expect-error Internal event
-          inngest.send({ name: internalEvents.FunctionFinished });
-      });
-    });
   });
 });
 
@@ -865,218 +749,6 @@ describe("createFunction", () => {
         );
       });
     });
-
-    describe("multiple custom types", () => {
-      const inngest = createClient({
-        id: "test",
-        schemas: new EventSchemas().fromRecord<{
-          foo: {
-            name: "foo";
-            data: { title: string };
-          };
-          bar: {
-            name: "bar";
-            data: { message: string };
-          };
-        }>(),
-      });
-
-      test("disallows unknown event as object", () => {
-        // @ts-expect-error Unknown event
-        inngest.createFunction("test", { event: "unknown" }, () => {
-          // no-op
-        });
-      });
-
-      test("disallows unknown event as string", () => {
-        // @ts-expect-error Unknown event
-        inngest.createFunction("test", "unknown", ({ event }) => {
-          assertType<unknown>(event);
-        });
-      });
-
-      test("allows name to be an object", () => {
-        inngest.createFunction(
-          { id: "test" },
-          { event: "bar" },
-          ({ event }) => {
-            assertType<
-              IsEqual<
-                `${internalEvents.FunctionInvoked}` | "bar",
-                typeof event.name
-              >
-            >(true);
-            assertType<{ message: string }>(event.data);
-          },
-        );
-      });
-
-      test("name as an object must contain a name property", () => {
-        inngest.createFunction(
-          // @ts-expect-error Must contain name property
-          { foo: "bar" },
-          { event: "foo" },
-          ({ event }) => {
-            assertType<
-              IsEqual<
-                `${internalEvents.FunctionInvoked}` | "foo",
-                typeof event.name
-              >
-            >(true);
-            assertType<{ title: string }>(event.data);
-          },
-        );
-      });
-
-      test("allows trigger to be an object with an event property", () => {
-        inngest.createFunction(
-          { id: "test" },
-          { event: "foo" },
-          ({ event }) => {
-            assertType<
-              IsEqual<
-                `${internalEvents.FunctionInvoked}` | "foo",
-                typeof event.name
-              >
-            >(true);
-            assertType<{ title: string }>(event.data);
-          },
-        );
-      });
-
-      test("allows trigger to be an object with a cron property", () => {
-        inngest.createFunction(
-          { id: "test" },
-          { cron: "test" },
-          ({ event }) => {
-            assertType<unknown>(event);
-          },
-        );
-      });
-
-      test("disallows trigger with unknown properties", () => {
-        // @ts-expect-error Unknown property
-        inngest.createFunction("test", { foo: "bar" }, ({ event }) => {
-          assertType<unknown>(event);
-        });
-      });
-
-      test("disallows trigger with both event and cron properties", () => {
-        inngest.createFunction(
-          { id: "test" },
-          // @ts-expect-error Both event and cron
-          { event: "foo", cron: "test" },
-          ({ event }) => {
-            assertType<unknown>(event);
-          },
-        );
-      });
-
-      test("allows no triggers (and no schema) with an empty array", () => {
-        inngest.createFunction({ id: "test" }, [], ({ event }) => {
-          assertType<
-            IsEqual<`${internalEvents.FunctionInvoked}`, typeof event.name>
-          >(true);
-          assertType<IsAny<typeof event.data>>(true);
-        });
-      });
-
-      test("allows multiple event triggers", () => {
-        inngest.createFunction(
-          { id: "test" },
-          [{ event: "foo" }, { event: "bar" }, { cron: "* * * * *" }],
-          ({ event, events }) => {
-            // `event` should represent all possible triggers
-            assertType<
-              IsEqual<
-                | `${internalEvents.FunctionInvoked}`
-                | `${internalEvents.ScheduledTimer}`
-                | "foo"
-                | "bar",
-                typeof event.name
-              >
-            >(true);
-
-            // Without narrowing, `event.data` should be the union of all
-            // possible data
-            assertType<
-              IsEqual<
-                { cron: string } | { title: string } | { message: string },
-                typeof event.data
-              >
-            >(true);
-
-            // Type narrowing should allow for specific data access
-            switch (event.name) {
-              case "inngest/scheduled.timer":
-                assertType<
-                  IsEqual<`${internalEvents.ScheduledTimer}`, typeof event.name>
-                >(true);
-                assertType<IsEqual<{ cron: string }, typeof event.data>>(true);
-                break;
-              case "foo":
-                assertType<IsEqual<"foo", typeof event.name>>(true);
-                assertType<IsEqual<{ title: string }, typeof event.data>>(true);
-                break;
-              case "bar":
-                assertType<IsEqual<"bar", typeof event.name>>(true);
-                assertType<{ message: string }>(event.data);
-                break;
-              case "inngest/function.invoked":
-                assertType<
-                  IsEqual<"inngest/function.invoked", typeof event.name>
-                >(true);
-                assertType<
-                  IsEqual<
-                    { cron: string } | { title: string } | { message: string },
-                    typeof event.data
-                  >
-                >(true);
-                break;
-              default:
-                // Proves we have exhausted all possibilities
-                assertType<IsNever<typeof event>>(true);
-            }
-
-            // `events` should omit internal triggers, as they are not
-            // batched
-            assertType<IsEqual<"foo" | "bar", (typeof events)[number]["name"]>>(
-              true,
-            );
-
-            // Without narrowing, `event.data` should be the union of all
-            // possible data, excluding internal triggers
-            assertType<
-              IsEqual<
-                { title: string } | { message: string },
-                (typeof events)[number]["data"]
-              >
-            >(true);
-
-            // Type narrowing should allow for specific data access
-            switch (events[0].name) {
-              case "foo":
-                assertType<"foo">(events[0].name);
-                assertType<{ title: string }>(events[0].data);
-
-                // Proves that each event can be different
-                assertType<"foo" | "bar" | undefined>(events[1]?.name);
-                break;
-              case "bar":
-                assertType<"bar">(events[0].name);
-                assertType<{ message: string }>(events[0].data);
-
-                // Proves that each event can be different
-                assertType<"foo" | "bar" | undefined>(events[1]?.name);
-                break;
-              default:
-                // Proves we have exhausted all possibilities
-                assertType<never>(events[0]);
-            }
-          },
-        );
-      });
-    });
   });
 });
 
@@ -1127,10 +799,6 @@ describe("setEnvVars", () => {
 describe("helper types", () => {
   const inngest = new Inngest({
     id: "test",
-    schemas: new EventSchemas().fromRecord<{
-      foo: { data: { foo: string } };
-      bar: { data: { bar: string } };
-    }>(),
     middleware: [
       new InngestMiddleware({
         name: "",
@@ -1147,34 +815,11 @@ describe("helper types", () => {
     ],
   });
 
-  type GetUnionKeyValue<
-    T,
-    K extends string | number | symbol,
-  > = T extends Record<K, infer U> ? U : never;
-
-  describe("type GetEvents", () => {
-    test("can use GetEvents to send an event", () => {
-      type T0 = GetEvents<typeof inngest>;
-      type T1 = T0[keyof T0];
-
-      const _myEventSendingFn = (events: T1[]) => {
-        void inngest.send(events);
-      };
-    });
-  });
-
   describe("type GetFunctionInput", () => {
     type T0 = GetFunctionInput<typeof inngest>;
 
     test("returns event typing", () => {
-      type Expected =
-        | `${internalEvents.FunctionFailed}`
-        | `${internalEvents.FunctionFinished}`
-        | `${internalEvents.FunctionInvoked}`
-        | `${internalEvents.FunctionCancelled}`
-        | `${internalEvents.ScheduledTimer}`
-        | "foo"
-        | "bar";
+      type Expected = string;
       type Actual = T0["event"]["name"];
       assertType<IsEqual<Expected, Actual>>(true);
     });
@@ -1194,15 +839,6 @@ describe("helper types", () => {
     test("has all step tooling", () => {
       type Expected = keyof ReturnType<typeof createStepTools>;
       type Actual = keyof T0["step"];
-      assertType<IsEqual<Expected, Actual>>(true);
-    });
-
-    test("returns step typing for sendEvent", () => {
-      type Expected = "foo" | "bar";
-      type Actual = GetUnionKeyValue<
-        Parameters<T0["step"]["sendEvent"]>[1],
-        "name"
-      >;
       assertType<IsEqual<Expected, Actual>>(true);
     });
   });
@@ -1289,12 +925,6 @@ describe("helper types", () => {
     test("has all tooling", () => {
       type Expected = keyof ReturnType<typeof createStepTools>;
       type Actual = keyof T0;
-      assertType<IsEqual<Expected, Actual>>(true);
-    });
-
-    test("returns step typing for sendEvent", () => {
-      type Expected = "foo" | "bar";
-      type Actual = GetUnionKeyValue<Parameters<T0["sendEvent"]>[1], "name">;
       assertType<IsEqual<Expected, Actual>>(true);
     });
   });
