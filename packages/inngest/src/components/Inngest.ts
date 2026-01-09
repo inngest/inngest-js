@@ -40,7 +40,6 @@ import {
 } from "../middleware/logger.ts";
 import {
   type ClientOptions,
-  type EventNameFromTrigger,
   type EventPayload,
   type FailureEventArgs,
   type Handler,
@@ -64,6 +63,8 @@ import {
   type MiddlewareRegisterReturn,
   type SendEventHookStack,
 } from "./InngestMiddleware.ts";
+import type { createStepTools } from "./InngestStepTools.ts";
+import type { HandlerWithTriggers } from "./triggers/helpers.ts";
 
 /**
  * Capturing the global type of fetch so that we can reliably access it below.
@@ -929,12 +930,9 @@ export namespace Inngest {
   export type CreateFunction<TClient extends Inngest.Any> = <
     TMiddleware extends InngestMiddleware.Stack,
     TTrigger extends SingleOrArray<InngestFunction.Trigger<string>>,
-    THandler extends Handler.Any = Handler<
-      TClient,
-      EventNameFromTrigger<
-        Record<string, EventPayload>,
-        AsArray<TTrigger>[number]
-      >,
+    THandler extends Handler.Any = HandlerWithTriggers<
+      ReturnType<typeof createStepTools<TClient>>,
+      AsArray<TTrigger>,
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
@@ -943,24 +941,16 @@ export namespace Inngest {
         ]
       >
     >,
-    TFailureHandler extends Handler.Any = Handler<
-      TClient,
-      EventNameFromTrigger<
-        Record<string, EventPayload>,
-        AsArray<TTrigger>[number]
-      >,
+    TFailureHandler extends Handler.Any = HandlerWithTriggers<
+      ReturnType<typeof createStepTools<TClient>>,
+      AsArray<TTrigger>,
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
           NonNullable<ClientOptionsFromInngest<TClient>["middleware"]>,
           TMiddleware,
         ],
-        FailureEventArgs<
-          Record<string, EventPayload>[EventNameFromTrigger<
-            Record<string, EventPayload>,
-            AsArray<TTrigger>[number]
-          >]
-        >
+        FailureEventArgs<EventPayload>
       >
     >,
   >(
