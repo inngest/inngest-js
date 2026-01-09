@@ -429,9 +429,6 @@ export const testFramework = (
           has_event_key: false,
           has_signing_key: false,
           mode: "dev",
-          extra: expect.objectContaining({
-            is_mode_explicit: true,
-          }),
         });
       });
 

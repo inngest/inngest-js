@@ -313,13 +313,13 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       this.options.baseUrl ||
       this.mode["env"][envKeys.InngestApiBaseUrl] ||
       this.mode["env"][envKeys.InngestBaseUrl] ||
-      this.mode.getExplicitUrl(defaultInngestApiBaseUrl);
+      this.mode.getUrl(defaultInngestApiBaseUrl);
 
     this._eventBaseUrl =
       this.options.baseUrl ||
       this.mode["env"][envKeys.InngestEventApiBaseUrl] ||
       this.mode["env"][envKeys.InngestBaseUrl] ||
-      this.mode.getExplicitUrl(defaultInngestEventBaseUrl);
+      this.mode.getUrl(defaultInngestEventBaseUrl);
 
     this.setEventKey(
       this.options.eventKey || this.mode["env"][envKeys.InngestEventKey] || "",

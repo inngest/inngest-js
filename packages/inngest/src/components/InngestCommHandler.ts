@@ -771,23 +771,7 @@ export class InngestCommHandler<
       ...(await headersToForwardP),
     });
 
-    const assumedMode = getMode({ env: this.env, client: this.client });
-
-    if (assumedMode.isExplicit) {
-      this._mode = assumedMode;
-    } else {
-      const serveIsProd = await actions.isProduction?.(
-        "starting to handle request",
-      );
-      if (typeof serveIsProd === "boolean") {
-        this._mode = new Mode({
-          type: serveIsProd ? "cloud" : "dev",
-          isExplicit: false,
-        });
-      } else {
-        this._mode = assumedMode;
-      }
-    }
+    this._mode = getMode({ env: this.env, client: this.client });
 
     this.upsertKeysFromEnv();
 
@@ -2267,9 +2251,7 @@ export class InngestCommHandler<
     let introspection:
       | UnauthenticatedIntrospection
       | AuthenticatedIntrospection = {
-      extra: {
-        is_mode_explicit: this._mode.isExplicit,
-      },
+      extra: {},
       has_event_key: this.client["eventKeySet"](),
       has_signing_key: Boolean(this.signingKey),
       function_count: registerBody.functions.length,
@@ -2436,12 +2418,7 @@ export class InngestCommHandler<
     const isAuthError =
       status === 401 || status === 403 || error.includes("signing key");
 
-    if (
-      isAuthError &&
-      this._mode?.isCloud &&
-      this._mode?.isInferred &&
-      !this.signingKey
-    ) {
+    if (isAuthError && this._mode?.isCloud && !this.signingKey) {
       this.log(
         "warn",
         `Hint: For local development, set INNGEST_DEV=1 to connect to the Inngest Dev Server.\n` +
@@ -2681,16 +2658,6 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
   env?: () => MaybePromise<Env | undefined>;
   headers: (key: string) => MaybePromise<string | null | undefined>;
 
-  /**
-   * Whether the current environment is production. This is used to determine
-   * some functionality like whether to connect to the dev server or whether to
-   * show debug logging.
-   *
-   * If this is not provided--or is provided and returns `undefined`--we'll try
-   * to automatically detect whether we're in production by checking various
-   * environment variables.
-   */
-  isProduction?: () => MaybePromise<boolean | undefined>;
   method: () => MaybePromise<string>;
   queryString?: (
     key: string,
