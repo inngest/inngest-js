@@ -119,7 +119,17 @@ export const serve = (
       };
 
       return {
-        body: () => (typeof req.json === "function" ? req.json() : req.body),
+        body: async () => {
+          if (typeof req.json === "function") {
+            return await req.json();
+          }
+
+          if (req.body instanceof ReadableStream) {
+            return await streamToJSON(req.body);
+          }
+
+          throw new Error("body is not a JSON or a ReadableStream");
+        },
         headers: getHeader,
         method: () => {
           /**
@@ -298,3 +308,16 @@ export const serve = (
 
   return handlerFn;
 };
+
+async function streamToJSON(stream: ReadableStream): Promise<unknown> {
+  const chunks = [];
+  const reader = stream.getReader();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    chunks.push(value);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
