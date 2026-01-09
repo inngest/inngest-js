@@ -42,7 +42,7 @@ import {
   type ExecutionResult,
   type ExecutionResults,
   type InngestExecutionOptions,
-  PREFERRED_EXECUTION_VERSION,
+  PREFERRED_ASYNC_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
 import { _internals as _v1Internals } from "./execution/v1.ts";
 import { _internals as _v2Internals } from "./execution/v2.ts";
@@ -171,7 +171,7 @@ describe("runFn", () => {
             );
 
             const execution = fn["createExecution"]({
-              version: PREFERRED_EXECUTION_VERSION,
+              version: PREFERRED_ASYNC_EXECUTION_VERSION,
               partialOptions: {
                 client: fn["client"],
                 data: fromPartial({
@@ -218,7 +218,7 @@ describe("runFn", () => {
 
           test("wrap thrown error", async () => {
             const execution = fn["createExecution"]({
-              version: PREFERRED_EXECUTION_VERSION,
+              version: PREFERRED_ASYNC_EXECUTION_VERSION,
               partialOptions: {
                 client: fn["client"],
                 data: fromPartial({
