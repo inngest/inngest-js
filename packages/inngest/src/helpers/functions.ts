@@ -1,7 +1,7 @@
 import { ZodError, z } from "zod/v3";
 import type { InngestApi } from "../api/api.ts";
 import { stepsSchemas } from "../api/schema.ts";
-import { PREFERRED_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
+import { PREFERRED_ASYNC_EXECUTION_VERSION } from "../components/execution/InngestExecution.ts";
 import { err, ok, type Result } from "../types.ts";
 import { ExecutionVersion } from "./consts.ts";
 import { prettyError } from "./errors.ts";
@@ -84,29 +84,46 @@ const fnDataVersionSchema = z.object({
     .or(z.literal(1))
     .or(z.literal(2))
     .optional()
-    .transform<ExecutionVersion>((v) => {
+    .transform<{ sdkDecided: boolean; version: ExecutionVersion }>((v) => {
       if (typeof v === "undefined") {
         console.debug(
-          `No request version specified by executor; defaulting to v${PREFERRED_EXECUTION_VERSION}`,
+          `No request version specified by executor; defaulting to v${PREFERRED_ASYNC_EXECUTION_VERSION}`,
         );
 
-        return PREFERRED_EXECUTION_VERSION;
+        return {
+          sdkDecided: true,
+          version: PREFERRED_ASYNC_EXECUTION_VERSION,
+        };
       }
 
-      return v === -1 ? PREFERRED_EXECUTION_VERSION : v;
+      if (v === -1) {
+        return {
+          sdkDecided: true,
+          version: PREFERRED_ASYNC_EXECUTION_VERSION,
+        };
+      }
+
+      return {
+        sdkDecided: false,
+        version: v,
+      };
     }),
 });
 
+type FnDataVersionParse = z.output<typeof fnDataVersionSchema>;
+
 export const parseFnData = (data: unknown) => {
-  let version: ExecutionVersion;
+  let version: FnDataVersionParse["version"];
 
   try {
-    ({ version } = fnDataVersionSchema.parse(data));
+    const parsed = fnDataVersionSchema.parse(data);
+    version = parsed.version;
 
     const versionHandlers = {
       [ExecutionVersion.V0]: () =>
         ({
           version: ExecutionVersion.V0,
+          sdkDecidedVersion: version.sdkDecided,
           ...z
             .object({
               event: z.record(z.any()),
@@ -138,6 +155,7 @@ export const parseFnData = (data: unknown) => {
       [ExecutionVersion.V1]: () =>
         ({
           version: ExecutionVersion.V1,
+          sdkDecidedVersion: version.sdkDecided,
           ...z
             .object({
               event: z.record(z.any()),
@@ -173,6 +191,7 @@ export const parseFnData = (data: unknown) => {
       [ExecutionVersion.V2]: () =>
         ({
           version: ExecutionVersion.V2,
+          sdkDecidedVersion: version.sdkDecided,
           ...z
             .object({
               event: z.record(z.any()),
@@ -206,7 +225,7 @@ export const parseFnData = (data: unknown) => {
         }) as const,
     } satisfies Record<ExecutionVersion, () => unknown>;
 
-    return versionHandlers[version]();
+    return versionHandlers[version.version]();
   } catch (err) {
     throw new Error(parseFailureErr(err));
   }

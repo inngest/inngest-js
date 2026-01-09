@@ -24,6 +24,7 @@ describe("#parseFnData", () => {
     {
       name: "should parse successfully for valid data",
       data: {
+        sdkDecidedVersion: false,
         version: 1,
         event: generateEvent(),
         events: [...Array.from(Array(5).keys())].map(() => generateEvent()),
