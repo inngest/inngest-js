@@ -22,7 +22,6 @@ import {
   type GoInterval,
   goIntervalTiming,
   resolveAfterPending,
-  resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises.ts";
 import * as Temporal from "../../helpers/temporal.ts";
@@ -383,12 +382,11 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       return transformResult;
     };
 
-    const maybeReturnNewSteps = async (): Promise<
-      ExecutionResult | undefined
-    > => {
-      const newSteps = await this.filterNewSteps(
-        Array.from(this.state.steps.values()),
-      );
+    const maybeReturnNewSteps = async (
+      steps: FoundStep[],
+    ): Promise<ExecutionResult | undefined> => {
+      const newSteps = await this.filterNewSteps(Array.from(steps.values()));
+
       if (newSteps) {
         return {
           type: "steps-found",
@@ -590,7 +588,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           return stepRanHandler(stepResult);
         }
 
-        return maybeReturnNewSteps();
+        return maybeReturnNewSteps(steps);
       },
 
       /**
@@ -699,7 +697,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
               return await attemptCheckpointAndResume(stepResult);
             }
 
-            return maybeReturnNewSteps();
+            return maybeReturnNewSteps(steps);
           }
 
           // If we have stepsToResume, resume as many as possible and resume execution
@@ -823,34 +821,6 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     if (!newSteps.length) {
       return;
-    }
-
-    /**
-     * Warn if we've found new steps but haven't yet seen all previous
-     * steps. This may indicate that step presence isn't determinate.
-     */
-    let knownSteps = 0;
-    for (const step of foundSteps) {
-      if (step.fulfilled) {
-        knownSteps++;
-      }
-    }
-    const foundAllCompletedSteps = this.state.stepsToFulfill === knownSteps;
-
-    if (!foundAllCompletedSteps) {
-      await this.options.client["warnMetadata"](
-        { run_id: this.options.runId },
-        ErrCode.NON_DETERMINISTIC_FUNCTION,
-        prettyError({
-          type: "warn",
-          whatHappened: "Function may be indeterminate",
-          why: "We found new steps before seeing all previous steps, which may indicate that the function is non-deterministic.",
-          consequences:
-            "This may cause unexpected behaviour as Inngest executes your function.",
-          reassurance:
-            "This is expected if a function is updated in the middle of a run, but may indicate a bug if not.",
-        }),
-      );
     }
 
     /**
@@ -1309,7 +1279,10 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
             // Note that we only run `step.handle()` if `step.hasStepState` is
             // `true`. This gives us a chance to handle checkpointing in another
             // part of the loop.
-            if (step.hasStepState && step.handle()) {
+            if (
+              (!this.options.checkpointingConfig || step.hasStepState) &&
+              step.handle()
+            ) {
               unhandledFoundStepsToReport.delete(hashedId);
 
               if (step.fulfilled) {
