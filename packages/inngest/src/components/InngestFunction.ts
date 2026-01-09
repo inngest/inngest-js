@@ -1,3 +1,4 @@
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import {
   ExecutionVersion,
   internalEvents,
@@ -352,6 +353,9 @@ export namespace InngestFunction {
     | {
         event: T;
         if?: string;
+
+        // biome-ignore lint/suspicious/noExplicitAny: schema can be any StandardSchemaV1
+        schema?: StandardSchemaV1<any>;
       }
     | {
         cron: string;
