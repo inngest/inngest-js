@@ -15,12 +15,7 @@ import {
   type SpanProcessor,
 } from "@opentelemetry/sdk-trace-base";
 import Debug from "debug";
-import {
-  defaultDevServerHost,
-  defaultInngestApiBaseUrl,
-} from "../../../helpers/consts.ts";
-import { devServerAvailable } from "../../../helpers/devserver.ts";
-import { devServerHost } from "../../../helpers/env.ts";
+import { defaultInngestApiBaseUrl } from "../../../helpers/consts.ts";
 import type { Inngest } from "../../Inngest.ts";
 import { getAsyncCtx } from "../als.ts";
 import { clientProcessorMap } from "./access.ts";
@@ -259,26 +254,15 @@ export class InngestSpanProcessor implements SpanProcessor {
           const app = store.app as Inngest.Any;
 
           // Fetch the URL for the Inngest endpoint using the app's config.
-          let url: URL;
           const path = "/v1/traces/userland";
-          if (app.apiBaseUrl) {
-            url = new URL(path, app.apiBaseUrl);
-          } else {
-            url = new URL(path, defaultInngestApiBaseUrl);
+          let baseUrl = app.apiBaseUrl || defaultInngestApiBaseUrl;
 
-            if (app["mode"] && app["mode"].isDev && app["mode"].isInferred) {
-              const devHost = devServerHost() || defaultDevServerHost;
-              const hasDevServer = await devServerAvailable(
-                devHost,
-                app["fetch"],
-              );
-              if (hasDevServer) {
-                url = new URL(path, devHost);
-              }
-            } else if (app["mode"]?.explicitDevUrl) {
-              url = new URL(path, app["mode"].explicitDevUrl.href);
-            }
+          // Use explicit dev server URL if provided via INNGEST_DEV=<url>
+          if (app["mode"]?.explicitDevUrl) {
+            baseUrl = app["mode"].explicitDevUrl.href;
           }
+
+          const url = new URL(path, baseUrl);
 
           processorDebug(
             "batcher lazily accessed; creating new batcher with URL",

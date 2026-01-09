@@ -7,7 +7,6 @@ import type { Inngest } from "../components/Inngest.ts";
 import type { SupportedFrameworkName } from "../types.ts";
 import { version } from "../version.ts";
 import { defaultDevServerHost, envKeys, headerKeys } from "./consts.ts";
-import { stringifyUnknown } from "./strings.ts";
 
 /**
  * @public
@@ -60,38 +59,7 @@ export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
   });
 };
 
-const checkFns = (<
-  T extends Record<string, (actual: EnvValue, expected: EnvValue) => boolean>,
->(
-  checks: T,
-): T => checks)({
-  equals: (actual, expected) => actual === expected,
-  "starts with": (actual, expected) =>
-    expected ? (actual?.startsWith(expected) ?? false) : false,
-  "is truthy": (actual) => Boolean(actual),
-  "is truthy but not": (actual, expected) =>
-    Boolean(actual) && actual !== expected,
-});
-
-const prodChecks: [
-  key: string,
-  customCheck: keyof typeof checkFns,
-  value?: string,
-][] = [
-  ["CF_PAGES", "equals", "1"],
-  ["CONTEXT", "starts with", "prod"],
-  ["ENVIRONMENT", "starts with", "prod"],
-  ["NODE_ENV", "starts with", "prod"],
-  ["VERCEL_ENV", "starts with", "prod"],
-  ["DENO_DEPLOYMENT_ID", "is truthy"],
-  [envKeys.VercelEnvKey, "is truthy but not", "development"],
-  [envKeys.IsNetlify, "is truthy"],
-  [envKeys.IsRender, "is truthy"],
-  [envKeys.RailwayBranch, "is truthy"],
-  [envKeys.IsCloudflarePages, "is truthy"],
-];
-
-interface IsProdOptions {
+interface GetModeOptions {
   /**
    * The optional environment variables to use instead of `process.env`.
    */
@@ -115,12 +83,7 @@ export interface ModeOptions {
   type: "cloud" | "dev";
 
   /**
-   * Whether the mode was explicitly set, or inferred from other sources.
-   */
-  isExplicit: boolean;
-
-  /**
-   * If the mode was explicitly set as a dev URL, this is the URL that was set.
+   * If the mode was set as a dev URL, this is the URL that was set.
    */
   explicitDevUrl?: URL;
 
@@ -133,25 +96,14 @@ export interface ModeOptions {
 export class Mode {
   public readonly type: "cloud" | "dev";
 
-  /**
-   * Whether the mode was explicitly set, or inferred from other sources.
-   */
-  public readonly isExplicit: boolean;
-
   public readonly explicitDevUrl?: URL;
 
   // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private readonly env: Env;
 
-  constructor({
-    type,
-    isExplicit,
-    explicitDevUrl,
-    env = allProcessEnv(),
-  }: ModeOptions) {
+  constructor({ type, explicitDevUrl, env = allProcessEnv() }: ModeOptions) {
     this.env = env;
     this.type = type;
-    this.isExplicit = isExplicit || Boolean(explicitDevUrl);
     this.explicitDevUrl = explicitDevUrl;
   }
 
@@ -163,33 +115,15 @@ export class Mode {
     return this.type === "cloud";
   }
 
-  public get isInferred(): boolean {
-    return !this.isExplicit;
-  }
-
   /**
-   * If we are explicitly in a particular mode, retrieve the URL that we are
-   * sure we should be using, not considering any environment variables or other
-   * influences.
+   * Retrieve the URL that should be used for this mode.
    */
-  public getExplicitUrl(defaultCloudUrl: string): string | undefined {
-    if (!this.isExplicit) {
-      return undefined;
-    }
-
+  public getUrl(defaultCloudUrl: string): string {
     if (this.explicitDevUrl) {
       return this.explicitDevUrl.href;
     }
 
-    if (this.isCloud) {
-      return defaultCloudUrl;
-    }
-
-    if (this.isDev) {
-      return defaultDevServerHost;
-    }
-
-    return undefined;
+    return this.isCloud ? defaultCloudUrl : defaultDevServerHost;
   }
 }
 
@@ -201,20 +135,22 @@ export const getMode = ({
   env = allProcessEnv(),
   client,
   explicitMode,
-}: IsProdOptions = {}): Mode => {
+}: GetModeOptions = {}): Mode => {
   if (explicitMode) {
-    return new Mode({ type: explicitMode, isExplicit: true, env });
+    return new Mode({ type: explicitMode, env });
   }
 
-  if (client?.["mode"].isExplicit) {
+  // If client's mode is specified, use that
+  if (client?.["mode"]) {
     return client["mode"];
   }
 
+  // Check environment variables
   if (envKeys.InngestDevMode in env) {
     if (typeof env[envKeys.InngestDevMode] === "string") {
       try {
         const explicitDevUrl = new URL(env[envKeys.InngestDevMode]);
-        return new Mode({ type: "dev", isExplicit: true, explicitDevUrl, env });
+        return new Mode({ type: "dev", explicitDevUrl, env });
       } catch {
         // no-op
       }
@@ -224,17 +160,13 @@ export const getMode = ({
     if (typeof envIsDev === "boolean") {
       return new Mode({
         type: envIsDev ? "dev" : "cloud",
-        isExplicit: true,
         env,
       });
     }
   }
 
-  const isProd = prodChecks.some(([key, checkKey, expected]) => {
-    return checkFns[checkKey](stringifyUnknown(env[key]), expected);
-  });
-
-  return new Mode({ type: isProd ? "cloud" : "dev", isExplicit: false, env });
+  // Default to cloud mode
+  return new Mode({ type: "cloud", env });
 };
 
 /**

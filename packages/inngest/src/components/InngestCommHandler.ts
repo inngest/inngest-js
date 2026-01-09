@@ -17,11 +17,10 @@ import {
   queryKeys,
   syncKind,
 } from "../helpers/consts.ts";
-import { devServerAvailable, devServerUrl } from "../helpers/devserver.ts";
+import { devServerUrl } from "../helpers/devserver.ts";
 import { enumFromValue } from "../helpers/enum.ts";
 import {
   allProcessEnv,
-  devServerHost,
   type Env,
   getFetch,
   getMode,
@@ -772,23 +771,7 @@ export class InngestCommHandler<
       ...(await headersToForwardP),
     });
 
-    const assumedMode = getMode({ env: this.env, client: this.client });
-
-    if (assumedMode.isExplicit) {
-      this._mode = assumedMode;
-    } else {
-      const serveIsProd = await actions.isProduction?.(
-        "starting to handle request",
-      );
-      if (typeof serveIsProd === "boolean") {
-        this._mode = new Mode({
-          type: serveIsProd ? "cloud" : "dev",
-          isExplicit: false,
-        });
-      } else {
-        this._mode = assumedMode;
-      }
-    }
+    this._mode = getMode({ env: this.env, client: this.client });
 
     this.upsertKeysFromEnv();
 
@@ -2268,9 +2251,7 @@ export class InngestCommHandler<
     let introspection:
       | UnauthenticatedIntrospection
       | AuthenticatedIntrospection = {
-      extra: {
-        is_mode_explicit: this._mode.isExplicit,
-      },
+      extra: {},
       has_event_key: this.client["eventKeySet"](),
       has_signing_key: Boolean(this.signingKey),
       function_count: registerBody.functions.length,
@@ -2332,21 +2313,11 @@ export class InngestCommHandler<
 
     let res: globalThis.Response;
 
-    // Whenever we register, we check to see if the dev server is up.  This
-    // is a noop and returns false in production. Clone the URL object to avoid
-    // mutating the property between requests.
+    // Clone the URL object to avoid mutating the property between requests.
     let registerURL = new URL(this.inngestRegisterUrl.href);
 
-    const inferredDevMode =
-      this._mode && this._mode.isInferred && this._mode.isDev;
-
-    if (inferredDevMode) {
-      const host = devServerHost(this.env);
-      const hasDevServer = await devServerAvailable(host, this.fetch);
-      if (hasDevServer) {
-        registerURL = devServerUrl(host, "/fn/register");
-      }
-    } else if (this._mode?.explicitDevUrl) {
+    // Use explicit dev server URL if provided via INNGEST_DEV=<url>
+    if (this._mode?.explicitDevUrl) {
       registerURL = devServerUrl(
         this._mode.explicitDevUrl.href,
         "/fn/register",
@@ -2441,6 +2412,18 @@ export class InngestCommHandler<
         res.status,
         res.statusText,
         data,
+      );
+    }
+
+    const isAuthError =
+      status === 401 || status === 403 || error.includes("signing key");
+
+    if (isAuthError && this._mode?.isCloud && !this.signingKey) {
+      this.log(
+        "warn",
+        `Hint: For local development, set INNGEST_DEV=1 to connect to the Inngest Dev Server.\n` +
+          `  Example: INNGEST_DEV=1 npm run dev\n` +
+          `  See: https://www.inngest.com/docs/local-development`,
       );
     }
 
@@ -2675,16 +2658,6 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
   env?: () => MaybePromise<Env | undefined>;
   headers: (key: string) => MaybePromise<string | null | undefined>;
 
-  /**
-   * Whether the current environment is production. This is used to determine
-   * some functionality like whether to connect to the dev server or whether to
-   * show debug logging.
-   *
-   * If this is not provided--or is provided and returns `undefined`--we'll try
-   * to automatically detect whether we're in production by checking various
-   * environment variables.
-   */
-  isProduction?: () => MaybePromise<boolean | undefined>;
   method: () => MaybePromise<string>;
   queryString?: (
     key: string,
