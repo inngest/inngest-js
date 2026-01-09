@@ -2433,6 +2433,23 @@ export class InngestCommHandler<
       );
     }
 
+    const isAuthError =
+      status === 401 || status === 403 || error.includes("signing key");
+
+    if (
+      isAuthError &&
+      this._mode?.isCloud &&
+      this._mode?.isInferred &&
+      !this.signingKey
+    ) {
+      this.log(
+        "warn",
+        `Hint: For local development, set INNGEST_DEV=1 to connect to the Inngest Dev Server.\n` +
+          `  Example: INNGEST_DEV=1 npm run dev\n` +
+          `  See: https://www.inngest.com/docs/local-development`,
+      );
+    }
+
     return { status, message: error, modified };
   }
 
