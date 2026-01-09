@@ -41,6 +41,12 @@ import {
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import type { Inngest } from "../Inngest.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+  MetadataUpdate,
+} from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
@@ -175,6 +181,24 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     return this.execution;
+  }
+
+  public addMetadata(
+    stepId: string,
+    kind: MetadataKind,
+    scope: MetadataScope,
+    op: MetadataOpcode,
+    values: Record<string, unknown>,
+  ) {
+    if (!this.state.metadata) {
+      this.state.metadata = new Map();
+    }
+
+    const updates = this.state.metadata.get(stepId) ?? [];
+    updates.push({ kind, scope, op, values });
+    this.state.metadata.set(stepId, updates);
+
+    return true;
   }
 
   /**
@@ -882,10 +906,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       })
       .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
         interval = _interval;
+        const metadata = this.state.metadata?.get(id);
 
         return {
           ...outgoingOp,
           data: await resultPromise,
+          ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
         };
       })
       .catch<OutgoingOp>((error) => {
@@ -900,12 +926,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           errorIsRetriable = false;
         }
 
+        const metadata = this.state.metadata?.get(id);
+
         if (errorIsRetriable) {
           return {
             ...outgoingOp,
             op: StepOpCode.StepError,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
+            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
           };
         } else {
           return {
@@ -913,6 +942,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             op: StepOpCode.StepFailed,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
+            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
           };
         }
       })
@@ -1085,6 +1115,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       allStateUsed: () => {
         return this.state.remainingStepsToBeSeen.size === 0;
       },
+      metadata: new Map(),
     };
 
     return state;
@@ -1189,7 +1220,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         if (!stepFoundThisTick) {
           warnOfParallelIndexing = true;
 
-          console.warn(
+          this.options.client["warnMetadata"](
+            { run_id: this.fnArg.runId },
+            ErrCode.AUTOMATIC_PARALLEL_INDEXING,
             prettyError({
               type: "warn",
               whatHappened:
@@ -1309,7 +1342,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          * Therefore, we'll only show a warning here to indicate that this is
          * potentially an issue.
          */
-        console.warn(
+        this.options.client["warnMetadata"](
+          { run_id: this.fnArg.runId },
+          ErrCode.NESTING_STEPS,
           prettyError({
             whatHappened: `We detected that you have nested \`step.*\` tooling in \`${
               opId.displayName ?? opId.id
@@ -1748,6 +1783,11 @@ export interface V1ExecutionState {
     appId: string;
     token?: string;
   };
+
+  /**
+   * Metadata collected during execution to be sent with outgoing ops.
+   */
+  metadata?: Map<string, Array<MetadataUpdate>>;
 }
 
 const hashId = (id: string): string => {
