@@ -128,7 +128,7 @@ export const serve = (
             return await streamToJSON(req.body);
           }
 
-          throw new Error("body is not a JSON or a ReadableStream");
+          return req.body;
         },
         headers: getHeader,
         method: () => {
