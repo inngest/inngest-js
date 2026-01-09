@@ -24,13 +24,11 @@ import {
   type StepOptions,
   type StepOptionsOrId,
   type TriggerEventFromFunction,
-  type TriggersFromClient,
 } from "../types.ts";
 import type { InngestExecution } from "./execution/InngestExecution.ts";
 import { fetch as stepFetch } from "./Fetch.ts";
 import type {
   ClientOptionsFromInngest,
-  GetEvents,
   GetFunctionOutput,
   GetStepTools,
   Inngest,
@@ -334,9 +332,9 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * Returns a promise that will resolve once the event has been sent.
      */
     sendEvent: createTool<
-      <Payload extends SendEventPayload<GetEvents<TClient>>>(
+      (
         idOrOptions: StepOptionsOrId,
-        payload: Payload,
+        payload: SendEventPayload,
       ) => Promise<SendEventOutput<ClientOptionsFromInngest<TClient>>>
     >(
       ({ id, name }) => {
@@ -433,14 +431,10 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * returning `null` instead of any event data.
      */
     waitForEvent: createTool<
-      <IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>>(
+      <IncomingEvent extends WithoutInternalStr<string>>(
         idOrOptions: StepOptionsOrId,
-        opts: WaitForEventOpts<GetEvents<TClient, true>, IncomingEvent>,
-      ) => Promise<
-        IncomingEvent extends WithoutInternalStr<TriggersFromClient<TClient>>
-          ? GetEvents<TClient, false>[IncomingEvent] | null
-          : IncomingEvent | null
-      >
+        opts: WaitForEventOpts<Record<string, EventPayload>, IncomingEvent>,
+      ) => Promise<EventPayload | null>
     >(
       (
         { id, name },

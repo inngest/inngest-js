@@ -9,11 +9,11 @@ import type {
   Cancellation,
   CheckpointingOptions,
   ConcurrencyOption,
+  EventPayload,
   FunctionConfig,
   Handler,
   TimeStr,
   TimeStrBatch,
-  TriggersFromClient,
 } from "../types.ts";
 import type {
   IInngestExecution,
@@ -22,7 +22,7 @@ import type {
 import { createV0InngestExecution } from "./execution/v0.ts";
 import { createV1InngestExecution } from "./execution/v1.ts";
 import { createV2InngestExecution } from "./execution/v2.ts";
-import type { GetEvents, Inngest } from "./Inngest.ts";
+import type { Inngest } from "./Inngest.ts";
 import type {
   InngestMiddleware,
   MiddlewareRegisterReturn,
@@ -39,7 +39,6 @@ import type {
  */
 export class InngestFunction<
   TFnOpts extends InngestFunction.Options<
-    TClient,
     TMiddleware,
     TTriggers,
     TFailureHandler
@@ -48,9 +47,8 @@ export class InngestFunction<
   TFailureHandler extends Handler.Any,
   TClient extends Inngest.Any = Inngest.Any,
   TMiddleware extends InngestMiddleware.Stack = InngestMiddleware.Stack,
-  TTriggers extends InngestFunction.Trigger<
-    TriggersFromClient<TClient>
-  >[] = InngestFunction.Trigger<TriggersFromClient<TClient>>[],
+  TTriggers extends
+    InngestFunction.Trigger<string>[] = InngestFunction.Trigger<string>[],
 > implements InngestFunction.Like
 {
   static stepId = "step";
@@ -370,11 +368,9 @@ export namespace InngestFunction {
    * @public
    */
   export interface Options<
-    TClient extends Inngest.Any = Inngest.Any,
     TMiddleware extends InngestMiddleware.Stack = InngestMiddleware.Stack,
-    TTriggers extends InngestFunction.Trigger<
-      TriggersFromClient<TClient>
-    >[] = InngestFunction.Trigger<TriggersFromClient<TClient>>[],
+    TTriggers extends
+      InngestFunction.Trigger<string>[] = InngestFunction.Trigger<string>[],
     TFailureHandler extends Handler.Any = Handler.Any,
   > {
     triggers?: TTriggers;
@@ -629,7 +625,7 @@ export namespace InngestFunction {
       mode: "skip" | "cancel";
     };
 
-    cancelOn?: Cancellation<GetEvents<TClient, true>>[];
+    cancelOn?: Cancellation<Record<string, EventPayload>>[];
 
     /**
      * Specifies the maximum number of retries for all steps across this function.

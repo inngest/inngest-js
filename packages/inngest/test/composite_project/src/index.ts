@@ -5,10 +5,6 @@ type CatchAll = Inngest.JsonError;
 
 export const inngest = new Inngest.Inngest({
   id: "me",
-  schemas: new Inngest.EventSchemas().fromRecord<{
-    foo: { data: { foo: string } };
-    bar: { data: { bar: string } };
-  }>(),
   middleware: [
     new Inngest.InngestMiddleware({
       name: "foo",

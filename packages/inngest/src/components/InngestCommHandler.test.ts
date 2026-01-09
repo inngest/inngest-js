@@ -1,38 +1,6 @@
-import { z } from "zod/v3";
-import { EventSchemas, InngestCommHandler } from "../index.ts";
+import { InngestCommHandler } from "../index.ts";
 import { serve } from "../next.ts";
 import { createClient } from "../test/helpers.ts";
-
-describe("#153", () => {
-  test('does not throw "type instantiation is excessively deep and possibly infinite" for looping type', () => {
-    const literalSchema = z.union([
-      z.string(),
-      z.number(),
-      z.boolean(),
-      z.null(),
-    ]);
-    type Literal = z.infer<typeof literalSchema>;
-    type Json = Literal | { [key: string]: Json } | Json[];
-
-    const inngest = createClient({
-      id: "My App",
-      schemas: new EventSchemas().fromRecord<{
-        foo: {
-          name: "foo";
-          data: {
-            json: Json;
-          };
-        };
-      }>(),
-    });
-
-    /**
-     * This would throw:
-     * "Type instantiation is excessively deep and possibly infinite.ts(2589)"
-     */
-    serve({ client: inngest, functions: [] });
-  });
-});
 
 describe("ServeHandler", () => {
   describe("functions argument", () => {

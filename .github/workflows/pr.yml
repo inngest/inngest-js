@@ -172,21 +172,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test
 
-  "middleware-validation_test":
-    name: "middleware-validation: Test"
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: packages/middleware-validation
-    steps:
-      - uses: actions/checkout@v3
-      - uses: ./.github/actions/setup-and-build
-        with:
-          install-dependencies: true
-          build: false
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test
-
   "realtime_test":
     name: "realtime: Test"
     runs-on: ubuntu-latest
