@@ -1,6 +1,6 @@
 {
   "name": "inngest",
-  "version": "3.49.0",
+  "version": "3.49.1",
   "description": "Official SDK for Inngest.com. Inngest is the reliability layer for modern applications. Inngest combines durable execution, events, and queues into a zero-infra platform with built-in observability.",
   "main": "./index.cjs",
   "module": "./index.js",
