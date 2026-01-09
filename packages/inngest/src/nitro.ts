@@ -8,8 +8,12 @@
 import type {
   InternalServeHandlerOptions,
   ServeHandlerOptions,
+  SyncHandlerOptions,
 } from "./components/InngestCommHandler.ts";
-import { serve as serveH3 } from "./h3.ts";
+import {
+  createExperimentalEndpointWrapper as createExperimentalEndpointWrapperH3,
+  serve as serveH3,
+} from "./h3.ts";
 import type { SupportedFrameworkName } from "./types.ts";
 
 /**
@@ -34,4 +38,42 @@ export const serve = (
   };
 
   return serveH3(optsOverrides);
+};
+
+/**
+ * In Nitro, create a function that can define an event handler with Inngest
+ * steps enabled, allowing you to use steps seamlessly within that API.
+ *
+ * @example
+ * ```ts
+ * import { Inngest, step } from "inngest";
+ * import { createExperimentalEndpointWrapper } from "inngest/nitro";
+ *
+ * const inngestEventHandler = createExperimentalEndpointWrapper({
+ *   client: new Inngest({ id: "nitro-sync-example" }),
+ * });
+ *
+ *
+ * export default inngestEventHandler(async (event) => {
+ *   const foo = await step.run("example/step", async () => {
+ *     return "Hello from step!";
+ *   });
+ *
+ *   return `
+ *       <meta charset="utf-8">
+ *       <h1>This endpoint worked!</h1>
+ *       <p>The step's result was: ${foo}</p>
+ *     `;
+ * });
+ * ```
+ */
+export const createExperimentalEndpointWrapper = (
+  options: SyncHandlerOptions,
+) => {
+  const optsOverrides = {
+    ...options,
+    frameworkName,
+  };
+
+  return createExperimentalEndpointWrapperH3(optsOverrides);
 };
