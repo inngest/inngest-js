@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "vitest run",
-    "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
+    "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts && node ./scripts/transformPackageJson.js",
     "postversion": "pnpm run build",
     "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
     "pack": "pnpm run build && mv $(npm pack ./dist --pack-destination . --silent) inngest-realtime.tgz"
@@ -70,7 +70,7 @@
     "eslint-plugin-prettier": "^5.2.1",
     "globals": "^15.14.0",
     "react": "^19.0.0",
-    "tsdown": "^0.15.4",
+    "tsdown": "^0.18.4",
     "typescript": "^5.8.2",
     "typescript-eslint": "^7.16.1",
     "valibot": "1.0.0-rc.3",

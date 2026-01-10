@@ -7,13 +7,207 @@
   "type": "module",
   "types": "./index.d.ts",
   "publishConfig": {
+    "exports": {
+      ".": {
+        "types": {
+          "import": "./index.d.ts",
+          "require": "./index.d.cts"
+        },
+        "import": "./index.js",
+        "require": "./index.cjs"
+      },
+      "./astro": {
+        "types": {
+          "import": "./astro.d.ts",
+          "require": "./astro.d.cts"
+        },
+        "import": "./astro.js",
+        "require": "./astro.cjs"
+      },
+      "./bun": {
+        "types": {
+          "import": "./bun.d.ts",
+          "require": "./bun.d.cts"
+        },
+        "import": "./bun.js",
+        "require": "./bun.cjs"
+      },
+      "./cloudflare": {
+        "types": {
+          "import": "./cloudflare.d.ts",
+          "require": "./cloudflare.d.cts"
+        },
+        "import": "./cloudflare.js",
+        "require": "./cloudflare.cjs"
+      },
+      "./connect": {
+        "types": {
+          "import": "./connect.d.ts",
+          "require": "./connect.d.cts"
+        },
+        "import": "./connect.js",
+        "require": "./connect.cjs"
+      },
+      "./deno/fresh": {
+        "types": {
+          "import": "./deno/fresh.d.ts",
+          "require": "./deno/fresh.d.cts"
+        },
+        "import": "./deno/fresh.js",
+        "require": "./deno/fresh.cjs"
+      },
+      "./digitalocean": {
+        "types": {
+          "import": "./digitalocean.d.ts",
+          "require": "./digitalocean.d.cts"
+        },
+        "import": "./digitalocean.js",
+        "require": "./digitalocean.cjs"
+      },
+      "./edge": {
+        "types": {
+          "import": "./edge.d.ts",
+          "require": "./edge.d.cts"
+        },
+        "import": "./edge.js",
+        "require": "./edge.cjs"
+      },
+      "./experimental": {
+        "types": {
+          "import": "./experimental.d.ts",
+          "require": "./experimental.d.cts"
+        },
+        "import": "./experimental.js",
+        "require": "./experimental.cjs"
+      },
+      "./express": {
+        "types": {
+          "import": "./express.d.ts",
+          "require": "./express.d.cts"
+        },
+        "import": "./express.js",
+        "require": "./express.cjs"
+      },
+      "./fastify": {
+        "types": {
+          "import": "./fastify.d.ts",
+          "require": "./fastify.d.cts"
+        },
+        "import": "./fastify.js",
+        "require": "./fastify.cjs"
+      },
+      "./h3": {
+        "types": {
+          "import": "./h3.d.ts",
+          "require": "./h3.d.cts"
+        },
+        "import": "./h3.js",
+        "require": "./h3.cjs"
+      },
+      "./hono": {
+        "types": {
+          "import": "./hono.d.ts",
+          "require": "./hono.d.cts"
+        },
+        "import": "./hono.js",
+        "require": "./hono.cjs"
+      },
+      "./internals": {
+        "types": {
+          "import": "./internals.d.ts",
+          "require": "./internals.d.cts"
+        },
+        "import": "./internals.js",
+        "require": "./internals.cjs"
+      },
+      "./koa": {
+        "types": {
+          "import": "./koa.d.ts",
+          "require": "./koa.d.cts"
+        },
+        "import": "./koa.js",
+        "require": "./koa.cjs"
+      },
+      "./lambda": {
+        "types": {
+          "import": "./lambda.d.ts",
+          "require": "./lambda.d.cts"
+        },
+        "import": "./lambda.js",
+        "require": "./lambda.cjs"
+      },
+      "./next": {
+        "types": {
+          "import": "./next.d.ts",
+          "require": "./next.d.cts"
+        },
+        "import": "./next.js",
+        "require": "./next.cjs"
+      },
+      "./nitro": {
+        "types": {
+          "import": "./nitro.d.ts",
+          "require": "./nitro.d.cts"
+        },
+        "import": "./nitro.js",
+        "require": "./nitro.cjs"
+      },
+      "./node": {
+        "types": {
+          "import": "./node.d.ts",
+          "require": "./node.d.cts"
+        },
+        "import": "./node.js",
+        "require": "./node.cjs"
+      },
+      "./nuxt": {
+        "types": {
+          "import": "./nuxt.d.ts",
+          "require": "./nuxt.d.cts"
+        },
+        "import": "./nuxt.js",
+        "require": "./nuxt.cjs"
+      },
+      "./redwood": {
+        "types": {
+          "import": "./redwood.d.ts",
+          "require": "./redwood.d.cts"
+        },
+        "import": "./redwood.js",
+        "require": "./redwood.cjs"
+      },
+      "./remix": {
+        "types": {
+          "import": "./remix.d.ts",
+          "require": "./remix.d.cts"
+        },
+        "import": "./remix.js",
+        "require": "./remix.cjs"
+      },
+      "./sveltekit": {
+        "types": {
+          "import": "./sveltekit.d.ts",
+          "require": "./sveltekit.d.cts"
+        },
+        "import": "./sveltekit.js",
+        "require": "./sveltekit.cjs"
+      },
+      "./types": {
+        "types": {
+          "import": "./types.d.ts",
+          "require": "./types.d.cts"
+        },
+        "import": "./types.js",
+        "require": "./types.cjs"
+      }
+    },
     "registry": "https://registry.npmjs.org"
   },
   "scripts": {
     "prebuild": "pnpm run pb:version",
     "pb:version": "genversion --semi --double --es6 ./src/version.ts",
     "proto": "protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=./src/proto ./src/components/connect/protobuf/connect.proto",
-    "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
+    "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts && node ./scripts/transformPackageJson.js",
     "test": "vitest run",
     "itest": "tsx scripts/integrationTestRunner.ts",
     "test:examples": "vitest run --dir src/test/functions",
@@ -33,198 +227,30 @@
     "bench": "tsx test/benchmark/main.ts"
   },
   "exports": {
-    ".": {
-      "types": {
-        "import": "./index.d.ts",
-        "require": "./index.d.cts"
-      },
-      "import": "./index.js",
-      "require": "./index.cjs"
-    },
-    "./experimental": {
-      "types": {
-        "import": "./experimental.d.ts",
-        "require": "./experimental.d.cts"
-      },
-      "import": "./experimental.js",
-      "require": "./experimental.cjs"
-    },
-    "./astro": {
-      "types": {
-        "import": "./astro.d.ts",
-        "require": "./astro.d.cts"
-      },
-      "import": "./astro.js",
-      "require": "./astro.cjs"
-    },
-    "./bun": {
-      "types": {
-        "import": "./bun.d.ts",
-        "require": "./bun.d.cts"
-      },
-      "import": "./bun.js",
-      "require": "./bun.cjs"
-    },
-    "./cloudflare": {
-      "types": {
-        "import": "./cloudflare.d.ts",
-        "require": "./cloudflare.d.cts"
-      },
-      "import": "./cloudflare.js",
-      "require": "./cloudflare.cjs"
-    },
-    "./digitalocean": {
-      "types": {
-        "import": "./digitalocean.d.ts",
-        "require": "./digitalocean.d.cts"
-      },
-      "import": "./digitalocean.js",
-      "require": "./digitalocean.cjs"
-    },
-    "./edge": {
-      "types": {
-        "import": "./edge.d.ts",
-        "require": "./edge.d.cts"
-      },
-      "import": "./edge.js",
-      "require": "./edge.cjs"
-    },
-    "./express": {
-      "types": {
-        "import": "./express.d.ts",
-        "require": "./express.d.cts"
-      },
-      "import": "./express.js",
-      "require": "./express.cjs"
-    },
-    "./fastify": {
-      "types": {
-        "import": "./fastify.d.ts",
-        "require": "./fastify.d.cts"
-      },
-      "import": "./fastify.js",
-      "require": "./fastify.cjs"
-    },
-    "./h3": {
-      "types": {
-        "import": "./h3.d.ts",
-        "require": "./h3.d.cts"
-      },
-      "import": "./h3.js",
-      "require": "./h3.cjs"
-    },
-    "./koa": {
-      "types": {
-        "import": "./koa.d.ts",
-        "require": "./koa.d.cts"
-      },
-      "import": "./koa.js",
-      "require": "./koa.cjs"
-    },
-    "./lambda": {
-      "types": {
-        "import": "./lambda.d.ts",
-        "require": "./lambda.d.cts"
-      },
-      "import": "./lambda.js",
-      "require": "./lambda.cjs"
-    },
-    "./next": {
-      "types": {
-        "import": "./next.d.ts",
-        "require": "./next.d.cts"
-      },
-      "import": "./next.js",
-      "require": "./next.cjs"
-    },
-    "./nuxt": {
-      "types": {
-        "import": "./nuxt.d.ts",
-        "require": "./nuxt.d.cts"
-      },
-      "import": "./nuxt.js",
-      "require": "./nuxt.cjs"
-    },
-    "./redwood": {
-      "types": {
-        "import": "./redwood.d.ts",
-        "require": "./redwood.d.cts"
-      },
-      "import": "./redwood.js",
-      "require": "./redwood.cjs"
-    },
-    "./remix": {
-      "types": {
-        "import": "./remix.d.ts",
-        "require": "./remix.d.cts"
-      },
-      "import": "./remix.js",
-      "require": "./remix.cjs"
-    },
-    "./sveltekit": {
-      "types": {
-        "import": "./sveltekit.d.ts",
-        "require": "./sveltekit.d.cts"
-      },
-      "import": "./sveltekit.js",
-      "require": "./sveltekit.cjs"
-    },
-    "./deno/fresh": {
-      "types": {
-        "import": "./deno/fresh.d.ts",
-        "require": "./deno/fresh.d.cts"
-      },
-      "import": "./deno/fresh.js",
-      "require": "./deno/fresh.cjs"
-    },
-    "./hono": {
-      "types": {
-        "import": "./hono.d.ts",
-        "require": "./hono.d.cts"
-      },
-      "import": "./hono.js",
-      "require": "./hono.cjs"
-    },
-    "./nitro": {
-      "types": {
-        "import": "./nitro.d.ts",
-        "require": "./nitro.d.cts"
-      },
-      "import": "./nitro.js",
-      "require": "./nitro.cjs"
-    },
-    "./node": {
-      "types": {
-        "import": "./node.d.ts",
-        "require": "./node.d.cts"
-      },
-      "import": "./node.js",
-      "require": "./node.cjs"
-    },
-    "./types": {
-      "types": {
-        "import": "./types.d.ts",
-        "require": "./types.d.cts"
-      },
-      "import": "./types.js",
-      "require": "./types.cjs"
-    },
-    "./connect": {
-      "types": {
-        "import": "./connect.d.ts",
-        "require": "./connect.d.cts"
-      },
-      "import": "./connect.js",
-      "require": "./connect.cjs"
-    },
-    "./internals": {
-      "types": {
-        "import": "./internals.d.ts",
-        "require": "./internals.d.cts"
-      },
-      "import": "./internals.js",
-      "require": "./internals.cjs"
-    }
+    ".": "./src/index.ts",
+    "./astro": "./src/astro.ts",
+    "./bun": "./src/bun.ts",
+    "./cloudflare": "./src/cloudflare.ts",
+    "./connect": "./src/connect.ts",
+    "./deno/fresh": "./src/deno/fresh.ts",
+    "./digitalocean": "./src/digitalocean.ts",
+    "./edge": "./src/edge.ts",
+    "./experimental": "./src/experimental.ts",
+    "./express": "./src/express.ts",
+    "./fastify": "./src/fastify.ts",
+    "./h3": "./src/h3.ts",
+    "./hono": "./src/hono.ts",
+    "./internals": "./src/internals.ts",
+    "./koa": "./src/koa.ts",
+    "./lambda": "./src/lambda.ts",
+    "./next": "./src/next.ts",
+    "./nitro": "./src/nitro.ts",
+    "./node": "./src/node.ts",
+    "./nuxt": "./src/nuxt.ts",
+    "./redwood": "./src/redwood.ts",
+    "./remix": "./src/remix.ts",
+    "./sveltekit": "./src/sveltekit.ts",
+    "./types": "./src/types.ts"
   },
   "homepage": "https://github.com/inngest/inngest-js#readme",
   "repository": {
@@ -335,7 +361,7 @@
     "prettier": "^3.1.0",
     "shx": "^0.3.4",
     "ts-proto": "^2.6.1",
-    "tsdown": "^0.15.4",
+    "tsdown": "^0.18.4",
     "tsx": "^3.12.7",
     "typescript": "^5.9.2",
     "vite-tsconfig-paths": "^5.1.4",
