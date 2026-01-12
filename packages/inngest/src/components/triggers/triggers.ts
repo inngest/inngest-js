@@ -43,23 +43,33 @@ export function cron<T extends string>(schedule: T) {
   };
 }
 
-type EventCreateParams<TData extends Record<string, unknown> | undefined> =
-  TData extends undefined
-    ? {
-        data?: Record<string, unknown>;
-        id?: string;
-        ts?: number;
-        v?: string;
-      }
-    : {
-        data: TData;
-        id?: string;
-        ts?: number;
-        v?: string;
-      };
+/**
+ * Parameters when creating an event (e.g. before sending an event).
+ *
+ * @template TData - The data type of the event. Note that this is the schema input, not output.
+ */
+type EventCreateParams<TData extends Record<string, unknown> | undefined> = {
+  id?: string;
+  ts?: number;
+  v?: string;
+} & (TData extends undefined // The `data` field has a special case we need to handle
+  ? // If data is undefined then data is optional
+    {
+      data?: Record<string, unknown>;
+    }
+  : // If data is defined then data is required
+    {
+      data: TData;
+    });
 
-type ExtractSchema<TData> = TData extends StandardSchemaV1<infer IData, infer _>
-  ? IData
+/**
+ * Extract the input type from a StandardSchemaV1.
+ */
+type ExtractSchemaInput<TData> = TData extends StandardSchemaV1<
+  infer IInput,
+  infer _
+>
+  ? IInput
   : undefined;
 
 /**
@@ -71,7 +81,9 @@ type ExtractSchema<TData> = TData extends StandardSchemaV1<infer IData, infer _>
  */
 export class EventType<
   TName extends string,
-  TSchema extends StandardSchemaV1<Record<string, unknown>> | undefined,
+  TSchema extends
+    | StandardSchemaV1<Record<string, unknown>, Record<string, unknown>>
+    | undefined,
 > {
   name: TName;
   schema: TSchema;
@@ -95,7 +107,7 @@ export class EventType<
    *
    * @param params - Event parameters including data, id, timestamp, etc.
    */
-  create(params: EventCreateParams<ExtractSchema<TSchema>>) {
+  create(params: EventCreateParams<ExtractSchemaInput<TSchema>>) {
     const event = {
       name: this.name,
       data: params.data,
@@ -156,11 +168,23 @@ export function eventType<TName extends string>(
 // Overload: event with schema. Data is required and typed.
 export function eventType<
   TName extends string,
-  TData extends Record<string, unknown>,
->(
-  name: TName,
-  schema: StandardSchemaV1<TData>,
-): EventType<TName, StandardSchemaV1<TData>>;
+  // TDataInput extends Record<string, unknown>,
+  // TDataOutput extends Record<string, unknown>,
+  TSchema extends StandardSchemaV1<
+    Record<string, unknown>,
+    Record<string, unknown>
+  >,
+>(name: TName, schema: TSchema): EventType<TName, TSchema>;
+
+// export function eventType<
+//   TName extends string,
+//   // TDataInput extends Record<string, unknown>,
+//   // TDataOutput extends Record<string, unknown>,
+//   TSchema extends StandardSchemaV1<
+//     Record<string, unknown>,
+//     Record<string, unknown>
+//   >,
+// >(name: TName, schema: TSchema): EventType<TName, TSchema>;
 
 /**
  * Create an event type definition that can be used as a trigger and for

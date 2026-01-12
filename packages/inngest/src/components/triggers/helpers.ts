@@ -50,13 +50,19 @@ type HasInvokeTrigger<T extends readonly any[]> = T extends readonly [
  * Extracts the event name and schema from EventType and transforms it into
  * the ReceivedEvent shape that function handlers receive.
  *
- * @template T - The EventType instance to convert
+ * @template TEventType - The EventType instance to convert
  * @returns ReceivedEvent type with extracted name and data
  */
-type EventTypeToEvent<T> = T extends EventType<infer N, infer S>
-  ? S extends StandardSchemaV1<infer D extends Record<string, unknown>>
-    ? ReceivedEvent<N, D>
-    : ReceivedEvent<N, Record<string, any>>
+type EventTypeToEvent<TEventType> = TEventType extends EventType<
+  infer TName,
+  infer TSchema
+>
+  ? TSchema extends StandardSchemaV1<
+      infer _,
+      infer TOutput extends Record<string, unknown>
+    >
+    ? ReceivedEvent<TName, TOutput>
+    : ReceivedEvent<TName, Record<string, any>>
   : never;
 
 /**
@@ -64,16 +70,19 @@ type EventTypeToEvent<T> = T extends EventType<infer N, infer S>
  *
  * Handles triggers like `{ event: "my-event", schema?: z.object(...) }`.
  *
- * @template N - Event name
- * @template S - Optional schema type
+ * @template TName - Event name
+ * @template TSchema - Optional schema type
  * @returns ReceivedEvent with typed data from schema, or Record<string, any> if no schema
  */
 type PlainEventToReceivedEvent<
-  N extends string,
-  S,
-> = S extends StandardSchemaV1<infer D extends Record<string, unknown>>
-  ? ReceivedEvent<N, D>
-  : ReceivedEvent<N, Record<string, any>>;
+  TName extends string,
+  TSchema,
+> = TSchema extends StandardSchemaV1<
+  infer _,
+  infer TOutput extends Record<string, unknown>
+>
+  ? ReceivedEvent<TName, TOutput>
+  : ReceivedEvent<TName, Record<string, any>>;
 
 /**
  * Processes a single trigger and converts it to ReceivedEvent(s).
@@ -155,9 +164,9 @@ type ExtractInvokeSchemas<T extends readonly any[]> = T extends readonly [
   infer First,
   ...infer Rest,
 ]
-  ? First extends { event: InvokeEventName; schema: infer S }
-    ? S extends StandardSchemaV1<infer D>
-      ? D | ExtractInvokeSchemas<Rest>
+  ? First extends { event: InvokeEventName; schema: infer TSchema }
+    ? TSchema extends StandardSchemaV1<infer TInput>
+      ? TInput | ExtractInvokeSchemas<Rest>
       : ExtractInvokeSchemas<Rest>
     : ExtractInvokeSchemas<Rest>
   : never;
@@ -172,19 +181,22 @@ type ExtractInvokeSchemas<T extends readonly any[]> = T extends readonly [
  * @template T - Array of trigger definitions to process
  * @returns Union of all trigger data types, or `never` if none found
  */
-type ExtractAllSchemas<T extends readonly any[]> = T extends readonly [
+type ExtractAllSchemaOutputs<T extends readonly any[]> = T extends readonly [
   infer First,
   ...infer Rest,
 ]
-  ? First extends EventType<any, infer S>
-    ? S extends StandardSchemaV1<infer D>
-      ? D | ExtractAllSchemas<Rest>
-      : Record<string, any> | ExtractAllSchemas<Rest>
-    : First extends { event: string; schema: StandardSchemaV1<infer D> }
-      ? D | ExtractAllSchemas<Rest>
+  ? First extends EventType<string, infer TSchema>
+    ? TSchema extends StandardSchemaV1<infer _, infer TOutput>
+      ? TOutput | ExtractAllSchemaOutputs<Rest>
+      : Record<string, any> | ExtractAllSchemaOutputs<Rest>
+    : First extends {
+          event: string;
+          schema: StandardSchemaV1<infer _, infer TOutput>;
+        }
+      ? TOutput | ExtractAllSchemaOutputs<Rest>
       : First extends { event: string }
-        ? Record<string, any> | ExtractAllSchemas<Rest>
-        : ExtractAllSchemas<Rest>
+        ? Record<string, any> | ExtractAllSchemaOutputs<Rest>
+        : ExtractAllSchemaOutputs<Rest>
   : never;
 
 /**
@@ -207,7 +219,10 @@ export type ToReceivedEvent<T extends readonly any[]> =
       ]
     : [
         ...TriggersToEventsWithCron<T>,
-        ReceivedEvent<InvokeEventName, NeverToEmpty<ExtractAllSchemas<T>>>,
+        ReceivedEvent<
+          InvokeEventName,
+          NeverToEmpty<ExtractAllSchemaOutputs<T>>
+        >,
       ];
 
 /**

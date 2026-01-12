@@ -42,6 +42,12 @@ describe("eventType", () => {
     test("create", () => {
       et.create({});
       et.create({ data: { foo: "bar" } });
+      et.create({
+        data: { foo: "bar" },
+        id: "123",
+        ts: 1715769600,
+        v: "1.0.0",
+      });
     });
 
     test("createFunction", () => {
@@ -74,13 +80,19 @@ describe("eventType", () => {
       expectTypeOf(et.name).toEqualTypeOf<"event-1">();
 
       expect(et.schema).toBeDefined();
-      expectTypeOf(et.schema).toEqualTypeOf<
-        StandardSchemaV1<{ message: string }>
+      expectTypeOf(et.schema).toExtend<
+        StandardSchemaV1<{ message: string }, { message: string }>
       >();
     });
 
     test("create", async () => {
       et.create({ data: { message: "hello" } });
+      et.create({
+        data: { message: "hello" },
+        id: "123",
+        ts: 1715769600,
+        v: "1.0.0",
+      });
 
       // @ts-expect-error - Missing data
       let event = et.create({});
@@ -128,6 +140,32 @@ describe("eventType", () => {
         }
       },
     );
+
+    test("z.transform", () => {
+      const schema = z.object({ message: z.string() }).transform((val) => {
+        return {
+          messageLength: val.message.length,
+        };
+      });
+
+      const et = eventType("event-1", schema);
+      et.create({ data: { message: "hello" } });
+      et.create({
+        data: { message: "hello" },
+        id: "123",
+        ts: 1715769600,
+        v: "1.0.0",
+      });
+
+      const inngest = new Inngest({ id: "app" });
+      inngest.createFunction({ id: "fn" }, et, ({ event }) => {
+        expectTypeOf(event.name).toEqualTypeOf<
+          "event-1" | "inngest/function.invoked"
+        >();
+        event.data;
+        expectTypeOf(event.data).toEqualTypeOf<{ messageLength: number }>();
+      });
+    });
   });
 
   test("withIf", () => {
