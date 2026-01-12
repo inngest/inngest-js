@@ -73,6 +73,38 @@ type ExtractSchemaInput<TData> = TData extends StandardSchemaV1<
   : undefined;
 
 /**
+ * An event that has been created but not validated.
+ * @template TInputData - The input data type of the event (i.e. before validation)
+ * @template TOutputData - The output data type of the event (i.e. after validation)
+ */
+type UnvalidatedCreatedEvent<TInputData, TOutputData> =
+  ValidatedCreatedEvent<TInputData> & {
+    validate: () => Promise<ValidatedCreatedEvent<TOutputData>>;
+  };
+
+/**
+ * An event that has been validated.
+ * @template TData - The data type of the event.
+ */
+type ValidatedCreatedEvent<TData> = {
+  data: TData;
+  name: string;
+  id?: string;
+  ts?: number;
+  v?: string;
+};
+
+/**
+ * Extract the output type from a StandardSchemaV1.
+ */
+type ExtractSchemaOutput<TData> = TData extends StandardSchemaV1<
+  infer _,
+  infer IOutput
+>
+  ? IOutput
+  : undefined;
+
+/**
  * Represents a typed event definition that can be used both as a trigger
  * and for creating events with validation.
  *
@@ -102,21 +134,40 @@ export class EventType<
    * Creates an event to send.
    *
    * The returned event object includes a `validate()` method that can be called
-   * to validate the event data against the schema (if one was provided).
-   * Validation is not performed in here because validation may be async.
+   * to validate the event data against the schema (if one was provided). The
+   * `validate()` method returns a new event object with the validated data,
+   * including any transforms defined in the schema.
+   *
+   * Validation is not performed within this method because validation may be async.
    *
    * @param params - Event parameters including data, id, timestamp, etc.
    */
-  create(params: EventCreateParams<ExtractSchemaInput<TSchema>>) {
-    const event = {
+  create(
+    params: EventCreateParams<ExtractSchemaInput<TSchema>>,
+  ): UnvalidatedCreatedEvent<
+    ExtractSchemaInput<TSchema>,
+    ExtractSchemaOutput<TSchema>
+  > {
+    const event: UnvalidatedCreatedEvent<
+      ExtractSchemaInput<TSchema>,
+      ExtractSchemaOutput<TSchema>
+    > = {
       name: this.name,
-      data: params.data,
+      data: params.data as ExtractSchemaInput<TSchema>,
       id: params.id,
       ts: params.ts,
       v: params.v,
 
-      validate: async () => {
+      // Method for validating and transforming the event data against the
+      // schema
+      validate: async (): Promise<
+        ValidatedCreatedEvent<ExtractSchemaOutput<TSchema>>
+      > => {
+        let data = params.data;
+
         if (this.schema) {
+          // Only perform validation if a schema was provided
+
           if (!params.data) {
             throw new Error("data is required");
           }
@@ -134,7 +185,13 @@ export class EventType<
                 .join(", "),
             );
           }
+          data = check.value;
         }
+
+        return {
+          ...event,
+          data: data as ExtractSchemaOutput<TSchema>,
+        };
       },
     };
 

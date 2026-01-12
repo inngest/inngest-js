@@ -50,6 +50,28 @@ describe("eventType", () => {
       });
     });
 
+    test("create with transform", async () => {
+      const et = eventType(
+        "event-1",
+        z.object({ name: z.string() }).transform((val) => {
+          return {
+            ...val,
+            nameLength: val.name.length,
+          };
+        }),
+      );
+
+      const created = et.create({ data: { name: "John" } });
+      expect(created.data).toEqual({ name: "John" });
+      expectTypeOf(created.data).toEqualTypeOf<{ name: string }>();
+      const validated = await created.validate();
+      expect(validated.data).toEqual({ name: "John", nameLength: 4 });
+      expectTypeOf(validated.data).toEqualTypeOf<{
+        name: string;
+        nameLength: number;
+      }>();
+    });
+
     test("createFunction", () => {
       const inngest = new Inngest({ id: "app" });
 
