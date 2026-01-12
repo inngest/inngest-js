@@ -62,9 +62,14 @@ describe("eventType", () => {
       );
 
       const created = et.create({ data: { name: "John" } });
+
+      // Note that the data is pre-transform
       expect(created.data).toEqual({ name: "John" });
       expectTypeOf(created.data).toEqualTypeOf<{ name: string }>();
+
       const validated = await created.validate();
+
+      // Note that the data is post-transform
       expect(validated.data).toEqual({ name: "John", nameLength: 4 });
       expectTypeOf(validated.data).toEqualTypeOf<{
         name: string;
