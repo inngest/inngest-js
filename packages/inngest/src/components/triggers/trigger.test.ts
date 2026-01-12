@@ -64,7 +64,7 @@ describe("eventType", () => {
           >();
 
           expectTypeOf(event.data).toEqualTypeOf<Record<string, any>>();
-        },
+        }
       );
     });
   });
@@ -112,36 +112,57 @@ describe("eventType", () => {
         expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
       });
     });
-  });
 
-  test("multiple event types", () => {
-    const inngest = new Inngest({ id: "app" });
-    inngest.createFunction(
-      { id: "fn" },
-      [
-        eventType("event-1", z.object({ a: z.string() })),
-        eventType("event-2", z.object({ b: z.number() })),
-      ] as const,
-      ({ event }) => {
-        expectTypeOf(event.name).toEqualTypeOf<
-          "event-1" | "event-2" | "inngest/function.invoked"
-        >();
+    test("multiple event types", () => {
+      const inngest = new Inngest({ id: "app" });
+      inngest.createFunction(
+        { id: "fn" },
+        [
+          eventType("event-1", z.object({ a: z.string() })),
+          eventType("event-2", z.object({ b: z.number() })),
+        ] as const,
+        ({ event }) => {
+          expectTypeOf(event.name).toEqualTypeOf<
+            "event-1" | "event-2" | "inngest/function.invoked"
+          >();
 
-        expectTypeOf(event.data).toEqualTypeOf<{ a: string } | { b: number }>();
-
-        if (event.name === "event-1") {
-          expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
-        } else if (event.name === "event-2") {
-          expectTypeOf(event.data).toEqualTypeOf<{ b: number }>();
-        } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<
             { a: string } | { b: number }
           >();
-        }
-      },
-    );
 
-    test("z.transform", () => {
+          if (event.name === "event-1") {
+            expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
+          } else if (event.name === "event-2") {
+            expectTypeOf(event.data).toEqualTypeOf<{ b: number }>();
+          } else if (event.name === "inngest/function.invoked") {
+            expectTypeOf(event.data).toEqualTypeOf<
+              { a: string } | { b: number }
+            >();
+          }
+        }
+      );
+    });
+
+    test("withIf", () => {
+      const et = eventType("event-1", z.object({ foo: z.string() })).withIf(
+        "event.data.foo == 'bar'"
+      );
+      expect(et.if).toBe("event.data.foo == 'bar'");
+      expectTypeOf(et.if).toEqualTypeOf<"event.data.foo == 'bar'">();
+
+      const inngest = new Inngest({ id: "app" });
+      inngest.createFunction({ id: "fn" }, et, ({ event }) => {
+        expectTypeOf(event.name).toEqualTypeOf<
+          "event-1" | "inngest/function.invoked"
+        >();
+        expectTypeOf(event.data).toEqualTypeOf<{ foo: string }>();
+      });
+    });
+
+    test("input schema and output schema are different", () => {
+      // When `z.transform` is used, the input schema and output schema are
+      // different
+
       const schema = z.object({ message: z.string() }).transform((val) => {
         return {
           messageLength: val.message.length,
@@ -167,22 +188,6 @@ describe("eventType", () => {
       });
     });
   });
-
-  test("withIf", () => {
-    const et = eventType("event-1", z.object({ foo: z.string() })).withIf(
-      "event.data.foo == 'bar'",
-    );
-    expect(et.if).toBe("event.data.foo == 'bar'");
-    expectTypeOf(et.if).toEqualTypeOf<"event.data.foo == 'bar'">();
-
-    const inngest = new Inngest({ id: "app" });
-    inngest.createFunction({ id: "fn" }, et, ({ event }) => {
-      expectTypeOf(event.name).toEqualTypeOf<
-        "event-1" | "inngest/function.invoked"
-      >();
-      expectTypeOf(event.data).toEqualTypeOf<{ foo: string }>();
-    });
-  });
 });
 
 describe("invoke", () => {
@@ -205,7 +210,7 @@ describe("invoke", () => {
       ({ event }) => {
         expectTypeOf(event.name).toEqualTypeOf<"inngest/function.invoked">();
         expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
-      },
+      }
     );
   });
 });
@@ -251,7 +256,7 @@ describe("mixed triggers", () => {
             { name: string } | { age: number }
           >();
         }
-      },
+      }
     );
   });
 
@@ -277,7 +282,7 @@ describe("mixed triggers", () => {
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
         }
-      },
+      }
     );
   });
 
@@ -300,7 +305,7 @@ describe("mixed triggers", () => {
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ b: number }>();
         }
-      },
+      }
     );
   });
 });
