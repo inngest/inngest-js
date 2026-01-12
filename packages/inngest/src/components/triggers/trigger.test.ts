@@ -64,7 +64,7 @@ describe("eventType", () => {
           >();
 
           expectTypeOf(event.data).toEqualTypeOf<Record<string, any>>();
-        }
+        },
       );
     });
   });
@@ -80,6 +80,7 @@ describe("eventType", () => {
       expectTypeOf(et.name).toEqualTypeOf<"event-1">();
 
       expect(et.schema).toBeDefined();
+      expectTypeOf(et.schema).not.toBeAny();
       expectTypeOf(et.schema).toExtend<
         StandardSchemaV1<{ message: string }, { message: string }>
       >();
@@ -139,13 +140,13 @@ describe("eventType", () => {
               { a: string } | { b: number }
             >();
           }
-        }
+        },
       );
     });
 
     test("withIf", () => {
       const et = eventType("event-1", z.object({ foo: z.string() })).withIf(
-        "event.data.foo == 'bar'"
+        "event.data.foo == 'bar'",
       );
       expect(et.if).toBe("event.data.foo == 'bar'");
       expectTypeOf(et.if).toEqualTypeOf<"event.data.foo == 'bar'">();
@@ -210,7 +211,7 @@ describe("invoke", () => {
       ({ event }) => {
         expectTypeOf(event.name).toEqualTypeOf<"inngest/function.invoked">();
         expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
-      }
+      },
     );
   });
 });
@@ -256,7 +257,7 @@ describe("mixed triggers", () => {
             { name: string } | { age: number }
           >();
         }
-      }
+      },
     );
   });
 
@@ -282,7 +283,7 @@ describe("mixed triggers", () => {
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
         }
-      }
+      },
     );
   });
 
@@ -305,7 +306,7 @@ describe("mixed triggers", () => {
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ b: number }>();
         }
-      }
+      },
     );
   });
 });
