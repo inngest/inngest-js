@@ -1,11 +1,5 @@
 # inngest
 
-## 3.49.1
-
-### Patch Changes
-
-- [#1234](https://github.com/inngest/inngest-js/pull/1234) [`c85e2f29`](https://github.com/inngest/inngest-js/commit/c85e2f297a782e78fe4b681793464e5b60045c23) Thanks [@amh4r](https://github.com/amh4r)! - Fix not treating Next Request.body as a ReadableStream
-
 ## 3.49.0
 
 ### Minor Changes
