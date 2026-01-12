@@ -25,7 +25,6 @@ import {
 import type { IsEqual } from "../helpers/types.ts";
 import {
   type EventPayload,
-  EventSchemas,
   InngestMiddleware,
   NonRetriableError,
 } from "../index.ts";
@@ -49,14 +48,6 @@ import { _internals as _v2Internals } from "./execution/v2.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import { STEP_INDEXING_SUFFIX } from "./InngestStepTools.ts";
 
-type TestEvents = {
-  foo: { data: { foo: string } };
-  bar: { data: { bar: string } };
-  baz: { data: { baz: string } };
-};
-
-const schemas = new EventSchemas().fromRecord<TestEvents>();
-
 const mockLogger = {
   info: vi.fn(globalThis.console.log),
   warn: vi.fn(globalThis.console.warn),
@@ -74,7 +65,6 @@ const clearLogger = () => {
 const opts = (<T extends ClientOptions>(x: T): T => x)({
   id: "test",
   eventKey: "event-key-123",
-  schemas,
   logger: mockLogger,
   /**
    * Create some test middleware that purposefully takes time for every hook.
@@ -3387,43 +3377,6 @@ describe("runFn", () => {
           );
         });
       });
-
-      describe("multiple custom types", () => {
-        const inngest = createClient({
-          id: "test",
-          schemas: new EventSchemas().fromRecord<{
-            foo: {
-              name: "foo";
-              data: { title: string };
-            };
-            bar: {
-              name: "bar";
-              data: { message: string };
-            };
-          }>(),
-        });
-
-        test("onFailure function has known internal event", () => {
-          inngest.createFunction(
-            {
-              id: "test",
-              onFailure: ({ error, event }) => {
-                assertType<`${internalEvents.FunctionFailed}`>(event.name);
-                assertType<FailureEventPayload>(event);
-                assertType<Error>(error);
-
-                assertType<"foo">(event.data.event.name);
-                assertType<EventPayload>(event.data.event);
-                assertType<{ title: string }>(event.data.event.data);
-              },
-            },
-            { event: "foo" },
-            () => {
-              // no-op
-            },
-          );
-        });
-      });
     });
 
     test("specifying an onFailure function registers correctly", () => {
@@ -3431,16 +3384,6 @@ describe("runFn", () => {
 
       const inngest = createClient({
         id: clientId,
-        schemas: new EventSchemas().fromRecord<{
-          foo: {
-            name: "foo";
-            data: { title: string };
-          };
-          bar: {
-            name: "bar";
-            data: { message: string };
-          };
-        }>(),
       });
 
       const fn = inngest.createFunction(
@@ -3528,64 +3471,6 @@ describe("runFn", () => {
           );
         });
       });
-
-      describe("multiple custom types", () => {
-        const inngest = createClient({
-          id: "test",
-          schemas: new EventSchemas().fromRecord<{
-            foo: {
-              name: "foo";
-              data: { title: string; foo: string };
-            };
-            bar: {
-              name: "bar";
-              data: { message: string; bar: string };
-            };
-            baz: {
-              name: "baz";
-              data: { title: string; baz: string };
-            };
-            qux: {
-              name: "qux";
-              data: { title: string; qux: string };
-            };
-          }>(),
-        });
-
-        test("disallows unknown event name", () => {
-          inngest.createFunction(
-            // @ts-expect-error Unknown event name
-            { name: "test", cancelOn: [{ event: "unknown" }] },
-            { event: "foo" },
-            () => {
-              // no-op
-            },
-          );
-        });
-
-        test("allows known event name", () => {
-          inngest.createFunction(
-            { id: "test", cancelOn: [{ event: "bar" }] },
-            { event: "foo" },
-            () => {
-              // no-op
-            },
-          );
-        });
-
-        test("allows known event name with a field match", () => {
-          inngest.createFunction(
-            {
-              id: "test",
-              cancelOn: [{ event: "baz", match: "data.title" }],
-            },
-            { event: "foo" },
-            () => {
-              // no-op
-            },
-          );
-        });
-      });
     });
 
     test("specifying a cancellation event registers correctly", () => {
@@ -3593,20 +3478,6 @@ describe("runFn", () => {
 
       const inngest = createClient({
         id: clientId,
-        schemas: new EventSchemas().fromRecord<{
-          foo: {
-            name: "foo";
-            data: { title: string };
-          };
-          bar: {
-            name: "bar";
-            data: { message: string };
-          };
-          baz: {
-            name: "baz";
-            data: { title: string };
-          };
-        }>(),
       });
 
       const fn = inngest.createFunction(

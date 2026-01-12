@@ -32,7 +32,6 @@ import type {
   SendEventPayload,
   SimplifyDeep,
   SingleOrArray,
-  WithoutInternal,
 } from "../helpers/types.ts";
 import {
   DefaultLogger,
@@ -50,9 +49,7 @@ import {
   type SendEventOutput,
   type SendEventResponse,
   sendEventResponseSchema,
-  type TriggersFromClient,
 } from "../types.ts";
-import type { EventSchemas } from "./EventSchemas.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
@@ -74,34 +71,11 @@ import {
 type FetchT = typeof fetch;
 
 /**
- * Given a set of client options for Inngest, return the event types that can
- * be sent or received.
- *
- * @public
- */
-export type EventsFromOpts<TOpts extends ClientOptions> =
-  TOpts["schemas"] extends EventSchemas<infer U>
-    ? U
-    : Record<string, EventPayload>;
-
-/**
  * A client used to interact with the Inngest API by sending or reacting to
  * events.
  *
- * To provide event typing, see {@link EventSchemas}.
- *
  * ```ts
  * const inngest = new Inngest({ id: "my-app" });
- *
- * // or to provide event typing too
- * const inngest = new Inngest({
- *   id: "my-app",
- *   schemas: new EventSchemas().fromRecord<{
- *     "app/user.created": {
- *       data: { userId: string };
- *     };
- *   }>(),
- * });
  * ```
  *
  * @public
@@ -174,8 +148,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    */
   private _mode!: Mode;
 
-  protected readonly schemas?: NonNullable<TClientOpts["schemas"]>;
-
   private _appVersion: string | undefined;
 
   /**
@@ -226,20 +198,8 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * A client used to interact with the Inngest API by sending or reacting to
    * events.
    *
-   * To provide event typing, see {@link EventSchemas}.
-   *
    * ```ts
-   * const inngest = new Inngest({ name: "My App" });
-   *
-   * // or to provide event typing too
-   * const inngest = new Inngest({
-   *   name: "My App",
-   *   schemas: new EventSchemas().fromRecord<{
-   *     "app/user.created": {
-   *       data: { userId: string };
-   *     };
-   *   }>(),
-   * });
+   * const inngest = new Inngest({ id: "my-app" });
    * ```
    */
   constructor(options: TClientOpts) {
@@ -251,7 +211,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       logger = new DefaultLogger(),
       middleware,
       isDev,
-      schemas,
       appVersion,
     } = this.options;
 
@@ -277,7 +236,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
       mode: this.mode,
     });
 
-    this.schemas = schemas;
     this.loadModeEnvVars();
 
     this.logger = logger;
@@ -578,25 +536,9 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    *
    * Returns a promise that will resolve if the event(s) were sent successfully,
    * else throws with an error explaining what went wrong.
-   *
-   * If you wish to send an event with custom types (i.e. one that hasn't been
-   * generated), make sure to add it when creating your Inngest instance, like
-   * so:
-   *
-   * ```ts
-   * const inngest = new Inngest({
-   *   name: "My App",
-   *   schemas: new EventSchemas().fromRecord<{
-   *     "my/event": {
-   *       name: "my/event";
-   *       data: { bar: string };
-   *     };
-   *   }>(),
-   * });
-   * ```
    */
-  public async send<Payload extends SendEventPayload<GetEvents<this>>>(
-    payload: Payload,
+  public async send(
+    payload: SendEventPayload,
     options?: {
       /**
        * The Inngest environment to send events to. Defaults to whichever
@@ -619,11 +561,11 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
    * Internal method for sending an event, used to allow Inngest internals to
    * further customize the request sent to an Inngest Server.
    */
-  private async _send<Payload extends SendEventPayload<GetEvents<this>>>({
+  private async _send({
     payload,
     headers,
   }: {
-    payload: Payload;
+    payload: SendEventPayload;
     headers?: Record<string, string>;
   }): Promise<SendEventOutput<TClientOpts>> {
     const nowMillis = new Date().getTime();
@@ -957,20 +899,8 @@ export const builtInMiddleware = (<T extends InngestMiddleware.Stack>(
  * A client used to interact with the Inngest API by sending or reacting to
  * events.
  *
- * To provide event typing, see {@link EventSchemas}.
- *
  * ```ts
- * const inngest = new Inngest({ name: "My App" });
- *
- * // or to provide event typing too
- * const inngest = new Inngest({
- *   name: "My App",
- *   schemas: new EventSchemas().fromRecord<{
- *     "app/user.created": {
- *       data: { userId: string };
- *     };
- *   }>(),
- * });
+ * const inngest = new Inngest({ id: "my-app" });
  * ```
  *
  * @public
@@ -998,12 +928,13 @@ export namespace Inngest {
 
   export type CreateFunction<TClient extends Inngest.Any> = <
     TMiddleware extends InngestMiddleware.Stack,
-    TTrigger extends SingleOrArray<
-      InngestFunction.Trigger<TriggersFromClient<TClient>>
-    >,
+    TTrigger extends SingleOrArray<InngestFunction.Trigger<string>>,
     THandler extends Handler.Any = Handler<
       TClient,
-      EventNameFromTrigger<GetEvents<TClient, true>, AsArray<TTrigger>[number]>,
+      EventNameFromTrigger<
+        Record<string, EventPayload>,
+        AsArray<TTrigger>[number]
+      >,
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
@@ -1014,7 +945,10 @@ export namespace Inngest {
     >,
     TFailureHandler extends Handler.Any = Handler<
       TClient,
-      EventNameFromTrigger<GetEvents<TClient, true>, AsArray<TTrigger>[number]>,
+      EventNameFromTrigger<
+        Record<string, EventPayload>,
+        AsArray<TTrigger>[number]
+      >,
       ExtendWithMiddleware<
         [
           typeof builtInMiddleware,
@@ -1022,8 +956,8 @@ export namespace Inngest {
           TMiddleware,
         ],
         FailureEventArgs<
-          GetEvents<TClient, true>[EventNameFromTrigger<
-            GetEvents<TClient, true>,
+          Record<string, EventPayload>[EventNameFromTrigger<
+            Record<string, EventPayload>,
             AsArray<TTrigger>[number]
           >]
         >
@@ -1031,24 +965,14 @@ export namespace Inngest {
     >,
   >(
     options: Omit<
-      InngestFunction.Options<
-        TClient,
-        TMiddleware,
-        AsArray<TTrigger>,
-        TFailureHandler
-      >,
+      InngestFunction.Options<TMiddleware, AsArray<TTrigger>, TFailureHandler>,
       "triggers"
     >,
     trigger: TTrigger,
     handler: THandler,
   ) => InngestFunction<
     Omit<
-      InngestFunction.Options<
-        TClient,
-        TMiddleware,
-        AsArray<TTrigger>,
-        TFailureHandler
-      >,
+      InngestFunction.Options<TMiddleware, AsArray<TTrigger>, TFailureHandler>,
       "triggers"
     >,
     THandler,
@@ -1077,8 +1001,7 @@ export namespace Inngest {
  */
 export type GetStepTools<
   TInngest extends Inngest.Any,
-  TTrigger extends keyof GetEvents<TInngest> &
-    string = keyof GetEvents<TInngest> & string,
+  TTrigger extends string = string,
 > = GetFunctionInput<TInngest, TTrigger> extends { step: infer TStep }
   ? TStep
   : never;
@@ -1101,19 +1024,8 @@ export type GetStepTools<
  */
 export type GetFunctionInput<
   TClient extends Inngest.Any,
-  TTrigger extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
+  TTrigger extends string = string,
 > = Parameters<
-  // Handler<
-  //   ClientOptionsFromInngest<TInngest>,
-  //   GetEvents<TInngest, true>,
-  //   TTrigger,
-  //   ExtendWithMiddleware<
-  //     [
-  //       typeof builtInMiddleware,
-  //       NonNullable<ClientOptionsFromInngest<TInngest>["middleware"]>,
-  //     ]
-  //   >
-  // >
   Handler<
     TClient,
     TTrigger,
@@ -1178,38 +1090,6 @@ export type GetFunctionOutputFromReferenceInngestFunction<
     ? null
     : SimplifyDeep<Jsonify<IOutput>>
   : unknown;
-
-/**
- * When passed an Inngest client, will return all event types for that client.
- *
- * It's recommended to use this instead of directly reusing your event types, as
- * Inngest will add extra properties and internal events such as `ts` and
- * `inngest/function.finished`.
- *
- * @example
- * ```ts
- * import { EventSchemas, Inngest, type GetEvents } from "inngest";
- *
- * export const inngest = new Inngest({
- *   id: "example-app",
- *   schemas: new EventSchemas().fromRecord<{
- *     "app/user.created": { data: { userId: string } };
- *   }>(),
- * });
- *
- * type Events = GetEvents<typeof inngest>;
- * type AppUserCreated = Events["app/user.created"];
- *
- * ```
- *
- * @public
- */
-export type GetEvents<
-  TInngest extends Inngest.Any,
-  TWithInternal extends boolean = false,
-> = TWithInternal extends true
-  ? EventsFromOpts<ClientOptionsFromInngest<TInngest>>
-  : WithoutInternal<EventsFromOpts<ClientOptionsFromInngest<TInngest>>>;
 
 /**
  * A helper type to extract the inferred options from a given Inngest instance.

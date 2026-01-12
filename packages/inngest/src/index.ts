@@ -39,21 +39,9 @@
  */
 
 export * from "@inngest/ai";
-export {
-  type AddName,
-  type AssertInternalEventPayloads,
-  type Combine,
-  EventSchemas,
-  type LiteralZodEventSchema,
-  type NormalizedEventSchemas as StandardEventSchemas,
-  type NormalizedEventSchemaToPayload as StandardEventSchemaToPayload,
-  type ZodEventSchemas,
-} from "./components/EventSchemas.ts";
 export { fetch } from "./components/Fetch.ts";
 export type {
   ClientOptionsFromInngest,
-  EventsFromOpts,
-  GetEvents,
   GetFunctionInput,
   GetFunctionOutput,
   GetStepTools,

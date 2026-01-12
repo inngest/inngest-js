@@ -10,12 +10,7 @@
  */
 
 import { z } from "zod/v3";
-import type { EventSchemas } from "./components/EventSchemas.ts";
-import type {
-  builtInMiddleware,
-  GetEvents,
-  Inngest,
-} from "./components/Inngest.ts";
+import type { builtInMiddleware, Inngest } from "./components/Inngest.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
 import type { InngestFunctionReference } from "./components/InngestFunctionReference.ts";
 import type {
@@ -32,7 +27,6 @@ import type {
   IsNever,
   Public,
   Simplify,
-  WithoutInternal,
 } from "./helpers/types.ts";
 import type { Logger } from "./middleware/logger.ts";
 
@@ -483,61 +477,14 @@ export type WithInvocation<T extends EventPayload> = Simplify<
 >;
 
 /**
- * Makes sure that all event names are stringified and not enums or other
- * values.
- */
-type StringifyAllEvents<T> = {
-  [K in keyof T as `${K & string}`]: Simplify<
-    Omit<T[K], "name"> & { name: `${K & string}` }
-  >;
-};
-
-/**
- * Given a client and a set of triggers, returns a record of all the events that
- * can be used to trigger a function. This will also include invocation events,
- * which currently could represent any of the triggers.
- */
-type GetSelectedEvents<
-  TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient>,
-> = Pick<GetEvents<TClient, true>, TTriggers> &
-  StringifyAllEvents<{
-    // Invocation events could (currently) represent any of the payloads that
-    // could be used to trigger the function. We use a distributive `Pick` over allto
-    // ensure this is represented correctly in typing.
-    [internalEvents.FunctionInvoked]: Simplify<{
-      name: `${internalEvents.FunctionInvoked}`;
-    }> &
-      Pick<
-        Pick<GetEvents<TClient, true>, TTriggers>[keyof Pick<
-          GetEvents<TClient, true>,
-          TTriggers
-        >],
-        AssertKeysAreFrom<EventPayload, "id" | "data" | "user" | "v" | "ts">
-      >;
-  }>;
-
-/**
- * Returns a union of all the events that can be used to trigger a function
- * based on the given `TClient` and `TTriggers`.
- *
- * Can optionally include or exclude internal events with `TExcludeInternal`.
+ * Returns the event type for a function context. Since events are now generic
+ * strings, this returns a simplified EventPayload type.
  */
 type GetContextEvents<
-  TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient>,
-  TExcludeInternal extends boolean = false,
-  // TInvokeSchema extends ValidSchemaInput = never,
-> = Simplify<
-  TExcludeInternal extends true
-    ? WithoutInternal<
-        GetSelectedEvents<TClient, TTriggers>
-      >[keyof WithoutInternal<GetSelectedEvents<TClient, TTriggers>>]
-    : GetSelectedEvents<TClient, TTriggers>[keyof GetSelectedEvents<
-        TClient,
-        TTriggers
-      >]
->;
+  _TClient extends Inngest.Any,
+  _TTriggers extends string,
+  _TExcludeInternal extends boolean = false,
+> = Simplify<EventPayload>;
 
 /**
  * Base context object, omitting any extras that may be added by middleware or
@@ -547,7 +494,7 @@ type GetContextEvents<
  */
 export type BaseContext<
   TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
+  TTriggers extends string = string,
 > = {
   /**
    * The event data present in the payload.
@@ -583,7 +530,7 @@ export type BaseContext<
  */
 export type Context<
   TClient extends Inngest.Any = Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
+  TTriggers extends string = string,
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = Omit<BaseContext<TClient, TTriggers>, keyof TOverrides> & TOverrides;
 
@@ -608,7 +555,7 @@ export namespace Context {
  */
 export type Handler<
   TClient extends Inngest.Any,
-  TTriggers extends TriggersFromClient<TClient> = TriggersFromClient<TClient>,
+  TTriggers extends string,
   TOverrides extends Record<string, unknown> = Record<never, never>,
 > = (
   /**
@@ -617,9 +564,6 @@ export type Handler<
    */
   ctx: Context<TClient, TTriggers, TOverrides>,
 ) => unknown;
-
-export type TriggersFromClient<TClient extends Inngest.Any = Inngest.Any> =
-  keyof GetEvents<TClient, true> & string;
 
 /**
  * The shape of a Inngest function, taking in event, step, ctx, and step
@@ -634,14 +578,6 @@ export namespace Handler {
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   export type Any = Handler<Inngest.Any, any, any>;
 }
-
-/**
- * Asserts that the given keys `U` are all present in the given object `T`.
- *
- * Used as an internal type guard to ensure that changes to keys are accounted
- * for
- */
-type AssertKeysAreFrom<T, K extends keyof T> = K;
 
 /**
  * The shape of a single event's payload without any fields used to identify the
@@ -842,31 +778,6 @@ export interface ClientOptions {
    * function.
    */
   fetch?: typeof fetch;
-
-  /**
-   * Provide an `EventSchemas` class to type events, providing type safety when
-   * sending events and running functions via Inngest.
-   *
-   * You can provide generated Inngest types, custom types, types using Zod, or
-   * a combination of the above. See {@link EventSchemas} for more information.
-   *
-   * @example
-   *
-   * ```ts
-   * export const inngest = new Inngest({
-   *   id: "my-app",
-   *   schemas: new EventSchemas().fromZod({
-   *     "app/user.created": {
-   *       data: z.object({
-   *         id: z.string(),
-   *         name: z.string(),
-   *       }),
-   *     },
-   *   }),
-   * });
-   * ```
-   */
-  schemas?: EventSchemas<Record<string, EventPayload>>;
 
   /**
    * The Inngest environment to send events to. Defaults to whichever
@@ -1596,10 +1507,7 @@ export type MetadataTarget =
     };
 
 export type EventsFromFunction<T extends InngestFunction.Any> =
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-  T extends InngestFunction<any, any, any, infer IClient, any, any>
-    ? GetEvents<IClient, true>
-    : never;
+  T extends InngestFunction.Any ? Record<string, EventPayload> : never;
 
 /**
  * A function that can be invoked by Inngest.

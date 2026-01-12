@@ -1,7 +1,6 @@
 import { z } from "zod";
 import type { IsAny, IsEqual } from "../helpers/types.ts";
 import type { MinimalEventPayload } from "../types";
-import { EventSchemas } from "./EventSchemas";
 import { Inngest } from "./Inngest.ts";
 import {
   InngestFunctionReference,
@@ -219,19 +218,14 @@ describe("referenceFunction", () => {
     });
 
     test("infers types from an InngestFunction passed as generic", () => {
-      const inngest = new Inngest({
-        id: "test",
-        schemas: new EventSchemas().fromSchema({
-          "test/event": z.object({ someValue: z.string() }),
-        }),
-      });
+      const inngest = new Inngest({ id: "test" });
 
       // Create a test function to reference
       const testFunction = inngest.createFunction(
         { id: "test-function" },
         { event: "test/event" },
-        async ({ event }) => {
-          return { success: true, value: event.data.someValue };
+        async () => {
+          return { success: true, value: "test" };
         },
       );
 
@@ -240,13 +234,6 @@ describe("referenceFunction", () => {
         functionId: "test-function",
       });
 
-      type ActualInput = typeof fnRef extends InngestFunctionReference<
-        infer TInput,
-        infer _
-      >
-        ? TInput
-        : never;
-
       type ActualOutput = typeof fnRef extends InngestFunctionReference<
         infer _,
         infer TOutput
@@ -254,13 +241,8 @@ describe("referenceFunction", () => {
         ? TOutput
         : never;
 
-      // Check that types are not any
-      assertType<IsAny<ActualInput>>(false);
+      // Check that output type is inferred correctly
       assertType<IsAny<ActualOutput>>(false);
-
-      // The types should be properly inferred from the function
-      // Input should have the event structure
-      assertType<IsEqual<ActualInput["data"], { someValue: string }>>(true);
 
       // Output should match the function's return type
       type ExpectedOutput = { success: boolean; value: string };
