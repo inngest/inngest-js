@@ -10,11 +10,13 @@ import {
 import { createEntropy } from "../helpers/crypto.ts";
 import {
   allProcessEnv,
+  type Env,
   getFetch,
   getMode,
   inngestHeaders,
   type Mode,
   processEnv,
+  resolveUrl,
 } from "../helpers/env.ts";
 import {
   type ErrCode,
@@ -161,16 +163,35 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   private readonly middleware: Promise<MiddlewareRegisterReturn[]>;
 
   /**
-   * Whether the client is running in a production environment. This can
-   * sometimes be `undefined` if the client has expressed no preference or
-   * perhaps environment variables are only available at a later stage in the
-   * runtime, for example when receiving a request.
+   * The operational mode of the SDK - either "cloud" (connecting to Inngest
+   * Cloud) or "dev" (connecting to a local dev server).
    *
    * An {@link InngestCommHandler} should prioritize this value over all other
    * settings, but should still check for the presence of an environment
    * variable if it is not set.
    */
   private _mode!: Mode;
+
+  /**
+   * If the `isDev` constructor option was explicitly passed, this stores that
+   * setting. This takes precedence over env vars when the handler determines
+   * mode. If not set, the handler can use its own env vars.
+   */
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: accessed via bracket notation
+  private _explicitMode?: Mode;
+
+  /**
+   * If set, the explicit URL of the dev server to connect to (e.g. when
+   * INNGEST_DEV is set to a URL instead of just "1" or "true").
+   */
+  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: accessed via bracket notation
+  private _explicitDevUrl?: URL;
+
+  /**
+   * Environment variables used for configuration. Stored separately from mode
+   * so that env-dependent values can be read without coupling to mode.
+   */
+  private _env: Env = {};
 
   protected readonly schemas?: NonNullable<TClientOpts["schemas"]>;
 
@@ -260,10 +281,16 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
     this.id = id;
 
-    this._mode = getMode({
-      explicitMode:
-        typeof isDev === "boolean" ? (isDev ? "dev" : "cloud") : undefined,
+    this._env = allProcessEnv();
+    // Only set _explicitMode if isDev was explicitly passed to constructor
+    this._explicitMode =
+      typeof isDev === "boolean" ? (isDev ? "dev" : "cloud") : undefined;
+    const { mode, explicitDevUrl } = getMode({
+      env: this._env,
+      explicitMode: this._explicitMode,
     });
+    this._mode = mode;
+    this._explicitDevUrl = explicitDevUrl;
 
     this.fetch = getFetch(fetch);
 
@@ -303,7 +330,15 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   public setEnvVars(
     env: Record<string, string | undefined> = allProcessEnv(),
   ): this {
-    this.mode = getMode({ env, client: this });
+    this._env = env;
+    // Preserve explicit mode from constructor (isDev option) over env vars
+    const { mode, explicitDevUrl } = getMode({
+      env,
+      explicitMode: this._explicitMode,
+    });
+    this._mode = mode;
+    this._explicitDevUrl = explicitDevUrl;
+    this.loadModeEnvVars();
 
     return this;
   }
@@ -311,23 +346,23 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   private loadModeEnvVars(): void {
     this._apiBaseUrl =
       this.options.baseUrl ||
-      this.mode["env"][envKeys.InngestApiBaseUrl] ||
-      this.mode["env"][envKeys.InngestBaseUrl] ||
-      this.mode.getUrl(defaultInngestApiBaseUrl);
+      this._env[envKeys.InngestApiBaseUrl] ||
+      this._env[envKeys.InngestBaseUrl] ||
+      resolveUrl(this._mode, this._explicitDevUrl, defaultInngestApiBaseUrl);
 
     this._eventBaseUrl =
       this.options.baseUrl ||
-      this.mode["env"][envKeys.InngestEventApiBaseUrl] ||
-      this.mode["env"][envKeys.InngestBaseUrl] ||
-      this.mode.getUrl(defaultInngestEventBaseUrl);
+      this._env[envKeys.InngestEventApiBaseUrl] ||
+      this._env[envKeys.InngestBaseUrl] ||
+      resolveUrl(this._mode, this._explicitDevUrl, defaultInngestEventBaseUrl);
 
     this.setEventKey(
-      this.options.eventKey || this.mode["env"][envKeys.InngestEventKey] || "",
+      this.options.eventKey || this._env[envKeys.InngestEventKey] || "",
     );
 
     this.headers = inngestHeaders({
       inngestEnv: this.options.env,
-      env: this.mode["env"],
+      env: this._env,
     });
 
     this.inngestApi["apiBaseUrl"] = this._apiBaseUrl;
@@ -365,15 +400,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     );
 
     return [...prefix, ...(await stack)];
-  }
-
-  private get mode(): Mode {
-    return this._mode;
-  }
-
-  private set mode(m) {
-    this._mode = m;
-    this.loadModeEnvVars();
   }
 
   /**
@@ -722,12 +748,12 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
 
     // When sending events, check if the dev server is available.  If so, use the
     // dev server.
-    let url = this.sendEventUrl.href;
+    const url = this.sendEventUrl.href;
 
     /**
-     * If in prod mode and key is not present, fail now.
+     * If in cloud mode and key is not present, fail now.
      */
-    if (this.mode.isCloud && !this.eventKeySet()) {
+    if (this._mode === "cloud" && !this.eventKeySet()) {
       throw new Error(
         prettyError({
           whatHappened: "Failed to send event",

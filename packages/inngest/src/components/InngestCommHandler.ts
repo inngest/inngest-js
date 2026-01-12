@@ -26,7 +26,7 @@ import {
   getMode,
   getPlatformName,
   inngestHeaders,
-  Mode,
+  type Mode,
   parseAsBoolean,
   platformSupportsStreaming,
 } from "../helpers/env.ts";
@@ -339,12 +339,16 @@ export class InngestCommHandler<
   protected signingKeyFallback: string | undefined;
 
   /**
-   * A property that can be set to indicate whether we believe we are in
-   * production mode.
+   * The operational mode - either "cloud" or "dev".
    *
    * Should be set every time a request is received.
    */
   protected _mode: Mode | undefined;
+
+  /**
+   * If set, the explicit URL of the dev server to connect to.
+   */
+  protected _explicitDevUrl: URL | undefined;
 
   /**
    * The localized `fetch` implementation used by this handler.
@@ -771,7 +775,13 @@ export class InngestCommHandler<
       ...(await headersToForwardP),
     });
 
-    this._mode = getMode({ env: this.env, client: this.client });
+    // Use client's explicit mode (from isDev option) if set, otherwise use env vars
+    const { mode, explicitDevUrl } = getMode({
+      env: this.env,
+      explicitMode: this.client["_explicitMode"],
+    });
+    this._mode = mode;
+    this._explicitDevUrl = explicitDevUrl;
 
     this.upsertKeysFromEnv();
 
@@ -1367,20 +1377,6 @@ export class InngestCommHandler<
     });
 
     return handler;
-  }
-
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
-  private get mode(): Mode | undefined {
-    return this._mode;
-  }
-
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
-  private set mode(m) {
-    this._mode = m;
-
-    if (m) {
-      this.client["mode"] = m;
-    }
   }
 
   /**
@@ -2255,13 +2251,13 @@ export class InngestCommHandler<
       has_event_key: this.client["eventKeySet"](),
       has_signing_key: Boolean(this.signingKey),
       function_count: registerBody.functions.length,
-      mode: this._mode.type,
+      mode: this._mode,
       schema_version: "2024-05-24",
     } satisfies UnauthenticatedIntrospection;
 
     // Only allow authenticated introspection in Cloud mode, since Dev mode skips
     // signature validation
-    if (this._mode.type === "cloud") {
+    if (this._mode === "cloud") {
       try {
         const validationResult = await signatureValidation;
         if (!validationResult.success) {
@@ -2317,11 +2313,8 @@ export class InngestCommHandler<
     let registerURL = new URL(this.inngestRegisterUrl.href);
 
     // Use explicit dev server URL if provided via INNGEST_DEV=<url>
-    if (this._mode?.explicitDevUrl) {
-      registerURL = devServerUrl(
-        this._mode.explicitDevUrl.href,
-        "/fn/register",
-      );
+    if (this._explicitDevUrl) {
+      registerURL = devServerUrl(this._explicitDevUrl.href, "/fn/register");
     }
 
     if (deployId) {
@@ -2418,7 +2411,7 @@ export class InngestCommHandler<
     const isAuthError =
       status === 401 || status === 403 || error.includes("signing key");
 
-    if (isAuthError && this._mode?.isCloud && !this.signingKey) {
+    if (isAuthError && this._mode === "cloud" && !this.signingKey) {
       this.log(
         "warn",
         `Hint: For local development, set INNGEST_DEV=1 to connect to the Inngest Dev Server.\n` +
@@ -2484,10 +2477,10 @@ export class InngestCommHandler<
         return { success: true, keyUsed: "" };
       }
 
-      // Never validate signatures outside of prod. Make sure to check the mode
+      // Never validate signatures in dev mode. Make sure to check the mode
       // exists here instead of using nullish coalescing to confirm that the check
       // has been completed.
-      if (this._mode && !this._mode.isCloud) {
+      if (this._mode === "dev") {
         return { success: true, keyUsed: "" };
       }
 

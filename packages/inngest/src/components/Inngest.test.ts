@@ -67,45 +67,45 @@ describe("new Inngest()", () => {
 
     test("should default to cloud mode", () => {
       const inngest = createTestClient();
-      expect(inngest["mode"].isCloud).toBe(true);
+      expect(inngest["_mode"]).toBe("cloud");
     });
 
     test("`isDev: true` sets dev mode", () => {
       const inngest = createTestClient({ opts: { isDev: true } });
-      expect(inngest["mode"].isDev).toBe(true);
+      expect(inngest["_mode"]).toBe("dev");
     });
 
     test("`isDev: false` sets cloud mode", () => {
       const inngest = createTestClient({ opts: { isDev: false } });
-      expect(inngest["mode"].isCloud).toBe(true);
+      expect(inngest["_mode"]).toBe("cloud");
     });
 
     test("`INNGEST_DEV=1` sets dev mode", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "1" },
       });
-      expect(inngest["mode"].isDev).toBe(true);
+      expect(inngest["_mode"]).toBe("dev");
     });
 
     test("`INNGEST_DEV=true` sets dev mode", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "true" },
       });
-      expect(inngest["mode"].isDev).toBe(true);
+      expect(inngest["_mode"]).toBe("dev");
     });
 
     test("`INNGEST_DEV=false` sets cloud mode", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "false" },
       });
-      expect(inngest["mode"].isCloud).toBe(true);
+      expect(inngest["_mode"]).toBe("cloud");
     });
 
     test("`INNGEST_DEV=0` sets cloud mode", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "0" },
       });
-      expect(inngest["mode"].isCloud).toBe(true);
+      expect(inngest["_mode"]).toBe("cloud");
     });
 
     test("`isDev` overwrites `INNGEST_DEV`", () => {
@@ -113,17 +113,15 @@ describe("new Inngest()", () => {
         env: { [envKeys.InngestDevMode]: "1" },
         opts: { isDev: false },
       });
-      expect(inngest["mode"].isDev).toBe(false);
+      expect(inngest["_mode"]).toBe("cloud");
     });
 
     test("`INNGEST_DEV=URL` sets dev mode with custom URL", () => {
       const inngest = createTestClient({
         env: { [envKeys.InngestDevMode]: "http://localhost:3000" },
       });
-      expect(inngest["mode"].isDev).toBe(true);
-      expect(inngest["mode"].explicitDevUrl?.href).toBe(
-        "http://localhost:3000/",
-      );
+      expect(inngest["_mode"]).toBe("dev");
+      expect(inngest["_explicitDevUrl"]?.href).toBe("http://localhost:3000/");
     });
   });
 });
@@ -1075,10 +1073,8 @@ describe("setEnvVars", () => {
   test("overwrites existing env vars", () => {
     const inngest = createClient({ id: "test" });
 
-    expect(inngest["_mode"]).toMatchObject({
-      type: "cloud",
-    });
-    expect(inngest["mode"]["explicitDevUrl"]).toBeUndefined();
+    expect(inngest["_mode"]).toBe("cloud");
+    expect(inngest["_explicitDevUrl"]).toBeUndefined();
     expect(inngest["_apiBaseUrl"]).toBeDefined();
     expect(inngest["_eventBaseUrl"]).toBeDefined();
     expect(inngest["eventKey"]).toBe(dummyEventKey);
@@ -1092,10 +1088,8 @@ describe("setEnvVars", () => {
       [envKeys.InngestEventKey]: devEventKey,
     });
 
-    expect(inngest["_mode"]).toMatchObject({
-      type: "dev",
-    });
-    expect(inngest["_mode"]["explicitDevUrl"]?.href).toBe(devUrl);
+    expect(inngest["_mode"]).toBe("dev");
+    expect(inngest["_explicitDevUrl"]?.href).toBe(devUrl);
     expect(inngest["_apiBaseUrl"]).toBe(devUrl);
     expect(inngest["_eventBaseUrl"]).toBe(devUrl);
     expect(inngest["eventKey"]).toBe(devEventKey);

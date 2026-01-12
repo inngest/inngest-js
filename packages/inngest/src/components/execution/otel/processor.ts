@@ -258,8 +258,8 @@ export class InngestSpanProcessor implements SpanProcessor {
           let baseUrl = app.apiBaseUrl || defaultInngestApiBaseUrl;
 
           // Use explicit dev server URL if provided via INNGEST_DEV=<url>
-          if (app["mode"]?.explicitDevUrl) {
-            baseUrl = app["mode"].explicitDevUrl.href;
+          if (app["_explicitDevUrl"]) {
+            baseUrl = app["_explicitDevUrl"].href;
           }
 
           const url = new URL(path, baseUrl);

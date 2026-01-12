@@ -59,6 +59,14 @@ export const devServerHost = (env: Env = allProcessEnv()): EnvValue => {
   });
 };
 
+/**
+ * The operational mode of the SDK - either connecting to Inngest Cloud
+ * or a local dev server.
+ *
+ * @public
+ */
+export type Mode = "cloud" | "dev";
+
 interface GetModeOptions {
   /**
    * The optional environment variables to use instead of `process.env`.
@@ -66,66 +74,26 @@ interface GetModeOptions {
   env?: Record<string, EnvValue>;
 
   /**
-   * The Inngest client that's being used when performing this check. This is
-   * used to check if the client has an explicit mode set, and if so, to use
-   * that mode instead of inferring it from the environment.
+   * If specified, this mode will be used instead of inferring from
+   * environment. Useful for preserving explicit mode settings (e.g., from
+   * the `isDev` constructor option) when env vars are updated.
    */
-  client?: Inngest.Any;
-
-  /**
-   * If specified as a `boolean`, this will be returned as the result of the
-   * function. Useful for options that may or may not be set by users.
-   */
-  explicitMode?: Mode["type"];
+  explicitMode?: Mode;
 }
 
-export interface ModeOptions {
-  type: "cloud" | "dev";
-
-  /**
-   * If the mode was set as a dev URL, this is the URL that was set.
-   */
-  explicitDevUrl?: URL;
-
-  /**
-   * Environment variables to use when determining the mode.
-   */
-  env?: Env;
-}
-
-export class Mode {
-  public readonly type: "cloud" | "dev";
-
-  public readonly explicitDevUrl?: URL;
-
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
-  private readonly env: Env;
-
-  constructor({ type, explicitDevUrl, env = allProcessEnv() }: ModeOptions) {
-    this.env = env;
-    this.type = type;
-    this.explicitDevUrl = explicitDevUrl;
+/**
+ * Resolve the appropriate URL based on mode and configuration.
+ */
+export const resolveUrl = (
+  mode: Mode,
+  explicitDevUrl: URL | undefined,
+  defaultCloudUrl: string,
+): string => {
+  if (explicitDevUrl) {
+    return explicitDevUrl.href;
   }
-
-  public get isDev(): boolean {
-    return this.type === "dev";
-  }
-
-  public get isCloud(): boolean {
-    return this.type === "cloud";
-  }
-
-  /**
-   * Retrieve the URL that should be used for this mode.
-   */
-  public getUrl(defaultCloudUrl: string): string {
-    if (this.explicitDevUrl) {
-      return this.explicitDevUrl.href;
-    }
-
-    return this.isCloud ? defaultCloudUrl : defaultDevServerHost;
-  }
-}
+  return mode === "cloud" ? defaultCloudUrl : defaultDevServerHost;
+};
 
 /**
  * Returns the mode of the current environment, based off of either passed
@@ -133,40 +101,34 @@ export class Mode {
  */
 export const getMode = ({
   env = allProcessEnv(),
-  client,
   explicitMode,
-}: GetModeOptions = {}): Mode => {
+}: GetModeOptions = {}): { mode: Mode; explicitDevUrl?: URL } => {
+  // If an explicit mode is specified (e.g., via `isDev` constructor option), use that
   if (explicitMode) {
-    return new Mode({ type: explicitMode, env });
-  }
-
-  // If client's mode is specified, use that
-  if (client?.["mode"]) {
-    return client["mode"];
+    return { mode: explicitMode };
   }
 
   // Check environment variables
   if (envKeys.InngestDevMode in env) {
+    // Check if it's a URL
     if (typeof env[envKeys.InngestDevMode] === "string") {
       try {
         const explicitDevUrl = new URL(env[envKeys.InngestDevMode]);
-        return new Mode({ type: "dev", explicitDevUrl, env });
+        return { mode: "dev", explicitDevUrl };
       } catch {
-        // no-op
+        // Not a URL, continue to boolean check
       }
     }
 
+    // Check if it's a boolean
     const envIsDev = parseAsBoolean(env[envKeys.InngestDevMode]);
     if (typeof envIsDev === "boolean") {
-      return new Mode({
-        type: envIsDev ? "dev" : "cloud",
-        env,
-      });
+      return { mode: envIsDev ? "dev" : "cloud" };
     }
   }
 
   // Default to cloud mode
-  return new Mode({ type: "cloud", env });
+  return { mode: "cloud" };
 };
 
 /**

@@ -1335,7 +1335,10 @@ export interface UnauthenticatedIntrospection {
 }
 
 export interface AuthenticatedIntrospection
-  extends Omit<UnauthenticatedIntrospection, "authentication_succeeded" | "extra"> {
+  extends Omit<
+    UnauthenticatedIntrospection,
+    "authentication_succeeded" | "extra"
+  > {
   api_origin: string;
   app_id: string;
   authentication_succeeded: true;

@@ -304,7 +304,7 @@ class WebSocketWorkerConnection implements WorkerConnection {
 
     this.debug("Establishing connection", { attempt });
 
-    if (this.inngest["mode"].isCloud && !this.options.signingKey) {
+    if (this.inngest["_mode"] === "cloud" && !this.options.signingKey) {
       throw new Error("Signing key is required");
     }
 
