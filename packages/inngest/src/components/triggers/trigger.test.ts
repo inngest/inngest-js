@@ -51,8 +51,7 @@ describe("eventType", () => {
     });
 
     test("create with transform", async () => {
-      const et = eventType(
-        "event-1",
+      const et = eventType("event-1").withSchema(
         z.object({ name: z.string() }).transform((val) => {
           return {
             ...val,
@@ -97,7 +96,9 @@ describe("eventType", () => {
   });
 
   describe("with schema", () => {
-    const et = eventType("event-1", z.object({ message: z.string() }));
+    const et = eventType("event-1").withSchema(
+      z.object({ message: z.string() })
+    );
 
     test("return", () => {
       expect(et.event).toBe("event-1");
@@ -162,8 +163,8 @@ describe("eventType", () => {
       inngest.createFunction(
         { id: "fn" },
         [
-          eventType("event-1", z.object({ a: z.string() })),
-          eventType("event-2", z.object({ b: z.number() })),
+          eventType("event-1").withSchema(z.object({ a: z.string() })),
+          eventType("event-2").withSchema(z.object({ b: z.number() })),
         ] as const,
         ({ event }) => {
           expectTypeOf(event.name).toEqualTypeOf<
@@ -188,9 +189,9 @@ describe("eventType", () => {
     });
 
     test("withIf", () => {
-      const et = eventType("event-1", z.object({ foo: z.string() })).withIf(
-        "event.data.foo == 'bar'"
-      );
+      const et = eventType("event-1")
+        .withSchema(z.object({ foo: z.string() }))
+        .withIf("event.data.foo == 'bar'");
       expect(et.if).toBe("event.data.foo == 'bar'");
       expectTypeOf(et.if).toEqualTypeOf<"event.data.foo == 'bar'">();
 
@@ -213,7 +214,7 @@ describe("eventType", () => {
         };
       });
 
-      const et = eventType("event-1", schema);
+      const et = eventType("event-1").withSchema(schema);
       et.create({ data: { message: "hello" } });
       et.create({
         data: { message: "hello" },
@@ -265,10 +266,10 @@ describe("mixed triggers", () => {
     inngest.createFunction(
       { id: "fn" },
       [
-        eventType("event-1", z.object({ a: z.string() })),
+        eventType("event-1").withSchema(z.object({ a: z.string() })),
         cron("* * * * *"),
         invoke(z.object({ name: z.string() })),
-        eventType("event-2", z.object({ b: z.number() })),
+        eventType("event-2").withSchema(z.object({ b: z.number() })),
         cron("0 0 * * *"),
         invoke(z.object({ age: z.number() })),
       ] as const,
@@ -335,7 +336,7 @@ describe("mixed triggers", () => {
     inngest.createFunction(
       { id: "fn" },
       [
-        eventType("event-1", z.object({ a: z.string() })),
+        eventType("event-1").withSchema(z.object({ a: z.string() })),
         invoke(z.object({ b: z.number() })),
       ] as const,
       ({ event }) => {

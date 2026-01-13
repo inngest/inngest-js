@@ -146,7 +146,7 @@ export class EventType<
    * @param params - Event parameters including data, id, timestamp, etc.
    */
   create(
-    params: EventCreateParams<ExtractSchemaInput<TSchema>>,
+    params: EventCreateParams<ExtractSchemaInput<TSchema>>
   ): UnvalidatedCreatedEvent<
     ExtractSchemaInput<TSchema>,
     ExtractSchemaOutput<TSchema>
@@ -185,7 +185,7 @@ export class EventType<
                   }
                   return issue.message;
                 })
-                .join(", "),
+                .join(", ")
             );
           }
           data = check.value;
@@ -218,33 +218,25 @@ export class EventType<
       schema: this.schema,
     };
   }
+
+  /**
+   * Add a schema to the event type.
+   *
+   * @param schema - StandardSchema for type-safe event data validation
+   * @returns New event type with schema applied
+   */
+  withSchema<
+    TSchema extends StandardSchemaV1<
+      Record<string, unknown>,
+      Record<string, unknown>
+    >,
+  >(schema: TSchema): EventType<TName, TSchema> {
+    return new EventType({
+      name: this.name,
+      schema,
+    });
+  }
 }
-
-// Overload: event without schema. Data is optional.
-export function eventType<TName extends string>(
-  name: TName,
-): EventType<TName, undefined>;
-
-// Overload: event with schema. Data is required and typed.
-export function eventType<
-  TName extends string,
-  // TDataInput extends Record<string, unknown>,
-  // TDataOutput extends Record<string, unknown>,
-  TSchema extends StandardSchemaV1<
-    Record<string, unknown>,
-    Record<string, unknown>
-  >,
->(name: TName, schema: TSchema): EventType<TName, TSchema>;
-
-// export function eventType<
-//   TName extends string,
-//   // TDataInput extends Record<string, unknown>,
-//   // TDataOutput extends Record<string, unknown>,
-//   TSchema extends StandardSchemaV1<
-//     Record<string, unknown>,
-//     Record<string, unknown>
-//   >,
-// >(name: TName, schema: TSchema): EventType<TName, TSchema>;
 
 /**
  * Create an event type definition that can be used as a trigger and for
@@ -254,20 +246,12 @@ export function eventType<
  * EventType instance that provides type safety and optional runtime validation.
  *
  * @param name - The event name (e.g., "user.created")
- * @param schema - Optional StandardSchema for type-safe event data (supports Zod, Valibot, etc.)
  * @returns EventType instance that can be used as a trigger or for creating events
  */
-export function eventType<
-  TName extends string,
-  TData extends Record<string, unknown>,
->(
-  name: TName,
-  schema?: StandardSchemaV1<TData>,
-): EventType<TName, StandardSchemaV1<TData>> | EventType<TName, undefined> {
-  if (schema) {
-    return new EventType<TName, StandardSchemaV1<TData>>({ name, schema });
-  }
-  return new EventType<TName, undefined>({ name, schema: undefined });
+export function eventType<TName extends string>(
+  name: TName
+): EventType<TName, undefined> {
+  return new EventType({ name, schema: undefined });
 }
 
 /**
@@ -281,7 +265,7 @@ export function eventType<
  * @returns Invoke trigger
  */
 export function invoke<TData extends Record<string, unknown>>(
-  schema: StandardSchemaV1<TData>,
+  schema: StandardSchemaV1<TData>
 ) {
   return {
     event: "inngest/function.invoked",
