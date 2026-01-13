@@ -57,7 +57,7 @@ describe("eventType", () => {
             ...val,
             nameLength: val.name.length,
           };
-        })
+        }),
       );
 
       const created = et.create({ data: { name: "John" } });
@@ -90,14 +90,14 @@ describe("eventType", () => {
           >();
 
           expectTypeOf(event.data).toEqualTypeOf<Record<string, any>>();
-        }
+        },
       );
     });
   });
 
   describe("with schema", () => {
     const et = eventType("event-1").withSchema(
-      z.object({ message: z.string() })
+      z.object({ message: z.string() }),
     );
 
     test("return", () => {
@@ -115,13 +115,26 @@ describe("eventType", () => {
     });
 
     test("create", async () => {
-      et.create({ data: { message: "hello" } });
-      et.create({
+      const created1 = et.create({ data: { message: "hello" } });
+      expect(created1.v).toBe("1.0.0");
+      expectTypeOf(created1.v).not.toBeAny();
+      expectTypeOf(created1.v).toEqualTypeOf<string | undefined>();
+
+      const created2 = et.create({
         data: { message: "hello" },
         id: "123",
         ts: 1715769600,
         v: "1.0.0",
       });
+      expect(created2.data).toEqual({ message: "hello" });
+      expectTypeOf(created2.data).not.toBeAny();
+      expectTypeOf(created2.data).toExtend<{ message: string }>();
+      expect(created2.id).toBe("123");
+      expectTypeOf(created2.id).toEqualTypeOf<string | undefined>();
+      expect(created2.ts).toBe(1715769600);
+      expectTypeOf(created2.ts).toEqualTypeOf<number | undefined>();
+      expect(created2.v).toBe("1.0.0");
+      expectTypeOf(created2.v).toEqualTypeOf<string | undefined>();
 
       // @ts-expect-error - Missing data
       let event = et.create({});
@@ -154,7 +167,7 @@ describe("eventType", () => {
             ...et,
             timeout: 1000,
           });
-        }
+        },
       );
     });
 
@@ -184,7 +197,7 @@ describe("eventType", () => {
               { a: string } | { b: number }
             >();
           }
-        }
+        },
       );
     });
 
@@ -233,6 +246,28 @@ describe("eventType", () => {
       });
     });
   });
+
+  test("withVersion", () => {
+    // Can set the event type version
+    const et = eventType("event-1").withVersion("1.0.0");
+    expect(et.version).toBe("1.0.0");
+    expectTypeOf(et.version).toEqualTypeOf<"1.0.0">();
+
+    // Defaults to event type version
+    const created = et.create({});
+    expect(created.v).toBe("1.0.0");
+    expectTypeOf(created.v).toEqualTypeOf<string | undefined>();
+
+    // Can override the version
+    const createdWithVersion = et.create({ v: "2.0.0" });
+    expect(createdWithVersion.v).toBe("2.0.0");
+    expectTypeOf(createdWithVersion.v).toEqualTypeOf<string | undefined>();
+
+    // withSchema retains the version
+    const etWithSchema = et.withSchema(z.object({ message: z.string() }));
+    expect(etWithSchema.version).toBe("1.0.0");
+    expectTypeOf(etWithSchema.version).toEqualTypeOf<"1.0.0">();
+  });
 });
 
 describe("invoke", () => {
@@ -255,7 +290,7 @@ describe("invoke", () => {
       ({ event }) => {
         expectTypeOf(event.name).toEqualTypeOf<"inngest/function.invoked">();
         expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
-      }
+      },
     );
   });
 });
@@ -301,7 +336,7 @@ describe("mixed triggers", () => {
             { name: string } | { age: number }
           >();
         }
-      }
+      },
     );
   });
 
@@ -327,7 +362,7 @@ describe("mixed triggers", () => {
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
         }
-      }
+      },
     );
   });
 
@@ -350,7 +385,7 @@ describe("mixed triggers", () => {
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ b: number }>();
         }
-      }
+      },
     );
   });
 });

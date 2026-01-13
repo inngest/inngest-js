@@ -77,18 +77,21 @@ type ExtractSchemaInput<TData> = TData extends StandardSchemaV1<
  * @template TInputData - The input data type of the event (i.e. before validation)
  * @template TOutputData - The output data type of the event (i.e. after validation)
  */
-type UnvalidatedCreatedEvent<TInputData, TOutputData> =
-  ValidatedCreatedEvent<TInputData> & {
-    validate: () => Promise<ValidatedCreatedEvent<TOutputData>>;
-  };
+type UnvalidatedCreatedEvent<
+  TName extends string,
+  TInputData,
+  TOutputData,
+> = ValidatedCreatedEvent<TName, TInputData> & {
+  validate: () => Promise<ValidatedCreatedEvent<TName, TOutputData>>;
+};
 
 /**
  * An event that has been validated.
  * @template TData - The data type of the event.
  */
-type ValidatedCreatedEvent<TData> = {
+type ValidatedCreatedEvent<TName extends string, TData> = {
   data: TData;
-  name: string;
+  name: TName;
   id?: string;
   ts?: number;
   v?: string;
@@ -116,6 +119,7 @@ export class EventType<
   TSchema extends
     | StandardSchemaV1<Record<string, unknown>, Record<string, unknown>>
     | undefined,
+  TVersion extends string | undefined,
 > {
   /**
    * The event name. This is the same as the `name` property, but is necessary
@@ -126,11 +130,21 @@ export class EventType<
 
   readonly name: TName;
   schema: TSchema;
+  version: TVersion;
 
-  constructor({ name, schema }: { name: TName; schema: TSchema }) {
+  constructor({
+    name,
+    schema,
+    version,
+  }: {
+    name: TName;
+    schema: TSchema;
+    version: TVersion;
+  }) {
     this.event = name;
     this.name = name;
     this.schema = schema;
+    this.version = version;
   }
 
   /**
@@ -146,12 +160,14 @@ export class EventType<
    * @param params - Event parameters including data, id, timestamp, etc.
    */
   create(
-    params: EventCreateParams<ExtractSchemaInput<TSchema>>
+    params: EventCreateParams<ExtractSchemaInput<TSchema>>,
   ): UnvalidatedCreatedEvent<
+    TName,
     ExtractSchemaInput<TSchema>,
     ExtractSchemaOutput<TSchema>
   > {
     const event: UnvalidatedCreatedEvent<
+      TName,
       ExtractSchemaInput<TSchema>,
       ExtractSchemaOutput<TSchema>
     > = {
@@ -159,12 +175,12 @@ export class EventType<
       data: params.data as ExtractSchemaInput<TSchema>,
       id: params.id,
       ts: params.ts,
-      v: params.v,
+      v: params.v ?? this.version,
 
       // Method for validating and transforming the event data against the
       // schema
       validate: async (): Promise<
-        ValidatedCreatedEvent<ExtractSchemaOutput<TSchema>>
+        ValidatedCreatedEvent<TName, ExtractSchemaOutput<TSchema>>
       > => {
         let data = params.data;
 
@@ -185,7 +201,7 @@ export class EventType<
                   }
                   return issue.message;
                 })
-                .join(", ")
+                .join(", "),
             );
           }
           data = check.value;
@@ -230,10 +246,21 @@ export class EventType<
       Record<string, unknown>,
       Record<string, unknown>
     >,
-  >(schema: TSchema): EventType<TName, TSchema> {
+  >(schema: TSchema): EventType<TName, TSchema, TVersion> {
     return new EventType({
       name: this.name,
       schema,
+      version: this.version,
+    });
+  }
+
+  withVersion<TVersion extends string>(
+    version: TVersion,
+  ): EventType<TName, TSchema, TVersion> {
+    return new EventType({
+      name: this.name,
+      schema: this.schema,
+      version,
     });
   }
 }
@@ -249,9 +276,9 @@ export class EventType<
  * @returns EventType instance that can be used as a trigger or for creating events
  */
 export function eventType<TName extends string>(
-  name: TName
-): EventType<TName, undefined> {
-  return new EventType({ name, schema: undefined });
+  name: TName,
+): EventType<TName, undefined, undefined> {
+  return new EventType({ name, schema: undefined, version: undefined });
 }
 
 /**
@@ -265,7 +292,7 @@ export function eventType<TName extends string>(
  * @returns Invoke trigger
  */
 export function invoke<TData extends Record<string, unknown>>(
-  schema: StandardSchemaV1<TData>
+  schema: StandardSchemaV1<TData>,
 ) {
   return {
     event: "inngest/function.invoked",
