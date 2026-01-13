@@ -127,14 +127,22 @@ describe("eventType", () => {
         v: "1.0.0",
       });
       expect(created2.data).toEqual({ message: "hello" });
-      expectTypeOf(created2.data).not.toBeAny();
-      expectTypeOf(created2.data).toExtend<{ message: string }>();
+      expectTypeOf(created2.data).toEqualTypeOf<{ message: string }>();
       expect(created2.id).toBe("123");
       expectTypeOf(created2.id).toEqualTypeOf<string | undefined>();
       expect(created2.ts).toBe(1715769600);
       expectTypeOf(created2.ts).toEqualTypeOf<number | undefined>();
       expect(created2.v).toBe("1.0.0");
       expectTypeOf(created2.v).toEqualTypeOf<string | undefined>();
+
+      const validated = await created2.validate();
+      expectTypeOf(validated).toEqualTypeOf<{
+        data: { message: string };
+        id?: string;
+        name: "event-1";
+        ts?: number;
+        v?: string;
+      }>();
 
       // @ts-expect-error - Missing data
       let event = et.create({});
