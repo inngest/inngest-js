@@ -58,7 +58,7 @@ describe("eventType", () => {
             ...val,
             nameLength: val.name.length,
           };
-        }),
+        })
       );
 
       const created = et.create({ data: { name: "John" } });
@@ -91,7 +91,7 @@ describe("eventType", () => {
           >();
 
           expectTypeOf(event.data).toEqualTypeOf<Record<string, any>>();
-        },
+        }
       );
     });
   });
@@ -133,12 +133,28 @@ describe("eventType", () => {
 
     test("createFunction", () => {
       const inngest = new Inngest({ id: "app" });
-      inngest.createFunction({ id: "fn" }, et, ({ event }) => {
-        expectTypeOf(event.name).toEqualTypeOf<
-          "event-1" | "inngest/function.invoked"
-        >();
-        expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
-      });
+      inngest.createFunction(
+        {
+          id: "fn",
+
+          // Can use the event type as a cancellation event
+          cancelOn: [et],
+        },
+
+        // Can use the event type as a trigger
+        et,
+        ({ event, step }) => {
+          expectTypeOf(event.name).toEqualTypeOf<
+            "event-1" | "inngest/function.invoked"
+          >();
+          expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
+
+          step.waitForEvent("id", {
+            ...et,
+            timeout: 1000,
+          });
+        }
+      );
     });
 
     test("multiple event types", () => {
@@ -167,13 +183,13 @@ describe("eventType", () => {
               { a: string } | { b: number }
             >();
           }
-        },
+        }
       );
     });
 
     test("withIf", () => {
       const et = eventType("event-1", z.object({ foo: z.string() })).withIf(
-        "event.data.foo == 'bar'",
+        "event.data.foo == 'bar'"
       );
       expect(et.if).toBe("event.data.foo == 'bar'");
       expectTypeOf(et.if).toEqualTypeOf<"event.data.foo == 'bar'">();
@@ -238,7 +254,7 @@ describe("invoke", () => {
       ({ event }) => {
         expectTypeOf(event.name).toEqualTypeOf<"inngest/function.invoked">();
         expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
-      },
+      }
     );
   });
 });
@@ -284,7 +300,7 @@ describe("mixed triggers", () => {
             { name: string } | { age: number }
           >();
         }
-      },
+      }
     );
   });
 
@@ -310,7 +326,7 @@ describe("mixed triggers", () => {
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
         }
-      },
+      }
     );
   });
 
@@ -333,7 +349,7 @@ describe("mixed triggers", () => {
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ b: number }>();
         }
-      },
+      }
     );
   });
 });

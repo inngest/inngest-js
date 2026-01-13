@@ -117,17 +117,20 @@ export class EventType<
     | StandardSchemaV1<Record<string, unknown>, Record<string, unknown>>
     | undefined,
 > {
-  name: TName;
+  /**
+   * The event name. This is the same as the `name` property, but is necessary
+   * to make the event type compatible with other features (e.g. event
+   * triggers).
+   */
+  readonly event: TName;
+
+  readonly name: TName;
   schema: TSchema;
 
   constructor({ name, schema }: { name: TName; schema: TSchema }) {
+    this.event = name;
     this.name = name;
     this.schema = schema;
-  }
-
-  get event() {
-    // The `createFunction` method expects an `event` property instead of `name`
-    return this.name;
   }
 
   /**
