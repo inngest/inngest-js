@@ -18,7 +18,7 @@ yarn create next-app --example https://github.com/inngest/inngest-js/tree/main/e
 pnpm create next-app --example https://github.com/inngest/inngest-js/tree/main/examples/framework-node inngest-node
 ```
 
-Open http://localhost:3000 with your browser to see the result.
+Open <http://localhost:3000> with your browser to see the result.
 
 - [Inngest functions](https://www.inngest.com/docs/functions) are available at `inngest/`.
 - The [Inngest handler](https://www.inngest.com/docs/sdk/serve) is available at `index.ts`.

@@ -1,5 +1,6 @@
 # Built files
 dist
+package/
 
 # Generated version file; always created pre-publish
 src/version.ts

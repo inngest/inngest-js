@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "dev": "tsx index.ts",
+    "dev": "tsc --noEmit && tsx index.ts",
     "start": "node dist/index.js"
   },
   "author": "",
