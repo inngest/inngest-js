@@ -1,4 +1,5 @@
 import { type AiAdapter, models } from "@inngest/ai";
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 import { getAsyncCtx } from "../experimental";
 import { logPrefix } from "../helpers/consts.ts";
@@ -41,6 +42,7 @@ import {
   metadataSymbol,
   UnscopedMetadataBuilder,
 } from "./InngestMetadata.ts";
+import type { EventType } from "./triggers/triggers.ts";
 
 export interface FoundStep extends HashedOp {
   hashedId: string;
@@ -431,10 +433,20 @@ export const createStepTools = <TClient extends Inngest.Any>(
      * returning `null` instead of any event data.
      */
     waitForEvent: createTool<
-      <IncomingEvent extends WithoutInternalStr<string>>(
+      <
+        TOpts extends {
+          event:
+            | string
+            // biome-ignore lint/suspicious/noExplicitAny: Allow any schema
+            | EventType<string, any>;
+          timeout: number | string | Date;
+          // biome-ignore lint/suspicious/noExplicitAny: Allow any schema
+          schema?: StandardSchemaV1<any, any>;
+        } & ExclusiveKeys<{ match?: string; if?: string }, "match", "if">,
+      >(
         idOrOptions: StepOptionsOrId,
-        opts: WaitForEventOpts<Record<string, EventPayload>, IncomingEvent>,
-      ) => Promise<EventPayload | null>
+        opts: TOpts,
+      ) => Promise<WaitForEventResult<TOpts>>
     >(
       (
         { id, name },
@@ -456,11 +468,15 @@ export const createStepTools = <TClient extends Inngest.Any>(
           }
         }
 
+        // Extract event name from string or EventType object
+        const eventName =
+          typeof opts.event === "string" ? opts.event : opts.event.name;
+
         return {
           id,
           mode: StepMode.Async,
           op: StepOpCode.WaitForEvent,
-          name: opts.event,
+          name: eventName,
           opts: matchOpts,
           displayName: name ?? id,
           userland: { id },
@@ -955,70 +971,65 @@ type WaitForSignalOpts = {
 };
 
 /**
- * A set of optional parameters given to a `waitForEvent` call to control how
- * the event is handled.
+ * Computes the return type for `waitForEvent` based on the options provided.
+ *
+ * Handles three cases:
+ * 1. `event: EventType<TName, TSchema>` - extracts name and data from EventType
+ * 2. `event: string` with `schema` - uses string as name and schema for data
+ * 3. `event: string` without schema - uses string as name with untyped data
  */
-type WaitForEventOpts<
-  Events extends Record<string, EventPayload>,
-  IncomingEvent extends keyof Events,
-> = {
-  event: IncomingEvent;
-
-  /**
-   * The step function will wait for the event for a maximum of this time, at
-   * which point the event will be returned as `null` instead of any event data.
-   *
-   * The time to wait can be specified using a `number` of milliseconds, an
-   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
-   * a `Date` object.
-   *
-   * {@link https://npm.im/ms}
-   */
-  timeout: number | string | Date;
-} & ExclusiveKeys<
-  {
-    /**
-     * If provided, the step function will wait for the incoming event to match
-     * particular criteria. If the event does not match, it will be ignored and
-     * the step function will wait for another event.
-     *
-     * It must be a string of a dot-notation field name within both events to
-     * compare, e.g. `"data.id"` or `"user.email"`.
-     *
-     * ```
-     * // Wait for an event where the `user.email` field matches
-     * match: "user.email"
-     * ```
-     *
-     * All of these are helpers for the `if` option, which allows you to specify
-     * a custom condition to check. This can be useful if you need to compare
-     * multiple fields or use a more complex condition.
-     *
-     * See the Inngest expressions docs for more information.
-     *
-     * {@link https://www.inngest.com/docs/functions/expressions}
-     *
-     * @deprecated Use `if` instead.
-     */
-    match?: string;
-
-    /**
-     * If provided, the step function will wait for the incoming event to match
-     * the given condition. If the event does not match, it will be ignored and
-     * the step function will wait for another event.
-     *
-     * The condition is a string of Google's Common Expression Language. For most
-     * simple cases, you might prefer to use `match` instead.
-     *
-     * See the Inngest expressions docs for more information.
-     *
-     * {@link https://www.inngest.com/docs/functions/expressions}
-     */
-    if?: string;
-  },
-  "match",
-  "if"
->;
+type WaitForEventResult<TOpts> =
+  // Case 1: event is an EventType with a schema
+  TOpts extends {
+    event: EventType<
+      infer TName extends string,
+      StandardSchemaV1<
+        // biome-ignore lint/suspicious/noExplicitAny: Need to infer output type
+        any,
+        infer TOutput extends Record<string, unknown>
+      >
+    >;
+  }
+    ? { name: TName; data: TOutput; id: string; ts: number; v?: string } | null
+    : // Case 2: event is an EventType without a schema
+      TOpts extends {
+          event: EventType<infer TName extends string, undefined>;
+        }
+      ? {
+          name: TName;
+          // biome-ignore lint/suspicious/noExplicitAny: fallback for untyped events
+          data: Record<string, any>;
+          id: string;
+          ts: number;
+          v?: string;
+        } | null
+      : // Case 3: event is a string with schema (spread EventType)
+        TOpts extends {
+            event: infer TName extends string;
+            schema: StandardSchemaV1<
+              // biome-ignore lint/suspicious/noExplicitAny: Need to infer output type
+              any,
+              infer TOutput extends Record<string, unknown>
+            >;
+          }
+        ? {
+            name: TName;
+            data: TOutput;
+            id: string;
+            ts: number;
+            v?: string;
+          } | null
+        : // Case 4: event is just a string
+          TOpts extends { event: infer TName extends string }
+          ? {
+              name: TName;
+              // biome-ignore lint/suspicious/noExplicitAny: fallback for untyped events
+              data: Record<string, any>;
+              id: string;
+              ts: number;
+              v?: string;
+            } | null
+          : EventPayload | null;
 
 /**
  * Options for `step.ai.infer()`.

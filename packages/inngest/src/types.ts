@@ -18,6 +18,7 @@ import type {
   InngestMiddleware,
 } from "./components/InngestMiddleware.ts";
 import type { createStepTools } from "./components/InngestStepTools.ts";
+import type { EventType } from "./components/triggers/triggers.ts";
 import type { internalEvents, knownEvents } from "./helpers/consts.ts";
 import type { GoInterval } from "./helpers/promises.ts";
 import type * as Temporal from "./helpers/temporal.ts";
@@ -1070,69 +1071,70 @@ export interface ConcurrencyOption {
  *
  * @public
  */
-export type Cancellation<Events extends Record<string, EventPayload>> = {
-  [K in keyof Events & string]: {
-    /**
-     * The name of the event that should cancel the function run.
-     */
-    event: K;
+export type Cancellation = {
+  /**
+   * The name of the event that should cancel the function run.
+   */
+  event:
+    | string
+    // biome-ignore lint/suspicious/noExplicitAny: Allow any schema
+    | EventType<string, any>;
 
-    /**
-     * The expression that must evaluate to true in order to cancel the function run. There
-     * are two variables available in this expression:
-     * - event, referencing the original function's event trigger
-     * - async, referencing the new cancel event.
-     *
-     * @example
-     *
-     * Ensures the cancel event's data.user_id field matches the triggering event's data.user_id
-     * field:
-     *
-     * ```ts
-     * "async.data.user_id == event.data.user_id"
-     * ```
-     */
-    if?: string;
+  /**
+   * The expression that must evaluate to true in order to cancel the function run. There
+   * are two variables available in this expression:
+   * - event, referencing the original function's event trigger
+   * - async, referencing the new cancel event.
+   *
+   * @example
+   *
+   * Ensures the cancel event's data.user_id field matches the triggering event's data.user_id
+   * field:
+   *
+   * ```ts
+   * "async.data.user_id == event.data.user_id"
+   * ```
+   */
+  if?: string;
 
-    /**
-     * If provided, the step function will wait for the incoming event to match
-     * particular criteria. If the event does not match, it will be ignored and
-     * the step function will wait for another event.
-     *
-     * It must be a string of a dot-notation field name within both events to
-     * compare, e.g. `"data.id"` or `"user.email"`.
-     *
-     * ```
-     * // Wait for an event where the `user.email` field matches
-     * match: "user.email"
-     * ```
-     *
-     * All of these are helpers for the `if` option, which allows you to specify
-     * a custom condition to check. This can be useful if you need to compare
-     * multiple fields or use a more complex condition.
-     *
-     * See the Inngest expressions docs for more information.
-     *
-     * {@link https://www.inngest.com/docs/functions/expressions}
-     *
-     * @deprecated Use `if` instead.
-     */
-    match?: string;
+  /**
+   * If provided, the step function will wait for the incoming event to match
+   * particular criteria. If the event does not match, it will be ignored and
+   * the step function will wait for another event.
+   *
+   * It must be a string of a dot-notation field name within both events to
+   * compare, e.g. `"data.id"` or `"user.email"`.
+   *
+   * ```
+   * // Wait for an event where the `user.email` field matches
+   * match: "user.email"
+   * ```
+   *
+   * All of these are helpers for the `if` option, which allows you to specify
+   * a custom condition to check. This can be useful if you need to compare
+   * multiple fields or use a more complex condition.
+   *
+   * See the Inngest expressions docs for more information.
+   *
+   * {@link https://www.inngest.com/docs/functions/expressions}
+   *
+   * @deprecated Use `if` instead.
+   */
+  match?: string;
 
-    /**
-     * An optional timeout that the cancel is valid for.  If this isn't
-     * specified, cancellation triggers are valid for up to a year or until the
-     * function ends.
-     *
-     * The time to wait can be specified using a `number` of milliseconds, an
-     * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
-     * a `Date` object.
-     *
-     * {@link https://npm.im/ms}
-     */
-    timeout?: number | string | Date;
-  };
-}[keyof Events & string];
+  /**
+   * An optional timeout that the cancel is valid for.  If this isn't
+   * specified, cancellation triggers are valid for up to a year or until the
+   * function ends.
+   *
+   * The time to wait can be specified using a `number` of milliseconds, an
+   * `ms`-compatible time string like `"1 hour"`, `"30 mins"`, or `"2.5d"`, or
+   * a `Date` object.
+   *
+   * {@link https://npm.im/ms}
+   */
+  timeout?: number | string | Date;
+};
 
 /**
  * The response to send to Inngest when pushing function config either directly
@@ -1418,8 +1420,12 @@ export type EventNameFromTrigger<
   ? `${internalEvents.FunctionInvoked}`
   : T extends string // `string` indicates a migration from v2 to v3
     ? T
-    : T extends { event: infer IEvent } // an event trigger
-      ? IEvent
+    : // If the trigger is an event string (e.g. `{ event: "my-event" }`)
+      T extends { event: infer IEvent } // an event trigger
+      ? // If the event is an EventType (e.g. `{ event: eventType("my-event") }`)
+        IEvent extends EventType<infer TName, infer _TSchema>
+        ? TName // Extract name from EventType
+        : IEvent // Use event directly if it's a string
       : T extends { cron: string } // a cron trigger
         ? `${internalEvents.ScheduledTimer}`
         : never;

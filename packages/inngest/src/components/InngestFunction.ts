@@ -214,8 +214,15 @@ export class InngestFunction<
 
     if (cancelOn) {
       fn.cancel = cancelOn.map(({ event, timeout, if: ifStr, match }) => {
+        let eventName: string;
+        if (typeof event === "string") {
+          eventName = event;
+        } else {
+          eventName = event.name;
+        }
+
         const ret: NonNullable<FunctionConfig["cancel"]>[number] = {
-          event,
+          event: eventName,
         };
 
         if (timeout) {
@@ -628,7 +635,7 @@ export namespace InngestFunction {
       mode: "skip" | "cancel";
     };
 
-    cancelOn?: Cancellation<Record<string, EventPayload>>[];
+    cancelOn?: Cancellation[];
 
     /**
      * Specifies the maximum number of retries for all steps across this function.

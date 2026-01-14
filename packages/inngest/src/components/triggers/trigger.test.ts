@@ -84,11 +84,21 @@ describe("eventType without options", () => {
     }>();
   });
 
-  test("createFunction", () => {
+  test("function trigger", () => {
     const inngest = new Inngest({ id: "app" });
 
-    inngest.createFunction({ id: "fn" }, et, () => {});
+    // Without condition
+    inngest.createFunction({ id: "fn" }, et, ({ event }) => {
+      expectTypeOf(event.name).not.toBeAny();
+      expectTypeOf(event.name).toEqualTypeOf<
+        "event-1" | "inngest/function.invoked"
+      >();
 
+      expectTypeOf(event.data).not.toBeAny();
+      expectTypeOf(event.data).toEqualTypeOf<Record<string, any>>();
+    });
+
+    // With condition
     inngest.createFunction(
       { id: "fn2" },
       {
@@ -106,6 +116,48 @@ describe("eventType without options", () => {
         expectTypeOf(event.data).toEqualTypeOf<Record<string, any>>();
       },
     );
+  });
+
+  test("function options", () => {
+    const inngest = new Inngest({ id: "app" });
+
+    // Without condition
+    inngest.createFunction(
+      {
+        id: "fn",
+        cancelOn: [et],
+      },
+      et,
+      () => {},
+    );
+
+    // With condition
+    inngest.createFunction(
+      {
+        id: "fn2",
+        cancelOn: [{ event: et, if: "event.data.foo == 'bar'" }],
+      },
+      [et],
+      () => {},
+    );
+  });
+
+  test("step.waitForEvent", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction({ id: "fn" }, et, async ({ step }) => {
+      const matched = await step.waitForEvent("id", {
+        event: et,
+        timeout: 1000,
+      });
+      expectTypeOf(matched).not.toBeAny();
+      expectTypeOf(matched).toEqualTypeOf<{
+        name: "event-1";
+        data: Record<string, any>;
+        id: string;
+        ts: number;
+        v?: string;
+      } | null>();
+    });
   });
 });
 
@@ -174,32 +226,34 @@ describe("eventType with schema", () => {
     await expect(event.validate()).rejects.toThrowError("message: Required");
   });
 
-  test("createFunction", () => {
+  test("function trigger", () => {
     const inngest = new Inngest({ id: "app" });
-    inngest.createFunction(
-      {
-        id: "fn",
+    inngest.createFunction({ id: "fn" }, et, ({ event }) => {
+      expectTypeOf(event.name).not.toBeAny();
+      expectTypeOf(event.name).toEqualTypeOf<
+        "event-1" | "inngest/function.invoked"
+      >();
+      expectTypeOf(event.data).not.toBeAny();
+      expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
+    });
+  });
 
-        // Can use the event type as a cancellation event
-        cancelOn: [et],
-      },
-
-      // Can use the event type as a trigger
-      et,
-      ({ event, step }) => {
-        expectTypeOf(event.name).not.toBeAny();
-        expectTypeOf(event.name).toEqualTypeOf<
-          "event-1" | "inngest/function.invoked"
-        >();
-        expectTypeOf(event.data).not.toBeAny();
-        expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
-
-        step.waitForEvent("id", {
-          ...et,
-          timeout: 1000,
-        });
-      },
-    );
+  test("step.waitForEvent", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction({ id: "fn" }, et, async ({ step }) => {
+      const matched = await step.waitForEvent("id", {
+        event: et,
+        timeout: 1000,
+      });
+      expectTypeOf(matched).not.toBeAny();
+      expectTypeOf(matched).toEqualTypeOf<{
+        name: "event-1";
+        data: { message: string };
+        id: string;
+        ts: number;
+        v?: string;
+      } | null>();
+    });
   });
 
   test("multiple event types", () => {
