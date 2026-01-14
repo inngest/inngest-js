@@ -119,7 +119,6 @@ export class EventType<
   TSchema extends
     | StandardSchemaV1<Record<string, unknown>, Record<string, unknown>>
     | undefined,
-  TVersion extends string | undefined,
 > {
   /**
    * The event name. This is the same as the `name` property, but is necessary
@@ -130,7 +129,7 @@ export class EventType<
 
   readonly name: TName;
   schema: TSchema;
-  version: TVersion;
+  version?: string;
 
   constructor({
     name,
@@ -139,7 +138,7 @@ export class EventType<
   }: {
     name: TName;
     schema: TSchema;
-    version: TVersion;
+    version?: string;
   }) {
     this.event = name;
     this.name = name;
@@ -254,7 +253,6 @@ export function eventType<
   TSchema extends
     | StandardSchemaV1<Record<string, unknown>, Record<string, unknown>>
     | undefined = undefined,
-  TVersion extends string | undefined = undefined,
 >(
   name: TName,
   {
@@ -262,13 +260,13 @@ export function eventType<
     version,
   }: {
     schema?: TSchema;
-    version?: TVersion;
-  } = {}
-): EventType<TName, TSchema, TVersion> {
-  return new EventType<TName, TSchema, TVersion>({
+    version?: string;
+  } = {},
+): EventType<TName, TSchema> {
+  return new EventType<TName, TSchema>({
     name,
     schema: schema as TSchema,
-    version: version as TVersion,
+    version,
   });
 }
 

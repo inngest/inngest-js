@@ -55,8 +55,7 @@ type HasInvokeTrigger<T extends readonly any[]> = T extends readonly [
  */
 type EventTypeToEvent<TEventType> = TEventType extends EventType<
   infer TName,
-  infer TSchema,
-  any
+  infer TSchema
 >
   ? TSchema extends StandardSchemaV1<
       infer _,
@@ -88,24 +87,43 @@ type PlainEventToReceivedEvent<
 /**
  * Processes a single trigger and converts it to ReceivedEvent(s).
  *
- * @template Trigger - The trigger to process
- * @template SeenCron - Whether we've already seen a cron trigger
+ * @template TTrigger - The trigger to process
+ * @template TSeenCron - Whether we've already seen a cron trigger
  * @returns Tuple of ReceivedEvent(s), or empty array if trigger should be skipped
  */
 type ProcessSingleTrigger<
-  Trigger,
-  SeenCron extends boolean,
-> = Trigger extends EventType<any, any, any>
-  ? [EventTypeToEvent<Trigger>]
-  : Trigger extends { cron: string }
-    ? SeenCron extends true
+  TTrigger,
+  TSeenCron extends boolean,
+> = TTrigger extends EventType<any, any>
+  ? [EventTypeToEvent<TTrigger>]
+  : // Is this a cron trigger?
+    TTrigger extends { cron: string }
+    ? TSeenCron extends true
       ? [] // Skip additional cron triggers (they're merged into one)
       : [ReceivedEvent<CronEventName, {}>]
-    : Trigger extends { event: InvokeEventName; schema?: any }
+    : // Is this an invoke trigger?
+      TTrigger extends { event: InvokeEventName; schema?: any }
       ? [] // Skip invoke triggers (handled separately by ToReceivedEvent)
-      : Trigger extends { event: infer N extends string; schema?: infer S }
-        ? [PlainEventToReceivedEvent<N, S>]
-        : []; // Unknown trigger type, skip it
+      : // Is this an event trigger using an EventType?
+        TTrigger extends {
+            event: EventType<infer TName, infer TSchema>;
+            if?: string;
+          }
+        ? [
+            TSchema extends StandardSchemaV1<
+              any,
+              infer TOutput extends Record<string, unknown>
+            >
+              ? ReceivedEvent<TName, TOutput>
+              : ReceivedEvent<TName, Record<string, any>>,
+          ]
+        : // Is this an event trigger using a string name (i.e. not an EventType)?
+          TTrigger extends {
+              event: infer TName extends string;
+              schema?: infer TSchema;
+            }
+          ? [PlainEventToReceivedEvent<TName, TSchema>]
+          : []; // Unknown trigger type, skip it
 
 /**
  * Recursively processes trigger array, converting to event types while tracking
@@ -186,18 +204,22 @@ type ExtractAllSchemaOutputs<T extends readonly any[]> = T extends readonly [
   infer First,
   ...infer Rest,
 ]
-  ? First extends EventType<string, infer TSchema, any>
+  ? First extends EventType<string, infer TSchema>
     ? TSchema extends StandardSchemaV1<infer _, infer TOutput>
       ? TOutput | ExtractAllSchemaOutputs<Rest>
       : Record<string, any> | ExtractAllSchemaOutputs<Rest>
-    : First extends {
-          event: string;
-          schema: StandardSchemaV1<infer _, infer TOutput>;
-        }
-      ? TOutput | ExtractAllSchemaOutputs<Rest>
-      : First extends { event: string }
-        ? Record<string, any> | ExtractAllSchemaOutputs<Rest>
-        : ExtractAllSchemaOutputs<Rest>
+    : First extends { event: EventType<string, infer TSchema> }
+      ? TSchema extends StandardSchemaV1<infer _, infer TOutput>
+        ? TOutput | ExtractAllSchemaOutputs<Rest>
+        : Record<string, any> | ExtractAllSchemaOutputs<Rest>
+      : First extends {
+            event: string;
+            schema: StandardSchemaV1<infer _, infer TOutput>;
+          }
+        ? TOutput | ExtractAllSchemaOutputs<Rest>
+        : First extends { event: string }
+          ? Record<string, any> | ExtractAllSchemaOutputs<Rest>
+          : ExtractAllSchemaOutputs<Rest>
   : never;
 
 /**

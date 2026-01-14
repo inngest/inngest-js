@@ -94,4 +94,22 @@ describe("ToReceivedEvent", () => {
       [ReceivedEvent<"inngest/function.invoked", { a: string } | { b: number }>]
     >();
   });
+
+  test("with condition", () => {
+    const triggers = [
+      {
+        event: eventType("event-1", { schema: z.object({ a: z.string() }) }),
+        if: "event.data.a == 'bar'",
+      },
+    ] as const;
+
+    type ReceivedEvents = ToReceivedEvent<typeof triggers>;
+    expectTypeOf<ReceivedEvents>().not.toBeAny();
+    expectTypeOf<ReceivedEvents>().toExtend<
+      [
+        ReceivedEvent<"event-1", { a: string }>,
+        ReceivedEvent<"inngest/function.invoked", { a: string }>,
+      ]
+    >();
+  });
 });
