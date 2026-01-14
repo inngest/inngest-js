@@ -6,10 +6,12 @@ import { cron, eventType, invoke } from "./triggers.ts";
 describe("ToReceivedEvent", () => {
   test("single event", () => {
     const triggers = [
-      eventType("event-1", z.object({ a: z.string() })),
+      eventType("event-1").withSchema(z.object({ a: z.string() })),
     ] as const;
 
-    expectTypeOf<ToReceivedEvent<typeof triggers>>().toEqualTypeOf<
+    type ReceivedEvents = ToReceivedEvent<typeof triggers>;
+    expectTypeOf<ReceivedEvents>().not.toBeAny();
+    expectTypeOf<ReceivedEvents>().toExtend<
       [
         ReceivedEvent<"event-1", { a: string }>,
         ReceivedEvent<"inngest/function.invoked", { a: string }>,
@@ -20,7 +22,9 @@ describe("ToReceivedEvent", () => {
   test("single cron trigger", () => {
     const triggers = [cron("* * * * *")] as const;
 
-    expectTypeOf<ToReceivedEvent<typeof triggers>>().toEqualTypeOf<
+    type ReceivedEvents = ToReceivedEvent<typeof triggers>;
+    expectTypeOf<ReceivedEvents>().not.toBeAny();
+    expectTypeOf<ReceivedEvents>().toExtend<
       [
         ReceivedEvent<"inngest/scheduled.timer", {}>,
         ReceivedEvent<"inngest/function.invoked", {}>,
@@ -33,7 +37,9 @@ describe("ToReceivedEvent", () => {
 
     const triggers = [cron("* * * * *"), cron("0 0 * * *")] as const;
 
-    expectTypeOf<ToReceivedEvent<typeof triggers>>().toEqualTypeOf<
+    type ReceivedEvents = ToReceivedEvent<typeof triggers>;
+    expectTypeOf<ReceivedEvents>().not.toBeAny();
+    expectTypeOf<ReceivedEvents>().toExtend<
       [
         ReceivedEvent<"inngest/scheduled.timer", {}>,
         ReceivedEvent<"inngest/function.invoked", {}>,
@@ -43,13 +49,15 @@ describe("ToReceivedEvent", () => {
 
   test("multiple event and cron triggers", () => {
     const triggers = [
-      eventType("event-1", z.object({ a: z.string() })),
+      eventType("event-1").withSchema(z.object({ a: z.string() })),
       cron("* * * * *"),
       cron("0 0 * * *"),
-      eventType("event-2", z.object({ b: z.number() })),
+      eventType("event-2").withSchema(z.object({ b: z.number() })),
     ] as const;
 
-    expectTypeOf<ToReceivedEvent<typeof triggers>>().toEqualTypeOf<
+    type ReceivedEvents = ToReceivedEvent<typeof triggers>;
+    expectTypeOf<ReceivedEvents>().not.toBeAny();
+    expectTypeOf<ReceivedEvents>().toExtend<
       [
         ReceivedEvent<"event-1", { a: string }>,
         ReceivedEvent<"inngest/scheduled.timer", {}>,
@@ -65,7 +73,9 @@ describe("ToReceivedEvent", () => {
   test("single invoke trigger", () => {
     const triggers = [invoke(z.object({ a: z.string() }))] as const;
 
-    expectTypeOf<ToReceivedEvent<typeof triggers>>().toEqualTypeOf<
+    type ReceivedEvents = ToReceivedEvent<typeof triggers>;
+    expectTypeOf<ReceivedEvents>().not.toBeAny();
+    expectTypeOf<ReceivedEvents>().toEqualTypeOf<
       [ReceivedEvent<"inngest/function.invoked", { a: string }>]
     >();
   });
@@ -78,7 +88,9 @@ describe("ToReceivedEvent", () => {
       invoke(z.object({ b: z.number() })),
     ] as const;
 
-    expectTypeOf<ToReceivedEvent<typeof triggers>>().toEqualTypeOf<
+    type ReceivedEvents = ToReceivedEvent<typeof triggers>;
+    expectTypeOf<ReceivedEvents>().not.toBeAny();
+    expectTypeOf<ReceivedEvents>().toEqualTypeOf<
       [ReceivedEvent<"inngest/function.invoked", { a: string } | { b: number }>]
     >();
   });

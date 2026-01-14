@@ -55,7 +55,8 @@ type HasInvokeTrigger<T extends readonly any[]> = T extends readonly [
  */
 type EventTypeToEvent<TEventType> = TEventType extends EventType<
   infer TName,
-  infer TSchema
+  infer TSchema,
+  any
 >
   ? TSchema extends StandardSchemaV1<
       infer _,
@@ -94,7 +95,7 @@ type PlainEventToReceivedEvent<
 type ProcessSingleTrigger<
   Trigger,
   SeenCron extends boolean,
-> = Trigger extends EventType<any, any>
+> = Trigger extends EventType<any, any, any>
   ? [EventTypeToEvent<Trigger>]
   : Trigger extends { cron: string }
     ? SeenCron extends true
@@ -185,7 +186,7 @@ type ExtractAllSchemaOutputs<T extends readonly any[]> = T extends readonly [
   infer First,
   ...infer Rest,
 ]
-  ? First extends EventType<string, infer TSchema>
+  ? First extends EventType<string, infer TSchema, any>
     ? TSchema extends StandardSchemaV1<infer _, infer TOutput>
       ? TOutput | ExtractAllSchemaOutputs<Rest>
       : Record<string, any> | ExtractAllSchemaOutputs<Rest>

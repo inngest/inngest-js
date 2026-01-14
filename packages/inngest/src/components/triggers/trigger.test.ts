@@ -10,15 +10,19 @@ describe("cron", () => {
   test("return", () => {
     const c = cron("* * * * *");
     expect(c.cron).toBe("* * * * *");
+    expectTypeOf(c.cron).not.toBeAny();
     expectTypeOf(c.cron).toEqualTypeOf<"* * * * *">();
   });
 
   test("createFunction", () => {
     const inngest = new Inngest({ id: "app" });
     inngest.createFunction({ id: "fn" }, cron("* * * * *"), ({ event }) => {
+      expectTypeOf(event.name).not.toBeAny();
       expectTypeOf(event.name).toEqualTypeOf<
         "inngest/scheduled.timer" | "inngest/function.invoked"
       >();
+
+      expectTypeOf(event.data).not.toBeAny();
       expectTypeOf(event.data).toEqualTypeOf<{}>();
     });
   });
@@ -85,10 +89,12 @@ describe("eventType", () => {
         { id: "fn2" },
         et.withIf("event.data.foo == 'bar'"),
         ({ event }) => {
+          expectTypeOf(event.name).not.toBeAny();
           expectTypeOf(event.name).toEqualTypeOf<
             "event-1" | "inngest/function.invoked"
           >();
 
+          expectTypeOf(event.data).not.toBeAny();
           expectTypeOf(event.data).toEqualTypeOf<Record<string, any>>();
         },
       );
