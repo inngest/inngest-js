@@ -34,12 +34,15 @@ describe("eventType", () => {
 
     test("return", () => {
       expect(et.event).toBe("event-1");
+      expectTypeOf(et.event).not.toBeAny();
       expectTypeOf(et.event).toEqualTypeOf<"event-1">();
 
       expect(et.name).toBe("event-1");
+      expectTypeOf(et.name).not.toBeAny();
       expectTypeOf(et.name).toEqualTypeOf<"event-1">();
 
       expect(et.schema).toBeUndefined();
+      expectTypeOf(et.schema).not.toBeAny();
       expectTypeOf(et.schema).toEqualTypeOf<undefined>();
     });
 
@@ -55,25 +58,27 @@ describe("eventType", () => {
     });
 
     test("create with transform", async () => {
-      const et = eventType("event-1").withSchema(
-        z.object({ name: z.string() }).transform((val) => {
+      const et = eventType("event-1", {
+        schema: z.object({ name: z.string() }).transform((val) => {
           return {
             ...val,
             nameLength: val.name.length,
           };
         }),
-      );
+      });
 
       const created = et.create({ data: { name: "John" } });
 
       // Note that the data is pre-transform
       expect(created.data).toEqual({ name: "John" });
+      expectTypeOf(created.data).not.toBeAny();
       expectTypeOf(created.data).toEqualTypeOf<{ name: string }>();
 
       const validated = await created.validate();
 
       // Note that the data is post-transform
       expect(validated.data).toEqual({ name: "John", nameLength: 4 });
+      expectTypeOf(validated.data).not.toBeAny();
       expectTypeOf(validated.data).toEqualTypeOf<{
         name: string;
         nameLength: number;
@@ -96,21 +101,23 @@ describe("eventType", () => {
 
           expectTypeOf(event.data).not.toBeAny();
           expectTypeOf(event.data).toEqualTypeOf<Record<string, any>>();
-        },
+        }
       );
     });
   });
 
   describe("with schema", () => {
-    const et = eventType("event-1").withSchema(
-      z.object({ message: z.string() }),
-    );
+    const et = eventType("event-1", {
+      schema: z.object({ message: z.string() }),
+    });
 
     test("return", () => {
       expect(et.event).toBe("event-1");
+      expectTypeOf(et.event).not.toBeAny();
       expectTypeOf(et.event).toEqualTypeOf<"event-1">();
 
       expect(et.name).toBe("event-1");
+      expectTypeOf(et.name).not.toBeAny();
       expectTypeOf(et.name).toEqualTypeOf<"event-1">();
 
       expect(et.schema).toBeDefined();
@@ -133,15 +140,20 @@ describe("eventType", () => {
         v: "1.0.0",
       });
       expect(created2.data).toEqual({ message: "hello" });
+      expectTypeOf(created2.data).not.toBeAny();
       expectTypeOf(created2.data).toEqualTypeOf<{ message: string }>();
       expect(created2.id).toBe("123");
+      expectTypeOf(created2.id).not.toBeAny();
       expectTypeOf(created2.id).toEqualTypeOf<string | undefined>();
       expect(created2.ts).toBe(1715769600);
+      expectTypeOf(created2.ts).not.toBeAny();
       expectTypeOf(created2.ts).toEqualTypeOf<number | undefined>();
       expect(created2.v).toBe("1.0.0");
+      expectTypeOf(created2.v).not.toBeAny();
       expectTypeOf(created2.v).toEqualTypeOf<string | undefined>();
 
       const validated = await created2.validate();
+      expectTypeOf(validated).not.toBeAny();
       expectTypeOf(validated).toEqualTypeOf<{
         data: { message: string };
         id?: string;
@@ -172,16 +184,18 @@ describe("eventType", () => {
         // Can use the event type as a trigger
         et,
         ({ event, step }) => {
+          expectTypeOf(event.name).not.toBeAny();
           expectTypeOf(event.name).toEqualTypeOf<
             "event-1" | "inngest/function.invoked"
           >();
+          expectTypeOf(event.data).not.toBeAny();
           expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
 
           step.waitForEvent("id", {
             ...et,
             timeout: 1000,
           });
-        },
+        }
       );
     });
 
@@ -190,18 +204,21 @@ describe("eventType", () => {
       inngest.createFunction(
         { id: "fn" },
         [
-          eventType("event-1").withSchema(z.object({ a: z.string() })),
-          eventType("event-2").withSchema(z.object({ b: z.number() })),
+          eventType("event-1", { schema: z.object({ a: z.string() }) }),
+          eventType("event-2", { schema: z.object({ b: z.number() }) }),
         ] as const,
         ({ event }) => {
+          expectTypeOf(event.name).not.toBeAny();
           expectTypeOf(event.name).toEqualTypeOf<
             "event-1" | "event-2" | "inngest/function.invoked"
           >();
 
+          expectTypeOf(event.data).not.toBeAny();
           expectTypeOf(event.data).toEqualTypeOf<
             { a: string } | { b: number }
           >();
 
+          expectTypeOf(event.data).not.toBeAny();
           if (event.name === "event-1") {
             expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
           } else if (event.name === "event-2") {
@@ -211,22 +228,26 @@ describe("eventType", () => {
               { a: string } | { b: number }
             >();
           }
-        },
+        }
       );
     });
 
     test("withIf", () => {
-      const et = eventType("event-1")
-        .withSchema(z.object({ foo: z.string() }))
-        .withIf("event.data.foo == 'bar'");
+      const et = eventType("event-1", {
+        schema: z.object({ foo: z.string() }),
+      }).withIf("event.data.foo == 'bar'");
       expect(et.if).toBe("event.data.foo == 'bar'");
+      expectTypeOf(et.if).not.toBeAny();
       expectTypeOf(et.if).toEqualTypeOf<"event.data.foo == 'bar'">();
 
       const inngest = new Inngest({ id: "app" });
       inngest.createFunction({ id: "fn" }, et, ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<
           "event-1" | "inngest/function.invoked"
         >();
+
+        expectTypeOf(event.data).not.toBeAny();
         expectTypeOf(event.data).toEqualTypeOf<{ foo: string }>();
       });
     });
@@ -241,7 +262,7 @@ describe("eventType", () => {
         };
       });
 
-      const et = eventType("event-1").withSchema(schema);
+      const et = eventType("event-1", { schema });
       et.create({ data: { message: "hello" } });
       et.create({
         data: { message: "hello" },
@@ -252,10 +273,12 @@ describe("eventType", () => {
 
       const inngest = new Inngest({ id: "app" });
       inngest.createFunction({ id: "fn" }, et, ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<
           "event-1" | "inngest/function.invoked"
         >();
-        event.data;
+
+        expectTypeOf(event.data).not.toBeAny();
         expectTypeOf(event.data).toEqualTypeOf<{ messageLength: number }>();
       });
     });
@@ -263,23 +286,30 @@ describe("eventType", () => {
 
   test("withVersion", () => {
     // Can set the event type version
-    const et = eventType("event-1").withVersion("1.0.0");
+    const et = eventType("event-1", { version: "1.0.0" });
     expect(et.version).toBe("1.0.0");
+    expectTypeOf(et.version).not.toBeAny();
     expectTypeOf(et.version).toEqualTypeOf<"1.0.0">();
 
     // Defaults to event type version
     const created = et.create({});
     expect(created.v).toBe("1.0.0");
+    expectTypeOf(created.v).not.toBeAny();
     expectTypeOf(created.v).toEqualTypeOf<string | undefined>();
 
     // Can override the version
     const createdWithVersion = et.create({ v: "2.0.0" });
     expect(createdWithVersion.v).toBe("2.0.0");
+    expectTypeOf(createdWithVersion.v).not.toBeAny();
     expectTypeOf(createdWithVersion.v).toEqualTypeOf<string | undefined>();
 
     // withSchema retains the version
-    const etWithSchema = et.withSchema(z.object({ message: z.string() }));
+    const etWithSchema = eventType("event-1", {
+      schema: z.object({ message: z.string() }),
+      version: "1.0.0",
+    });
     expect(etWithSchema.version).toBe("1.0.0");
+    expectTypeOf(etWithSchema.version).not.toBeAny()
     expectTypeOf(etWithSchema.version).toEqualTypeOf<"1.0.0">();
   });
 });
@@ -288,9 +318,11 @@ describe("invoke", () => {
   test("return", () => {
     const inv = invoke(z.object({ message: z.string() }));
     expect(inv.event).toBe("inngest/function.invoked");
+    expectTypeOf(inv.event).not.toBeAny();
     expectTypeOf(inv.event).toEqualTypeOf<"inngest/function.invoked">();
 
     expect(inv.schema).toBeDefined();
+    expectTypeOf(inv.schema).not.toBeAny();
     expectTypeOf(inv.schema).toEqualTypeOf<
       StandardSchemaV1<{ message: string }>
     >();
@@ -302,9 +334,12 @@ describe("invoke", () => {
       { id: "fn" },
       invoke(z.object({ message: z.string() })),
       ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<"inngest/function.invoked">();
+
+        expectTypeOf(event.data).not.toBeAny();
         expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
-      },
+      }
     );
   });
 });
@@ -315,14 +350,15 @@ describe("mixed triggers", () => {
     inngest.createFunction(
       { id: "fn" },
       [
-        eventType("event-1").withSchema(z.object({ a: z.string() })),
+        eventType("event-1", { schema: z.object({ a: z.string() }) }),
         cron("* * * * *"),
         invoke(z.object({ name: z.string() })),
-        eventType("event-2").withSchema(z.object({ b: z.number() })),
+        eventType("event-2", { schema: z.object({ b: z.number() }) }),
         cron("0 0 * * *"),
         invoke(z.object({ age: z.number() })),
       ] as const,
       ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<
           | "event-1"
           | "event-2"
@@ -330,6 +366,7 @@ describe("mixed triggers", () => {
           | "inngest/function.invoked"
         >();
 
+        expectTypeOf(event.data).not.toBeAny();
         expectTypeOf(event.data).toEqualTypeOf<
           | { a: string }
           | { b: number }
@@ -350,7 +387,7 @@ describe("mixed triggers", () => {
             { name: string } | { age: number }
           >();
         }
-      },
+      }
     );
   });
 
@@ -366,6 +403,7 @@ describe("mixed triggers", () => {
         expectTypeOf(event.name).toEqualTypeOf<
           "event-1" | "inngest/scheduled.timer" | "inngest/function.invoked"
         >();
+        expectTypeOf(event.data).not.toBeAny();
         expectTypeOf(event.data).toEqualTypeOf<{ a: string } | {}>();
 
         // Can type narrow the data type based on the event name
@@ -376,7 +414,7 @@ describe("mixed triggers", () => {
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ a: string }>();
         }
-      },
+      }
     );
   });
 
@@ -385,13 +423,16 @@ describe("mixed triggers", () => {
     inngest.createFunction(
       { id: "fn" },
       [
-        eventType("event-1").withSchema(z.object({ a: z.string() })),
+        eventType("event-1", { schema: z.object({ a: z.string() }) }),
         invoke(z.object({ b: z.number() })),
       ] as const,
       ({ event }) => {
+        expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<
           "event-1" | "inngest/function.invoked"
         >();
+
+        expectTypeOf(event.data).not.toBeAny();
         expectTypeOf(event.data).toEqualTypeOf<{ a: string } | { b: number }>();
 
         if (event.name === "event-1") {
@@ -399,7 +440,7 @@ describe("mixed triggers", () => {
         } else if (event.name === "inngest/function.invoked") {
           expectTypeOf(event.data).toEqualTypeOf<{ b: number }>();
         }
-      },
+      }
     );
   });
 });

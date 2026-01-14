@@ -234,35 +234,6 @@ export class EventType<
       schema: this.schema,
     };
   }
-
-  /**
-   * Add a schema to the event type.
-   *
-   * @param schema - StandardSchema for type-safe event data validation
-   * @returns New event type with schema applied
-   */
-  withSchema<
-    TSchema extends StandardSchemaV1<
-      Record<string, unknown>,
-      Record<string, unknown>
-    >,
-  >(schema: TSchema): EventType<TName, TSchema, TVersion> {
-    return new EventType({
-      name: this.name,
-      schema,
-      version: this.version,
-    });
-  }
-
-  withVersion<TVersion extends string>(
-    version: TVersion,
-  ): EventType<TName, TSchema, TVersion> {
-    return new EventType({
-      name: this.name,
-      schema: this.schema,
-      version,
-    });
-  }
 }
 
 /**
@@ -273,12 +244,32 @@ export class EventType<
  * EventType instance that provides type safety and optional runtime validation.
  *
  * @param name - The event name (e.g., "user.created")
+ * @param options - Optional options for the event type
+ * @param options.schema - Optional StandardSchema for type-safe event data validation
+ * @param options.version - Optional version of the event
  * @returns EventType instance that can be used as a trigger or for creating events
  */
-export function eventType<TName extends string>(
+export function eventType<
+  TName extends string,
+  TSchema extends
+    | StandardSchemaV1<Record<string, unknown>, Record<string, unknown>>
+    | undefined = undefined,
+  TVersion extends string | undefined = undefined,
+>(
   name: TName,
-): EventType<TName, undefined, undefined> {
-  return new EventType({ name, schema: undefined, version: undefined });
+  {
+    schema,
+    version,
+  }: {
+    schema?: TSchema;
+    version?: TVersion;
+  } = {}
+): EventType<TName, TSchema, TVersion> {
+  return new EventType<TName, TSchema, TVersion>({
+    name,
+    schema: schema as TSchema,
+    version: version as TVersion,
+  });
 }
 
 /**

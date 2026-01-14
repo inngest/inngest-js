@@ -6,7 +6,7 @@ import { cron, eventType, invoke } from "./triggers.ts";
 describe("ToReceivedEvent", () => {
   test("single event", () => {
     const triggers = [
-      eventType("event-1").withSchema(z.object({ a: z.string() })),
+      eventType("event-1", { schema: z.object({ a: z.string() }) }),
     ] as const;
 
     type ReceivedEvents = ToReceivedEvent<typeof triggers>;
@@ -49,10 +49,10 @@ describe("ToReceivedEvent", () => {
 
   test("multiple event and cron triggers", () => {
     const triggers = [
-      eventType("event-1").withSchema(z.object({ a: z.string() })),
+      eventType("event-1", { schema: z.object({ a: z.string() }) }),
       cron("* * * * *"),
       cron("0 0 * * *"),
-      eventType("event-2").withSchema(z.object({ b: z.number() })),
+      eventType("event-2", { schema: z.object({ b: z.number() }) }),
     ] as const;
 
     type ReceivedEvents = ToReceivedEvent<typeof triggers>;
