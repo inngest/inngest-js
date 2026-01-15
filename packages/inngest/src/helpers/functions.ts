@@ -11,7 +11,7 @@ import type { Await } from "./types.ts";
  * Wraps a function with a cache. When the returned function is run, it will
  * cache the result and return it on subsequent calls.
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export const cacheFn = <T extends (...args: any[]) => any>(fn: T): T => {
   const key = "value";
   const cache = new Map<typeof key, unknown>();
@@ -36,7 +36,7 @@ export const cacheFn = <T extends (...args: any[]) => any>(fn: T): T => {
  * Because this needs to support both sync and async functions, it only allows
  * functions that accept a single argument.
  */
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 export const waterfall = <TFns extends ((arg?: any) => any)[]>(
   fns: TFns,
 
@@ -46,7 +46,7 @@ export const waterfall = <TFns extends ((arg?: any) => any)[]>(
    *
    * Will not be called on the final function.
    */
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   transform?: (prev: any, output: any) => any,
 ): ((...args: Parameters<TFns[number]>) => Promise<Await<TFns[number]>>) => {
   return (...args) => {

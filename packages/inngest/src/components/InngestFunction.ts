@@ -329,15 +329,15 @@ export namespace InngestFunction {
    * inference.
    */
   export type Any = InngestFunction<
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     any,
     Handler.Any,
     Handler.Any,
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     any,
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     any,
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     any
   >;
 
@@ -361,7 +361,7 @@ export namespace InngestFunction {
   >;
 
   export type GetOptions<T extends InngestFunction.Any> =
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     T extends InngestFunction<infer O, any, any, any, any, any> ? O : never;
 
   /**

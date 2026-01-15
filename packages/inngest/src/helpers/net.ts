@@ -53,7 +53,7 @@ export function signDataWithKey(
   const encoded = typeof data === "string" ? data : canonicalize(data);
   // Remove the `/signkey-[test|prod]-/` prefix from our signing key to calculate the HMAC.
   const key = signingKey.replace(/signkey-\w+-/, "");
-  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  // biome-ignore lint/suspicious/noExplicitAny: intentional
   const mac = hmac(sha256 as any, key)
     .update(encoded)
     .update(ts)

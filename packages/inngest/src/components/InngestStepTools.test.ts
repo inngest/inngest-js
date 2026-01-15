@@ -784,7 +784,7 @@ describe("sendEvent", () => {
   describe("types", () => {
     describe("no custom types", () => {
       const sendEvent: ReturnType<typeof createStepTools>["sendEvent"] =
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
         (() => undefined) as any;
 
       test("allows sending a single event with a string", () => {
@@ -824,7 +824,7 @@ describe("sendEvent", () => {
 
       const sendEvent: ReturnType<
         typeof createStepTools<Client>
-        // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+        // biome-ignore lint/suspicious/noExplicitAny: intentional
       >["sendEvent"] = (() => undefined) as any;
 
       test("disallows sending a single unknown event with a string", () => {
@@ -1066,7 +1066,7 @@ describe("invoke", () => {
       typeof createStepTools<typeof client>
     >["invoke"];
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     type GetTestReturn<T extends () => InvocationResult<any>> = Awaited<
       ReturnType<T>
     >;

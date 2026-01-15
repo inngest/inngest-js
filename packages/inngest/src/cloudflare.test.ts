@@ -20,7 +20,7 @@ testFramework("Cloudflare", CloudflareHandler, {
        * `process.stderr`, we do need to provide some pieces of this, but we can
        * still remove any env vars.
        */
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       process.env = undefined as any;
 
       Object.defineProperties(globalThis, {
@@ -44,14 +44,14 @@ testFramework("Cloudflare", CloudflareHandler, {
   },
   transformReq: (req, _res, env) => {
     const headers = new Headers();
-    // biome-ignore lint/complexity/noForEach: <explanation>
+    // biome-ignore lint/complexity/noForEach: intentional
     Object.entries(req.headers).forEach(([k, v]) => {
       headers.set(k, v as string);
     });
 
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     (req as any).headers = headers;
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+    // biome-ignore lint/suspicious/noExplicitAny: intentional
     (req as any).json = () => Promise.resolve(req.body);
 
     return [

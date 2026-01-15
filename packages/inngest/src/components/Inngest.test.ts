@@ -56,7 +56,7 @@ describe("new Inngest()", () => {
       const inngest = new Inngest({ id: "test", ...opts });
 
       if (env) {
-        // biome-ignore lint/complexity/noForEach: <explanation>
+        // biome-ignore lint/complexity/noForEach: intentional
         Object.keys(ogKeys).forEach((key) => {
           process.env[key] = ogKeys[key];
         });
@@ -432,7 +432,7 @@ describe("send", () => {
       expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
       expect(mockedFetch.mock.calls[1]).toHaveLength(2);
       expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       const body: Array<Record<string, any>> = JSON.parse(
         mockedFetch.mock.calls[1]?.[1]?.body as string,
       );
@@ -463,7 +463,7 @@ describe("send", () => {
       expect(mockedFetch).toHaveBeenCalledTimes(2); // 2nd for dev server check
       expect(mockedFetch.mock.calls[1]).toHaveLength(2);
       expect(typeof mockedFetch.mock.calls[1]?.[1]?.body).toBe("string");
-      // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      // biome-ignore lint/suspicious/noExplicitAny: intentional
       const body: Array<Record<string, any>> = JSON.parse(
         mockedFetch.mock.calls[1]?.[1]?.body as string,
       );

@@ -69,7 +69,7 @@ describe("#parseFnData", () => {
     },
   ];
 
-  // biome-ignore lint/complexity/noForEach: <explanation>
+  // biome-ignore lint/complexity/noForEach: intentional
   specs.forEach((test) => {
     it(test.name, () => {
       if (test.isOk) {

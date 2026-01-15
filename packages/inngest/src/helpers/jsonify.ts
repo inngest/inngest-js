@@ -21,7 +21,7 @@ import type {
 } from "./types.ts";
 
 // Note: The return value has to be `any` and not `unknown` so it can match `void`.
-// biome-ignore lint/suspicious/noExplicitAny: <explanation>
+// biome-ignore lint/suspicious/noExplicitAny: intentional
 type NotJsonable = ((...arguments_: any[]) => any) | undefined | symbol;
 
 type NeverToNull<T> = IsNever<T> extends true ? null : T;
@@ -154,7 +154,7 @@ type BaseKeyFilter<Type, Key extends keyof Type> = Key extends symbol
   */
       { name: string } extends Type[Key]
       ? Key
-      : // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+      : // biome-ignore lint/suspicious/noExplicitAny: intentional
         [(...arguments_: any[]) => any] extends [Type[Key]]
         ? never
         : Key;
@@ -276,7 +276,7 @@ const timeJson = JSON.parse(JSON.stringify(time)) as Jsonify<typeof time>;
 {@link https://github.com/Microsoft/TypeScript/issues/1897#issuecomment-710744173}
 */
 export type Jsonify<T> = IsAny<T> extends true
-  ? // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  ? // biome-ignore lint/suspicious/noExplicitAny: intentional
     any
   : IsUnknown<T> extends true
     ? unknown
@@ -296,7 +296,7 @@ export type Jsonify<T> = IsAny<T> extends true
               ? string
               : T extends boolean
                 ? boolean
-                : // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+                : // biome-ignore lint/suspicious/noExplicitAny: intentional
                   T extends Map<any, any> | Set<any>
                   ? EmptyObject
                   : T extends TypedArray
