@@ -96,9 +96,16 @@ const fnDataVersionSchema = z.object({
         };
       }
 
+      if (v === -1) {
+        return {
+          sdkDecided: true,
+          version: PREFERRED_EXECUTION_VERSION,
+        };
+      }
+
       return {
         sdkDecided: false,
-        version: v === -1 ? PREFERRED_EXECUTION_VERSION : v,
+        version: v,
       };
     }),
 });
