@@ -1543,13 +1543,30 @@ export type TriggerEventFromFunction<
     : MinimalEventPayload;
 
 /**
- * Extracts the input type from trigger schemas.
+ * Extracts the input type from invoke trigger schemas only.
  * For `step.invoke`, we need the schema INPUT type (what the caller provides),
  * not the output type (what the function receives after transformation).
  *
- * Handles both:
- * - `invoke(schema)` triggers: `{ event: "inngest/function.invoked"; schema }`
- * - `eventType("evt", { schema })` triggers: `EventType<TName, TSchema>`
+ * Only extracts from `invoke(schema)` triggers (event: "inngest/function.invoked").
+ * Returns a union of all invoke trigger input types.
+ *
+ * @internal
+ */
+type ExtractInvokeSchemaInput<T extends readonly unknown[]> =
+  T extends readonly [infer First, ...infer Rest]
+    ? First extends {
+        event: "inngest/function.invoked";
+        schema: infer TSchema;
+      }
+      ? TSchema extends StandardSchemaV1<infer TInput, infer _>
+        ? TInput | ExtractInvokeSchemaInput<Rest>
+        : ExtractInvokeSchemaInput<Rest>
+      : ExtractInvokeSchemaInput<Rest>
+    : never;
+
+/**
+ * Extracts the input type from any trigger with a schema.
+ * Used as a fallback when no invoke triggers exist.
  *
  * @internal
  */
@@ -1563,11 +1580,23 @@ type ExtractTriggerSchemaInput<T extends readonly unknown[]> =
     : never;
 
 /**
- * Checks if a trigger array contains a trigger with a schema.
+ * Checks if a trigger array contains an invoke trigger with a schema.
  *
- * Handles both:
- * - `invoke(schema)` triggers
- * - `eventType("evt", { schema })` triggers
+ * @internal
+ */
+type HasInvokeTriggerWithSchema<T extends readonly unknown[]> =
+  T extends readonly [infer First, ...infer Rest]
+    ? First extends {
+        event: "inngest/function.invoked";
+        // biome-ignore lint/suspicious/noExplicitAny: Need any to match any StandardSchemaV1
+        schema: StandardSchemaV1<any, any>;
+      }
+      ? true
+      : HasInvokeTriggerWithSchema<Rest>
+    : false;
+
+/**
+ * Checks if a trigger array contains any trigger with a schema.
  *
  * @internal
  */
@@ -1614,28 +1643,32 @@ export type PayloadForAnyInngestFunction<
     keyof EventsFromFunction<TFunction> & string
   >[]
 >
-  ? // First check: Does this function have a trigger with a schema?
-    HasTriggerWithSchema<ITriggers> extends true
-    ? // If so, use the schema's input type for the data property
-      { data: ExtractTriggerSchemaInput<ITriggers> }
-    : // Otherwise, fall back to existing behavior
-      IsEqual<
-          EventsFromFunction<TFunction>[EventNameFromTrigger<
-            EventsFromFunction<TFunction>,
-            ITriggers[number]
-          >]["name"],
-          `${internalEvents.ScheduledTimer}`
-        > extends true
-      ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
-      : Simplify<
-          Omit<
+  ? // First check: Does this function have an invoke trigger with a schema?
+    // If so, only invoke schemas should be used (not eventType schemas)
+    HasInvokeTriggerWithSchema<ITriggers> extends true
+    ? { data: ExtractInvokeSchemaInput<ITriggers> }
+    : // Second check: Does this function have any trigger with a schema?
+      HasTriggerWithSchema<ITriggers> extends true
+      ? // If so, use the schema's input type for the data property
+        { data: ExtractTriggerSchemaInput<ITriggers> }
+      : // Otherwise, fall back to existing behavior
+        IsEqual<
             EventsFromFunction<TFunction>[EventNameFromTrigger<
               EventsFromFunction<TFunction>,
               ITriggers[number]
-            >],
-            "name" | "ts"
+            >]["name"],
+            `${internalEvents.ScheduledTimer}`
+          > extends true
+        ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
+        : Simplify<
+            Omit<
+              EventsFromFunction<TFunction>[EventNameFromTrigger<
+                EventsFromFunction<TFunction>,
+                ITriggers[number]
+              >],
+              "name" | "ts"
+            >
           >
-        >
   : never;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;

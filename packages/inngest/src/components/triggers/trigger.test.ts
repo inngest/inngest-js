@@ -539,6 +539,30 @@ describe("mixed triggers", () => {
         }
       },
     );
+
+    inngest.createFunction({ id: "fn" }, [], async ({step}) => {
+      await step.invoke("invoke", {
+        function: fn,
+
+        // @ts-expect-error - Can't invoke using event schema
+        data: { a: "hello" },
+      });
+
+      // @ts-expect-error - Missing data
+      await step.invoke("invoke", {
+        function: fn,
+      });
+
+      await step.invoke("invoke", {
+        function: fn,
+        data: { name: "Alice" },
+      });
+
+      await step.invoke("invoke", {
+        function: fn,
+        data: { age: 10 },
+      });
+    });
   });
 
   test("object literals instead of trigger creation functions", () => {
