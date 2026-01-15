@@ -84,16 +84,22 @@ const fnDataVersionSchema = z.object({
     .or(z.literal(1))
     .or(z.literal(2))
     .optional()
-    .transform<ExecutionVersion>((v) => {
+    .transform<{ version: ExecutionVersion; sdkDecided: boolean }>((v) => {
       if (typeof v === "undefined") {
         console.debug(
           `No request version specified by executor; defaulting to v${PREFERRED_EXECUTION_VERSION}`,
         );
 
-        return PREFERRED_EXECUTION_VERSION;
+        return {
+          sdkDecided: true,
+          version: PREFERRED_EXECUTION_VERSION,
+        };
       }
 
-      return v === -1 ? PREFERRED_EXECUTION_VERSION : v;
+      return {
+        sdkDecided: false,
+        version: v === -1 ? PREFERRED_EXECUTION_VERSION : v,
+      };
     }),
 });
 
@@ -101,12 +107,15 @@ export const parseFnData = (data: unknown) => {
   let version: ExecutionVersion;
 
   try {
-    ({ version } = fnDataVersionSchema.parse(data));
+    const parsedVersionData = fnDataVersionSchema.parse(data);
+    version = parsedVersionData.version.version;
+    const sdkDecided = parsedVersionData.version.sdkDecided;
 
     const versionHandlers = {
       [ExecutionVersion.V0]: () =>
         ({
           version: ExecutionVersion.V0,
+          sdkDecided,
           ...z
             .object({
               event: z.record(z.any()),
@@ -138,6 +147,7 @@ export const parseFnData = (data: unknown) => {
       [ExecutionVersion.V1]: () =>
         ({
           version: ExecutionVersion.V1,
+          sdkDecided,
           ...z
             .object({
               event: z.record(z.any()),
@@ -173,6 +183,7 @@ export const parseFnData = (data: unknown) => {
       [ExecutionVersion.V2]: () =>
         ({
           version: ExecutionVersion.V2,
+          sdkDecided,
           ...z
             .object({
               event: z.record(z.any()),
