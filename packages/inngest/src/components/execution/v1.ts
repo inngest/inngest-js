@@ -974,7 +974,10 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       .catch<OutgoingOp>((error) => {
         let errorIsRetriable = true;
 
-        if (error instanceof NonRetriableError) {
+        if (
+          error instanceof NonRetriableError ||
+          (error as any)?.name === "NonRetriableError"
+        ) {
           errorIsRetriable = false;
         } else if (
           this.fnArg.maxAttempts &&
@@ -1107,6 +1110,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
        */
       let retriable: boolean | string = !(
         error instanceof NonRetriableError ||
+        (error as any)?.name === "NonRetriableError" ||
         (error instanceof StepError &&
           error === this.state.recentlyRejectedStepError)
       );
