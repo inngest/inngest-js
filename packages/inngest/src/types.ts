@@ -1557,12 +1557,6 @@ export type TriggerEventFromFunction<
  */
 export type PayloadForAnyInngestFunction<
   TFunction extends InngestFunction.Any,
-  TEvents extends Record<
-    string,
-    EventPayload
-  > = TFunction extends InngestFunction.Any
-    ? EventsFromFunction<TFunction>
-    : never,
 > = TFunction extends InngestFunction<
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   any,
@@ -1574,16 +1568,24 @@ export type PayloadForAnyInngestFunction<
   any,
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   any,
-  infer ITriggers extends InngestFunction.Trigger<keyof TEvents & string>[]
+  infer ITriggers extends InngestFunction.Trigger<
+    keyof EventsFromFunction<TFunction> & string
+  >[]
 >
   ? IsEqual<
-      TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>]["name"],
+      EventsFromFunction<TFunction>[EventNameFromTrigger<
+        EventsFromFunction<TFunction>,
+        ITriggers[number]
+      >]["name"],
       `${internalEvents.ScheduledTimer}`
     > extends true
     ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
     : Simplify<
         Omit<
-          TEvents[EventNameFromTrigger<TEvents, ITriggers[number]>],
+          EventsFromFunction<TFunction>[EventNameFromTrigger<
+            EventsFromFunction<TFunction>,
+            ITriggers[number]
+          >],
           "name" | "ts"
         >
       >
