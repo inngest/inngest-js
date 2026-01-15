@@ -9,6 +9,7 @@
  * @module
  */
 
+import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { z } from "zod/v3";
 import type { builtInMiddleware, Inngest } from "./components/Inngest.ts";
 import type { InngestFunction } from "./components/InngestFunction.ts";
@@ -1542,6 +1543,47 @@ export type TriggerEventFromFunction<
     : MinimalEventPayload;
 
 /**
+ * Extracts the input type from trigger schemas.
+ * For `step.invoke`, we need the schema INPUT type (what the caller provides),
+ * not the output type (what the function receives after transformation).
+ *
+ * Handles both:
+ * - `invoke(schema)` triggers: `{ event: "inngest/function.invoked"; schema }`
+ * - `eventType("evt", { schema })` triggers: `EventType<TName, TSchema>`
+ *
+ * @internal
+ */
+type ExtractTriggerSchemaInput<T extends readonly unknown[]> =
+  T extends readonly [infer First, ...infer Rest]
+    ? First extends { schema: infer TSchema }
+      ? TSchema extends StandardSchemaV1<infer TInput, infer _>
+        ? TInput
+        : ExtractTriggerSchemaInput<Rest>
+      : ExtractTriggerSchemaInput<Rest>
+    : never;
+
+/**
+ * Checks if a trigger array contains a trigger with a schema.
+ *
+ * Handles both:
+ * - `invoke(schema)` triggers
+ * - `eventType("evt", { schema })` triggers
+ *
+ * @internal
+ */
+type HasTriggerWithSchema<T extends readonly unknown[]> = T extends readonly [
+  infer First,
+  ...infer Rest,
+]
+  ? First extends {
+      // biome-ignore lint/suspicious/noExplicitAny: Need any to match any StandardSchemaV1
+      schema: StandardSchemaV1<any, any>;
+    }
+    ? true
+    : HasTriggerWithSchema<Rest>
+  : false;
+
+/**
  * Given an {@link InngestFunction} instance, extract the {@link MinimalPayload}
  * that will be used to trigger it.
  *
@@ -1572,23 +1614,28 @@ export type PayloadForAnyInngestFunction<
     keyof EventsFromFunction<TFunction> & string
   >[]
 >
-  ? IsEqual<
-      EventsFromFunction<TFunction>[EventNameFromTrigger<
-        EventsFromFunction<TFunction>,
-        ITriggers[number]
-      >]["name"],
-      `${internalEvents.ScheduledTimer}`
-    > extends true
-    ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
-    : Simplify<
-        Omit<
+  ? // First check: Does this function have a trigger with a schema?
+    HasTriggerWithSchema<ITriggers> extends true
+    ? // If so, use the schema's input type for the data property
+      { data: ExtractTriggerSchemaInput<ITriggers> }
+    : // Otherwise, fall back to existing behavior
+      IsEqual<
           EventsFromFunction<TFunction>[EventNameFromTrigger<
             EventsFromFunction<TFunction>,
             ITriggers[number]
-          >],
-          "name" | "ts"
+          >]["name"],
+          `${internalEvents.ScheduledTimer}`
+        > extends true
+      ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
+      : Simplify<
+          Omit<
+            EventsFromFunction<TFunction>[EventNameFromTrigger<
+              EventsFromFunction<TFunction>,
+              ITriggers[number]
+            >],
+            "name" | "ts"
+          >
         >
-      >
   : never;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;

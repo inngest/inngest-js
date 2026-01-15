@@ -159,7 +159,7 @@ export class EventType<
    * @param params - Event parameters including data, id, timestamp, etc.
    */
   create(
-    params: EventCreateParams<ExtractSchemaInput<TSchema>>
+    params: EventCreateParams<ExtractSchemaInput<TSchema>>,
   ): UnvalidatedCreatedEvent<
     TName,
     ExtractSchemaInput<TSchema>,
@@ -200,7 +200,7 @@ export class EventType<
                   }
                   return issue.message;
                 })
-                .join(", ")
+                .join(", "),
             );
           }
           data = check.value;
@@ -261,7 +261,7 @@ export function eventType<
   }: {
     schema?: TSchema;
     version?: string;
-  } = {}
+  } = {},
 ): EventType<TName, TSchema> {
   return new EventType<TName, TSchema>({
     name,

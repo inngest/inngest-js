@@ -26,6 +26,26 @@ describe("cron", () => {
       expectTypeOf(event.data).toEqualTypeOf<{}>();
     });
   });
+
+  test("step.invoke", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction({ id: "parent" }, [], async ({ step }) => {
+      await step.invoke("invoke", {
+        function: child,
+        data: { message: "hello" },
+      });
+
+      await step.invoke("invoke", {
+        function: child,
+      });
+    });
+
+    const child = inngest.createFunction(
+      { id: "child" },
+      cron("* * * * *"),
+      () => {},
+    );
+  });
 });
 
 describe("eventType without options", () => {
@@ -142,6 +162,22 @@ describe("eventType without options", () => {
     );
   });
 
+  test("step.invoke", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction({ id: "parent" }, [], async ({ step }) => {
+      await step.invoke("invoke", {
+        function: child,
+        data: { message: "hello" },
+      });
+
+      await step.invoke("invoke", {
+        function: child,
+      });
+    });
+
+    const child = inngest.createFunction({ id: "child" }, et, () => {});
+  });
+
   test("step.waitForEvent", () => {
     const inngest = new Inngest({ id: "app" });
     inngest.createFunction({ id: "fn" }, et, async ({ step }) => {
@@ -163,7 +199,11 @@ describe("eventType without options", () => {
 
 describe("eventType with schema", () => {
   const et = eventType("event-1", {
-    schema: z.object({ message: z.string() }),
+    schema: z.object({ input: z.string() }).transform((val) => {
+      return {
+        output: val.input.length,
+      };
+    }),
   });
 
   test("return", () => {
@@ -178,25 +218,25 @@ describe("eventType with schema", () => {
     expect(et.schema).toBeDefined();
     expectTypeOf(et.schema).not.toBeAny();
     expectTypeOf(et.schema).toExtend<
-      StandardSchemaV1<{ message: string }, { message: string }>
+      StandardSchemaV1<{ input: string }, { output: number }>
     >();
   });
 
   test("create", async () => {
-    const created1 = et.create({ data: { message: "hello" } });
+    const created1 = et.create({ data: { input: "hello" } });
     expect(created1.v).toBe("1.0.0");
     expectTypeOf(created1.v).not.toBeAny();
     expectTypeOf(created1.v).toEqualTypeOf<string | undefined>();
 
     const created2 = et.create({
-      data: { message: "hello" },
+      data: { input: "hello" },
       id: "123",
       ts: 1715769600,
       v: "1.0.0",
     });
-    expect(created2.data).toEqual({ message: "hello" });
+    expect(created2.data).toEqual({ input: "hello" });
     expectTypeOf(created2.data).not.toBeAny();
-    expectTypeOf(created2.data).toEqualTypeOf<{ message: string }>();
+    expectTypeOf(created2.data).toEqualTypeOf<{ input: string }>();
     expect(created2.id).toBe("123");
     expectTypeOf(created2.id).not.toBeAny();
     expectTypeOf(created2.id).toEqualTypeOf<string | undefined>();
@@ -210,7 +250,7 @@ describe("eventType with schema", () => {
     const validated = await created2.validate();
     expectTypeOf(validated).not.toBeAny();
     expectTypeOf(validated).toEqualTypeOf<{
-      data: { message: string };
+      data: { output: number };
       id?: string;
       name: "event-1";
       ts?: number;
@@ -234,8 +274,32 @@ describe("eventType with schema", () => {
         "event-1" | "inngest/function.invoked"
       >();
       expectTypeOf(event.data).not.toBeAny();
-      expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
+      expectTypeOf(event.data).toEqualTypeOf<{ output: number }>();
     });
+  });
+
+  test("step.invoke", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction({ id: "parent" }, [], async ({ step }) => {
+      await step.invoke("invoke", {
+        function: child,
+        data: { input: "hello" },
+      });
+
+      await step.invoke("invoke", {
+        function: child,
+
+        // @ts-expect-error - Invalid data
+        data: { wrong: "data" },
+      });
+
+      // @ts-expect-error - Missing data
+      await step.invoke("invoke", {
+        function: child,
+      });
+    });
+
+    const child = inngest.createFunction({ id: "child" }, et, () => {});
   });
 
   test("step.waitForEvent", () => {
@@ -248,7 +312,7 @@ describe("eventType with schema", () => {
       expectTypeOf(matched).not.toBeAny();
       expectTypeOf(matched).toEqualTypeOf<{
         name: "event-1";
-        data: { message: string };
+        data: { output: number };
         id: string;
         ts: number;
         v?: string;
@@ -382,16 +446,50 @@ describe("invoke", () => {
     });
 
     const inngest = new Inngest({ id: "app" });
-    inngest.createFunction(
-      { id: "fn" },
-      invoke(schema),
-      ({ event }) => {
-        expectTypeOf(event.name).not.toBeAny();
-        expectTypeOf(event.name).toEqualTypeOf<"inngest/function.invoked">();
+    inngest.createFunction({ id: "fn" }, invoke(schema), ({ event }) => {
+      expectTypeOf(event.name).not.toBeAny();
+      expectTypeOf(event.name).toEqualTypeOf<"inngest/function.invoked">();
 
-        expectTypeOf(event.data).not.toBeAny();
-        expectTypeOf(event.data).toEqualTypeOf<{ message: string, messageLength: number }>();
-      },
+      expectTypeOf(event.data).not.toBeAny();
+      expectTypeOf(event.data).toEqualTypeOf<{
+        message: string;
+        messageLength: number;
+      }>();
+    });
+  });
+
+  test("step.invoke", () => {
+    const inngest = new Inngest({ id: "app" });
+    inngest.createFunction({ id: "parent" }, [], async ({ step }) => {
+      await step.invoke("invoke", {
+        function: child,
+        data: { message: "hello" },
+      });
+
+      await step.invoke("invoke", {
+        function: child,
+
+        // @ts-expect-error - Invalid data
+        data: { wrong: "data" },
+      });
+
+      // @ts-expect-error - Missing data
+      await step.invoke("invoke", {
+        function: child,
+      });
+    });
+
+    const schema = z.object({ message: z.string() }).transform((val) => {
+      return {
+        ...val,
+        messageLength: val.message.length,
+      };
+    });
+
+    const child = inngest.createFunction(
+      { id: "child" },
+      invoke(schema),
+      () => {},
     );
   });
 });
@@ -399,7 +497,7 @@ describe("invoke", () => {
 describe("mixed triggers", () => {
   test("multiple of each kind", () => {
     const inngest = new Inngest({ id: "app" });
-    inngest.createFunction(
+    const fn =inngest.createFunction(
       { id: "fn" },
       [
         eventType("event-1", { schema: z.object({ a: z.string() }) }),
