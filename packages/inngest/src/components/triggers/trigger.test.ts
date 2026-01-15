@@ -327,7 +327,7 @@ describe("eventType with schema", () => {
       [
         eventType("event-1", { schema: z.object({ a: z.string() }) }),
         eventType("event-2", { schema: z.object({ b: z.number() }) }),
-      ] as const,
+      ],
       ({ event }) => {
         expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<
@@ -486,7 +486,7 @@ describe("mixed triggers", () => {
         eventType("event-2", { schema: z.object({ b: z.number() }) }),
         cron("0 0 * * *"),
         invoke(z.object({ age: z.number() })),
-      ] as const,
+      ],
       ({ event }) => {
         expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<
@@ -552,7 +552,7 @@ describe("mixed triggers", () => {
       [
         { event: "event-1", schema: z.object({ a: z.string() }) },
         { cron: "0 0 * * *" },
-      ] as const,
+      ],
       ({ event }) => {
         expectTypeOf(event.name).toEqualTypeOf<
           "event-1" | "inngest/scheduled.timer" | "inngest/function.invoked"
@@ -579,7 +579,7 @@ describe("mixed triggers", () => {
       [
         eventType("event-1", { schema: z.object({ a: z.string() }) }),
         invoke(z.object({ b: z.number() })),
-      ] as const,
+      ],
       ({ event }) => {
         expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<

@@ -929,7 +929,7 @@ export namespace Inngest {
 
   export type CreateFunction<TClient extends Inngest.Any> = <
     TMiddleware extends InngestMiddleware.Stack,
-    TTrigger extends SingleOrArray<InngestFunction.Trigger<string>>,
+    const TTrigger extends SingleOrArray<InngestFunction.Trigger<string>>,
     THandler extends Handler.Any = HandlerWithTriggers<
       ReturnType<typeof createStepTools<TClient>>,
       AsArray<TTrigger>,
