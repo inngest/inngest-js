@@ -351,26 +351,6 @@ describe("eventType with schema", () => {
     );
   });
 
-  test("withIf", () => {
-    const et = eventType("event-1", {
-      schema: z.object({ foo: z.string() }),
-    }).withIf("event.data.foo == 'bar'");
-    expect(et.if).toBe("event.data.foo == 'bar'");
-    expectTypeOf(et.if).not.toBeAny();
-    expectTypeOf(et.if).toEqualTypeOf<"event.data.foo == 'bar'">();
-
-    const inngest = new Inngest({ id: "app" });
-    inngest.createFunction({ id: "fn" }, et, ({ event }) => {
-      expectTypeOf(event.name).not.toBeAny();
-      expectTypeOf(event.name).toEqualTypeOf<
-        "event-1" | "inngest/function.invoked"
-      >();
-
-      expectTypeOf(event.data).not.toBeAny();
-      expectTypeOf(event.data).toEqualTypeOf<{ foo: string }>();
-    });
-  });
-
   test("input schema and output schema are different", () => {
     // When `z.transform` is used, the input schema and output schema are
     // different

@@ -215,24 +215,6 @@ export class EventType<
 
     return event;
   }
-
-  /**
-   * Create a trigger with a conditional filter.
-   *
-   * Functions with conditional triggers only execute when the condition
-   * evaluates to true. The condition is a CEL (Common Expression Language)
-   * expression that is evaluated against the event.
-   *
-   * @param condition - CEL expression evaluated against the event
-   * @returns New event trigger with condition applied
-   */
-  withIf<T extends string>(condition: T) {
-    return {
-      event: this.name,
-      if: condition,
-      schema: this.schema,
-    };
-  }
 }
 
 /**
