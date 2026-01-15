@@ -53,6 +53,7 @@ import {
   type TriggersFromClient,
 } from "../types.ts";
 import type { EventSchemas } from "./EventSchemas.ts";
+import { getAsyncCtx } from "./execution/als.ts";
 import { InngestFunction } from "./InngestFunction.ts";
 import type { InngestFunctionReference } from "./InngestFunctionReference.ts";
 import {
@@ -587,12 +588,18 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     getSubscriptionToken: Realtime.GetSubscriptionTokenFn;
   } = {
     publish: async (opts) => {
-      const { topic, channel, data } = await opts;
+      const [{ topic, channel, data }, ctx] = await Promise.all([
+        opts,
+        getAsyncCtx(),
+      ]);
+
+      const runId = ctx?.execution?.ctx.runId;
 
       const res = await this.inngestApi.publish(
         {
           channel: channel,
           topics: [topic],
+          runId,
         },
         data,
       );
