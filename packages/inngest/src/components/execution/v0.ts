@@ -29,6 +29,11 @@ import {
   StepOpCode,
 } from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+} from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
@@ -39,6 +44,7 @@ import { NonRetriableError } from "../NonRetriableError.ts";
 import { RetryAfterError } from "../RetryAfterError.ts";
 import {
   type ExecutionResult,
+  ExecutionVersion,
   type IInngestExecution,
   InngestExecution,
   type InngestExecutionFactory,
@@ -56,6 +62,8 @@ export class V0InngestExecution
   extends InngestExecution
   implements IInngestExecution
 {
+  public version = ExecutionVersion.V0;
+
   private state: V0ExecutionState;
   private execution: Promise<ExecutionResult> | undefined;
   private userFnToRun: Handler.Any;
@@ -67,6 +75,16 @@ export class V0InngestExecution
     this.userFnToRun = this.getUserFnToRun();
     this.state = this.createExecutionState();
     this.fnArg = this.createFnArg();
+  }
+
+  public addMetadata(
+    _stepId: string,
+    _kind: MetadataKind,
+    _scope: MetadataScope,
+    _op: MetadataOpcode,
+    _values: Record<string, unknown>,
+  ): boolean {
+    return false;
   }
 
   public start() {

@@ -1,7 +1,11 @@
 import { trace } from "@opentelemetry/api";
 import hashjs from "hash.js";
 import { z } from "zod/v3";
-import { headerKeys, internalEvents } from "../../helpers/consts.ts";
+import {
+  ExecutionVersion,
+  headerKeys,
+  internalEvents,
+} from "../../helpers/consts.ts";
 import {
   deserializeError,
   ErrCode,
@@ -14,6 +18,7 @@ import {
   createDeferredPromise,
   createDeferredPromiseWithStack,
   createTimeoutPromise,
+  resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
@@ -29,6 +34,12 @@ import {
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import type { Inngest } from "../Inngest.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+  MetadataUpdate,
+} from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
@@ -59,6 +70,8 @@ export const createV2InngestExecution: InngestExecutionFactory = (options) => {
 };
 
 class V2InngestExecution extends InngestExecution implements IInngestExecution {
+  public version = ExecutionVersion.V2;
+
   private state: V2ExecutionState;
   private fnArg: Context.Any;
   private checkpointHandlers: CheckpointHandlers;
@@ -105,7 +118,13 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
       this.execution = getAsyncLocalStorage().then((als) => {
         return als.run(
-          { app: this.options.client, ctx: this.fnArg },
+          {
+            app: this.options.client,
+            execution: {
+              ctx: this.fnArg,
+              instance: this,
+            },
+          },
           async () => {
             return tracer.startActiveSpan("inngest.execution", (span) => {
               clientProcessorMap.get(this.options.client)?.declareStartingSpan({
@@ -130,6 +149,24 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     return this.execution;
+  }
+
+  public addMetadata(
+    stepId: string,
+    kind: MetadataKind,
+    scope: MetadataScope,
+    op: MetadataOpcode,
+    values: Record<string, unknown>,
+  ) {
+    if (!this.state.metadata) {
+      this.state.metadata = new Map();
+    }
+
+    const updates = this.state.metadata.get(stepId) ?? [];
+    updates.push({ kind, scope, op, values });
+    this.state.metadata.set(stepId, updates);
+
+    return true;
   }
 
   /**
@@ -359,8 +396,9 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     const foundAllCompletedSteps = this.state.stepsToFulfill === knownSteps;
 
     if (!foundAllCompletedSteps) {
-      // TODO Tag
-      console.warn(
+      await this.options.client["warnMetadata"](
+        { run_id: this.options.runId },
+        ErrCode.NONDETERMINISTIC_STEPS,
         prettyError({
           type: "warn",
           whatHappened: "Function may be indeterminate",
@@ -386,6 +424,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       id: step.hashedId,
       name: step.name,
       opts: step.opts,
+      userland: step.userland,
     })) as [OutgoingOp, ...OutgoingOp[]];
 
     /**
@@ -468,6 +507,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
     opts,
     fn,
     displayName,
+    userland,
   }: FoundStep): Promise<OutgoingOp> {
     this.timeout?.clear();
     await this.state.hooks?.afterMemoization?.();
@@ -479,13 +519,14 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
       name,
       opts,
       displayName,
+      userland,
     };
     this.state.executingStep = outgoingOp;
 
     const store = await getAsyncCtx();
 
-    if (store) {
-      store.executingStep = {
+    if (store?.execution) {
+      store.execution.executingStep = {
         id,
         name: displayName,
       };
@@ -495,8 +536,8 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
     return runAsPromise(fn)
       .finally(async () => {
-        if (store) {
-          delete store.executingStep;
+        if (store?.execution) {
+          delete store.execution.executingStep;
         }
 
         await this.state.hooks?.afterExecution?.();
@@ -776,7 +817,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
         return;
       }
 
-      foundStepsReportPromise = new Promise((resolve) => setImmediate(resolve))
+      foundStepsReportPromise = resolveNextTick()
         /**
          * Ensure that we wait for this promise to resolve before continuing.
          *
@@ -851,7 +892,9 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
          * Therefore, we'll only show a warning here to indicate that this is
          * potentially an issue.
          */
-        console.warn(
+        this.options.client["warnMetadata"](
+          { run_id: this.options.runId },
+          ErrCode.NESTING_STEPS,
           prettyError({
             whatHappened: `We detected that you have nested \`step.*\` tooling in \`${
               opId.displayName ?? opId.id
@@ -878,6 +921,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
           if (!this.state.steps.has(newId)) {
             expectedNextStepIndexes.set(originalId, i + 1);
             opId.id = newId;
+            opId.userland.index = i;
             break;
           }
         }
@@ -1183,6 +1227,11 @@ export interface V2ExecutionState {
    * little more smoothly with the core loop.
    */
   recentlyRejectedStepError?: StepError;
+
+  /**
+   * Metadata collected during execution to be sent with outgoing ops.
+   */
+  metadata?: Map<string, Array<MetadataUpdate>>;
 }
 
 const hashId = (id: string): string => {

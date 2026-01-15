@@ -321,13 +321,10 @@ describe("Gemini Adapter Unit Tests", () => {
 
   describe("Type Safety", () => {
     test("has correct input and output types", () => {
-      const model = gemini({
-        model: "gemini-2.0-flash-exp",
-        apiKey: "test-key",
-      });
+      type GeminiModel = ReturnType<typeof gemini>;
 
       // Test input type
-      const input: (typeof model)["~types"]["input"] = {
+      const input: GeminiModel["~types"]["input"] = {
         contents: [
           {
             role: "user",
@@ -349,7 +346,7 @@ describe("Gemini Adapter Unit Tests", () => {
       expect(input.generationConfig?.thinkingConfig?.thinkingBudget).toBe(512);
 
       // Test output type
-      const output: (typeof model)["~types"]["output"] = {
+      const output: GeminiModel["~types"]["output"] = {
         candidates: [
           {
             content: {

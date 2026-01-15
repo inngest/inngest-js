@@ -1,6 +1,6 @@
 {
   "name": "@inngest/realtime",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "",
   "main": "./index.js",
   "publishConfig": {
@@ -10,8 +10,7 @@
     "test": "vitest run",
     "build": "tsc -p tsconfig.build.json && tsdown --config tsdown.config.ts",
     "postversion": "pnpm run build",
-    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js && pnpm dlx jsr publish --allow-slow-types --allow-dirty",
-    "release:version": "node ../../scripts/release/jsrVersion.js",
+    "release": "cross-env DIST_DIR=dist node ../../scripts/release/publish.js",
     "pack": "pnpm run build && mv $(npm pack ./dist --pack-destination . --silent) inngest-realtime.tgz"
   },
   "exports": {
@@ -59,7 +58,8 @@
   "author": "Inngest Inc. <hello@inngest.com>",
   "license": "Apache-2.0",
   "peerDependencies": {
-    "react": ">=18.0.0"
+    "react": ">=18.0.0",
+    "zod": "^3.25.0 || ^4.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.7.0",
@@ -81,6 +81,6 @@
     "@standard-schema/spec": "^1.0.0",
     "debug": "^4.3.4",
     "inngest": "^3.42.3",
-    "zod": "^3.25.76"
+    "zod": "^3.25.0"
   }
 }

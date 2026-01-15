@@ -21,7 +21,6 @@ Read the <a href="https://www.inngest.com/docs?ref=github-inngest-js-readme">doc
   <p>
 
 <a href="https://www.npmjs.com/package/inngest"><img src="https://img.shields.io/npm/v/inngest" /></a>
-<a href="https://jsr.io/@inngest/sdk"><img src="https://jsr.io/badges/@inngest/sdk" /></a>
 <br/>
 <a href="https://www.inngest.com/discord"><img src="https://img.shields.io/discord/842170679536517141?label=discord" /></a>
 <a href="https://twitter.com/inngest"><img src="https://img.shields.io/twitter/follow/inngest?style=social" /></a>
@@ -64,12 +63,6 @@ Install Inngest:
 npm install inngest
 ```
 
-Or get it from [JSR](https://jsr.io/@inngest/sdk):
-
-```bash
-deno add jsr:@inngest/sdk
-```
-
 ### Writing functions
 
 Write serverless functions and background jobs right in your own code:
@@ -107,7 +100,7 @@ Inngest invokes functions via HTTP, so you need to _serve_ them using an adapter
 import { Inngest } from "inngest";
 // See the "inngest/next" adapter imported here:
 import { serve } from "inngest/next";
-import myFunction from "../userOnboardingCOmmunication"; // see above function
+import myFunction from "../userOnboardingCommunication"; // see above function
 
 // You can create this in a single file and import where it's needed
 const inngest = new Inngest({ id: "my-app" });

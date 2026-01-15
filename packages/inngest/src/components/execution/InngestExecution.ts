@@ -2,10 +2,21 @@ import Debug, { type Debugger } from "debug";
 import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
 import type { ServerTiming } from "../../helpers/ServerTiming.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
-import type { Context, IncomingOp, OutgoingOp } from "../../types.ts";
+import type {
+  CheckpointingOptions,
+  Context,
+  IncomingOp,
+  OutgoingOp,
+  StepMode,
+} from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { ActionResponse } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+} from "../InngestMetadata.ts";
 
 // Re-export ExecutionVersion so it's correctly recognized as an enum and not
 // just a type. This can be lost when bundling if we don't re-export it here.
@@ -21,6 +32,15 @@ export interface ExecutionResults {
   "function-rejected": { error: unknown; retriable: boolean | string };
   "steps-found": { steps: [OutgoingOp, ...OutgoingOp[]] };
   "step-not-found": { step: OutgoingOp };
+
+  /**
+   * Indicates that we need to relinquish control back to Inngest in order to
+   * change step modes.
+   */
+  "change-mode": {
+    to: StepMode;
+    token: string;
+  };
 }
 
 export type ExecutionResult = {
@@ -72,11 +92,30 @@ export const PREFERRED_EXECUTION_VERSION =
 export interface InngestExecutionOptions {
   client: Inngest.Any;
   fn: InngestFunction.Any;
+
+  /**
+   * The UUID that represents this function in Inngest.
+   *
+   * This is used to reference the function during async checkpointing, when we
+   * know the function/run already exists and just wish to reference it
+   * directly.
+   */
+  internalFnId?: string;
   reqArgs: unknown[];
   runId: string;
   data: Omit<Context.Any, "step">;
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
+  stepMode: StepMode;
+  checkpointingConfig?: CheckpointingOptions;
+
+  /**
+   * If this execution is being run from a queue job, this will be an identifier
+   * used to reference this execution in Inngest. SDKs are expected to parrot
+   * this back in some responses to correctly attribute actions to this queue
+   * item.
+   */
+  queueItemId?: string;
 
   /**
    * Headers to be sent with any request to Inngest during this execution.
@@ -92,6 +131,14 @@ export interface InngestExecutionOptions {
    * the execution starts.
    */
   transformCtx?: (ctx: Readonly<Context.Any>) => Context.Any;
+
+  /**
+   * A hook that is called to create an {@link ActionResponse} from the returned
+   * value of an execution.
+   *
+   * This is required for checkpointing executions.
+   */
+  createResponse?: (data: unknown) => MaybePromise<ActionResponse>;
 }
 
 export type InngestExecutionFactory = (
@@ -107,5 +154,14 @@ export class InngestExecution {
 }
 
 export interface IInngestExecution {
+  version: ExecutionVersion;
   start(): Promise<ExecutionResult>;
+
+  addMetadata(
+    stepId: string,
+    kind: MetadataKind,
+    scope: MetadataScope,
+    op: MetadataOpcode,
+    values: Record<string, unknown>,
+  ): boolean;
 }

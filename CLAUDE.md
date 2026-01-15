@@ -88,7 +88,7 @@ To test examples: `pnpm dev:example` and select from the list.
 - **Changesets**: All releases managed through Changesets
 - **Prerelease**: Add `prerelease/inngest` label to PRs for `pr-123` versions
 - **Backports**: Add `backport v*.x` labels for legacy version releases
-- **Dual publishing**: npm + JSR registry
+- **Publishing**: To npm
 
 ## Special Notes
 

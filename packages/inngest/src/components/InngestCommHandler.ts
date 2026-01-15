@@ -1,12 +1,16 @@
 import debug from "debug";
+import { ulid } from "ulid";
 import { z } from "zod/v3";
+import { getAsyncCtx } from "../experimental";
 import {
   debugPrefix,
   defaultInngestApiBaseUrl,
   defaultInngestEventBaseUrl,
+  defaultMaxRetries,
   dummyEventKey,
   ExecutionVersion,
   envKeys,
+  forwardedHeaders,
   headerKeys,
   logPrefix,
   probe as probeEnum,
@@ -41,6 +45,9 @@ import { createStream } from "../helpers/stream.ts";
 import { hashEventKey, hashSigningKey, stringify } from "../helpers/strings.ts";
 import type { MaybePromise } from "../helpers/types.ts";
 import {
+  type APIStepPayload,
+  AsyncResponseType,
+  type AsyncResponseValue,
   type AuthenticatedIntrospection,
   type EventPayload,
   type FunctionConfig,
@@ -52,6 +59,8 @@ import {
   type OutgoingOp,
   type RegisterOptions,
   type RegisterRequest,
+  StepMode,
+  StepOpCode,
   type SupportedFrameworkName,
   type UnauthenticatedIntrospection,
 } from "../types.ts";
@@ -63,9 +72,10 @@ import {
   type InngestExecutionOptions,
   PREFERRED_EXECUTION_VERSION,
 } from "./execution/InngestExecution.ts";
+import { _internals } from "./execution/v1";
 import type { Inngest } from "./Inngest.ts";
-import type {
-  CreateExecutionOptions,
+import {
+  type CreateExecutionOptions,
   InngestFunction,
 } from "./InngestFunction.ts";
 
@@ -87,12 +97,72 @@ export interface ServeHandlerOptions extends RegisterOptions {
   functions: readonly InngestFunction.Like[];
 }
 
+export interface SyncHandlerOptions extends RegisterOptions {
+  /**
+   * The `Inngest` instance used to declare all functions.
+   */
+  client: Inngest.Like;
+
+  /**
+   * The type of response you wish to return to an API endpoint when using steps
+   * within it and we must transition to {@link StepMode.Async}.
+   *
+   * In most cases, this defaults to {@link AsyncResponseType.Redirect}.
+   */
+  asyncResponse?: AsyncResponseValue;
+
+  /**
+   * If defined, this sets the function ID that represents this endpoint.
+   * Without this set, it defaults to using the detected method and path of the
+   * request, for example: `GET /api/my-endpoint`.
+   */
+  functionId?: string;
+
+  /**
+   * Specifies the maximum number of retries for all steps.
+   *
+   * Can be a number from `0` to `20`. Defaults to `3`.
+   */
+  retries?:
+    | 0
+    | 1
+    | 2
+    | 3
+    | 4
+    | 5
+    | 6
+    | 7
+    | 8
+    | 9
+    | 10
+    | 11
+    | 12
+    | 13
+    | 14
+    | 15
+    | 16
+    | 17
+    | 18
+    | 19
+    | 20;
+}
+
 export interface InternalServeHandlerOptions extends ServeHandlerOptions {
   /**
    * Can be used to override the framework name given to a particular serve
    * handler.
    */
   frameworkName?: string;
+
+  /**
+   * Can be used to force the handler to always execute functions regardless of
+   * the request method or other factors.
+   *
+   * This is primarily intended for use with Inngest in APIs, where requests may
+   * not have the usual shape of an Inngest payload, but we want to pull data
+   * and execute.
+   */
+  // forceExecution?: boolean;
 }
 
 interface InngestCommHandlerOptions<
@@ -127,7 +197,7 @@ interface InngestCommHandlerOptions<
   /**
    * An array of the functions to serve and register with Inngest.
    */
-  functions: readonly InngestFunction.Like[];
+  functions?: readonly InngestFunction.Like[];
 
   /**
    * The `handler` is the function that will be called with your framework's
@@ -159,6 +229,11 @@ interface InngestCommHandlerOptions<
   handler: Handler<Input, Output, StreamOutput>;
 
   skipSignatureValidation?: boolean;
+
+  /**
+   * Options for when this comm handler executes a synchronous (API) function.
+   */
+  syncOptions?: SyncHandlerOptions;
 }
 
 /**
@@ -386,9 +461,10 @@ export class InngestCommHandler<
     );
 
     // Ensure we filter any undefined functions in case of missing imports.
-    this.rawFns = options.functions.filter(Boolean) as InngestFunction.Any[];
+    this.rawFns = (options.functions?.filter(Boolean) ??
+      []) as InngestFunction.Any[];
 
-    if (this.rawFns.length !== options.functions.length) {
+    if (this.rawFns.length !== (options.functions ?? []).length) {
       // TODO PrettyError
       console.warn(
         `Some functions passed to serve() are undefined and misconfigured.  Please check your imports.`,
@@ -616,6 +692,162 @@ export class InngestCommHandler<
     );
   }
 
+  private async isInngestReq(
+    actions: HandlerResponseWithErrors,
+  ): Promise<boolean> {
+    const reqMessage = `checking if this is an Inngest request`;
+
+    const [runId, signature] = await Promise.all([
+      actions.headers(reqMessage, headerKeys.InngestRunId),
+      actions.headers(reqMessage, headerKeys.Signature),
+    ]);
+
+    // Note that the signature just has to be present; in Dev it'll be empty,
+    // but still set to `""`.
+    return Boolean(runId && typeof signature === "string");
+  }
+
+  /**
+   * Start handling a request, setting up environments, modes, and returning
+   * some helpers.
+   */
+  private async initRequest(...args: Input): Promise<{
+    timer: ServerTiming;
+    actions: HandlerResponseWithErrors;
+    getHeaders: () => Promise<Record<string, string>>;
+  }> {
+    const timer = new ServerTiming();
+    const actions = await this.getActions(timer, ...args);
+
+    const [env, expectedServerKind] = await Promise.all([
+      actions.env?.("starting to handle request"),
+      actions.headers(
+        "checking expected server kind",
+        headerKeys.InngestServerKind,
+      ),
+    ]);
+
+    // Always make sure to merge whatever env we've been given with
+    // `process.env`; some platforms may not provide all the necessary
+    // environment variables or may use two sources.
+    this.env = {
+      ...allProcessEnv(),
+      ...env,
+    };
+
+    const headerPromises = forwardedHeaders.map(async (header) => {
+      const value = await actions.headers(
+        `fetching ${header} for forwarding`,
+        header,
+      );
+
+      return { header, value };
+    });
+
+    const headersToForwardP = Promise.all(headerPromises).then(
+      (fetchedHeaders) => {
+        return fetchedHeaders.reduce<Record<string, string>>(
+          (acc, { header, value }) => {
+            if (value) {
+              acc[header] = value;
+            }
+
+            return acc;
+          },
+          {},
+        );
+      },
+    );
+
+    const getHeaders = async (): Promise<Record<string, string>> => ({
+      ...inngestHeaders({
+        env: this.env,
+        framework: this.frameworkName,
+        client: this.client,
+        expectedServerKind: expectedServerKind || undefined,
+        extras: {
+          "Server-Timing": timer.getHeader(),
+        },
+      }),
+      ...(await headersToForwardP),
+    });
+
+    const assumedMode = getMode({ env: this.env, client: this.client });
+
+    if (assumedMode.isExplicit) {
+      this._mode = assumedMode;
+    } else {
+      const serveIsProd = await actions.isProduction?.(
+        "starting to handle request",
+      );
+      if (typeof serveIsProd === "boolean") {
+        this._mode = new Mode({
+          type: serveIsProd ? "cloud" : "dev",
+          isExplicit: false,
+        });
+      } else {
+        this._mode = assumedMode;
+      }
+    }
+
+    this.upsertKeysFromEnv();
+
+    return {
+      timer,
+      actions,
+      getHeaders,
+    };
+  }
+
+  /**
+   * `createSyncHandler` should be used to return a type-equivalent version of
+   * the `handler` specified during instantiation.
+   */
+  public createSyncHandler<
+    THandler extends (...args: Input) => Promise<Awaited<Output>>,
+  >(): (handler: THandler) => THandler {
+    // Return a function that can be used to wrap endpoints
+    return (handler) => {
+      return this.wrapHandler((async (...args) => {
+        const reqInit = await this.initRequest(...args);
+
+        const fn = new InngestFunction(
+          this.client,
+          {
+            id: this._options.syncOptions?.functionId ?? "",
+            retries: this._options.syncOptions?.retries ?? defaultMaxRetries,
+          },
+          () => handler(...args),
+        );
+
+        // Decide if this request looks like an Inngest request. If it does,
+        // we'll just use the regular `serve()` handler for this request, as
+        // it's async.
+        if (await this.isInngestReq(reqInit.actions)) {
+          // If we have a run ID, we can just use the normal serve path
+          // return this.createHandler()(...args);
+          return this.handleAsyncRequest({
+            ...reqInit,
+            forceExecution: true,
+            args,
+            fns: [fn],
+          });
+        }
+
+        // Otherwise, we know this is a sync request, so we can proceed with
+        // creating a sync request to Inngest.
+        return this.handleSyncRequest({
+          ...reqInit,
+          args,
+          asyncMode:
+            this._options.syncOptions?.asyncResponse ??
+            AsyncResponseType.Redirect,
+          fn,
+        });
+      }) as THandler);
+    };
+  }
+
   /**
    * `createHandler` should be used to return a type-equivalent version of the
    * `handler` specified during instantiation.
@@ -649,306 +881,486 @@ export class InngestCommHandler<
    * };
    * ```
    */
-  public createHandler(): (...args: Input) => Promise<Awaited<Output>> {
-    const handler = async (...args: Input) => {
-      const timer = new ServerTiming();
+  public createHandler<
+    THandler extends (...args: Input) => Promise<Awaited<Output>>,
+  >(): THandler {
+    return this.wrapHandler((async (...args) => {
+      return this.handleAsyncRequest({
+        ...(await this.initRequest(...args)),
+        args,
+      });
+    }) as THandler);
+  }
 
-      /**
-       * Used for testing, allow setting action overrides externally when
-       * calling the handler. Always search the final argument.
-       */
-      const lastArg = args[args.length - 1] as unknown;
-      const actionOverrides =
-        typeof lastArg === "object" &&
-        lastArg !== null &&
-        "actionOverrides" in lastArg &&
-        typeof lastArg["actionOverrides"] === "object" &&
-        lastArg["actionOverrides"] !== null
-          ? lastArg["actionOverrides"]
-          : {};
+  /**
+   * Given a set of actions that let us access the incoming request, create a
+   * `http/run.started` event that repesents a run starting from an HTTP
+   * request.
+   */
+  private async createHttpEvent(
+    actions: HandlerResponseWithErrors,
+    fn: InngestFunction.Any,
+  ): Promise<APIStepPayload> {
+    const reason = "creating sync event";
 
-      /**
-       * We purposefully `await` the handler, as it could be either sync or
-       * async.
-       */
-      const rawActions = {
-        ...(await timer
-          .wrap("handler", () => this.handler(...args))
-          .catch(rethrowError("Serve handler failed to run"))),
-        ...actionOverrides,
-      };
+    const contentTypePromise = actions
+      .headers(reason, headerKeys.ContentType)
+      .then((v) => v ?? "");
 
-      /**
-       * Map over every `action` in `rawActions` and create a new `actions`
-       * object where each function is safely promisified with each access
-       * requiring a reason.
-       *
-       * This helps us provide high quality errors about what's going wrong for
-       * each access without having to wrap every access in a try/catch.
-       */
-      const promisifiedActions: ActionHandlerResponseWithErrors =
-        Object.entries(rawActions).reduce((acc, [key, value]) => {
-          if (typeof value !== "function") {
-            return acc;
-          }
+    const ipPromise = actions
+      .headers(reason, headerKeys.ForwardedFor)
+      .then((v) => {
+        if (v) return v;
 
-          return {
-            ...acc,
-            [key]: (reason: string, ...args: unknown[]) => {
-              const errMessage = [
-                `Failed calling \`${key}\` from serve handler`,
-                reason,
-              ]
-                .filter(Boolean)
-                .join(" when ");
-
-              const fn = () =>
-                (value as (...args: unknown[]) => unknown)(...args);
-
-              return runAsPromise(fn)
-                .catch(rethrowError(errMessage))
-                .catch((err) => {
-                  this.log("error", err);
-                  throw err;
-                });
-            },
-          };
-        }, {} as ActionHandlerResponseWithErrors);
-
-      /**
-       * Mapped promisified handlers from userland `serve()` function mixed in
-       * with some helpers.
-       */
-      const actions: HandlerResponseWithErrors = {
-        ...promisifiedActions,
-        queryStringWithDefaults: async (
-          reason: string,
-          key: string,
-        ): Promise<string | undefined> => {
-          const url = await actions.url(reason);
-
-          const ret =
-            (await actions.queryString?.(reason, key, url)) ||
-            url.searchParams.get(key) ||
-            undefined;
-
-          return ret;
-        },
-        ...actionOverrides,
-      };
-
-      const [env, expectedServerKind] = await Promise.all([
-        actions.env?.("starting to handle request"),
-        actions.headers(
-          "checking expected server kind",
-          headerKeys.InngestServerKind,
-        ),
-      ]);
-
-      // Always make sure to merge whatever env we've been given with
-      // `process.env`; some platforms may not provide all the necessary
-      // environment variables or may use two sources.
-      this.env = {
-        ...allProcessEnv(),
-        ...env,
-      };
-
-      const getInngestHeaders = (): Record<string, string> =>
-        inngestHeaders({
-          env: this.env,
-          framework: this.frameworkName,
-          client: this.client,
-          expectedServerKind: expectedServerKind || undefined,
-          extras: {
-            "Server-Timing": timer.getHeader(),
-          },
-        });
-
-      const assumedMode = getMode({ env: this.env, client: this.client });
-
-      if (assumedMode.isExplicit) {
-        this._mode = assumedMode;
-      } else {
-        const serveIsProd = await actions.isProduction?.(
-          "starting to handle request",
-        );
-        if (typeof serveIsProd === "boolean") {
-          this._mode = new Mode({
-            type: serveIsProd ? "cloud" : "dev",
-            isExplicit: false,
-          });
-        } else {
-          this._mode = assumedMode;
-        }
-      }
-
-      this.upsertKeysFromEnv();
-
-      const methodP = actions.method("starting to handle request");
-
-      const headerPromises = [
-        headerKeys.TraceParent,
-        headerKeys.TraceState,
-      ].map(async (header) => {
-        const value = await actions.headers(
-          `fetching ${header} for forwarding`,
-          header,
-        );
-
-        return { header, value };
+        return actions.headers(reason, headerKeys.RealIp).then((v) => v ?? "");
       });
 
-      const contentLength = await actions
-        .headers("checking signature for request", headerKeys.ContentLength)
-        .then((value) => {
-          if (!value) {
-            return undefined;
-          }
-          return Number.parseInt(value, 10);
-        });
+    const methodPromise = actions.method(reason);
 
-      const [signature, method, body] = await Promise.all([
-        actions
-          .headers("checking signature for request", headerKeys.Signature)
-          .then((headerSignature) => {
-            return headerSignature ?? undefined;
-          }),
-        methodP,
-        methodP.then((method) => {
-          if (method === "POST" || method === "PUT") {
-            if (!contentLength) {
-              // Return empty string because req.json() will throw an error.
-              return "";
-            }
+    const urlPromise = actions.url(reason).then((v) => this.reqUrl(v));
 
-            return actions.body(
-              `checking body for request signing as method is ${method}`,
+    const domainPromise = urlPromise.then(
+      (url) => `${url.protocol}//${url.host}`,
+    );
+
+    const pathPromise = urlPromise.then((url) => url.pathname);
+
+    const queryParamsPromise = urlPromise.then((url) =>
+      url.searchParams.toString(),
+    );
+
+    // TODO For body, we can add `textBody()` to the actions
+    const bodyPromise = actions.textBody!(reason).then((body) => {
+      return typeof body === "string" ? body : stringify(body);
+    });
+
+    const [contentType, domain, ip, method, path, queryParams, body] =
+      await Promise.all([
+        contentTypePromise,
+        domainPromise,
+        ipPromise,
+        methodPromise,
+        pathPromise,
+        queryParamsPromise,
+        bodyPromise,
+      ]);
+
+    return {
+      name: "http/run.started",
+      data: {
+        content_type: contentType,
+        domain,
+        ip,
+        method,
+        path,
+        query_params: queryParams,
+        body,
+        fn: fn.id(),
+      },
+    };
+  }
+
+  private async handleSyncRequest({
+    timer,
+    actions,
+    fn,
+    asyncMode,
+    args,
+  }: {
+    timer: ServerTiming;
+    actions: HandlerResponseWithErrors;
+    fn: InngestFunction.Any;
+    asyncMode: AsyncResponseValue;
+    args: unknown[];
+  }): Promise<Awaited<Output>> {
+    // Do we have actions for handling sync requests? We must!
+    if (!actions.experimentalTransformSyncResponse) {
+      throw new Error(
+        "This platform does not support synchronous Inngest function executions.",
+      );
+    }
+
+    // Check we're not in a context already...
+    const ctx = await getAsyncCtx();
+    if (ctx) {
+      throw new Error(
+        "We already seem to be in the context of an Inngest execution, but didn't expect to be. Did you already wrap this handler?",
+      );
+    }
+
+    // We create a new run ID here in the SDK.
+    const runId = ulid();
+    const event = await this.createHttpEvent(actions, fn);
+
+    // TODO Nope. Should be v2, so we now have two preferred versions...
+    const exeVersion = PREFERRED_EXECUTION_VERSION;
+
+    const exe = fn["createExecution"]({
+      version: exeVersion,
+      partialOptions: {
+        client: this.client,
+        data: {
+          runId,
+          event,
+          attempt: 0,
+          events: [event],
+          maxAttempts: fn.opts.retries ?? defaultMaxRetries,
+        },
+        runId,
+        headers: {},
+        reqArgs: args,
+        stepCompletionOrder: [],
+        stepState: {},
+        disableImmediateExecution: false,
+        isFailureHandler: false,
+        timer,
+        createResponse: (data: unknown) =>
+          actions.experimentalTransformSyncResponse!(
+            "creating sync execution",
+            data,
+          ).then((res) => ({
+            ...res,
+            version: exeVersion,
+          })),
+        stepMode: StepMode.Sync,
+      },
+    });
+
+    const result = await exe.start();
+
+    const resultHandlers: ExecutionResultHandlers<unknown> = {
+      "step-not-found": () => {
+        throw new Error(
+          "We should not get the result 'step-not-found' when checkpointing. This is a bug in the `inngest` SDK",
+        );
+      },
+      "steps-found": () => {
+        throw new Error(
+          "We should not get the result 'steps-found' when checkpointing. This is a bug in the `inngest` SDK",
+        );
+      },
+      "step-ran": () => {
+        throw new Error(
+          "We should not get the result 'step-ran' when checkpointing. This is a bug in the `inngest` SDK",
+        );
+      },
+      "function-rejected": () => {
+        throw new Error(
+          "We should not get the result 'function-rejected' when checkpointing. This is a bug in the `inngest` SDK",
+        );
+      },
+      "function-resolved": ({ data }) => {
+        // We're done and we didn't call any step tools, so just return the
+        // response.
+        return data;
+      },
+      "change-mode": async ({ token }) => {
+        switch (asyncMode) {
+          case AsyncResponseType.Redirect: {
+            return actions.transformResponse(
+              "creating sync->async redirect response",
+              {
+                status: 302,
+                headers: {
+                  [headerKeys.Location]: await this.client["inngestApi"]
+                    ["getTargetUrl"](
+                      `/v1/http/runs/${runId}/output?token=${token}`,
+                    )
+                    .then((url) => url.toString()),
+                },
+                version: exeVersion,
+                body: "",
+              },
             );
           }
 
-          return "";
+          case AsyncResponseType.Token: {
+            return actions.transformResponse(
+              "creating sync->async token response",
+              {
+                status: 200,
+                headers: {},
+                version: exeVersion,
+                body: stringify({ run_id: runId, token }),
+              },
+            );
+          }
+
+          default: {
+            // TODO user-provided hook mate, incl. req args
+            break;
+          }
+        }
+
+        throw new Error("Not implemented: change-mode");
+      },
+    };
+
+    const resultHandler = resultHandlers[
+      result.type
+    ] as ExecutionResultHandler<unknown>;
+    if (!resultHandler) {
+      throw new Error(
+        `No handler for execution result type: ${result.type}. This is a bug in the \`inngest\` SDK`,
+      );
+    }
+
+    return resultHandler(result) as Awaited<Output>;
+  }
+
+  private async handleAsyncRequest({
+    timer,
+    actions,
+    args,
+    getHeaders,
+    forceExecution,
+    fns,
+  }: {
+    timer: ServerTiming;
+    actions: HandlerResponseWithErrors;
+    args: Input;
+    getHeaders: () => Promise<Record<string, string>>;
+    forceExecution?: boolean;
+    fns?: InngestFunction.Any[];
+  }): Promise<Awaited<Output>> {
+    if (forceExecution && !actions.experimentalTransformSyncResponse) {
+      throw new Error(
+        "This platform does not support async executions in Inngest for APIs.",
+      );
+    }
+
+    const methodP = actions.method("starting to handle request");
+
+    const contentLength = await actions
+      .headers("checking signature for request", headerKeys.ContentLength)
+      .then((value) => {
+        if (!value) {
+          return undefined;
+        }
+        return Number.parseInt(value, 10);
+      });
+
+    const [signature, method, body] = await Promise.all([
+      actions
+        .headers("checking signature for request", headerKeys.Signature)
+        .then((headerSignature) => {
+          return headerSignature ?? undefined;
         }),
-      ]);
+      methodP,
+      methodP.then((method) => {
+        if (method === "POST" || method === "PUT") {
+          if (!contentLength) {
+            // Return empty string because req.json() will throw an error.
+            return "";
+          }
 
-      const signatureValidation = this.validateSignature(signature, body);
-
-      const headersToForwardP = Promise.all(headerPromises).then(
-        (fetchedHeaders) => {
-          return fetchedHeaders.reduce<Record<string, string>>(
-            (acc, { header, value }) => {
-              if (value) {
-                acc[header] = value;
-              }
-
-              return acc;
-            },
-            {},
+          return actions.body(
+            `checking body for request signing as method is ${method}`,
           );
-        },
-      );
-
-      const actionRes = timer.wrap("action", () =>
-        this.handleAction({
-          actions,
-          timer,
-          getInngestHeaders,
-          reqArgs: args,
-          signatureValidation,
-
-          body,
-          method,
-          headers: headersToForwardP,
-        }),
-      );
-
-      /**
-       * Prepares an action response by merging returned data to provide
-       * trailing information such as `Server-Timing` headers.
-       *
-       * It should always prioritize the headers returned by the action, as they
-       * may contain important information such as `Content-Type`.
-       */
-      const prepareActionRes = async (
-        res: ActionResponse,
-      ): Promise<ActionResponse> => {
-        const headers: Record<string, string> = {
-          ...getInngestHeaders(),
-          ...(await headersToForwardP),
-          ...res.headers,
-          ...(res.version === null
-            ? {}
-            : {
-                [headerKeys.RequestVersion]: (
-                  res.version ?? PREFERRED_EXECUTION_VERSION
-                ).toString(),
-              }),
-        };
-
-        let signature: string | undefined;
-
-        try {
-          signature = await signatureValidation.then((result) => {
-            if (!result.success || !result.keyUsed) {
-              return undefined;
-            }
-
-            return this.getResponseSignature(result.keyUsed, res.body);
-          });
-        } catch (err) {
-          // If we fail to sign, retun a 500 with the error.
-          return {
-            ...res,
-            headers,
-            body: stringify(serializeError(err)),
-            status: 500,
-          };
         }
 
-        if (signature) {
-          headers[headerKeys.Signature] = signature;
-        }
+        return "";
+      }),
+    ]);
 
+    const signatureValidation = this.validateSignature(signature, body);
+
+    const actionRes = timer.wrap("action", () =>
+      this.handleAction({
+        actions,
+        timer,
+        getHeaders,
+        reqArgs: args,
+        signatureValidation,
+        body,
+        method,
+        forceExecution: Boolean(forceExecution),
+        fns,
+      }),
+    );
+
+    /**
+     * Prepares an action response by merging returned data to provide
+     * trailing information such as `Server-Timing` headers.
+     *
+     * It should always prioritize the headers returned by the action, as they
+     * may contain important information such as `Content-Type`.
+     */
+    const prepareActionRes = async (
+      res: ActionResponse,
+    ): Promise<ActionResponse> => {
+      const headers: Record<string, string> = {
+        ...(await getHeaders()),
+        ...res.headers,
+        ...(res.version === null
+          ? {}
+          : {
+              [headerKeys.RequestVersion]: (
+                res.version ?? PREFERRED_EXECUTION_VERSION
+              ).toString(),
+            }),
+      };
+
+      let signature: string | undefined;
+
+      try {
+        signature = await signatureValidation.then((result) => {
+          if (!result.success || !result.keyUsed) {
+            return undefined;
+          }
+
+          return this.getResponseSignature(result.keyUsed, res.body);
+        });
+      } catch (err) {
+        // If we fail to sign, retun a 500 with the error.
         return {
           ...res,
           headers,
+          body: stringify(serializeError(err)),
+          status: 500,
         };
-      };
-
-      if (await this.shouldStream(actions)) {
-        const method = await actions.method("starting streaming response");
-
-        if (method === "POST") {
-          const { stream, finalize } = await createStream();
-
-          /**
-           * Errors are handled by `handleAction` here to ensure that an
-           * appropriate response is always given.
-           */
-          void actionRes.then((res) => {
-            return finalize(prepareActionRes(res));
-          });
-
-          return timer.wrap("res", () => {
-            return actions.transformStreamingResponse?.(
-              "starting streaming response",
-              {
-                status: 201,
-                headers: getInngestHeaders(),
-                body: stream,
-                version: null,
-              },
-            );
-          });
-        }
       }
 
-      return timer.wrap("res", async () => {
-        return actionRes.then(prepareActionRes).then((actionRes) => {
-          return actions.transformResponse("sending back response", actionRes);
-        });
-      });
+      if (signature) {
+        headers[headerKeys.Signature] = signature;
+      }
+
+      return {
+        ...res,
+        headers,
+      };
     };
 
+    if (await this.shouldStream(actions)) {
+      const method = await actions.method("starting streaming response");
+
+      if (method === "POST") {
+        const { stream, finalize } = await createStream();
+
+        /**
+         * Errors are handled by `handleAction` here to ensure that an
+         * appropriate response is always given.
+         */
+        void actionRes.then((res) => {
+          return finalize(prepareActionRes(res));
+        });
+
+        return timer.wrap("res", async () => {
+          return actions.transformStreamingResponse?.(
+            "starting streaming response",
+            {
+              status: 201,
+              headers: await getHeaders(),
+              body: stream,
+              version: null,
+            },
+          );
+        });
+      }
+    }
+
+    return timer.wrap("res", async () => {
+      return actionRes.then(prepareActionRes).then((actionRes) => {
+        return actions.transformResponse("sending back response", actionRes);
+      });
+    });
+  }
+
+  private async getActions(
+    timer: ServerTiming,
+    ...args: Input
+  ): Promise<HandlerResponseWithErrors> {
+    /**
+     * Used for testing, allow setting action overrides externally when
+     * calling the handler. Always search the final argument.
+     */
+    const lastArg = args[args.length - 1] as unknown;
+    const actionOverrides =
+      typeof lastArg === "object" &&
+      lastArg !== null &&
+      "actionOverrides" in lastArg &&
+      typeof lastArg["actionOverrides"] === "object" &&
+      lastArg["actionOverrides"] !== null
+        ? lastArg["actionOverrides"]
+        : {};
+
+    /**
+     * We purposefully `await` the handler, as it could be either sync or
+     * async.
+     */
+    const rawActions = {
+      ...(await timer
+        .wrap("handler", () => this.handler(...args))
+        .catch(rethrowError("Serve handler failed to run"))),
+      ...actionOverrides,
+    };
+
+    /**
+     * Map over every `action` in `rawActions` and create a new `actions`
+     * object where each function is safely promisified with each access
+     * requiring a reason.
+     *
+     * This helps us provide high quality errors about what's going wrong for
+     * each access without having to wrap every access in a try/catch.
+     */
+    const promisifiedActions: ActionHandlerResponseWithErrors = Object.entries(
+      rawActions,
+    ).reduce((acc, [key, value]) => {
+      if (typeof value !== "function") {
+        return acc;
+      }
+
+      return {
+        ...acc,
+        [key]: (reason: string, ...args: unknown[]) => {
+          const errMessage = [
+            `Failed calling \`${key}\` from serve handler`,
+            reason,
+          ]
+            .filter(Boolean)
+            .join(" when ");
+
+          const fn = () => (value as (...args: unknown[]) => unknown)(...args);
+
+          return runAsPromise(fn)
+            .catch(rethrowError(errMessage))
+            .catch((err) => {
+              this.log("error", err);
+              throw err;
+            });
+        },
+      };
+    }, {} as ActionHandlerResponseWithErrors);
+
+    /**
+     * Mapped promisified handlers from userland `serve()` function mixed in
+     * with some helpers.
+     */
+    const actions: HandlerResponseWithErrors = {
+      ...promisifiedActions,
+      queryStringWithDefaults: async (
+        reason: string,
+        key: string,
+      ): Promise<string | undefined> => {
+        const url = await actions.url(reason);
+
+        const ret =
+          (await actions.queryString?.(reason, key, url)) ||
+          url.searchParams.get(key) ||
+          undefined;
+
+        return ret;
+      },
+      ...actionOverrides,
+    };
+
+    return actions;
+  }
+
+  // biome-ignore lint/suspicious/noExplicitAny: any fn
+  private wrapHandler<THandler extends (...args: any[]) => any>(
+    handler: THandler,
+  ): THandler {
     /**
      * Some platforms check (at runtime) the length of the function being used
      * to handle an endpoint. If this is a variadic function, it will fail that
@@ -1002,33 +1414,35 @@ export class InngestCommHandler<
   private async handleAction({
     actions,
     timer,
-    getInngestHeaders,
+    getHeaders,
     reqArgs,
     signatureValidation,
-    body,
+    body: rawBody,
     method,
-    headers,
+    forceExecution,
+    fns,
   }: {
     actions: HandlerResponseWithErrors;
     timer: ServerTiming;
-    getInngestHeaders: () => Record<string, string>;
+    getHeaders: () => Promise<Record<string, string>>;
     reqArgs: unknown[];
     signatureValidation: ReturnType<InngestCommHandler["validateSignature"]>;
-    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
-    body: any;
+    body: unknown;
     method: string;
-    headers: Promise<Record<string, string>>;
+    forceExecution: boolean;
+    fns?: InngestFunction.Any[];
   }): Promise<ActionResponse> {
     // This is when the request body is completely missing; it does not
     // include an empty body. This commonly happens when the HTTP framework
     // doesn't have body parsing middleware.
-    const isMissingBody = body === undefined;
+    const isMissingBody = rawBody === undefined;
+    let body = rawBody;
 
     try {
       let url = await actions.url("starting to handle request");
 
-      if (method === "POST") {
-        if (isMissingBody) {
+      if (method === "POST" || forceExecution) {
+        if (!forceExecution && isMissingBody) {
           this.log(
             "error",
             "Missing body when executing, possibly due to missing request body middleware",
@@ -1062,59 +1476,96 @@ export class InngestCommHandler<
           };
         }
 
-        const rawProbe = await actions.queryStringWithDefaults(
-          "testing for probe",
-          queryKeys.Probe,
-        );
-        if (rawProbe) {
-          const probe = enumFromValue(probeEnum, rawProbe);
-          if (!probe) {
-            // If we're here, we've received a probe that we don't recognize.
-            // Fail.
-            return {
-              status: 400,
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: stringify(
-                serializeError(new Error(`Unknown probe "${rawProbe}"`)),
+        let fn: { fn: InngestFunction.Any; onFailure: boolean } | undefined;
+        let fnId: string | undefined;
+        let stepId: string | null | undefined;
+
+        if (forceExecution) {
+          fn =
+            fns?.length && fns[0]
+              ? { fn: fns[0], onFailure: false }
+              : Object.values(this.fns)[0];
+          fnId = fn?.fn.id();
+          stepId = "step"; // Checkpointed runs are never parallel atm, so this is hardcoded
+          body = {
+            event: {},
+            events: [],
+            steps: {},
+            version: PREFERRED_EXECUTION_VERSION,
+            ctx: {
+              attempt: 0,
+              disable_immediate_execution: false,
+              use_api: true,
+              max_attempts: 3,
+              run_id: await actions.headers(
+                "getting run ID for forced execution",
+                headerKeys.InngestRunId,
               ),
-              version: undefined,
+              // TODO We need this to be given to us or the API to return it
+              stack: { stack: [], current: 0 },
+            },
+          } as Extract<FnData, { version: typeof PREFERRED_EXECUTION_VERSION }>;
+        } else {
+          const rawProbe = await actions.queryStringWithDefaults(
+            "testing for probe",
+            queryKeys.Probe,
+          );
+          if (rawProbe) {
+            const probe = enumFromValue(probeEnum, rawProbe);
+            if (!probe) {
+              // If we're here, we've received a probe that we don't recognize.
+              // Fail.
+              return {
+                status: 400,
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: stringify(
+                  serializeError(new Error(`Unknown probe "${rawProbe}"`)),
+                ),
+                version: undefined,
+              };
+            }
+
+            // Provide actions for every probe available.
+            const probeActions: Record<
+              probeEnum,
+              () => MaybePromise<ActionResponse>
+            > = {
+              [probeEnum.Trust]: () => ({
+                status: 200,
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: "",
+                version: undefined,
+              }),
             };
+
+            return probeActions[probe]();
           }
 
-          // Provide actions for every probe available.
-          const probeActions: Record<
-            probeEnum,
-            () => MaybePromise<ActionResponse>
-          > = {
-            [probeEnum.Trust]: () => ({
-              status: 200,
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: "",
-              version: undefined,
-            }),
-          };
+          fnId = await actions.queryStringWithDefaults(
+            "processing run request",
+            queryKeys.FnId,
+          );
+          if (!fnId) {
+            // TODO PrettyError
+            throw new Error("No function ID found in async request");
+          }
 
-          return probeActions[probe]();
+          fn = this.fns[fnId];
+
+          stepId =
+            (await actions.queryStringWithDefaults(
+              "processing run request",
+              queryKeys.StepId,
+            )) || null;
         }
 
-        const fnId = await actions.queryStringWithDefaults(
-          "processing run request",
-          queryKeys.FnId,
-        );
-        if (!fnId) {
-          // TODO PrettyError
+        if (typeof fnId === "undefined" || !fn) {
           throw new Error("No function ID found in request");
         }
-
-        const stepId =
-          (await actions.queryStringWithDefaults(
-            "processing run request",
-            queryKeys.StepId,
-          )) || null;
 
         const { version, result } = this.runStep({
           functionId: fnId,
@@ -1122,7 +1573,10 @@ export class InngestCommHandler<
           stepId,
           timer,
           reqArgs,
-          headers: await headers,
+          headers: await getHeaders(),
+          fn,
+          forceExecution,
+          actions,
         });
         const stepOutput = await result;
 
@@ -1151,6 +1605,23 @@ export class InngestCommHandler<
             };
           },
           "function-resolved": (result) => {
+            if (forceExecution) {
+              const runCompleteOp: OutgoingOp = {
+                id: _internals.hashId("complete"),
+                op: StepOpCode.RunComplete,
+                data: undefinedToNull(result.data),
+              };
+
+              return {
+                status: 206,
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: stringify(runCompleteOp),
+                version,
+              };
+            }
+
             return {
               status: 200,
               headers: {
@@ -1207,6 +1678,19 @@ export class InngestCommHandler<
               version,
             };
           },
+          "change-mode": (result) => {
+            return {
+              status: 500,
+              headers: {
+                "Content-Type": "application/json",
+                [headerKeys.NoRetry]: "true",
+              },
+              body: stringify({
+                error: `We wanted to change mode to "${result.to}", but this is not supported within the InngestCommHandler. This is a bug in the Inngest SDK.`,
+              }),
+              version,
+            };
+          },
         };
 
         const handler = resultHandlers[
@@ -1222,7 +1706,7 @@ export class InngestCommHandler<
       }
 
       // TODO: This feels hacky, so we should probably make it not hacky.
-      const env = getInngestHeaders()[headerKeys.Environment] ?? null;
+      const env = (await getHeaders())[headerKeys.Environment] ?? null;
 
       if (method === "GET") {
         return {
@@ -1355,7 +1839,7 @@ export class InngestCommHandler<
         const { status, message, modified } = await this.register(
           this.reqUrl(url),
           deployId,
-          getInngestHeaders,
+          getHeaders,
         );
 
         return {
@@ -1394,21 +1878,26 @@ export class InngestCommHandler<
   }
 
   protected runStep({
+    actions,
     functionId,
     stepId,
     data,
     timer,
     reqArgs,
     headers,
+    fn,
+    forceExecution,
   }: {
+    actions: HandlerResponseWithErrors;
     functionId: string;
     stepId: string | null;
     data: unknown;
     timer: ServerTiming;
     reqArgs: unknown[];
     headers: Record<string, string>;
+    fn: { fn: InngestFunction.Any; onFailure: boolean };
+    forceExecution: boolean;
   }): { version: ExecutionVersion; result: Promise<ExecutionResult> } {
-    const fn = this.fns[functionId];
     if (!fn) {
       // TODO PrettyError
       throw new Error(`Could not find function with ID "${functionId}"`);
@@ -1431,6 +1920,7 @@ export class InngestCommHandler<
         api: this.client["inngestApi"],
         version,
       });
+
       if (!anyFnData.ok) {
         throw new Error(anyFnData.error);
       }
@@ -1450,6 +1940,18 @@ export class InngestCommHandler<
         [V in ExecutionVersion]: ExecutionStarter<V>;
       };
 
+      const createResponse =
+        forceExecution && actions.experimentalTransformSyncResponse
+          ? (data: unknown) =>
+              actions.experimentalTransformSyncResponse!(
+                "created sync->async response",
+                data,
+              ).then((res) => ({
+                ...res,
+                version,
+              }))
+          : undefined;
+
       const executionStarters = ((s: ExecutionStarters) =>
         s as GenericExecutionStarters)({
         [ExecutionVersion.V0]: ({ event, events, steps, ctx, version }) => {
@@ -1468,6 +1970,7 @@ export class InngestCommHandler<
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
+              stepMode: StepMode.Async,
               data: {
                 event: event as EventPayload,
                 events: events as [EventPayload, ...EventPayload[]],
@@ -1482,6 +1985,7 @@ export class InngestCommHandler<
               stepCompletionOrder: ctx?.stack?.stack ?? [],
               reqArgs,
               headers,
+              createResponse,
             },
           };
         },
@@ -1500,11 +2004,24 @@ export class InngestCommHandler<
             };
           }, {});
 
+          const requestedRunStep =
+            stepId === "step" ? undefined : stepId || undefined;
+
+          const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
+            requestedRunStep,
+            ctx?.fn_id,
+            Boolean(ctx?.disable_immediate_execution),
+          );
+
           return {
             version,
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
+              stepMode: checkpointingConfig
+                ? StepMode.AsyncCheckpointing
+                : StepMode.Async,
+              checkpointingConfig,
               data: {
                 event: event as EventPayload,
                 events: events as [EventPayload, ...EventPayload[]],
@@ -1512,15 +2029,17 @@ export class InngestCommHandler<
                 attempt: ctx?.attempt ?? 0,
                 maxAttempts: ctx?.max_attempts,
               },
+              internalFnId: ctx?.fn_id,
+              queueItemId: ctx?.qi_id,
               stepState,
-              requestedRunStep:
-                stepId === "step" ? undefined : stepId || undefined,
+              requestedRunStep,
               timer,
               isFailureHandler: fn.onFailure,
               disableImmediateExecution: ctx?.disable_immediate_execution,
               stepCompletionOrder: ctx?.stack?.stack ?? [],
               reqArgs,
               headers,
+              createResponse,
             },
           };
         },
@@ -1539,11 +2058,24 @@ export class InngestCommHandler<
             };
           }, {});
 
+          const requestedRunStep =
+            stepId === "step" ? undefined : stepId || undefined;
+
+          const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
+            requestedRunStep,
+            ctx?.fn_id,
+            Boolean(ctx?.disable_immediate_execution),
+          );
+
           return {
             version,
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
+              stepMode: checkpointingConfig
+                ? StepMode.AsyncCheckpointing
+                : StepMode.Async,
+              checkpointingConfig,
               data: {
                 event: event as EventPayload,
                 events: events as [EventPayload, ...EventPayload[]],
@@ -1551,15 +2083,17 @@ export class InngestCommHandler<
                 attempt: ctx?.attempt ?? 0,
                 maxAttempts: ctx?.max_attempts,
               },
+              internalFnId: ctx?.fn_id,
+              queueItemId: ctx?.qi_id,
               stepState,
-              requestedRunStep:
-                stepId === "step" ? undefined : stepId || undefined,
+              requestedRunStep,
               timer,
               isFailureHandler: fn.onFailure,
               disableImmediateExecution: ctx?.disable_immediate_execution,
               stepCompletionOrder: ctx?.stack?.stack ?? [],
               reqArgs,
               headers,
+              createResponse,
             },
           };
         },
@@ -1700,7 +2234,10 @@ export class InngestCommHandler<
       url: registerBody.url,
     };
 
-    if (introspectionBody.authentication_succeeded) {
+    if (
+      "authentication_succeeded" in introspectionBody &&
+      introspectionBody.authentication_succeeded
+    ) {
       body.sdk_language = introspectionBody.sdk_language;
       body.sdk_version = introspectionBody.sdk_version;
     }
@@ -1731,7 +2268,6 @@ export class InngestCommHandler<
     let introspection:
       | UnauthenticatedIntrospection
       | AuthenticatedIntrospection = {
-      authentication_succeeded: null,
       extra: {
         is_mode_explicit: this._mode.isExplicit,
       },
@@ -1780,7 +2316,6 @@ export class InngestCommHandler<
         // unauthenticated introspection
         introspection = {
           ...introspection,
-          authentication_succeeded: false,
         } satisfies UnauthenticatedIntrospection;
       }
     }
@@ -1791,7 +2326,7 @@ export class InngestCommHandler<
   protected async register(
     url: URL,
     deployId: string | undefined | null,
-    getHeaders: () => Record<string, string>,
+    getHeaders: () => Promise<Record<string, string>>,
   ): Promise<{ status: number; message: string; modified: boolean }> {
     const body = this.registerBody({ url, deployId });
 
@@ -1832,7 +2367,7 @@ export class InngestCommHandler<
           method: "POST",
           body: stringify(body),
           headers: {
-            ...getHeaders(),
+            ...(await getHeaders()),
             [headerKeys.InngestSyncKind]: syncKind.OutOfBand,
           },
           redirect: "follow",
@@ -2136,6 +2671,7 @@ export type Handler<
 export type HandlerResponse<Output = any, StreamOutput = any> = {
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   body: () => MaybePromise<any>;
+  textBody?: (() => MaybePromise<string>) | null; // TODO Make this required | null
   env?: () => MaybePromise<Env | undefined>;
   headers: (key: string) => MaybePromise<string | null | undefined>;
 
@@ -2192,6 +2728,32 @@ export type HandlerResponse<Output = any, StreamOutput = any> = {
   transformStreamingResponse?: (
     res: ActionResponse<ReadableStream>,
   ) => StreamOutput;
+
+  /**
+   * TODO Needed to give folks a chance to wrap arguments if they need to in
+   * order to extract the request body so that it can be sent back to Inngest
+   * during either sync or async calls.
+   *
+   * This is because usually they do not interact directly with e.g. the
+   * `Response` object, but with sync mode they do, so we need to provide hooks
+   * to let us access the body.
+   */
+  experimentalTransformSyncRequest?: (
+    ...args: unknown[]
+  ) => MaybePromise<unknown>;
+
+  /**
+   * TODO Needed to give folks a chance to transform the response from their own
+   * code to an Inngestish response. This is only needed so that sync mode can
+   * checkpoint the response if we've gone through the entire run with no
+   * interruptions.
+   *
+   * Because of its location when being specified, we have scoped access to the
+   * `reqArgs` (e.g. `req` and `res`), so we don't need to pass them here.
+   */
+  experimentalTransformSyncResponse?: (
+    data: unknown,
+  ) => MaybePromise<Omit<ActionResponse, "version">>;
 };
 
 /**

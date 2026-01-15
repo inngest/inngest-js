@@ -1,4 +1,4 @@
-import { trace } from "@opentelemetry/api";
+import { context, trace } from "@opentelemetry/api";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { AsyncHooksContextManager } from "@opentelemetry/context-async-hooks";
 import {
@@ -31,9 +31,8 @@ export const createProvider = (
     instrumentations: instrList,
   });
 
-  p.register({
-    contextManager: new AsyncHooksContextManager().enable(),
-  });
+  trace.setGlobalTracerProvider(p);
+  context.setGlobalContextManager(new AsyncHooksContextManager().enable());
 
   return { success: true, processor };
 };
