@@ -563,6 +563,7 @@ export class V0InngestExecution
        */
       let retriable: boolean | string = !(
         error instanceof NonRetriableError ||
+        // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
         (error as any)?.name === "NonRetriableError"
       );
       if (retriable && error instanceof RetryAfterError) {

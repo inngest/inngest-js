@@ -977,6 +977,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
 
         if (
           error instanceof NonRetriableError ||
+          // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
           (error as any)?.name === "NonRetriableError"
         ) {
           errorIsRetriable = false;
@@ -1111,6 +1112,7 @@ class V2InngestExecution extends InngestExecution implements IInngestExecution {
        */
       let retriable: boolean | string = !(
         error instanceof NonRetriableError ||
+        // biome-ignore lint/suspicious/noExplicitAny: instanceof fails across module boundaries
         (error as any)?.name === "NonRetriableError" ||
         (error instanceof StepError &&
           error === this.state.recentlyRejectedStepError)
