@@ -395,11 +395,16 @@ export const createStepTools = <TClient extends Inngest.Any>(
     }),
 
     /**
-     * TODO
+     * Step-level functionality related to realtime features.
+     *
+     * Unlike client-level realtime methods (`inngest.realtime.*`), these tools
+     * will be their own durable steps when run. If you wish to use realtime
+     * features outside of a step, make sure to use the client-level methods
+     * instead.
      */
     realtime: {
       /**
-       * TODO
+       * Publish a realtime message to a particular topic and channel as a step.
        */
       publish: createTool<
         <TMessage extends Realtime.Message.Input>(

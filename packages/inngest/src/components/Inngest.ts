@@ -570,16 +570,19 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
   }
 
   /**
-   * TODO
+   * Realtime-related functionality for this Inngest client.
    */
   public realtime: {
     /**
-     * TODO
+     * Unlike step-level realtime methods (`step.realtime.*`), these tools will
+     * never be their own durable steps when run. Use these methods inside of a
+     * step to make them durable, or anywhere outside of an Inngest function
+     * too.
      */
     publish: Realtime.PublishFn;
 
     /**
-     * TODO
+     * Generate a subscription token for subscribing to realtime messages.
      */
     getSubscriptionToken: Realtime.GetSubscriptionTokenFn;
   } = {
