@@ -243,11 +243,18 @@ export const fetchAllFnData = async ({
 }): Promise<Result<FnData, ParseErr>> => {
   const result = { ...data };
 
+  // Ugly pattern, but ensures we always check every execution model correctly.
+  const shouldFetchData: Record<ExecutionVersion, () => boolean> = {
+    [ExecutionVersion.V0]: () =>
+      result.version === ExecutionVersion.V0 && result.use_api,
+    [ExecutionVersion.V1]: () =>
+      result.version === ExecutionVersion.V1 && Boolean(result.ctx?.use_api),
+    [ExecutionVersion.V2]: () =>
+      result.version === ExecutionVersion.V2 && Boolean(result.ctx?.use_api),
+  };
+
   try {
-    if (
-      (result.version === ExecutionVersion.V0 && result.use_api) ||
-      (result.version === ExecutionVersion.V1 && result.ctx?.use_api)
-    ) {
+    if (shouldFetchData[result.version]()) {
       if (!result.ctx?.run_id) {
         return err(
           prettyError({
