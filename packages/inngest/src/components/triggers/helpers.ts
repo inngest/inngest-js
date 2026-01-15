@@ -170,22 +170,22 @@ type FilterNonInvokeTriggers<T extends readonly any[]> =
   TriggersToEventsWithCron<T>;
 
 /**
- * Extracts and builds a union of all data types from invoke trigger schemas.
+ * Extracts and builds a union of schema output types from invoke triggers.
  *
- * This recursively processes the trigger array and accumulates the data types
- * from all invoke triggers (those with event: "inngest/function.invoked") into
- * a union type.
+ * This recursively processes the trigger array and accumulates the output types
+ * from all invoke trigger schemas (those with event: "inngest/function.invoked")
+ * into a union type.
  *
  * @template T - Array of trigger definitions to process
- * @returns Union of all invoke trigger data types, or `never` if none found
+ * @returns Union of all invoke trigger schema output types, or `never` if none found
  */
 type ExtractInvokeSchemas<T extends readonly any[]> = T extends readonly [
   infer First,
   ...infer Rest,
 ]
   ? First extends { event: InvokeEventName; schema: infer TSchema }
-    ? TSchema extends StandardSchemaV1<infer TInput>
-      ? TInput | ExtractInvokeSchemas<Rest>
+    ? TSchema extends StandardSchemaV1<infer _, infer TOutput>
+      ? TOutput | ExtractInvokeSchemas<Rest>
       : ExtractInvokeSchemas<Rest>
     : ExtractInvokeSchemas<Rest>
   : never;
@@ -234,6 +234,19 @@ type ExtractAllSchemaOutputs<T extends readonly any[]> = T extends readonly [
  */
 type NeverToEmpty<T> = [T] extends [never] ? {} : T;
 
+/**
+ * Converts a trigger array to a tuple of ReceivedEvent types.
+ *
+ * This type transforms trigger definitions into the event types that a function
+ * handler will receive. It always includes an invoke event type because
+ * functions can be invoked directly regardless of their declared triggers.
+ *
+ * When invoke triggers are present, it uses their schemas for the invoke event
+ * data. Otherwise, it derives the invoke event data type from all trigger
+ * schemas.
+ *
+ * @template T - Array of trigger definitions to process
+ */
 export type ToReceivedEvent<T extends readonly any[]> =
   HasInvokeTrigger<T> extends true
     ? [

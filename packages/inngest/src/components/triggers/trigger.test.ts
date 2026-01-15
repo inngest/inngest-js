@@ -374,16 +374,23 @@ describe("invoke", () => {
   });
 
   test("createFunction", () => {
+    const schema = z.object({ message: z.string() }).transform((val) => {
+      return {
+        ...val,
+        messageLength: val.message.length,
+      };
+    });
+
     const inngest = new Inngest({ id: "app" });
     inngest.createFunction(
       { id: "fn" },
-      invoke(z.object({ message: z.string() })),
+      invoke(schema),
       ({ event }) => {
         expectTypeOf(event.name).not.toBeAny();
         expectTypeOf(event.name).toEqualTypeOf<"inngest/function.invoked">();
 
         expectTypeOf(event.data).not.toBeAny();
-        expectTypeOf(event.data).toEqualTypeOf<{ message: string }>();
+        expectTypeOf(event.data).toEqualTypeOf<{ message: string, messageLength: number }>();
       },
     );
   });
