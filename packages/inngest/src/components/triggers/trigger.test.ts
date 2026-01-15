@@ -263,7 +263,7 @@ describe("eventType with schema", () => {
 
     // @ts-expect-error - Invalid data
     event = et.create({ data: { foo: "bar" } });
-    await expect(event.validate()).rejects.toThrowError("message: Required");
+    await expect(event.validate()).rejects.toThrowError("input: Required");
   });
 
   test("function trigger", () => {
@@ -383,7 +383,7 @@ describe("eventType with schema", () => {
   });
 });
 
-describe("eventType with version", () => {
+test("eventType with version", () => {
   // Can set the event type version
   const et = eventType("event-1", { version: "1.0.0" });
   expect(et.version).toBe("1.0.0");
