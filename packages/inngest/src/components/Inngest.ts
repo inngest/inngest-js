@@ -514,7 +514,6 @@ export class Inngest<TClientOpts extends ClientOptions = ClientOptions>
     );
   }
 
-  // biome-ignore lint/correctness/noUnusedPrivateClassMembers: used in the SDK
   private async updateMetadata({
     target,
     metadata,
