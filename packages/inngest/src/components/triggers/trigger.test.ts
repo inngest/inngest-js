@@ -224,7 +224,7 @@ describe("eventType with schema", () => {
 
   test("create", async () => {
     const created1 = et.create({ data: { input: "hello" } });
-    expect(created1.v).toBe("1.0.0");
+    expect(created1.v).toBeUndefined();
     expectTypeOf(created1.v).not.toBeAny();
     expectTypeOf(created1.v).toEqualTypeOf<string | undefined>();
 
@@ -477,7 +477,7 @@ describe("invoke", () => {
 describe("mixed triggers", () => {
   test("multiple of each kind", () => {
     const inngest = new Inngest({ id: "app" });
-    const fn =inngest.createFunction(
+    const fn = inngest.createFunction(
       { id: "fn" },
       [
         eventType("event-1", { schema: z.object({ a: z.string() }) }),
@@ -520,7 +520,7 @@ describe("mixed triggers", () => {
       },
     );
 
-    inngest.createFunction({ id: "fn" }, [], async ({step}) => {
+    inngest.createFunction({ id: "fn" }, [], async ({ step }) => {
       await step.invoke("invoke", {
         function: fn,
 
