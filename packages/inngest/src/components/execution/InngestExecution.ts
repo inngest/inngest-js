@@ -2,10 +2,21 @@ import Debug, { type Debugger } from "debug";
 import { debugPrefix, ExecutionVersion } from "../../helpers/consts.ts";
 import type { ServerTiming } from "../../helpers/ServerTiming.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
-import type { Context, IncomingOp, OutgoingOp, StepMode } from "../../types.ts";
+import type {
+  CheckpointingOptions,
+  Context,
+  IncomingOp,
+  OutgoingOp,
+  StepMode,
+} from "../../types.ts";
 import type { Inngest } from "../Inngest.ts";
 import type { ActionResponse } from "../InngestCommHandler.ts";
 import type { InngestFunction } from "../InngestFunction.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+} from "../InngestMetadata.ts";
 
 // Re-export ExecutionVersion so it's correctly recognized as an enum and not
 // just a type. This can be lost when bundling if we don't re-export it here.
@@ -96,6 +107,7 @@ export interface InngestExecutionOptions {
   stepState: Record<string, MemoizedOp>;
   stepCompletionOrder: string[];
   stepMode: StepMode;
+  checkpointingConfig?: CheckpointingOptions;
 
   /**
    * If this execution is being run from a queue job, this will be an identifier
@@ -144,4 +156,12 @@ export class InngestExecution {
 export interface IInngestExecution {
   version: ExecutionVersion;
   start(): Promise<ExecutionResult>;
+
+  addMetadata(
+    stepId: string,
+    kind: MetadataKind,
+    scope: MetadataScope,
+    op: MetadataOpcode,
+    values: Record<string, unknown>,
+  ): boolean;
 }

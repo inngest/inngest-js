@@ -7,6 +7,7 @@ import { timeStr } from "../helpers/strings.ts";
 import type { RecursiveTuple, StrictUnion } from "../helpers/types.ts";
 import type {
   Cancellation,
+  CheckpointingOptions,
   ConcurrencyOption,
   FunctionConfig,
   Handler,
@@ -296,15 +297,17 @@ export class InngestFunction<
     requestedRunStep: string | undefined,
     internalFnId: string | undefined,
     disableImmediateExecution: boolean,
-  ): boolean {
+  ): CheckpointingOptions | undefined {
     if (requestedRunStep || !internalFnId || disableImmediateExecution) {
-      return false;
+      return;
     }
 
-    return Boolean(
-      this.opts.experimentalCheckpointing ||
-        // TODO We should check the commhandler's client instead of this one?
-        this.client["options"].experimentalCheckpointing,
+    // TODO We should check the commhandler's client instead of this one?
+    return (
+      this.opts.checkpointing ??
+      this.client["options"].checkpointing ??
+      this.opts.experimentalCheckpointing ??
+      this.client["options"].experimentalCheckpointing
     );
   }
 }
@@ -712,20 +715,33 @@ export namespace InngestFunction {
      * If `true`, enables checkpointing with default settings, which is a safe,
      * blocking version of checkpointing, where we check in with Inngest after
      * every step is run.
-     */
-    experimentalCheckpointing?: boolean;
-    /**
-     * If an object, you can tweak the settings to batch many steps into a
-     * single checkpoint. Note that if your server dies before the checkpoint
-     * completes, step data will be lost and steps will be rerun.
      *
-     * We recommend starting with the default `true` configuration and only
-     * tweak the parameters directly if necessary.
+     * If an object, you can tweak the settings to batch, set a maximum runtime
+     * before going async, and more. Note that if your server dies before the
+     * checkpoint completes, step data will be lost and steps will be rerun.
+     *
+     * We recommend starting with the default `true` configuration and only tweak
+     * the parameters directly if necessary.
+     *
+     * @deprecated Use `checkpointing` instead.
      */
-    // | {
-    //     maxSteps?: number;
-    //     maxInterval?: number | string | Temporal.DurationLike;
-    //   };
+    experimentalCheckpointing?: CheckpointingOptions;
+
+    /**
+     * Whether or not to use checkpointing for this function's executions.
+     *
+     * If `true`, enables checkpointing with default settings, which is a safe,
+     * blocking version of checkpointing, where we check in with Inngest after
+     * every step is run.
+     *
+     * If an object, you can tweak the settings to batch, set a maximum runtime
+     * before going async, and more. Note that if your server dies before the
+     * checkpoint completes, step data will be lost and steps will be rerun.
+     *
+     * We recommend starting with the default `true` configuration and only tweak
+     * the parameters directly if necessary.
+     */
+    checkpointing?: CheckpointingOptions;
   }
 }
 

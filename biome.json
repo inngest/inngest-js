@@ -8,8 +8,7 @@
       "!**/coverage",
       "!**/dist",
       "!**/src/proto",
-      "!**/package.json",
-      "!**/jsr.json"
+      "!**/package.json"
     ]
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 },

@@ -1,5 +1,6 @@
 import { trace } from "@opentelemetry/api";
 import hashjs from "hash.js";
+import ms, { type StringValue } from "ms";
 import { z } from "zod/v3";
 import {
   ExecutionVersion,
@@ -24,6 +25,7 @@ import {
   resolveNextTick,
   runAsPromise,
 } from "../../helpers/promises.ts";
+import * as Temporal from "../../helpers/temporal.ts";
 import type { MaybePromise, Simplify } from "../../helpers/types.ts";
 import {
   type APIStepPayload,
@@ -39,6 +41,12 @@ import {
 } from "../../types.ts";
 import { version } from "../../version.ts";
 import type { Inngest } from "../Inngest.ts";
+import type {
+  MetadataKind,
+  MetadataOpcode,
+  MetadataScope,
+  MetadataUpdate,
+} from "../InngestMetadata.ts";
 import { getHookStack, type RunHookStack } from "../InngestMiddleware.ts";
 import {
   createStepTools,
@@ -87,6 +95,16 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
    */
   private timeout?: ReturnType<typeof createTimeoutPromise>;
 
+  /**
+   * If we're checkpointing and have been given a maximum runtime, this will be
+   * a `Promise` that resolves after that duration has elapsed, allowing us to
+   * ensure that we end the execution in good time, especially in serverless
+   * environments.
+   */
+  private checkpointingMaxRuntimeTimer?: ReturnType<
+    typeof createTimeoutPromise
+  >;
+
   constructor(rawOptions: InngestExecutionOptions) {
     const options: InngestExecutionOptions = {
       ...rawOptions,
@@ -109,6 +127,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     this.fnArg = this.createFnArg();
     this.checkpointHandlers = this.createCheckpointHandlers();
     this.initializeTimer(this.state);
+    this.initializeCheckpointRuntimeTimer(this.state);
 
     this.debug(
       "created new V1 execution for run;",
@@ -162,6 +181,24 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     }
 
     return this.execution;
+  }
+
+  public addMetadata(
+    stepId: string,
+    kind: MetadataKind,
+    scope: MetadataScope,
+    op: MetadataOpcode,
+    values: Record<string, unknown>,
+  ) {
+    if (!this.state.metadata) {
+      this.state.metadata = new Map();
+    }
+
+    const updates = this.state.metadata.get(stepId) ?? [];
+    updates.push({ kind, scope, op, values });
+    this.state.metadata.set(stepId, updates);
+
+    return true;
   }
 
   /**
@@ -427,14 +464,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         }
 
         // Otherwise we're good to start executing things right now.
-        const step = this.state.steps.get(steps[0].id);
-        if (!step) {
-          throw new Error(
-            "Step not found in memoization state during sync checkpointing; this should never happen and is a bug in the Inngest SDK",
-          );
-        }
-
-        const result = await this.executeStep(step);
+        const result = await this.executeStep(steps[0]);
 
         if (result.error) {
           return this.checkpointAndSwitchToAsync([result]);
@@ -443,6 +473,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         return void (await this.checkpoint([
           this.resumeStepWithResult(result),
         ]));
+      },
+
+      "checkpointing-runtime-reached": () => {
+        return this.checkpointAndSwitchToAsync([
+          {
+            op: StepOpCode.DiscoveryRequest,
+            id: _internals.hashId("discovery-request"), // ID doesn't matter
+          },
+        ]);
       },
     };
 
@@ -497,6 +536,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           ops: this.ops,
           step,
         };
+      },
+
+      "checkpointing-runtime-reached": () => {
+        throw new Error(
+          "Checkpointing maximum runtime reached, but this is not in a checkpointing step mode. This is a bug in the Inngest SDK.",
+        );
       },
     };
 
@@ -585,9 +630,20 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
 
               this.debug("checkpointing and resuming execution after step run");
 
-              return void (await this.checkpoint([
-                this.resumeStepWithResult(stepResult),
-              ]));
+              try {
+                return void (await this.checkpoint([
+                  this.resumeStepWithResult(stepResult),
+                ]));
+              } catch (err) {
+                // If checkpointing fails for any reason, fall back to the async
+                // flow
+                this.debug(
+                  "error checkpointing after step run, so falling back to async",
+                  err,
+                );
+
+                return stepRanHandler(stepResult);
+              }
             }
 
             return maybeReturnNewSteps();
@@ -606,6 +662,19 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           }
 
           return;
+        },
+        "checkpointing-runtime-reached": async () => {
+          return {
+            type: "steps-found",
+            ctx: this.fnArg,
+            ops: this.ops,
+            steps: [
+              {
+                op: StepOpCode.DiscoveryRequest,
+                id: _internals.hashId("discovery-request"), // ID doesn't matter
+              },
+            ],
+          };
         },
       };
 
@@ -837,10 +906,12 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       })
       .then<OutgoingOp>(async ({ resultPromise, interval: _interval }) => {
         interval = _interval;
+        const metadata = this.state.metadata?.get(id);
 
         return {
           ...outgoingOp,
           data: await resultPromise,
+          ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
         };
       })
       .catch<OutgoingOp>((error) => {
@@ -855,12 +926,15 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
           errorIsRetriable = false;
         }
 
+        const metadata = this.state.metadata?.get(id);
+
         if (errorIsRetriable) {
           return {
             ...outgoingOp,
             op: StepOpCode.StepError,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
+            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
           };
         } else {
           return {
@@ -868,6 +942,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
             op: StepOpCode.StepFailed,
             // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
             error,
+            ...(metadata && metadata.length > 0 ? { metadata: metadata } : {}),
           };
         }
       })
@@ -891,6 +966,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
      * Start the timer to time out the run if needed.
      */
     void this.timeout?.start();
+    void this.checkpointingMaxRuntimeTimer?.start();
 
     await this.state.hooks?.beforeMemoization?.();
 
@@ -1019,6 +1095,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       }
     })(() => {
       this.timeout?.clear();
+      this.checkpointingMaxRuntimeTimer?.clear();
       void checkpointResults.return();
     });
 
@@ -1038,6 +1115,7 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
       allStateUsed: () => {
         return this.state.remainingStepsToBeSeen.size === 0;
       },
+      metadata: new Map(),
     };
 
     return state;
@@ -1142,7 +1220,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
         if (!stepFoundThisTick) {
           warnOfParallelIndexing = true;
 
-          console.warn(
+          this.options.client["warnMetadata"](
+            { run_id: this.fnArg.runId },
+            ErrCode.AUTOMATIC_PARALLEL_INDEXING,
             prettyError({
               type: "warn",
               whatHappened:
@@ -1262,7 +1342,9 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
          * Therefore, we'll only show a warning here to indicate that this is
          * potentially an issue.
          */
-        console.warn(
+        this.options.client["warnMetadata"](
+          { run_id: this.fnArg.runId },
+          ErrCode.NESTING_STEPS,
           prettyError({
             whatHappened: `We detected that you have nested \`step.*\` tooling in \`${
               opId.displayName ?? opId.id
@@ -1477,6 +1559,50 @@ class V1InngestExecution extends InngestExecution implements IInngestExecution {
     });
   }
 
+  private initializeCheckpointRuntimeTimer(state: V1ExecutionState): void {
+    // Not checkpointing? Skip.
+    if (!this.options.checkpointingConfig) {
+      return;
+    }
+
+    // Default checkpointing config? Skip.
+    if (typeof this.options.checkpointingConfig === "boolean") {
+      return;
+    }
+
+    // Custom checkpointing config but no max runtime? Skip.
+    if (!this.options.checkpointingConfig.maxRuntime) {
+      return;
+    }
+
+    const maxRuntimeMs = Temporal.isTemporalDuration(
+      this.options.checkpointingConfig.maxRuntime,
+    )
+      ? this.options.checkpointingConfig.maxRuntime.total({
+          unit: "milliseconds",
+        })
+      : typeof this.options.checkpointingConfig.maxRuntime === "string"
+        ? ms(this.options.checkpointingConfig.maxRuntime as StringValue) // type assertion to satisfy ms package
+        : (this.options.checkpointingConfig.maxRuntime as number);
+
+    // 0 or negative max runtime? Skip.
+    if (!Number.isFinite(maxRuntimeMs) || maxRuntimeMs <= 0) {
+      return;
+    }
+
+    this.checkpointingMaxRuntimeTimer = createTimeoutPromise(maxRuntimeMs);
+
+    void this.checkpointingMaxRuntimeTimer.then(async () => {
+      await this.state.hooks?.afterMemoization?.();
+      await this.state.hooks?.beforeExecution?.();
+      await this.state.hooks?.afterExecution?.();
+
+      state.setCheckpoint({
+        type: "checkpointing-runtime-reached",
+      });
+    });
+  }
+
   private async initializeMiddleware(): Promise<RunHookStack> {
     const ctx = this.options.data as Pick<
       Readonly<BaseContext<Inngest.Any>>,
@@ -1525,6 +1651,7 @@ export interface Checkpoints {
   "function-rejected": { error: unknown };
   "function-resolved": { data: unknown };
   "step-not-found": { step: OutgoingOp };
+  "checkpointing-runtime-reached": {};
 }
 
 type Checkpoint = {
@@ -1656,6 +1783,11 @@ export interface V1ExecutionState {
     appId: string;
     token?: string;
   };
+
+  /**
+   * Metadata collected during execution to be sent with outgoing ops.
+   */
+  metadata?: Map<string, Array<MetadataUpdate>>;
 }
 
 const hashId = (id: string): string => {

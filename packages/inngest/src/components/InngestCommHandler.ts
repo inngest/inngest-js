@@ -1,5 +1,5 @@
 import debug from "debug";
-import { ulid } from "ulidx";
+import { ulid } from "ulid";
 import { z } from "zod/v3";
 import { getAsyncCtx } from "../experimental";
 import {
@@ -2007,18 +2007,21 @@ export class InngestCommHandler<
           const requestedRunStep =
             stepId === "step" ? undefined : stepId || undefined;
 
+          const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
+            requestedRunStep,
+            ctx?.fn_id,
+            Boolean(ctx?.disable_immediate_execution),
+          );
+
           return {
             version,
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
-              stepMode: fn.fn["shouldAsyncCheckpoint"](
-                requestedRunStep,
-                ctx?.fn_id,
-                Boolean(ctx?.disable_immediate_execution),
-              )
+              stepMode: checkpointingConfig
                 ? StepMode.AsyncCheckpointing
                 : StepMode.Async,
+              checkpointingConfig,
               data: {
                 event: event as EventPayload,
                 events: events as [EventPayload, ...EventPayload[]],
@@ -2058,18 +2061,21 @@ export class InngestCommHandler<
           const requestedRunStep =
             stepId === "step" ? undefined : stepId || undefined;
 
+          const checkpointingConfig = fn.fn["shouldAsyncCheckpoint"](
+            requestedRunStep,
+            ctx?.fn_id,
+            Boolean(ctx?.disable_immediate_execution),
+          );
+
           return {
             version,
             partialOptions: {
               client: this.client,
               runId: ctx?.run_id || "",
-              stepMode: fn.fn["shouldAsyncCheckpoint"](
-                requestedRunStep,
-                ctx?.fn_id,
-                Boolean(ctx?.disable_immediate_execution),
-              )
+              stepMode: checkpointingConfig
                 ? StepMode.AsyncCheckpointing
                 : StepMode.Async,
+              checkpointingConfig,
               data: {
                 event: event as EventPayload,
                 events: events as [EventPayload, ...EventPayload[]],
@@ -2228,7 +2234,10 @@ export class InngestCommHandler<
       url: registerBody.url,
     };
 
-    if (introspectionBody.authentication_succeeded) {
+    if (
+      "authentication_succeeded" in introspectionBody &&
+      introspectionBody.authentication_succeeded
+    ) {
       body.sdk_language = introspectionBody.sdk_language;
       body.sdk_version = introspectionBody.sdk_version;
     }
@@ -2259,7 +2268,6 @@ export class InngestCommHandler<
     let introspection:
       | UnauthenticatedIntrospection
       | AuthenticatedIntrospection = {
-      authentication_succeeded: null,
       extra: {
         is_mode_explicit: this._mode.isExplicit,
       },
@@ -2308,7 +2316,6 @@ export class InngestCommHandler<
         // unauthenticated introspection
         introspection = {
           ...introspection,
-          authentication_succeeded: false,
         } satisfies UnauthenticatedIntrospection;
       }
     }

@@ -25,6 +25,7 @@ import type {
 import type { createStepTools } from "./components/InngestStepTools.ts";
 import type { internalEvents, knownEvents } from "./helpers/consts.ts";
 import type { GoInterval } from "./helpers/promises.ts";
+import type * as Temporal from "./helpers/temporal.ts";
 import type {
   AsTuple,
   IsEqual,
@@ -264,6 +265,7 @@ export enum StepOpCode {
   Gateway = "Gateway",
 
   RunComplete = "RunComplete",
+  DiscoveryRequest = "DiscoveryRequest",
 }
 
 /**
@@ -928,21 +930,43 @@ export interface ClientOptions {
    * If `true`, enables checkpointing with default settings, which is a safe,
    * blocking version of checkpointing, where we check in with Inngest after
    * every step is run.
-   */
-  experimentalCheckpointing?: boolean;
-  /**
-   * If an object, you can tweak the settings to batch many steps into a
-   * single checkpoint. Note that if your server dies before the checkpoint
-   * completes, step data will be lost and steps will be rerun.
    *
-   * We recommend starting with the default `true` configuration and only
-   * tweak the parameters directly if necessary.
+   * If an object, you can tweak the settings to batch, set a maximum runtime
+   * before going async, and more. Note that if your server dies before the
+   * checkpoint completes, step data will be lost and steps will be rerun.
+   *
+   * We recommend starting with the default `true` configuration and only tweak
+   * the parameters directly if necessary.
+   *
+   * @deprecated Use `checkpointing` instead.
    */
-  // | {
-  //     maxSteps?: number;
-  //     maxInterval?: number | string | Temporal.DurationLike;
-  //   };
+  experimentalCheckpointing?: CheckpointingOptions;
+
+  /**
+   * Whether or not to use checkpointing by default for executions of functions
+   * created using this client.
+   *
+   * If `true`, enables checkpointing with default settings, which is a safe,
+   * blocking version of checkpointing, where we check in with Inngest after
+   * every step is run.
+   *
+   * If an object, you can tweak the settings to batch, set a maximum runtime
+   * before going async, and more. Note that if your server dies before the
+   * checkpoint completes, step data will be lost and steps will be rerun.
+   *
+   * We recommend starting with the default `true` configuration and only tweak
+   * the parameters directly if necessary.
+   */
+  checkpointing?: CheckpointingOptions;
 }
+
+export type CheckpointingOptions =
+  | boolean
+  | {
+      maxRuntime?: number | string | Temporal.DurationLike;
+      // maxSteps?: number;
+      // maxInterval?: number | string | Temporal.DurationLike;
+    };
 
 /**
  * A set of log levels that can be used to control the amount of logging output
@@ -1302,7 +1326,6 @@ export interface InBandRegisterRequest
  * @internal
  */
 export interface UnauthenticatedIntrospection {
-  authentication_succeeded: false | null;
   extra: {
     is_mode_explicit: boolean;
   };
@@ -1542,6 +1565,36 @@ export interface StepOptions {
  */
 export type StepOptionsOrId = StepOptions["id"] | StepOptions;
 
+/**
+ * An object containing info to target a run/step/step attempt/span, used for attaching metadata.
+ */
+export type MetadataTarget =
+  | {
+      // run level
+      run_id: string;
+    }
+  | {
+      // step level
+      run_id: string;
+      step_id: string; // user-defined
+      step_index?: number;
+    }
+  | {
+      // step attempt level
+      run_id: string;
+      step_id: string; // user-defined
+      step_index?: number;
+      step_attempt: number; // -1 === last attempt?
+    }
+  | {
+      // span level
+      run_id: string;
+      step_id: string; // user-defined
+      step_index?: number;
+      step_attempt: number; // -1 === last attempt?
+      span_id: string;
+    };
+
 export type EventsFromFunction<T extends InngestFunction.Any> =
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   T extends InngestFunction<any, any, any, infer IClient, any, any>
@@ -1550,8 +1603,6 @@ export type EventsFromFunction<T extends InngestFunction.Any> =
 
 /**
  * A function that can be invoked by Inngest.
- *
- * @public
  */
 export type InvokeTargetFunctionDefinition =
   | Public<InngestFunctionReference.Any>

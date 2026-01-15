@@ -1,5 +1,49 @@
 # inngest
 
+## 3.49.1
+
+### Patch Changes
+
+- [#1234](https://github.com/inngest/inngest-js/pull/1234) [`c85e2f29`](https://github.com/inngest/inngest-js/commit/c85e2f297a782e78fe4b681793464e5b60045c23) Thanks [@amh4r](https://github.com/amh4r)! - Fix not treating Next Request.body as a ReadableStream
+
+## 3.49.0
+
+### Minor Changes
+
+- [#1176](https://github.com/inngest/inngest-js/pull/1176) [`e828e226`](https://github.com/inngest/inngest-js/commit/e828e226e3575fea988a8272bba8cfcdd66ba28a) Thanks [@Linell](https://github.com/Linell)! - feat(metadata): Add step.update.metadata
+
+### Patch Changes
+
+- [#1215](https://github.com/inngest/inngest-js/pull/1215) [`29307e2e`](https://github.com/inngest/inngest-js/commit/29307e2e341a550eefc2118b1e35470ca8478c81) Thanks [@rhino1998](https://github.com/rhino1998)! - Fix step.fetch response status code
+
+- [#1222](https://github.com/inngest/inngest-js/pull/1222) [`ecf46a58`](https://github.com/inngest/inngest-js/commit/ecf46a58f6e67558bf6dc19ac4524f995cdf0754) Thanks [@amh4r](https://github.com/amh4r)! - Remove "authentication_succeeded: false" when responding to unsigned requests
+
+- [#1214](https://github.com/inngest/inngest-js/pull/1214) [`326fe06b`](https://github.com/inngest/inngest-js/commit/326fe06b5231f2528be46922084e1673bb63ae3d) Thanks [@djfarrelly](https://github.com/djfarrelly)! - Fix Connect heartbeater stops too soon during shutdown
+
+## 3.48.1
+
+### Patch Changes
+
+- [#1205](https://github.com/inngest/inngest-js/pull/1205) [`8ca992e9`](https://github.com/inngest/inngest-js/commit/8ca992e913d1d41c5704dfd7b0d262848b9fb84f) Thanks [@Linell](https://github.com/Linell)! - Include client headers, such as `x-inngest-env` in trace exports.
+
+## 3.48.0
+
+### Minor Changes
+
+- [#1189](https://github.com/inngest/inngest-js/pull/1189) [`28ffbc89`](https://github.com/inngest/inngest-js/commit/28ffbc8962602bbc1a14a10cee724fd5f8747930) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Bring checkpointing out of experimental
+
+## 3.47.0
+
+### Minor Changes
+
+- [#1188](https://github.com/inngest/inngest-js/pull/1188) [`90b14e92`](https://github.com/inngest/inngest-js/commit/90b14e926a1fe79917789512b162ed49e66d4666) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Add `experimentalCheckpointing: { maxRuntime?: number | string | Temporal.DurationLike }` to set max runtime duration before re-entry during checkpointing
+
+### Patch Changes
+
+- [#1190](https://github.com/inngest/inngest-js/pull/1190) [`cb286c5e`](https://github.com/inngest/inngest-js/commit/cb286c5e3a4747d5fc6abb0b09cac56b76b3a12a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Recover from checkpointing failures by falling back to async mode
+
+- [#1179](https://github.com/inngest/inngest-js/pull/1179) [`9c88fd19`](https://github.com/inngest/inngest-js/commit/9c88fd191e461bc5aaec50f4f3a709d258c6c61a) Thanks [@jpwilliams](https://github.com/jpwilliams)! - Fix sync execution looking for step in the wrong place
+
 ## 3.46.0
 
 ### Minor Changes
