@@ -1513,9 +1513,6 @@ export type MetadataTarget =
       span_id: string;
     };
 
-export type EventsFromFunction<T extends InngestFunction.Any> =
-  T extends InngestFunction.Any ? Record<string, EventPayload> : never;
-
 /**
  * A function that can be invoked by Inngest.
  */
@@ -1639,9 +1636,7 @@ export type PayloadForAnyInngestFunction<
   any,
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   any,
-  infer ITriggers extends InngestFunction.Trigger<
-    keyof EventsFromFunction<TFunction> & string
-  >[]
+  infer ITriggers extends InngestFunction.Trigger<string>[]
 >
   ? // First check: Does this function have an invoke trigger with a schema?
     // If so, only invoke schemas should be used (not eventType schemas)
@@ -1653,22 +1648,14 @@ export type PayloadForAnyInngestFunction<
         { data: ExtractTriggerSchemaInput<ITriggers> }
       : // Otherwise, fall back to existing behavior
         IsEqual<
-            EventsFromFunction<TFunction>[EventNameFromTrigger<
-              EventsFromFunction<TFunction>,
+            EventNameFromTrigger<
+              Record<string, EventPayload>,
               ITriggers[number]
-            >]["name"],
+            >,
             `${internalEvents.ScheduledTimer}`
           > extends true
         ? object // If this is ONLY a cron trigger, then we don't need to provide a payload
-        : Simplify<
-            Omit<
-              EventsFromFunction<TFunction>[EventNameFromTrigger<
-                EventsFromFunction<TFunction>,
-                ITriggers[number]
-              >],
-              "name" | "ts"
-            >
-          >
+        : MinimalEventPayload
   : never;
 
 export type InvocationResult<TReturn> = Promise<TReturn>;
