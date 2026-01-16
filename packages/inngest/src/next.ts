@@ -141,23 +141,6 @@ export const serve = (
           const method = reqMethod || req.method || "";
           return method;
         },
-        isProduction: () => {
-          /**
-           * Vercel Edge Functions do not allow dynamic access to environment
-           * variables, so we'll manage production checks directly here.
-           *
-           * We try/catch to avoid situations where Next.js is being used in
-           * environments where `process.env` is not accessible or polyfilled.
-           */
-          try {
-            const isProd = process.env.NODE_ENV === "production";
-            return isProd;
-          } catch (_err) {
-            // no-op
-          }
-
-          return;
-        },
         queryString: (key, url) => {
           const qs = req.query?.[key] || url.searchParams.get(key);
           return Array.isArray(qs) ? qs[0] : qs;

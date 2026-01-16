@@ -85,7 +85,6 @@ export const serve = (options: ServeHandlerOptions) => {
          * below.
          */
         // env: () => process.env,
-        // isProduction: () => internalChecks(),
         // queryString: (key, url) => url.searchParams.get(key),
       };
     },

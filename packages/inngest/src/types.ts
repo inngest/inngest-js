@@ -1237,9 +1237,7 @@ export interface InBandRegisterRequest
  * @internal
  */
 export interface UnauthenticatedIntrospection {
-  extra: {
-    is_mode_explicit: boolean;
-  };
+  extra: Record<string, unknown>;
   function_count: number;
   has_event_key: boolean;
   has_signing_key: boolean;
@@ -1248,7 +1246,10 @@ export interface UnauthenticatedIntrospection {
 }
 
 export interface AuthenticatedIntrospection
-  extends Omit<UnauthenticatedIntrospection, "authentication_succeeded"> {
+  extends Omit<
+    UnauthenticatedIntrospection,
+    "authentication_succeeded" | "extra"
+  > {
   api_origin: string;
   app_id: string;
   authentication_succeeded: true;
@@ -1256,7 +1257,7 @@ export interface AuthenticatedIntrospection
   env: string | null;
   event_api_origin: string;
   event_key_hash: string | null;
-  extra: UnauthenticatedIntrospection["extra"] & {
+  extra: {
     is_streaming: boolean;
   };
   framework: string;
