@@ -78,30 +78,24 @@ describe("eventType without options", () => {
 
   test("create with transform", async () => {
     const et = eventType("event-1", {
-      schema: z.object({ name: z.string() }).transform((val) => {
-        return {
-          ...val,
-          nameLength: val.name.length,
-        };
+      schema: z.object({ input: z.string() }).transform((val) => {
+        return { output: val.input.length };
       }),
     });
 
-    const created = et.create({ data: { name: "John" } });
+    const created = et.create({ data: { input: "John" } });
 
     // Note that the data is pre-transform
-    expect(created.data).toEqual({ name: "John" });
+    expect(created.data).toEqual({ input: "John" });
     expectTypeOf(created.data).not.toBeAny();
-    expectTypeOf(created.data).toEqualTypeOf<{ name: string }>();
+    expectTypeOf(created.data).toEqualTypeOf<{ input: string }>();
 
     const validated = await created.validate();
 
     // Note that the data is post-transform
-    expect(validated.data).toEqual({ name: "John", nameLength: 4 });
+    expect(validated.data).toEqual({ output: 4 });
     expectTypeOf(validated.data).not.toBeAny();
-    expectTypeOf(validated.data).toEqualTypeOf<{
-      name: string;
-      nameLength: number;
-    }>();
+    expectTypeOf(validated.data).toEqualTypeOf<{ output: number }>();
   });
 
   test("function trigger", () => {
