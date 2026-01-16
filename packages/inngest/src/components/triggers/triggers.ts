@@ -65,24 +65,20 @@ type EventCreateParams<TData extends Record<string, unknown> | undefined> = {
 /**
  * Extract the input type from a StandardSchemaV1.
  */
-type ExtractSchemaInput<TData> = TData extends StandardSchemaV1<
-  infer IInput,
-  infer _
->
-  ? IInput
+type ExtractSchemaData<TData> = TData extends StandardSchemaV1<infer TData>
+  ? TData
   : undefined;
 
 /**
  * An event that has been created but not validated.
- * @template TInputData - The input data type of the event (i.e. before validation)
+ * @template TData - The input data type of the event (i.e. before validation)
  * @template TOutputData - The output data type of the event (i.e. after validation)
  */
 type UnvalidatedCreatedEvent<
   TName extends string,
-  TInputData,
-  TOutputData,
-> = ValidatedCreatedEvent<TName, TInputData> & {
-  validate: () => Promise<ValidatedCreatedEvent<TName, TOutputData>>;
+  TData,
+> = ValidatedCreatedEvent<TName, TData> & {
+  validate: () => Promise<ValidatedCreatedEvent<TName, TData>>;
 };
 
 /**
@@ -98,16 +94,6 @@ type ValidatedCreatedEvent<TName extends string, TData> = {
 };
 
 /**
- * Extract the output type from a StandardSchemaV1.
- */
-type ExtractSchemaOutput<TData> = TData extends StandardSchemaV1<
-  infer _,
-  infer IOutput
->
-  ? IOutput
-  : undefined;
-
-/**
  * Represents a typed event definition that can be used both as a trigger
  * and for creating events with validation.
  *
@@ -117,7 +103,7 @@ type ExtractSchemaOutput<TData> = TData extends StandardSchemaV1<
 export class EventType<
   TName extends string,
   TSchema extends
-    | StandardSchemaV1<Record<string, unknown>, Record<string, unknown>>
+    | StandardSchemaV1<Record<string, unknown>>
     | undefined,
 > {
   /**
@@ -159,19 +145,11 @@ export class EventType<
    * @param params - Event parameters including data, id, timestamp, etc.
    */
   create(
-    params: EventCreateParams<ExtractSchemaInput<TSchema>>,
-  ): UnvalidatedCreatedEvent<
-    TName,
-    ExtractSchemaInput<TSchema>,
-    ExtractSchemaOutput<TSchema>
-  > {
-    const event: UnvalidatedCreatedEvent<
-      TName,
-      ExtractSchemaInput<TSchema>,
-      ExtractSchemaOutput<TSchema>
-    > = {
+    params: EventCreateParams<ExtractSchemaData<TSchema>>,
+  ): UnvalidatedCreatedEvent<TName, ExtractSchemaData<TSchema>> {
+    const event: UnvalidatedCreatedEvent<TName, ExtractSchemaData<TSchema>> = {
       name: this.name,
-      data: params.data as ExtractSchemaInput<TSchema>,
+      data: params.data as ExtractSchemaData<TSchema>,
       id: params.id,
       ts: params.ts,
       v: params.v ?? this.version,
@@ -179,7 +157,7 @@ export class EventType<
       // Method for validating and transforming the event data against the
       // schema
       validate: async (): Promise<
-        ValidatedCreatedEvent<TName, ExtractSchemaOutput<TSchema>>
+        ValidatedCreatedEvent<TName, ExtractSchemaData<TSchema>>
       > => {
         let data = params.data;
 
@@ -208,7 +186,7 @@ export class EventType<
 
         return {
           ...event,
-          data: data as ExtractSchemaOutput<TSchema>,
+          data: data as ExtractSchemaData<TSchema>,
         };
       },
     };
@@ -216,6 +194,29 @@ export class EventType<
     return event;
   }
 }
+
+/**
+ * This type's only purpose is to clearly highlight static type error messages
+ * in our codebase. To end users, it's exactly the same as a normal string.
+ */
+type StaticTypeError<TMessage extends string> = TMessage;
+
+/**
+ * Ensure that users don't use transforms in their schemas, since we don't
+ * support transforms.
+ */
+type AssertNoTransform<TSchema extends StandardSchemaV1 | undefined> =
+  TSchema extends undefined
+    ? // Undefined schema is OK
+      undefined
+    : TSchema extends StandardSchemaV1<infer TInput, infer TOutput>
+      ? TInput extends TOutput
+        ? // Input and output schemas match, so we're good
+          TSchema
+        : // Return an error message since the input and output schemas don't match
+          StaticTypeError<"Transforms not supported: schema input/output types must match">
+      : // Return an error message since the schema is not a StandardSchemaV1
+        StaticTypeError<"Transforms not supported: schema input/output types must match">;
 
 /**
  * Create an event type definition that can be used as a trigger and for
@@ -233,7 +234,7 @@ export class EventType<
 export function eventType<
   TName extends string,
   TSchema extends
-    | StandardSchemaV1<Record<string, unknown>, Record<string, unknown>>
+    | StandardSchemaV1<Record<string, unknown>>
     | undefined = undefined,
 >(
   name: TName,
@@ -241,7 +242,7 @@ export function eventType<
     schema,
     version,
   }: {
-    schema?: TSchema;
+    schema?: AssertNoTransform<TSchema>;
     version?: string;
   } = {},
 ): EventType<TName, TSchema> {
@@ -262,10 +263,9 @@ export function eventType<
  * @param schema - StandardSchema defining the invoke payload structure
  * @returns Invoke trigger
  */
-export function invoke<
-  TInputData extends Record<string, unknown>,
-  TOutputData extends Record<string, unknown>,
->(schema: StandardSchemaV1<TInputData, TOutputData>) {
+export function invoke<TData extends Record<string, unknown>>(
+  schema: StandardSchemaV1<TData>,
+) {
   return {
     event: "inngest/function.invoked",
     schema,

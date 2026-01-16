@@ -58,10 +58,9 @@ type EventTypeToEvent<TEventType> = TEventType extends EventType<
   infer TSchema
 >
   ? TSchema extends StandardSchemaV1<
-      infer _,
-      infer TOutput extends Record<string, unknown>
+      infer TData extends Record<string, unknown>
     >
-    ? ReceivedEvent<TName, TOutput>
+    ? ReceivedEvent<TName, TData>
     : ReceivedEvent<TName, Record<string, any>>
   : never;
 
@@ -78,10 +77,9 @@ type PlainEventToReceivedEvent<
   TName extends string,
   TSchema,
 > = TSchema extends StandardSchemaV1<
-  infer _,
-  infer TOutput extends Record<string, unknown>
+  infer TData extends Record<string, unknown>
 >
-  ? ReceivedEvent<TName, TOutput>
+  ? ReceivedEvent<TName, TData>
   : ReceivedEvent<TName, Record<string, any>>;
 
 /**
@@ -111,10 +109,9 @@ type ProcessSingleTrigger<
           }
         ? [
             TSchema extends StandardSchemaV1<
-              any,
-              infer TOutput extends Record<string, unknown>
+              infer TData extends Record<string, unknown>
             >
-              ? ReceivedEvent<TName, TOutput>
+              ? ReceivedEvent<TName, TData>
               : ReceivedEvent<TName, Record<string, any>>,
           ]
         : // Is this an event trigger using a string name (i.e. not an EventType)?
@@ -184,8 +181,8 @@ type ExtractInvokeSchemas<T extends readonly any[]> = T extends readonly [
   ...infer Rest,
 ]
   ? First extends { event: InvokeEventName; schema: infer TSchema }
-    ? TSchema extends StandardSchemaV1<infer _, infer TOutput>
-      ? TOutput | ExtractInvokeSchemas<Rest>
+    ? TSchema extends StandardSchemaV1<infer TData>
+      ? TData | ExtractInvokeSchemas<Rest>
       : ExtractInvokeSchemas<Rest>
     : ExtractInvokeSchemas<Rest>
   : never;
@@ -205,18 +202,18 @@ type ExtractAllSchemaOutputs<T extends readonly any[]> = T extends readonly [
   ...infer Rest,
 ]
   ? First extends EventType<string, infer TSchema>
-    ? TSchema extends StandardSchemaV1<infer _, infer TOutput>
-      ? TOutput | ExtractAllSchemaOutputs<Rest>
+    ? TSchema extends StandardSchemaV1<infer TData>
+      ? TData | ExtractAllSchemaOutputs<Rest>
       : Record<string, any> | ExtractAllSchemaOutputs<Rest>
     : First extends { event: EventType<string, infer TSchema> }
-      ? TSchema extends StandardSchemaV1<infer _, infer TOutput>
-        ? TOutput | ExtractAllSchemaOutputs<Rest>
+      ? TSchema extends StandardSchemaV1<infer TData>
+        ? TData | ExtractAllSchemaOutputs<Rest>
         : Record<string, any> | ExtractAllSchemaOutputs<Rest>
       : First extends {
             event: string;
-            schema: StandardSchemaV1<infer _, infer TOutput>;
+            schema: StandardSchemaV1<infer TData>;
           }
-        ? TOutput | ExtractAllSchemaOutputs<Rest>
+        ? TData | ExtractAllSchemaOutputs<Rest>
         : First extends { event: string }
           ? Record<string, any> | ExtractAllSchemaOutputs<Rest>
           : ExtractAllSchemaOutputs<Rest>

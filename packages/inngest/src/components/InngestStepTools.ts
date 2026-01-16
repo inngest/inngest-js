@@ -441,7 +441,7 @@ export const createStepTools = <TClient extends Inngest.Any>(
             | EventType<string, any>;
           timeout: number | string | Date;
           // biome-ignore lint/suspicious/noExplicitAny: Allow any schema
-          schema?: StandardSchemaV1<any, any>;
+          schema?: StandardSchemaV1<any>;
         } & ExclusiveKeys<{ match?: string; if?: string }, "match", "if">,
       >(
         idOrOptions: StepOptionsOrId,
@@ -983,14 +983,10 @@ type WaitForEventResult<TOpts> =
   TOpts extends {
     event: EventType<
       infer TName extends string,
-      StandardSchemaV1<
-        // biome-ignore lint/suspicious/noExplicitAny: Need to infer output type
-        any,
-        infer TOutput extends Record<string, unknown>
-      >
+      StandardSchemaV1<infer TData extends Record<string, unknown>>
     >;
   }
-    ? { name: TName; data: TOutput; id: string; ts: number; v?: string } | null
+    ? { name: TName; data: TData; id: string; ts: number; v?: string } | null
     : // Case 2: event is an EventType without a schema
       TOpts extends {
           event: EventType<infer TName extends string, undefined>;
@@ -1007,14 +1003,12 @@ type WaitForEventResult<TOpts> =
         TOpts extends {
             event: infer TName extends string;
             schema: StandardSchemaV1<
-              // biome-ignore lint/suspicious/noExplicitAny: Need to infer output type
-              any,
-              infer TOutput extends Record<string, unknown>
+              infer TData extends Record<string, unknown>
             >;
           }
         ? {
             name: TName;
-            data: TOutput;
+            data: TData;
             id: string;
             ts: number;
             v?: string;

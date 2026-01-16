@@ -1538,8 +1538,8 @@ type ExtractInvokeSchemaInput<T extends readonly unknown[]> =
         event: "inngest/function.invoked";
         schema: infer TSchema;
       }
-      ? TSchema extends StandardSchemaV1<infer TInput, infer _>
-        ? TInput | ExtractInvokeSchemaInput<Rest>
+      ? TSchema extends StandardSchemaV1<infer TData>
+        ? TData | ExtractInvokeSchemaInput<Rest>
         : ExtractInvokeSchemaInput<Rest>
       : ExtractInvokeSchemaInput<Rest>
     : never;
@@ -1553,8 +1553,8 @@ type ExtractInvokeSchemaInput<T extends readonly unknown[]> =
 type ExtractTriggerSchemaInput<T extends readonly unknown[]> =
   T extends readonly [infer First, ...infer Rest]
     ? First extends { schema: infer TSchema }
-      ? TSchema extends StandardSchemaV1<infer TInput, infer _>
-        ? TInput
+      ? TSchema extends StandardSchemaV1<infer TData>
+        ? TData
         : ExtractTriggerSchemaInput<Rest>
       : ExtractTriggerSchemaInput<Rest>
     : never;
@@ -1569,7 +1569,7 @@ type HasInvokeTriggerWithSchema<T extends readonly unknown[]> =
     ? First extends {
         event: "inngest/function.invoked";
         // biome-ignore lint/suspicious/noExplicitAny: Need any to match any StandardSchemaV1
-        schema: StandardSchemaV1<any, any>;
+        schema: StandardSchemaV1<any>;
       }
       ? true
       : HasInvokeTriggerWithSchema<Rest>
@@ -1586,7 +1586,7 @@ type HasTriggerWithSchema<T extends readonly unknown[]> = T extends readonly [
 ]
   ? First extends {
       // biome-ignore lint/suspicious/noExplicitAny: Need any to match any StandardSchemaV1
-      schema: StandardSchemaV1<any, any>;
+      schema: StandardSchemaV1<any>;
     }
     ? true
     : HasTriggerWithSchema<Rest>
